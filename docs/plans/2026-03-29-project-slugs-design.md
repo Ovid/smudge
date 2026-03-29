@@ -14,9 +14,11 @@ Replace UUID-based project URLs (`/projects/0c0e478b-...`) with human-readable s
 
 ## Data Layer
 
-New migration adds `slug TEXT NOT NULL UNIQUE` to the `projects` table with an index. Backfills existing projects by generating slugs from current titles.
+New migration adds `slug TEXT NOT NULL` to the `projects` table. Backfills existing projects by generating slugs from current titles.
 
-Uniqueness is enforced at both DB level (unique constraint) and application level (check before create/rename, return `PROJECT_TITLE_EXISTS` error).
+Both `title` and `slug` get **partial unique indexes** scoped to non-deleted rows: `CREATE UNIQUE INDEX ... WHERE deleted_at IS NULL`. This enforces the "no duplicate names" rule at the DB level while allowing soft-deleted projects' names to be reused.
+
+Uniqueness is also enforced at the application level (check before create/rename, return `PROJECT_TITLE_EXISTS` error).
 
 UUIDs remain the primary key. `chapters.project_id` still references UUIDs. Slugs are purely external-facing.
 
@@ -32,6 +34,7 @@ Algorithm:
 4. Collapse consecutive hyphens
 5. Trim leading/trailing hyphens
 6. If result is empty, fall back to `"untitled"`
+7. On slug collision (unique constraint or pre-check), append numeric suffix: `untitled-2`, `untitled-3`, etc. This also serves as a general safety net for any slug collision.
 
 No external dependencies. Built-in string methods and regexes only.
 
@@ -62,13 +65,15 @@ Chapter endpoints remain UUID-based (`/api/chapters/:id`).
 
 **Rename handling:** `PATCH` response includes new slug. Client calls `navigate('/projects/${newSlug}', { replace: true })` to update URL without adding a history entry.
 
-**Shared types:** Add `slug: string` to the `Project` interface in `packages/shared`.
+**Shared types:** Add `slug: string` to both the `Project` and `ProjectListItem` interfaces in `packages/shared`.
 
 ## Scope
 
 - 1 new migration (add slug column, backfill existing projects)
 - 1 new shared utility (`generateSlug`)
-- Update shared types (add `slug` to `Project`)
+- Update shared types (add `slug` to `Project` and `ProjectListItem`)
+- Update Zod schemas for create/update validation and response shapes
 - Update server routes (swap `:id` for `:slug` on project endpoints)
 - Update client (routing, API client, navigation, rename handling)
+- Update existing server integration tests to use slugs instead of UUIDs
 - Tests for all of the above
