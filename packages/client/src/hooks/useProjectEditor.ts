@@ -14,11 +14,16 @@ export function useProjectEditor(slug: string | undefined) {
   const [error, setError] = useState<string | null>(null);
   const [chapterWordCount, setChapterWordCount] = useState(0);
   const activeChapterRef = useRef<Chapter | null>(null);
+  const projectSlugRef = useRef(project?.slug);
 
   // Keep ref in sync for use in loadProject's closure
   useEffect(() => {
     activeChapterRef.current = activeChapter;
   }, [activeChapter]);
+
+  useEffect(() => {
+    projectSlugRef.current = project?.slug;
+  }, [project?.slug]);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,16 +106,17 @@ export function useProjectEditor(slug: string | undefined) {
   );
 
   const handleCreateChapter = useCallback(async () => {
-    if (!project) return;
+    const slug = projectSlugRef.current;
+    if (!slug) return;
     try {
-      const newChapter = await api.chapters.create(project.slug);
+      const newChapter = await api.chapters.create(slug);
       setActiveChapter(newChapter);
       setChapterWordCount(0);
       setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
     } catch (err) {
       setError(err instanceof Error ? err.message : STRINGS.error.createChapterFailed);
     }
-  }, [project]);
+  }, []);
 
   const handleSelectChapter = useCallback(
     async (chapterId: string) => {
@@ -165,9 +171,10 @@ export function useProjectEditor(slug: string | undefined) {
 
   const handleReorderChapters = useCallback(
     async (orderedIds: string[]) => {
-      if (!project) return;
+      const slug = projectSlugRef.current;
+      if (!slug) return;
       try {
-        await api.projects.reorderChapters(project.slug, orderedIds);
+        await api.projects.reorderChapters(slug, orderedIds);
         setProject((prev) => {
           if (!prev) return prev;
           const reordered = orderedIds
@@ -179,7 +186,7 @@ export function useProjectEditor(slug: string | undefined) {
         setError(err instanceof Error ? err.message : STRINGS.error.reorderFailed);
       }
     },
-    [project],
+    [],
   );
 
   const handleUpdateProjectTitle = useCallback(
