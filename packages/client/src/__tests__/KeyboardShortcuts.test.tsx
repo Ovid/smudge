@@ -119,6 +119,27 @@ describe("Keyboard shortcut help dialog", () => {
     // "Keyboard shortcuts" appears as both dialog title and shortcut label — at least 2
     expect(screen.getAllByText(/keyboard shortcuts/i).length).toBeGreaterThanOrEqual(2);
   });
+
+  it("closes help dialog when clicking the backdrop", async () => {
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2 })).toBeInTheDocument();
+    });
+
+    fireEvent.keyDown(document, { key: "/", ctrlKey: true });
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: /keyboard shortcuts/i })).toBeInTheDocument();
+    });
+
+    // Click the dialog backdrop (the dialog element itself, not its inner content)
+    const dialog = screen.getByRole("dialog", { name: /keyboard shortcuts/i });
+    fireEvent.click(dialog);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: /keyboard shortcuts/i })).toBeNull();
+    });
+  });
 });
 
 describe("Ctrl+Shift+N creates a new chapter", () => {

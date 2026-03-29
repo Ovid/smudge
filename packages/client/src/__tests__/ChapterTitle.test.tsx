@@ -197,6 +197,43 @@ describe("Project title editing", () => {
     expect(input).toHaveValue("Test Project");
   });
 
+  it("cancels project title editing on Escape without saving", async () => {
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Test Project")).toBeInTheDocument();
+    });
+
+    const projectTitle = screen.getByText("Test Project");
+    fireEvent.doubleClick(projectTitle);
+
+    const input = document.querySelector("input[aria-label='Project title']") as HTMLInputElement;
+    await userEvent.clear(input);
+    await userEvent.type(input, "Something else{Escape}");
+
+    expect(api.projects.update).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getByText("Test Project")).toBeInTheDocument();
+    });
+  });
+
+  it("does not save project title if whitespace-only", async () => {
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Test Project")).toBeInTheDocument();
+    });
+
+    const projectTitle = screen.getByText("Test Project");
+    fireEvent.doubleClick(projectTitle);
+
+    const input = document.querySelector("input[aria-label='Project title']") as HTMLInputElement;
+    await userEvent.clear(input);
+    await userEvent.type(input, "   {Enter}");
+
+    expect(api.projects.update).not.toHaveBeenCalled();
+  });
+
   it("saves project title on Enter", async () => {
     renderEditorPage();
 

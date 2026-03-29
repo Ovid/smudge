@@ -91,6 +91,77 @@ describe("GET /api/projects", () => {
   });
 });
 
+describe("PATCH /api/projects/:id", () => {
+  it("renames a project", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Old Name", mode: "fiction" });
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${createRes.body.id}`)
+      .send({ title: "New Name" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.title).toBe("New Name");
+  });
+
+  it("trims whitespace from title", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Book", mode: "fiction" });
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${createRes.body.id}`)
+      .send({ title: "  Trimmed  " });
+
+    expect(res.status).toBe(200);
+    expect(res.body.title).toBe("Trimmed");
+  });
+
+  it("returns 400 when title is missing", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Book", mode: "fiction" });
+
+    const res = await request(t.app).patch(`/api/projects/${createRes.body.id}`).send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("returns 400 when title is whitespace-only", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Book", mode: "fiction" });
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${createRes.body.id}`)
+      .send({ title: "   " });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 for non-existent project", async () => {
+    const res = await request(t.app).patch("/api/projects/nonexistent-id").send({ title: "Nope" });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("returns 404 for soft-deleted project", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Deleted", mode: "fiction" });
+    await request(t.app).delete(`/api/projects/${createRes.body.id}`);
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${createRes.body.id}`)
+      .send({ title: "Nope" });
+
+    expect(res.status).toBe(404);
+  });
+});
+
 describe("GET /api/projects/:id", () => {
   it("returns project with chapters", async () => {
     const createRes = await request(t.app)

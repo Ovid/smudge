@@ -53,6 +53,29 @@ describe("api.projects", () => {
       body: JSON.stringify({ title: "New", mode: "fiction" }),
     });
   });
+
+  it("update(id, data) sends PATCH /api/projects/:id", async () => {
+    const updated = { id: "p1", title: "Renamed" };
+    mockFetch.mockResolvedValue(jsonResponse(updated));
+
+    const result = await api.projects.update("p1", { title: "Renamed" });
+    expect(result).toEqual(updated);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1", {
+      headers: { "Content-Type": "application/json" },
+      method: "PATCH",
+      body: JSON.stringify({ title: "Renamed" }),
+    });
+  });
+
+  it("delete(id) sends DELETE /api/projects/:id", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ message: "deleted" }));
+
+    await api.projects.delete("p1");
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1", {
+      headers: { "Content-Type": "application/json" },
+      method: "DELETE",
+    });
+  });
 });
 
 describe("api.chapters", () => {
@@ -64,6 +87,18 @@ describe("api.chapters", () => {
     expect(result).toEqual(chapter);
     expect(mockFetch).toHaveBeenCalledWith("/api/chapters/ch-1", {
       headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  it("create(projectId) sends POST /api/projects/:id/chapters", async () => {
+    const chapter = { id: "ch-new", title: "Untitled Chapter" };
+    mockFetch.mockResolvedValue(jsonResponse(chapter, 201));
+
+    const result = await api.chapters.create("p1");
+    expect(result).toEqual(chapter);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1/chapters", {
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
     });
   });
 
