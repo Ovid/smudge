@@ -41,16 +41,13 @@ export async function up(knex) {
     await knex("projects").where({ id: project.id }).update({ slug });
   }
 
-  // Partial unique indexes — only enforce uniqueness among non-deleted rows.
-  // This allows reuse of titles/slugs after soft-deleting a project.
+  // Partial unique index on slug — only enforces uniqueness among non-deleted rows.
+  // This allows reuse of slugs after soft-deleting a project.
+  // Title uniqueness is enforced at the application level (not via a DB index)
+  // to avoid migration failures on databases with pre-existing duplicate titles.
   await knex.raw(`
     CREATE UNIQUE INDEX idx_projects_slug_active
     ON projects(slug)
-    WHERE deleted_at IS NULL
-  `);
-  await knex.raw(`
-    CREATE UNIQUE INDEX idx_projects_title_active
-    ON projects(title)
     WHERE deleted_at IS NULL
   `);
 }
@@ -58,7 +55,6 @@ export async function up(knex) {
 /** @param {import('knex').Knex} knex */
 export async function down(knex) {
   await knex.raw("DROP INDEX IF EXISTS idx_projects_slug_active");
-  await knex.raw("DROP INDEX IF EXISTS idx_projects_title_active");
   await knex.schema.alterTable("projects", (table) => {
     table.dropColumn("slug");
   });

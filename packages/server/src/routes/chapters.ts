@@ -1,8 +1,9 @@
 import { Router } from "express";
 import type { Knex } from "knex";
-import { UpdateChapterSchema, countWords } from "@smudge/shared";
+import { UpdateChapterSchema, countWords, generateSlug } from "@smudge/shared";
 import { asyncHandler } from "../app";
 import { parseChapterContent } from "./parseChapterContent";
+import { resolveUniqueSlug } from "./resolve-slug";
 
 export function chaptersRouter(db: Knex): Router {
   const router = Router();
@@ -127,13 +128,26 @@ export function chaptersRouter(db: Knex): Router {
         return;
       }
 
+      // If the parent project is deleted and will be restored, resolve any slug collision
+      const projectUpdate: Record<string, unknown> = { deleted_at: null };
+      if (parentProject.deleted_at) {
+        const freshSlug = await resolveUniqueSlug(
+          db,
+          generateSlug(parentProject.title),
+          parentProject.id,
+        );
+        if (freshSlug !== parentProject.slug) {
+          projectUpdate.slug = freshSlug;
+        }
+      }
+
       // Restore the chapter and parent project atomically
       await db.transaction(async (trx) => {
         await trx("chapters").where({ id: req.params.id }).update({ deleted_at: null });
         await trx("projects")
           .where({ id: chapter.project_id })
           .whereNotNull("deleted_at")
-          .update({ deleted_at: null });
+          .update(projectUpdate);
       });
 
       const restored = await db("chapters").where({ id: req.params.id }).first();

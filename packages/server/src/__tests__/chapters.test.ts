@@ -225,6 +225,37 @@ describe("POST /api/chapters/:id/restore", () => {
     expect(projectRes.status).toBe(200);
   });
 
+  it("re-slugs restored project when slug is now taken", async () => {
+    // Create project A, delete it
+    const projectA = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Novel", mode: "fiction" });
+    const chapterA = (await request(t.app).get(`/api/projects/${projectA.body.slug}`))
+      .body.chapters[0];
+    await request(t.app).delete(`/api/chapters/${chapterA.id}`);
+    await request(t.app).delete(`/api/projects/${projectA.body.slug}`);
+
+    // Create project B with the same title — slug reuse is allowed after soft-delete
+    const projectB = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Novel", mode: "fiction" });
+    expect(projectB.body.slug).toBe("my-novel");
+
+    // Restore chapter from A — this also restores project A
+    const res = await request(t.app).post(`/api/chapters/${chapterA.id}/restore`);
+    expect(res.status).toBe(200);
+
+    // Project A should be accessible with a new slug (not "my-novel", that's taken by B)
+    const restoredProject = await t.db("projects").where({ id: projectA.body.id }).first();
+    expect(restoredProject.deleted_at).toBeNull();
+    expect(restoredProject.slug).toBe("my-novel-2");
+
+    // Project B should be unaffected
+    const projectBRes = await request(t.app).get("/api/projects/my-novel");
+    expect(projectBRes.status).toBe(200);
+    expect(projectBRes.body.id).toBe(projectB.body.id);
+  });
+
   it("returns 404 for non-existent chapter", async () => {
     const res = await request(t.app).post("/api/chapters/nonexistent-id/restore");
 

@@ -30,7 +30,7 @@ describe("api.projects", () => {
     });
   });
 
-  it("get(id) fetches GET /api/projects/:id", async () => {
+  it("get(slug) fetches GET /api/projects/:slug", async () => {
     const project = { id: "p1", title: "Test", chapters: [] };
     mockFetch.mockResolvedValue(jsonResponse(project));
 
@@ -54,7 +54,7 @@ describe("api.projects", () => {
     });
   });
 
-  it("update(id, data) sends PATCH /api/projects/:id", async () => {
+  it("update(slug, data) sends PATCH /api/projects/:slug", async () => {
     const updated = { id: "p1", title: "Renamed" };
     mockFetch.mockResolvedValue(jsonResponse(updated));
 
@@ -67,7 +67,7 @@ describe("api.projects", () => {
     });
   });
 
-  it("reorderChapters sends PUT /api/projects/:id/chapters/order", async () => {
+  it("reorderChapters sends PUT /api/projects/:slug/chapters/order", async () => {
     mockFetch.mockResolvedValue(jsonResponse({ message: "ok" }));
 
     await api.projects.reorderChapters("p1", ["ch3", "ch1", "ch2"]);
@@ -78,7 +78,7 @@ describe("api.projects", () => {
     });
   });
 
-  it("trash(id) fetches GET /api/projects/:id/trash", async () => {
+  it("trash(slug) fetches GET /api/projects/:slug/trash", async () => {
     const trashed = [{ id: "ch1", title: "Deleted", deleted_at: "2026-01-01" }];
     mockFetch.mockResolvedValue(jsonResponse(trashed));
 
@@ -89,7 +89,7 @@ describe("api.projects", () => {
     });
   });
 
-  it("delete(id) sends DELETE /api/projects/:id", async () => {
+  it("delete(slug) sends DELETE /api/projects/:slug", async () => {
     mockFetch.mockResolvedValue(jsonResponse({ message: "deleted" }));
 
     await api.projects.delete("p1");
@@ -112,7 +112,7 @@ describe("api.chapters", () => {
     });
   });
 
-  it("create(projectId) sends POST /api/projects/:id/chapters", async () => {
+  it("create(projectSlug) sends POST /api/projects/:slug/chapters", async () => {
     const chapter = { id: "ch-new", title: "Untitled Chapter" };
     mockFetch.mockResolvedValue(jsonResponse(chapter, 201));
 
