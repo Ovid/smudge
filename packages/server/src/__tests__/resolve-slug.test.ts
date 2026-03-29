@@ -75,24 +75,28 @@ describe("resolveUniqueSlug", () => {
     expect(slug).toBe("my-novel");
   });
 
-  it("throws when all 100 suffixes are exhausted", async () => {
+  it("throws when all 1000 suffixes are exhausted", async () => {
     const now = new Date().toISOString();
 
-    // Insert 100 projects: "my-novel", "my-novel-2", ..., "my-novel-100"
-    for (let i = 1; i <= 100; i++) {
-      const slug = i === 1 ? "my-novel" : `my-novel-${i}`;
-      await t.db("projects").insert({
+    // Insert 1000 projects: "my-novel", "my-novel-2", ..., "my-novel-1000"
+    const rows = [];
+    for (let i = 1; i <= 1000; i++) {
+      rows.push({
         id: `p${i}`,
         title: `My Novel ${i}`,
-        slug,
+        slug: i === 1 ? "my-novel" : `my-novel-${i}`,
         mode: "fiction",
         created_at: now,
         updated_at: now,
       });
     }
+    // Batch insert for speed
+    for (let i = 0; i < rows.length; i += 100) {
+      await t.db("projects").insert(rows.slice(i, i + 100));
+    }
 
     await expect(resolveUniqueSlug(t.db, "my-novel")).rejects.toThrow(
-      'Cannot generate unique slug for "my-novel" after 100 attempts',
+      'Cannot generate unique slug for "my-novel" after 1000 attempts',
     );
   });
 });

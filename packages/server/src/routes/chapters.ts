@@ -131,7 +131,9 @@ export function chaptersRouter(db: Knex): Router {
       // Restore the chapter (and parent project if deleted) atomically
       try {
         await db.transaction(async (trx) => {
-          await trx("chapters").where({ id: req.params.id }).update({ deleted_at: null });
+          await trx("chapters")
+            .where({ id: req.params.id })
+            .update({ deleted_at: null, updated_at: new Date().toISOString() });
 
           if (parentProject.deleted_at) {
             const freshSlug = await resolveUniqueSlug(
@@ -162,7 +164,7 @@ export function chaptersRouter(db: Knex): Router {
 
       const restored = await db("chapters").where({ id: req.params.id }).first();
       const updatedProject = await db("projects").where({ id: chapter.project_id }).first();
-      res.json({ ...parseChapterContent(restored), project_slug: updatedProject.slug });
+      res.json({ ...parseChapterContent(restored), project_slug: updatedProject?.slug });
     }),
   );
 

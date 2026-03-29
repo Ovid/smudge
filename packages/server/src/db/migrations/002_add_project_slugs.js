@@ -26,7 +26,7 @@ export async function up(knex) {
   const projects = await knex("projects").select("id", "title");
   for (const project of projects) {
     const baseSlug = generateSlug(project.title);
-    const MAX_SUFFIX = 100;
+    const MAX_SUFFIX = 1000;
     let slug = baseSlug;
     const baseQuery = knex("projects")
       .where({ slug })

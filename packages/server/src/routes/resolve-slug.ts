@@ -5,7 +5,7 @@ export async function resolveUniqueSlug(
   baseSlug: string,
   excludeProjectId?: string,
 ): Promise<string> {
-  const MAX_SUFFIX = 100;
+  const MAX_SUFFIX = 1000;
 
   // First, try the base slug with no suffix.
   const baseQuery = db("projects").where({ slug: baseSlug }).whereNull("deleted_at");
