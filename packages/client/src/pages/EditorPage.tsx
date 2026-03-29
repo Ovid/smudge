@@ -59,22 +59,30 @@ export function EditorPage() {
 
   async function openTrash() {
     if (!projectId) return;
-    const trashed = await api.projects.trash(projectId);
-    setTrashedChapters(trashed);
-    setTrashOpen(true);
+    try {
+      const trashed = await api.projects.trash(projectId);
+      setTrashedChapters(trashed);
+      setTrashOpen(true);
+    } catch {
+      // Silently fail — trash view just won't open
+    }
   }
 
   async function handleRestore(chapterId: string) {
-    const restored = await api.chapters.restore(chapterId);
-    setTrashedChapters((prev) => prev.filter((c) => c.id !== chapterId));
-    setProject((prev) =>
-      prev
-        ? {
-            ...prev,
-            chapters: [...prev.chapters, restored].sort((a, b) => a.sort_order - b.sort_order),
-          }
-        : prev,
-    );
+    try {
+      const restored = await api.chapters.restore(chapterId);
+      setTrashedChapters((prev) => prev.filter((c) => c.id !== chapterId));
+      setProject((prev) =>
+        prev
+          ? {
+              ...prev,
+              chapters: [...prev.chapters, restored].sort((a, b) => a.sort_order - b.sort_order),
+            }
+          : prev,
+      );
+    } catch {
+      // Silently fail — chapter stays in trash list
+    }
   }
 
   async function confirmDeleteChapter() {
