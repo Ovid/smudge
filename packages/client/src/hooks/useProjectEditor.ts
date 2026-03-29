@@ -51,25 +51,33 @@ export function useProjectEditor(projectId: string | undefined) {
     async (content: Record<string, unknown>) => {
       if (!activeChapter) return;
       const savingChapterId = activeChapter.id;
+      const BACKOFF_MS = [2000, 4000, 8000];
+      const MAX_RETRIES = 3;
 
       setSaveStatus("saving");
-      try {
-        const updated = await api.chapters.update(savingChapterId, { content });
-        // Don't call setActiveChapter — the editor holds the current truth.
-        // Only sync the server-computed word_count into project.chapters.
-        setProject((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            chapters: prev.chapters.map((c) =>
-              c.id === savingChapterId ? { ...c, word_count: updated.word_count } : c,
-            ),
-          };
-        });
-        setSaveStatus("saved");
-      } catch {
-        setSaveStatus("error");
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          const updated = await api.chapters.update(savingChapterId, { content });
+          // Don't call setActiveChapter — the editor holds the current truth.
+          // Only sync the server-computed word_count into project.chapters.
+          setProject((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              chapters: prev.chapters.map((c) =>
+                c.id === savingChapterId ? { ...c, word_count: updated.word_count } : c,
+              ),
+            };
+          });
+          setSaveStatus("saved");
+          return;
+        } catch {
+          if (attempt < MAX_RETRIES) {
+            await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
+          }
+        }
       }
+      setSaveStatus("error");
     },
     [activeChapter],
   );

@@ -346,15 +346,15 @@ describe("EditorPage save status", () => {
       editorEl.textContent = "dirty content";
       fireEvent.input(editorEl);
 
-      // Wait for auto-save debounce to trigger save + reject
+      // Wait for auto-save debounce + retries (with backoff) to complete
       await waitFor(
         () => {
           expect(screen.getByText("Unable to save \u2014 check connection")).toBeInTheDocument();
         },
-        { timeout: 3000 },
+        { timeout: 20000 },
       );
     }
-  });
+  }, 25000);
 
   it("displays the back button that navigates home", async () => {
     renderEditorPage();

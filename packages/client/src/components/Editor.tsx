@@ -42,6 +42,17 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
     [],
   );
 
+  // Warn before closing tab with unsaved changes
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (dirtyRef.current) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, []);
+
   // Flush pending save on unmount
   useEffect(() => {
     return () => {

@@ -133,17 +133,51 @@ describe("useProjectEditor", () => {
     expect(result.current.project!.chapters[0].word_count).toBe(5);
   });
 
-  it("sets save status to error on failure", async () => {
+  it("sets save status to error after exhausting retries", async () => {
     vi.mocked(api.chapters.update).mockRejectedValue(new Error("fail"));
 
     const { result } = renderHook(() => useProjectEditor("p1"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
-    await act(async () => {
-      await result.current.handleSave({ type: "doc", content: [] });
-    });
+    // Switch to fake timers after hook is set up
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        const p = result.current.handleSave({ type: "doc", content: [] });
+        await vi.advanceTimersByTimeAsync(2000);
+        await vi.advanceTimersByTimeAsync(4000);
+        await vi.advanceTimersByTimeAsync(8000);
+        return p;
+      });
 
-    expect(result.current.saveStatus).toBe("error");
+      expect(result.current.saveStatus).toBe("error");
+      expect(api.chapters.update).toHaveBeenCalledTimes(4); // 1 initial + 3 retries
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("succeeds on retry after transient failure", async () => {
+    vi.mocked(api.chapters.update)
+      .mockRejectedValueOnce(new Error("network error"))
+      .mockResolvedValueOnce({ ...mockChapter1, word_count: 3 });
+
+    const { result } = renderHook(() => useProjectEditor("p1"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        const p = result.current.handleSave({ type: "doc", content: [] });
+        await vi.advanceTimersByTimeAsync(2000);
+        return p;
+      });
+
+      expect(result.current.saveStatus).toBe("saved");
+      expect(api.chapters.update).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("selects a different chapter", async () => {
