@@ -11,10 +11,15 @@ vi.mock("../api/client", () => ({
     projects: {
       get: vi.fn(),
       update: vi.fn(),
+      reorderChapters: vi.fn(),
+      trash: vi.fn(),
     },
     chapters: {
       get: vi.fn(),
+      create: vi.fn(),
       update: vi.fn(),
+      delete: vi.fn(),
+      restore: vi.fn(),
     },
   },
 }));
@@ -65,9 +70,9 @@ describe("A11y: title attributes", () => {
   it("does not use title attribute on chapter heading (leaks into accessible name)", async () => {
     renderEditorPage();
     await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2 })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 2, name: "My Chapter" })).toBeInTheDocument();
     });
-    const h2 = screen.getByRole("heading", { level: 2 });
+    const h2 = screen.getByRole("heading", { level: 2, name: "My Chapter" });
     expect(h2).not.toHaveAttribute("title");
     expect(h2).toHaveAttribute("aria-label", "My Chapter");
   });
@@ -100,9 +105,9 @@ describe("Chapter title editing", () => {
   async function findChapterTitle(): Promise<HTMLElement> {
     // Wait for the page to load, then find the h2 with the chapter title
     await waitFor(() => {
-      expect(screen.queryByRole("heading", { level: 2 })).not.toBeNull();
+      expect(screen.getByRole("heading", { level: 2, name: "My Chapter" })).toBeInTheDocument();
     });
-    return screen.queryByRole("heading", { level: 2 }) as HTMLElement;
+    return screen.getByRole("heading", { level: 2, name: "My Chapter" });
   }
 
   function getTitleInput(): HTMLInputElement {
@@ -151,8 +156,8 @@ describe("Chapter title editing", () => {
     await userEvent.type(input, "Something else{Escape}");
 
     expect(api.chapters.update).not.toHaveBeenCalled();
-    const restoredTitle = screen.queryByRole("heading", { level: 2 });
-    expect(restoredTitle?.textContent).toBe("My Chapter");
+    const restoredTitle = screen.getByRole("heading", { level: 2, name: "My Chapter" });
+    expect(restoredTitle.textContent).toBe("My Chapter");
   });
 
   it("does not save if title is whitespace-only", async () => {
@@ -186,10 +191,10 @@ describe("Project title editing", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Test Project")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument();
     });
 
-    const projectTitle = screen.getByText("Test Project");
+    const projectTitle = screen.getByRole("heading", { level: 1 });
     fireEvent.doubleClick(projectTitle);
 
     const input = document.querySelector("input[aria-label='Project title']") as HTMLInputElement;
@@ -201,10 +206,10 @@ describe("Project title editing", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Test Project")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument();
     });
 
-    const projectTitle = screen.getByText("Test Project");
+    const projectTitle = screen.getByRole("heading", { level: 1 });
     fireEvent.doubleClick(projectTitle);
 
     const input = document.querySelector("input[aria-label='Project title']") as HTMLInputElement;
@@ -213,7 +218,7 @@ describe("Project title editing", () => {
 
     expect(api.projects.update).not.toHaveBeenCalled();
     await waitFor(() => {
-      expect(screen.getByText("Test Project")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument();
     });
   });
 
@@ -221,10 +226,10 @@ describe("Project title editing", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Test Project")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument();
     });
 
-    const projectTitle = screen.getByText("Test Project");
+    const projectTitle = screen.getByRole("heading", { level: 1 });
     fireEvent.doubleClick(projectTitle);
 
     const input = document.querySelector("input[aria-label='Project title']") as HTMLInputElement;
@@ -238,10 +243,10 @@ describe("Project title editing", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Test Project")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument();
     });
 
-    const projectTitle = screen.getByText("Test Project");
+    const projectTitle = screen.getByRole("heading", { level: 1 });
     fireEvent.doubleClick(projectTitle);
 
     const input = document.querySelector("input[aria-label='Project title']") as HTMLInputElement;
@@ -280,7 +285,7 @@ describe("EditorPage save status", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      expect(screen.queryByRole("heading", { level: 2 })).not.toBeNull();
+      expect(screen.getByRole("heading", { level: 2, name: "My Chapter" })).toBeInTheDocument();
     });
 
     // Modify editor content to mark dirty, then blur to trigger save
@@ -308,7 +313,7 @@ describe("EditorPage save status", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      expect(screen.queryByRole("heading", { level: 2 })).not.toBeNull();
+      expect(screen.getByRole("heading", { level: 2, name: "My Chapter" })).toBeInTheDocument();
     });
 
     const editorEl = document.querySelector("[role='textbox']") as HTMLElement;
@@ -332,7 +337,7 @@ describe("EditorPage save status", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      expect(screen.queryByRole("heading", { level: 2 })).not.toBeNull();
+      expect(screen.getByRole("heading", { level: 2, name: "My Chapter" })).toBeInTheDocument();
     });
 
     const editorEl = document.querySelector("[role='textbox']") as HTMLElement;
@@ -355,7 +360,7 @@ describe("EditorPage save status", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      expect(screen.queryByRole("heading", { level: 2 })).not.toBeNull();
+      expect(screen.getByRole("heading", { level: 2, name: "My Chapter" })).toBeInTheDocument();
     });
 
     const backButton = screen.getByText(/Projects/);
@@ -367,7 +372,7 @@ describe("EditorPage save status", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Test Project")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 1, name: "Test Project" })).toBeInTheDocument();
     });
   });
 });

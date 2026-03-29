@@ -9,11 +9,15 @@ vi.mock("../api/client", () => ({
     projects: {
       get: vi.fn(),
       update: vi.fn(),
+      reorderChapters: vi.fn(),
+      trash: vi.fn(),
     },
     chapters: {
       get: vi.fn(),
       update: vi.fn(),
       create: vi.fn(),
+      delete: vi.fn(),
+      restore: vi.fn(),
     },
   },
 }));
@@ -74,7 +78,7 @@ describe("Keyboard shortcut help dialog", () => {
   it("opens help dialog on Ctrl+/", async () => {
     renderEditorPage();
     await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2 })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
     });
 
     fireEvent.keyDown(document, { key: "/", ctrlKey: true });
@@ -87,7 +91,7 @@ describe("Keyboard shortcut help dialog", () => {
   it("closes help dialog on Escape", async () => {
     renderEditorPage();
     await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2 })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
     });
 
     fireEvent.keyDown(document, { key: "/", ctrlKey: true });
@@ -106,7 +110,7 @@ describe("Keyboard shortcut help dialog", () => {
   it("lists all Smudge-specific shortcuts", async () => {
     renderEditorPage();
     await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2 })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
     });
 
     fireEvent.keyDown(document, { key: "/", ctrlKey: true });
@@ -123,7 +127,7 @@ describe("Keyboard shortcut help dialog", () => {
   it("closes help dialog when clicking the backdrop", async () => {
     renderEditorPage();
     await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2 })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
     });
 
     fireEvent.keyDown(document, { key: "/", ctrlKey: true });
@@ -165,7 +169,7 @@ describe("Ctrl+Shift+N creates a new chapter", () => {
   it("calls api.chapters.create on Ctrl+Shift+N", async () => {
     renderEditorPage();
     await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2 })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
     });
 
     fireEvent.keyDown(document, { key: "N", ctrlKey: true, shiftKey: true });

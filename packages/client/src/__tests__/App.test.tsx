@@ -8,10 +8,16 @@ vi.mock("../api/client", () => ({
     projects: {
       list: vi.fn(),
       get: vi.fn(),
+      update: vi.fn(),
+      reorderChapters: vi.fn(),
+      trash: vi.fn(),
     },
     chapters: {
       get: vi.fn(),
+      create: vi.fn(),
       update: vi.fn(),
+      delete: vi.fn(),
+      restore: vi.fn(),
     },
   },
 }));
@@ -76,7 +82,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByText("Test Project")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 1, name: "Test Project" })).toBeInTheDocument();
     });
   });
 });

@@ -1,22 +1,32 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import type { Chapter } from "@smudge/shared";
 import { Editor } from "../components/Editor";
+import { Sidebar } from "../components/Sidebar";
+import { TrashView } from "../components/TrashView";
+import { PreviewMode } from "../components/PreviewMode";
 import { STRINGS } from "../strings";
 import { useProjectEditor } from "../hooks/useProjectEditor";
+import { api } from "../api/client";
 
 export function EditorPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const {
     project,
+    setProject,
     activeChapter,
     saveStatus,
     chapterWordCount,
     handleSave,
     handleContentChange,
     handleCreateChapter,
+    handleSelectChapter,
+    handleDeleteChapter,
+    handleReorderChapters,
     handleUpdateProjectTitle,
     handleUpdateChapterTitle,
+    handleRenameChapter,
   } = useProjectEditor(projectId);
 
   const [editingTitle, setEditingTitle] = useState(false);
@@ -28,6 +38,50 @@ export function EditorPage() {
   const [projectTitleDraft, setProjectTitleDraft] = useState("");
   const projectTitleInputRef = useRef<HTMLInputElement>(null);
   const projectEscapePressedRef = useRef(false);
+
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<Chapter | null>(null);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [trashedChapters, setTrashedChapters] = useState<Chapter[]>([]);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  const editorRef = useRef<{ flushSave: () => void } | null>(null);
+
+  const handleSelectChapterWithFlush = useCallback(
+    async (chapterId: string) => {
+      editorRef.current?.flushSave();
+      await handleSelectChapter(chapterId);
+    },
+    [handleSelectChapter],
+  );
+
+  async function openTrash() {
+    if (!projectId) return;
+    const trashed = await api.projects.trash(projectId);
+    setTrashedChapters(trashed);
+    setTrashOpen(true);
+  }
+
+  async function handleRestore(chapterId: string) {
+    const restored = await api.chapters.restore(chapterId);
+    setTrashedChapters((prev) => prev.filter((c) => c.id !== chapterId));
+    setProject((prev) =>
+      prev
+        ? {
+            ...prev,
+            chapters: [...prev.chapters, restored].sort(
+              (a, b) => a.sort_order - b.sort_order,
+            ),
+          }
+        : prev,
+    );
+  }
+
+  async function confirmDeleteChapter() {
+    if (!deleteTarget) return;
+    await handleDeleteChapter(deleteTarget);
+    setDeleteTarget(null);
+  }
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -42,6 +96,18 @@ export function EditorPage() {
       if (ctrl && e.shiftKey && e.key === "N") {
         e.preventDefault();
         handleCreateChapter();
+        return;
+      }
+
+      if (ctrl && e.shiftKey && e.key === "\\") {
+        e.preventDefault();
+        setSidebarOpen((prev) => !prev);
+        return;
+      }
+
+      if (ctrl && e.shiftKey && e.key === "P") {
+        e.preventDefault();
+        setPreviewOpen((prev) => !prev);
         return;
       }
 
@@ -112,100 +178,165 @@ export function EditorPage() {
   }
 
   return (
-    <div className="min-h-screen bg-bg-primary">
-      <header className="border-b border-border px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => navigate("/")}
-            className="text-text-secondary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-focus-ring rounded px-2 py-1"
-          >
-            &larr; Projects
-          </button>
-          {editingProjectTitle ? (
-            <input
-              ref={projectTitleInputRef}
-              value={projectTitleDraft}
-              onChange={(e) => setProjectTitleDraft(e.target.value)}
-              onBlur={saveProjectTitle}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") saveProjectTitle();
-                if (e.key === "Escape") {
-                  projectEscapePressedRef.current = true;
-                  setEditingProjectTitle(false);
-                }
-              }}
-              className="text-lg font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none"
-              aria-label="Project title"
-            />
-          ) : (
-            <h1
-              className="text-lg font-semibold text-text-primary cursor-pointer hover:text-text-secondary"
-              onDoubleClick={startEditingProjectTitle}
-              aria-label={project.title}
-            >
-              {project.title}
-            </h1>
-          )}
-        </div>
-      </header>
-
-      <main className="px-6 py-8" aria-label={STRINGS.a11y.mainContent}>
-        {editingTitle ? (
-          <input
-            ref={titleInputRef}
-            value={titleDraft}
-            onChange={(e) => setTitleDraft(e.target.value)}
-            onBlur={saveTitle}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") saveTitle();
-              if (e.key === "Escape") {
-                escapePressedRef.current = true;
-                setEditingTitle(false);
-              }
-            }}
-            className="mx-auto block max-w-[720px] mb-4 text-2xl font-serif text-text-primary bg-transparent border-b-2 border-accent focus:outline-none w-full"
-            aria-label="Chapter title"
-          />
-        ) : (
-          <h2
-            className="mx-auto max-w-[720px] mb-4 text-2xl font-serif text-text-primary cursor-pointer hover:text-text-secondary"
-            onDoubleClick={startEditingTitle}
-            aria-label={activeChapter.title}
-          >
-            {activeChapter.title}
-          </h2>
-        )}
-        <Editor
-          content={activeChapter.content}
-          onSave={handleSave}
-          onContentChange={handleContentChange}
+    <div className="flex h-screen bg-bg-primary">
+      {sidebarOpen && (
+        <Sidebar
+          project={project}
+          activeChapterId={activeChapter.id}
+          onSelectChapter={handleSelectChapterWithFlush}
+          onAddChapter={handleCreateChapter}
+          onDeleteChapter={setDeleteTarget}
+          onReorderChapters={handleReorderChapters}
+          onRenameChapter={handleRenameChapter}
+          onOpenTrash={openTrash}
         />
-      </main>
+      )}
 
-      <footer
-        role="status"
-        aria-live="polite"
-        className="fixed bottom-0 left-0 right-0 border-t border-border bg-bg-primary px-6 py-2 flex items-center justify-between text-sm text-text-secondary"
-      >
-        <div>
-          {STRINGS.project.wordCount(chapterWordCount)}
-          {project && (
-            <span className="ml-3 text-text-muted">
-              {STRINGS.project.wordCount(
-                project.chapters.reduce((sum, c) => sum + c.word_count, 0),
-              )}{" "}total
-            </span>
-          )}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <header className="border-b border-border px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => navigate("/")}
+              className="text-text-secondary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-focus-ring rounded px-2 py-1"
+            >
+              &larr; Projects
+            </button>
+            {editingProjectTitle ? (
+              <input
+                ref={projectTitleInputRef}
+                value={projectTitleDraft}
+                onChange={(e) => setProjectTitleDraft(e.target.value)}
+                onBlur={saveProjectTitle}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveProjectTitle();
+                  if (e.key === "Escape") {
+                    projectEscapePressedRef.current = true;
+                    setEditingProjectTitle(false);
+                  }
+                }}
+                className="text-lg font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none"
+                aria-label="Project title"
+              />
+            ) : (
+              <h1
+                className="text-lg font-semibold text-text-primary cursor-pointer hover:text-text-secondary"
+                onDoubleClick={startEditingProjectTitle}
+                aria-label={project.title}
+              >
+                {project.title}
+              </h1>
+            )}
+          </div>
+          <button
+            onClick={() => setPreviewOpen(true)}
+            className="text-sm text-text-secondary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-focus-ring rounded px-2 py-1"
+          >
+            Preview
+          </button>
+        </header>
+
+        {trashOpen ? (
+          <main className="flex-1 overflow-y-auto" aria-label={STRINGS.a11y.mainContent}>
+            <TrashView
+              chapters={trashedChapters}
+              onRestore={handleRestore}
+              onBack={() => setTrashOpen(false)}
+            />
+          </main>
+        ) : (
+          <main className="flex-1 overflow-y-auto px-6 py-8" aria-label={STRINGS.a11y.mainContent}>
+            {editingTitle ? (
+              <input
+                ref={titleInputRef}
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onBlur={saveTitle}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveTitle();
+                  if (e.key === "Escape") {
+                    escapePressedRef.current = true;
+                    setEditingTitle(false);
+                  }
+                }}
+                className="mx-auto block max-w-[720px] mb-4 text-2xl font-serif text-text-primary bg-transparent border-b-2 border-accent focus:outline-none w-full"
+                aria-label="Chapter title"
+              />
+            ) : (
+              <h2
+                className="mx-auto max-w-[720px] mb-4 text-2xl font-serif text-text-primary cursor-pointer hover:text-text-secondary"
+                onDoubleClick={startEditingTitle}
+                aria-label={activeChapter.title}
+              >
+                {activeChapter.title}
+              </h2>
+            )}
+            <Editor
+              content={activeChapter.content}
+              onSave={handleSave}
+              onContentChange={handleContentChange}
+              editorRef={editorRef}
+            />
+          </main>
+        )}
+
+        <footer
+          role="status"
+          aria-live="polite"
+          className="border-t border-border bg-bg-primary px-6 py-2 flex items-center justify-between text-sm text-text-secondary"
+        >
+          <div>
+            {STRINGS.project.wordCount(chapterWordCount)}
+            {project && (
+              <span className="ml-3 text-text-muted">
+                {STRINGS.project.wordCount(
+                  project.chapters.reduce((sum, c) => sum + c.word_count, 0),
+                )}{" "}total
+              </span>
+            )}
+          </div>
+          <div>
+            {saveStatus === "saving" && STRINGS.editor.saving}
+            {saveStatus === "saved" && STRINGS.editor.saved}
+            {saveStatus === "error" && (
+              <span className="text-status-error">{STRINGS.editor.saveFailed}</span>
+            )}
+            {saveStatus === "idle" && ""}
+          </div>
+        </footer>
+      </div>
+
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          role="alertdialog"
+          aria-modal="true"
+          aria-label="Confirm delete"
+          aria-describedby="delete-confirm-body"
+        >
+          <div className="rounded bg-bg-primary p-6 shadow-lg max-w-sm w-full mx-4">
+            <p className="text-text-primary font-medium mb-2">
+              {STRINGS.delete.confirmTitle(deleteTarget.title)}
+            </p>
+            <p id="delete-confirm-body" className="text-text-secondary text-sm mb-4">
+              {STRINGS.delete.confirmBody}
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="rounded px-4 py-2 text-text-secondary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-focus-ring"
+              >
+                {STRINGS.delete.cancelButton}
+              </button>
+              <button
+                onClick={confirmDeleteChapter}
+                className="rounded bg-status-error px-4 py-2 text-text-inverse hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-focus-ring"
+              >
+                {STRINGS.delete.confirmButton}
+              </button>
+            </div>
+          </div>
         </div>
-        <div>
-          {saveStatus === "saving" && STRINGS.editor.saving}
-          {saveStatus === "saved" && STRINGS.editor.saved}
-          {saveStatus === "error" && (
-            <span className="text-status-error">{STRINGS.editor.saveFailed}</span>
-          )}
-          {saveStatus === "idle" && ""}
-        </div>
-      </footer>
+      )}
 
       {shortcutHelpOpen && (
         <dialog
@@ -240,6 +371,17 @@ export function EditorPage() {
             </dl>
           </div>
         </dialog>
+      )}
+
+      {previewOpen && (
+        <PreviewMode
+          chapters={project.chapters}
+          onClose={() => setPreviewOpen(false)}
+          onNavigateToChapter={(chapterId) => {
+            setPreviewOpen(false);
+            handleSelectChapter(chapterId);
+          }}
+        />
       )}
     </div>
   );
