@@ -36,6 +36,7 @@ describe("Editor", () => {
     expect(within(toolbarEl).getByRole("button", { name: "Quote" })).toBeInTheDocument();
     expect(within(toolbarEl).getByRole("button", { name: "List" })).toBeInTheDocument();
     expect(within(toolbarEl).getByRole("button", { name: "Numbered" })).toBeInTheDocument();
+    expect(within(toolbarEl).getByRole("button", { name: "HR" })).toBeInTheDocument();
   });
 
   it("has correct ARIA attributes on the editor", () => {
@@ -52,7 +53,7 @@ describe("Editor", () => {
 
     // Click each toolbar button — should not throw
     const buttons = within(toolbar).getAllByRole("button");
-    expect(buttons.length).toBe(8);
+    expect(buttons.length).toBe(9);
     for (const button of buttons) {
       fireEvent.click(button);
     }
@@ -72,6 +73,25 @@ describe("Editor", () => {
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }));
     });
+  });
+
+  it("calls onSave after debounce when content changes (auto-save)", async () => {
+    const onSave = vi.fn();
+    const { container } = render(<Editor content={null} onSave={onSave} />);
+
+    const editorEl = container.querySelector("[role='textbox']") as HTMLElement;
+    // Simulate typing by dispatching input
+    fireEvent.focus(editorEl);
+    editorEl.textContent = "Hello auto-save";
+    fireEvent.input(editorEl);
+
+    // Should not have saved immediately
+    expect(onSave).not.toHaveBeenCalled();
+
+    // Wait for debounce (1500ms) + buffer
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }));
+    }, { timeout: 3000 });
   });
 
   it("syncs content when prop changes", async () => {

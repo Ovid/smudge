@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import type { ProjectWithChapters, Chapter } from "@smudge/shared";
+import { countWords } from "@smudge/shared";
 import { api } from "../api/client";
 import { Editor } from "../components/Editor";
 import { STRINGS } from "../strings";
@@ -11,10 +12,15 @@ export function EditorPage() {
   const [project, setProject] = useState<ProjectWithChapters | null>(null);
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [chapterWordCount, setChapterWordCount] = useState(0);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const titleInputRef = useRef<HTMLInputElement>(null);
   const escapePressedRef = useRef(false);
+  const [editingProjectTitle, setEditingProjectTitle] = useState(false);
+  const [projectTitleDraft, setProjectTitleDraft] = useState("");
+  const projectTitleInputRef = useRef<HTMLInputElement>(null);
+  const projectEscapePressedRef = useRef(false);
 
   const loadProject = useCallback(async () => {
     if (!projectId) return;
@@ -24,6 +30,7 @@ export function EditorPage() {
     if (firstChapter && !activeChapter) {
       const chapter = await api.chapters.get(firstChapter.id);
       setActiveChapter(chapter);
+      setChapterWordCount(countWords(chapter.content));
     }
   }, [projectId, activeChapter]);
 
@@ -45,6 +52,13 @@ export function EditorPage() {
       }
     },
     [activeChapter],
+  );
+
+  const handleContentChange = useCallback(
+    (content: Record<string, unknown>) => {
+      setChapterWordCount(countWords(content));
+    },
+    [],
   );
 
   function startEditingTitle() {
@@ -72,6 +86,31 @@ export function EditorPage() {
     setEditingTitle(false);
   }
 
+  function startEditingProjectTitle() {
+    if (!project) return;
+    projectEscapePressedRef.current = false;
+    setProjectTitleDraft(project.title);
+    setEditingProjectTitle(true);
+    setTimeout(() => projectTitleInputRef.current?.select(), 0);
+  }
+
+  async function saveProjectTitle() {
+    if (projectEscapePressedRef.current) {
+      setEditingProjectTitle(false);
+      return;
+    }
+    if (!project || !projectTitleDraft.trim()) {
+      setEditingProjectTitle(false);
+      return;
+    }
+    const trimmed = projectTitleDraft.trim();
+    if (trimmed !== project.title) {
+      await api.projects.update(project.id, { title: trimmed });
+      setProject({ ...project, title: trimmed });
+    }
+    setEditingProjectTitle(false);
+  }
+
   if (!project || !activeChapter) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-primary">
@@ -90,13 +129,31 @@ export function EditorPage() {
           >
             &larr; Projects
           </button>
-          <h1 className="text-lg font-semibold text-text-primary">{project.title}</h1>
-        </div>
-        <div aria-live="polite" className="text-sm text-text-muted">
-          {saveStatus === "saving" && STRINGS.editor.saving}
-          {saveStatus === "saved" && STRINGS.editor.saved}
-          {saveStatus === "error" && (
-            <span className="text-status-error">{STRINGS.editor.saveFailed}</span>
+          {editingProjectTitle ? (
+            <input
+              ref={projectTitleInputRef}
+              value={projectTitleDraft}
+              onChange={(e) => setProjectTitleDraft(e.target.value)}
+              onBlur={saveProjectTitle}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") saveProjectTitle();
+                if (e.key === "Escape") {
+                  projectEscapePressedRef.current = true;
+                  setEditingProjectTitle(false);
+                }
+              }}
+              className="text-lg font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none"
+              aria-label="Project title"
+            />
+          ) : (
+            <h1
+              className="text-lg font-semibold text-text-primary cursor-pointer hover:text-text-secondary"
+              onDoubleClick={startEditingProjectTitle}
+              title="Double-click to edit"
+              aria-label={project.title}
+            >
+              {project.title}
+            </h1>
           )}
         </div>
       </header>
@@ -123,12 +180,31 @@ export function EditorPage() {
             className="mx-auto max-w-[720px] mb-4 text-2xl font-serif text-text-primary cursor-pointer hover:text-text-secondary"
             onDoubleClick={startEditingTitle}
             title="Double-click to edit"
+            aria-label={activeChapter.title}
           >
             {activeChapter.title}
           </h2>
         )}
-        <Editor content={activeChapter.content} onSave={handleSave} />
+        <Editor content={activeChapter.content} onSave={handleSave} onContentChange={handleContentChange} />
       </main>
+
+      <footer
+        role="status"
+        aria-live="polite"
+        className="fixed bottom-0 left-0 right-0 border-t border-border bg-bg-primary px-6 py-2 flex items-center justify-between text-sm text-text-secondary"
+      >
+        <div>
+          {STRINGS.project.wordCount(chapterWordCount)}
+        </div>
+        <div>
+          {saveStatus === "saving" && STRINGS.editor.saving}
+          {saveStatus === "saved" && STRINGS.editor.saved}
+          {saveStatus === "error" && (
+            <span className="text-status-error">{STRINGS.editor.saveFailed}</span>
+          )}
+          {saveStatus === "idle" && ""}
+        </div>
+      </footer>
     </div>
   );
 }

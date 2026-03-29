@@ -66,6 +66,35 @@ export function projectsRouter(db: Knex): Router {
     res.json(result);
   });
 
+  router.patch("/:id", async (req, res) => {
+    const { title } = req.body as { title?: string };
+    if (!title || !title.trim()) {
+      res.status(400).json({
+        error: { code: "VALIDATION_ERROR", message: "Title is required." },
+      });
+      return;
+    }
+
+    const project = await db("projects")
+      .where({ id: req.params.id })
+      .whereNull("deleted_at")
+      .first();
+
+    if (!project) {
+      res.status(404).json({
+        error: { code: "NOT_FOUND", message: "Project not found." },
+      });
+      return;
+    }
+
+    await db("projects")
+      .where({ id: req.params.id })
+      .update({ title: title.trim(), updated_at: new Date().toISOString() });
+
+    const updated = await db("projects").where({ id: req.params.id }).first();
+    res.json(updated);
+  });
+
   router.get("/:id", async (req, res) => {
     const project = await db("projects")
       .where({ id: req.params.id })

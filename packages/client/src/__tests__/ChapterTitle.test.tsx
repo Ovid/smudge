@@ -10,6 +10,7 @@ vi.mock("../api/client", () => ({
   api: {
     projects: {
       get: vi.fn(),
+      update: vi.fn(),
     },
     chapters: {
       get: vi.fn(),
@@ -135,6 +136,57 @@ describe("Chapter title editing", () => {
     await userEvent.type(input, "   {Enter}");
 
     expect(api.chapters.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("Project title editing", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.projects.get).mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
+    vi.mocked(api.projects.update).mockResolvedValue({
+      ...mockProject,
+      title: "Renamed Project",
+      chapters: mockProject.chapters,
+    });
+  });
+
+  it("enters edit mode on double-click of project title", async () => {
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Test Project")).toBeInTheDocument();
+    });
+
+    const projectTitle = screen.getByText("Test Project");
+    fireEvent.doubleClick(projectTitle);
+
+    const input = document.querySelector("input[aria-label='Project title']") as HTMLInputElement;
+    expect(input).not.toBeNull();
+    expect(input).toHaveValue("Test Project");
+  });
+
+  it("saves project title on Enter", async () => {
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Test Project")).toBeInTheDocument();
+    });
+
+    const projectTitle = screen.getByText("Test Project");
+    fireEvent.doubleClick(projectTitle);
+
+    const input = document.querySelector("input[aria-label='Project title']") as HTMLInputElement;
+    await userEvent.clear(input);
+    await userEvent.type(input, "Renamed Project{Enter}");
+
+    await waitFor(() => {
+      expect(api.projects.update).toHaveBeenCalledWith("proj-1", {
+        title: "Renamed Project",
+      });
+    });
   });
 });
 

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { Knex } from "knex";
-import { UpdateChapterSchema } from "@smudge/shared";
+import { UpdateChapterSchema, countWords } from "@smudge/shared";
 
 function parseChapterContent(chapter: Record<string, unknown>) {
   return {
@@ -62,6 +62,7 @@ export function chaptersRouter(db: Knex): Router {
 
     if (parsed.data.content !== undefined) {
       updates.content = JSON.stringify(parsed.data.content);
+      updates.word_count = countWords(parsed.data.content as Record<string, unknown>);
     }
 
     await db("chapters").where({ id: req.params.id }).update(updates);

@@ -21,7 +21,20 @@ From this, produce an explicit **Test Plan** as a numbered list before doing any
 
 ## 2. Start the Dev Server
 
-Check if something is already listening on port 5173. If not, run `npm run dev` in the background and wait until the server is ready before proceeding.
+**CRITICAL: Never touch the user's database.** UAT must use an isolated temporary database
+so the user's writing is never at risk. Start the dev server with a temp DB path:
+
+```bash
+DB_PATH=/tmp/smudge-uat-$$.db npm run dev
+```
+
+This creates a fresh SQLite database for each UAT session. If a dev server is already
+listening on port 5173, **do not reuse it** — it may be pointing at the user's real database.
+Kill it first and restart with the temp DB path.
+
+Check if something is already listening on port 5173. If so, kill it and restart with the
+temp DB. If not, start with the temp DB as shown above. Wait until the server is ready
+before proceeding.
 
 ## 3. Open the Browser
 

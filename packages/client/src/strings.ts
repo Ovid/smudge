@@ -12,6 +12,10 @@ export const STRINGS = {
     cancelButton: "Cancel",
     emptyState: "No projects yet. Create one to start writing.",
     wordCount: (count: number) => `${count.toLocaleString()} words`,
+    lastEdited: (dateStr: string) => {
+      const date = new Date(dateStr);
+      return `Edited ${date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
+    },
   },
   chapter: {
     untitledDefault: "Untitled Chapter",

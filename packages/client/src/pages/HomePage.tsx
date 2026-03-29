@@ -60,8 +60,9 @@ export function HomePage() {
                       {project.mode === "fiction" ? STRINGS.project.fiction : STRINGS.project.nonfiction}
                     </span>
                   </div>
-                  <div className="mt-1 text-sm text-text-secondary">
-                    {STRINGS.project.wordCount(project.total_word_count)}
+                  <div className="mt-1 text-sm text-text-secondary flex items-center gap-3">
+                    <span>{STRINGS.project.wordCount(project.total_word_count)}</span>
+                    <span className="text-text-muted">{STRINGS.project.lastEdited(project.updated_at)}</span>
                   </div>
                 </button>
               </li>

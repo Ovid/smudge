@@ -2,17 +2,42 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Heading from "@tiptap/extension-heading";
 import Placeholder from "@tiptap/extension-placeholder";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { STRINGS } from "../strings";
 
 interface EditorProps {
   content: Record<string, unknown> | null;
   onSave: (content: Record<string, unknown>) => void;
+  onContentChange?: (content: Record<string, unknown>) => void;
 }
 
-export function Editor({ content, onSave }: EditorProps) {
+const AUTO_SAVE_DEBOUNCE_MS = 1500;
+
+export function Editor({ content, onSave, onContentChange }: EditorProps) {
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
+  const onContentChangeRef = useRef(onContentChange);
+  onContentChangeRef.current = onContentChange;
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const debouncedSave = useCallback((editorInstance: { getJSON: () => Record<string, unknown> }) => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      onSaveRef.current(editorInstance.getJSON() as Record<string, unknown>);
+      debounceTimerRef.current = null;
+    }, AUTO_SAVE_DEBOUNCE_MS);
+  }, []);
+
+  // Flush pending save on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
 
   const editor = useEditor({
     extensions: [
@@ -27,8 +52,17 @@ export function Editor({ content, onSave }: EditorProps) {
       }),
     ],
     content: content ?? { type: "doc", content: [{ type: "paragraph" }] },
-    onBlur: ({ editor }) => {
-      onSaveRef.current(editor.getJSON() as Record<string, unknown>);
+    onUpdate: ({ editor: ed }) => {
+      onContentChangeRef.current?.(ed.getJSON() as Record<string, unknown>);
+      debouncedSave(ed);
+    },
+    onBlur: ({ editor: ed }) => {
+      // Immediate save on blur (cancel pending debounce)
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+      onSaveRef.current(ed.getJSON() as Record<string, unknown>);
     },
     editorProps: {
       attributes: {
@@ -148,6 +182,12 @@ export function Editor({ content, onSave }: EditorProps) {
           }`}
         >
           Numbered
+        </button>
+        <button
+          onClick={() => editor.chain().focus().setHorizontalRule().run()}
+          className="rounded px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring text-text-secondary hover:bg-bg-hover"
+        >
+          HR
         </button>
       </div>
       <EditorContent editor={editor} />

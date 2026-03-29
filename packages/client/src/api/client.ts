@@ -34,6 +34,12 @@ export const api = {
         method: "POST",
         body: JSON.stringify(input),
       }),
+
+    update: (id: string, data: { title?: string }) =>
+      apiFetch<Project>(`/projects/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
   },
 
   chapters: {

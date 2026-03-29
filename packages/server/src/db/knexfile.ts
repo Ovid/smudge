@@ -8,7 +8,7 @@ export function createKnexConfig(dbPath?: string): Knex.Config {
   return {
     client: "better-sqlite3",
     connection: {
-      filename: dbPath ?? path.join(__dirname, "../../data/smudge.db"),
+      filename: dbPath ?? process.env.DB_PATH ?? path.join(__dirname, "../../data/smudge.db"),
     },
     useNullAsDefault: true,
     migrations: {
