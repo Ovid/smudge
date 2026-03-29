@@ -1,6 +1,7 @@
 import express from "express";
 import type { Knex } from "knex";
 import { projectsRouter } from "./routes/projects";
+import { chaptersRouter } from "./routes/chapters";
 
 export function createApp(db: Knex): express.Express {
   const app = express();
@@ -8,6 +9,7 @@ export function createApp(db: Knex): express.Express {
   app.use(express.json());
 
   app.use("/api/projects", projectsRouter(db));
+  app.use("/api/chapters", chaptersRouter(db));
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok" });
