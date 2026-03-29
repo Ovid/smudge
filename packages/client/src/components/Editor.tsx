@@ -26,6 +26,7 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
   }, [onContentChange]);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyRef = useRef(false);
+  const editorInstanceRef = useRef<{ getJSON: () => Record<string, unknown> } | null>(null);
 
   const debouncedSave = useCallback(
     (editorInstance: { getJSON: () => Record<string, unknown> }) => {
@@ -46,6 +47,10 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
     return () => {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
+      }
+      if (dirtyRef.current && editorInstanceRef.current) {
+        onSaveRef.current(editorInstanceRef.current.getJSON() as Record<string, unknown>);
+        dirtyRef.current = false;
       }
     };
   }, []);
@@ -84,6 +89,10 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
       },
     },
   });
+
+  useEffect(() => {
+    editorInstanceRef.current = editor;
+  }, [editor]);
 
   useEffect(() => {
     if (editorRef && editor) {
