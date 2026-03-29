@@ -36,6 +36,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     throw new ApiRequestError(message, res.status);
   }
 
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -57,7 +58,7 @@ export const api = {
         body: JSON.stringify(data),
       }),
 
-    delete: (id: string) => apiFetch<undefined>(`/projects/${id}`, { method: "DELETE" }),
+    delete: (id: string) => apiFetch<{ message: string }>(`/projects/${id}`, { method: "DELETE" }),
 
     reorderChapters: (projectId: string, chapterIds: string[]) =>
       apiFetch<{ message: string }>(`/projects/${projectId}/chapters/order`, {
