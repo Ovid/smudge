@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ProjectMode } from "@smudge/shared";
+import type { ProjectModeType as ProjectMode } from "@smudge/shared";
 import { STRINGS } from "../strings";
 
 interface NewProjectDialogProps {

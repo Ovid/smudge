@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import type { ProjectListItem, ProjectMode } from "@smudge/shared";
+import type { ProjectListItem, ProjectModeType as ProjectMode } from "@smudge/shared";
 import { api } from "../api/client";
 import { NewProjectDialog } from "../components/NewProjectDialog";
 import { STRINGS } from "../strings";
