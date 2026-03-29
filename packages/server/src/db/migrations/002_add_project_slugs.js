@@ -26,17 +26,33 @@ export async function up(knex) {
   const projects = await knex("projects").select("id", "title");
   for (const project of projects) {
     const baseSlug = generateSlug(project.title);
+    const MAX_SUFFIX = 100;
     let slug = baseSlug;
-    let suffix = 2;
-    while (true) {
-      const existing = await knex("projects")
-        .where({ slug })
-        .whereNot({ id: project.id })
-        .whereNull("deleted_at")
-        .first();
-      if (!existing) break;
-      slug = `${baseSlug}-${suffix}`;
-      suffix++;
+    const baseQuery = knex("projects")
+      .where({ slug })
+      .whereNot({ id: project.id })
+      .whereNull("deleted_at");
+    if (!(await baseQuery.first())) {
+      // Base slug is available
+    } else {
+      let found = false;
+      for (let suffix = 2; suffix <= MAX_SUFFIX; suffix++) {
+        slug = `${baseSlug}-${suffix}`;
+        const existing = await knex("projects")
+          .where({ slug })
+          .whereNot({ id: project.id })
+          .whereNull("deleted_at")
+          .first();
+        if (!existing) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        throw new Error(
+          `Migration: cannot generate unique slug for "${project.title}" after ${MAX_SUFFIX} attempts`,
+        );
+      }
     }
     await knex("projects").where({ id: project.id }).update({ slug });
   }
