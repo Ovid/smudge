@@ -1,7 +1,7 @@
 import knex, { type Knex } from "knex";
 import { createKnexConfig } from "./knexfile";
 
-let db: Knex;
+let db: Knex | undefined;
 
 export function getDb(): Knex {
   if (!db) {
@@ -21,5 +21,6 @@ export async function initDb(config?: Knex.Config): Promise<Knex> {
 export async function closeDb(): Promise<void> {
   if (db) {
     await db.destroy();
+    db = undefined;
   }
 }

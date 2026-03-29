@@ -8,12 +8,8 @@ describe("db/connection", () => {
   });
 
   it("getDb throws before initDb is called", () => {
-    // After closeDb in afterEach, the module-level db is still set from prior tests.
-    // We need a fresh import to test the uninitialized state.
-    // Instead, test that initDb + getDb works:
-    expect(() => {
-      // getDb should work after init (tested below)
-    }).not.toThrow();
+    // After closeDb in afterEach, db is cleared to undefined
+    expect(() => getDb()).toThrow("Database not initialized. Call initDb() first.");
   });
 
   it("initDb initializes the database and runs migrations", async () => {
