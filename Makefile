@@ -3,10 +3,10 @@
 all: lint format test ## Lint, format, and test
 
 test: ## Run full test suite
-	npm test
+	npx vitest run
 
 cover: ## Generate code coverage report (one-shot)
-	npm exec -w packages/shared -- vitest run --coverage && npm exec -w packages/server -- vitest run --coverage && npm exec -w packages/client -- vitest run --coverage --passWithNoTests
+	npx vitest run --coverage
 
 lint: ## Lint with autofix
 	npm run lint

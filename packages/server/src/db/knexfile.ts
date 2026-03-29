@@ -13,7 +13,7 @@ export function createKnexConfig(dbPath?: string): Knex.Config {
     useNullAsDefault: true,
     migrations: {
       directory: path.join(__dirname, "migrations"),
-      loadExtensions: [".ts", ".js"],
+      loadExtensions: [".js"],
     },
   };
 }
@@ -25,7 +25,7 @@ export function createTestKnexConfig(): Knex.Config {
     useNullAsDefault: true,
     migrations: {
       directory: path.join(__dirname, "migrations"),
-      loadExtensions: [".ts", ".js"],
+      loadExtensions: [".js"],
     },
   };
 }

@@ -13,7 +13,7 @@ async function main() {
           useNullAsDefault: true,
           migrations: {
             directory: new URL("./db/migrations", import.meta.url).pathname,
-            loadExtensions: [".ts", ".js"],
+            loadExtensions: [".js"],
           },
         }
       : undefined,
