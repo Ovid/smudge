@@ -5,13 +5,14 @@ import { setupTestDb } from "./test-helpers";
 const t = setupTestDb();
 
 describe("POST /api/projects", () => {
-  it("creates a project and returns 201 with project data", async () => {
+  it("creates a project and returns 201 with slug", async () => {
     const res = await request(t.app)
       .post("/api/projects")
       .send({ title: "My Novel", mode: "fiction" });
 
     expect(res.status).toBe(201);
     expect(res.body.id).toBeDefined();
+    expect(res.body.slug).toBe("my-novel");
     expect(res.body.title).toBe("My Novel");
     expect(res.body.mode).toBe("fiction");
     expect(res.body.created_at).toBeDefined();
@@ -54,6 +55,34 @@ describe("POST /api/projects", () => {
 
     expect(res.status).toBe(201);
     expect(res.body.title).toBe("My Novel");
+    expect(res.body.slug).toBe("my-novel");
+  });
+
+  it("returns 400 when title duplicates an existing project", async () => {
+    await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Novel", mode: "fiction" });
+
+    const res = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Novel", mode: "fiction" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("PROJECT_TITLE_EXISTS");
+  });
+
+  it("allows reuse of a soft-deleted project title", async () => {
+    const first = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Novel", mode: "fiction" });
+    await request(t.app).delete(`/api/projects/${first.body.slug}`);
+
+    const res = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Novel", mode: "fiction" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.slug).toBe("my-novel");
   });
 });
 
@@ -76,6 +105,13 @@ describe("GET /api/projects", () => {
     expect(res.body[0].total_word_count).toBe(0);
   });
 
+  it("returns projects with slug field", async () => {
+    await request(t.app).post("/api/projects").send({ title: "First", mode: "fiction" });
+
+    const res = await request(t.app).get("/api/projects");
+    expect(res.body[0].slug).toBe("first");
+  });
+
   it("excludes soft-deleted projects", async () => {
     const createRes = await request(t.app)
       .post("/api/projects")
@@ -91,18 +127,31 @@ describe("GET /api/projects", () => {
   });
 });
 
-describe("PATCH /api/projects/:id", () => {
+describe("PATCH /api/projects/:slug", () => {
   it("renames a project", async () => {
     const createRes = await request(t.app)
       .post("/api/projects")
       .send({ title: "Old Name", mode: "fiction" });
 
     const res = await request(t.app)
-      .patch(`/api/projects/${createRes.body.id}`)
+      .patch(`/api/projects/${createRes.body.slug}`)
       .send({ title: "New Name" });
 
     expect(res.status).toBe(200);
     expect(res.body.title).toBe("New Name");
+  });
+
+  it("returns updated slug when title changes", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Old Name", mode: "fiction" });
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${createRes.body.slug}`)
+      .send({ title: "New Name" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.slug).toBe("new-name");
   });
 
   it("trims whitespace from title", async () => {
@@ -111,7 +160,7 @@ describe("PATCH /api/projects/:id", () => {
       .send({ title: "My Book", mode: "fiction" });
 
     const res = await request(t.app)
-      .patch(`/api/projects/${createRes.body.id}`)
+      .patch(`/api/projects/${createRes.body.slug}`)
       .send({ title: "  Trimmed  " });
 
     expect(res.status).toBe(200);
@@ -123,7 +172,9 @@ describe("PATCH /api/projects/:id", () => {
       .post("/api/projects")
       .send({ title: "My Book", mode: "fiction" });
 
-    const res = await request(t.app).patch(`/api/projects/${createRes.body.id}`).send({});
+    const res = await request(t.app)
+      .patch(`/api/projects/${createRes.body.slug}`)
+      .send({});
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
@@ -135,14 +186,32 @@ describe("PATCH /api/projects/:id", () => {
       .send({ title: "My Book", mode: "fiction" });
 
     const res = await request(t.app)
-      .patch(`/api/projects/${createRes.body.id}`)
+      .patch(`/api/projects/${createRes.body.slug}`)
       .send({ title: "   " });
 
     expect(res.status).toBe(400);
   });
 
+  it("returns 400 when renaming to a duplicate title", async () => {
+    await request(t.app)
+      .post("/api/projects")
+      .send({ title: "First", mode: "fiction" });
+    const second = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Second", mode: "fiction" });
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${second.body.slug}`)
+      .send({ title: "First" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("PROJECT_TITLE_EXISTS");
+  });
+
   it("returns 404 for non-existent project", async () => {
-    const res = await request(t.app).patch("/api/projects/nonexistent-id").send({ title: "Nope" });
+    const res = await request(t.app)
+      .patch("/api/projects/nonexistent-slug")
+      .send({ title: "Nope" });
 
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe("NOT_FOUND");
@@ -152,30 +221,32 @@ describe("PATCH /api/projects/:id", () => {
     const createRes = await request(t.app)
       .post("/api/projects")
       .send({ title: "Deleted", mode: "fiction" });
-    await request(t.app).delete(`/api/projects/${createRes.body.id}`);
+    await request(t.app).delete(`/api/projects/${createRes.body.slug}`);
 
     const res = await request(t.app)
-      .patch(`/api/projects/${createRes.body.id}`)
+      .patch(`/api/projects/${createRes.body.slug}`)
       .send({ title: "Nope" });
 
     expect(res.status).toBe(404);
   });
 });
 
-describe("GET /api/projects/:id", () => {
+describe("GET /api/projects/:slug", () => {
   it("returns project with chapters", async () => {
     const createRes = await request(t.app)
       .post("/api/projects")
       .send({ title: "My Novel", mode: "fiction" });
-    const res = await request(t.app).get(`/api/projects/${createRes.body.id}`);
+
+    const res = await request(t.app).get(`/api/projects/${createRes.body.slug}`);
     expect(res.status).toBe(200);
     expect(res.body.title).toBe("My Novel");
+    expect(res.body.slug).toBe("my-novel");
     expect(res.body.chapters).toHaveLength(1);
     expect(res.body.chapters[0].title).toBe("Untitled Chapter");
   });
 
   it("returns 404 for non-existent project", async () => {
-    const res = await request(t.app).get("/api/projects/nonexistent-id");
+    const res = await request(t.app).get("/api/projects/nonexistent-slug");
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe("NOT_FOUND");
   });
@@ -188,7 +259,8 @@ describe("GET /api/projects/:id", () => {
       .db("projects")
       .where({ id: createRes.body.id })
       .update({ deleted_at: new Date().toISOString() });
-    const res = await request(t.app).get(`/api/projects/${createRes.body.id}`);
+
+    const res = await request(t.app).get(`/api/projects/${createRes.body.slug}`);
     expect(res.status).toBe(404);
   });
 
@@ -207,46 +279,49 @@ describe("GET /api/projects/:id", () => {
       created_at: now,
       updated_at: now,
     });
-    const res = await request(t.app).get(`/api/projects/${projectId}`);
+
+    const res = await request(t.app).get(`/api/projects/${createRes.body.slug}`);
     expect(res.body.chapters).toHaveLength(2);
     expect(res.body.chapters[0].title).toBe("Untitled Chapter");
     expect(res.body.chapters[1].title).toBe("Chapter Two");
   });
 });
 
-describe("PUT /api/projects/:id/chapters/order", () => {
+describe("PUT /api/projects/:slug/chapters/order", () => {
   it("reorders chapters by provided ID array", async () => {
     const projectRes = await request(t.app)
       .post("/api/projects")
       .send({ title: "Test", mode: "fiction" });
-    const projectId = projectRes.body.id;
+    const projectSlug = projectRes.body.slug;
 
-    // Create 2 more chapters (auto-created one is at sort_order 0)
-    await request(t.app).post(`/api/projects/${projectId}/chapters`);
-    await request(t.app).post(`/api/projects/${projectId}/chapters`);
+    await request(t.app).post(`/api/projects/${projectSlug}/chapters`);
+    await request(t.app).post(`/api/projects/${projectSlug}/chapters`);
 
-    const getRes = await request(t.app).get(`/api/projects/${projectId}`);
+    const getRes = await request(t.app).get(`/api/projects/${projectSlug}`);
     const [ch1Id, ch2Id, ch3Id] = getRes.body.chapters.map((c: { id: string }) => c.id);
 
-    // Reverse the order
     const res = await request(t.app)
-      .put(`/api/projects/${projectId}/chapters/order`)
+      .put(`/api/projects/${projectSlug}/chapters/order`)
       .send({ chapter_ids: [ch3Id, ch2Id, ch1Id] });
 
     expect(res.status).toBe(200);
 
-    const updated = await request(t.app).get(`/api/projects/${projectId}`);
-    expect(updated.body.chapters.map((c: { id: string }) => c.id)).toEqual([ch3Id, ch2Id, ch1Id]);
+    const updated = await request(t.app).get(`/api/projects/${projectSlug}`);
+    expect(updated.body.chapters.map((c: { id: string }) => c.id)).toEqual([
+      ch3Id,
+      ch2Id,
+      ch1Id,
+    ]);
   });
 
   it("returns 400 if chapter IDs don't match", async () => {
     const projectRes = await request(t.app)
       .post("/api/projects")
       .send({ title: "Test", mode: "fiction" });
-    const projectId = projectRes.body.id;
+    const projectSlug = projectRes.body.slug;
 
     const res = await request(t.app)
-      .put(`/api/projects/${projectId}/chapters/order`)
+      .put(`/api/projects/${projectSlug}/chapters/order`)
       .send({ chapter_ids: ["wrong-id"] });
 
     expect(res.status).toBe(400);
@@ -256,36 +331,37 @@ describe("PUT /api/projects/:id/chapters/order", () => {
     const projectRes = await request(t.app)
       .post("/api/projects")
       .send({ title: "Test", mode: "fiction" });
-    const projectId = projectRes.body.id;
+    const projectSlug = projectRes.body.slug;
 
-    const res = await request(t.app).put(`/api/projects/${projectId}/chapters/order`).send({});
+    const res = await request(t.app)
+      .put(`/api/projects/${projectSlug}/chapters/order`)
+      .send({});
 
     expect(res.status).toBe(400);
   });
 
   it("returns 404 for non-existent project", async () => {
     const res = await request(t.app)
-      .put("/api/projects/nonexistent-id/chapters/order")
+      .put("/api/projects/nonexistent-slug/chapters/order")
       .send({ chapter_ids: [] });
 
     expect(res.status).toBe(404);
   });
 });
 
-describe("GET /api/projects/:id/trash", () => {
+describe("GET /api/projects/:slug/trash", () => {
   it("returns soft-deleted chapters for a project", async () => {
     const projectRes = await request(t.app)
       .post("/api/projects")
       .send({ title: "Test", mode: "fiction" });
-    const projectId = projectRes.body.id;
+    const projectSlug = projectRes.body.slug;
 
-    const getRes = await request(t.app).get(`/api/projects/${projectId}`);
+    const getRes = await request(t.app).get(`/api/projects/${projectSlug}`);
     const chapterId = getRes.body.chapters[0].id;
 
-    // Delete the chapter
     await request(t.app).delete(`/api/chapters/${chapterId}`);
 
-    const res = await request(t.app).get(`/api/projects/${projectId}/trash`);
+    const res = await request(t.app).get(`/api/projects/${projectSlug}/trash`);
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(1);
@@ -297,27 +373,28 @@ describe("GET /api/projects/:id/trash", () => {
     const projectRes = await request(t.app)
       .post("/api/projects")
       .send({ title: "Test", mode: "fiction" });
-    const projectId = projectRes.body.id;
+    const projectSlug = projectRes.body.slug;
 
-    const res = await request(t.app).get(`/api/projects/${projectId}/trash`);
+    const res = await request(t.app).get(`/api/projects/${projectSlug}/trash`);
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);
   });
 
   it("returns 404 for non-existent project", async () => {
-    const res = await request(t.app).get("/api/projects/nonexistent-id/trash");
+    const res = await request(t.app).get("/api/projects/nonexistent-slug/trash");
 
     expect(res.status).toBe(404);
   });
 });
 
-describe("DELETE /api/projects/:id", () => {
+describe("DELETE /api/projects/:slug", () => {
   it("soft-deletes a project and returns 200", async () => {
     const createRes = await request(t.app)
       .post("/api/projects")
       .send({ title: "Doomed", mode: "fiction" });
-    const res = await request(t.app).delete(`/api/projects/${createRes.body.id}`);
+
+    const res = await request(t.app).delete(`/api/projects/${createRes.body.slug}`);
     expect(res.status).toBe(200);
     expect(res.body.message).toBe("Project moved to trash.");
   });
@@ -326,7 +403,8 @@ describe("DELETE /api/projects/:id", () => {
     const createRes = await request(t.app)
       .post("/api/projects")
       .send({ title: "Doomed", mode: "fiction" });
-    await request(t.app).delete(`/api/projects/${createRes.body.id}`);
+    await request(t.app).delete(`/api/projects/${createRes.body.slug}`);
+
     const project = await t.db("projects").where({ id: createRes.body.id }).first();
     expect(project.deleted_at).not.toBeNull();
   });
@@ -335,13 +413,14 @@ describe("DELETE /api/projects/:id", () => {
     const createRes = await request(t.app)
       .post("/api/projects")
       .send({ title: "Doomed", mode: "fiction" });
-    await request(t.app).delete(`/api/projects/${createRes.body.id}`);
+    await request(t.app).delete(`/api/projects/${createRes.body.slug}`);
+
     const listRes = await request(t.app).get("/api/projects");
     expect(listRes.body).toHaveLength(0);
   });
 
   it("returns 404 for non-existent project", async () => {
-    const res = await request(t.app).delete("/api/projects/nonexistent-id");
+    const res = await request(t.app).delete("/api/projects/nonexistent-slug");
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe("NOT_FOUND");
   });
@@ -350,8 +429,9 @@ describe("DELETE /api/projects/:id", () => {
     const createRes = await request(t.app)
       .post("/api/projects")
       .send({ title: "Doomed", mode: "fiction" });
-    await request(t.app).delete(`/api/projects/${createRes.body.id}`);
-    const res = await request(t.app).delete(`/api/projects/${createRes.body.id}`);
+    await request(t.app).delete(`/api/projects/${createRes.body.slug}`);
+
+    const res = await request(t.app).delete(`/api/projects/${createRes.body.slug}`);
     expect(res.status).toBe(404);
   });
 
@@ -359,14 +439,13 @@ describe("DELETE /api/projects/:id", () => {
     const projectRes = await request(t.app)
       .post("/api/projects")
       .send({ title: "Test", mode: "fiction" });
+    const projectSlug = projectRes.body.slug;
     const projectId = projectRes.body.id;
 
-    // Create an extra chapter
-    await request(t.app).post(`/api/projects/${projectId}/chapters`);
+    await request(t.app).post(`/api/projects/${projectSlug}/chapters`);
 
-    await request(t.app).delete(`/api/projects/${projectId}`);
+    await request(t.app).delete(`/api/projects/${projectSlug}`);
 
-    // Directly query — chapters should all have deleted_at set
     const chapters = await t.db("chapters").where({ project_id: projectId });
     expect(chapters.every((c: { deleted_at: string | null }) => c.deleted_at !== null)).toBe(true);
   });
