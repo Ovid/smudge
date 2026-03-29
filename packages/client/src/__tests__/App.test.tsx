@@ -59,9 +59,10 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "New Project" })).toBeInTheDocument();
   });
 
-  it("renders the editor page at /projects/:projectId", async () => {
+  it("renders the editor page at /projects/:slug", async () => {
     const mockProject = {
       id: "p1",
+      slug: "test-project",
       title: "Test Project",
       mode: "fiction" as const,
       created_at: "",
@@ -87,7 +88,7 @@ describe("App", () => {
       mockProject.chapters[0] as (typeof mockProject.chapters)[0],
     );
 
-    window.history.pushState({}, "", "/projects/p1");
+    window.history.pushState({}, "", "/projects/test-project");
     render(<App />);
 
     await waitFor(() => {

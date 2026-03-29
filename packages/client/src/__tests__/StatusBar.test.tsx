@@ -28,6 +28,7 @@ vi.mock("../api/client", () => ({
 
 const mockProject = {
   id: "proj-1",
+  slug: "test-project",
   title: "Test Project",
   mode: "fiction" as const,
   created_at: "2026-01-01T00:00:00Z",
@@ -55,9 +56,9 @@ const mockChapter = mockProject.chapters[0] as (typeof mockProject.chapters)[0];
 
 function renderEditorPage() {
   return render(
-    <MemoryRouter initialEntries={["/projects/proj-1"]}>
+    <MemoryRouter initialEntries={["/projects/test-project"]}>
       <Routes>
-        <Route path="/projects/:projectId" element={<EditorPage />} />
+        <Route path="/projects/:slug" element={<EditorPage />} />
       </Routes>
     </MemoryRouter>,
   );

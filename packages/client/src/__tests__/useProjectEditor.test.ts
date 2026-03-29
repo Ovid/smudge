@@ -63,6 +63,7 @@ const mockChapter2 = {
 
 const mockProject = {
   id: "p1",
+  slug: "test-project",
   title: "Test Project",
   mode: "fiction" as const,
   created_at: "2026-01-01",
@@ -79,7 +80,7 @@ beforeEach(() => {
 
 describe("useProjectEditor", () => {
   it("loads project and first chapter on mount", async () => {
-    const { result } = renderHook(() => useProjectEditor("p1"));
+    const { result } = renderHook(() => useProjectEditor("test-project"));
 
     await waitFor(() => {
       expect(result.current.project).toEqual(mockProject);
@@ -101,7 +102,7 @@ describe("useProjectEditor", () => {
     };
     vi.mocked(api.chapters.create).mockResolvedValue(newChapter);
 
-    const { result } = renderHook(() => useProjectEditor("p1"));
+    const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
 
     await act(async () => {
@@ -116,7 +117,7 @@ describe("useProjectEditor", () => {
     const updatedChapter = { ...mockChapter1, word_count: 2 };
     vi.mocked(api.chapters.update).mockResolvedValue(updatedChapter);
 
-    const { result } = renderHook(() => useProjectEditor("p1"));
+    const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
     await act(async () => {
@@ -133,7 +134,7 @@ describe("useProjectEditor", () => {
     const updatedChapter = { ...mockChapter1, word_count: 5 };
     vi.mocked(api.chapters.update).mockResolvedValue(updatedChapter);
 
-    const { result } = renderHook(() => useProjectEditor("p1"));
+    const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
     const originalContent = result.current.activeChapter?.content;
@@ -151,7 +152,7 @@ describe("useProjectEditor", () => {
   it("sets save status to error after exhausting retries", async () => {
     vi.mocked(api.chapters.update).mockRejectedValue(new Error("fail"));
 
-    const { result } = renderHook(() => useProjectEditor("p1"));
+    const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
     // Switch to fake timers after hook is set up
@@ -177,7 +178,7 @@ describe("useProjectEditor", () => {
       .mockRejectedValueOnce(new Error("network error"))
       .mockResolvedValueOnce({ ...mockChapter1, word_count: 3 });
 
-    const { result } = renderHook(() => useProjectEditor("p1"));
+    const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
     vi.useFakeTimers();
@@ -200,7 +201,7 @@ describe("useProjectEditor", () => {
       .mockResolvedValueOnce(mockChapter1) // initial load
       .mockResolvedValueOnce(mockChapter2); // select
 
-    const { result } = renderHook(() => useProjectEditor("p1"));
+    const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
     await act(async () => {
@@ -211,7 +212,7 @@ describe("useProjectEditor", () => {
   });
 
   it("does not switch when selecting the already-active chapter", async () => {
-    const { result } = renderHook(() => useProjectEditor("p1"));
+    const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
     await act(async () => {
@@ -225,7 +226,7 @@ describe("useProjectEditor", () => {
   it("deletes a non-active chapter", async () => {
     vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
 
-    const { result } = renderHook(() => useProjectEditor("p1"));
+    const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
 
     await act(async () => {
@@ -242,7 +243,7 @@ describe("useProjectEditor", () => {
       .mockResolvedValueOnce(mockChapter1) // initial load
       .mockResolvedValueOnce(mockChapter2); // switch after delete
 
-    const { result } = renderHook(() => useProjectEditor("p1"));
+    const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
     await act(async () => {
@@ -257,7 +258,7 @@ describe("useProjectEditor", () => {
   it("reorders chapters", async () => {
     vi.mocked(api.projects.reorderChapters).mockResolvedValue({ message: "ok" });
 
-    const { result } = renderHook(() => useProjectEditor("p1"));
+    const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
 
     await act(async () => {
@@ -272,10 +273,11 @@ describe("useProjectEditor", () => {
     vi.mocked(api.projects.update).mockResolvedValue({
       ...mockProject,
       title: "New Title",
+      slug: "new-title",
       chapters: undefined as never,
     });
 
-    const { result } = renderHook(() => useProjectEditor("p1"));
+    const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
 
     await act(async () => {
@@ -291,7 +293,7 @@ describe("useProjectEditor", () => {
       title: "Renamed",
     });
 
-    const { result } = renderHook(() => useProjectEditor("p1"));
+    const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
     await act(async () => {
@@ -309,7 +311,7 @@ describe("useProjectEditor", () => {
       title: "Better Name",
     });
 
-    const { result } = renderHook(() => useProjectEditor("p1"));
+    const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
 
     await act(async () => {
@@ -325,7 +327,7 @@ describe("useProjectEditor", () => {
       title: "Active Renamed",
     });
 
-    const { result } = renderHook(() => useProjectEditor("p1"));
+    const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
     await act(async () => {
@@ -348,7 +350,7 @@ describe("useProjectEditor", () => {
   });
 
   it("updates word count on content change", async () => {
-    const { result } = renderHook(() => useProjectEditor("p1"));
+    const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
 
     act(() => {

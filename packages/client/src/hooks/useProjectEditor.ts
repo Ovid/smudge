@@ -7,7 +7,7 @@ import { STRINGS } from "../strings";
 
 export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
 
-export function useProjectEditor(projectId: string | undefined) {
+export function useProjectEditor(slug: string | undefined) {
   const [project, setProject] = useState<ProjectWithChapters | null>(null);
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
@@ -24,9 +24,9 @@ export function useProjectEditor(projectId: string | undefined) {
     let cancelled = false;
 
     async function loadProject() {
-      if (!projectId) return;
+      if (!slug) return;
       try {
-        const data = await api.projects.get(projectId);
+        const data = await api.projects.get(slug);
         if (cancelled) return;
         setProject(data);
         const firstChapter = data.chapters[0];
@@ -49,7 +49,7 @@ export function useProjectEditor(projectId: string | undefined) {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [slug]);
 
   const handleSave = useCallback(
     async (content: Record<string, unknown>): Promise<boolean> => {
@@ -101,16 +101,16 @@ export function useProjectEditor(projectId: string | undefined) {
   );
 
   const handleCreateChapter = useCallback(async () => {
-    if (!projectId) return;
+    if (!project) return;
     try {
-      const newChapter = await api.chapters.create(projectId);
+      const newChapter = await api.chapters.create(project.slug);
       setActiveChapter(newChapter);
       setChapterWordCount(0);
       setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
     } catch (err) {
       setError(err instanceof Error ? err.message : STRINGS.error.createChapterFailed);
     }
-  }, [projectId]);
+  }, [project]);
 
   const handleSelectChapter = useCallback(
     async (chapterId: string) => {
@@ -165,9 +165,9 @@ export function useProjectEditor(projectId: string | undefined) {
 
   const handleReorderChapters = useCallback(
     async (orderedIds: string[]) => {
-      if (!projectId) return;
+      if (!project) return;
       try {
-        await api.projects.reorderChapters(projectId, orderedIds);
+        await api.projects.reorderChapters(project.slug, orderedIds);
         setProject((prev) => {
           if (!prev) return prev;
           const reordered = orderedIds
@@ -179,17 +179,21 @@ export function useProjectEditor(projectId: string | undefined) {
         setError(err instanceof Error ? err.message : STRINGS.error.reorderFailed);
       }
     },
-    [projectId],
+    [project],
   );
 
   const handleUpdateProjectTitle = useCallback(
-    async (title: string) => {
-      if (!project) return;
+    async (title: string): Promise<string | undefined> => {
+      if (!project) return undefined;
       try {
-        await api.projects.update(project.id, { title });
-        setProject((prev) => (prev ? { ...prev, title } : prev));
+        const updated = await api.projects.update(project.slug, { title });
+        setProject((prev) =>
+          prev ? { ...prev, title: updated.title, slug: updated.slug } : prev,
+        );
+        return updated.slug;
       } catch (err) {
         setError(err instanceof Error ? err.message : STRINGS.error.updateTitleFailed);
+        return undefined;
       }
     },
     [project],

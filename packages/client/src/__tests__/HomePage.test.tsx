@@ -65,8 +65,8 @@ describe("HomePage", () => {
 
   it("renders project list", async () => {
     vi.mocked(api.projects.list).mockResolvedValue([
-      { id: "p1", title: "Novel One", mode: "fiction", total_word_count: 1234, updated_at: "" },
-      { id: "p2", title: "Memoir", mode: "nonfiction", total_word_count: 5678, updated_at: "" },
+      { id: "p1", slug: "novel-one", title: "Novel One", mode: "fiction", total_word_count: 1234, updated_at: "" },
+      { id: "p2", slug: "memoir", title: "Memoir", mode: "nonfiction", total_word_count: 5678, updated_at: "" },
     ]);
     renderHomePage();
 
@@ -82,7 +82,7 @@ describe("HomePage", () => {
 
   it("navigates to project on click", async () => {
     vi.mocked(api.projects.list).mockResolvedValue([
-      { id: "p1", title: "Novel One", mode: "fiction", total_word_count: 0, updated_at: "" },
+      { id: "p1", slug: "novel-one", title: "Novel One", mode: "fiction", total_word_count: 0, updated_at: "" },
     ]);
     renderHomePage();
 
@@ -91,13 +91,14 @@ describe("HomePage", () => {
     });
 
     await userEvent.click(screen.getByText("Novel One"));
-    expect(mockNavigate).toHaveBeenCalledWith("/projects/p1");
+    expect(mockNavigate).toHaveBeenCalledWith("/projects/novel-one");
   });
 
   it("opens dialog and creates project", async () => {
     vi.mocked(api.projects.list).mockResolvedValue([]);
     vi.mocked(api.projects.create).mockResolvedValue({
       id: "new-proj",
+      slug: "my-book",
       title: "My Book",
       mode: "fiction",
       created_at: "",
@@ -124,7 +125,7 @@ describe("HomePage", () => {
     await waitFor(() => {
       expect(api.projects.create).toHaveBeenCalledWith({ title: "My Book", mode: "fiction" });
     });
-    expect(mockNavigate).toHaveBeenCalledWith("/projects/new-proj");
+    expect(mockNavigate).toHaveBeenCalledWith("/projects/my-book");
   });
 
   it("displays the app name in the header", async () => {
@@ -143,7 +144,7 @@ describe("HomePage", () => {
 
   it("shows a delete button for each project", async () => {
     vi.mocked(api.projects.list).mockResolvedValue([
-      { id: "p1", title: "Novel One", mode: "fiction", total_word_count: 0, updated_at: "" },
+      { id: "p1", slug: "novel-one", title: "Novel One", mode: "fiction", total_word_count: 0, updated_at: "" },
     ]);
     renderHomePage();
 
@@ -156,7 +157,7 @@ describe("HomePage", () => {
 
   it("shows confirmation dialog before deleting", async () => {
     vi.mocked(api.projects.list).mockResolvedValue([
-      { id: "p1", title: "Novel One", mode: "fiction", total_word_count: 0, updated_at: "" },
+      { id: "p1", slug: "novel-one", title: "Novel One", mode: "fiction", total_word_count: 0, updated_at: "" },
     ]);
     renderHomePage();
 
@@ -173,7 +174,7 @@ describe("HomePage", () => {
 
   it("deletes project on confirmation and removes from list", async () => {
     vi.mocked(api.projects.list).mockResolvedValue([
-      { id: "p1", title: "Novel One", mode: "fiction", total_word_count: 0, updated_at: "" },
+      { id: "p1", slug: "novel-one", title: "Novel One", mode: "fiction", total_word_count: 0, updated_at: "" },
     ]);
     vi.mocked(api.projects.delete).mockResolvedValue(undefined);
     renderHomePage();
@@ -186,13 +187,13 @@ describe("HomePage", () => {
     await userEvent.click(screen.getByRole("button", { name: /confirm/i }));
 
     await waitFor(() => {
-      expect(api.projects.delete).toHaveBeenCalledWith("p1");
+      expect(api.projects.delete).toHaveBeenCalledWith("novel-one");
     });
   });
 
   it("cancels delete and keeps project in list", async () => {
     vi.mocked(api.projects.list).mockResolvedValue([
-      { id: "p1", title: "Novel One", mode: "fiction", total_word_count: 0, updated_at: "" },
+      { id: "p1", slug: "novel-one", title: "Novel One", mode: "fiction", total_word_count: 0, updated_at: "" },
     ]);
     renderHomePage();
 

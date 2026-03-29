@@ -11,7 +11,7 @@ import { useProjectEditor } from "../hooks/useProjectEditor";
 import { api } from "../api/client";
 
 export function EditorPage() {
-  const { projectId } = useParams<{ projectId: string }>();
+  const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const {
     project,
@@ -28,7 +28,7 @@ export function EditorPage() {
     handleReorderChapters,
     handleUpdateProjectTitle,
     handleRenameChapter,
-  } = useProjectEditor(projectId);
+  } = useProjectEditor(slug);
 
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -58,9 +58,9 @@ export function EditorPage() {
   );
 
   async function openTrash() {
-    if (!projectId) return;
+    if (!project) return;
     try {
-      const trashed = await api.projects.trash(projectId);
+      const trashed = await api.projects.trash(project.slug);
       setTrashedChapters(trashed);
       setTrashOpen(true);
     } catch {
@@ -89,9 +89,9 @@ export function EditorPage() {
     if (!deleteTarget) return;
     await handleDeleteChapter(deleteTarget);
     setDeleteTarget(null);
-    if (trashOpen && projectId) {
+    if (trashOpen && project) {
       try {
-        const trashed = await api.projects.trash(projectId);
+        const trashed = await api.projects.trash(project.slug);
         setTrashedChapters(trashed);
       } catch {
         // Trash refresh failed — stale list is acceptable
@@ -181,7 +181,10 @@ export function EditorPage() {
     }
     const trimmed = projectTitleDraft.trim();
     if (trimmed !== project.title) {
-      await handleUpdateProjectTitle(trimmed);
+      const newSlug = await handleUpdateProjectTitle(trimmed);
+      if (newSlug && newSlug !== slug) {
+        navigate(`/projects/${newSlug}`, { replace: true });
+      }
     }
     setEditingProjectTitle(false);
   }

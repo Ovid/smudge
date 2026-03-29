@@ -38,7 +38,7 @@ export function HomePage() {
     try {
       const project = await api.projects.create({ title, mode });
       setDialogOpen(false);
-      navigate(`/projects/${project.id}`);
+      navigate(`/projects/${project.slug}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : STRINGS.error.createFailed);
     }
@@ -47,7 +47,7 @@ export function HomePage() {
   async function handleDelete() {
     if (!deleteTarget) return;
     try {
-      await api.projects.delete(deleteTarget.id);
+      await api.projects.delete(deleteTarget.slug);
       setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
       setDeleteTarget(null);
     } catch (err) {
@@ -90,7 +90,7 @@ export function HomePage() {
             {projects.map((project) => (
               <li key={project.id} className="flex items-center gap-2">
                 <button
-                  onClick={() => navigate(`/projects/${project.id}`)}
+                  onClick={() => navigate(`/projects/${project.slug}`)}
                   className="flex-1 rounded border border-border bg-bg-input p-4 text-left hover:bg-bg-hover focus:outline-none focus:ring-2 focus:ring-focus-ring"
                 >
                   <div className="flex items-center justify-between">
