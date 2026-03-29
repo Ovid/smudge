@@ -8,14 +8,17 @@
 
 **Tech Stack:** TypeScript, better-sqlite3/Knex.js (migration), Vitest (tests), React Router, Express
 
+**Design doc:** `docs/plans/2026-03-29-project-slugs-design.md`
+
 ---
 
-### Task 1: generateSlug — failing tests
+### Task 1: generateSlug
 
-**Files:**
-- Create: `packages/shared/src/__tests__/slugify.test.ts`
+**Requirement:** Slug generation algorithm (design doc §Slug Generation)
 
-**Step 1: Write the failing tests**
+#### RED
+
+Write `packages/shared/src/__tests__/slugify.test.ts`:
 
 ```typescript
 import { describe, it, expect } from "vitest";
@@ -57,20 +60,12 @@ describe("generateSlug", () => {
 });
 ```
 
-**Step 2: Run tests to verify they fail**
-
 Run: `npm test -w packages/shared -- --run slugify`
-Expected: FAIL — module `../slugify` does not exist
+Expected failure: module `../slugify` does not exist
 
----
+#### GREEN
 
-### Task 2: generateSlug — implementation
-
-**Files:**
-- Create: `packages/shared/src/slugify.ts`
-- Modify: `packages/shared/src/index.ts`
-
-**Step 1: Implement generateSlug**
+Create `packages/shared/src/slugify.ts`:
 
 ```typescript
 export function generateSlug(title: string): string {
@@ -86,19 +81,21 @@ export function generateSlug(title: string): string {
 }
 ```
 
-**Step 2: Export from index.ts**
+Add export to `packages/shared/src/index.ts`:
 
-Add to `packages/shared/src/index.ts`:
 ```typescript
 export { generateSlug } from "./slugify";
 ```
 
-**Step 3: Run tests to verify they pass**
-
 Run: `npm test -w packages/shared -- --run slugify`
 Expected: All 8 tests PASS
 
-**Step 4: Commit**
+#### REFACTOR
+
+- Check if any regex steps can be combined (unlikely — they're already minimal)
+- Verify the export appears correctly in the shared barrel
+
+**Commit:**
 
 ```bash
 git add packages/shared/src/slugify.ts packages/shared/src/__tests__/slugify.test.ts packages/shared/src/index.ts
@@ -107,14 +104,95 @@ git commit -m "feat: add generateSlug utility to shared package"
 
 ---
 
-### Task 3: resolveUniqueSlug — failing tests
+### Task 2: Migration — add slug column
 
-**Files:**
-- Create: `packages/server/src/__tests__/resolve-slug.test.ts`
+**Requirement:** Data layer (design doc §Data Layer)
 
-This tests the server-side helper that appends `-2`, `-3`, etc. on slug collision. It needs a database to check existing slugs.
+This must come before `resolveUniqueSlug` tests (Task 3) because those tests insert rows with a `slug` column.
 
-**Step 1: Write the failing tests**
+#### RED
+
+No direct test for this task — the migration is infrastructure. It will be exercised by Task 3's tests (which run `migrate.latest()` via test-helpers).
+
+#### GREEN
+
+Create `packages/server/src/db/migrations/002_add_project_slugs.js`:
+
+```javascript
+import { generateSlug } from "@smudge/shared";
+
+/** @param {import('knex').Knex} knex */
+export async function up(knex) {
+  // Add slug column — nullable because SQLite doesn't support adding NOT NULL
+  // columns to existing tables. Application code always sets slug, so this is
+  // a known SQLite limitation, not a gap in enforcement.
+  await knex.schema.alterTable("projects", (table) => {
+    table.string("slug").nullable();
+  });
+
+  // Backfill existing projects
+  const projects = await knex("projects").select("id", "title");
+  for (const project of projects) {
+    const baseSlug = generateSlug(project.title);
+    let slug = baseSlug;
+    let suffix = 2;
+    while (true) {
+      const existing = await knex("projects")
+        .where({ slug })
+        .whereNot({ id: project.id })
+        .whereNull("deleted_at")
+        .first();
+      if (!existing) break;
+      slug = `${baseSlug}-${suffix}`;
+      suffix++;
+    }
+    await knex("projects").where({ id: project.id }).update({ slug });
+  }
+
+  // Partial unique indexes — only enforce uniqueness among non-deleted rows.
+  // This allows reuse of titles/slugs after soft-deleting a project.
+  await knex.raw(`
+    CREATE UNIQUE INDEX idx_projects_slug_active
+    ON projects(slug)
+    WHERE deleted_at IS NULL
+  `);
+  await knex.raw(`
+    CREATE UNIQUE INDEX idx_projects_title_active
+    ON projects(title)
+    WHERE deleted_at IS NULL
+  `);
+}
+
+/** @param {import('knex').Knex} knex */
+export async function down(knex) {
+  await knex.raw("DROP INDEX IF EXISTS idx_projects_slug_active");
+  await knex.raw("DROP INDEX IF EXISTS idx_projects_title_active");
+  await knex.schema.alterTable("projects", (table) => {
+    table.dropColumn("slug");
+  });
+}
+```
+
+#### REFACTOR
+
+- Verify migration runs without error: `npm test -w packages/server -- --run projects` (existing tests should still pass since slug is nullable and existing routes don't use it yet)
+
+**Commit:**
+
+```bash
+git add packages/server/src/db/migrations/002_add_project_slugs.js
+git commit -m "feat: add migration for project slug column with partial unique indexes"
+```
+
+---
+
+### Task 3: resolveUniqueSlug
+
+**Requirement:** Slug collision handling (design doc §Slug Generation, item 7)
+
+#### RED
+
+Create `packages/server/src/__tests__/resolve-slug.test.ts`:
 
 ```typescript
 import { describe, it, expect } from "vitest";
@@ -132,8 +210,12 @@ describe("resolveUniqueSlug", () => {
   it("appends -2 on first collision", async () => {
     const now = new Date().toISOString();
     await t.db("projects").insert({
-      id: "p1", title: "My Novel", slug: "my-novel",
-      mode: "fiction", created_at: now, updated_at: now,
+      id: "p1",
+      title: "My Novel",
+      slug: "my-novel",
+      mode: "fiction",
+      created_at: now,
+      updated_at: now,
     });
     const slug = await resolveUniqueSlug(t.db, "my-novel");
     expect(slug).toBe("my-novel-2");
@@ -142,12 +224,20 @@ describe("resolveUniqueSlug", () => {
   it("appends -3 when -2 is also taken", async () => {
     const now = new Date().toISOString();
     await t.db("projects").insert({
-      id: "p1", title: "My Novel", slug: "my-novel",
-      mode: "fiction", created_at: now, updated_at: now,
+      id: "p1",
+      title: "My Novel",
+      slug: "my-novel",
+      mode: "fiction",
+      created_at: now,
+      updated_at: now,
     });
     await t.db("projects").insert({
-      id: "p2", title: "My Novel 2", slug: "my-novel-2",
-      mode: "fiction", created_at: now, updated_at: now,
+      id: "p2",
+      title: "My Novel 2",
+      slug: "my-novel-2",
+      mode: "fiction",
+      created_at: now,
+      updated_at: now,
     });
     const slug = await resolveUniqueSlug(t.db, "my-novel");
     expect(slug).toBe("my-novel-3");
@@ -156,8 +246,13 @@ describe("resolveUniqueSlug", () => {
   it("ignores soft-deleted projects for collision", async () => {
     const now = new Date().toISOString();
     await t.db("projects").insert({
-      id: "p1", title: "My Novel", slug: "my-novel",
-      mode: "fiction", created_at: now, updated_at: now, deleted_at: now,
+      id: "p1",
+      title: "My Novel",
+      slug: "my-novel",
+      mode: "fiction",
+      created_at: now,
+      updated_at: now,
+      deleted_at: now,
     });
     const slug = await resolveUniqueSlug(t.db, "my-novel");
     expect(slug).toBe("my-novel");
@@ -166,8 +261,12 @@ describe("resolveUniqueSlug", () => {
   it("excludes a specific project id when provided", async () => {
     const now = new Date().toISOString();
     await t.db("projects").insert({
-      id: "p1", title: "My Novel", slug: "my-novel",
-      mode: "fiction", created_at: now, updated_at: now,
+      id: "p1",
+      title: "My Novel",
+      slug: "my-novel",
+      mode: "fiction",
+      created_at: now,
+      updated_at: now,
     });
     const slug = await resolveUniqueSlug(t.db, "my-novel", "p1");
     expect(slug).toBe("my-novel");
@@ -175,100 +274,12 @@ describe("resolveUniqueSlug", () => {
 });
 ```
 
-**Step 2: Run tests to verify they fail**
-
 Run: `npm test -w packages/server -- --run resolve-slug`
-Expected: FAIL — module `../routes/resolve-slug` does not exist
+Expected failure: module `../routes/resolve-slug` does not exist
 
-**Note:** These tests will also fail because the `slug` column doesn't exist yet. Task 4 (migration) must run before these tests can pass.
+#### GREEN
 
----
-
-### Task 4: Migration — add slug column
-
-**Files:**
-- Create: `packages/server/src/db/migrations/002_add_project_slugs.js`
-
-**Step 1: Write the migration**
-
-```javascript
-import { generateSlug } from "@smudge/shared";
-
-/** @param {import('knex').Knex} knex */
-export async function up(knex) {
-  // Add slug column (nullable first for backfill)
-  await knex.schema.alterTable("projects", (table) => {
-    table.string("slug").nullable();
-  });
-
-  // Backfill existing projects
-  const projects = await knex("projects").select("id", "title");
-  for (const project of projects) {
-    const baseSlug = generateSlug(project.title);
-    // Simple collision resolution for backfill
-    let slug = baseSlug;
-    let suffix = 2;
-    while (true) {
-      const existing = await knex("projects")
-        .where({ slug })
-        .whereNot({ id: project.id })
-        .whereNull("deleted_at")
-        .first();
-      if (!existing) break;
-      slug = `${baseSlug}-${suffix}`;
-      suffix++;
-    }
-    await knex("projects").where({ id: project.id }).update({ slug });
-  }
-
-  // Make slug NOT NULL after backfill
-  // SQLite doesn't support ALTER COLUMN, so we use raw SQL
-  // The column is already populated, so we add the partial unique indexes
-  await knex.raw(`
-    CREATE UNIQUE INDEX idx_projects_slug_active
-    ON projects(slug)
-    WHERE deleted_at IS NULL
-  `);
-  await knex.raw(`
-    CREATE UNIQUE INDEX idx_projects_title_active
-    ON projects(title)
-    WHERE deleted_at IS NULL
-  `);
-}
-
-/** @param {import('knex').Knex} knex */
-export async function down(knex) {
-  await knex.raw("DROP INDEX IF EXISTS idx_projects_slug_active");
-  await knex.raw("DROP INDEX IF EXISTS idx_projects_title_active");
-
-  // SQLite doesn't support DROP COLUMN in older versions,
-  // but better-sqlite3 with recent SQLite does
-  await knex.schema.alterTable("projects", (table) => {
-    table.dropColumn("slug");
-  });
-}
-```
-
-**Step 2: Run the migration in tests**
-
-Run: `npm test -w packages/server -- --run resolve-slug`
-Expected: FAIL — `resolveUniqueSlug` module still doesn't exist (but migration runs via test-helpers `migrate.latest()`)
-
-**Step 3: Commit**
-
-```bash
-git add packages/server/src/db/migrations/002_add_project_slugs.js
-git commit -m "feat: add migration for project slug column with partial unique indexes"
-```
-
----
-
-### Task 5: resolveUniqueSlug — implementation
-
-**Files:**
-- Create: `packages/server/src/routes/resolve-slug.ts`
-
-**Step 1: Implement resolveUniqueSlug**
+Create `packages/server/src/routes/resolve-slug.ts`:
 
 ```typescript
 import type { Knex } from "knex";
@@ -294,12 +305,14 @@ export async function resolveUniqueSlug(
 }
 ```
 
-**Step 2: Run tests to verify they pass**
-
 Run: `npm test -w packages/server -- --run resolve-slug`
 Expected: All 5 tests PASS
 
-**Step 3: Commit**
+#### REFACTOR
+
+- Nothing to refactor — function is minimal and focused
+
+**Commit:**
 
 ```bash
 git add packages/server/src/routes/resolve-slug.ts packages/server/src/__tests__/resolve-slug.test.ts
@@ -308,28 +321,32 @@ git commit -m "feat: add resolveUniqueSlug helper for slug collision resolution"
 
 ---
 
-### Task 6: Update shared types and schemas
+### Task 4: Update shared types
 
-**Files:**
-- Modify: `packages/shared/src/types.ts`
-- Modify: `packages/shared/src/schemas.ts`
+**Requirement:** Add slug to Project and ProjectListItem (design doc §Client Changes)
 
-**Step 1: Add slug to Project and ProjectListItem**
+#### RED
+
+No failing test needed — this is a type-only change. TypeScript compilation in downstream packages will catch mismatches once those packages start using the new field.
+
+#### GREEN
 
 In `packages/shared/src/types.ts`, add `slug: string` to both interfaces:
 
 ```typescript
 export interface Project {
   id: string;
-  slug: string;          // <-- add
+  slug: string;
   title: string;
   mode: ProjectMode;
-  // ...
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
 }
 
 export interface ProjectListItem {
   id: string;
-  slug: string;          // <-- add
+  slug: string;
   title: string;
   mode: ProjectMode;
   total_word_count: number;
@@ -337,16 +354,14 @@ export interface ProjectListItem {
 }
 ```
 
-**Step 2: No Zod schema changes needed for input**
-
-The `CreateProjectSchema` and `UpdateProjectSchema` accept a `title` — the server generates the slug. No slug field in request bodies. Response shapes are defined by TypeScript interfaces, not Zod schemas in this codebase.
-
-**Step 3: Run existing tests to verify nothing breaks**
-
 Run: `npm test -w packages/shared -- --run`
-Expected: All existing tests PASS (type changes don't break runtime)
+Expected: All existing tests PASS
 
-**Step 4: Commit**
+#### REFACTOR
+
+- Verify no Zod schema changes are needed: `CreateProjectSchema` and `UpdateProjectSchema` accept `title` only — the server generates the slug. Response shapes use TypeScript interfaces, not Zod. No changes needed.
+
+**Commit:**
 
 ```bash
 git add packages/shared/src/types.ts
@@ -355,115 +370,497 @@ git commit -m "feat: add slug field to Project and ProjectListItem types"
 
 ---
 
-### Task 7: Update server project routes — failing tests
+### Task 5: Update server project routes — tests
 
-**Files:**
-- Modify: `packages/server/src/__tests__/projects.test.ts`
+**Requirement:** All project endpoints switch to slug (design doc §Server API Changes), title uniqueness (§Data Layer), existing test updates (§Scope)
 
-This is a large task — rewrite all project tests to use slugs instead of UUIDs. The key changes:
+#### RED
 
-1. `POST /api/projects` response now includes `slug` — assert it
-2. All `/:id` endpoints become `/:slug` — use `createRes.body.slug` instead of `createRes.body.id`
-3. Add tests for title uniqueness (duplicate title → 400 `PROJECT_TITLE_EXISTS`)
-4. Add tests for slug regeneration on rename
-5. `GET /api/projects` response items now include `slug`
+Replace the entire `packages/server/src/__tests__/projects.test.ts` with this file. Changes from original:
+- All endpoint URLs use `createRes.body.slug` instead of `createRes.body.id`
+- New tests: slug in create response, slug in list response, title uniqueness on create, slug regeneration on rename, title uniqueness on rename
+- Direct DB operations still use `id` (internal PK) where needed
 
-**Step 1: Rewrite the test file**
-
-Replace the entire test file. Key changes per describe block:
-
-**POST /api/projects:**
 ```typescript
-it("creates a project and returns 201 with slug", async () => {
-  const res = await request(t.app)
-    .post("/api/projects")
-    .send({ title: "My Novel", mode: "fiction" });
+import { describe, it, expect } from "vitest";
+import request from "supertest";
+import { setupTestDb } from "./test-helpers";
 
-  expect(res.status).toBe(201);
-  expect(res.body.slug).toBe("my-novel");
-  expect(res.body.title).toBe("My Novel");
+const t = setupTestDb();
+
+describe("POST /api/projects", () => {
+  it("creates a project and returns 201 with slug", async () => {
+    const res = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Novel", mode: "fiction" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.id).toBeDefined();
+    expect(res.body.slug).toBe("my-novel");
+    expect(res.body.title).toBe("My Novel");
+    expect(res.body.mode).toBe("fiction");
+    expect(res.body.created_at).toBeDefined();
+    expect(res.body.updated_at).toBeDefined();
+  });
+
+  it("auto-creates a first chapter", async () => {
+    const res = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Novel", mode: "fiction" });
+
+    expect(res.status).toBe(201);
+
+    const chapters = await t.db("chapters").where({ project_id: res.body.id }).select("*");
+    expect(chapters).toHaveLength(1);
+    expect(chapters[0].title).toBe("Untitled Chapter");
+    expect(chapters[0].sort_order).toBe(0);
+  });
+
+  it("returns 400 when title is missing", async () => {
+    const res = await request(t.app).post("/api/projects").send({ mode: "fiction" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("returns 400 when mode is invalid", async () => {
+    const res = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Book", mode: "poetry" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("trims whitespace from title", async () => {
+    const res = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "  My Novel  ", mode: "fiction" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.title).toBe("My Novel");
+    expect(res.body.slug).toBe("my-novel");
+  });
+
+  it("returns 400 when title duplicates an existing project", async () => {
+    await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Novel", mode: "fiction" });
+
+    const res = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Novel", mode: "fiction" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("PROJECT_TITLE_EXISTS");
+  });
+
+  it("allows reuse of a soft-deleted project title", async () => {
+    const first = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Novel", mode: "fiction" });
+    await request(t.app).delete(`/api/projects/${first.body.slug}`);
+
+    const res = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Novel", mode: "fiction" });
+
+    expect(res.status).toBe(201);
+    expect(res.body.slug).toBe("my-novel");
+  });
 });
 
-it("returns 400 when title duplicates an existing project", async () => {
-  await request(t.app).post("/api/projects").send({ title: "My Novel", mode: "fiction" });
-  const res = await request(t.app).post("/api/projects").send({ title: "My Novel", mode: "fiction" });
+describe("GET /api/projects", () => {
+  it("returns empty array when no projects exist", async () => {
+    const res = await request(t.app).get("/api/projects");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
 
-  expect(res.status).toBe(400);
-  expect(res.body.error.code).toBe("PROJECT_TITLE_EXISTS");
+  it("returns all non-deleted projects sorted by updated_at desc", async () => {
+    await request(t.app).post("/api/projects").send({ title: "First", mode: "fiction" });
+    await request(t.app).post("/api/projects").send({ title: "Second", mode: "nonfiction" });
+
+    const res = await request(t.app).get("/api/projects");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    expect(res.body[0].title).toBe("Second");
+    expect(res.body[1].title).toBe("First");
+    expect(res.body[0].total_word_count).toBe(0);
+  });
+
+  it("returns projects with slug field", async () => {
+    await request(t.app).post("/api/projects").send({ title: "First", mode: "fiction" });
+
+    const res = await request(t.app).get("/api/projects");
+    expect(res.body[0].slug).toBe("first");
+  });
+
+  it("excludes soft-deleted projects", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Deleted", mode: "fiction" });
+    await t
+      .db("projects")
+      .where({ id: createRes.body.id })
+      .update({ deleted_at: new Date().toISOString() });
+
+    const res = await request(t.app).get("/api/projects");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(0);
+  });
+});
+
+describe("PATCH /api/projects/:slug", () => {
+  it("renames a project", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Old Name", mode: "fiction" });
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${createRes.body.slug}`)
+      .send({ title: "New Name" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.title).toBe("New Name");
+  });
+
+  it("returns updated slug when title changes", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Old Name", mode: "fiction" });
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${createRes.body.slug}`)
+      .send({ title: "New Name" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.slug).toBe("new-name");
+  });
+
+  it("trims whitespace from title", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Book", mode: "fiction" });
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${createRes.body.slug}`)
+      .send({ title: "  Trimmed  " });
+
+    expect(res.status).toBe(200);
+    expect(res.body.title).toBe("Trimmed");
+  });
+
+  it("returns 400 when title is missing", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Book", mode: "fiction" });
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${createRes.body.slug}`)
+      .send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("returns 400 when title is whitespace-only", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Book", mode: "fiction" });
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${createRes.body.slug}`)
+      .send({ title: "   " });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when renaming to a duplicate title", async () => {
+    await request(t.app)
+      .post("/api/projects")
+      .send({ title: "First", mode: "fiction" });
+    const second = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Second", mode: "fiction" });
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${second.body.slug}`)
+      .send({ title: "First" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("PROJECT_TITLE_EXISTS");
+  });
+
+  it("returns 404 for non-existent project", async () => {
+    const res = await request(t.app)
+      .patch("/api/projects/nonexistent-slug")
+      .send({ title: "Nope" });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("returns 404 for soft-deleted project", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Deleted", mode: "fiction" });
+    await request(t.app).delete(`/api/projects/${createRes.body.slug}`);
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${createRes.body.slug}`)
+      .send({ title: "Nope" });
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("GET /api/projects/:slug", () => {
+  it("returns project with chapters", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Novel", mode: "fiction" });
+
+    const res = await request(t.app).get(`/api/projects/${createRes.body.slug}`);
+    expect(res.status).toBe(200);
+    expect(res.body.title).toBe("My Novel");
+    expect(res.body.slug).toBe("my-novel");
+    expect(res.body.chapters).toHaveLength(1);
+    expect(res.body.chapters[0].title).toBe("Untitled Chapter");
+  });
+
+  it("returns 404 for non-existent project", async () => {
+    const res = await request(t.app).get("/api/projects/nonexistent-slug");
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("returns 404 for soft-deleted project", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Deleted", mode: "fiction" });
+    await t
+      .db("projects")
+      .where({ id: createRes.body.id })
+      .update({ deleted_at: new Date().toISOString() });
+
+    const res = await request(t.app).get(`/api/projects/${createRes.body.slug}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("orders chapters by sort_order", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Novel", mode: "fiction" });
+    const projectId = createRes.body.id;
+    const now = new Date().toISOString();
+    await t.db("chapters").insert({
+      id: "ch-2",
+      project_id: projectId,
+      title: "Chapter Two",
+      sort_order: 1,
+      word_count: 0,
+      created_at: now,
+      updated_at: now,
+    });
+
+    const res = await request(t.app).get(`/api/projects/${createRes.body.slug}`);
+    expect(res.body.chapters).toHaveLength(2);
+    expect(res.body.chapters[0].title).toBe("Untitled Chapter");
+    expect(res.body.chapters[1].title).toBe("Chapter Two");
+  });
+});
+
+describe("PUT /api/projects/:slug/chapters/order", () => {
+  it("reorders chapters by provided ID array", async () => {
+    const projectRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Test", mode: "fiction" });
+    const projectSlug = projectRes.body.slug;
+
+    await request(t.app).post(`/api/projects/${projectSlug}/chapters`);
+    await request(t.app).post(`/api/projects/${projectSlug}/chapters`);
+
+    const getRes = await request(t.app).get(`/api/projects/${projectSlug}`);
+    const [ch1Id, ch2Id, ch3Id] = getRes.body.chapters.map((c: { id: string }) => c.id);
+
+    const res = await request(t.app)
+      .put(`/api/projects/${projectSlug}/chapters/order`)
+      .send({ chapter_ids: [ch3Id, ch2Id, ch1Id] });
+
+    expect(res.status).toBe(200);
+
+    const updated = await request(t.app).get(`/api/projects/${projectSlug}`);
+    expect(updated.body.chapters.map((c: { id: string }) => c.id)).toEqual([
+      ch3Id,
+      ch2Id,
+      ch1Id,
+    ]);
+  });
+
+  it("returns 400 if chapter IDs don't match", async () => {
+    const projectRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Test", mode: "fiction" });
+    const projectSlug = projectRes.body.slug;
+
+    const res = await request(t.app)
+      .put(`/api/projects/${projectSlug}/chapters/order`)
+      .send({ chapter_ids: ["wrong-id"] });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 if chapter_ids is missing or not an array", async () => {
+    const projectRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Test", mode: "fiction" });
+    const projectSlug = projectRes.body.slug;
+
+    const res = await request(t.app)
+      .put(`/api/projects/${projectSlug}/chapters/order`)
+      .send({});
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 for non-existent project", async () => {
+    const res = await request(t.app)
+      .put("/api/projects/nonexistent-slug/chapters/order")
+      .send({ chapter_ids: [] });
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("GET /api/projects/:slug/trash", () => {
+  it("returns soft-deleted chapters for a project", async () => {
+    const projectRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Test", mode: "fiction" });
+    const projectSlug = projectRes.body.slug;
+
+    const getRes = await request(t.app).get(`/api/projects/${projectSlug}`);
+    const chapterId = getRes.body.chapters[0].id;
+
+    await request(t.app).delete(`/api/chapters/${chapterId}`);
+
+    const res = await request(t.app).get(`/api/projects/${projectSlug}/trash`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].id).toBe(chapterId);
+    expect(res.body[0].deleted_at).toBeTruthy();
+  });
+
+  it("returns empty array when no trashed chapters", async () => {
+    const projectRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Test", mode: "fiction" });
+    const projectSlug = projectRes.body.slug;
+
+    const res = await request(t.app).get(`/api/projects/${projectSlug}/trash`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it("returns 404 for non-existent project", async () => {
+    const res = await request(t.app).get("/api/projects/nonexistent-slug/trash");
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("DELETE /api/projects/:slug", () => {
+  it("soft-deletes a project and returns 200", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Doomed", mode: "fiction" });
+
+    const res = await request(t.app).delete(`/api/projects/${createRes.body.slug}`);
+    expect(res.status).toBe(200);
+    expect(res.body.message).toBe("Project moved to trash.");
+  });
+
+  it("sets deleted_at on the project", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Doomed", mode: "fiction" });
+    await request(t.app).delete(`/api/projects/${createRes.body.slug}`);
+
+    const project = await t.db("projects").where({ id: createRes.body.id }).first();
+    expect(project.deleted_at).not.toBeNull();
+  });
+
+  it("soft-deleted project no longer appears in GET /api/projects", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Doomed", mode: "fiction" });
+    await request(t.app).delete(`/api/projects/${createRes.body.slug}`);
+
+    const listRes = await request(t.app).get("/api/projects");
+    expect(listRes.body).toHaveLength(0);
+  });
+
+  it("returns 404 for non-existent project", async () => {
+    const res = await request(t.app).delete("/api/projects/nonexistent-slug");
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("returns 404 for already-deleted project", async () => {
+    const createRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Doomed", mode: "fiction" });
+    await request(t.app).delete(`/api/projects/${createRes.body.slug}`);
+
+    const res = await request(t.app).delete(`/api/projects/${createRes.body.slug}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("soft-deletes all chapters when project is deleted", async () => {
+    const projectRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Test", mode: "fiction" });
+    const projectSlug = projectRes.body.slug;
+    const projectId = projectRes.body.id;
+
+    await request(t.app).post(`/api/projects/${projectSlug}/chapters`);
+
+    await request(t.app).delete(`/api/projects/${projectSlug}`);
+
+    const chapters = await t.db("chapters").where({ project_id: projectId });
+    expect(chapters.every((c: { deleted_at: string | null }) => c.deleted_at !== null)).toBe(true);
+  });
 });
 ```
-
-**GET /api/projects:**
-```typescript
-it("returns projects with slug field", async () => {
-  await request(t.app).post("/api/projects").send({ title: "First", mode: "fiction" });
-  const res = await request(t.app).get("/api/projects");
-
-  expect(res.body[0].slug).toBe("first");
-});
-```
-
-**All `:id` endpoints switch to `:slug`:**
-```typescript
-// Before:
-const res = await request(t.app).get(`/api/projects/${createRes.body.id}`);
-// After:
-const res = await request(t.app).get(`/api/projects/${createRes.body.slug}`);
-```
-
-**PATCH /api/projects/:slug — slug regeneration:**
-```typescript
-it("returns updated slug when title changes", async () => {
-  const createRes = await request(t.app)
-    .post("/api/projects")
-    .send({ title: "Old Name", mode: "fiction" });
-
-  const res = await request(t.app)
-    .patch(`/api/projects/${createRes.body.slug}`)
-    .send({ title: "New Name" });
-
-  expect(res.status).toBe(200);
-  expect(res.body.title).toBe("New Name");
-  expect(res.body.slug).toBe("new-name");
-});
-
-it("returns 400 when renaming to a duplicate title", async () => {
-  await request(t.app).post("/api/projects").send({ title: "First", mode: "fiction" });
-  const second = await request(t.app).post("/api/projects").send({ title: "Second", mode: "fiction" });
-
-  const res = await request(t.app)
-    .patch(`/api/projects/${second.body.slug}`)
-    .send({ title: "First" });
-
-  expect(res.status).toBe(400);
-  expect(res.body.error.code).toBe("PROJECT_TITLE_EXISTS");
-});
-```
-
-**Step 2: Run tests to verify they fail**
 
 Run: `npm test -w packages/server -- --run projects`
-Expected: FAIL — routes still use `:id` and don't return `slug`
+Expected failure: routes still use `:id` and don't return `slug`
 
 ---
 
-### Task 8: Update server project routes — implementation
+### Task 6: Update server project routes — implementation
 
-**Files:**
-- Modify: `packages/server/src/routes/projects.ts`
+**Requirement:** All project endpoints switch to slug (design doc §Server API Changes)
 
-**Step 1: Update imports**
+#### GREEN
 
-Add at the top of `projects.ts`:
+Modify `packages/server/src/routes/projects.ts`:
+
+**Update imports** — add at the top:
+
 ```typescript
 import { generateSlug } from "@smudge/shared";
 import { resolveUniqueSlug } from "./resolve-slug";
 ```
 
-**Step 2: Update POST / (create)**
+**Update `POST /` (create)** — after validation, before inserting:
 
-After validation, before inserting:
 ```typescript
+const { title, mode } = parsed.data;
+
 // Check title uniqueness
 const existingTitle = await db("projects")
   .where({ title })
@@ -471,7 +868,10 @@ const existingTitle = await db("projects")
   .first();
 if (existingTitle) {
   res.status(400).json({
-    error: { code: "PROJECT_TITLE_EXISTS", message: "A project with that title already exists" },
+    error: {
+      code: "PROJECT_TITLE_EXISTS",
+      message: "A project with that title already exists",
+    },
   });
   return;
 }
@@ -480,30 +880,32 @@ const slug = await resolveUniqueSlug(db, generateSlug(title));
 ```
 
 Add `slug` to the project insert:
+
 ```typescript
 await trx("projects").insert({
   id: projectId, title, slug, mode, created_at: now, updated_at: now,
 });
 ```
 
-**Step 3: Update GET / (list)**
+**Update `GET /` (list)** — add `"projects.slug"` to the `.select(...)` call.
 
-Add `"projects.slug"` to the `.select(...)` call.
+**Change all `:id` params to `:slug`** — for every route:
 
-**Step 4: Change all `:id` params to `:slug`**
+1. Change route path from `"/:id"` to `"/:slug"`
+2. Change project lookups from `.where({ id: req.params.id })` to `.where({ slug: req.params.slug }).whereNull("deleted_at")`
+3. Use `project.id` (from the looked-up row) for any subsequent operations that need the UUID (chapter queries, FK references, etc.)
 
-For every route (`PATCH /:id`, `GET /:id`, `POST /:id/chapters`, `PUT /:id/chapters/order`, `GET /:id/trash`, `DELETE /:id`):
+**Special handling for `GET /:slug/trash`** — this endpoint currently doesn't filter by `deleted_at` on the project (it shows trash for deleted projects too). Keep that behavior: look up by slug without the `whereNull("deleted_at")` filter, but search both active and deleted projects:
 
-1. Change route path from `/:id` to `/:slug`
-2. Replace `req.params.id` lookups: instead of `.where({ id: req.params.id })`, use `.where({ slug: req.params.slug }).whereNull("deleted_at")` to find the project, then use `project.id` for any subsequent operations that need the UUID (chapter queries, updates, etc.)
+```typescript
+const project = await db("projects").where({ slug: req.params.slug }).first();
+```
 
-**Step 5: Update PATCH /:slug specifically**
+**Update `PATCH /:slug`** — after title validation and project lookup, add title uniqueness check and slug regeneration:
 
-After title validation and project lookup, add title uniqueness check and slug regeneration:
 ```typescript
 const { title } = parsed.data;
 
-// Check title uniqueness (exclude current project)
 const existingTitle = await db("projects")
   .where({ title })
   .whereNull("deleted_at")
@@ -511,7 +913,10 @@ const existingTitle = await db("projects")
   .first();
 if (existingTitle) {
   res.status(400).json({
-    error: { code: "PROJECT_TITLE_EXISTS", message: "A project with that title already exists" },
+    error: {
+      code: "PROJECT_TITLE_EXISTS",
+      message: "A project with that title already exists",
+    },
   });
   return;
 }
@@ -523,17 +928,15 @@ await db("projects")
   .update({ title, slug: newSlug, updated_at: new Date().toISOString() });
 ```
 
-**Step 6: Run tests to verify they pass**
-
 Run: `npm test -w packages/server -- --run projects`
 Expected: All tests PASS
 
-**Step 7: Run full test suite**
+#### REFACTOR
 
-Run: `npm test`
-Expected: All tests PASS across all packages
+- Look for duplicated "find project by slug" logic. If 5+ routes share the same pattern (`db("projects").where({ slug }).whereNull("deleted_at").first()` + 404 check), consider extracting a `findProjectBySlug(db, slug)` helper. Only do this if the duplication is truly identical — don't abstract if some routes need different `deleted_at` behavior (like the trash endpoint).
+- Verify the full test suite still passes: `npm test`
 
-**Step 8: Commit**
+**Commit:**
 
 ```bash
 git add packages/server/src/routes/projects.ts packages/server/src/__tests__/projects.test.ts
@@ -542,45 +945,125 @@ git commit -m "feat: switch project API endpoints from UUID to slug"
 
 ---
 
-### Task 9: Update client API client
+### Task 7: Update chapters.test.ts for slug-based project endpoints
 
-**Files:**
-- Modify: `packages/client/src/api/client.ts`
+**Requirement:** Existing tests must pass after route changes (design doc §Scope)
 
-**Step 1: Update project methods to use slug**
+#### RED
+
+The existing `chapters.test.ts` will be failing because its `createProjectWithChapter` helper uses `GET /api/projects/${projectId}` (UUID) which no longer matches the `:slug` route.
+
+Run: `npm test -w packages/server -- --run chapters`
+Expected failure: 404 errors on project endpoints that now expect slugs
+
+#### GREEN
+
+Modify `packages/server/src/__tests__/chapters.test.ts`:
+
+Update the `createProjectWithChapter` helper to return `projectSlug` and use it for project-endpoint calls:
+
+```typescript
+/** Helper: create a project and return its id, slug, + first chapter id */
+async function createProjectWithChapter(app: ReturnType<typeof setupTestDb>["app"]) {
+  const projectRes = await request(app)
+    .post("/api/projects")
+    .send({ title: "Test Project", mode: "fiction" });
+  const projectId = projectRes.body.id;
+  const projectSlug = projectRes.body.slug;
+
+  const getRes = await request(app).get(`/api/projects/${projectSlug}`);
+  const chapterId = getRes.body.chapters[0].id;
+
+  return { projectId, projectSlug, chapterId };
+}
+```
+
+Then update every test that calls project endpoints to use `projectSlug`:
+
+- `POST /api/projects/${projectSlug}/chapters` (create chapter)
+- `GET /api/projects/${projectSlug}` (get project)
+- `DELETE /api/projects/${projectSlug}` (delete project)
+
+Chapter endpoints (`GET/PATCH/DELETE /api/chapters/:id`, `POST /api/chapters/:id/restore`) stay unchanged — they still use UUIDs.
+
+For the restore test "also restores parent project if it was deleted" — the final assertion `GET /api/projects/${projectId}` needs to change to `GET /api/projects/${projectSlug}`.
+
+Run: `npm test -w packages/server -- --run chapters`
+Expected: All tests PASS
+
+#### REFACTOR
+
+- Nothing to refactor — mechanical find-and-replace
+
+Run: `npm test` (full suite)
+Expected: All tests PASS across all packages
+
+**Commit:**
+
+```bash
+git add packages/server/src/__tests__/chapters.test.ts
+git commit -m "fix: update chapters tests to use slug-based project endpoints"
+```
+
+---
+
+### Task 8: Update client API client
+
+**Requirement:** API client uses slugs (design doc §Client Changes)
+
+#### RED
+
+No test to write — the client API module has no unit tests (it's tested via integration). The type changes will surface compile errors if parameter names are wrong.
+
+#### GREEN
+
+Modify `packages/client/src/api/client.ts`:
 
 Change parameter names from `id` to `slug` for all project methods:
 
 ```typescript
 projects: {
   list: () => apiFetch<ProjectListItem[]>("/projects"),
+
   get: (slug: string) => apiFetch<ProjectWithChapters>(`/projects/${slug}`),
+
   create: (input: CreateProjectInput) =>
-    apiFetch<Project>("/projects", { method: "POST", body: JSON.stringify(input) }),
+    apiFetch<Project>("/projects", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+
   update: (slug: string, data: { title?: string }) =>
-    apiFetch<Project>(`/projects/${slug}`, { method: "PATCH", body: JSON.stringify(data) }),
+    apiFetch<Project>(`/projects/${slug}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
   delete: (slug: string) =>
     apiFetch<{ message: string }>(`/projects/${slug}`, { method: "DELETE" }),
+
   reorderChapters: (slug: string, chapterIds: string[]) =>
     apiFetch<{ message: string }>(`/projects/${slug}/chapters/order`, {
-      method: "PUT", body: JSON.stringify({ chapter_ids: chapterIds }),
+      method: "PUT",
+      body: JSON.stringify({ chapter_ids: chapterIds }),
     }),
+
   trash: (slug: string) => apiFetch<Chapter[]>(`/projects/${slug}/trash`),
 },
 ```
 
-**Step 2: Update chapters.create to use slug**
+Update `chapters.create` to use slug:
 
 ```typescript
-chapters: {
-  // ...
-  create: (projectSlug: string) =>
-    apiFetch<Chapter>(`/projects/${projectSlug}/chapters`, { method: "POST" }),
-  // ...
-},
+create: (projectSlug: string) =>
+  apiFetch<Chapter>(`/projects/${projectSlug}/chapters`, { method: "POST" }),
 ```
 
-**Step 3: Commit**
+#### REFACTOR
+
+- Nothing to refactor — parameter rename only
+
+**Commit:**
 
 ```bash
 git add packages/client/src/api/client.ts
@@ -589,126 +1072,83 @@ git commit -m "refactor: update API client to use slugs for project endpoints"
 
 ---
 
-### Task 10: Update client routing and pages
+### Task 9: Update client routing and pages
 
-**Files:**
-- Modify: `packages/client/src/App.tsx`
-- Modify: `packages/client/src/pages/HomePage.tsx`
-- Modify: `packages/client/src/pages/EditorPage.tsx`
-- Modify: `packages/client/src/hooks/useProjectEditor.ts`
+**Requirement:** Client routing uses slugs, rename updates URL (design doc §Client Changes)
 
-**Step 1: Update App.tsx route**
+#### RED
+
+No unit tests for client pages currently. This will be verified via the smoke test (Task 10).
+
+#### GREEN
+
+**`packages/client/src/App.tsx`** — change route param:
 
 ```typescript
 <Route path="/projects/:slug" element={<EditorPage />} />
 ```
 
-**Step 2: Update HomePage.tsx**
+**`packages/client/src/pages/HomePage.tsx`** — change navigation and delete to use slug:
 
-Change navigation to use slug:
 ```typescript
-// In handleCreate:
+// In handleCreate (around line 41):
 navigate(`/projects/${project.slug}`);
 
-// In project list button onClick:
+// In project list button onClick (around line 93):
 navigate(`/projects/${project.slug}`);
 
-// In handleDelete — use slug:
+// In handleDelete (around line 51):
 await api.projects.delete(deleteTarget.slug);
 ```
 
-Keep filtering by `id` for local state updates (the `id` is still on the object):
+Keep local state filtering by `id`:
+
 ```typescript
 setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
 ```
 
-**Step 3: Update EditorPage.tsx**
+**`packages/client/src/pages/EditorPage.tsx`** — extract `slug` instead of `projectId`:
 
-Change `useParams` to extract `slug`:
 ```typescript
 const { slug } = useParams<{ slug: string }>();
 ```
 
 Pass `slug` to `useProjectEditor`:
+
 ```typescript
 const { ... } = useProjectEditor(slug);
 ```
 
-Update `openTrash` and `confirmDeleteChapter` to use `project.slug` instead of `projectId`:
+Update `openTrash` to use `project.slug` instead of `projectId`:
+
 ```typescript
 async function openTrash() {
   if (!project) return;
   try {
     const trashed = await api.projects.trash(project.slug);
-    // ...
+    setTrashedChapters(trashed);
+    setTrashOpen(true);
+  } catch {
+    // Silently fail
   }
 }
+```
 
-// In confirmDeleteChapter:
+Update `confirmDeleteChapter` similarly:
+
+```typescript
 if (trashOpen && project) {
-  const trashed = await api.projects.trash(project.slug);
-  // ...
+  try {
+    const trashed = await api.projects.trash(project.slug);
+    setTrashedChapters(trashed);
+  } catch {
+    // Trash refresh failed
+  }
 }
 ```
 
-**Step 4: Update useProjectEditor.ts**
+Update `saveProjectTitle` to handle slug change in URL:
 
-Change parameter name and usage:
-```typescript
-export function useProjectEditor(slug: string | undefined) {
-```
-
-In `loadProject`:
-```typescript
-const data = await api.projects.get(slug);
-```
-
-In `handleCreateChapter` — use `project.slug` instead of `projectId`:
-```typescript
-const handleCreateChapter = useCallback(async () => {
-  if (!project) return;
-  try {
-    const newChapter = await api.chapters.create(project.slug);
-    // ...
-  }
-}, [project]);
-```
-
-In `handleReorderChapters` — use `project.slug`:
-```typescript
-const handleReorderChapters = useCallback(
-  async (orderedIds: string[]) => {
-    if (!project) return;
-    try {
-      await api.projects.reorderChapters(project.slug, orderedIds);
-      // ...
-    }
-  },
-  [project],
-);
-```
-
-In `handleUpdateProjectTitle` — use `project.slug` and handle slug change:
-```typescript
-const handleUpdateProjectTitle = useCallback(
-  async (title: string) => {
-    if (!project) return;
-    try {
-      const updated = await api.projects.update(project.slug, { title });
-      setProject((prev) => (prev ? { ...prev, title: updated.title, slug: updated.slug } : prev));
-      return updated.slug;  // Return new slug so EditorPage can update URL
-    } catch (err) {
-      setError(err instanceof Error ? err.message : STRINGS.error.updateTitleFailed);
-      return undefined;
-    }
-  },
-  [project],
-);
-```
-
-**Step 5: Update EditorPage.tsx — handle slug change on rename**
-
-In `saveProjectTitle`, update URL when slug changes:
 ```typescript
 async function saveProjectTitle() {
   if (projectEscapePressedRef.current) {
@@ -730,12 +1170,79 @@ async function saveProjectTitle() {
 }
 ```
 
-**Step 6: Run the full test suite**
+**`packages/client/src/hooks/useProjectEditor.ts`** — change parameter and all usages:
 
-Run: `npm test`
-Expected: All tests PASS
+```typescript
+export function useProjectEditor(slug: string | undefined) {
+```
 
-**Step 7: Commit**
+In `loadProject`:
+
+```typescript
+if (!slug) return;
+const data = await api.projects.get(slug);
+```
+
+Update `useEffect` dependency from `projectId` to `slug`:
+
+```typescript
+}, [slug]);
+```
+
+In `handleCreateChapter` — use `project.slug`:
+
+```typescript
+const handleCreateChapter = useCallback(async () => {
+  if (!project) return;
+  try {
+    const newChapter = await api.chapters.create(project.slug);
+    // ... rest unchanged
+  }
+}, [project]);
+```
+
+In `handleReorderChapters` — use `project.slug`:
+
+```typescript
+const handleReorderChapters = useCallback(
+  async (orderedIds: string[]) => {
+    if (!project) return;
+    try {
+      await api.projects.reorderChapters(project.slug, orderedIds);
+      // ... rest unchanged
+    }
+  },
+  [project],
+);
+```
+
+In `handleUpdateProjectTitle` — use `project.slug` and return the new slug:
+
+```typescript
+const handleUpdateProjectTitle = useCallback(
+  async (title: string): Promise<string | undefined> => {
+    if (!project) return undefined;
+    try {
+      const updated = await api.projects.update(project.slug, { title });
+      setProject((prev) =>
+        prev ? { ...prev, title: updated.title, slug: updated.slug } : prev,
+      );
+      return updated.slug;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : STRINGS.error.updateTitleFailed);
+      return undefined;
+    }
+  },
+  [project],
+);
+```
+
+#### REFACTOR
+
+- Check that no stale references to `projectId` remain in EditorPage or useProjectEditor
+- Run: `npm test` — all tests should pass
+
+**Commit:**
 
 ```bash
 git add packages/client/src/App.tsx packages/client/src/pages/HomePage.tsx packages/client/src/pages/EditorPage.tsx packages/client/src/hooks/useProjectEditor.ts
@@ -744,22 +1251,18 @@ git commit -m "feat: switch client routing and navigation from UUIDs to slugs"
 
 ---
 
-### Task 11: Manual smoke test
+### Task 10: Manual smoke test
 
-**Step 1: Start the dev server**
+**Requirement:** End-to-end verification of all slug functionality
 
-Run: `make dev`
+#### Steps
 
-**Step 2: Verify these scenarios in the browser**
-
-1. Create a new project "My Test Novel" → URL should be `/projects/my-test-novel`
-2. Open the project → editor loads correctly
-3. Rename the project to "My Renamed Novel" → URL should update to `/projects/my-renamed-novel` without page reload
-4. Go back to home page → project shows new name
-5. Create another project and try to give it the same name → should see error
-6. Delete a project, create a new one with the same name → should work (partial unique index)
-
-**Step 3: Run full test suite one final time**
-
-Run: `make all`
-Expected: Lint + format + all tests PASS
+1. Start the dev server: `make dev`
+2. Verify in the browser:
+   - Create a new project "My Test Novel" → URL should be `/projects/my-test-novel`
+   - Open the project → editor loads correctly
+   - Rename the project to "My Renamed Novel" → URL should update to `/projects/my-renamed-novel` without page reload
+   - Go back to home page → project shows new name
+   - Create another project and try to give it the same name → should see error
+   - Delete a project, create a new one with the same name → should work (partial unique index)
+3. Run full suite: `make all` — lint + format + all tests PASS
