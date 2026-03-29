@@ -78,14 +78,15 @@ function SortableChapterItem({
         isDragging ? "opacity-50 bg-accent-light" : isActive ? "bg-accent-light" : "hover:bg-bg-hover"
       }`}
     >
-      <span
+      <button
+        type="button"
         {...attributes}
         {...listeners}
         aria-label={STRINGS.sidebar.dragHandle}
-        className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-text-muted cursor-grab active:cursor-grabbing text-sm select-none focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
+        className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-text-muted cursor-grab active:cursor-grabbing text-sm select-none focus:outline-none focus:ring-2 focus:ring-focus-ring rounded border-none bg-transparent p-0"
       >
         ⠿
-      </span>
+      </button>
       {isEditing ? (
         <input
           ref={editInputRef}
