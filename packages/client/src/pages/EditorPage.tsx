@@ -39,6 +39,8 @@ export function EditorPage() {
   const [projectTitleDraft, setProjectTitleDraft] = useState("");
   const projectTitleInputRef = useRef<HTMLInputElement>(null);
   const projectEscapePressedRef = useRef(false);
+  const isSavingTitleRef = useRef(false);
+  const isSavingProjectTitleRef = useRef(false);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<Chapter | null>(null);
@@ -63,8 +65,8 @@ export function EditorPage() {
       const trashed = await api.projects.trash(project.slug);
       setTrashedChapters(trashed);
       setTrashOpen(true);
-    } catch {
-      // Silently fail — trash view just won't open
+    } catch (err) {
+      console.error("Failed to load trash:", err);
     }
   }
 
@@ -80,8 +82,8 @@ export function EditorPage() {
             }
           : prev,
       );
-    } catch {
-      // Silently fail — chapter stays in trash list
+    } catch (err) {
+      console.error("Failed to restore chapter:", err);
     }
   }
 
@@ -147,6 +149,7 @@ export function EditorPage() {
   }
 
   async function saveTitle() {
+    if (isSavingTitleRef.current) return;
     if (escapePressedRef.current) {
       setEditingTitle(false);
       return;
@@ -155,11 +158,16 @@ export function EditorPage() {
       setEditingTitle(false);
       return;
     }
-    const trimmed = titleDraft.trim();
-    if (trimmed !== activeChapter.title) {
-      await handleRenameChapter(activeChapter.id, trimmed);
+    isSavingTitleRef.current = true;
+    try {
+      const trimmed = titleDraft.trim();
+      if (trimmed !== activeChapter.title) {
+        await handleRenameChapter(activeChapter.id, trimmed);
+      }
+      setEditingTitle(false);
+    } finally {
+      isSavingTitleRef.current = false;
     }
-    setEditingTitle(false);
   }
 
   function startEditingProjectTitle() {
@@ -171,6 +179,7 @@ export function EditorPage() {
   }
 
   async function saveProjectTitle() {
+    if (isSavingProjectTitleRef.current) return;
     if (projectEscapePressedRef.current) {
       setEditingProjectTitle(false);
       return;
@@ -179,14 +188,20 @@ export function EditorPage() {
       setEditingProjectTitle(false);
       return;
     }
-    const trimmed = projectTitleDraft.trim();
-    if (trimmed !== project.title) {
-      const newSlug = await handleUpdateProjectTitle(trimmed);
-      if (newSlug && newSlug !== slug) {
-        navigate(`/projects/${newSlug}`, { replace: true });
+    isSavingProjectTitleRef.current = true;
+    try {
+      const trimmed = projectTitleDraft.trim();
+      if (trimmed !== project.title) {
+        const newSlug = await handleUpdateProjectTitle(trimmed);
+        if (newSlug === undefined) return; // keep edit mode open on failure
+        if (newSlug !== slug) {
+          navigate(`/projects/${newSlug}`, { replace: true });
+        }
       }
+      setEditingProjectTitle(false);
+    } finally {
+      isSavingProjectTitleRef.current = false;
     }
-    setEditingProjectTitle(false);
   }
 
   if (error) {
