@@ -9,11 +9,12 @@ interface EditorProps {
   content: Record<string, unknown> | null;
   onSave: (content: Record<string, unknown>) => void;
   onContentChange?: (content: Record<string, unknown>) => void;
+  editorRef?: React.MutableRefObject<{ flushSave: () => void } | null>;
 }
 
 const AUTO_SAVE_DEBOUNCE_MS = 1500;
 
-export function Editor({ content, onSave, onContentChange }: EditorProps) {
+export function Editor({ content, onSave, onContentChange, editorRef }: EditorProps) {
   const onSaveRef = useRef(onSave);
   const onContentChangeRef = useRef(onContentChange);
 
@@ -25,6 +26,7 @@ export function Editor({ content, onSave, onContentChange }: EditorProps) {
     onContentChangeRef.current = onContentChange;
   }, [onContentChange]);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dirtyRef = useRef(false);
 
   const debouncedSave = useCallback(
     (editorInstance: { getJSON: () => Record<string, unknown> }) => {
@@ -33,6 +35,7 @@ export function Editor({ content, onSave, onContentChange }: EditorProps) {
       }
       debounceTimerRef.current = setTimeout(() => {
         onSaveRef.current(editorInstance.getJSON() as Record<string, unknown>);
+        dirtyRef.current = false;
         debounceTimerRef.current = null;
       }, AUTO_SAVE_DEBOUNCE_MS);
     },
@@ -62,16 +65,19 @@ export function Editor({ content, onSave, onContentChange }: EditorProps) {
     ],
     content: content ?? { type: "doc", content: [{ type: "paragraph" }] },
     onUpdate: ({ editor: ed }) => {
+      dirtyRef.current = true;
       onContentChangeRef.current?.(ed.getJSON() as Record<string, unknown>);
       debouncedSave(ed);
     },
     onBlur: ({ editor: ed }) => {
+      if (!dirtyRef.current) return;
       // Immediate save on blur (cancel pending debounce)
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
       }
       onSaveRef.current(ed.getJSON() as Record<string, unknown>);
+      dirtyRef.current = false;
     },
     editorProps: {
       attributes: {
@@ -86,11 +92,28 @@ export function Editor({ content, onSave, onContentChange }: EditorProps) {
   });
 
   useEffect(() => {
+    if (editorRef && editor) {
+      editorRef.current = {
+        flushSave: () => {
+          if (!dirtyRef.current) return;
+          if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
+            debounceTimerRef.current = null;
+          }
+          onSaveRef.current(editor.getJSON() as Record<string, unknown>);
+          dirtyRef.current = false;
+        },
+      };
+    }
+  }, [editor, editorRef]);
+
+  useEffect(() => {
     if (editor && content) {
       const currentJSON = JSON.stringify(editor.getJSON());
       const newJSON = JSON.stringify(content);
       if (currentJSON !== newJSON) {
         editor.commands.setContent(content);
+        dirtyRef.current = false;
       }
     }
   }, [editor, content]);

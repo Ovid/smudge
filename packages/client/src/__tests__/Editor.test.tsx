@@ -57,20 +57,21 @@ describe("Editor", () => {
     }
   });
 
-  it("calls onSave when editor loses focus", async () => {
+  it("does not fire onSave on blur when content is unchanged", async () => {
     const onSave = vi.fn();
-    const { container } = render(<Editor content={null} onSave={onSave} />);
+    const content = { type: "doc", content: [{ type: "paragraph" }] };
+    const { container } = render(<Editor content={content} onSave={onSave} />);
 
     const editorEl = container.querySelector("[role='textbox']") as HTMLElement;
     expect(editorEl).not.toBeNull();
 
-    // Focus then blur to trigger onSave
+    // Focus then blur without typing — should not save
     fireEvent.focus(editorEl);
     fireEvent.blur(editorEl);
 
-    await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }));
-    });
+    // Give it a tick to ensure nothing fires
+    await new Promise((r) => setTimeout(r, 50));
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it("calls onSave after debounce when content changes (auto-save)", async () => {
