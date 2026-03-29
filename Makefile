@@ -1,4 +1,4 @@
-.PHONY: all test cover lint format dev build help
+.PHONY: all test cover lint format dev build clean help
 
 all: lint format test ## Lint, format, and test
 
@@ -19,6 +19,9 @@ dev: ## Start dev servers (server + client)
 
 build: ## Build client for production
 	npm run build -w packages/client
+
+clean: ## Remove SQLite database files (full reset)
+	rm -f packages/server/data/smudge.db packages/server/data/smudge.db-shm packages/server/data/smudge.db-wal
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'
