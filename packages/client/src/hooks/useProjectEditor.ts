@@ -80,6 +80,7 @@ export function useProjectEditor(projectId: string | undefined) {
         }
       }
       setSaveStatus("error");
+      throw new Error("Save failed after retries");
     },
     [activeChapter],
   );
