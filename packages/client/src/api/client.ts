@@ -58,7 +58,8 @@ export const api = {
         body: JSON.stringify(data),
       }),
 
-    delete: (slug: string) => apiFetch<{ message: string }>(`/projects/${slug}`, { method: "DELETE" }),
+    delete: (slug: string) =>
+      apiFetch<{ message: string }>(`/projects/${slug}`, { method: "DELETE" }),
 
     reorderChapters: (slug: string, chapterIds: string[]) =>
       apiFetch<{ message: string }>(`/projects/${slug}/chapters/order`, {

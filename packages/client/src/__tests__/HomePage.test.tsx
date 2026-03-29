@@ -65,8 +65,22 @@ describe("HomePage", () => {
 
   it("renders project list", async () => {
     vi.mocked(api.projects.list).mockResolvedValue([
-      { id: "p1", slug: "novel-one", title: "Novel One", mode: "fiction", total_word_count: 1234, updated_at: "" },
-      { id: "p2", slug: "memoir", title: "Memoir", mode: "nonfiction", total_word_count: 5678, updated_at: "" },
+      {
+        id: "p1",
+        slug: "novel-one",
+        title: "Novel One",
+        mode: "fiction",
+        total_word_count: 1234,
+        updated_at: "",
+      },
+      {
+        id: "p2",
+        slug: "memoir",
+        title: "Memoir",
+        mode: "nonfiction",
+        total_word_count: 5678,
+        updated_at: "",
+      },
     ]);
     renderHomePage();
 
@@ -82,7 +96,14 @@ describe("HomePage", () => {
 
   it("navigates to project on click", async () => {
     vi.mocked(api.projects.list).mockResolvedValue([
-      { id: "p1", slug: "novel-one", title: "Novel One", mode: "fiction", total_word_count: 0, updated_at: "" },
+      {
+        id: "p1",
+        slug: "novel-one",
+        title: "Novel One",
+        mode: "fiction",
+        total_word_count: 0,
+        updated_at: "",
+      },
     ]);
     renderHomePage();
 
@@ -144,7 +165,14 @@ describe("HomePage", () => {
 
   it("shows a delete button for each project", async () => {
     vi.mocked(api.projects.list).mockResolvedValue([
-      { id: "p1", slug: "novel-one", title: "Novel One", mode: "fiction", total_word_count: 0, updated_at: "" },
+      {
+        id: "p1",
+        slug: "novel-one",
+        title: "Novel One",
+        mode: "fiction",
+        total_word_count: 0,
+        updated_at: "",
+      },
     ]);
     renderHomePage();
 
@@ -157,7 +185,14 @@ describe("HomePage", () => {
 
   it("shows confirmation dialog before deleting", async () => {
     vi.mocked(api.projects.list).mockResolvedValue([
-      { id: "p1", slug: "novel-one", title: "Novel One", mode: "fiction", total_word_count: 0, updated_at: "" },
+      {
+        id: "p1",
+        slug: "novel-one",
+        title: "Novel One",
+        mode: "fiction",
+        total_word_count: 0,
+        updated_at: "",
+      },
     ]);
     renderHomePage();
 
@@ -174,7 +209,14 @@ describe("HomePage", () => {
 
   it("deletes project on confirmation and removes from list", async () => {
     vi.mocked(api.projects.list).mockResolvedValue([
-      { id: "p1", slug: "novel-one", title: "Novel One", mode: "fiction", total_word_count: 0, updated_at: "" },
+      {
+        id: "p1",
+        slug: "novel-one",
+        title: "Novel One",
+        mode: "fiction",
+        total_word_count: 0,
+        updated_at: "",
+      },
     ]);
     vi.mocked(api.projects.delete).mockResolvedValue(undefined);
     renderHomePage();
@@ -193,7 +235,14 @@ describe("HomePage", () => {
 
   it("cancels delete and keeps project in list", async () => {
     vi.mocked(api.projects.list).mockResolvedValue([
-      { id: "p1", slug: "novel-one", title: "Novel One", mode: "fiction", total_word_count: 0, updated_at: "" },
+      {
+        id: "p1",
+        slug: "novel-one",
+        title: "Novel One",
+        mode: "fiction",
+        total_word_count: 0,
+        updated_at: "",
+      },
     ]);
     renderHomePage();
 

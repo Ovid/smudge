@@ -1,7 +1,12 @@
 import { Router } from "express";
 import type { Knex } from "knex";
 import { v4 as uuid } from "uuid";
-import { CreateProjectSchema, UpdateProjectSchema, ReorderChaptersSchema, generateSlug } from "@smudge/shared";
+import {
+  CreateProjectSchema,
+  UpdateProjectSchema,
+  ReorderChaptersSchema,
+  generateSlug,
+} from "@smudge/shared";
 import { asyncHandler } from "../app";
 import { parseChapterContent } from "./parseChapterContent";
 import { resolveUniqueSlug } from "./resolve-slug";
@@ -26,10 +31,7 @@ export function projectsRouter(db: Knex): Router {
       const { title, mode } = parsed.data;
 
       // Check title uniqueness
-      const existingTitle = await db("projects")
-        .where({ title })
-        .whereNull("deleted_at")
-        .first();
+      const existingTitle = await db("projects").where({ title }).whereNull("deleted_at").first();
       if (existingTitle) {
         res.status(400).json({
           error: {

@@ -169,34 +169,29 @@ export function useProjectEditor(slug: string | undefined) {
     [activeChapter],
   );
 
-  const handleReorderChapters = useCallback(
-    async (orderedIds: string[]) => {
-      const slug = projectSlugRef.current;
-      if (!slug) return;
-      try {
-        await api.projects.reorderChapters(slug, orderedIds);
-        setProject((prev) => {
-          if (!prev) return prev;
-          const reordered = orderedIds
-            .map((id) => prev.chapters.find((c) => c.id === id))
-            .filter(Boolean) as Chapter[];
-          return { ...prev, chapters: reordered };
-        });
-      } catch (err) {
-        setError(err instanceof Error ? err.message : STRINGS.error.reorderFailed);
-      }
-    },
-    [],
-  );
+  const handleReorderChapters = useCallback(async (orderedIds: string[]) => {
+    const slug = projectSlugRef.current;
+    if (!slug) return;
+    try {
+      await api.projects.reorderChapters(slug, orderedIds);
+      setProject((prev) => {
+        if (!prev) return prev;
+        const reordered = orderedIds
+          .map((id) => prev.chapters.find((c) => c.id === id))
+          .filter(Boolean) as Chapter[];
+        return { ...prev, chapters: reordered };
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : STRINGS.error.reorderFailed);
+    }
+  }, []);
 
   const handleUpdateProjectTitle = useCallback(
     async (title: string): Promise<string | undefined> => {
       if (!project) return undefined;
       try {
         const updated = await api.projects.update(project.slug, { title });
-        setProject((prev) =>
-          prev ? { ...prev, title: updated.title, slug: updated.slug } : prev,
-        );
+        setProject((prev) => (prev ? { ...prev, title: updated.title, slug: updated.slug } : prev));
         return updated.slug;
       } catch (err) {
         setError(err instanceof Error ? err.message : STRINGS.error.updateTitleFailed);

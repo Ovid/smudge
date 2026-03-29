@@ -59,9 +59,7 @@ describe("POST /api/projects", () => {
   });
 
   it("returns 400 when title duplicates an existing project", async () => {
-    await request(t.app)
-      .post("/api/projects")
-      .send({ title: "My Novel", mode: "fiction" });
+    await request(t.app).post("/api/projects").send({ title: "My Novel", mode: "fiction" });
 
     const res = await request(t.app)
       .post("/api/projects")
@@ -172,9 +170,7 @@ describe("PATCH /api/projects/:slug", () => {
       .post("/api/projects")
       .send({ title: "My Book", mode: "fiction" });
 
-    const res = await request(t.app)
-      .patch(`/api/projects/${createRes.body.slug}`)
-      .send({});
+    const res = await request(t.app).patch(`/api/projects/${createRes.body.slug}`).send({});
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
@@ -193,9 +189,7 @@ describe("PATCH /api/projects/:slug", () => {
   });
 
   it("returns 400 when renaming to a duplicate title", async () => {
-    await request(t.app)
-      .post("/api/projects")
-      .send({ title: "First", mode: "fiction" });
+    await request(t.app).post("/api/projects").send({ title: "First", mode: "fiction" });
     const second = await request(t.app)
       .post("/api/projects")
       .send({ title: "Second", mode: "fiction" });
@@ -307,11 +301,7 @@ describe("PUT /api/projects/:slug/chapters/order", () => {
     expect(res.status).toBe(200);
 
     const updated = await request(t.app).get(`/api/projects/${projectSlug}`);
-    expect(updated.body.chapters.map((c: { id: string }) => c.id)).toEqual([
-      ch3Id,
-      ch2Id,
-      ch1Id,
-    ]);
+    expect(updated.body.chapters.map((c: { id: string }) => c.id)).toEqual([ch3Id, ch2Id, ch1Id]);
   });
 
   it("returns 400 if chapter IDs don't match", async () => {
@@ -333,9 +323,7 @@ describe("PUT /api/projects/:slug/chapters/order", () => {
       .send({ title: "Test", mode: "fiction" });
     const projectSlug = projectRes.body.slug;
 
-    const res = await request(t.app)
-      .put(`/api/projects/${projectSlug}/chapters/order`)
-      .send({});
+    const res = await request(t.app).put(`/api/projects/${projectSlug}/chapters/order`).send({});
 
     expect(res.status).toBe(400);
   });
