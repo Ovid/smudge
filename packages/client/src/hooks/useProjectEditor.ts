@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import type { ProjectWithChapters, Chapter } from "@smudge/shared";
 import { countWords } from "@smudge/shared";
 import { api, ApiRequestError } from "../api/client";
+import { getCachedContent, setCachedContent, clearCachedContent } from "./useContentCache";
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -31,8 +32,10 @@ export function useProjectEditor(projectId: string | undefined) {
         if (firstChapter && !activeChapterRef.current) {
           const chapter = await api.chapters.get(firstChapter.id);
           if (cancelled) return;
-          setActiveChapter(chapter);
-          setChapterWordCount(countWords(chapter.content));
+          const cached = getCachedContent(chapter.id);
+          const effectiveChapter = cached ? { ...chapter, content: cached } : chapter;
+          setActiveChapter(effectiveChapter);
+          setChapterWordCount(countWords(effectiveChapter.content));
         }
       } catch (err) {
         if (cancelled) return;
@@ -71,6 +74,7 @@ export function useProjectEditor(projectId: string | undefined) {
               ),
             };
           });
+          clearCachedContent(savingChapterId);
           setSaveStatus("saved");
           return;
         } catch (err) {
@@ -86,9 +90,15 @@ export function useProjectEditor(projectId: string | undefined) {
     [activeChapter],
   );
 
-  const handleContentChange = useCallback((content: Record<string, unknown>) => {
-    setChapterWordCount(countWords(content));
-  }, []);
+  const handleContentChange = useCallback(
+    (content: Record<string, unknown>) => {
+      setChapterWordCount(countWords(content));
+      if (activeChapter) {
+        setCachedContent(activeChapter.id, content);
+      }
+    },
+    [activeChapter],
+  );
 
   const handleCreateChapter = useCallback(async () => {
     if (!projectId) return;
@@ -107,8 +117,10 @@ export function useProjectEditor(projectId: string | undefined) {
       if (activeChapter && chapterId === activeChapter.id) return;
       try {
         const chapter = await api.chapters.get(chapterId);
-        setActiveChapter(chapter);
-        setChapterWordCount(countWords(chapter.content));
+        const cached = getCachedContent(chapterId);
+        const effectiveChapter = cached ? { ...chapter, content: cached } : chapter;
+        setActiveChapter(effectiveChapter);
+        setChapterWordCount(countWords(effectiveChapter.content));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load chapter");
       }
