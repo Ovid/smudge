@@ -6,7 +6,7 @@ test: ## Run full test suite
 	npm test
 
 cover: ## Generate code coverage report (one-shot)
-	npx vitest run --workspace vitest.workspace.ts --coverage -- --run
+	npm exec -w packages/shared -- vitest run --coverage && npm exec -w packages/server -- vitest run --coverage && npm exec -w packages/client -- vitest run --coverage --passWithNoTests
 
 lint: ## Lint with autofix
 	npm run lint
