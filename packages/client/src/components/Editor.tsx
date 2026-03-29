@@ -6,7 +6,7 @@ import { STRINGS } from "../strings";
 
 interface EditorProps {
   content: Record<string, unknown> | null;
-  onSave: (content: Record<string, unknown>) => void;
+  onSave: (content: Record<string, unknown>) => Promise<boolean>;
   onContentChange?: (content: Record<string, unknown>) => void;
   editorRef?: React.MutableRefObject<{ flushSave: () => void } | null>;
 }
@@ -34,12 +34,8 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
         clearTimeout(debounceTimerRef.current);
       }
       debounceTimerRef.current = setTimeout(async () => {
-        try {
-          await onSaveRef.current(editorInstance.getJSON() as Record<string, unknown>);
-          dirtyRef.current = false;
-        } catch {
-          dirtyRef.current = true;
-        }
+        const ok = await onSaveRef.current(editorInstance.getJSON() as Record<string, unknown>);
+        dirtyRef.current = !ok;
         debounceTimerRef.current = null;
       }, AUTO_SAVE_DEBOUNCE_MS);
     },
@@ -90,10 +86,9 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
       }
-      onSaveRef.current(ed.getJSON() as Record<string, unknown>).then(
-        () => { dirtyRef.current = false; },
-        () => { dirtyRef.current = true; },
-      );
+      onSaveRef.current(ed.getJSON() as Record<string, unknown>).then((ok) => {
+        dirtyRef.current = !ok;
+      });
     },
     editorProps: {
       attributes: {
@@ -120,10 +115,9 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
             clearTimeout(debounceTimerRef.current);
             debounceTimerRef.current = null;
           }
-          onSaveRef.current(editor.getJSON() as Record<string, unknown>).then(
-            () => { dirtyRef.current = false; },
-            () => { dirtyRef.current = true; },
-          );
+          onSaveRef.current(editor.getJSON() as Record<string, unknown>).then((ok) => {
+            dirtyRef.current = !ok;
+          });
         },
       };
     }

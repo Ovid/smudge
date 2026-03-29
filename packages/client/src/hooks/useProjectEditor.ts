@@ -51,8 +51,8 @@ export function useProjectEditor(projectId: string | undefined) {
   }, [projectId]);
 
   const handleSave = useCallback(
-    async (content: Record<string, unknown>) => {
-      if (!activeChapter) return;
+    async (content: Record<string, unknown>): Promise<boolean> => {
+      if (!activeChapter) return false;
       const savingChapterId = activeChapter.id;
       const BACKOFF_MS = [2000, 4000, 8000];
       const MAX_RETRIES = 3;
@@ -68,15 +68,13 @@ export function useProjectEditor(projectId: string | undefined) {
             return {
               ...prev,
               chapters: prev.chapters.map((c) =>
-                c.id === savingChapterId
-                  ? { ...c, word_count: updated.word_count, content }
-                  : c,
+                c.id === savingChapterId ? { ...c, word_count: updated.word_count, content } : c,
               ),
             };
           });
           clearCachedContent(savingChapterId);
           setSaveStatus("saved");
-          return;
+          return true;
         } catch (err) {
           if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) break;
           if (attempt < MAX_RETRIES) {
@@ -85,7 +83,7 @@ export function useProjectEditor(projectId: string | undefined) {
         }
       }
       setSaveStatus("error");
-      throw new Error("Save failed after retries");
+      return false;
     },
     [activeChapter],
   );

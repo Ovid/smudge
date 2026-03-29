@@ -162,7 +162,7 @@ describe("useProjectEditor", () => {
         await vi.advanceTimersByTimeAsync(2000);
         await vi.advanceTimersByTimeAsync(4000);
         await vi.advanceTimersByTimeAsync(8000);
-        await expect(p).rejects.toThrow("Save failed after retries");
+        expect(await p).toBe(false);
       });
 
       expect(result.current.saveStatus).toBe("error");
