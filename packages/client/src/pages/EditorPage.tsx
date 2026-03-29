@@ -5,6 +5,7 @@ import { Editor } from "../components/Editor";
 import { Sidebar } from "../components/Sidebar";
 import { TrashView } from "../components/TrashView";
 import { PreviewMode } from "../components/PreviewMode";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { STRINGS } from "../strings";
 import { useProjectEditor } from "../hooks/useProjectEditor";
 import { api } from "../api/client";
@@ -374,36 +375,14 @@ export function EditorPage() {
       </div>
 
       {deleteTarget && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-          role="alertdialog"
-          aria-modal="true"
-          aria-label="Confirm delete"
-          aria-describedby="delete-confirm-body"
-        >
-          <div className="rounded bg-bg-primary p-6 shadow-lg max-w-sm w-full mx-4">
-            <p className="text-text-primary font-medium mb-2">
-              {STRINGS.delete.confirmTitle(deleteTarget.title)}
-            </p>
-            <p id="delete-confirm-body" className="text-text-secondary text-sm mb-4">
-              {STRINGS.delete.confirmBody}
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setDeleteTarget(null)}
-                className="rounded px-4 py-2 text-text-secondary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-focus-ring"
-              >
-                {STRINGS.delete.cancelButton}
-              </button>
-              <button
-                onClick={confirmDeleteChapter}
-                className="rounded bg-status-error px-4 py-2 text-text-inverse hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-focus-ring"
-              >
-                {STRINGS.delete.confirmButton}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title={STRINGS.delete.confirmTitle(deleteTarget.title)}
+          body={STRINGS.delete.confirmBody}
+          confirmLabel={STRINGS.delete.confirmButton}
+          cancelLabel={STRINGS.delete.cancelButton}
+          onConfirm={confirmDeleteChapter}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
 
       {shortcutHelpOpen && (

@@ -2,17 +2,7 @@ import { Router } from "express";
 import type { Knex } from "knex";
 import { UpdateChapterSchema, countWords } from "@smudge/shared";
 import { asyncHandler } from "../app";
-
-function parseChapterContent(chapter: Record<string, unknown>) {
-  if (typeof chapter.content === "string") {
-    try {
-      return { ...chapter, content: JSON.parse(chapter.content) };
-    } catch {
-      return { ...chapter, content: null };
-    }
-  }
-  return { ...chapter, content: chapter.content ?? null };
-}
+import { parseChapterContent } from "./parseChapterContent";
 
 export function chaptersRouter(db: Knex): Router {
   const router = Router();

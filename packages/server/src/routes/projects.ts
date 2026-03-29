@@ -3,6 +3,7 @@ import type { Knex } from "knex";
 import { v4 as uuid } from "uuid";
 import { CreateProjectSchema, UpdateProjectSchema, ReorderChaptersSchema } from "@smudge/shared";
 import { asyncHandler } from "../app";
+import { parseChapterContent } from "./parseChapterContent";
 
 export function projectsRouter(db: Knex): Router {
   const router = Router();
@@ -131,16 +132,9 @@ export function projectsRouter(db: Knex): Router {
         .orderBy("sort_order", "asc")
         .select("*");
 
-      const parsedChapters = chapters.map((ch: Record<string, unknown>) => {
-        if (typeof ch.content === "string") {
-          try {
-            return { ...ch, content: JSON.parse(ch.content as string) };
-          } catch {
-            return { ...ch, content: null };
-          }
-        }
-        return { ...ch, content: ch.content ?? null };
-      });
+      const parsedChapters = chapters.map((ch: Record<string, unknown>) =>
+        parseChapterContent(ch),
+      );
 
       res.json({ ...project, chapters: parsedChapters });
     }),
@@ -184,7 +178,7 @@ export function projectsRouter(db: Knex): Router {
       await db("projects").where({ id: req.params.id }).update({ updated_at: now });
 
       const chapter = await db("chapters").where({ id: chapterId }).first();
-      res.status(201).json({ ...chapter, content: chapter.content ?? null });
+      res.status(201).json(parseChapterContent(chapter));
     }),
   );
 
@@ -266,18 +260,7 @@ export function projectsRouter(db: Knex): Router {
         .orderBy("deleted_at", "desc")
         .select("*");
 
-      const parsed = trashed.map((ch: Record<string, unknown>) => {
-        if (typeof ch.content === "string") {
-          try {
-            return { ...ch, content: JSON.parse(ch.content as string) };
-          } catch {
-            return { ...ch, content: null };
-          }
-        }
-        return { ...ch, content: ch.content ?? null };
-      });
-
-      res.json(parsed);
+      res.json(trashed.map((ch: Record<string, unknown>) => parseChapterContent(ch)));
     }),
   );
 
