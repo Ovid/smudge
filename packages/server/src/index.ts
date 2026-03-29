@@ -37,7 +37,12 @@ async function main() {
 }
 
 main().catch((err: unknown) => {
-  if (err instanceof Error && "code" in err && typeof (err as Record<string, unknown>).code === "string" && (err as Record<string, unknown>).code?.toString().startsWith("SQLITE_IOERR")) {
+  if (
+    err instanceof Error &&
+    "code" in err &&
+    typeof (err as Record<string, unknown>).code === "string" &&
+    (err as Record<string, unknown>).code?.toString().startsWith("SQLITE_IOERR")
+  ) {
     console.error("Database file is corrupt or has stale WAL files.");
     console.error("Run 'make clean' to reset, or manually delete packages/server/data/smudge.db*");
   } else {

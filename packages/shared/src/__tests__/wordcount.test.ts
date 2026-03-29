@@ -13,9 +13,7 @@ describe("countWords", () => {
   it("counts words in simple paragraph", () => {
     const doc = {
       type: "doc",
-      content: [
-        { type: "paragraph", content: [{ type: "text", text: "Hello world" }] },
-      ],
+      content: [{ type: "paragraph", content: [{ type: "text", text: "Hello world" }] }],
     };
     expect(countWords(doc)).toBe(2);
   });
@@ -48,9 +46,7 @@ describe("countWords", () => {
       content: [
         {
           type: "blockquote",
-          content: [
-            { type: "paragraph", content: [{ type: "text", text: "Quoted text here" }] },
-          ],
+          content: [{ type: "paragraph", content: [{ type: "text", text: "Quoted text here" }] }],
         },
       ],
     };
@@ -60,9 +56,7 @@ describe("countWords", () => {
   it("handles contractions as single words", () => {
     const doc = {
       type: "doc",
-      content: [
-        { type: "paragraph", content: [{ type: "text", text: "don't can't won't" }] },
-      ],
+      content: [{ type: "paragraph", content: [{ type: "text", text: "don't can't won't" }] }],
     };
     expect(countWords(doc)).toBe(3);
   });
@@ -70,9 +64,7 @@ describe("countWords", () => {
   it("handles hyphenated compounds", () => {
     const doc = {
       type: "doc",
-      content: [
-        { type: "paragraph", content: [{ type: "text", text: "well-known self-aware" }] },
-      ],
+      content: [{ type: "paragraph", content: [{ type: "text", text: "well-known self-aware" }] }],
     };
     // Intl.Segmenter treats hyphenated words as separate segments
     const count = countWords(doc);

@@ -40,10 +40,15 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify(data),
       }),
+
+    delete: (id: string) => apiFetch<undefined>(`/projects/${id}`, { method: "DELETE" }),
   },
 
   chapters: {
     get: (id: string) => apiFetch<Chapter>(`/chapters/${id}`),
+
+    create: (projectId: string) =>
+      apiFetch<Chapter>(`/projects/${projectId}/chapters`, { method: "POST" }),
 
     update: (id: string, data: { title?: string; content?: Record<string, unknown> }) =>
       apiFetch<Chapter>(`/chapters/${id}`, {

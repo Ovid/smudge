@@ -10,6 +10,7 @@ vi.mock("../api/client", () => ({
     projects: {
       list: vi.fn(),
       create: vi.fn(),
+      delete: vi.fn(),
     },
   },
 }));
@@ -107,8 +108,8 @@ describe("HomePage", () => {
     // Fill and submit form
     const input = screen.getByRole("textbox");
     await userEvent.type(input, "My Book");
-    const form = input.closest("form")!;
-    const submitButton = form.querySelector("button[type='submit']")!;
+    const form = input.closest("form") as HTMLFormElement;
+    const submitButton = form.querySelector("button[type='submit']") as HTMLButtonElement;
     await userEvent.click(submitButton);
 
     await waitFor(() => {
@@ -129,5 +130,71 @@ describe("HomePage", () => {
     renderHomePage();
 
     expect(screen.getByRole("main")).toHaveAttribute("aria-label", "Main content");
+  });
+
+  it("shows a delete button for each project", async () => {
+    vi.mocked(api.projects.list).mockResolvedValue([
+      { id: "p1", title: "Novel One", mode: "fiction", total_word_count: 0, updated_at: "" },
+    ]);
+    renderHomePage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Novel One")).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("button", { name: /delete/i })).toBeInTheDocument();
+  });
+
+  it("shows confirmation dialog before deleting", async () => {
+    vi.mocked(api.projects.list).mockResolvedValue([
+      { id: "p1", title: "Novel One", mode: "fiction", total_word_count: 0, updated_at: "" },
+    ]);
+    renderHomePage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Novel One")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /delete/i }));
+
+    // Confirmation dialog should appear
+    expect(screen.getByText(/move.*novel one.*to trash/i)).toBeInTheDocument();
+    expect(screen.getByText(/restore.*within 30 days/i)).toBeInTheDocument();
+  });
+
+  it("deletes project on confirmation and removes from list", async () => {
+    vi.mocked(api.projects.list).mockResolvedValue([
+      { id: "p1", title: "Novel One", mode: "fiction", total_word_count: 0, updated_at: "" },
+    ]);
+    vi.mocked(api.projects.delete).mockResolvedValue(undefined);
+    renderHomePage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Novel One")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /delete/i }));
+    await userEvent.click(screen.getByRole("button", { name: /confirm/i }));
+
+    await waitFor(() => {
+      expect(api.projects.delete).toHaveBeenCalledWith("p1");
+    });
+  });
+
+  it("cancels delete and keeps project in list", async () => {
+    vi.mocked(api.projects.list).mockResolvedValue([
+      { id: "p1", title: "Novel One", mode: "fiction", total_word_count: 0, updated_at: "" },
+    ]);
+    renderHomePage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Novel One")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /delete/i }));
+    await userEvent.click(screen.getByRole("button", { name: /cancel/i }));
+
+    expect(screen.getByText("Novel One")).toBeInTheDocument();
+    expect(api.projects.delete).not.toHaveBeenCalled();
   });
 });

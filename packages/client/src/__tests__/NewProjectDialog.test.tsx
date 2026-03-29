@@ -47,7 +47,7 @@ describe("NewProjectDialog", () => {
 
     const input = screen.getByRole("textbox");
     await userEvent.type(input, "  My Novel  ");
-    fireEvent.submit(input.closest("form")!);
+    fireEvent.submit(input.closest("form") as HTMLFormElement);
 
     expect(onCreate).toHaveBeenCalledWith("My Novel", "fiction");
   });
@@ -58,7 +58,7 @@ describe("NewProjectDialog", () => {
 
     const input = screen.getByRole("textbox");
     await userEvent.type(input, "My Novel");
-    fireEvent.submit(input.closest("form")!);
+    fireEvent.submit(input.closest("form") as HTMLFormElement);
 
     expect((input as HTMLInputElement).value).toBe("");
   });
@@ -67,7 +67,7 @@ describe("NewProjectDialog", () => {
     const onCreate = vi.fn();
     render(<NewProjectDialog open={true} onClose={vi.fn()} onCreate={onCreate} />);
 
-    fireEvent.submit(screen.getByRole("textbox").closest("form")!);
+    fireEvent.submit(screen.getByRole("textbox").closest("form") as HTMLFormElement);
     expect(onCreate).not.toHaveBeenCalled();
   });
 
@@ -80,7 +80,7 @@ describe("NewProjectDialog", () => {
 
     const input = screen.getByRole("textbox");
     await userEvent.type(input, "My Memoir");
-    fireEvent.submit(input.closest("form")!);
+    fireEvent.submit(input.closest("form") as HTMLFormElement);
 
     expect(onCreate).toHaveBeenCalledWith("My Memoir", "nonfiction");
   });

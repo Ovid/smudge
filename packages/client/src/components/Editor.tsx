@@ -15,20 +15,29 @@ const AUTO_SAVE_DEBOUNCE_MS = 1500;
 
 export function Editor({ content, onSave, onContentChange }: EditorProps) {
   const onSaveRef = useRef(onSave);
-  onSaveRef.current = onSave;
   const onContentChangeRef = useRef(onContentChange);
-  onContentChangeRef.current = onContentChange;
+
+  useEffect(() => {
+    onSaveRef.current = onSave;
+  }, [onSave]);
+
+  useEffect(() => {
+    onContentChangeRef.current = onContentChange;
+  }, [onContentChange]);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const debouncedSave = useCallback((editorInstance: { getJSON: () => Record<string, unknown> }) => {
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-    debounceTimerRef.current = setTimeout(() => {
-      onSaveRef.current(editorInstance.getJSON() as Record<string, unknown>);
-      debounceTimerRef.current = null;
-    }, AUTO_SAVE_DEBOUNCE_MS);
-  }, []);
+  const debouncedSave = useCallback(
+    (editorInstance: { getJSON: () => Record<string, unknown> }) => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+      debounceTimerRef.current = setTimeout(() => {
+        onSaveRef.current(editorInstance.getJSON() as Record<string, unknown>);
+        debounceTimerRef.current = null;
+      }, AUTO_SAVE_DEBOUNCE_MS);
+    },
+    [],
+  );
 
   // Flush pending save on unmount
   useEffect(() => {

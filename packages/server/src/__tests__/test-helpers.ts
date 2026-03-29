@@ -22,7 +22,11 @@ export function setupTestDb() {
   });
 
   return {
-    get db() { return testDb; },
-    get app() { return createApp(testDb); },
+    get db() {
+      return testDb;
+    },
+    get app() {
+      return createApp(testDb);
+    },
   };
 }

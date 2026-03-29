@@ -17,26 +17,35 @@ export function EditorPage() {
   const [titleDraft, setTitleDraft] = useState("");
   const titleInputRef = useRef<HTMLInputElement>(null);
   const escapePressedRef = useRef(false);
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [editingProjectTitle, setEditingProjectTitle] = useState(false);
   const [projectTitleDraft, setProjectTitleDraft] = useState("");
   const projectTitleInputRef = useRef<HTMLInputElement>(null);
   const projectEscapePressedRef = useRef(false);
 
-  const loadProject = useCallback(async () => {
-    if (!projectId) return;
-    const data = await api.projects.get(projectId);
-    setProject(data);
-    const firstChapter = data.chapters[0];
-    if (firstChapter && !activeChapter) {
-      const chapter = await api.chapters.get(firstChapter.id);
-      setActiveChapter(chapter);
-      setChapterWordCount(countWords(chapter.content));
-    }
-  }, [projectId, activeChapter]);
-
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadProject() {
+      if (!projectId) return;
+      const data = await api.projects.get(projectId);
+      if (cancelled) return;
+      setProject(data);
+      const firstChapter = data.chapters[0];
+      if (firstChapter && !activeChapter) {
+        const chapter = await api.chapters.get(firstChapter.id);
+        if (cancelled) return;
+        setActiveChapter(chapter);
+        setChapterWordCount(countWords(chapter.content));
+      }
+    }
+
     loadProject();
-  }, [loadProject]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, activeChapter]);
 
   const handleSave = useCallback(
     async (content: Record<string, unknown>) => {
@@ -54,12 +63,43 @@ export function EditorPage() {
     [activeChapter],
   );
 
-  const handleContentChange = useCallback(
-    (content: Record<string, unknown>) => {
-      setChapterWordCount(countWords(content));
-    },
-    [],
-  );
+  const handleContentChange = useCallback((content: Record<string, unknown>) => {
+    setChapterWordCount(countWords(content));
+  }, []);
+
+  const handleCreateChapter = useCallback(async () => {
+    if (!projectId) return;
+    const newChapter = await api.chapters.create(projectId);
+    setActiveChapter(newChapter);
+    setChapterWordCount(0);
+    setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
+  }, [projectId]);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const ctrl = e.ctrlKey || e.metaKey;
+
+      if (ctrl && e.key === "/") {
+        e.preventDefault();
+        setShortcutHelpOpen((prev) => !prev);
+        return;
+      }
+
+      if (ctrl && e.shiftKey && e.key === "N") {
+        e.preventDefault();
+        handleCreateChapter();
+        return;
+      }
+
+      if (shortcutHelpOpen && e.key === "Escape") {
+        e.preventDefault();
+        setShortcutHelpOpen(false);
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [handleCreateChapter, shortcutHelpOpen]);
 
   function startEditingTitle() {
     if (!activeChapter) return;
@@ -149,7 +189,6 @@ export function EditorPage() {
             <h1
               className="text-lg font-semibold text-text-primary cursor-pointer hover:text-text-secondary"
               onDoubleClick={startEditingProjectTitle}
-              title="Double-click to edit"
               aria-label={project.title}
             >
               {project.title}
@@ -179,13 +218,16 @@ export function EditorPage() {
           <h2
             className="mx-auto max-w-[720px] mb-4 text-2xl font-serif text-text-primary cursor-pointer hover:text-text-secondary"
             onDoubleClick={startEditingTitle}
-            title="Double-click to edit"
             aria-label={activeChapter.title}
           >
             {activeChapter.title}
           </h2>
         )}
-        <Editor content={activeChapter.content} onSave={handleSave} onContentChange={handleContentChange} />
+        <Editor
+          content={activeChapter.content}
+          onSave={handleSave}
+          onContentChange={handleContentChange}
+        />
       </main>
 
       <footer
@@ -193,9 +235,7 @@ export function EditorPage() {
         aria-live="polite"
         className="fixed bottom-0 left-0 right-0 border-t border-border bg-bg-primary px-6 py-2 flex items-center justify-between text-sm text-text-secondary"
       >
-        <div>
-          {STRINGS.project.wordCount(chapterWordCount)}
-        </div>
+        <div>{STRINGS.project.wordCount(chapterWordCount)}</div>
         <div>
           {saveStatus === "saving" && STRINGS.editor.saving}
           {saveStatus === "saved" && STRINGS.editor.saved}
@@ -205,6 +245,41 @@ export function EditorPage() {
           {saveStatus === "idle" && ""}
         </div>
       </footer>
+
+      {shortcutHelpOpen && (
+        <dialog
+          open
+          aria-label={STRINGS.shortcuts.dialogTitle}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 m-0 p-0 w-full h-full border-none bg-transparent"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShortcutHelpOpen(false);
+          }}
+        >
+          <div className="rounded bg-bg-primary p-6 shadow-lg max-w-sm w-full mx-auto mt-[20vh]">
+            <h3 className="text-lg font-semibold text-text-primary mb-4">
+              {STRINGS.shortcuts.dialogTitle}
+            </h3>
+            <dl className="flex flex-col gap-2 text-sm">
+              <div className="flex justify-between">
+                <dt className="text-text-secondary">{STRINGS.shortcuts.togglePreview}</dt>
+                <dd className="font-mono text-text-muted">Ctrl+Shift+P</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-text-secondary">{STRINGS.shortcuts.newChapter}</dt>
+                <dd className="font-mono text-text-muted">Ctrl+Shift+N</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-text-secondary">{STRINGS.shortcuts.toggleSidebar}</dt>
+                <dd className="font-mono text-text-muted">Ctrl+Shift+\</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-text-secondary">{STRINGS.shortcuts.showShortcuts}</dt>
+                <dd className="font-mono text-text-muted">Ctrl+/</dd>
+              </div>
+            </dl>
+          </div>
+        </dialog>
+      )}
     </div>
   );
 }

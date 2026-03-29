@@ -14,12 +14,8 @@ describe("Global error handler", () => {
 
     // Error handler (same as in app.ts)
     app.use(
-      (
-        err: Error,
-        _req: express.Request,
-        res: express.Response,
-        _next: express.NextFunction,
-      ) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
         console.error(err);
         res.status(500).json({
           error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." },

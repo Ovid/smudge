@@ -13,9 +13,7 @@ describe("Editor", () => {
   it("does not show placeholder when content has text", () => {
     const content = {
       type: "doc",
-      content: [
-        { type: "paragraph", content: [{ type: "text", text: "Hello world" }] },
-      ],
+      content: [{ type: "paragraph", content: [{ type: "text", text: "Hello world" }] }],
     };
     const { container } = render(<Editor content={content} onSave={vi.fn()} />);
     expect(within(container).getByText("Hello world")).toBeInTheDocument();
@@ -89,9 +87,12 @@ describe("Editor", () => {
     expect(onSave).not.toHaveBeenCalled();
 
     // Wait for debounce (1500ms) + buffer
-    await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }));
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }));
+      },
+      { timeout: 3000 },
+    );
   });
 
   it("syncs content when prop changes", async () => {

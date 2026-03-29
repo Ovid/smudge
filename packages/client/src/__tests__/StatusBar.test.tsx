@@ -31,9 +31,7 @@ const mockProject = {
       title: "My Chapter",
       content: {
         type: "doc",
-        content: [
-          { type: "paragraph", content: [{ type: "text", text: "Hello world test" }] },
-        ],
+        content: [{ type: "paragraph", content: [{ type: "text", text: "Hello world test" }] }],
       },
       sort_order: 0,
       word_count: 3,
@@ -44,7 +42,7 @@ const mockProject = {
   ],
 };
 
-const mockChapter = mockProject.chapters[0]!;
+const mockChapter = mockProject.chapters[0] as (typeof mockProject.chapters)[0];
 
 function renderEditorPage() {
   return render(

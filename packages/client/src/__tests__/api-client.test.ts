@@ -18,7 +18,9 @@ beforeEach(() => {
 
 describe("api.projects", () => {
   it("list() fetches GET /api/projects", async () => {
-    const projects = [{ id: "1", title: "P1", mode: "fiction", total_word_count: 0, updated_at: "" }];
+    const projects = [
+      { id: "1", title: "P1", mode: "fiction", total_word_count: 0, updated_at: "" },
+    ];
     mockFetch.mockResolvedValue(jsonResponse(projects));
 
     const result = await api.projects.list();
@@ -89,9 +91,7 @@ describe("error handling", () => {
   });
 
   it("throws with fallback message when error body lacks message", async () => {
-    mockFetch.mockResolvedValue(
-      jsonResponse({ error: {} }, 500),
-    );
+    mockFetch.mockResolvedValue(jsonResponse({ error: {} }, 500));
 
     await expect(api.projects.list()).rejects.toThrow("Request failed: 500");
   });

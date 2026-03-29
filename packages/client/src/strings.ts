@@ -20,12 +20,26 @@ export const STRINGS = {
   chapter: {
     untitledDefault: "Untitled Chapter",
   },
+  delete: {
+    buttonLabel: "Delete",
+    confirmTitle: (name: string) => `Move \u201c${name}\u201d to trash?`,
+    confirmBody: "You can restore it within 30 days.",
+    confirmButton: "Confirm",
+    cancelButton: "Cancel",
+  },
   editor: {
     placeholder: "Start writing\u2026",
     saving: "Saving\u2026",
     saved: "Saved",
     unsaved: "Unsaved changes",
     saveFailed: "Unable to save \u2014 check connection",
+  },
+  shortcuts: {
+    dialogTitle: "Keyboard Shortcuts",
+    togglePreview: "Toggle preview",
+    newChapter: "New chapter",
+    toggleSidebar: "Toggle sidebar",
+    showShortcuts: "Keyboard shortcuts",
   },
   a11y: {
     mainContent: "Main content",

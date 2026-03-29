@@ -17,6 +17,43 @@ async function createProjectWithChapter(app: ReturnType<typeof setupTestDb>["app
   return { projectId, chapterId };
 }
 
+describe("POST /api/projects/:id/chapters", () => {
+  it("creates a new chapter appended to end", async () => {
+    const { projectId } = await createProjectWithChapter(t.app);
+
+    const res = await request(t.app).post(`/api/projects/${projectId}/chapters`).send();
+
+    expect(res.status).toBe(201);
+    expect(res.body.title).toBe("Untitled Chapter");
+    expect(res.body.project_id).toBe(projectId);
+    expect(res.body.sort_order).toBe(1); // after the auto-created chapter at 0
+  });
+
+  it("returns 404 for non-existent project", async () => {
+    const res = await request(t.app).post("/api/projects/nonexistent-id/chapters").send();
+
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 for deleted project", async () => {
+    const { projectId } = await createProjectWithChapter(t.app);
+    await request(t.app).delete(`/api/projects/${projectId}`);
+
+    const res = await request(t.app).post(`/api/projects/${projectId}/chapters`).send();
+
+    expect(res.status).toBe(404);
+  });
+
+  it("increments sort_order for each new chapter", async () => {
+    const { projectId } = await createProjectWithChapter(t.app);
+
+    await request(t.app).post(`/api/projects/${projectId}/chapters`).send();
+    const res = await request(t.app).post(`/api/projects/${projectId}/chapters`).send();
+
+    expect(res.body.sort_order).toBe(2);
+  });
+});
+
 describe("GET /api/chapters/:id", () => {
   it("returns chapter by id", async () => {
     const { chapterId } = await createProjectWithChapter(t.app);
@@ -43,9 +80,7 @@ describe("PATCH /api/chapters/:id", () => {
       content: [{ type: "paragraph", content: [{ type: "text", text: "Hello world" }] }],
     };
 
-    const res = await request(t.app)
-      .patch(`/api/chapters/${chapterId}`)
-      .send({ content });
+    const res = await request(t.app).patch(`/api/chapters/${chapterId}`).send({ content });
 
     expect(res.status).toBe(200);
     expect(res.body.content).toEqual(content);
@@ -76,18 +111,14 @@ describe("PATCH /api/chapters/:id", () => {
   it("returns 400 when body is empty", async () => {
     const { chapterId } = await createProjectWithChapter(t.app);
 
-    const res = await request(t.app)
-      .patch(`/api/chapters/${chapterId}`)
-      .send({});
+    const res = await request(t.app).patch(`/api/chapters/${chapterId}`).send({});
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
   });
 
   it("returns 404 for non-existent chapter", async () => {
-    const res = await request(t.app)
-      .patch("/api/chapters/nonexistent-id")
-      .send({ title: "Nope" });
+    const res = await request(t.app).patch("/api/chapters/nonexistent-id").send({ title: "Nope" });
 
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe("NOT_FOUND");
@@ -102,9 +133,7 @@ describe("PATCH /api/chapters/:id", () => {
     };
 
     // Save valid content first
-    await request(t.app)
-      .patch(`/api/chapters/${chapterId}`)
-      .send({ content: validContent });
+    await request(t.app).patch(`/api/chapters/${chapterId}`).send({ content: validContent });
 
     // Attempt invalid update
     const badRes = await request(t.app)

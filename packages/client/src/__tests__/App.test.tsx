@@ -68,7 +68,9 @@ describe("App", () => {
     };
 
     vi.mocked(api.projects.get).mockResolvedValue(mockProject);
-    vi.mocked(api.chapters.get).mockResolvedValue(mockProject.chapters[0]!);
+    vi.mocked(api.chapters.get).mockResolvedValue(
+      mockProject.chapters[0] as (typeof mockProject.chapters)[0],
+    );
 
     window.history.pushState({}, "", "/projects/p1");
     render(<App />);

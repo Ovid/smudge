@@ -5,7 +5,8 @@ import { UpdateChapterSchema, countWords } from "@smudge/shared";
 function parseChapterContent(chapter: Record<string, unknown>) {
   return {
     ...chapter,
-    content: typeof chapter.content === "string" ? JSON.parse(chapter.content) : chapter.content ?? null,
+    content:
+      typeof chapter.content === "string" ? JSON.parse(chapter.content) : (chapter.content ?? null),
   };
 }
 
@@ -72,9 +73,7 @@ export function chaptersRouter(db: Knex): Router {
       .where({ id: chapter.project_id })
       .update({ updated_at: new Date().toISOString() });
 
-    const updated = await db("chapters")
-      .where({ id: req.params.id })
-      .first();
+    const updated = await db("chapters").where({ id: req.params.id }).first();
 
     res.json(parseChapterContent(updated));
   });

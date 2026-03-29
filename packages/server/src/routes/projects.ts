@@ -54,11 +54,11 @@ export function projectsRouter(db: Knex): Router {
 
     const result = await Promise.all(
       projects.map(async (p) => {
-        const { total } = await db("chapters")
+        const { total } = (await db("chapters")
           .where({ project_id: p.id })
           .whereNull("deleted_at")
           .sum("word_count as total")
-          .first() as { total: number };
+          .first()) as { total: number };
         return { ...p, total_word_count: total ?? 0 };
       }),
     );
@@ -115,6 +115,64 @@ export function projectsRouter(db: Knex): Router {
       .select("*");
 
     res.json({ ...project, chapters });
+  });
+
+  router.post("/:id/chapters", async (req, res) => {
+    const project = await db("projects")
+      .where({ id: req.params.id })
+      .whereNull("deleted_at")
+      .first();
+
+    if (!project) {
+      res.status(404).json({
+        error: { code: "NOT_FOUND", message: "Project not found." },
+      });
+      return;
+    }
+
+    const maxOrder = (await db("chapters")
+      .where({ project_id: req.params.id })
+      .whereNull("deleted_at")
+      .max("sort_order as max")
+      .first()) as { max: number | null };
+
+    const chapterId = uuid();
+    const now = new Date().toISOString();
+
+    await db("chapters").insert({
+      id: chapterId,
+      project_id: req.params.id,
+      title: "Untitled Chapter",
+      content: null,
+      sort_order: (maxOrder?.max ?? -1) + 1,
+      word_count: 0,
+      created_at: now,
+      updated_at: now,
+    });
+
+    await db("projects").where({ id: req.params.id }).update({ updated_at: now });
+
+    const chapter = await db("chapters").where({ id: chapterId }).first();
+    res.status(201).json(chapter);
+  });
+
+  router.delete("/:id", async (req, res) => {
+    const project = await db("projects")
+      .where({ id: req.params.id })
+      .whereNull("deleted_at")
+      .first();
+
+    if (!project) {
+      res.status(404).json({
+        error: { code: "NOT_FOUND", message: "Project not found." },
+      });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    await db("projects").where({ id: req.params.id }).update({ deleted_at: now });
+
+    res.json({ message: "Project moved to trash." });
   });
 
   return router;

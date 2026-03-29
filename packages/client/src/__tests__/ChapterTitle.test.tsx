@@ -41,7 +41,7 @@ const mockProject = {
   ],
 };
 
-const mockChapter = mockProject.chapters[0]!;
+const mockChapter = mockProject.chapters[0] as (typeof mockProject.chapters)[0];
 
 function renderEditorPage() {
   return render(
@@ -52,6 +52,35 @@ function renderEditorPage() {
     </MemoryRouter>,
   );
 }
+
+describe("A11y: title attributes", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.projects.get).mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
+  });
+
+  it("does not use title attribute on chapter heading (leaks into accessible name)", async () => {
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2 })).toBeInTheDocument();
+    });
+    const h2 = screen.getByRole("heading", { level: 2 });
+    expect(h2).not.toHaveAttribute("title");
+    expect(h2).toHaveAttribute("aria-label", "My Chapter");
+  });
+
+  it("does not use title attribute on project heading (leaks into accessible name)", async () => {
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument();
+    });
+    const h1 = screen.getByRole("heading", { level: 1 });
+    expect(h1).not.toHaveAttribute("title");
+  });
+});
 
 describe("Chapter title editing", () => {
   afterEach(() => {
@@ -71,9 +100,9 @@ describe("Chapter title editing", () => {
   async function findChapterTitle(): Promise<HTMLElement> {
     // Wait for the page to load, then find the h2 with the chapter title
     await waitFor(() => {
-      expect(document.querySelector("h2[title='Double-click to edit']")).not.toBeNull();
+      expect(screen.queryByRole("heading", { level: 2 })).not.toBeNull();
     });
-    return document.querySelector("h2[title='Double-click to edit']") as HTMLElement;
+    return screen.queryByRole("heading", { level: 2 }) as HTMLElement;
   }
 
   function getTitleInput(): HTMLInputElement {
@@ -122,7 +151,7 @@ describe("Chapter title editing", () => {
     await userEvent.type(input, "Something else{Escape}");
 
     expect(api.chapters.update).not.toHaveBeenCalled();
-    const restoredTitle = document.querySelector("h2[title='Double-click to edit']");
+    const restoredTitle = screen.queryByRole("heading", { level: 2 });
     expect(restoredTitle?.textContent).toBe("My Chapter");
   });
 
@@ -214,7 +243,7 @@ describe("EditorPage save status", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      expect(document.querySelector("h2[title='Double-click to edit']")).not.toBeNull();
+      expect(screen.queryByRole("heading", { level: 2 })).not.toBeNull();
     });
 
     // Trigger save by blurring the editor
@@ -237,7 +266,7 @@ describe("EditorPage save status", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      expect(document.querySelector("h2[title='Double-click to edit']")).not.toBeNull();
+      expect(screen.queryByRole("heading", { level: 2 })).not.toBeNull();
     });
 
     const editorEl = document.querySelector("[role='textbox']") as HTMLElement;
@@ -256,7 +285,7 @@ describe("EditorPage save status", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      expect(document.querySelector("h2[title='Double-click to edit']")).not.toBeNull();
+      expect(screen.queryByRole("heading", { level: 2 })).not.toBeNull();
     });
 
     const editorEl = document.querySelector("[role='textbox']") as HTMLElement;
@@ -274,7 +303,7 @@ describe("EditorPage save status", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      expect(document.querySelector("h2[title='Double-click to edit']")).not.toBeNull();
+      expect(screen.queryByRole("heading", { level: 2 })).not.toBeNull();
     });
 
     const backButton = screen.getByText(/Projects/);
