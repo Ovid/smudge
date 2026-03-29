@@ -7,6 +7,10 @@ export const CreateProjectSchema = z.object({
   mode: ProjectMode,
 });
 
+export const UpdateProjectSchema = z.object({
+  title: z.string().trim().min(1, "Title is required"),
+});
+
 const TipTapDocSchema = z
   .object({
     type: z.literal("doc"),

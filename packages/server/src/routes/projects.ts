@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { Knex } from "knex";
 import { v4 as uuid } from "uuid";
-import { CreateProjectSchema } from "@smudge/shared";
+import { CreateProjectSchema, UpdateProjectSchema } from "@smudge/shared";
 import { asyncHandler } from "../app";
 
 export function projectsRouter(db: Knex): Router {
@@ -70,10 +70,13 @@ export function projectsRouter(db: Knex): Router {
   }));
 
   router.patch("/:id", asyncHandler(async (req, res) => {
-    const { title } = req.body as { title?: string };
-    if (!title || !title.trim()) {
+    const parsed = UpdateProjectSchema.safeParse(req.body);
+    if (!parsed.success) {
       res.status(400).json({
-        error: { code: "VALIDATION_ERROR", message: "Title is required." },
+        error: {
+          code: "VALIDATION_ERROR",
+          message: parsed.error.issues[0]?.message ?? "Invalid input",
+        },
       });
       return;
     }
@@ -92,7 +95,7 @@ export function projectsRouter(db: Knex): Router {
 
     await db("projects")
       .where({ id: req.params.id })
-      .update({ title: title.trim(), updated_at: new Date().toISOString() });
+      .update({ title: parsed.data.title, updated_at: new Date().toISOString() });
 
     const updated = await db("projects").where({ id: req.params.id }).first();
     res.json(updated);
