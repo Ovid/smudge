@@ -14,6 +14,7 @@ export function EditorPage() {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const escapePressedRef = useRef(false);
 
   const loadProject = useCallback(async () => {
     if (!projectId) return;
@@ -48,12 +49,17 @@ export function EditorPage() {
 
   function startEditingTitle() {
     if (!activeChapter) return;
+    escapePressedRef.current = false;
     setTitleDraft(activeChapter.title);
     setEditingTitle(true);
     setTimeout(() => titleInputRef.current?.select(), 0);
   }
 
   async function saveTitle() {
+    if (escapePressedRef.current) {
+      setEditingTitle(false);
+      return;
+    }
     if (!activeChapter || !titleDraft.trim()) {
       setEditingTitle(false);
       return;
@@ -104,7 +110,10 @@ export function EditorPage() {
             onBlur={saveTitle}
             onKeyDown={(e) => {
               if (e.key === "Enter") saveTitle();
-              if (e.key === "Escape") setEditingTitle(false);
+              if (e.key === "Escape") {
+                escapePressedRef.current = true;
+                setEditingTitle(false);
+              }
             }}
             className="mx-auto block max-w-[720px] mb-4 text-2xl font-serif text-text-primary bg-transparent border-b-2 border-accent focus:outline-none w-full"
             aria-label="Chapter title"

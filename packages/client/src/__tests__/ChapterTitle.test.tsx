@@ -1,0 +1,139 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { EditorPage } from "../pages/EditorPage";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { api } from "../api/client";
+
+// Mock the API module
+vi.mock("../api/client", () => ({
+  api: {
+    projects: {
+      get: vi.fn(),
+    },
+    chapters: {
+      get: vi.fn(),
+      update: vi.fn(),
+    },
+  },
+}));
+
+const mockProject = {
+  id: "proj-1",
+  title: "Test Project",
+  mode: "fiction" as const,
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-01T00:00:00Z",
+  deleted_at: null,
+  chapters: [
+    {
+      id: "ch-1",
+      project_id: "proj-1",
+      title: "My Chapter",
+      content: { type: "doc", content: [{ type: "paragraph" }] },
+      sort_order: 0,
+      word_count: 0,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      deleted_at: null,
+    },
+  ],
+};
+
+const mockChapter = mockProject.chapters[0]!;
+
+function renderEditorPage() {
+  return render(
+    <MemoryRouter initialEntries={["/projects/proj-1"]}>
+      <Routes>
+        <Route path="/projects/:projectId" element={<EditorPage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+describe("Chapter title editing", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.projects.get).mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
+    vi.mocked(api.chapters.update).mockResolvedValue({
+      ...mockChapter,
+      title: "Renamed Chapter",
+    });
+  });
+
+  async function findChapterTitle(): Promise<HTMLElement> {
+    // Wait for the page to load, then find the h2 with the chapter title
+    await waitFor(() => {
+      expect(document.querySelector("h2[title='Double-click to edit']")).not.toBeNull();
+    });
+    return document.querySelector("h2[title='Double-click to edit']") as HTMLElement;
+  }
+
+  function getTitleInput(): HTMLInputElement {
+    return document.querySelector("input[aria-label='Chapter title']") as HTMLInputElement;
+  }
+
+  it("displays the chapter title as an h2", async () => {
+    renderEditorPage();
+    const title = await findChapterTitle();
+    expect(title.tagName).toBe("H2");
+    expect(title.textContent).toBe("My Chapter");
+  });
+
+  it("enters edit mode on double-click", async () => {
+    renderEditorPage();
+    const title = await findChapterTitle();
+    fireEvent.doubleClick(title);
+    const input = getTitleInput();
+    expect(input).not.toBeNull();
+    expect(input).toHaveValue("My Chapter");
+  });
+
+  it("saves title on Enter", async () => {
+    renderEditorPage();
+    const title = await findChapterTitle();
+    fireEvent.doubleClick(title);
+    const input = getTitleInput();
+
+    await userEvent.clear(input);
+    await userEvent.type(input, "Renamed Chapter{Enter}");
+
+    await waitFor(() => {
+      expect(api.chapters.update).toHaveBeenCalledWith("ch-1", {
+        title: "Renamed Chapter",
+      });
+    });
+  });
+
+  it("cancels editing on Escape without saving", async () => {
+    renderEditorPage();
+    const title = await findChapterTitle();
+    fireEvent.doubleClick(title);
+    const input = getTitleInput();
+
+    await userEvent.clear(input);
+    await userEvent.type(input, "Something else{Escape}");
+
+    expect(api.chapters.update).not.toHaveBeenCalled();
+    const restoredTitle = document.querySelector("h2[title='Double-click to edit']");
+    expect(restoredTitle?.textContent).toBe("My Chapter");
+  });
+
+  it("does not save if title is whitespace-only", async () => {
+    renderEditorPage();
+    const title = await findChapterTitle();
+    fireEvent.doubleClick(title);
+    const input = getTitleInput();
+
+    await userEvent.clear(input);
+    await userEvent.type(input, "   {Enter}");
+
+    expect(api.chapters.update).not.toHaveBeenCalled();
+  });
+});
