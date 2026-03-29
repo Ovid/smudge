@@ -18,7 +18,7 @@ describe("Global error handler", () => {
         err: Error & { status?: number; statusCode?: number },
         _req: express.Request,
         res: express.Response,
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
         _next: express.NextFunction,
       ) => {
         console.error(err);
@@ -57,7 +57,7 @@ describe("Global error handler", () => {
         err: Error & { status?: number },
         _req: express.Request,
         res: express.Response,
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
         _next: express.NextFunction,
       ) => {
         const status = err.status ?? 500;
