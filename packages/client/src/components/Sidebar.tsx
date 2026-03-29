@@ -55,7 +55,11 @@ export function Sidebar({
       const ids = reordered.map((c) => c.id);
       onReorderChapters(ids);
       setAnnouncement(
-        STRINGS.sidebar.chapterPosition(chapters[chapterIndex].title, chapterIndex, chapters.length),
+        STRINGS.sidebar.chapterPosition(
+          chapters[chapterIndex].title,
+          chapterIndex,
+          chapters.length,
+        ),
       );
     }
 
@@ -96,9 +100,7 @@ export function Sidebar({
               key={chapter.id}
               aria-current={chapter.id === activeChapterId ? "true" : undefined}
               className={`flex items-center gap-2 px-4 py-2 cursor-pointer group ${
-                chapter.id === activeChapterId
-                  ? "bg-accent-light"
-                  : "hover:bg-bg-hover"
+                chapter.id === activeChapterId ? "bg-accent-light" : "hover:bg-bg-hover"
               }`}
             >
               {editingId === chapter.id ? (

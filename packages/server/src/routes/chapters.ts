@@ -111,9 +111,7 @@ export function chaptersRouter(db: Knex): Router {
     }
 
     // Restore the chapter
-    await db("chapters")
-      .where({ id: req.params.id })
-      .update({ deleted_at: null });
+    await db("chapters").where({ id: req.params.id }).update({ deleted_at: null });
 
     // Also restore parent project if it was deleted
     await db("projects")

@@ -69,9 +69,7 @@ export function EditorPage() {
       prev
         ? {
             ...prev,
-            chapters: [...prev.chapters, restored].sort(
-              (a, b) => a.sort_order - b.sort_order,
-            ),
+            chapters: [...prev.chapters, restored].sort((a, b) => a.sort_order - b.sort_order),
           }
         : prev,
     );
@@ -290,7 +288,8 @@ export function EditorPage() {
               <span className="ml-3 text-text-muted">
                 {STRINGS.project.wordCount(
                   project.chapters.reduce((sum, c) => sum + c.word_count, 0),
-                )}{" "}total
+                )}{" "}
+                total
               </span>
             )}
           </div>

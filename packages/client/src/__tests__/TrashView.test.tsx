@@ -24,18 +24,14 @@ const trashedChapters: Chapter[] = [
 
 describe("TrashView", () => {
   it("renders trashed chapters", () => {
-    render(
-      <TrashView chapters={trashedChapters} onRestore={vi.fn()} onBack={vi.fn()} />,
-    );
+    render(<TrashView chapters={trashedChapters} onRestore={vi.fn()} onBack={vi.fn()} />);
 
     expect(screen.getByText("Deleted Chapter")).toBeInTheDocument();
   });
 
   it("calls onRestore when clicking Restore", async () => {
     const onRestore = vi.fn();
-    render(
-      <TrashView chapters={trashedChapters} onRestore={onRestore} onBack={vi.fn()} />,
-    );
+    render(<TrashView chapters={trashedChapters} onRestore={onRestore} onBack={vi.fn()} />);
 
     await userEvent.click(screen.getByText("Restore"));
     expect(onRestore).toHaveBeenCalledWith("ch1");
@@ -49,9 +45,7 @@ describe("TrashView", () => {
 
   it("calls onBack when clicking Back", async () => {
     const onBack = vi.fn();
-    render(
-      <TrashView chapters={trashedChapters} onRestore={vi.fn()} onBack={onBack} />,
-    );
+    render(<TrashView chapters={trashedChapters} onRestore={vi.fn()} onBack={onBack} />);
 
     await userEvent.click(screen.getByText("Back to editor"));
     expect(onBack).toHaveBeenCalled();

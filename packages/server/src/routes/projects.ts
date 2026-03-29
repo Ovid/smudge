@@ -205,9 +205,7 @@ export function projectsRouter(db: Knex): Router {
   });
 
   router.get("/:id/trash", async (req, res) => {
-    const project = await db("projects")
-      .where({ id: req.params.id })
-      .first();
+    const project = await db("projects").where({ id: req.params.id }).first();
 
     if (!project) {
       res.status(404).json({

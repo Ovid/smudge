@@ -49,8 +49,7 @@ export const api = {
         body: JSON.stringify({ chapter_ids: chapterIds }),
       }),
 
-    trash: (projectId: string) =>
-      apiFetch<Chapter[]>(`/projects/${projectId}/trash`),
+    trash: (projectId: string) => apiFetch<Chapter[]>(`/projects/${projectId}/trash`),
   },
 
   chapters: {
@@ -65,10 +64,8 @@ export const api = {
         body: JSON.stringify(data),
       }),
 
-    delete: (id: string) =>
-      apiFetch<{ message: string }>(`/chapters/${id}`, { method: "DELETE" }),
+    delete: (id: string) => apiFetch<{ message: string }>(`/chapters/${id}`, { method: "DELETE" }),
 
-    restore: (id: string) =>
-      apiFetch<Chapter>(`/chapters/${id}/restore`, { method: "POST" }),
+    restore: (id: string) => apiFetch<Chapter>(`/chapters/${id}/restore`, { method: "POST" }),
   },
 };

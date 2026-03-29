@@ -226,9 +226,7 @@ describe("PUT /api/projects/:id/chapters/order", () => {
     await request(t.app).post(`/api/projects/${projectId}/chapters`);
 
     const getRes = await request(t.app).get(`/api/projects/${projectId}`);
-    const [ch1Id, ch2Id, ch3Id] = getRes.body.chapters.map(
-      (c: { id: string }) => c.id,
-    );
+    const [ch1Id, ch2Id, ch3Id] = getRes.body.chapters.map((c: { id: string }) => c.id);
 
     // Reverse the order
     const res = await request(t.app)
@@ -238,11 +236,7 @@ describe("PUT /api/projects/:id/chapters/order", () => {
     expect(res.status).toBe(200);
 
     const updated = await request(t.app).get(`/api/projects/${projectId}`);
-    expect(updated.body.chapters.map((c: { id: string }) => c.id)).toEqual([
-      ch3Id,
-      ch2Id,
-      ch1Id,
-    ]);
+    expect(updated.body.chapters.map((c: { id: string }) => c.id)).toEqual([ch3Id, ch2Id, ch1Id]);
   });
 
   it("returns 400 if chapter IDs don't match", async () => {
@@ -264,9 +258,7 @@ describe("PUT /api/projects/:id/chapters/order", () => {
       .send({ title: "Test", mode: "fiction" });
     const projectId = projectRes.body.id;
 
-    const res = await request(t.app)
-      .put(`/api/projects/${projectId}/chapters/order`)
-      .send({});
+    const res = await request(t.app).put(`/api/projects/${projectId}/chapters/order`).send({});
 
     expect(res.status).toBe(400);
   });

@@ -22,7 +22,9 @@ async function main() {
 
   const purged = await purgeOldTrash(db);
   if (purged.chapters > 0 || purged.projects > 0) {
-    console.log(`Purged ${purged.chapters} chapter(s) and ${purged.projects} project(s) from trash.`);
+    console.log(
+      `Purged ${purged.chapters} chapter(s) and ${purged.projects} project(s) from trash.`,
+    );
   }
 
   const app = createApp(db);

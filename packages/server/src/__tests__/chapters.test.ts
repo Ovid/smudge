@@ -126,7 +126,10 @@ describe("PATCH /api/chapters/:id", () => {
 
   it("returns 404 for soft-deleted chapter", async () => {
     const { chapterId } = await createProjectWithChapter(t.app);
-    await t.db("chapters").where({ id: chapterId }).update({ deleted_at: new Date().toISOString() });
+    await t
+      .db("chapters")
+      .where({ id: chapterId })
+      .update({ deleted_at: new Date().toISOString() });
 
     const res = await request(t.app).patch(`/api/chapters/${chapterId}`).send({ title: "Nope" });
 

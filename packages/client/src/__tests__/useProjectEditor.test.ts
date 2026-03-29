@@ -82,6 +82,6 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.activeChapter).toEqual(newChapter);
-    expect(result.current.project!.chapters).toHaveLength(2);
+    expect(result.current.project?.chapters).toHaveLength(2);
   });
 });
