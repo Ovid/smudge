@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-29
 **Approach:** Vertical slices with TDD (red/green/refactor) throughout
-**Spec:** `docs/notes/mvp.md`
+**Spec:** `docs/plans/mvp.md`
 
 ---
 
