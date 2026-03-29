@@ -46,5 +46,47 @@ export function projectsRouter(db: Knex): Router {
     res.status(201).json(project);
   });
 
+  router.get("/", async (_req, res) => {
+    const projects = await db("projects")
+      .whereNull("deleted_at")
+      .orderBy("updated_at", "desc")
+      .select("id", "title", "mode", "updated_at");
+
+    const result = await Promise.all(
+      projects.map(async (p) => {
+        const { total } = await db("chapters")
+          .where({ project_id: p.id })
+          .whereNull("deleted_at")
+          .sum("word_count as total")
+          .first() as { total: number };
+        return { ...p, total_word_count: total ?? 0 };
+      }),
+    );
+
+    res.json(result);
+  });
+
+  router.get("/:id", async (req, res) => {
+    const project = await db("projects")
+      .where({ id: req.params.id })
+      .whereNull("deleted_at")
+      .first();
+
+    if (!project) {
+      res.status(404).json({
+        error: { code: "NOT_FOUND", message: "Project not found." },
+      });
+      return;
+    }
+
+    const chapters = await db("chapters")
+      .where({ project_id: req.params.id })
+      .whereNull("deleted_at")
+      .orderBy("sort_order", "asc")
+      .select("*");
+
+    res.json({ ...project, chapters });
+  });
+
   return router;
 }
