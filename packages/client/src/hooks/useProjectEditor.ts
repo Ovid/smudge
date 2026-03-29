@@ -188,9 +188,11 @@ export function useProjectEditor(slug: string | undefined) {
 
   const handleUpdateProjectTitle = useCallback(
     async (title: string): Promise<string | undefined> => {
-      if (!project) return undefined;
+      const slug = projectSlugRef.current;
+      if (!slug) return undefined;
       try {
-        const updated = await api.projects.update(project.slug, { title });
+        const updated = await api.projects.update(slug, { title });
+        projectSlugRef.current = updated.slug;
         setProject((prev) => (prev ? { ...prev, title: updated.title, slug: updated.slug } : prev));
         return updated.slug;
       } catch (err) {
@@ -198,7 +200,7 @@ export function useProjectEditor(slug: string | undefined) {
         return undefined;
       }
     },
-    [project],
+    [],
   );
 
   const handleRenameChapter = useCallback(
