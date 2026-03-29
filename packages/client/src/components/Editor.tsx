@@ -1,7 +1,9 @@
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Heading from "@tiptap/extension-heading";
+import Placeholder from "@tiptap/extension-placeholder";
 import { useEffect, useRef } from "react";
+import { STRINGS } from "../strings";
 
 interface EditorProps {
   content: Record<string, unknown> | null;
@@ -19,6 +21,9 @@ export function Editor({ content, onSave }: EditorProps) {
       }),
       Heading.configure({
         levels: [3, 4, 5],
+      }),
+      Placeholder.configure({
+        placeholder: STRINGS.editor.placeholder,
       }),
     ],
     content: content ?? { type: "doc", content: [{ type: "paragraph" }] },

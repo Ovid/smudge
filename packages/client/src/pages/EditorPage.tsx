@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import type { ProjectWithChapters, Chapter } from "@smudge/shared";
 import { api } from "../api/client";
@@ -11,6 +11,9 @@ export function EditorPage() {
   const [project, setProject] = useState<ProjectWithChapters | null>(null);
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   const loadProject = useCallback(async () => {
     if (!projectId) return;
@@ -43,6 +46,26 @@ export function EditorPage() {
     [activeChapter],
   );
 
+  function startEditingTitle() {
+    if (!activeChapter) return;
+    setTitleDraft(activeChapter.title);
+    setEditingTitle(true);
+    setTimeout(() => titleInputRef.current?.select(), 0);
+  }
+
+  async function saveTitle() {
+    if (!activeChapter || !titleDraft.trim()) {
+      setEditingTitle(false);
+      return;
+    }
+    const trimmed = titleDraft.trim();
+    if (trimmed !== activeChapter.title) {
+      const updated = await api.chapters.update(activeChapter.id, { title: trimmed });
+      setActiveChapter(updated);
+    }
+    setEditingTitle(false);
+  }
+
   if (!project || !activeChapter) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-primary">
@@ -73,9 +96,28 @@ export function EditorPage() {
       </header>
 
       <main className="px-6 py-8" aria-label={STRINGS.a11y.mainContent}>
-        <h2 className="mx-auto max-w-[720px] mb-4 text-2xl font-serif text-text-primary">
-          {activeChapter.title}
-        </h2>
+        {editingTitle ? (
+          <input
+            ref={titleInputRef}
+            value={titleDraft}
+            onChange={(e) => setTitleDraft(e.target.value)}
+            onBlur={saveTitle}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") saveTitle();
+              if (e.key === "Escape") setEditingTitle(false);
+            }}
+            className="mx-auto block max-w-[720px] mb-4 text-2xl font-serif text-text-primary bg-transparent border-b-2 border-accent focus:outline-none w-full"
+            aria-label="Chapter title"
+          />
+        ) : (
+          <h2
+            className="mx-auto max-w-[720px] mb-4 text-2xl font-serif text-text-primary cursor-pointer hover:text-text-secondary"
+            onDoubleClick={startEditingTitle}
+            title="Double-click to edit"
+          >
+            {activeChapter.title}
+          </h2>
+        )}
         <Editor content={activeChapter.content} onSave={handleSave} />
       </main>
     </div>

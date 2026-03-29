@@ -17,6 +17,7 @@ export const STRINGS = {
     untitledDefault: "Untitled Chapter",
   },
   editor: {
+    placeholder: "Start writing\u2026",
     saving: "Saving\u2026",
     saved: "Saved",
     unsaved: "Unsaved changes",
