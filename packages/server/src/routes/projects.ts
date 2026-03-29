@@ -156,6 +156,75 @@ export function projectsRouter(db: Knex): Router {
     res.status(201).json(chapter);
   });
 
+  router.put("/:id/chapters/order", async (req, res) => {
+    const project = await db("projects")
+      .where({ id: req.params.id })
+      .whereNull("deleted_at")
+      .first();
+
+    if (!project) {
+      res.status(404).json({
+        error: { code: "NOT_FOUND", message: "Project not found." },
+      });
+      return;
+    }
+
+    const { chapter_ids } = req.body as { chapter_ids?: string[] };
+    if (!Array.isArray(chapter_ids)) {
+      res.status(400).json({
+        error: { code: "VALIDATION_ERROR", message: "chapter_ids must be an array." },
+      });
+      return;
+    }
+
+    const existing = await db("chapters")
+      .where({ project_id: req.params.id })
+      .whereNull("deleted_at")
+      .select("id");
+    const existingIds = existing.map((c: { id: string }) => c.id).sort();
+    const providedIds = [...chapter_ids].sort();
+
+    if (
+      existingIds.length !== providedIds.length ||
+      !existingIds.every((id: string, i: number) => id === providedIds[i])
+    ) {
+      res.status(400).json({
+        error: {
+          code: "REORDER_MISMATCH",
+          message: "Provided chapter IDs do not match existing chapters.",
+        },
+      });
+      return;
+    }
+
+    for (let i = 0; i < chapter_ids.length; i++) {
+      await db("chapters").where({ id: chapter_ids[i] }).update({ sort_order: i });
+    }
+
+    res.json({ message: "Chapter order updated." });
+  });
+
+  router.get("/:id/trash", async (req, res) => {
+    const project = await db("projects")
+      .where({ id: req.params.id })
+      .first();
+
+    if (!project) {
+      res.status(404).json({
+        error: { code: "NOT_FOUND", message: "Project not found." },
+      });
+      return;
+    }
+
+    const trashed = await db("chapters")
+      .where({ project_id: req.params.id })
+      .whereNotNull("deleted_at")
+      .orderBy("deleted_at", "desc")
+      .select("*");
+
+    res.json(trashed);
+  });
+
   router.delete("/:id", async (req, res) => {
     const project = await db("projects")
       .where({ id: req.params.id })

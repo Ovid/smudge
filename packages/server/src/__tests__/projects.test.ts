@@ -214,6 +214,112 @@ describe("GET /api/projects/:id", () => {
   });
 });
 
+describe("PUT /api/projects/:id/chapters/order", () => {
+  it("reorders chapters by provided ID array", async () => {
+    const projectRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Test", mode: "fiction" });
+    const projectId = projectRes.body.id;
+
+    // Create 2 more chapters (auto-created one is at sort_order 0)
+    await request(t.app).post(`/api/projects/${projectId}/chapters`);
+    await request(t.app).post(`/api/projects/${projectId}/chapters`);
+
+    const getRes = await request(t.app).get(`/api/projects/${projectId}`);
+    const [ch1Id, ch2Id, ch3Id] = getRes.body.chapters.map(
+      (c: { id: string }) => c.id,
+    );
+
+    // Reverse the order
+    const res = await request(t.app)
+      .put(`/api/projects/${projectId}/chapters/order`)
+      .send({ chapter_ids: [ch3Id, ch2Id, ch1Id] });
+
+    expect(res.status).toBe(200);
+
+    const updated = await request(t.app).get(`/api/projects/${projectId}`);
+    expect(updated.body.chapters.map((c: { id: string }) => c.id)).toEqual([
+      ch3Id,
+      ch2Id,
+      ch1Id,
+    ]);
+  });
+
+  it("returns 400 if chapter IDs don't match", async () => {
+    const projectRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Test", mode: "fiction" });
+    const projectId = projectRes.body.id;
+
+    const res = await request(t.app)
+      .put(`/api/projects/${projectId}/chapters/order`)
+      .send({ chapter_ids: ["wrong-id"] });
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 if chapter_ids is missing or not an array", async () => {
+    const projectRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Test", mode: "fiction" });
+    const projectId = projectRes.body.id;
+
+    const res = await request(t.app)
+      .put(`/api/projects/${projectId}/chapters/order`)
+      .send({});
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 for non-existent project", async () => {
+    const res = await request(t.app)
+      .put("/api/projects/nonexistent-id/chapters/order")
+      .send({ chapter_ids: [] });
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("GET /api/projects/:id/trash", () => {
+  it("returns soft-deleted chapters for a project", async () => {
+    const projectRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Test", mode: "fiction" });
+    const projectId = projectRes.body.id;
+
+    const getRes = await request(t.app).get(`/api/projects/${projectId}`);
+    const chapterId = getRes.body.chapters[0].id;
+
+    // Delete the chapter
+    await request(t.app).delete(`/api/chapters/${chapterId}`);
+
+    const res = await request(t.app).get(`/api/projects/${projectId}/trash`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].id).toBe(chapterId);
+    expect(res.body[0].deleted_at).toBeTruthy();
+  });
+
+  it("returns empty array when no trashed chapters", async () => {
+    const projectRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Test", mode: "fiction" });
+    const projectId = projectRes.body.id;
+
+    const res = await request(t.app).get(`/api/projects/${projectId}/trash`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it("returns 404 for non-existent project", async () => {
+    const res = await request(t.app).get("/api/projects/nonexistent-id/trash");
+
+    expect(res.status).toBe(404);
+  });
+});
+
 describe("DELETE /api/projects/:id", () => {
   it("soft-deletes a project and returns 200", async () => {
     const createRes = await request(t.app)
