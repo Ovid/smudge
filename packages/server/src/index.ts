@@ -1,5 +1,6 @@
 import { initDb } from "./db/connection";
 import { createApp } from "./app";
+import { purgeOldTrash } from "./db/purge";
 
 const PORT = parseInt(process.env.SMUDGE_PORT ?? "3456", 10);
 const DB_PATH = process.env.DB_PATH;
@@ -18,6 +19,11 @@ async function main() {
         }
       : undefined,
   );
+
+  const purged = await purgeOldTrash(db);
+  if (purged.chapters > 0 || purged.projects > 0) {
+    console.log(`Purged ${purged.chapters} chapter(s) and ${purged.projects} project(s) from trash.`);
+  }
 
   const app = createApp(db);
 
