@@ -1,4 +1,15 @@
 import { useState, useRef } from "react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import { CSS } from "@dnd-kit/utilities";
 import type { ProjectWithChapters, Chapter } from "@smudge/shared";
 import { STRINGS } from "../strings";
 
@@ -11,6 +22,105 @@ interface SidebarProps {
   onReorderChapters: (orderedIds: string[]) => void;
   onRenameChapter: (chapterId: string, title: string) => void;
   onOpenTrash: () => void;
+}
+
+interface SortableChapterItemProps {
+  chapter: Chapter;
+  index: number;
+  isActive: boolean;
+  isEditing: boolean;
+  editDraft: string;
+  editInputRef: React.RefObject<HTMLInputElement | null>;
+  onEditDraftChange: (value: string) => void;
+  onCommitRename: () => void;
+  onCancelRename: () => void;
+  onSelectChapter: (id: string) => void;
+  onStartRename: (chapter: Chapter) => void;
+  onKeyReorder: (e: React.KeyboardEvent, index: number) => void;
+  onDeleteChapter: (chapter: Chapter) => void;
+}
+
+function SortableChapterItem({
+  chapter,
+  index,
+  isActive,
+  isEditing,
+  editDraft,
+  editInputRef,
+  onEditDraftChange,
+  onCommitRename,
+  onCancelRename,
+  onSelectChapter,
+  onStartRename,
+  onKeyReorder,
+  onDeleteChapter,
+}: SortableChapterItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: chapter.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={style}
+      aria-current={isActive ? "true" : undefined}
+      className={`flex items-center gap-2 px-4 py-2 cursor-pointer group ${
+        isDragging ? "opacity-50 bg-accent-light" : isActive ? "bg-accent-light" : "hover:bg-bg-hover"
+      }`}
+    >
+      <span
+        {...attributes}
+        {...listeners}
+        aria-label={STRINGS.sidebar.dragHandle}
+        className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-text-muted cursor-grab active:cursor-grabbing text-sm select-none focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
+      >
+        ⠿
+      </span>
+      {isEditing ? (
+        <input
+          ref={editInputRef}
+          value={editDraft}
+          onChange={(e) => onEditDraftChange(e.target.value)}
+          onBlur={onCommitRename}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onCommitRename();
+            if (e.key === "Escape") onCancelRename();
+          }}
+          className="flex-1 text-sm text-text-primary bg-bg-input border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-focus-ring"
+          aria-label="Chapter title"
+        />
+      ) : (
+        <button
+          onClick={() => onSelectChapter(chapter.id)}
+          onDoubleClick={() => onStartRename(chapter)}
+          onKeyDown={(e) => onKeyReorder(e, index)}
+          className="flex-1 text-left text-sm text-text-primary truncate focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
+        >
+          {chapter.title}
+        </button>
+      )}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onDeleteChapter(chapter);
+        }}
+        className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-text-muted hover:text-status-error text-xs p-1 rounded focus:outline-none focus:ring-2 focus:ring-focus-ring"
+        aria-label={`Delete ${chapter.title}`}
+      >
+        ✕
+      </button>
+    </li>
+  );
 }
 
 export function Sidebar({
@@ -27,6 +137,12 @@ export function Sidebar({
   const [editDraft, setEditDraft] = useState("");
   const editInputRef = useRef<HTMLInputElement>(null);
   const [announcement, setAnnouncement] = useState("");
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+  );
 
   function startRename(chapter: Chapter) {
     setEditingId(chapter.id);
@@ -82,6 +198,22 @@ export function Sidebar({
     }
   }
 
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = project.chapters.findIndex((c) => c.id === active.id);
+    const newIndex = project.chapters.findIndex((c) => c.id === over.id);
+    const reorderedIds = arrayMove(
+      project.chapters.map((c) => c.id),
+      oldIndex,
+      newIndex,
+    );
+    onReorderChapters(reorderedIds);
+  }
+
+  const chapterIds = project.chapters.map((c) => c.id);
+
   return (
     <aside
       aria-label={STRINGS.a11y.chaptersSidebar}
@@ -94,51 +226,35 @@ export function Sidebar({
       </div>
 
       <nav className="flex-1 overflow-y-auto py-2">
-        <ul role="list">
-          {project.chapters.map((chapter, index) => (
-            <li
-              key={chapter.id}
-              aria-current={chapter.id === activeChapterId ? "true" : undefined}
-              className={`flex items-center gap-2 px-4 py-2 cursor-pointer group ${
-                chapter.id === activeChapterId ? "bg-accent-light" : "hover:bg-bg-hover"
-              }`}
-            >
-              {editingId === chapter.id ? (
-                <input
-                  ref={editInputRef}
-                  value={editDraft}
-                  onChange={(e) => setEditDraft(e.target.value)}
-                  onBlur={commitRename}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") commitRename();
-                    if (e.key === "Escape") setEditingId(null);
-                  }}
-                  className="flex-1 text-sm text-text-primary bg-bg-input border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-focus-ring"
-                  aria-label="Chapter title"
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToVerticalAxis]}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext items={chapterIds} strategy={verticalListSortingStrategy}>
+            <ul role="list">
+              {project.chapters.map((chapter, index) => (
+                <SortableChapterItem
+                  key={chapter.id}
+                  chapter={chapter}
+                  index={index}
+                  isActive={chapter.id === activeChapterId}
+                  isEditing={editingId === chapter.id}
+                  editDraft={editDraft}
+                  editInputRef={editInputRef}
+                  onEditDraftChange={setEditDraft}
+                  onCommitRename={commitRename}
+                  onCancelRename={() => setEditingId(null)}
+                  onSelectChapter={onSelectChapter}
+                  onStartRename={startRename}
+                  onKeyReorder={handleKeyReorder}
+                  onDeleteChapter={onDeleteChapter}
                 />
-              ) : (
-                <button
-                  onClick={() => onSelectChapter(chapter.id)}
-                  onDoubleClick={() => startRename(chapter)}
-                  onKeyDown={(e) => handleKeyReorder(e, index)}
-                  className="flex-1 text-left text-sm text-text-primary truncate focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
-                >
-                  {chapter.title}
-                </button>
-              )}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeleteChapter(chapter);
-                }}
-                className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-text-muted hover:text-status-error text-xs p-1 rounded focus:outline-none focus:ring-2 focus:ring-focus-ring"
-                aria-label={`Delete ${chapter.title}`}
-              >
-                ✕
-              </button>
-            </li>
-          ))}
-        </ul>
+              ))}
+            </ul>
+          </SortableContext>
+        </DndContext>
       </nav>
 
       <div className="border-t border-border px-4 py-3 flex flex-col gap-2">

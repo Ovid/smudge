@@ -157,6 +157,23 @@ describe("Sidebar", () => {
     expect(onOpenTrash).toHaveBeenCalled();
   });
 
+  it("renders drag handles for each chapter", () => {
+    renderSidebar();
+
+    const handles = screen.getAllByLabelText("Drag to reorder");
+    expect(handles).toHaveLength(2);
+  });
+
+  it("drag handles have correct role and tabindex", () => {
+    renderSidebar();
+
+    const handles = screen.getAllByLabelText("Drag to reorder");
+    for (const handle of handles) {
+      expect(handle).toHaveAttribute("role", "button");
+      expect(handle).toHaveAttribute("tabindex", "0");
+    }
+  });
+
   it("reorders chapter up with Alt+ArrowUp", async () => {
     const onReorder = vi.fn();
     renderSidebar({ onReorderChapters: onReorder, activeChapterId: "ch2" });
