@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import { NewProjectDialog } from "../components/NewProjectDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { STRINGS } from "../strings";
+import smudgeLogo from "../assets/smudge-logo.png";
 
 export function HomePage() {
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
@@ -59,7 +60,13 @@ export function HomePage() {
   return (
     <div className="min-h-screen bg-bg-primary">
       <header className="border-b border-border px-6 py-4">
-        <h1 className="text-2xl font-serif text-text-primary">{STRINGS.app.name}</h1>
+        <h1>
+          <img
+            src={smudgeLogo}
+            alt={STRINGS.app.name}
+            className="h-8"
+          />
+        </h1>
       </header>
 
       <main className="mx-auto max-w-2xl px-6 py-8" aria-label={STRINGS.a11y.mainContent}>
