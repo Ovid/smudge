@@ -170,6 +170,13 @@ export function projectsRouter(db: Knex): Router {
     }
 
     const now = new Date().toISOString();
+
+    // Soft-delete all chapters belonging to this project
+    await db("chapters")
+      .where({ project_id: req.params.id })
+      .whereNull("deleted_at")
+      .update({ deleted_at: now });
+
     await db("projects").where({ id: req.params.id }).update({ deleted_at: now });
 
     res.json({ message: "Project moved to trash." });

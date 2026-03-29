@@ -256,4 +256,20 @@ describe("DELETE /api/projects/:id", () => {
     const res = await request(t.app).delete(`/api/projects/${createRes.body.id}`);
     expect(res.status).toBe(404);
   });
+
+  it("soft-deletes all chapters when project is deleted", async () => {
+    const projectRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Test", mode: "fiction" });
+    const projectId = projectRes.body.id;
+
+    // Create an extra chapter
+    await request(t.app).post(`/api/projects/${projectId}/chapters`);
+
+    await request(t.app).delete(`/api/projects/${projectId}`);
+
+    // Directly query — chapters should all have deleted_at set
+    const chapters = await t.db("chapters").where({ project_id: projectId });
+    expect(chapters.every((c: { deleted_at: string | null }) => c.deleted_at !== null)).toBe(true);
+  });
 });
