@@ -33,7 +33,7 @@ export function TrashView({ chapters, onRestore, onBack }: TrashViewProps) {
                 <span className="text-text-primary">{chapter.title}</span>
                 {chapter.deleted_at && (
                   <span className="ml-3 text-sm text-text-muted">
-                    {STRINGS.project.lastEdited(chapter.deleted_at).replace("Edited", "Deleted")}
+                    {STRINGS.project.lastDeleted(chapter.deleted_at)}
                   </span>
                 )}
               </div>

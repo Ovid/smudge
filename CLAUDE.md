@@ -78,7 +78,7 @@ REST endpoints under `/api/`. Error envelope: `{ "error": { "code": "MACHINE_REA
 Key endpoints:
 - `PATCH /api/chapters/{id}` — auto-save target; recalculates word count server-side; rejects invalid JSON with 400 (preserves previous content)
 - `PUT /api/projects/{id}/chapters/order` — full chapter ID list required, 400 on mismatch
-- `POST /api/trash/{id}/restore` — restoring a chapter whose project is deleted also restores the project
+- `POST /api/chapters/{id}/restore` — restoring a chapter whose project is deleted also restores the project
 
 ## Accessibility (WCAG 2.1 AA — Mandatory)
 

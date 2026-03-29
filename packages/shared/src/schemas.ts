@@ -18,6 +18,10 @@ const TipTapDocSchema = z
   })
   .passthrough();
 
+export const ReorderChaptersSchema = z.object({
+  chapter_ids: z.array(z.string().uuid()),
+});
+
 export const UpdateChapterSchema = z
   .object({
     title: z.string().trim().min(1).optional(),

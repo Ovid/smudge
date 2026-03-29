@@ -3,6 +3,7 @@ export {
   CreateProjectSchema,
   UpdateProjectSchema,
   UpdateChapterSchema,
+  ReorderChaptersSchema,
   ProjectMode,
 } from "./schemas";
 export { countWords } from "./wordcount";

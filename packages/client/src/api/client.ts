@@ -9,6 +9,16 @@ import type {
 
 const BASE = "/api";
 
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiRequestError";
+  }
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -23,7 +33,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     } catch {
       // Response body wasn't JSON (e.g., proxy HTML error page)
     }
-    throw new Error(message);
+    throw new ApiRequestError(message, res.status);
   }
 
   return res.json() as Promise<T>;

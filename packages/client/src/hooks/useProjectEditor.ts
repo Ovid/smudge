@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import type { ProjectWithChapters, Chapter } from "@smudge/shared";
 import { countWords } from "@smudge/shared";
-import { api } from "../api/client";
+import { api, ApiRequestError } from "../api/client";
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -73,7 +73,8 @@ export function useProjectEditor(projectId: string | undefined) {
           });
           setSaveStatus("saved");
           return;
-        } catch {
+        } catch (err) {
+          if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) break;
           if (attempt < MAX_RETRIES) {
             await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
           }

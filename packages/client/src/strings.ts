@@ -17,6 +17,10 @@ export const STRINGS = {
       const date = new Date(dateStr);
       return `Edited ${date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
     },
+    lastDeleted: (dateStr: string) => {
+      const date = new Date(dateStr);
+      return `Deleted ${date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
+    },
   },
   chapter: {
     untitledDefault: "Untitled Chapter",

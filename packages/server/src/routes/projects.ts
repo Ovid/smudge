@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { Knex } from "knex";
 import { v4 as uuid } from "uuid";
-import { CreateProjectSchema, UpdateProjectSchema } from "@smudge/shared";
+import { CreateProjectSchema, UpdateProjectSchema, ReorderChaptersSchema } from "@smudge/shared";
 import { asyncHandler } from "../app";
 
 export function projectsRouter(db: Knex): Router {
@@ -203,13 +203,17 @@ export function projectsRouter(db: Knex): Router {
         return;
       }
 
-      const { chapter_ids } = req.body as { chapter_ids?: string[] };
-      if (!Array.isArray(chapter_ids)) {
+      const parsed = ReorderChaptersSchema.safeParse(req.body);
+      if (!parsed.success) {
         res.status(400).json({
-          error: { code: "VALIDATION_ERROR", message: "chapter_ids must be an array." },
+          error: {
+            code: "VALIDATION_ERROR",
+            message: parsed.error.issues[0]?.message ?? "chapter_ids must be an array of UUIDs.",
+          },
         });
         return;
       }
+      const { chapter_ids } = parsed.data;
 
       const existing = await db("chapters")
         .where({ project_id: req.params.id })
@@ -235,6 +239,9 @@ export function projectsRouter(db: Knex): Router {
         for (let i = 0; i < chapter_ids.length; i++) {
           await trx("chapters").where({ id: chapter_ids[i] }).update({ sort_order: i });
         }
+        await trx("projects")
+          .where({ id: req.params.id })
+          .update({ updated_at: new Date().toISOString() });
       });
 
       res.json({ message: "Chapter order updated." });
