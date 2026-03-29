@@ -18,11 +18,17 @@ export function createApp(db: Knex): express.Express {
   // Global error handler — consistent JSON envelope for unhandled errors
   app.use(
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    (
+      err: Error & { status?: number; statusCode?: number },
+      _req: express.Request,
+      res: express.Response,
+      _next: express.NextFunction,
+    ) => {
       console.error(err);
-      res.status(500).json({
-        error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." },
-      });
+      const status = err.status ?? err.statusCode ?? 500;
+      const code = status < 500 ? "VALIDATION_ERROR" : "INTERNAL_ERROR";
+      const message = status < 500 ? err.message : "An unexpected error occurred.";
+      res.status(status).json({ error: { code, message } });
     },
   );
 
