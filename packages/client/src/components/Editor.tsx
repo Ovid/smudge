@@ -105,7 +105,7 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
           "prose prose-lg max-w-none font-serif text-text-primary prose-headings:text-text-primary prose-a:text-accent focus:outline-none min-h-[60vh]",
         role: "textbox",
         "aria-multiline": "true",
-        "aria-label": "Chapter content",
+        "aria-label": STRINGS.a11y.editorContent,
         spellcheck: "true",
       },
     },

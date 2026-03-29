@@ -27,6 +27,7 @@ export const STRINGS = {
   },
   delete: {
     buttonLabel: "Delete",
+    deleteChapterAriaLabel: (title: string) => `Delete ${title}`,
     confirmTitle: (name: string) => `Move \u201c${name}\u201d to trash?`,
     confirmBody: "You can restore it within 30 days.",
     confirmButton: "Confirm",
@@ -36,7 +37,14 @@ export const STRINGS = {
     projectNotFound: "Project not found",
     backToProjects: "Back to Projects",
     loadFailed: "Failed to load projects",
+    loadProjectFailed: "Failed to load project",
     createFailed: "Failed to create project",
+    createChapterFailed: "Failed to create chapter",
+    loadChapterFailed: "Failed to load chapter",
+    deleteChapterFailed: "Failed to delete chapter",
+    reorderFailed: "Failed to reorder chapters",
+    updateTitleFailed: "Failed to update project title",
+    renameChapterFailed: "Failed to rename chapter",
     deleteFailed: "Failed to delete project",
   },
   editor: {
@@ -70,6 +78,7 @@ export const STRINGS = {
   preview: {
     backToEditor: "Back to Editor",
     tableOfContents: "Table of Contents",
+    renderError: "Unable to render content",
   },
   a11y: {
     mainContent: "Main content",

@@ -50,12 +50,12 @@ export function PreviewMode({ chapters, onClose, onNavigateToChapter }: PreviewM
     return () => observer.disconnect();
   }, [chapters]);
 
-  function renderChapterHtml(content: Record<string, unknown> | null): string {
-    if (!content) return "";
+  function renderChapterHtml(content: Record<string, unknown> | null): string | null {
+    if (!content) return null;
     try {
       return generateHTML(content as Parameters<typeof generateHTML>[0], editorExtensions);
     } catch {
-      return "<p><em>Unable to render content</em></p>";
+      return null;
     }
   }
 
@@ -88,10 +88,18 @@ export function PreviewMode({ chapters, onClose, onNavigateToChapter }: PreviewM
                 >
                   {chapter.title}
                 </h2>
-                <div
-                  className="prose prose-lg font-serif text-text-primary leading-[1.9] prose-headings:text-text-primary prose-a:text-accent"
-                  dangerouslySetInnerHTML={{ __html: renderChapterHtml(chapter.content) }}
-                />
+                {(() => {
+                  const html = renderChapterHtml(chapter.content);
+                  if (html) {
+                    return (
+                      <div
+                        className="prose prose-lg font-serif text-text-primary leading-[1.9] prose-headings:text-text-primary prose-a:text-accent"
+                        dangerouslySetInnerHTML={{ __html: html }}
+                      />
+                    );
+                  }
+                  return <p className="text-text-muted italic">{STRINGS.preview.renderError}</p>;
+                })()}
               </section>
             ))}
           </div>

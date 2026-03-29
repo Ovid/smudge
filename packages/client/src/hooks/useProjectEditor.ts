@@ -3,6 +3,7 @@ import type { ProjectWithChapters, Chapter } from "@smudge/shared";
 import { countWords } from "@smudge/shared";
 import { api, ApiRequestError } from "../api/client";
 import { getCachedContent, setCachedContent, clearCachedContent } from "./useContentCache";
+import { STRINGS } from "../strings";
 
 export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
 
@@ -39,7 +40,7 @@ export function useProjectEditor(projectId: string | undefined) {
         }
       } catch (err) {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to load project");
+        setError(err instanceof Error ? err.message : STRINGS.error.loadProjectFailed);
       }
     }
 
@@ -107,7 +108,7 @@ export function useProjectEditor(projectId: string | undefined) {
       setChapterWordCount(0);
       setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create chapter");
+      setError(err instanceof Error ? err.message : STRINGS.error.createChapterFailed);
     }
   }, [projectId]);
 
@@ -121,7 +122,7 @@ export function useProjectEditor(projectId: string | undefined) {
         setActiveChapter(effectiveChapter);
         setChapterWordCount(countWords(effectiveChapter.content));
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load chapter");
+        setError(err instanceof Error ? err.message : STRINGS.error.loadChapterFailed);
       }
     },
     [activeChapter],
@@ -156,7 +157,7 @@ export function useProjectEditor(projectId: string | undefined) {
           }
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to delete chapter");
+        setError(err instanceof Error ? err.message : STRINGS.error.deleteChapterFailed);
       }
     },
     [activeChapter],
@@ -175,7 +176,7 @@ export function useProjectEditor(projectId: string | undefined) {
           return { ...prev, chapters: reordered };
         });
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to reorder chapters");
+        setError(err instanceof Error ? err.message : STRINGS.error.reorderFailed);
       }
     },
     [projectId],
@@ -188,7 +189,7 @@ export function useProjectEditor(projectId: string | undefined) {
         await api.projects.update(project.id, { title });
         setProject((prev) => (prev ? { ...prev, title } : prev));
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to update project title");
+        setError(err instanceof Error ? err.message : STRINGS.error.updateTitleFailed);
       }
     },
     [project],
@@ -211,7 +212,7 @@ export function useProjectEditor(projectId: string | undefined) {
           };
         });
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to rename chapter");
+        setError(err instanceof Error ? err.message : STRINGS.error.renameChapterFailed);
       }
     },
     [activeChapter],

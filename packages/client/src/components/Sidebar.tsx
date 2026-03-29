@@ -120,7 +120,7 @@ function SortableChapterItem({
           onDeleteChapter(chapter);
         }}
         className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-text-muted hover:text-status-error text-xs p-1 rounded focus:outline-none focus:ring-2 focus:ring-focus-ring"
-        aria-label={`Delete ${chapter.title}`}
+        aria-label={STRINGS.delete.deleteChapterAriaLabel(chapter.title)}
       >
         ✕
       </button>
