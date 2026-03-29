@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { Knex } from "knex";
 import { UpdateChapterSchema, countWords } from "@smudge/shared";
+import { asyncHandler } from "../app";
 
 function parseChapterContent(chapter: Record<string, unknown>) {
   return {
@@ -13,7 +14,7 @@ function parseChapterContent(chapter: Record<string, unknown>) {
 export function chaptersRouter(db: Knex): Router {
   const router = Router();
 
-  router.get("/:id", async (req, res) => {
+  router.get("/:id", asyncHandler(async (req, res) => {
     const chapter = await db("chapters")
       .where({ id: req.params.id })
       .whereNull("deleted_at")
@@ -27,9 +28,9 @@ export function chaptersRouter(db: Knex): Router {
     }
 
     res.json(parseChapterContent(chapter));
-  });
+  }));
 
-  router.patch("/:id", async (req, res) => {
+  router.patch("/:id", asyncHandler(async (req, res) => {
     const parsed = UpdateChapterSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({
@@ -76,9 +77,9 @@ export function chaptersRouter(db: Knex): Router {
     const updated = await db("chapters").where({ id: req.params.id }).first();
 
     res.json(parseChapterContent(updated));
-  });
+  }));
 
-  router.delete("/:id", async (req, res) => {
+  router.delete("/:id", asyncHandler(async (req, res) => {
     const chapter = await db("chapters")
       .where({ id: req.params.id })
       .whereNull("deleted_at")
@@ -95,9 +96,9 @@ export function chaptersRouter(db: Knex): Router {
     await db("chapters").where({ id: req.params.id }).update({ deleted_at: now });
 
     res.json({ message: "Chapter moved to trash." });
-  });
+  }));
 
-  router.post("/:id/restore", async (req, res) => {
+  router.post("/:id/restore", asyncHandler(async (req, res) => {
     const chapter = await db("chapters")
       .where({ id: req.params.id })
       .whereNotNull("deleted_at")
@@ -121,7 +122,7 @@ export function chaptersRouter(db: Knex): Router {
 
     const restored = await db("chapters").where({ id: req.params.id }).first();
     res.json(parseChapterContent(restored));
-  });
+  }));
 
   return router;
 }

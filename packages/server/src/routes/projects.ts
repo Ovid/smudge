@@ -2,11 +2,12 @@ import { Router } from "express";
 import type { Knex } from "knex";
 import { v4 as uuid } from "uuid";
 import { CreateProjectSchema } from "@smudge/shared";
+import { asyncHandler } from "../app";
 
 export function projectsRouter(db: Knex): Router {
   const router = Router();
 
-  router.post("/", async (req, res) => {
+  router.post("/", asyncHandler(async (req, res) => {
     const parsed = CreateProjectSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({
@@ -46,9 +47,9 @@ export function projectsRouter(db: Knex): Router {
 
     const project = await db("projects").where({ id: projectId }).first();
     res.status(201).json(project);
-  });
+  }));
 
-  router.get("/", async (_req, res) => {
+  router.get("/", asyncHandler(async (_req, res) => {
     const projects = await db("projects")
       .whereNull("deleted_at")
       .orderBy("updated_at", "desc")
@@ -66,9 +67,9 @@ export function projectsRouter(db: Knex): Router {
     );
 
     res.json(result);
-  });
+  }));
 
-  router.patch("/:id", async (req, res) => {
+  router.patch("/:id", asyncHandler(async (req, res) => {
     const { title } = req.body as { title?: string };
     if (!title || !title.trim()) {
       res.status(400).json({
@@ -95,9 +96,9 @@ export function projectsRouter(db: Knex): Router {
 
     const updated = await db("projects").where({ id: req.params.id }).first();
     res.json(updated);
-  });
+  }));
 
-  router.get("/:id", async (req, res) => {
+  router.get("/:id", asyncHandler(async (req, res) => {
     const project = await db("projects")
       .where({ id: req.params.id })
       .whereNull("deleted_at")
@@ -122,9 +123,9 @@ export function projectsRouter(db: Knex): Router {
     }));
 
     res.json({ ...project, chapters: parsedChapters });
-  });
+  }));
 
-  router.post("/:id/chapters", async (req, res) => {
+  router.post("/:id/chapters", asyncHandler(async (req, res) => {
     const project = await db("projects")
       .where({ id: req.params.id })
       .whereNull("deleted_at")
@@ -161,9 +162,9 @@ export function projectsRouter(db: Knex): Router {
 
     const chapter = await db("chapters").where({ id: chapterId }).first();
     res.status(201).json(chapter);
-  });
+  }));
 
-  router.put("/:id/chapters/order", async (req, res) => {
+  router.put("/:id/chapters/order", asyncHandler(async (req, res) => {
     const project = await db("projects")
       .where({ id: req.params.id })
       .whereNull("deleted_at")
@@ -211,9 +212,9 @@ export function projectsRouter(db: Knex): Router {
     });
 
     res.json({ message: "Chapter order updated." });
-  });
+  }));
 
-  router.get("/:id/trash", async (req, res) => {
+  router.get("/:id/trash", asyncHandler(async (req, res) => {
     const project = await db("projects").where({ id: req.params.id }).first();
 
     if (!project) {
@@ -230,9 +231,9 @@ export function projectsRouter(db: Knex): Router {
       .select("*");
 
     res.json(trashed);
-  });
+  }));
 
-  router.delete("/:id", async (req, res) => {
+  router.delete("/:id", asyncHandler(async (req, res) => {
     const project = await db("projects")
       .where({ id: req.params.id })
       .whereNull("deleted_at")
@@ -256,7 +257,7 @@ export function projectsRouter(db: Knex): Router {
     await db("projects").where({ id: req.params.id }).update({ deleted_at: now });
 
     res.json({ message: "Project moved to trash." });
-  });
+  }));
 
   return router;
 }

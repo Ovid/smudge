@@ -1,7 +1,16 @@
 import express from "express";
+import type { Request, Response, NextFunction } from "express";
 import type { Knex } from "knex";
 import { projectsRouter } from "./routes/projects";
 import { chaptersRouter } from "./routes/chapters";
+
+export function asyncHandler(
+  fn: (req: Request, res: Response, next: NextFunction) => Promise<void>,
+) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
 
 export function createApp(db: Knex): express.Express {
   const app = express();
