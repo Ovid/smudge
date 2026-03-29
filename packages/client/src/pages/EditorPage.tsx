@@ -1,18 +1,24 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import type { ProjectWithChapters, Chapter } from "@smudge/shared";
-import { countWords } from "@smudge/shared";
-import { api } from "../api/client";
 import { Editor } from "../components/Editor";
 import { STRINGS } from "../strings";
+import { useProjectEditor } from "../hooks/useProjectEditor";
 
 export function EditorPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const [project, setProject] = useState<ProjectWithChapters | null>(null);
-  const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [chapterWordCount, setChapterWordCount] = useState(0);
+  const {
+    project,
+    activeChapter,
+    saveStatus,
+    chapterWordCount,
+    handleSave,
+    handleContentChange,
+    handleCreateChapter,
+    handleUpdateProjectTitle,
+    handleUpdateChapterTitle,
+  } = useProjectEditor(projectId);
+
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -22,58 +28,6 @@ export function EditorPage() {
   const [projectTitleDraft, setProjectTitleDraft] = useState("");
   const projectTitleInputRef = useRef<HTMLInputElement>(null);
   const projectEscapePressedRef = useRef(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadProject() {
-      if (!projectId) return;
-      const data = await api.projects.get(projectId);
-      if (cancelled) return;
-      setProject(data);
-      const firstChapter = data.chapters[0];
-      if (firstChapter && !activeChapter) {
-        const chapter = await api.chapters.get(firstChapter.id);
-        if (cancelled) return;
-        setActiveChapter(chapter);
-        setChapterWordCount(countWords(chapter.content));
-      }
-    }
-
-    loadProject();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, activeChapter]);
-
-  const handleSave = useCallback(
-    async (content: Record<string, unknown>) => {
-      if (!activeChapter) return;
-
-      setSaveStatus("saving");
-      try {
-        const updated = await api.chapters.update(activeChapter.id, { content });
-        setActiveChapter(updated);
-        setSaveStatus("saved");
-      } catch {
-        setSaveStatus("error");
-      }
-    },
-    [activeChapter],
-  );
-
-  const handleContentChange = useCallback((content: Record<string, unknown>) => {
-    setChapterWordCount(countWords(content));
-  }, []);
-
-  const handleCreateChapter = useCallback(async () => {
-    if (!projectId) return;
-    const newChapter = await api.chapters.create(projectId);
-    setActiveChapter(newChapter);
-    setChapterWordCount(0);
-    setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
-  }, [projectId]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -120,8 +74,7 @@ export function EditorPage() {
     }
     const trimmed = titleDraft.trim();
     if (trimmed !== activeChapter.title) {
-      const updated = await api.chapters.update(activeChapter.id, { title: trimmed });
-      setActiveChapter(updated);
+      await handleUpdateChapterTitle(trimmed);
     }
     setEditingTitle(false);
   }
@@ -145,8 +98,7 @@ export function EditorPage() {
     }
     const trimmed = projectTitleDraft.trim();
     if (trimmed !== project.title) {
-      await api.projects.update(project.id, { title: trimmed });
-      setProject({ ...project, title: trimmed });
+      await handleUpdateProjectTitle(trimmed);
     }
     setEditingProjectTitle(false);
   }
@@ -235,7 +187,16 @@ export function EditorPage() {
         aria-live="polite"
         className="fixed bottom-0 left-0 right-0 border-t border-border bg-bg-primary px-6 py-2 flex items-center justify-between text-sm text-text-secondary"
       >
-        <div>{STRINGS.project.wordCount(chapterWordCount)}</div>
+        <div>
+          {STRINGS.project.wordCount(chapterWordCount)}
+          {project && (
+            <span className="ml-3 text-text-muted">
+              {STRINGS.project.wordCount(
+                project.chapters.reduce((sum, c) => sum + c.word_count, 0),
+              )}{" "}total
+            </span>
+          )}
+        </div>
         <div>
           {saveStatus === "saving" && STRINGS.editor.saving}
           {saveStatus === "saved" && STRINGS.editor.saved}
