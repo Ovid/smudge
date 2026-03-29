@@ -38,6 +38,19 @@
   --font-serif: "Libre Baskerville", "Georgia", ui-serif, serif;
 }
 
+/* Tighten list spacing in the editor — Tailwind prose adds too much margin */
+.tiptap ul li,
+.tiptap ol li {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+.tiptap ul li p,
+.tiptap ol li p {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
 /* TipTap placeholder */
 .tiptap p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
