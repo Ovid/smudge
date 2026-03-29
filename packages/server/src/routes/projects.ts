@@ -116,7 +116,12 @@ export function projectsRouter(db: Knex): Router {
       .orderBy("sort_order", "asc")
       .select("*");
 
-    res.json({ ...project, chapters });
+    const parsedChapters = chapters.map((ch: Record<string, unknown>) => ({
+      ...ch,
+      content: typeof ch.content === "string" ? JSON.parse(ch.content as string) : (ch.content ?? null),
+    }));
+
+    res.json({ ...project, chapters: parsedChapters });
   });
 
   router.post("/:id/chapters", async (req, res) => {
