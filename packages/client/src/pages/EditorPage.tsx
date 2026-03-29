@@ -201,7 +201,43 @@ export function EditorPage() {
     );
   }
 
-  if (!project || !activeChapter) {
+  if (!project) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-bg-primary">
+        <p className="text-text-muted">Loading...</p>
+      </div>
+    );
+  }
+
+  if (!activeChapter && project.chapters.length === 0) {
+    return (
+      <div className="flex h-screen bg-bg-primary">
+        {sidebarOpen && (
+          <Sidebar
+            project={project}
+            activeChapterId={null}
+            onSelectChapter={handleSelectChapterWithFlush}
+            onAddChapter={handleCreateChapter}
+            onDeleteChapter={setDeleteTarget}
+            onReorderChapters={handleReorderChapters}
+            onRenameChapter={handleRenameChapter}
+            onOpenTrash={openTrash}
+          />
+        )}
+        <div className="flex-1 flex flex-col items-center justify-center">
+          <p className="text-text-muted mb-4">{STRINGS.project.emptyChapters}</p>
+          <button
+            onClick={handleCreateChapter}
+            className="rounded bg-accent px-4 py-2 text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring"
+          >
+            {STRINGS.sidebar.addChapter}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!activeChapter) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-primary">
         <p className="text-text-muted">Loading...</p>
@@ -412,7 +448,7 @@ export function EditorPage() {
           onClose={() => setPreviewOpen(false)}
           onNavigateToChapter={(chapterId) => {
             setPreviewOpen(false);
-            handleSelectChapter(chapterId);
+            handleSelectChapterWithFlush(chapterId);
           }}
         />
       )}

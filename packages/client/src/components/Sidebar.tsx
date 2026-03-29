@@ -20,7 +20,7 @@ import { STRINGS } from "../strings";
 
 interface SidebarProps {
   project: ProjectWithChapters;
-  activeChapterId: string;
+  activeChapterId: string | null;
   onSelectChapter: (id: string) => void;
   onAddChapter: () => void;
   onDeleteChapter: (chapter: Chapter) => void;

@@ -65,7 +65,9 @@ export function useProjectEditor(projectId: string | undefined) {
             return {
               ...prev,
               chapters: prev.chapters.map((c) =>
-                c.id === savingChapterId ? { ...c, word_count: updated.word_count } : c,
+                c.id === savingChapterId
+                  ? { ...c, word_count: updated.word_count, content }
+                  : c,
               ),
             };
           });
@@ -100,7 +102,7 @@ export function useProjectEditor(projectId: string | undefined) {
 
   const handleSelectChapter = useCallback(
     async (chapterId: string) => {
-      if (!activeChapter || chapterId === activeChapter.id) return;
+      if (activeChapter && chapterId === activeChapter.id) return;
       try {
         const chapter = await api.chapters.get(chapterId);
         setActiveChapter(chapter);
@@ -116,9 +118,10 @@ export function useProjectEditor(projectId: string | undefined) {
     async (chapter: Chapter) => {
       try {
         await api.chapters.delete(chapter.id);
-        const remaining = project?.chapters.filter((c) => c.id !== chapter.id) ?? [];
+        let remaining: Chapter[] = [];
         setProject((prev) => {
           if (!prev) return prev;
+          remaining = prev.chapters.filter((c) => c.id !== chapter.id);
           return { ...prev, chapters: remaining };
         });
 

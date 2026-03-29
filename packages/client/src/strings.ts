@@ -11,6 +11,7 @@ export const STRINGS = {
     createButton: "Create",
     cancelButton: "Cancel",
     emptyState: "No projects yet. Create one to start writing.",
+    emptyChapters: "No chapters yet. Add one to start writing.",
     wordCount: (count: number) => `${count.toLocaleString()} words`,
     lastEdited: (dateStr: string) => {
       const date = new Date(dateStr);
