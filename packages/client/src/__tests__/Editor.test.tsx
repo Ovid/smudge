@@ -96,6 +96,21 @@ describe("Editor", () => {
     );
   });
 
+  it("clears content when prop changes to null (new chapter)", async () => {
+    const content1 = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "Existing content" }] }],
+    };
+
+    const { container, rerender } = render(<Editor content={content1} onSave={vi.fn()} />);
+    expect(within(container).getByText("Existing content")).toBeInTheDocument();
+
+    rerender(<Editor content={null} onSave={vi.fn()} />);
+    await waitFor(() => {
+      expect(container.querySelector(".is-editor-empty")).not.toBeNull();
+    });
+  });
+
   it("syncs content when prop changes", async () => {
     const content1 = {
       type: "doc",
