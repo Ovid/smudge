@@ -47,27 +47,40 @@ export function projectsRouter(db: Knex): Router {
       const chapterId = uuid();
       const now = new Date().toISOString();
 
-      await db.transaction(async (trx) => {
-        await trx("projects").insert({
-          id: projectId,
-          title,
-          slug,
-          mode,
-          created_at: now,
-          updated_at: now,
-        });
+      try {
+        await db.transaction(async (trx) => {
+          await trx("projects").insert({
+            id: projectId,
+            title,
+            slug,
+            mode,
+            created_at: now,
+            updated_at: now,
+          });
 
-        await trx("chapters").insert({
-          id: chapterId,
-          project_id: projectId,
-          title: "Untitled Chapter",
-          content: null,
-          sort_order: 0,
-          word_count: 0,
-          created_at: now,
-          updated_at: now,
+          await trx("chapters").insert({
+            id: chapterId,
+            project_id: projectId,
+            title: "Untitled Chapter",
+            content: null,
+            sort_order: 0,
+            word_count: 0,
+            created_at: now,
+            updated_at: now,
+          });
         });
-      });
+      } catch (err: unknown) {
+        if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
+          res.status(400).json({
+            error: {
+              code: "PROJECT_TITLE_EXISTS",
+              message: "A project with that title already exists",
+            },
+          });
+          return;
+        }
+        throw err;
+      }
 
       const project = await db("projects").where({ id: projectId }).first();
       res.status(201).json(project);
@@ -147,9 +160,22 @@ export function projectsRouter(db: Knex): Router {
 
       const newSlug = await resolveUniqueSlug(db, generateSlug(title), project.id);
 
-      await db("projects")
-        .where({ id: project.id })
-        .update({ title, slug: newSlug, updated_at: new Date().toISOString() });
+      try {
+        await db("projects")
+          .where({ id: project.id })
+          .update({ title, slug: newSlug, updated_at: new Date().toISOString() });
+      } catch (err: unknown) {
+        if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
+          res.status(400).json({
+            error: {
+              code: "PROJECT_TITLE_EXISTS",
+              message: "A project with that title already exists",
+            },
+          });
+          return;
+        }
+        throw err;
+      }
 
       const updated = await db("projects").where({ id: project.id }).first();
       res.json(updated);
