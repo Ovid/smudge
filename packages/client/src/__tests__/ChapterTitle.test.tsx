@@ -137,3 +137,104 @@ describe("Chapter title editing", () => {
     expect(api.chapters.update).not.toHaveBeenCalled();
   });
 });
+
+describe("EditorPage save status", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.projects.get).mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
+  });
+
+  it("shows loading state before data arrives", () => {
+    // Make API calls never resolve
+    vi.mocked(api.projects.get).mockReturnValue(new Promise(() => {}));
+    renderEditorPage();
+    expect(screen.getByText("Loading...")).toBeInTheDocument();
+  });
+
+  it("shows 'Saving...' during save", async () => {
+    // Make update hang indefinitely to capture saving state
+    vi.mocked(api.chapters.update).mockReturnValue(new Promise(() => {}));
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(document.querySelector("h2[title='Double-click to edit']")).not.toBeNull();
+    });
+
+    // Trigger save by blurring the editor
+    const editorEl = document.querySelector("[role='textbox']") as HTMLElement;
+    if (editorEl) {
+      fireEvent.focus(editorEl);
+      fireEvent.blur(editorEl);
+
+      await waitFor(() => {
+        expect(screen.getByText("Saving\u2026")).toBeInTheDocument();
+      });
+    }
+  });
+
+  it("shows 'Saved' after successful save", async () => {
+    vi.mocked(api.chapters.update).mockResolvedValue({
+      ...mockChapter,
+      content: { type: "doc", content: [{ type: "paragraph" }] },
+    });
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(document.querySelector("h2[title='Double-click to edit']")).not.toBeNull();
+    });
+
+    const editorEl = document.querySelector("[role='textbox']") as HTMLElement;
+    if (editorEl) {
+      fireEvent.focus(editorEl);
+      fireEvent.blur(editorEl);
+
+      await waitFor(() => {
+        expect(screen.getByText("Saved")).toBeInTheDocument();
+      });
+    }
+  });
+
+  it("shows error message on save failure", async () => {
+    vi.mocked(api.chapters.update).mockRejectedValue(new Error("Network error"));
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(document.querySelector("h2[title='Double-click to edit']")).not.toBeNull();
+    });
+
+    const editorEl = document.querySelector("[role='textbox']") as HTMLElement;
+    if (editorEl) {
+      fireEvent.focus(editorEl);
+      fireEvent.blur(editorEl);
+
+      await waitFor(() => {
+        expect(screen.getByText("Unable to save \u2014 check connection")).toBeInTheDocument();
+      });
+    }
+  });
+
+  it("displays the back button that navigates home", async () => {
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(document.querySelector("h2[title='Double-click to edit']")).not.toBeNull();
+    });
+
+    const backButton = screen.getByText(/Projects/);
+    expect(backButton).toBeInTheDocument();
+    expect(backButton.tagName).toBe("BUTTON");
+  });
+
+  it("displays the project title in the header", async () => {
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Test Project")).toBeInTheDocument();
+    });
+  });
+});
