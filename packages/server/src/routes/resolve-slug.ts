@@ -7,8 +7,9 @@ export async function resolveUniqueSlug(
 ): Promise<string> {
   let slug = baseSlug;
   let suffix = 2;
+  const MAX_SUFFIX = 100;
 
-  while (true) {
+  while (suffix <= MAX_SUFFIX + 2) {
     const query = db("projects").where({ slug }).whereNull("deleted_at");
     if (excludeProjectId) {
       query.whereNot({ id: excludeProjectId });
@@ -18,4 +19,6 @@ export async function resolveUniqueSlug(
     slug = `${baseSlug}-${suffix}`;
     suffix++;
   }
+
+  throw new Error(`Cannot generate unique slug for "${baseSlug}" after ${MAX_SUFFIX} attempts`);
 }
