@@ -23,23 +23,25 @@ export function projectsRouter(db: Knex): Router {
     const chapterId = uuid();
     const now = new Date().toISOString();
 
-    await db("projects").insert({
-      id: projectId,
-      title,
-      mode,
-      created_at: now,
-      updated_at: now,
-    });
+    await db.transaction(async (trx) => {
+      await trx("projects").insert({
+        id: projectId,
+        title,
+        mode,
+        created_at: now,
+        updated_at: now,
+      });
 
-    await db("chapters").insert({
-      id: chapterId,
-      project_id: projectId,
-      title: "Untitled Chapter",
-      content: null,
-      sort_order: 0,
-      word_count: 0,
-      created_at: now,
-      updated_at: now,
+      await trx("chapters").insert({
+        id: chapterId,
+        project_id: projectId,
+        title: "Untitled Chapter",
+        content: null,
+        sort_order: 0,
+        word_count: 0,
+        created_at: now,
+        updated_at: now,
+      });
     });
 
     const project = await db("projects").where({ id: projectId }).first();
@@ -197,9 +199,11 @@ export function projectsRouter(db: Knex): Router {
       return;
     }
 
-    for (let i = 0; i < chapter_ids.length; i++) {
-      await db("chapters").where({ id: chapter_ids[i] }).update({ sort_order: i });
-    }
+    await db.transaction(async (trx) => {
+      for (let i = 0; i < chapter_ids.length; i++) {
+        await trx("chapters").where({ id: chapter_ids[i] }).update({ sort_order: i });
+      }
+    });
 
     res.json({ message: "Chapter order updated." });
   });
