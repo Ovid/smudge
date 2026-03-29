@@ -31,6 +31,9 @@ export const STRINGS = {
   error: {
     projectNotFound: "Project not found",
     backToProjects: "Back to Projects",
+    loadFailed: "Failed to load projects",
+    createFailed: "Failed to create project",
+    deleteFailed: "Failed to delete project",
   },
   editor: {
     placeholder: "Start writing\u2026",
