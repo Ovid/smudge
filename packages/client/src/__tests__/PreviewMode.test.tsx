@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeAll } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PreviewMode } from "../components/PreviewMode";
 import type { Chapter } from "@smudge/shared";
@@ -92,5 +92,28 @@ describe("PreviewMode", () => {
 
     const tocNav = screen.getByRole("navigation", { name: "Table of Contents" });
     expect(tocNav).toBeInTheDocument();
+  });
+
+  it("calls onClose when Escape is pressed", () => {
+    const onClose = vi.fn();
+    render(<PreviewMode chapters={chapters} onClose={onClose} onNavigateToChapter={vi.fn()} />);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("renders empty string for null content", () => {
+    const chaptersWithNull: Chapter[] = [
+      {
+        ...chapters[0],
+        content: null,
+      },
+    ];
+    render(
+      <PreviewMode chapters={chaptersWithNull} onClose={vi.fn()} onNavigateToChapter={vi.fn()} />,
+    );
+
+    // Chapter title should still render
+    expect(screen.getByRole("heading", { name: "Chapter One" })).toBeInTheDocument();
   });
 });

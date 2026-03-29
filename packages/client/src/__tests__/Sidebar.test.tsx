@@ -114,4 +114,90 @@ describe("Sidebar", () => {
     await userEvent.type(input, "Renamed{Enter}");
     expect(onRename).toHaveBeenCalledWith("ch1", "Renamed");
   });
+
+  it("commits rename on blur", async () => {
+    const onRename = vi.fn();
+    renderSidebar({ onRenameChapter: onRename });
+
+    await userEvent.dblClick(screen.getByText("Chapter One"));
+    const input = screen.getByRole("textbox", { name: "Chapter title" });
+    await userEvent.clear(input);
+    await userEvent.type(input, "Blur Renamed");
+    input.blur();
+
+    expect(onRename).toHaveBeenCalledWith("ch1", "Blur Renamed");
+  });
+
+  it("cancels rename on Escape", async () => {
+    const onRename = vi.fn();
+    renderSidebar({ onRenameChapter: onRename });
+
+    await userEvent.dblClick(screen.getByText("Chapter One"));
+    const input = screen.getByRole("textbox", { name: "Chapter title" });
+    await userEvent.type(input, "{Escape}");
+
+    expect(onRename).not.toHaveBeenCalled();
+    expect(screen.getByText("Chapter One")).toBeInTheDocument();
+  });
+
+  it("calls onDeleteChapter when clicking delete button", async () => {
+    const onDelete = vi.fn();
+    renderSidebar({ onDeleteChapter: onDelete });
+
+    const deleteButtons = screen.getAllByRole("button", { name: /Delete/ });
+    await userEvent.click(deleteButtons[0]);
+    expect(onDelete).toHaveBeenCalledWith(mockProject.chapters[0]);
+  });
+
+  it("calls onOpenTrash when clicking Trash button", async () => {
+    const onOpenTrash = vi.fn();
+    renderSidebar({ onOpenTrash });
+
+    await userEvent.click(screen.getByText("Trash"));
+    expect(onOpenTrash).toHaveBeenCalled();
+  });
+
+  it("reorders chapter up with Alt+ArrowUp", async () => {
+    const onReorder = vi.fn();
+    renderSidebar({ onReorderChapters: onReorder, activeChapterId: "ch2" });
+
+    const ch2Button = screen.getByText("Chapter Two");
+    ch2Button.focus();
+    await userEvent.keyboard("{Alt>}{ArrowUp}{/Alt}");
+
+    expect(onReorder).toHaveBeenCalledWith(["ch2", "ch1"]);
+  });
+
+  it("reorders chapter down with Alt+ArrowDown", async () => {
+    const onReorder = vi.fn();
+    renderSidebar({ onReorderChapters: onReorder });
+
+    const ch1Button = screen.getByText("Chapter One");
+    ch1Button.focus();
+    await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+
+    expect(onReorder).toHaveBeenCalledWith(["ch2", "ch1"]);
+  });
+
+  it("does not reorder first chapter up", async () => {
+    const onReorder = vi.fn();
+    renderSidebar({ onReorderChapters: onReorder });
+
+    const ch1Button = screen.getByText("Chapter One");
+    ch1Button.focus();
+    await userEvent.keyboard("{Alt>}{ArrowUp}{/Alt}");
+
+    expect(onReorder).not.toHaveBeenCalled();
+  });
+
+  it("does not reorder last chapter down", async () => {
+    const onReorder = vi.fn();
+    renderSidebar({ onReorderChapters: onReorder, activeChapterId: "ch2" });
+
+    const ch2Button = screen.getByText("Chapter Two");
+    ch2Button.focus();
+    await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
+
+    expect(onReorder).not.toHaveBeenCalled();
+  });
 });
