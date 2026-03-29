@@ -6,6 +6,15 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api/client";
 
 vi.mock("../api/client", () => ({
+  ApiRequestError: class ApiRequestError extends Error {
+    constructor(
+      message: string,
+      public readonly status: number,
+    ) {
+      super(message);
+      this.name = "ApiRequestError";
+    }
+  },
   api: {
     projects: {
       get: vi.fn(),
@@ -188,7 +197,7 @@ describe("EditorPage delete confirmation", () => {
     await userEvent.click(deleteButtons[0]);
 
     // Should show confirmation dialog
-    expect(screen.getByRole("alertdialog", { name: "Confirm delete" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: /Move .+ to trash/ })).toBeInTheDocument();
     expect(screen.getByText(/Move .+ to trash/)).toBeInTheDocument();
   });
 

@@ -4,6 +4,15 @@ import { App } from "../App";
 import { api } from "../api/client";
 
 vi.mock("../api/client", () => ({
+  ApiRequestError: class ApiRequestError extends Error {
+    constructor(
+      message: string,
+      public readonly status: number,
+    ) {
+      super(message);
+      this.name = "ApiRequestError";
+    }
+  },
   api: {
     projects: {
       list: vi.fn(),

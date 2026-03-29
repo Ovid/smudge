@@ -132,12 +132,11 @@ export function useProjectEditor(projectId: string | undefined) {
     async (chapter: Chapter) => {
       try {
         await api.chapters.delete(chapter.id);
-        let remaining: Chapter[] = [];
         setProject((prev) => {
           if (!prev) return prev;
-          remaining = prev.chapters.filter((c) => c.id !== chapter.id);
-          return { ...prev, chapters: remaining };
+          return { ...prev, chapters: prev.chapters.filter((c) => c.id !== chapter.id) };
         });
+        const remaining = project?.chapters.filter((c) => c.id !== chapter.id) ?? [];
 
         // If deleting the active chapter, switch to the first remaining
         if (activeChapter?.id === chapter.id) {

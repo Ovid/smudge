@@ -2,6 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
 
 vi.mock("../api/client", () => ({
+  ApiRequestError: class ApiRequestError extends Error {
+    constructor(
+      message: string,
+      public readonly status: number,
+    ) {
+      super(message);
+      this.name = "ApiRequestError";
+    }
+  },
   api: {
     projects: {
       get: vi.fn(),
@@ -17,6 +26,12 @@ vi.mock("../api/client", () => ({
       restore: vi.fn(),
     },
   },
+}));
+
+vi.mock("../hooks/useContentCache", () => ({
+  getCachedContent: vi.fn().mockReturnValue(null),
+  setCachedContent: vi.fn(),
+  clearCachedContent: vi.fn(),
 }));
 
 import { api } from "../api/client";
@@ -147,7 +162,7 @@ describe("useProjectEditor", () => {
         await vi.advanceTimersByTimeAsync(2000);
         await vi.advanceTimersByTimeAsync(4000);
         await vi.advanceTimersByTimeAsync(8000);
-        return p;
+        await expect(p).rejects.toThrow("Save failed after retries");
       });
 
       expect(result.current.saveStatus).toBe("error");
