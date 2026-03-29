@@ -9,7 +9,7 @@ export async function resolveUniqueSlug(
   let suffix = 2;
   const MAX_SUFFIX = 100;
 
-  while (suffix <= MAX_SUFFIX + 2) {
+  while (suffix <= MAX_SUFFIX + 1) {
     const query = db("projects").where({ slug }).whereNull("deleted_at");
     if (excludeProjectId) {
       query.whereNot({ id: excludeProjectId });
