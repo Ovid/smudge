@@ -178,26 +178,6 @@ export function useProjectEditor(projectId: string | undefined) {
     [project],
   );
 
-  const handleUpdateChapterTitle = useCallback(
-    async (title: string) => {
-      if (!activeChapter) return;
-      try {
-        const updated = await api.chapters.update(activeChapter.id, { title });
-        setActiveChapter(updated);
-        setProject((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            chapters: prev.chapters.map((c) => (c.id === updated.id ? { ...c, title } : c)),
-          };
-        });
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to update chapter title");
-      }
-    },
-    [activeChapter],
-  );
-
   const handleRenameChapter = useCallback(
     async (chapterId: string, title: string) => {
       try {
@@ -233,7 +213,6 @@ export function useProjectEditor(projectId: string | undefined) {
     handleDeleteChapter,
     handleReorderChapters,
     handleUpdateProjectTitle,
-    handleUpdateChapterTitle,
     handleRenameChapter,
   };
 }

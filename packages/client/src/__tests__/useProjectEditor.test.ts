@@ -280,7 +280,7 @@ describe("useProjectEditor", () => {
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
     await act(async () => {
-      await result.current.handleUpdateChapterTitle("Renamed");
+      await result.current.handleRenameChapter(result.current.activeChapter!.id, "Renamed");
     });
 
     expect(result.current.activeChapter?.title).toBe("Renamed");

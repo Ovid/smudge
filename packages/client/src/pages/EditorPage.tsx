@@ -26,7 +26,6 @@ export function EditorPage() {
     handleDeleteChapter,
     handleReorderChapters,
     handleUpdateProjectTitle,
-    handleUpdateChapterTitle,
     handleRenameChapter,
   } = useProjectEditor(projectId);
 
@@ -152,7 +151,7 @@ export function EditorPage() {
     }
     const trimmed = titleDraft.trim();
     if (trimmed !== activeChapter.title) {
-      await handleUpdateChapterTitle(trimmed);
+      await handleRenameChapter(activeChapter.id, trimmed);
     }
     setEditingTitle(false);
   }
