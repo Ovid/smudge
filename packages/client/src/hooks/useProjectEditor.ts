@@ -195,8 +195,9 @@ export function useProjectEditor(slug: string | undefined) {
         projectSlugRef.current = updated.slug;
         setProject((prev) => (prev ? { ...prev, title: updated.title, slug: updated.slug } : prev));
         return updated.slug;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : STRINGS.error.updateTitleFailed);
+      } catch {
+        // Don't call setError — that triggers the full-page error overlay.
+        // Returning undefined keeps the title edit mode open so the user can retry.
         return undefined;
       }
     },
