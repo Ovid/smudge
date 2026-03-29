@@ -16,8 +16,14 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
-    const body = (await res.json()) as ApiError;
-    throw new Error(body.error?.message ?? `Request failed: ${res.status}`);
+    let message = `Request failed: ${res.status}`;
+    try {
+      const body = (await res.json()) as ApiError;
+      message = body.error?.message ?? message;
+    } catch {
+      // Response body wasn't JSON (e.g., proxy HTML error page)
+    }
+    throw new Error(message);
   }
 
   return res.json() as Promise<T>;
