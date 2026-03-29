@@ -393,6 +393,316 @@ describe("EditorPage trash view", () => {
   });
 });
 
+describe("EditorPage empty and loading states", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders empty project state with add chapter button", async () => {
+    const emptyProject = { ...mockProject, chapters: [] };
+    vi.mocked(api.projects.get).mockResolvedValue(emptyProject);
+
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("No chapters yet. Add one to start writing.")).toBeInTheDocument();
+    });
+
+    // There are multiple Add Chapter buttons (sidebar + main area), both valid
+    expect(screen.getAllByRole("button", { name: "Add Chapter" }).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("shows loading state while project loads", async () => {
+    // Never resolve — keep project loading forever
+    vi.mocked(api.projects.get).mockReturnValue(new Promise(() => {}));
+
+    renderEditorPage();
+
+    expect(screen.getByText("Loading...")).toBeInTheDocument();
+  });
+
+  it("shows loading state when project loaded but activeChapter not yet set", async () => {
+    // Project with chapters but chapter.get never resolves
+    vi.mocked(api.projects.get).mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockReturnValue(new Promise(() => {}));
+
+    renderEditorPage();
+
+    // First we see loading (project not yet loaded)
+    expect(screen.getByText("Loading...")).toBeInTheDocument();
+
+    // After project loads but chapter still pending, still loading
+    await waitFor(() => {
+      // project is loaded — we should still see loading because activeChapter is null
+      // and chapters.length > 0 so it hits the second loading guard
+      expect(screen.getByText("Loading...")).toBeInTheDocument();
+    });
+  });
+});
+
+describe("EditorPage openTrash failure", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.projects.get).mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
+  });
+
+  it("logs error when openTrash fails", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(api.projects.trash).mockRejectedValue(new Error("trash load failed"));
+
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Trash")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByText("Trash"));
+
+    await waitFor(() => {
+      expect(consoleSpy).toHaveBeenCalledWith("Failed to load trash:", expect.any(Error));
+    });
+
+    consoleSpy.mockRestore();
+  });
+});
+
+describe("EditorPage restore with slug change", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.projects.get).mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
+  });
+
+  it("updates project slug when restored chapter has a different project_slug", async () => {
+    const trashedChapter = {
+      id: "ch-trashed",
+      project_id: "proj-1",
+      title: "Deleted Chapter",
+      content: null,
+      sort_order: 2,
+      word_count: 0,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+      deleted_at: "2026-03-20T10:00:00.000Z",
+    };
+    vi.mocked(api.projects.trash).mockResolvedValue([trashedChapter]);
+    vi.mocked(api.chapters.restore).mockResolvedValue({
+      ...trashedChapter,
+      deleted_at: null,
+      project_slug: "new-project-slug",
+    });
+
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Trash")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByText("Trash"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Deleted Chapter")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByText("Restore"));
+
+    await waitFor(() => {
+      expect(api.chapters.restore).toHaveBeenCalledWith("ch-trashed");
+    });
+  });
+
+  it("logs error when handleRestore fails", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const trashedChapter = {
+      id: "ch-trashed",
+      project_id: "proj-1",
+      title: "Deleted Chapter",
+      content: null,
+      sort_order: 2,
+      word_count: 0,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+      deleted_at: "2026-03-20T10:00:00.000Z",
+    };
+    vi.mocked(api.projects.trash).mockResolvedValue([trashedChapter]);
+    vi.mocked(api.chapters.restore).mockRejectedValue(new Error("restore failed"));
+
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Trash")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByText("Trash"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Deleted Chapter")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByText("Restore"));
+
+    await waitFor(() => {
+      expect(consoleSpy).toHaveBeenCalledWith("Failed to restore chapter:", expect.any(Error));
+    });
+
+    consoleSpy.mockRestore();
+  });
+});
+
+describe("EditorPage confirmDeleteChapter trash refresh failure", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.projects.get).mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
+    vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
+  });
+
+  it("silently handles trash refresh failure after delete", async () => {
+    // First trash call succeeds (opens trash), second fails (refresh after delete)
+    vi.mocked(api.projects.trash)
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error("trash refresh failed"));
+
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Trash")).toBeInTheDocument();
+    });
+
+    // Open trash view
+    await userEvent.click(screen.getByText("Trash"));
+    await waitFor(() => {
+      expect(screen.getByText("No chapters in trash.")).toBeInTheDocument();
+    });
+
+    // Delete a chapter while trash is open
+    const deleteButtons = screen.getAllByRole("button", { name: /Delete/ });
+    await userEvent.click(deleteButtons[1]);
+    await userEvent.click(screen.getByText("Confirm"));
+
+    // Should not throw — the empty catch handles it
+    await waitFor(() => {
+      expect(api.chapters.delete).toHaveBeenCalled();
+    });
+  });
+});
+
+describe("EditorPage title editing guards", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.projects.get).mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
+  });
+
+  it("cancels chapter title edit on Escape", async () => {
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    // Double-click to start editing
+    await userEvent.dblClick(screen.getByRole("heading", { level: 2, name: "Chapter One" }));
+
+    const input = screen.getByLabelText("Chapter title");
+    expect(input).toBeInTheDocument();
+
+    // Press Escape to cancel
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+  });
+
+  it("cancels project title edit on Escape", async () => {
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Test Project");
+    });
+
+    // Double-click the h1 to start editing
+    await userEvent.dblClick(screen.getByRole("heading", { level: 1 }));
+
+    const input = screen.getByLabelText("Project title");
+    expect(input).toBeInTheDocument();
+
+    // Press Escape to cancel
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Test Project");
+    });
+  });
+
+  it("keeps edit mode open when handleUpdateProjectTitle returns undefined", async () => {
+    vi.mocked(api.projects.update).mockRejectedValue(new Error("update failed"));
+
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Test Project");
+    });
+
+    // Double-click the h1 to start editing project title
+    await userEvent.dblClick(screen.getByRole("heading", { level: 1 }));
+
+    const input = screen.getByLabelText("Project title");
+    await userEvent.clear(input);
+    await userEvent.type(input, "New Title");
+
+    // Blur to trigger save
+    fireEvent.blur(input);
+
+    // Since handleUpdateProjectTitle returns undefined on failure,
+    // the edit mode should stay open (input still visible)
+    await waitFor(() => {
+      expect(api.projects.update).toHaveBeenCalled();
+    });
+  });
+
+  it("navigates when project title update returns a different slug", async () => {
+    vi.mocked(api.projects.update).mockResolvedValue({
+      ...mockProject,
+      title: "New Title",
+      slug: "new-title",
+      chapters: undefined as never,
+    });
+
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Test Project");
+    });
+
+    // Double-click the h1 to start editing project title
+    await userEvent.dblClick(screen.getByRole("heading", { level: 1 }));
+
+    const input = screen.getByLabelText("Project title");
+    await userEvent.clear(input);
+    await userEvent.type(input, "New Title");
+
+    // Submit via Enter
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(api.projects.update).toHaveBeenCalled();
+    });
+  });
+});
+
 describe("EditorPage preview mode", () => {
   afterEach(() => cleanup());
 

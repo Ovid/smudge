@@ -230,8 +230,8 @@ describe("POST /api/chapters/:id/restore", () => {
     const projectA = await request(t.app)
       .post("/api/projects")
       .send({ title: "My Novel", mode: "fiction" });
-    const chapterA = (await request(t.app).get(`/api/projects/${projectA.body.slug}`))
-      .body.chapters[0];
+    const chapterA = (await request(t.app).get(`/api/projects/${projectA.body.slug}`)).body
+      .chapters[0];
     await request(t.app).delete(`/api/chapters/${chapterA.id}`);
     await request(t.app).delete(`/api/projects/${projectA.body.slug}`);
 
@@ -268,5 +268,40 @@ describe("POST /api/chapters/:id/restore", () => {
     const res = await request(t.app).post(`/api/chapters/${chapterId}/restore`);
 
     expect(res.status).toBe(404);
+  });
+
+  it("returns PROJECT_PURGED when parent project has been hard-deleted", async () => {
+    const { projectId, chapterId } = await createProjectWithChapter(t.app);
+
+    // Soft-delete the chapter
+    await request(t.app).delete(`/api/chapters/${chapterId}`);
+
+    // Temporarily disable FK constraints so we can hard-delete the project
+    // while leaving the orphaned chapter behind
+    await t.db.raw("PRAGMA foreign_keys = OFF");
+
+    await t.db("chapters").where({ project_id: projectId }).del();
+    await t.db("projects").where({ id: projectId }).del();
+
+    // Re-insert just the soft-deleted chapter (no parent project)
+    const now = new Date().toISOString();
+    await t.db("chapters").insert({
+      id: chapterId,
+      project_id: projectId,
+      title: "Orphaned Chapter",
+      sort_order: 0,
+      word_count: 0,
+      created_at: now,
+      updated_at: now,
+      deleted_at: now,
+    });
+
+    // Re-enable FK constraints
+    await t.db.raw("PRAGMA foreign_keys = ON");
+
+    const res = await request(t.app).post(`/api/chapters/${chapterId}/restore`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("PROJECT_PURGED");
   });
 });

@@ -317,6 +317,21 @@ describe("PUT /api/projects/:slug/chapters/order", () => {
     expect(res.status).toBe(400);
   });
 
+  it("returns REORDER_MISMATCH when IDs have correct count but wrong values", async () => {
+    const projectRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Test", mode: "fiction" });
+    const projectSlug = projectRes.body.slug;
+
+    // Project auto-creates one chapter; send one ID but the wrong one
+    const res = await request(t.app)
+      .put(`/api/projects/${projectSlug}/chapters/order`)
+      .send({ chapter_ids: ["00000000-0000-0000-0000-000000000000"] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("REORDER_MISMATCH");
+  });
+
   it("returns 400 if chapter_ids is missing or not an array", async () => {
     const projectRes = await request(t.app)
       .post("/api/projects")

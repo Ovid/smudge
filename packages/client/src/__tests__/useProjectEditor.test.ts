@@ -362,4 +362,107 @@ describe("useProjectEditor", () => {
 
     expect(result.current.chapterWordCount).toBe(2);
   });
+
+  it("sets error when handleCreateChapter fails", async () => {
+    vi.mocked(api.chapters.create).mockRejectedValue(new Error("create boom"));
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleCreateChapter();
+    });
+
+    expect(result.current.error).toBe("create boom");
+  });
+
+  it("sets error when handleSelectChapter fails", async () => {
+    vi.mocked(api.chapters.get)
+      .mockResolvedValueOnce(mockChapter1) // initial load
+      .mockRejectedValueOnce(new Error("select boom")); // select fails
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleSelectChapter("ch2");
+    });
+
+    expect(result.current.error).toBe("select boom");
+  });
+
+  it("sets error when handleDeleteChapter fails", async () => {
+    vi.mocked(api.chapters.delete).mockRejectedValue(new Error("delete boom"));
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleDeleteChapter(mockChapter2);
+    });
+
+    expect(result.current.error).toBe("delete boom");
+  });
+
+  it("sets activeChapter to null when deleting the last chapter", async () => {
+    const singleChapterProject = {
+      ...mockProject,
+      chapters: [mockChapter1],
+    };
+    vi.mocked(api.projects.get).mockResolvedValue(singleChapterProject);
+    vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleDeleteChapter(mockChapter1);
+    });
+
+    expect(result.current.activeChapter).toBeNull();
+    expect(result.current.chapterWordCount).toBe(0);
+    expect(result.current.project?.chapters).toHaveLength(0);
+  });
+
+  it("sets error when handleReorderChapters fails", async () => {
+    vi.mocked(api.projects.reorderChapters).mockRejectedValue(new Error("reorder boom"));
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleReorderChapters(["ch2", "ch1"]);
+    });
+
+    expect(result.current.error).toBe("reorder boom");
+  });
+
+  it("returns undefined when handleUpdateProjectTitle fails", async () => {
+    vi.mocked(api.projects.update).mockRejectedValue(new Error("update boom"));
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    let returnValue: string | undefined;
+    await act(async () => {
+      returnValue = await result.current.handleUpdateProjectTitle("New Title");
+    });
+
+    expect(returnValue).toBeUndefined();
+    // Should NOT set error (keeps title edit mode open instead)
+    expect(result.current.error).toBeNull();
+  });
+
+  it("sets error when handleRenameChapter fails", async () => {
+    vi.mocked(api.chapters.update).mockRejectedValue(new Error("rename boom"));
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleRenameChapter("ch1", "New Name");
+    });
+
+    expect(result.current.error).toBe("rename boom");
+  });
 });
