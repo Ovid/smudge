@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "concurrently -n server,client -c blue,green \"npm run dev -w packages/server\" \"npm run dev -w packages/client\"",
     "test": "npm test -w packages/shared && npm test -w packages/server && npm test -w packages/client",
-    "test:watch": "vitest --workspace vitest.workspace.ts",
+    "test:watch": "vitest --config vitest.config.ts",
     "lint": "eslint packages/",
     "format": "prettier --write \"packages/**/*.{ts,tsx,json,css}\"",
     "format:check": "prettier --check \"packages/**/*.{ts,tsx,json,css}\""
