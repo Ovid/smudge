@@ -84,6 +84,7 @@ export const api = {
 
     delete: (id: string) => apiFetch<{ message: string }>(`/chapters/${id}`, { method: "DELETE" }),
 
-    restore: (id: string) => apiFetch<Chapter>(`/chapters/${id}/restore`, { method: "POST" }),
+    restore: (id: string) =>
+      apiFetch<Chapter & { project_slug?: string }>(`/chapters/${id}/restore`, { method: "POST" }),
   },
 };

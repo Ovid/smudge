@@ -74,14 +74,18 @@ export function EditorPage() {
     try {
       const restored = await api.chapters.restore(chapterId);
       setTrashedChapters((prev) => prev.filter((c) => c.id !== chapterId));
-      setProject((prev) =>
-        prev
-          ? {
-              ...prev,
-              chapters: [...prev.chapters, restored].sort((a, b) => a.sort_order - b.sort_order),
-            }
-          : prev,
-      );
+      setProject((prev) => {
+        if (!prev) return prev;
+        const updatedProject = {
+          ...prev,
+          chapters: [...prev.chapters, restored].sort((a, b) => a.sort_order - b.sort_order),
+        };
+        // If the restore also restored the parent project with a new slug, update it
+        if (restored.project_slug && restored.project_slug !== prev.slug) {
+          updatedProject.slug = restored.project_slug;
+        }
+        return updatedProject;
+      });
     } catch (err) {
       console.error("Failed to restore chapter:", err);
     }
