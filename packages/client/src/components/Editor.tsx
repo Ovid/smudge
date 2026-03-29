@@ -47,6 +47,7 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
     const handler = (e: BeforeUnloadEvent) => {
       if (dirtyRef.current) {
         e.preventDefault();
+        e.returnValue = "";
       }
     };
     window.addEventListener("beforeunload", handler);
