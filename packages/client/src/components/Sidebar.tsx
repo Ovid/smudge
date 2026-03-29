@@ -7,7 +7,12 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
 import type { ProjectWithChapters, Chapter } from "@smudge/shared";
@@ -55,14 +60,9 @@ function SortableChapterItem({
   onKeyReorder,
   onDeleteChapter,
 }: SortableChapterItemProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: chapter.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: chapter.id,
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -75,7 +75,11 @@ function SortableChapterItem({
       style={style}
       aria-current={isActive ? "true" : undefined}
       className={`flex items-center gap-2 px-4 py-2 cursor-pointer group ${
-        isDragging ? "opacity-50 bg-accent-light" : isActive ? "bg-accent-light" : "hover:bg-bg-hover"
+        isDragging
+          ? "opacity-50 bg-accent-light"
+          : isActive
+            ? "bg-accent-light"
+            : "hover:bg-bg-hover"
       }`}
     >
       <button

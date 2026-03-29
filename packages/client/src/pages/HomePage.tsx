@@ -112,7 +112,9 @@ export function HomePage() {
             <p className="text-text-primary font-medium mb-2">
               {STRINGS.delete.confirmTitle(deleteTarget.title)}
             </p>
-            <p id="home-delete-confirm-body" className="text-text-secondary text-sm mb-4">{STRINGS.delete.confirmBody}</p>
+            <p id="home-delete-confirm-body" className="text-text-secondary text-sm mb-4">
+              {STRINGS.delete.confirmBody}
+            </p>
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setDeleteTarget(null)}
