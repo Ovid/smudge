@@ -131,11 +131,16 @@ export function projectsRouter(db: Knex): Router {
         .orderBy("sort_order", "asc")
         .select("*");
 
-      const parsedChapters = chapters.map((ch: Record<string, unknown>) => ({
-        ...ch,
-        content:
-          typeof ch.content === "string" ? JSON.parse(ch.content as string) : (ch.content ?? null),
-      }));
+      const parsedChapters = chapters.map((ch: Record<string, unknown>) => {
+        if (typeof ch.content === "string") {
+          try {
+            return { ...ch, content: JSON.parse(ch.content as string) };
+          } catch {
+            return { ...ch, content: null };
+          }
+        }
+        return { ...ch, content: ch.content ?? null };
+      });
 
       res.json({ ...project, chapters: parsedChapters });
     }),
@@ -179,7 +184,7 @@ export function projectsRouter(db: Knex): Router {
       await db("projects").where({ id: req.params.id }).update({ updated_at: now });
 
       const chapter = await db("chapters").where({ id: chapterId }).first();
-      res.status(201).json(chapter);
+      res.status(201).json({ ...chapter, content: chapter.content ?? null });
     }),
   );
 
@@ -254,7 +259,18 @@ export function projectsRouter(db: Knex): Router {
         .orderBy("deleted_at", "desc")
         .select("*");
 
-      res.json(trashed);
+      const parsed = trashed.map((ch: Record<string, unknown>) => {
+        if (typeof ch.content === "string") {
+          try {
+            return { ...ch, content: JSON.parse(ch.content as string) };
+          } catch {
+            return { ...ch, content: null };
+          }
+        }
+        return { ...ch, content: ch.content ?? null };
+      });
+
+      res.json(parsed);
     }),
   );
 

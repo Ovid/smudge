@@ -4,11 +4,14 @@ import { UpdateChapterSchema, countWords } from "@smudge/shared";
 import { asyncHandler } from "../app";
 
 function parseChapterContent(chapter: Record<string, unknown>) {
-  return {
-    ...chapter,
-    content:
-      typeof chapter.content === "string" ? JSON.parse(chapter.content) : (chapter.content ?? null),
-  };
+  if (typeof chapter.content === "string") {
+    try {
+      return { ...chapter, content: JSON.parse(chapter.content) };
+    } catch {
+      return { ...chapter, content: null };
+    }
+  }
+  return { ...chapter, content: chapter.content ?? null };
 }
 
 export function chaptersRouter(db: Knex): Router {
