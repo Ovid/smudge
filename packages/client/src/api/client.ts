@@ -44,7 +44,7 @@ export const api = {
   projects: {
     list: () => apiFetch<ProjectListItem[]>("/projects"),
 
-    get: (id: string) => apiFetch<ProjectWithChapters>(`/projects/${id}`),
+    get: (slug: string) => apiFetch<ProjectWithChapters>(`/projects/${slug}`),
 
     create: (input: CreateProjectInput) =>
       apiFetch<Project>("/projects", {
@@ -52,28 +52,28 @@ export const api = {
         body: JSON.stringify(input),
       }),
 
-    update: (id: string, data: { title?: string }) =>
-      apiFetch<Project>(`/projects/${id}`, {
+    update: (slug: string, data: { title?: string }) =>
+      apiFetch<Project>(`/projects/${slug}`, {
         method: "PATCH",
         body: JSON.stringify(data),
       }),
 
-    delete: (id: string) => apiFetch<{ message: string }>(`/projects/${id}`, { method: "DELETE" }),
+    delete: (slug: string) => apiFetch<{ message: string }>(`/projects/${slug}`, { method: "DELETE" }),
 
-    reorderChapters: (projectId: string, chapterIds: string[]) =>
-      apiFetch<{ message: string }>(`/projects/${projectId}/chapters/order`, {
+    reorderChapters: (slug: string, chapterIds: string[]) =>
+      apiFetch<{ message: string }>(`/projects/${slug}/chapters/order`, {
         method: "PUT",
         body: JSON.stringify({ chapter_ids: chapterIds }),
       }),
 
-    trash: (projectId: string) => apiFetch<Chapter[]>(`/projects/${projectId}/trash`),
+    trash: (slug: string) => apiFetch<Chapter[]>(`/projects/${slug}/trash`),
   },
 
   chapters: {
     get: (id: string) => apiFetch<Chapter>(`/chapters/${id}`),
 
-    create: (projectId: string) =>
-      apiFetch<Chapter>(`/projects/${projectId}/chapters`, { method: "POST" }),
+    create: (projectSlug: string) =>
+      apiFetch<Chapter>(`/projects/${projectSlug}/chapters`, { method: "POST" }),
 
     update: (id: string, data: { title?: string; content?: Record<string, unknown> }) =>
       apiFetch<Chapter>(`/chapters/${id}`, {
