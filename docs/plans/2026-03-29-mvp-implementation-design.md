@@ -6,17 +6,25 @@
 
 ---
 
+## Cross-Slice Constraints
+
+**CSS custom properties for all visual values.** All colors, backgrounds, and borders must be defined as CSS custom properties (mapped to Tailwind theme tokens), not hardcoded values. Dark mode is Phase 7, but retrofitting hardcoded colors across every component is days of work. Defining tokens from the start costs one or two hours of setup in slice 0 and zero user-facing cost. This is a discipline constraint, not a feature.
+
+---
+
 ## Slice 0: Monorepo Scaffold & Tooling
 
 npm workspaces with three packages: `shared`, `server`, `client`. Root `package.json` defines workspace layout. Each package gets its own `tsconfig.json` extending a shared base config at the root.
 
-**Shared** is built first (both server and client depend on it). Contains TypeScript types, Zod schemas, and `countWords()`. Compiles to CommonJS.
+**Shared** is built first (both server and client depend on it). Contains TypeScript types and Zod schemas. Ships ESM (`"type": "module"` in package.json) — Vite consumes it natively, Node 20 handles ESM, no CJS/ESM friction.
 
 **Server** uses Express 4.x, better-sqlite3, Knex. Vitest + Supertest for testing.
 
-**Client** uses Vite + React 18 + TypeScript + TipTap v2 + Tailwind CSS. Vitest for testing.
+**Client** uses Vite + React 18 + TypeScript + TipTap v2 + Tailwind CSS. Vitest for testing. React Router for client-side navigation (`/`, `/projects/:id`, `/projects/:id/preview`, `/trash`). Vite `server.proxy` forwards `/api/*` to Express in dev (no CORS middleware needed).
 
-**Dev workflow:** `npm run dev` at root starts both server (tsx watch) and client (Vite dev server with API proxy). Single command.
+**Tailwind theme:** Define all colors, backgrounds, and borders as CSS custom properties in a theme file, mapped to Tailwind tokens. All components use tokens, never raw color values.
+
+**Dev workflow:** `npm run dev` at root starts both server (tsx watch) and client (Vite dev server with API proxy to Express). Single command.
 
 **Linting:** ESLint + Prettier, shared config at root. Strict TypeScript (`strict: true`, `noUncheckedIndexedAccess: true`).
 
@@ -30,24 +38,24 @@ First feature slice. By the end: create a project, see a chapter, type in TipTap
 
 ### Shared (TDD)
 
-- `countWords(tiptapJson)` with edge cases: English prose, CJK text, empty doc, structural-only nodes, hyphenated compounds, contractions. Uses `Intl.Segmenter`.
 - Zod schemas: `CreateProjectSchema` (title required, mode enum), `UpdateChapterSchema` (title optional, content optional as valid JSON).
 - TypeScript types: `Project`, `Chapter`, API request/response shapes.
+- Note: `countWords()` is deferred to slice 3 where it's first meaningfully displayed.
 
 ### Server (TDD with Supertest)
 
 - Knex migration: `projects` and `chapters` tables with all columns from spec.
-- Routes: `POST /api/projects` (creates project + auto-creates first chapter), `GET /api/projects`, `GET /api/projects/:id` (project + chapters), `GET /api/chapters/:id`, `PATCH /api/chapters/:id` (update content, recalculate word count server-side).
+- `GET /api/health` — returns 200 with `{ "status": "ok" }`. Available from day one for dev checks and Docker healthcheck later.
+- Routes: `POST /api/projects` (creates project + auto-creates first chapter), `GET /api/projects`, `GET /api/projects/:id` (project + chapters), `GET /api/chapters/:id`, `PATCH /api/chapters/:id` (update content).
 - Validation via shared Zod schemas. Error envelope format from spec.
 - Integration tests against real SQLite (in-memory).
 
 ### Client (minimal)
 
 - Home page: project list, "New Project" button with title + mode input.
-- Editor page: project title, single chapter, TipTap editor.
+- Editor page: project title, single chapter, TipTap editor with heading levels configured as H3/H4/H5 (writer sees "Heading 1/2/3" but DOM maintains correct hierarchy under the H2 chapter title).
 - No auto-save yet. Temporary save-on-blur (removed in slice 2).
-- Word count displayed using shared `countWords()`.
-- Tailwind styling with spec's color palette and typography from day one.
+- Tailwind styling with spec's color palette and typography from day one, using theme tokens (no hardcoded colors).
 
 ---
 
@@ -72,7 +80,7 @@ The trust backbone. TDD is especially critical here.
 
 ### Server hardening
 
-- `PATCH /api/chapters/:id` validates content is valid TipTap JSON before overwriting. Returns 400 with `code: "INVALID_CONTENT"` if malformed. Previous content preserved.
+- `PATCH /api/chapters/:id` validates content is valid JSON and has a `type: "doc"` root node before overwriting. Returns 400 with `code: "INVALID_CONTENT"` if malformed. Previous content preserved. (No full ProseMirror schema validation — catches corruption without risking false rejections.)
 
 ### Tests
 
@@ -88,12 +96,17 @@ The trust backbone. TDD is especially critical here.
 
 Multiple chapters, sidebar, chapter switching.
 
+### Shared (TDD)
+
+- `countWords(tiptapJson)` with edge cases: English prose, CJK text, empty doc, structural-only nodes, hyphenated compounds, contractions. Uses `Intl.Segmenter`.
+
 ### Server (TDD)
 
 - `POST /api/projects/:id/chapters` -- "Untitled Chapter", empty content, `sort_order` appended.
 - `DELETE /api/chapters/:id` -- soft-delete (sets `deleted_at`). Full trash UI in slice 5, but API correct now.
+- `PATCH /api/chapters/:id` now recalculates `word_count` server-side on content update using shared `countWords()`.
 - `GET /api/projects/:id` excludes soft-deleted chapters, orders by `sort_order`.
-- Tests: create multiple chapters, verify ordering. Delete chapter, verify excluded from list but still in DB.
+- Tests: create multiple chapters, verify ordering. Delete chapter, verify excluded from list but still in DB. Word count updated on save.
 
 ### Client -- Sidebar
 
@@ -110,7 +123,7 @@ Multiple chapters, sidebar, chapter switching.
 
 ### Word count (status bar)
 
-- Chapter + total manuscript word count, always visible.
+- Chapter + total manuscript word count, always visible. Client uses shared `countWords()` for live display.
 - `aria-live="polite"`, updated on save (not every keystroke).
 
 ---
@@ -152,8 +165,8 @@ Completes the data safety story.
 ### Server (TDD)
 
 - `GET /api/trash` -- all soft-deleted items with id, title, type, `deleted_at`.
-- `POST /api/trash/:id/restore` -- clears `deleted_at`. Restoring a chapter whose project is deleted also restores the project.
-- `DELETE /api/trash/:id` -- hard delete (permanent).
+- `POST /api/trash/:id/restore` -- clears `deleted_at`. Looks up UUID in projects table first, then chapters (UUIDs are globally unique, no collision risk). Restoring a chapter whose project is deleted also restores the project.
+- `DELETE /api/trash/:id` -- hard delete (permanent). Same UUID lookup strategy.
 - `DELETE /api/projects/:id` -- soft-deletes project and all its chapters (cascade).
 - Background purge on server startup: items where `deleted_at` > 30 days.
 - Tests: cascade delete. Restore chapter restores deleted parent. Hard delete removes from DB. Purge respects 30-day boundary (exactly 30 days kept, 31 purged).
@@ -195,33 +208,32 @@ Read-through experience for the full manuscript.
 - Chapter titles as anchor links.
 - Keyboard accessible.
 
+### Client -- Keyboard shortcut help dialog
+
+- Triggered by Cmd/Ctrl+/. Lists all Smudge shortcuts and TipTap formatting shortcuts.
+- Proper `<dialog>` with focus trapping. This is the last shortcut added, so the help dialog is complete.
+
 ### Tests
 
-- Preview renders all chapters in order. TOC links scroll correctly. Escape exits. Chapter heading click opens editor. Cmd/Ctrl+Shift+P toggles.
+- Preview renders all chapters in order. TOC links scroll correctly. Escape exits. Chapter heading click opens editor. Cmd/Ctrl+Shift+P toggles. Help dialog opens and lists shortcuts.
 
 ---
 
-## Slice 7: Accessibility & Polish Pass
+## Slice 7: Accessibility Audit (Verification Only)
 
-Dedicated audit and remediation. Earlier slices build with a11y as they go; this is the verification pass.
-
-### Heading hierarchy
-
-- H1: project/manuscript title.
-- H2: chapter titles.
-- In-content headings: TipTap "Heading 1/2/3" maps to H3/H4/H5 in the DOM. Writer sees relative labels; screen readers get correct hierarchy. Configured via TipTap `Heading` extension with `levels: [3, 4, 5]`.
+Pure audit and remediation. No new features. Earlier slices build with a11y (semantic HTML, ARIA, heading hierarchy, keyboard alternatives). This slice verifies everything works together.
 
 ### Semantic structure audit
 
 - All interactive elements are `<button>` or `<a>`. No clickable `<div>`/`<span>`.
 - ARIA landmarks: `<aside aria-label="Chapters">`, `<main>`, `role="toolbar" aria-label="Formatting"`, status bar with `aria-live`.
+- Heading hierarchy verified: H1 (project title), H2 (chapter titles), H3/H4/H5 (in-content headings).
 
 ### Keyboard navigation
 
-- Tab order walkthrough of every screen.
+- Tab order walkthrough of every screen: home, editor, preview, trash, dialogs.
 - Visible focus indicators (3:1 contrast minimum).
 - No keyboard traps except modal dialogs.
-- Keyboard shortcut help dialog (Cmd/Ctrl+/) listing all shortcuts.
 
 ### Screen reader support
 
@@ -233,6 +245,7 @@ Dedicated audit and remediation. Earlier slices build with a11y as they go; this
 ### Visual checks
 
 - All colors meet AA contrast (4.5:1 body, 3:1 large text/UI).
+- All colors use theme tokens (no hardcoded values — verify cross-slice discipline).
 - `prefers-reduced-motion` disables animations.
 - Usable at 200% zoom without horizontal scroll.
 - No information conveyed by color alone.
