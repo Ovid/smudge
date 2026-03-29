@@ -124,6 +124,15 @@ describe("PATCH /api/chapters/:id", () => {
     expect(res.body.error.code).toBe("NOT_FOUND");
   });
 
+  it("returns 404 for soft-deleted chapter", async () => {
+    const { chapterId } = await createProjectWithChapter(t.app);
+    await t.db("chapters").where({ id: chapterId }).update({ deleted_at: new Date().toISOString() });
+
+    const res = await request(t.app).patch(`/api/chapters/${chapterId}`).send({ title: "Nope" });
+
+    expect(res.status).toBe(404);
+  });
+
   it("preserves content on invalid update", async () => {
     const { chapterId } = await createProjectWithChapter(t.app);
 
@@ -145,5 +154,84 @@ describe("PATCH /api/chapters/:id", () => {
     const getRes = await request(t.app).get(`/api/chapters/${chapterId}`);
     expect(getRes.status).toBe(200);
     expect(getRes.body.content).toEqual(validContent);
+  });
+});
+
+describe("DELETE /api/chapters/:id", () => {
+  it("soft-deletes a chapter", async () => {
+    const { chapterId } = await createProjectWithChapter(t.app);
+
+    const res = await request(t.app).delete(`/api/chapters/${chapterId}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.message).toBe("Chapter moved to trash.");
+  });
+
+  it("returns 404 for non-existent chapter", async () => {
+    const res = await request(t.app).delete("/api/chapters/nonexistent-id");
+
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 for already-deleted chapter", async () => {
+    const { chapterId } = await createProjectWithChapter(t.app);
+    await request(t.app).delete(`/api/chapters/${chapterId}`);
+
+    const res = await request(t.app).delete(`/api/chapters/${chapterId}`);
+
+    expect(res.status).toBe(404);
+  });
+
+  it("chapter no longer appears in project chapters after delete", async () => {
+    const { projectId, chapterId } = await createProjectWithChapter(t.app);
+    await request(t.app).delete(`/api/chapters/${chapterId}`);
+
+    const projectRes = await request(t.app).get(`/api/projects/${projectId}`);
+
+    expect(projectRes.body.chapters).toHaveLength(0);
+  });
+});
+
+describe("POST /api/chapters/:id/restore", () => {
+  it("restores a soft-deleted chapter", async () => {
+    const { projectId, chapterId } = await createProjectWithChapter(t.app);
+    await request(t.app).delete(`/api/chapters/${chapterId}`);
+
+    const res = await request(t.app).post(`/api/chapters/${chapterId}/restore`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.deleted_at).toBeNull();
+
+    // Chapter should appear in project again
+    const projectRes = await request(t.app).get(`/api/projects/${projectId}`);
+    expect(projectRes.body.chapters).toHaveLength(1);
+  });
+
+  it("also restores parent project if it was deleted", async () => {
+    const { projectId, chapterId } = await createProjectWithChapter(t.app);
+    await request(t.app).delete(`/api/chapters/${chapterId}`);
+    await request(t.app).delete(`/api/projects/${projectId}`);
+
+    const res = await request(t.app).post(`/api/chapters/${chapterId}/restore`);
+
+    expect(res.status).toBe(200);
+
+    // Project should be accessible again
+    const projectRes = await request(t.app).get(`/api/projects/${projectId}`);
+    expect(projectRes.status).toBe(200);
+  });
+
+  it("returns 404 for non-existent chapter", async () => {
+    const res = await request(t.app).post("/api/chapters/nonexistent-id/restore");
+
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 for a chapter that is not deleted", async () => {
+    const { chapterId } = await createProjectWithChapter(t.app);
+
+    const res = await request(t.app).post(`/api/chapters/${chapterId}/restore`);
+
+    expect(res.status).toBe(404);
   });
 });
