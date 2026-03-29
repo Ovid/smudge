@@ -298,6 +298,67 @@ describe("EditorPage trash view", () => {
     });
   });
 
+  it("shows newly deleted chapter in trash when trash view is open", async () => {
+    vi.mocked(api.projects.trash).mockResolvedValue([]);
+    vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
+
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Trash")).toBeInTheDocument();
+    });
+
+    // Open trash view (initially empty)
+    await userEvent.click(screen.getByText("Trash"));
+    await waitFor(() => {
+      expect(screen.getByText("No chapters in trash.")).toBeInTheDocument();
+    });
+
+    // Now delete a chapter — mock trash to return the deleted chapter
+    const trashedChapter = {
+      ...mockProject.chapters[1],
+      deleted_at: "2026-03-29T10:00:00.000Z",
+    };
+    vi.mocked(api.projects.trash).mockResolvedValue([trashedChapter]);
+
+    const deleteButtons = screen.getAllByRole("button", { name: /Delete/ });
+    await userEvent.click(deleteButtons[1]);
+    await userEvent.click(screen.getByText("Confirm"));
+
+    // Trash should refresh and show the deleted chapter
+    await waitFor(() => {
+      expect(screen.getByText("Chapter Two")).toBeInTheDocument();
+    });
+  });
+
+  it("closes trash view when selecting a chapter from sidebar", async () => {
+    vi.mocked(api.projects.trash).mockResolvedValue([]);
+    vi.mocked(api.chapters.get)
+      .mockResolvedValueOnce(mockChapter) // initial load
+      .mockResolvedValueOnce(mockProject.chapters[1]); // select ch-2
+
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Trash")).toBeInTheDocument();
+    });
+
+    // Open trash view
+    await userEvent.click(screen.getByText("Trash"));
+    await waitFor(() => {
+      expect(screen.getByText("No chapters in trash.")).toBeInTheDocument();
+    });
+
+    // Click Chapter Two in the sidebar
+    await userEvent.click(screen.getByText("Chapter Two"));
+
+    // Trash view should close, editor should be visible
+    await waitFor(() => {
+      expect(screen.queryByText("No chapters in trash.")).toBeNull();
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter Two" })).toBeInTheDocument();
+    });
+  });
+
   it("closes trash view when clicking Back to editor", async () => {
     vi.mocked(api.projects.trash).mockResolvedValue([]);
 

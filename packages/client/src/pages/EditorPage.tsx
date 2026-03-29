@@ -51,6 +51,7 @@ export function EditorPage() {
   const handleSelectChapterWithFlush = useCallback(
     async (chapterId: string) => {
       editorRef.current?.flushSave();
+      setTrashOpen(false);
       await handleSelectChapter(chapterId);
     },
     [handleSelectChapter],
@@ -80,6 +81,10 @@ export function EditorPage() {
     if (!deleteTarget) return;
     await handleDeleteChapter(deleteTarget);
     setDeleteTarget(null);
+    if (trashOpen && projectId) {
+      const trashed = await api.projects.trash(projectId);
+      setTrashedChapters(trashed);
+    }
   }
 
   useEffect(() => {
