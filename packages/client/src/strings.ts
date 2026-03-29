@@ -41,6 +41,20 @@ export const STRINGS = {
     toggleSidebar: "Toggle sidebar",
     showShortcuts: "Keyboard shortcuts",
   },
+  sidebar: {
+    addChapter: "Add Chapter",
+    trash: "Trash",
+    trashEmpty: "No chapters in trash.",
+    restore: "Restore",
+    backToEditor: "Back to editor",
+    dragHandle: "Drag to reorder",
+    chapterPosition: (title: string, position: number, total: number) =>
+      `Chapter \u201c${title}\u201d moved to position ${position} of ${total}`,
+  },
+  preview: {
+    backToEditor: "Back to Editor",
+    tableOfContents: "Table of Contents",
+  },
   a11y: {
     mainContent: "Main content",
     chaptersSidebar: "Chapters",
