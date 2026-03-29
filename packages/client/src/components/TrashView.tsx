@@ -27,24 +27,24 @@ export function TrashView({ chapters, onRestore, onBack }: TrashViewProps) {
           {chapters.map((chapter) => (
             <li
               key={chapter.id}
-              className="flex items-center justify-between rounded border border-border bg-bg-input p-4"
+              className="flex items-center justify-between gap-4 rounded border border-border bg-bg-input p-4"
             >
-              <div>
+              <div className="min-w-0">
                 <span className="text-text-primary">{chapter.title}</span>
                 {chapter.deleted_at && (
-                  <>
-                    <span className="ml-3 text-sm text-text-muted">
+                  <div className="mt-1 flex flex-wrap gap-x-3 text-sm">
+                    <span className="text-text-muted">
                       {STRINGS.project.lastDeleted(chapter.deleted_at)}
                     </span>
-                    <span className="ml-3 text-sm text-status-error">
+                    <span className="text-status-error">
                       {STRINGS.sidebar.permanentDeleteDate(chapter.deleted_at)}
                     </span>
-                  </>
+                  </div>
                 )}
               </div>
               <button
                 onClick={() => onRestore(chapter.id)}
-                className="rounded bg-accent px-3 py-1 text-sm text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring"
+                className="shrink-0 rounded bg-accent px-3 py-1 text-sm text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring"
               >
                 {STRINGS.sidebar.restore}
               </button>

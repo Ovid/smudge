@@ -37,6 +37,13 @@ describe("TrashView", () => {
     expect(onRestore).toHaveBeenCalledWith("ch1");
   });
 
+  it("shows the permanent deletion date for each trashed chapter", () => {
+    render(<TrashView chapters={trashedChapters} onRestore={vi.fn()} onBack={vi.fn()} />);
+
+    // deleted_at is 2026-03-20, so purge date is 30 days later: Apr 19, 2026
+    expect(screen.getByText(/Permanently deleted.*Apr 19, 2026/)).toBeInTheDocument();
+  });
+
   it("shows empty state when no trashed chapters", () => {
     render(<TrashView chapters={[]} onRestore={vi.fn()} onBack={vi.fn()} />);
 
