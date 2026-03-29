@@ -8,7 +8,7 @@ interface EditorProps {
   content: Record<string, unknown> | null;
   onSave: (content: Record<string, unknown>) => Promise<boolean>;
   onContentChange?: (content: Record<string, unknown>) => void;
-  editorRef?: React.MutableRefObject<{ flushSave: () => void } | null>;
+  editorRef?: React.MutableRefObject<{ flushSave: () => Promise<void> } | null>;
 }
 
 const AUTO_SAVE_DEBOUNCE_MS = 1500;
@@ -61,8 +61,11 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
         clearTimeout(debounceTimerRef.current);
       }
       if (dirtyRef.current && editorInstanceRef.current) {
-        onSaveRef.current(editorInstanceRef.current.getJSON() as Record<string, unknown>);
-        dirtyRef.current = false;
+        // Fire-and-forget: don't set dirtyRef=false here since the save is async.
+        // The content cache persists the data until save succeeds.
+        onSaveRef
+          .current(editorInstanceRef.current.getJSON() as Record<string, unknown>)
+          .catch(() => {});
       }
     };
   }, []);
@@ -87,9 +90,14 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
       }
-      onSaveRef.current(ed.getJSON() as Record<string, unknown>).then((ok) => {
-        dirtyRef.current = !ok;
-      });
+      onSaveRef
+        .current(ed.getJSON() as Record<string, unknown>)
+        .then((ok) => {
+          dirtyRef.current = !ok;
+        })
+        .catch(() => {
+          dirtyRef.current = true;
+        });
     },
     editorProps: {
       attributes: {
@@ -111,14 +119,19 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
     if (editorRef && editor) {
       editorRef.current = {
         flushSave: () => {
-          if (!dirtyRef.current) return;
+          if (!dirtyRef.current) return Promise.resolve();
           if (debounceTimerRef.current) {
             clearTimeout(debounceTimerRef.current);
             debounceTimerRef.current = null;
           }
-          onSaveRef.current(editor.getJSON() as Record<string, unknown>).then((ok) => {
-            dirtyRef.current = !ok;
-          });
+          return onSaveRef
+            .current(editor.getJSON() as Record<string, unknown>)
+            .then((ok) => {
+              dirtyRef.current = !ok;
+            })
+            .catch(() => {
+              dirtyRef.current = true;
+            });
         },
       };
     }

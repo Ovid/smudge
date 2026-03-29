@@ -78,9 +78,9 @@ export const STRINGS = {
   toolbar: {
     bold: "Bold",
     italic: "Italic",
-    heading1: "H1",
-    heading2: "H2",
-    heading3: "H3",
+    heading1: "H3",
+    heading2: "H4",
+    heading3: "H5",
     quote: "Quote",
     bulletList: "List",
     numberedList: "Numbered",

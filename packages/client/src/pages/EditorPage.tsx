@@ -46,11 +46,11 @@ export function EditorPage() {
   const [trashedChapters, setTrashedChapters] = useState<Chapter[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
 
-  const editorRef = useRef<{ flushSave: () => void } | null>(null);
+  const editorRef = useRef<{ flushSave: () => Promise<void> } | null>(null);
 
   const handleSelectChapterWithFlush = useCallback(
     async (chapterId: string) => {
-      editorRef.current?.flushSave();
+      await editorRef.current?.flushSave();
       setTrashOpen(false);
       await handleSelectChapter(chapterId);
     },
@@ -90,8 +90,12 @@ export function EditorPage() {
     await handleDeleteChapter(deleteTarget);
     setDeleteTarget(null);
     if (trashOpen && projectId) {
-      const trashed = await api.projects.trash(projectId);
-      setTrashedChapters(trashed);
+      try {
+        const trashed = await api.projects.trash(projectId);
+        setTrashedChapters(trashed);
+      } catch {
+        // Trash refresh failed — stale list is acceptable
+      }
     }
   }
 
@@ -119,6 +123,7 @@ export function EditorPage() {
 
       if (ctrl && e.shiftKey && e.key === "P") {
         e.preventDefault();
+        editorRef.current?.flushSave();
         setPreviewOpen((prev) => !prev);
         return;
       }
@@ -296,7 +301,10 @@ export function EditorPage() {
             )}
           </div>
           <button
-            onClick={() => setPreviewOpen(true)}
+            onClick={() => {
+              editorRef.current?.flushSave();
+              setPreviewOpen(true);
+            }}
             className="text-sm text-text-secondary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-focus-ring rounded px-2 py-1"
           >
             {STRINGS.nav.preview}
@@ -364,6 +372,7 @@ export function EditorPage() {
             )}
           </div>
           <div>
+            {saveStatus === "unsaved" && STRINGS.editor.unsaved}
             {saveStatus === "saving" && STRINGS.editor.saving}
             {saveStatus === "saved" && STRINGS.editor.saved}
             {saveStatus === "error" && (

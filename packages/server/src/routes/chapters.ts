@@ -65,12 +65,12 @@ export function chaptersRouter(db: Knex): Router {
         updates.word_count = countWords(parsed.data.content as Record<string, unknown>);
       }
 
-      await db("chapters").where({ id: req.params.id }).update(updates);
-
-      // Also update project's updated_at
-      await db("projects")
-        .where({ id: chapter.project_id })
-        .update({ updated_at: new Date().toISOString() });
+      await db.transaction(async (trx) => {
+        await trx("chapters").where({ id: req.params.id }).update(updates);
+        await trx("projects")
+          .where({ id: chapter.project_id })
+          .update({ updated_at: new Date().toISOString() });
+      });
 
       const updated = await db("chapters").where({ id: req.params.id }).first();
 
@@ -115,14 +115,26 @@ export function chaptersRouter(db: Knex): Router {
         return;
       }
 
-      // Restore the chapter
-      await db("chapters").where({ id: req.params.id }).update({ deleted_at: null });
+      // Verify parent project still exists (may have been hard-purged)
+      const parentProject = await db("projects").where({ id: chapter.project_id }).first();
+      if (!parentProject) {
+        res.status(404).json({
+          error: {
+            code: "PROJECT_PURGED",
+            message: "The parent project has been permanently deleted.",
+          },
+        });
+        return;
+      }
 
-      // Also restore parent project if it was deleted
-      await db("projects")
-        .where({ id: chapter.project_id })
-        .whereNotNull("deleted_at")
-        .update({ deleted_at: null });
+      // Restore the chapter and parent project atomically
+      await db.transaction(async (trx) => {
+        await trx("chapters").where({ id: req.params.id }).update({ deleted_at: null });
+        await trx("projects")
+          .where({ id: chapter.project_id })
+          .whereNotNull("deleted_at")
+          .update({ deleted_at: null });
+      });
 
       const restored = await db("chapters").where({ id: req.params.id }).first();
       res.json(parseChapterContent(restored));

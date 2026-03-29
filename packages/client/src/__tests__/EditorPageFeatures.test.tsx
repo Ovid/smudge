@@ -197,7 +197,7 @@ describe("EditorPage delete confirmation", () => {
     await userEvent.click(deleteButtons[0]);
 
     // Should show confirmation dialog
-    expect(screen.getByRole("dialog", { name: /Move .+ to trash/ })).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog", { name: /Move .+ to trash/ })).toBeInTheDocument();
     expect(screen.getByText(/Move .+ to trash/)).toBeInTheDocument();
   });
 

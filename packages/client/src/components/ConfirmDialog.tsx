@@ -17,9 +17,14 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) {
+      dialog.showModal();
+    }
     cancelRef.current?.focus();
   }, []);
 
@@ -36,10 +41,11 @@ export function ConfirmDialog({
 
   return (
     <dialog
-      open
+      ref={dialogRef}
+      role="alertdialog"
       aria-label={title}
       aria-describedby="confirm-dialog-body"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 m-0 p-0 w-full h-full border-none bg-transparent"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-transparent m-0 p-0 w-full h-full border-none backdrop:bg-black/40"
       onClick={(e) => {
         if (e.target === e.currentTarget) onCancel();
       }}

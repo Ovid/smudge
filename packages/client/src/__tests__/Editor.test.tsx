@@ -28,9 +28,9 @@ describe("Editor", () => {
     const toolbarEl = toolbar as HTMLElement;
     expect(within(toolbarEl).getByRole("button", { name: "Bold" })).toBeInTheDocument();
     expect(within(toolbarEl).getByRole("button", { name: "Italic" })).toBeInTheDocument();
-    expect(within(toolbarEl).getByRole("button", { name: "H1" })).toBeInTheDocument();
-    expect(within(toolbarEl).getByRole("button", { name: "H2" })).toBeInTheDocument();
     expect(within(toolbarEl).getByRole("button", { name: "H3" })).toBeInTheDocument();
+    expect(within(toolbarEl).getByRole("button", { name: "H4" })).toBeInTheDocument();
+    expect(within(toolbarEl).getByRole("button", { name: "H5" })).toBeInTheDocument();
     expect(within(toolbarEl).getByRole("button", { name: "Quote" })).toBeInTheDocument();
     expect(within(toolbarEl).getByRole("button", { name: "List" })).toBeInTheDocument();
     expect(within(toolbarEl).getByRole("button", { name: "Numbered" })).toBeInTheDocument();

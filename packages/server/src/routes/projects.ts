@@ -71,7 +71,12 @@ export function projectsRouter(db: Knex): Router {
           db.raw("COALESCE(SUM(chapters.word_count), 0) as total_word_count"),
         );
 
-      res.json(result);
+      // SQLite returns raw expressions as strings — coerce to number
+      const projects = result.map((r: Record<string, unknown>) => ({
+        ...r,
+        total_word_count: Number(r.total_word_count),
+      }));
+      res.json(projects);
     }),
   );
 
@@ -278,13 +283,14 @@ export function projectsRouter(db: Knex): Router {
 
       const now = new Date().toISOString();
 
-      // Soft-delete all chapters belonging to this project
-      await db("chapters")
-        .where({ project_id: req.params.id })
-        .whereNull("deleted_at")
-        .update({ deleted_at: now });
+      await db.transaction(async (trx) => {
+        await trx("chapters")
+          .where({ project_id: req.params.id })
+          .whereNull("deleted_at")
+          .update({ deleted_at: now });
 
-      await db("projects").where({ id: req.params.id }).update({ deleted_at: now });
+        await trx("projects").where({ id: req.params.id }).update({ deleted_at: now });
+      });
 
       res.json({ message: "Project moved to trash." });
     }),
