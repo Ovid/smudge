@@ -1,8 +1,7 @@
 import { useEditor, EditorContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Heading from "@tiptap/extension-heading";
 import Placeholder from "@tiptap/extension-placeholder";
 import { useEffect, useRef, useCallback } from "react";
+import { editorExtensions } from "../editorExtensions";
 import { STRINGS } from "../strings";
 
 interface EditorProps {
@@ -53,12 +52,7 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({
-        heading: false,
-      }),
-      Heading.configure({
-        levels: [3, 4, 5],
-      }),
+      ...editorExtensions,
       Placeholder.configure({
         placeholder: STRINGS.editor.placeholder,
       }),

@@ -283,15 +283,20 @@ describe("EditorPage save status", () => {
       expect(screen.queryByRole("heading", { level: 2 })).not.toBeNull();
     });
 
-    // Trigger save by blurring the editor
+    // Modify editor content to mark dirty, then blur to trigger save
     const editorEl = document.querySelector("[role='textbox']") as HTMLElement;
     if (editorEl) {
       fireEvent.focus(editorEl);
-      fireEvent.blur(editorEl);
+      editorEl.textContent = "dirty content";
+      fireEvent.input(editorEl);
 
-      await waitFor(() => {
-        expect(screen.getByText("Saving\u2026")).toBeInTheDocument();
-      });
+      // Wait for auto-save debounce to trigger save
+      await waitFor(
+        () => {
+          expect(screen.getByText("Saving\u2026")).toBeInTheDocument();
+        },
+        { timeout: 3000 },
+      );
     }
   });
 
@@ -309,11 +314,16 @@ describe("EditorPage save status", () => {
     const editorEl = document.querySelector("[role='textbox']") as HTMLElement;
     if (editorEl) {
       fireEvent.focus(editorEl);
-      fireEvent.blur(editorEl);
+      editorEl.textContent = "dirty content";
+      fireEvent.input(editorEl);
 
-      await waitFor(() => {
-        expect(screen.getByText("Saved")).toBeInTheDocument();
-      });
+      // Wait for auto-save debounce to trigger save + resolve
+      await waitFor(
+        () => {
+          expect(screen.getByText("Saved")).toBeInTheDocument();
+        },
+        { timeout: 3000 },
+      );
     }
   });
 
@@ -328,11 +338,16 @@ describe("EditorPage save status", () => {
     const editorEl = document.querySelector("[role='textbox']") as HTMLElement;
     if (editorEl) {
       fireEvent.focus(editorEl);
-      fireEvent.blur(editorEl);
+      editorEl.textContent = "dirty content";
+      fireEvent.input(editorEl);
 
-      await waitFor(() => {
-        expect(screen.getByText("Unable to save \u2014 check connection")).toBeInTheDocument();
-      });
+      // Wait for auto-save debounce to trigger save + reject
+      await waitFor(
+        () => {
+          expect(screen.getByText("Unable to save \u2014 check connection")).toBeInTheDocument();
+        },
+        { timeout: 3000 },
+      );
     }
   });
 
