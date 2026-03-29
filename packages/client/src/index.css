@@ -1,0 +1,73 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  /* Background colors */
+  --color-bg-primary: #faf8f5;
+  --color-bg-sidebar: #f3f0eb;
+  --color-bg-hover: #ede9e3;
+  --color-bg-active: #e5e0d8;
+  --color-bg-input: #ffffff;
+  --color-bg-toolbar: #f7f5f2;
+
+  /* Text colors */
+  --color-text-primary: #2d2d2d;
+  --color-text-secondary: #5c5c5c;
+  --color-text-muted: #8a8a8a;
+  --color-text-inverse: #ffffff;
+
+  /* Accent colors */
+  --color-accent: #c0874f;
+  --color-accent-hover: #a8733d;
+  --color-accent-light: #f5e6d3;
+
+  /* Border colors */
+  --color-border: #ddd8d0;
+  --color-border-strong: #c5bfb5;
+
+  /* Status colors */
+  --color-status-success: #5d8c61;
+  --color-status-error: #c25450;
+  --color-status-warning: #d4a843;
+
+  /* Focus */
+  --color-focus-ring: #c0874f;
+
+  /* Typography */
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Libre Baskerville", "Georgia", ui-serif, serif;
+}
+
+/* Tighten list spacing in the editor — Tailwind prose adds too much margin */
+.tiptap ul li,
+.tiptap ol li {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+.tiptap ul li p,
+.tiptap ol li p {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* Respect reduced-motion preference (WCAG 2.1 AA) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* TipTap placeholder */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--color-text-muted);
+  pointer-events: none;
+  height: 0;
+}
