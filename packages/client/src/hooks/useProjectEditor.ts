@@ -50,11 +50,22 @@ export function useProjectEditor(projectId: string | undefined) {
   const handleSave = useCallback(
     async (content: Record<string, unknown>) => {
       if (!activeChapter) return;
+      const savingChapterId = activeChapter.id;
 
       setSaveStatus("saving");
       try {
-        const updated = await api.chapters.update(activeChapter.id, { content });
-        setActiveChapter(updated);
+        const updated = await api.chapters.update(savingChapterId, { content });
+        // Don't call setActiveChapter — the editor holds the current truth.
+        // Only sync the server-computed word_count into project.chapters.
+        setProject((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            chapters: prev.chapters.map((c) =>
+              c.id === savingChapterId ? { ...c, word_count: updated.word_count } : c,
+            ),
+          };
+        });
         setSaveStatus("saved");
       } catch {
         setSaveStatus("error");
