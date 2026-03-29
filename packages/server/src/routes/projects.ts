@@ -56,21 +56,20 @@ export function projectsRouter(db: Knex): Router {
   router.get(
     "/",
     asyncHandler(async (_req, res) => {
-      const projects = await db("projects")
-        .whereNull("deleted_at")
-        .orderBy("updated_at", "desc")
-        .select("id", "title", "mode", "updated_at");
-
-      const result = await Promise.all(
-        projects.map(async (p) => {
-          const { total } = (await db("chapters")
-            .where({ project_id: p.id })
-            .whereNull("deleted_at")
-            .sum("word_count as total")
-            .first()) as { total: number };
-          return { ...p, total_word_count: total ?? 0 };
-        }),
-      );
+      const result = await db("projects")
+        .leftJoin("chapters", function () {
+          this.on("projects.id", "=", "chapters.project_id").andOnNull("chapters.deleted_at");
+        })
+        .whereNull("projects.deleted_at")
+        .groupBy("projects.id")
+        .orderBy("projects.updated_at", "desc")
+        .select(
+          "projects.id",
+          "projects.title",
+          "projects.mode",
+          "projects.updated_at",
+          db.raw("COALESCE(SUM(chapters.word_count), 0) as total_word_count"),
+        );
 
       res.json(result);
     }),
