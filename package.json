@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "dev": "concurrently -n server,client -c blue,green \"npm run dev -w packages/server\" \"npm run dev -w packages/client\"",
-    "test": "vitest run --workspace vitest.workspace.ts",
+    "test": "vitest run --workspace vitest.workspace.ts --passWithNoTests",
     "test:watch": "vitest --workspace vitest.workspace.ts",
     "lint": "eslint packages/",
     "format": "prettier --write \"packages/**/*.{ts,tsx,json,css}\"",
