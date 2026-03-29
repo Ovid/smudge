@@ -58,6 +58,10 @@ export const STRINGS = {
     trash: "Trash",
     trashEmpty: "No chapters in trash.",
     restore: "Restore",
+    permanentDeleteDate: (deletedAt: string) => {
+      const purgeDate = new Date(new Date(deletedAt).getTime() + 30 * 24 * 60 * 60 * 1000);
+      return `Permanently deleted ${purgeDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
+    },
     backToEditor: "Back to editor",
     dragHandle: "Drag to reorder",
     chapterPosition: (title: string, position: number, total: number) =>
