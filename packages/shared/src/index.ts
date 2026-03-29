@@ -7,6 +7,7 @@ export {
   ProjectMode,
 } from "./schemas";
 export { countWords } from "./wordcount";
+export { generateSlug } from "./slugify";
 export type {
   Project,
   Chapter,
