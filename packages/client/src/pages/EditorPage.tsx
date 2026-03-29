@@ -14,6 +14,7 @@ export function EditorPage() {
   const navigate = useNavigate();
   const {
     project,
+    error,
     setProject,
     activeChapter,
     saveStatus,
@@ -165,6 +166,26 @@ export function EditorPage() {
       await handleUpdateProjectTitle(trimmed);
     }
     setEditingProjectTitle(false);
+  }
+
+  if (error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-bg-primary">
+        <div className="text-center">
+          <p className="text-text-primary text-lg mb-4">{STRINGS.error.projectNotFound}</p>
+          <a
+            href="/"
+            onClick={(e) => {
+              e.preventDefault();
+              navigate("/");
+            }}
+            className="text-accent hover:underline"
+          >
+            {STRINGS.error.backToProjects}
+          </a>
+        </div>
+      </div>
+    );
   }
 
   if (!project || !activeChapter) {

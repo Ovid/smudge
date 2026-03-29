@@ -266,6 +266,18 @@ describe("useProjectEditor", () => {
     expect(result.current.activeChapter?.title).toBe("Active Renamed");
   });
 
+  it("sets error state when project fetch returns 404", async () => {
+    vi.mocked(api.projects.get).mockRejectedValue(new Error("Project not found."));
+
+    const { result } = renderHook(() => useProjectEditor("nonexistent-id"));
+
+    await waitFor(() => {
+      expect(result.current.error).toBe("Project not found.");
+    });
+
+    expect(result.current.project).toBeNull();
+  });
+
   it("updates word count on content change", async () => {
     const { result } = renderHook(() => useProjectEditor("p1"));
     await waitFor(() => expect(result.current.project).toBeTruthy());

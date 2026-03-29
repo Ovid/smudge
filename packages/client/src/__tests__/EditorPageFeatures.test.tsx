@@ -87,6 +87,26 @@ function renderEditorPage() {
   );
 }
 
+describe("EditorPage error handling", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("shows error message when project is not found", async () => {
+    vi.mocked(api.projects.get).mockRejectedValue(new Error("Project not found."));
+
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Project not found")).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("link", { name: "Back to Projects" })).toBeInTheDocument();
+  });
+});
+
 describe("EditorPage sidebar features", () => {
   afterEach(() => cleanup());
 

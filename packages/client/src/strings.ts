@@ -27,6 +27,10 @@ export const STRINGS = {
     confirmButton: "Confirm",
     cancelButton: "Cancel",
   },
+  error: {
+    projectNotFound: "Project not found",
+    backToProjects: "Back to Projects",
+  },
   editor: {
     placeholder: "Start writing\u2026",
     saving: "Saving\u2026",

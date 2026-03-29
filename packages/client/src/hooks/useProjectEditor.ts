@@ -9,6 +9,7 @@ export function useProjectEditor(projectId: string | undefined) {
   const [project, setProject] = useState<ProjectWithChapters | null>(null);
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [error, setError] = useState<string | null>(null);
   const [chapterWordCount, setChapterWordCount] = useState(0);
   const activeChapterRef = useRef<Chapter | null>(null);
 
@@ -22,15 +23,20 @@ export function useProjectEditor(projectId: string | undefined) {
 
     async function loadProject() {
       if (!projectId) return;
-      const data = await api.projects.get(projectId);
-      if (cancelled) return;
-      setProject(data);
-      const firstChapter = data.chapters[0];
-      if (firstChapter && !activeChapterRef.current) {
-        const chapter = await api.chapters.get(firstChapter.id);
+      try {
+        const data = await api.projects.get(projectId);
         if (cancelled) return;
-        setActiveChapter(chapter);
-        setChapterWordCount(countWords(chapter.content));
+        setProject(data);
+        const firstChapter = data.chapters[0];
+        if (firstChapter && !activeChapterRef.current) {
+          const chapter = await api.chapters.get(firstChapter.id);
+          if (cancelled) return;
+          setActiveChapter(chapter);
+          setChapterWordCount(countWords(chapter.content));
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Failed to load project");
       }
     }
 
@@ -168,6 +174,7 @@ export function useProjectEditor(projectId: string | undefined) {
 
   return {
     project,
+    error,
     setProject,
     activeChapter,
     saveStatus,
