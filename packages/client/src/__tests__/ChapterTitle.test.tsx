@@ -5,6 +5,27 @@ import { EditorPage } from "../pages/EditorPage";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api/client";
 
+// Store the onSave callback so tests can trigger saves directly
+let capturedOnSave: ((content: Record<string, unknown>) => Promise<boolean>) | null = null;
+
+vi.mock("../components/Editor", () => ({
+  Editor: ({
+    onSave,
+  }: {
+    content: Record<string, unknown> | null;
+    onSave: (content: Record<string, unknown>) => Promise<boolean>;
+    onContentChange?: (content: Record<string, unknown>) => void;
+    editorRef?: React.MutableRefObject<{ flushSave: () => void } | null>;
+  }) => {
+    capturedOnSave = onSave;
+    return (
+      <div role="textbox" aria-multiline="true" aria-label="Chapter content">
+        Mock editor
+      </div>
+    );
+  },
+}));
+
 // Mock the API module
 vi.mock("../api/client", () => ({
   ApiRequestError: class ApiRequestError extends Error {
@@ -297,21 +318,14 @@ describe("EditorPage save status", () => {
       expect(screen.getByRole("heading", { level: 2, name: "My Chapter" })).toBeInTheDocument();
     });
 
-    // Modify editor content to mark dirty, then blur to trigger save
-    const editorEl = document.querySelector("[role='textbox']") as HTMLElement;
-    if (editorEl) {
-      fireEvent.focus(editorEl);
-      editorEl.textContent = "dirty content";
-      fireEvent.input(editorEl);
+    // Trigger save directly via captured onSave callback
+    expect(capturedOnSave).toBeTruthy();
+    // Fire and forget — the mock never resolves so status stays "saving"
+    capturedOnSave?.({ type: "doc", content: [{ type: "paragraph" }] });
 
-      // Wait for auto-save debounce to trigger save
-      await waitFor(
-        () => {
-          expect(screen.getByText("Saving\u2026")).toBeInTheDocument();
-        },
-        { timeout: 3000 },
-      );
-    }
+    await waitFor(() => {
+      expect(screen.getByText("Saving\u2026")).toBeInTheDocument();
+    });
   });
 
   it("shows 'Saved' after successful save", async () => {
@@ -325,20 +339,12 @@ describe("EditorPage save status", () => {
       expect(screen.getByRole("heading", { level: 2, name: "My Chapter" })).toBeInTheDocument();
     });
 
-    const editorEl = document.querySelector("[role='textbox']") as HTMLElement;
-    if (editorEl) {
-      fireEvent.focus(editorEl);
-      editorEl.textContent = "dirty content";
-      fireEvent.input(editorEl);
+    expect(capturedOnSave).toBeTruthy();
+    await capturedOnSave?.({ type: "doc", content: [{ type: "paragraph" }] });
 
-      // Wait for auto-save debounce to trigger save + resolve
-      await waitFor(
-        () => {
-          expect(screen.getByText("Saved")).toBeInTheDocument();
-        },
-        { timeout: 3000 },
-      );
-    }
+    await waitFor(() => {
+      expect(screen.getByText("Saved")).toBeInTheDocument();
+    });
   });
 
   it("shows error message on save failure", async () => {
@@ -349,20 +355,12 @@ describe("EditorPage save status", () => {
       expect(screen.getByRole("heading", { level: 2, name: "My Chapter" })).toBeInTheDocument();
     });
 
-    const editorEl = document.querySelector("[role='textbox']") as HTMLElement;
-    if (editorEl) {
-      fireEvent.focus(editorEl);
-      editorEl.textContent = "dirty content";
-      fireEvent.input(editorEl);
+    expect(capturedOnSave).toBeTruthy();
+    await capturedOnSave?.({ type: "doc", content: [{ type: "paragraph" }] });
 
-      // Wait for auto-save debounce + retries (with backoff) to complete
-      await waitFor(
-        () => {
-          expect(screen.getByText("Unable to save \u2014 check connection")).toBeInTheDocument();
-        },
-        { timeout: 20000 },
-      );
-    }
+    await waitFor(() => {
+      expect(screen.getByText("Unable to save \u2014 check connection")).toBeInTheDocument();
+    });
   }, 25000);
 
   it("displays the back button that navigates home", async () => {
