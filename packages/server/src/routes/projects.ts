@@ -288,7 +288,10 @@ export function projectsRouter(db: Knex): Router {
   router.get(
     "/:slug/trash",
     asyncHandler(async (req, res) => {
-      const project = await db("projects").where({ slug: req.params.slug }).first();
+      const project = await db("projects")
+        .where({ slug: req.params.slug })
+        .whereNull("deleted_at")
+        .first();
 
       if (!project) {
         res.status(404).json({
