@@ -31,18 +31,28 @@ e2e/            # Playwright tests
 
 ```bash
 # Development
+make dev                             # Start both server + client dev servers
 npm install                          # Install all workspace dependencies
-npm run dev -w packages/server       # Start backend dev server
-npm run dev -w packages/client       # Start frontend dev server (Vite)
 
-# Testing
+# Testing & Quality
+make test                            # Run full test suite (all packages)
+make lint                            # Lint with autofix
+make format                          # Format code
+make all                             # Lint + format + test (full CI pass)
+make cover                           # Generate code coverage report
+
+# Per-package testing (when working on one package)
 npm test -w packages/shared          # Unit tests (Vitest)
 npm test -w packages/server          # Unit + integration tests (Vitest + Supertest)
 npm test -w packages/client          # Client tests (Vitest)
 npx playwright test                  # E2e tests
 
-# Docker
+# Build & Deploy
+make build                           # Build client for production
 docker compose up                    # Full app on port 3456
+
+# Help
+make help                            # Show all available make targets
 ```
 
 ## Key Architecture Decisions
