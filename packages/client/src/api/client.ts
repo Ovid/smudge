@@ -42,6 +42,15 @@ export const api = {
       }),
 
     delete: (id: string) => apiFetch<undefined>(`/projects/${id}`, { method: "DELETE" }),
+
+    reorderChapters: (projectId: string, chapterIds: string[]) =>
+      apiFetch<{ message: string }>(`/projects/${projectId}/chapters/order`, {
+        method: "PUT",
+        body: JSON.stringify({ chapter_ids: chapterIds }),
+      }),
+
+    trash: (projectId: string) =>
+      apiFetch<Chapter[]>(`/projects/${projectId}/trash`),
   },
 
   chapters: {
@@ -55,5 +64,11 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify(data),
       }),
+
+    delete: (id: string) =>
+      apiFetch<{ message: string }>(`/chapters/${id}`, { method: "DELETE" }),
+
+    restore: (id: string) =>
+      apiFetch<Chapter>(`/chapters/${id}/restore`, { method: "POST" }),
   },
 };

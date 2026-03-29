@@ -67,6 +67,28 @@ describe("api.projects", () => {
     });
   });
 
+  it("reorderChapters sends PUT /api/projects/:id/chapters/order", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ message: "ok" }));
+
+    await api.projects.reorderChapters("p1", ["ch3", "ch1", "ch2"]);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1/chapters/order", {
+      headers: { "Content-Type": "application/json" },
+      method: "PUT",
+      body: JSON.stringify({ chapter_ids: ["ch3", "ch1", "ch2"] }),
+    });
+  });
+
+  it("trash(id) fetches GET /api/projects/:id/trash", async () => {
+    const trashed = [{ id: "ch1", title: "Deleted", deleted_at: "2026-01-01" }];
+    mockFetch.mockResolvedValue(jsonResponse(trashed));
+
+    const result = await api.projects.trash("p1");
+    expect(result).toEqual(trashed);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1/trash", {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
   it("delete(id) sends DELETE /api/projects/:id", async () => {
     mockFetch.mockResolvedValue(jsonResponse({ message: "deleted" }));
 
@@ -97,6 +119,28 @@ describe("api.chapters", () => {
     const result = await api.chapters.create("p1");
     expect(result).toEqual(chapter);
     expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1/chapters", {
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+  });
+
+  it("delete(id) sends DELETE /api/chapters/:id", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ message: "Chapter moved to trash." }));
+
+    await api.chapters.delete("ch1");
+    expect(mockFetch).toHaveBeenCalledWith("/api/chapters/ch1", {
+      headers: { "Content-Type": "application/json" },
+      method: "DELETE",
+    });
+  });
+
+  it("restore(id) sends POST /api/chapters/:id/restore", async () => {
+    const chapter = { id: "ch1", title: "Restored" };
+    mockFetch.mockResolvedValue(jsonResponse(chapter));
+
+    const result = await api.chapters.restore("ch1");
+    expect(result).toEqual(chapter);
+    expect(mockFetch).toHaveBeenCalledWith("/api/chapters/ch1/restore", {
       headers: { "Content-Type": "application/json" },
       method: "POST",
     });
