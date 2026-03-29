@@ -12,6 +12,7 @@ export function useProjectEditor(slug: string | undefined) {
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [projectTitleError, setProjectTitleError] = useState<string | null>(null);
   const [chapterWordCount, setChapterWordCount] = useState(0);
   const activeChapterRef = useRef<Chapter | null>(null);
   const projectSlugRef = useRef(project?.slug);
@@ -190,14 +191,18 @@ export function useProjectEditor(slug: string | undefined) {
     async (title: string): Promise<string | undefined> => {
       const slug = projectSlugRef.current;
       if (!slug) return undefined;
+      setProjectTitleError(null);
       try {
         const updated = await api.projects.update(slug, { title });
         projectSlugRef.current = updated.slug;
         setProject((prev) => (prev ? { ...prev, title: updated.title, slug: updated.slug } : prev));
         return updated.slug;
-      } catch {
+      } catch (err) {
         // Don't call setError — that triggers the full-page error overlay.
         // Returning undefined keeps the title edit mode open so the user can retry.
+        const message =
+          err instanceof Error ? err.message : STRINGS.error.updateTitleFailed;
+        setProjectTitleError(message);
         return undefined;
       }
     },
@@ -230,6 +235,8 @@ export function useProjectEditor(slug: string | undefined) {
   return {
     project,
     error,
+    projectTitleError,
+    setProjectTitleError,
     setProject,
     activeChapter,
     saveStatus,

@@ -449,8 +449,10 @@ describe("useProjectEditor", () => {
     });
 
     expect(returnValue).toBeUndefined();
-    // Should NOT set error (keeps title edit mode open instead)
+    // Should NOT set page-level error (keeps title edit mode open instead)
     expect(result.current.error).toBeNull();
+    // Should set inline project title error
+    expect(result.current.projectTitleError).toBe("update boom");
   });
 
   it("sets error when handleRenameChapter fails", async () => {

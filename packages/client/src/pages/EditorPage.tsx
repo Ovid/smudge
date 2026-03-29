@@ -16,6 +16,8 @@ export function EditorPage() {
   const {
     project,
     error,
+    projectTitleError,
+    setProjectTitleError,
     setProject,
     activeChapter,
     saveStatus,
@@ -177,6 +179,7 @@ export function EditorPage() {
   function startEditingProjectTitle() {
     if (!project) return;
     projectEscapePressedRef.current = false;
+    setProjectTitleError(null);
     setProjectTitleDraft(project.title);
     setEditingProjectTitle(true);
     setTimeout(() => projectTitleInputRef.current?.select(), 0);
@@ -297,21 +300,28 @@ export function EditorPage() {
               {STRINGS.nav.backToProjects}
             </button>
             {editingProjectTitle ? (
-              <input
-                ref={projectTitleInputRef}
-                value={projectTitleDraft}
-                onChange={(e) => setProjectTitleDraft(e.target.value)}
-                onBlur={saveProjectTitle}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") saveProjectTitle();
-                  if (e.key === "Escape") {
-                    projectEscapePressedRef.current = true;
-                    setEditingProjectTitle(false);
-                  }
-                }}
-                className="text-lg font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none"
-                aria-label={STRINGS.a11y.projectTitleInput}
-              />
+              <div className="flex flex-col">
+                <input
+                  ref={projectTitleInputRef}
+                  value={projectTitleDraft}
+                  onChange={(e) => setProjectTitleDraft(e.target.value)}
+                  onBlur={saveProjectTitle}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveProjectTitle();
+                    if (e.key === "Escape") {
+                      projectEscapePressedRef.current = true;
+                      setEditingProjectTitle(false);
+                    }
+                  }}
+                  className="text-lg font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none"
+                  aria-label={STRINGS.a11y.projectTitleInput}
+                />
+                {projectTitleError && (
+                  <span role="alert" className="text-xs text-status-error mt-1">
+                    {projectTitleError}
+                  </span>
+                )}
+              </div>
             ) : (
               <h1
                 className="text-lg font-semibold text-text-primary cursor-pointer hover:text-text-secondary"
