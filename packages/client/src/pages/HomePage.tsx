@@ -103,15 +103,16 @@ export function HomePage() {
       {deleteTarget && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-          role="dialog"
+          role="alertdialog"
           aria-modal="true"
           aria-label="Confirm delete"
+          aria-describedby="home-delete-confirm-body"
         >
           <div className="rounded bg-bg-primary p-6 shadow-lg max-w-sm w-full mx-4">
             <p className="text-text-primary font-medium mb-2">
               {STRINGS.delete.confirmTitle(deleteTarget.title)}
             </p>
-            <p className="text-text-secondary text-sm mb-4">{STRINGS.delete.confirmBody}</p>
+            <p id="home-delete-confirm-body" className="text-text-secondary text-sm mb-4">{STRINGS.delete.confirmBody}</p>
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setDeleteTarget(null)}
