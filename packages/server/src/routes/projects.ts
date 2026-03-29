@@ -42,13 +42,14 @@ export function projectsRouter(db: Knex): Router {
         return;
       }
 
-      const slug = await resolveUniqueSlug(db, generateSlug(title));
       const projectId = uuid();
       const chapterId = uuid();
       const now = new Date().toISOString();
 
       try {
         await db.transaction(async (trx) => {
+          const slug = await resolveUniqueSlug(trx, generateSlug(title));
+
           await trx("projects").insert({
             id: projectId,
             title,
@@ -158,12 +159,13 @@ export function projectsRouter(db: Knex): Router {
         return;
       }
 
-      const newSlug = await resolveUniqueSlug(db, generateSlug(title), project.id);
-
       try {
-        await db("projects")
-          .where({ id: project.id })
-          .update({ title, slug: newSlug, updated_at: new Date().toISOString() });
+        await db.transaction(async (trx) => {
+          const newSlug = await resolveUniqueSlug(trx, generateSlug(title), project.id);
+          await trx("projects")
+            .where({ id: project.id })
+            .update({ title, slug: newSlug, updated_at: new Date().toISOString() });
+        });
       } catch (err: unknown) {
         if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
           res.status(400).json({
