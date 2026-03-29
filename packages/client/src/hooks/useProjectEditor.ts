@@ -88,31 +88,26 @@ export function useProjectEditor(projectId: string | undefined) {
   const handleDeleteChapter = useCallback(
     async (chapter: Chapter) => {
       await api.chapters.delete(chapter.id);
+      const remaining = project?.chapters.filter((c) => c.id !== chapter.id) ?? [];
       setProject((prev) => {
         if (!prev) return prev;
-        const remaining = prev.chapters.filter((c) => c.id !== chapter.id);
         return { ...prev, chapters: remaining };
       });
 
       // If deleting the active chapter, switch to the first remaining
       if (activeChapter?.id === chapter.id) {
-        setProject((prev) => {
-          if (!prev) return prev;
-          const first = prev.chapters[0];
-          if (first) {
-            api.chapters.get(first.id).then((ch) => {
-              setActiveChapter(ch);
-              setChapterWordCount(countWords(ch.content));
-            });
-          } else {
-            setActiveChapter(null);
-            setChapterWordCount(0);
-          }
-          return prev;
-        });
+        const first = remaining[0];
+        if (first) {
+          const ch = await api.chapters.get(first.id);
+          setActiveChapter(ch);
+          setChapterWordCount(countWords(ch.content));
+        } else {
+          setActiveChapter(null);
+          setChapterWordCount(0);
+        }
       }
     },
-    [activeChapter],
+    [activeChapter, project],
   );
 
   const handleReorderChapters = useCallback(
