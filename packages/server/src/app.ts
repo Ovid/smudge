@@ -26,11 +26,11 @@ export function createApp(db: Knex): express.Express {
 
   // Global error handler — consistent JSON envelope for unhandled errors
   app.use(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     (
       err: Error & { status?: number; statusCode?: number },
       _req: express.Request,
       res: express.Response,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       _next: express.NextFunction,
     ) => {
       console.error(err);

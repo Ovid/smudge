@@ -121,16 +121,16 @@ describe("useProjectEditor", () => {
     const { result } = renderHook(() => useProjectEditor("p1"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
-    const originalContent = result.current.activeChapter!.content;
+    const originalContent = result.current.activeChapter?.content;
 
     await act(async () => {
       await result.current.handleSave({ type: "doc", content: [] });
     });
 
     // activeChapter.content should NOT be replaced by the save response
-    expect(result.current.activeChapter!.content).toEqual(originalContent);
+    expect(result.current.activeChapter?.content).toEqual(originalContent);
     // But word_count should be synced into project.chapters
-    expect(result.current.project!.chapters[0].word_count).toBe(5);
+    expect(result.current.project?.chapters[0].word_count).toBe(5);
   });
 
   it("sets save status to error after exhausting retries", async () => {

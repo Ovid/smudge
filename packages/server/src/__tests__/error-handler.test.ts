@@ -14,11 +14,11 @@ describe("Global error handler", () => {
 
     // Error handler (same as in app.ts)
     app.use(
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       (
         err: Error & { status?: number; statusCode?: number },
         _req: express.Request,
         res: express.Response,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         _next: express.NextFunction,
       ) => {
         console.error(err);
@@ -53,8 +53,13 @@ describe("Global error handler", () => {
       res.json({ ok: true });
     });
     app.use(
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      (err: Error & { status?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      (
+        err: Error & { status?: number },
+        _req: express.Request,
+        res: express.Response,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        _next: express.NextFunction,
+      ) => {
         const status = err.status ?? 500;
         const code = status === 400 ? "VALIDATION_ERROR" : "INTERNAL_ERROR";
         const message = status === 400 ? err.message : "An unexpected error occurred.";
