@@ -71,5 +71,28 @@ export const STRINGS = {
     mainContent: "Main content",
     chaptersSidebar: "Chapters",
     formattingToolbar: "Formatting",
+    chapterTitleInput: "Chapter title",
+    projectTitleInput: "Project title",
+    editorContent: "Chapter content",
+  },
+  toolbar: {
+    bold: "Bold",
+    italic: "Italic",
+    heading1: "H1",
+    heading2: "H2",
+    heading3: "H3",
+    quote: "Quote",
+    bulletList: "List",
+    numberedList: "Numbered",
+    horizontalRule: "HR",
+  },
+  home: {
+    projectsHeading: "Projects",
+  },
+  nav: {
+    backToProjects: "\u2190 Projects",
+    preview: "Preview",
+    loading: "Loading...",
+    totalSuffix: "total",
   },
 } as const;

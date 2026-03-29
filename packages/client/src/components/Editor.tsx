@@ -140,7 +140,7 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
     <div className="mx-auto max-w-[720px]">
       <div
         role="toolbar"
-        aria-label="Formatting"
+        aria-label={STRINGS.a11y.formattingToolbar}
         className="mb-4 flex gap-1 border-b border-border pb-2"
       >
         <button
@@ -152,7 +152,7 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
               : "text-text-secondary hover:bg-bg-hover"
           }`}
         >
-          Bold
+          {STRINGS.toolbar.bold}
         </button>
         <button
           onClick={() => editor.chain().focus().toggleItalic().run()}
@@ -163,7 +163,7 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
               : "text-text-secondary hover:bg-bg-hover"
           }`}
         >
-          Italic
+          {STRINGS.toolbar.italic}
         </button>
         <button
           onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
@@ -174,7 +174,7 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
               : "text-text-secondary hover:bg-bg-hover"
           }`}
         >
-          H1
+          {STRINGS.toolbar.heading1}
         </button>
         <button
           onClick={() => editor.chain().focus().toggleHeading({ level: 4 }).run()}
@@ -185,7 +185,7 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
               : "text-text-secondary hover:bg-bg-hover"
           }`}
         >
-          H2
+          {STRINGS.toolbar.heading2}
         </button>
         <button
           onClick={() => editor.chain().focus().toggleHeading({ level: 5 }).run()}
@@ -196,7 +196,7 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
               : "text-text-secondary hover:bg-bg-hover"
           }`}
         >
-          H3
+          {STRINGS.toolbar.heading3}
         </button>
         <button
           onClick={() => editor.chain().focus().toggleBlockquote().run()}
@@ -207,7 +207,7 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
               : "text-text-secondary hover:bg-bg-hover"
           }`}
         >
-          Quote
+          {STRINGS.toolbar.quote}
         </button>
         <button
           onClick={() => editor.chain().focus().toggleBulletList().run()}
@@ -218,7 +218,7 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
               : "text-text-secondary hover:bg-bg-hover"
           }`}
         >
-          List
+          {STRINGS.toolbar.bulletList}
         </button>
         <button
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
@@ -229,13 +229,13 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
               : "text-text-secondary hover:bg-bg-hover"
           }`}
         >
-          Numbered
+          {STRINGS.toolbar.numberedList}
         </button>
         <button
           onClick={() => editor.chain().focus().setHorizontalRule().run()}
           className="rounded px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring text-text-secondary hover:bg-bg-hover"
         >
-          HR
+          {STRINGS.toolbar.horizontalRule}
         </button>
       </div>
       <EditorContent editor={editor} />

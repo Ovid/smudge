@@ -204,7 +204,7 @@ export function EditorPage() {
   if (!project) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-primary">
-        <p className="text-text-muted">Loading...</p>
+        <p className="text-text-muted">{STRINGS.nav.loading}</p>
       </div>
     );
   }
@@ -240,7 +240,7 @@ export function EditorPage() {
   if (!activeChapter) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-primary">
-        <p className="text-text-muted">Loading...</p>
+        <p className="text-text-muted">{STRINGS.nav.loading}</p>
       </div>
     );
   }
@@ -267,7 +267,7 @@ export function EditorPage() {
               onClick={() => navigate("/")}
               className="text-text-secondary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-focus-ring rounded px-2 py-1"
             >
-              &larr; Projects
+              {STRINGS.nav.backToProjects}
             </button>
             {editingProjectTitle ? (
               <input
@@ -283,7 +283,7 @@ export function EditorPage() {
                   }
                 }}
                 className="text-lg font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none"
-                aria-label="Project title"
+                aria-label={STRINGS.a11y.projectTitleInput}
               />
             ) : (
               <h1
@@ -299,7 +299,7 @@ export function EditorPage() {
             onClick={() => setPreviewOpen(true)}
             className="text-sm text-text-secondary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-focus-ring rounded px-2 py-1"
           >
-            Preview
+            {STRINGS.nav.preview}
           </button>
         </header>
 
@@ -327,7 +327,7 @@ export function EditorPage() {
                   }
                 }}
                 className="mx-auto block max-w-[720px] mb-4 text-2xl font-serif text-text-primary bg-transparent border-b-2 border-accent focus:outline-none w-full"
-                aria-label="Chapter title"
+                aria-label={STRINGS.a11y.chapterTitleInput}
               />
             ) : (
               <h2
@@ -359,7 +359,7 @@ export function EditorPage() {
                 {STRINGS.project.wordCount(
                   project.chapters.reduce((sum, c) => sum + c.word_count, 0),
                 )}{" "}
-                total
+                {STRINGS.nav.totalSuffix}
               </span>
             )}
           </div>

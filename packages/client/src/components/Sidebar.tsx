@@ -102,7 +102,7 @@ function SortableChapterItem({
             if (e.key === "Escape") onCancelRename();
           }}
           className="flex-1 text-sm text-text-primary bg-bg-input border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-focus-ring"
-          aria-label="Chapter title"
+          aria-label={STRINGS.a11y.chapterTitleInput}
         />
       ) : (
         <button

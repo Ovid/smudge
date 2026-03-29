@@ -72,7 +72,7 @@ export function HomePage() {
           </div>
         )}
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-text-primary">Projects</h2>
+          <h2 className="text-lg font-semibold text-text-primary">{STRINGS.home.projectsHeading}</h2>
           <button
             onClick={() => setDialogOpen(true)}
             className="rounded bg-accent px-4 py-2 text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring"
