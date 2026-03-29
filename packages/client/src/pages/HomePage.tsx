@@ -64,7 +64,10 @@ export function HomePage() {
 
       <main className="mx-auto max-w-2xl px-6 py-8" aria-label={STRINGS.a11y.mainContent}>
         {error && (
-          <div role="alert" className="mb-4 rounded bg-status-error/10 px-4 py-3 text-status-error text-sm">
+          <div
+            role="alert"
+            className="mb-4 rounded bg-status-error/10 px-4 py-3 text-status-error text-sm"
+          >
             {error}
           </div>
         )}

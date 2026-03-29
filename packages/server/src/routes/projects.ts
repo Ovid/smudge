@@ -132,9 +132,7 @@ export function projectsRouter(db: Knex): Router {
         .orderBy("sort_order", "asc")
         .select("*");
 
-      const parsedChapters = chapters.map((ch: Record<string, unknown>) =>
-        parseChapterContent(ch),
-      );
+      const parsedChapters = chapters.map((ch: Record<string, unknown>) => parseChapterContent(ch));
 
       res.json({ ...project, chapters: parsedChapters });
     }),
