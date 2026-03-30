@@ -3,16 +3,6 @@ import type { ChapterStatusRow } from "@smudge/shared";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
 
-type DashboardChapter = {
-  id: string;
-  title: string;
-  status: string;
-  status_label: string;
-  word_count: number;
-  updated_at: string;
-  sort_order: number;
-};
-
 type DashboardData = Awaited<ReturnType<typeof api.projects.dashboard>>;
 
 type SortKey = "sort_order" | "title" | "status" | "word_count" | "updated_at";
@@ -70,6 +60,11 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
     ? chapters.reduce((a, b) => (a.updated_at < b.updated_at ? a : b))
     : null;
 
+  // Build status sort_order lookup from statuses prop
+  const statusSortOrder: Record<string, number> = Object.fromEntries(
+    statuses.map((s) => [s.status, s.sort_order]),
+  );
+
   // Sort chapters
   const sortedChapters = [...chapters].sort((a, b) => {
     const dir = sortAsc ? 1 : -1;
@@ -77,7 +72,7 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
       case "title":
         return dir * a.title.localeCompare(b.title);
       case "status":
-        return dir * a.status.localeCompare(b.status);
+        return dir * ((statusSortOrder[a.status] ?? 0) - (statusSortOrder[b.status] ?? 0));
       case "word_count":
         return dir * (a.word_count - b.word_count);
       case "updated_at":
@@ -130,7 +125,7 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
           {/* Status summary bar */}
           {totalStatusCount > 0 && (
             <section aria-label="Status summary" className="mb-8">
-              <div className="flex h-4 rounded overflow-hidden mb-2">
+              <div className="flex h-4 rounded overflow-hidden mb-2" role="img" aria-label="Chapter status distribution">
                 {Object.entries(status_summary).map(([status, count]) => {
                   if (count === 0) return null;
                   const pct = (count / totalStatusCount) * 100;
@@ -164,38 +159,21 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left">
-                <th className="py-2 pr-4">
-                  <button
-                    onClick={() => handleSort("title")}
-                    className="font-medium text-text-secondary hover:text-text-primary"
-                  >
-                    {STRINGS.dashboard.columnTitle}
-                  </button>
-                </th>
-                <th className="py-2 pr-4">
-                  <button
-                    onClick={() => handleSort("status")}
-                    className="font-medium text-text-secondary hover:text-text-primary"
-                  >
-                    {STRINGS.dashboard.columnStatus}
-                  </button>
-                </th>
-                <th className="py-2 pr-4">
-                  <button
-                    onClick={() => handleSort("word_count")}
-                    className="font-medium text-text-secondary hover:text-text-primary"
-                  >
-                    {STRINGS.dashboard.columnWordCount}
-                  </button>
-                </th>
-                <th className="py-2">
-                  <button
-                    onClick={() => handleSort("updated_at")}
-                    className="font-medium text-text-secondary hover:text-text-primary"
-                  >
-                    {STRINGS.dashboard.columnLastEdited}
-                  </button>
-                </th>
+                {([
+                  ["title", STRINGS.dashboard.columnTitle, "py-2 pr-4"],
+                  ["status", STRINGS.dashboard.columnStatus, "py-2 pr-4"],
+                  ["word_count", STRINGS.dashboard.columnWordCount, "py-2 pr-4"],
+                  ["updated_at", STRINGS.dashboard.columnLastEdited, "py-2"],
+                ] as const).map(([key, label, className]) => (
+                  <th key={key} className={className}>
+                    <button
+                      onClick={() => handleSort(key)}
+                      className="font-medium text-text-secondary hover:text-text-primary"
+                    >
+                      {label}{sortKey === key ? (sortAsc ? " \u2191" : " \u2193") : ""}
+                    </button>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -214,6 +192,7 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
                       <span
                         className="inline-block w-2.5 h-2.5 rounded-full"
                         style={{ backgroundColor: STATUS_COLORS[chapter.status] ?? "#999" }}
+                        aria-hidden="true"
                       />
                       {chapter.status_label}
                     </span>

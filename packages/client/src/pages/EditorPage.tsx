@@ -383,6 +383,7 @@ export function EditorPage() {
               onClick={() => {
                 setViewMode("editor");
               }}
+              aria-current={viewMode === "editor" ? "page" : undefined}
               className={`text-sm rounded px-3 py-1 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
                 viewMode === "editor"
                   ? "bg-accent-light text-accent font-medium"
@@ -396,6 +397,7 @@ export function EditorPage() {
                 editorRef.current?.flushSave();
                 setViewMode("preview");
               }}
+              aria-current={viewMode === "preview" ? "page" : undefined}
               className={`text-sm rounded px-3 py-1 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
                 viewMode === "preview"
                   ? "bg-accent-light text-accent font-medium"
@@ -408,6 +410,7 @@ export function EditorPage() {
               onClick={() => {
                 setViewMode("dashboard");
               }}
+              aria-current={viewMode === "dashboard" ? "page" : undefined}
               className={`text-sm rounded px-3 py-1 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
                 viewMode === "dashboard"
                   ? "bg-accent-light text-accent font-medium"
