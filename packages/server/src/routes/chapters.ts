@@ -5,6 +5,11 @@ import { asyncHandler } from "../app";
 import { parseChapterContent } from "./parseChapterContent";
 import { resolveUniqueSlug } from "./resolve-slug";
 
+async function getStatusLabel(db: Knex, status: string): Promise<string> {
+  const row = await db("chapter_statuses").where({ status }).first("label");
+  return row?.label ?? status;
+}
+
 export function chaptersRouter(db: Knex): Router {
   const router = Router();
 
@@ -23,7 +28,9 @@ export function chaptersRouter(db: Knex): Router {
         return;
       }
 
-      res.json(parseChapterContent(chapter));
+      const parsed = parseChapterContent(chapter);
+      const status_label = await getStatusLabel(db, chapter.status as string);
+      res.json({ ...parsed, status_label });
     }),
   );
 
@@ -93,8 +100,10 @@ export function chaptersRouter(db: Knex): Router {
       });
 
       const updated = await db("chapters").where({ id: req.params.id }).first();
+      const parsedUpdated = parseChapterContent(updated);
+      const updatedStatusLabel = await getStatusLabel(db, updated.status as string);
 
-      res.json(parseChapterContent(updated));
+      res.json({ ...parsedUpdated, status_label: updatedStatusLabel });
     }),
   );
 
@@ -183,7 +192,8 @@ export function chaptersRouter(db: Knex): Router {
 
       const restored = await db("chapters").where({ id: req.params.id }).first();
       const updatedProject = await db("projects").where({ id: chapter.project_id }).first();
-      res.json({ ...parseChapterContent(restored), project_slug: updatedProject?.slug });
+      const restoredStatusLabel = await getStatusLabel(db, restored.status as string);
+      res.json({ ...parseChapterContent(restored), status_label: restoredStatusLabel, project_slug: updatedProject?.slug });
     }),
   );
 

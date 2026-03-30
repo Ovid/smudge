@@ -261,7 +261,9 @@ export function projectsRouter(db: Knex): Router {
       await db("projects").where({ id: project.id }).update({ updated_at: now });
 
       const chapter = await db("chapters").where({ id: chapterId }).first();
-      res.status(201).json(parseChapterContent(chapter));
+      const statusLabelMap = await getStatusLabelMap(db);
+      const parsedChapter = parseChapterContent(chapter);
+      res.status(201).json({ ...parsedChapter, status_label: statusLabelMap[chapter.status as string] ?? (chapter.status as string) });
     }),
   );
 
@@ -349,9 +351,7 @@ export function projectsRouter(db: Knex): Router {
       const allStatuses = await db("chapter_statuses")
         .orderBy("sort_order", "asc")
         .select("status", "label");
-      const statusLabelMap: Record<string, string> = Object.fromEntries(
-        allStatuses.map((r) => [r.status, r.label]),
-      );
+      const statusLabelMap = await getStatusLabelMap(db);
 
       const chaptersWithLabels = chapters.map((ch: Record<string, unknown>) => ({
         ...ch,
@@ -366,7 +366,7 @@ export function projectsRouter(db: Knex): Router {
       for (const ch of chapters) {
         const status = ch.status as string;
         if (status in statusSummary) {
-          statusSummary[status]++;
+          statusSummary[status] = (statusSummary[status] ?? 0) + 1;
         }
       }
 
