@@ -33,7 +33,7 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
       .catch((err) => {
         if (!cancelled) {
           console.error(err);
-          setError(err instanceof Error ? err.message : "Failed to load dashboard");
+          setError(err instanceof Error ? err.message : STRINGS.error.loadDashboardFailed);
         }
       });
     return () => {

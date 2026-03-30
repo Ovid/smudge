@@ -46,6 +46,9 @@ export const STRINGS = {
     updateTitleFailed: "Failed to update project title",
     renameChapterFailed: "Failed to rename chapter",
     deleteFailed: "Failed to delete project",
+    loadTrashFailed: "Failed to load trash",
+    restoreChapterFailed: "Failed to restore chapter",
+    loadDashboardFailed: "Failed to load dashboard",
   },
   editor: {
     placeholder: "Start writing\u2026",
@@ -93,6 +96,7 @@ export const STRINGS = {
     chapterTitleInput: "Chapter title",
     projectTitleInput: "Project title",
     editorContent: "Chapter content",
+    dismissError: "Dismiss error",
   },
   toolbar: {
     bold: "Bold",

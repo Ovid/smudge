@@ -110,7 +110,7 @@ export function EditorPage() {
       setTrashOpen(true);
     } catch (err) {
       console.error("Failed to load trash:", err);
-      setActionError(err instanceof Error ? err.message : "Failed to load trash");
+      setActionError(err instanceof Error ? err.message : STRINGS.error.loadTrashFailed);
     }
   }
 
@@ -132,7 +132,7 @@ export function EditorPage() {
       });
     } catch (err) {
       console.error("Failed to restore chapter:", err);
-      setActionError(err instanceof Error ? err.message : "Failed to restore chapter");
+      setActionError(err instanceof Error ? err.message : STRINGS.error.restoreChapterFailed);
     }
   }
 
@@ -174,8 +174,9 @@ export function EditorPage() {
 
       if (ctrl && e.shiftKey && e.key === "P") {
         e.preventDefault();
-        editorRef.current?.flushSave();
-        setViewMode((prev) => (prev === "preview" ? "editor" : "preview"));
+        editorRef.current?.flushSave().then(() => {
+          setViewMode((prev) => (prev === "preview" ? "editor" : "preview"));
+        });
         return;
       }
 
@@ -419,8 +420,8 @@ export function EditorPage() {
               {STRINGS.nav.editor}
             </button>
             <button
-              onClick={() => {
-                editorRef.current?.flushSave();
+              onClick={async () => {
+                await editorRef.current?.flushSave();
                 setViewMode("preview");
               }}
               aria-current={viewMode === "preview" ? "page" : undefined}
@@ -433,8 +434,8 @@ export function EditorPage() {
               {STRINGS.nav.preview}
             </button>
             <button
-              onClick={() => {
-                editorRef.current?.flushSave();
+              onClick={async () => {
+                await editorRef.current?.flushSave();
                 setViewMode("dashboard");
               }}
               aria-current={viewMode === "dashboard" ? "page" : undefined}
@@ -458,7 +459,7 @@ export function EditorPage() {
             <button
               onClick={() => setActionError(null)}
               className="text-status-error hover:text-text-primary text-xs ml-4 focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
-              aria-label="Dismiss error"
+              aria-label={STRINGS.a11y.dismissError}
             >
               ✕
             </button>
