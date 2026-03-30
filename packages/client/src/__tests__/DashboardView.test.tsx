@@ -86,9 +86,7 @@ describe("DashboardView", () => {
   it("renders health bar with word count and chapter count", async () => {
     vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
 
-    render(
-      <DashboardView slug="test-project" statuses={statuses} onNavigateToChapter={vi.fn()} />,
-    );
+    render(<DashboardView slug="test-project" statuses={statuses} onNavigateToChapter={vi.fn()} />);
 
     await waitFor(() => {
       expect(screen.getByText("1,700 words")).toBeInTheDocument();
@@ -102,9 +100,7 @@ describe("DashboardView", () => {
   it("renders chapter table with titles and statuses", async () => {
     vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
 
-    render(
-      <DashboardView slug="test-project" statuses={statuses} onNavigateToChapter={vi.fn()} />,
-    );
+    render(<DashboardView slug="test-project" statuses={statuses} onNavigateToChapter={vi.fn()} />);
 
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
@@ -119,9 +115,7 @@ describe("DashboardView", () => {
     vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
 
     const onNav = vi.fn();
-    render(
-      <DashboardView slug="test-project" statuses={statuses} onNavigateToChapter={onNav} />,
-    );
+    render(<DashboardView slug="test-project" statuses={statuses} onNavigateToChapter={onNav} />);
 
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
@@ -134,9 +128,7 @@ describe("DashboardView", () => {
   it("renders status summary text", async () => {
     vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
 
-    render(
-      <DashboardView slug="test-project" statuses={statuses} onNavigateToChapter={vi.fn()} />,
-    );
+    render(<DashboardView slug="test-project" statuses={statuses} onNavigateToChapter={vi.fn()} />);
 
     await waitFor(() => {
       expect(screen.getByText(/Outline: 1/)).toBeInTheDocument();
@@ -148,9 +140,7 @@ describe("DashboardView", () => {
   it("renders empty state", async () => {
     vi.mocked(api.projects.dashboard).mockResolvedValue(emptyDashboardData);
 
-    render(
-      <DashboardView slug="test-project" statuses={statuses} onNavigateToChapter={vi.fn()} />,
-    );
+    render(<DashboardView slug="test-project" statuses={statuses} onNavigateToChapter={vi.fn()} />);
 
     await waitFor(() => {
       expect(screen.getByText("No chapters yet")).toBeInTheDocument();

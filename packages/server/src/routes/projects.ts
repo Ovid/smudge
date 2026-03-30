@@ -342,7 +342,9 @@ export function projectsRouter(db: Knex): Router {
         .orderBy("sort_order", "asc")
         .select("id", "title", "status", "word_count", "updated_at", "sort_order");
 
-      const allStatuses = await db("chapter_statuses").orderBy("sort_order", "asc").select("status", "label");
+      const allStatuses = await db("chapter_statuses")
+        .orderBy("sort_order", "asc")
+        .select("status", "label");
       const statusLabelMap: Record<string, string> = Object.fromEntries(
         allStatuses.map((r: { status: string; label: string }) => [r.status, r.label]),
       );
@@ -370,12 +372,10 @@ export function projectsRouter(db: Knex): Router {
         0,
       );
       const updatedAts = chapters.map((ch: Record<string, unknown>) => ch.updated_at as string);
-      const mostRecentEdit = updatedAts.length > 0
-        ? updatedAts.reduce((a, b) => (a > b ? a : b))
-        : null;
-      const leastRecentEdit = updatedAts.length > 0
-        ? updatedAts.reduce((a, b) => (a < b ? a : b))
-        : null;
+      const mostRecentEdit =
+        updatedAts.length > 0 ? updatedAts.reduce((a, b) => (a > b ? a : b)) : null;
+      const leastRecentEdit =
+        updatedAts.length > 0 ? updatedAts.reduce((a, b) => (a < b ? a : b)) : null;
 
       res.json({
         chapters: chaptersWithLabels,

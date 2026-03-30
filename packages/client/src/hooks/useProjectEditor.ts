@@ -200,8 +200,7 @@ export function useProjectEditor(slug: string | undefined) {
       } catch (err) {
         // Don't call setError — that triggers the full-page error overlay.
         // Returning undefined keeps the title edit mode open so the user can retry.
-        const message =
-          err instanceof Error ? err.message : STRINGS.error.updateTitleFailed;
+        const message = err instanceof Error ? err.message : STRINGS.error.updateTitleFailed;
         setProjectTitleError(message);
         return undefined;
       }
@@ -235,7 +234,9 @@ export function useProjectEditor(slug: string | undefined) {
             if (activeChapter?.id === chapterId) {
               const revertedChapter = data.chapters.find((c) => c.id === chapterId);
               if (revertedChapter) {
-                setActiveChapter((prev) => (prev ? { ...prev, status: revertedChapter.status } : prev));
+                setActiveChapter((prev) =>
+                  prev ? { ...prev, status: revertedChapter.status } : prev,
+                );
               }
             }
           } catch {

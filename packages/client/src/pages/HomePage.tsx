@@ -61,11 +61,7 @@ export function HomePage() {
     <div className="min-h-screen bg-bg-primary">
       <header className="border-b border-border px-6 py-4">
         <h1>
-          <img
-            src={smudgeLogo}
-            alt={STRINGS.app.name}
-            className="h-8"
-          />
+          <img src={smudgeLogo} alt={STRINGS.app.name} className="h-8" />
         </h1>
       </header>
 

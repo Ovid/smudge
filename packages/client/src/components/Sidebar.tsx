@@ -53,15 +53,12 @@ function StatusBadge({ chapter, statuses, onStatusChange, onAnnounce }: StatusBa
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setOpen(false);
-      }
-    },
-    [],
-  );
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setOpen(false);
+    }
+  }, []);
 
   function selectStatus(status: string) {
     onStatusChange(chapter.id, status);

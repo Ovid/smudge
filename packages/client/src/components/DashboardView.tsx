@@ -53,12 +53,10 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
   const { chapters, status_summary, totals } = data;
 
   // Find chapter names for most/least recent edit
-  const mostRecentChapter = chapters.length > 0
-    ? chapters.reduce((a, b) => (a.updated_at > b.updated_at ? a : b))
-    : null;
-  const leastRecentChapter = chapters.length > 0
-    ? chapters.reduce((a, b) => (a.updated_at < b.updated_at ? a : b))
-    : null;
+  const mostRecentChapter =
+    chapters.length > 0 ? chapters.reduce((a, b) => (a.updated_at > b.updated_at ? a : b)) : null;
+  const leastRecentChapter =
+    chapters.length > 0 ? chapters.reduce((a, b) => (a.updated_at < b.updated_at ? a : b)) : null;
 
   // Build status sort_order lookup from statuses prop
   const statusSortOrder: Record<string, number> = Object.fromEntries(
@@ -117,7 +115,10 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
             )}
             {totals.least_recent_edit && leastRecentChapter && (
               <p className="text-text-secondary text-sm">
-                {STRINGS.dashboard.leastRecentEdit(totals.least_recent_edit, leastRecentChapter.title)}
+                {STRINGS.dashboard.leastRecentEdit(
+                  totals.least_recent_edit,
+                  leastRecentChapter.title,
+                )}
               </p>
             )}
           </section>
@@ -125,7 +126,11 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
           {/* Status summary bar */}
           {totalStatusCount > 0 && (
             <section aria-label="Status summary" className="mb-8">
-              <div className="flex h-4 rounded overflow-hidden mb-2" role="img" aria-label="Chapter status distribution">
+              <div
+                className="flex h-4 rounded overflow-hidden mb-2"
+                role="img"
+                aria-label="Chapter status distribution"
+              >
                 {Object.entries(status_summary).map(([status, count]) => {
                   if (count === 0) return null;
                   const pct = (count / totalStatusCount) * 100;
@@ -159,18 +164,21 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left">
-                {([
-                  ["title", STRINGS.dashboard.columnTitle, "py-2 pr-4"],
-                  ["status", STRINGS.dashboard.columnStatus, "py-2 pr-4"],
-                  ["word_count", STRINGS.dashboard.columnWordCount, "py-2 pr-4"],
-                  ["updated_at", STRINGS.dashboard.columnLastEdited, "py-2"],
-                ] as const).map(([key, label, className]) => (
+                {(
+                  [
+                    ["title", STRINGS.dashboard.columnTitle, "py-2 pr-4"],
+                    ["status", STRINGS.dashboard.columnStatus, "py-2 pr-4"],
+                    ["word_count", STRINGS.dashboard.columnWordCount, "py-2 pr-4"],
+                    ["updated_at", STRINGS.dashboard.columnLastEdited, "py-2"],
+                  ] as const
+                ).map(([key, label, className]) => (
                   <th key={key} className={className}>
                     <button
                       onClick={() => handleSort(key)}
                       className="font-medium text-text-secondary hover:text-text-primary"
                     >
-                      {label}{sortKey === key ? (sortAsc ? " \u2191" : " \u2193") : ""}
+                      {label}
+                      {sortKey === key ? (sortAsc ? " \u2191" : " \u2193") : ""}
                     </button>
                   </th>
                 ))}

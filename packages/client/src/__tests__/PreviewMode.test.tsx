@@ -87,9 +87,7 @@ describe("PreviewMode", () => {
         content: null,
       },
     ];
-    render(
-      <PreviewMode chapters={chaptersWithNull} onNavigateToChapter={vi.fn()} />,
-    );
+    render(<PreviewMode chapters={chaptersWithNull} onNavigateToChapter={vi.fn()} />);
 
     // Chapter title should still render
     expect(screen.getByRole("heading", { name: "Chapter One" })).toBeInTheDocument();

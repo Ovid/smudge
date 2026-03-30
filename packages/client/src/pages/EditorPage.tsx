@@ -196,7 +196,14 @@ export function EditorPage() {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [handleCreateChapter, shortcutHelpOpen, viewMode, activeChapter, project, handleSelectChapterWithFlush]);
+  }, [
+    handleCreateChapter,
+    shortcutHelpOpen,
+    viewMode,
+    activeChapter,
+    project,
+    handleSelectChapterWithFlush,
+  ]);
 
   function startEditingTitle() {
     if (!activeChapter) return;
@@ -457,7 +464,7 @@ export function EditorPage() {
         ) : viewMode === "dashboard" ? (
           <main className="flex-1 overflow-y-auto" aria-label={STRINGS.a11y.mainContent}>
             <DashboardView
-              slug={slug!}
+              slug={slug as string}
               statuses={statuses}
               onNavigateToChapter={(chapterId) => {
                 setViewMode("editor");
@@ -501,9 +508,7 @@ export function EditorPage() {
           </main>
         )}
 
-        <footer
-          className="border-t border-border bg-bg-primary px-6 py-2 flex items-center justify-between text-sm text-text-secondary"
-        >
+        <footer className="border-t border-border bg-bg-primary px-6 py-2 flex items-center justify-between text-sm text-text-secondary">
           <div>
             {STRINGS.project.wordCount(chapterWordCount)}
             {project && (
@@ -538,7 +543,9 @@ export function EditorPage() {
         />
       )}
 
-      <div aria-live="polite" className="sr-only">{navAnnouncement}</div>
+      <div aria-live="polite" className="sr-only">
+        {navAnnouncement}
+      </div>
 
       {shortcutHelpOpen && (
         <dialog
@@ -582,7 +589,6 @@ export function EditorPage() {
           </div>
         </dialog>
       )}
-
     </div>
   );
 }

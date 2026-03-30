@@ -266,8 +266,8 @@ describe("Ctrl+Shift+Arrow chapter navigation", () => {
 
   it("Ctrl+Shift+ArrowUp navigates to previous chapter", async () => {
     vi.mocked(api.chapters.get)
-      .mockResolvedValueOnce(mockMultiChapterProject.chapters[0])  // initial load
-      .mockResolvedValueOnce(mockMultiChapterProject.chapters[1])  // navigate down
+      .mockResolvedValueOnce(mockMultiChapterProject.chapters[0]) // initial load
+      .mockResolvedValueOnce(mockMultiChapterProject.chapters[1]) // navigate down
       .mockResolvedValueOnce(mockMultiChapterProject.chapters[0]); // navigate back up
 
     renderEditorPage();

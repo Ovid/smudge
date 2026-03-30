@@ -1,5 +1,7 @@
 # Bugs
 
+- Formatting bar scrolls away as chapter gets longer. Need to make it sticky,
+  put it in the topbar, or something.
 - MAJOR: I entered text for the body of a chapter, changed the title (might be
   a red herring), clicked on "Preview", when I get get back to chapters, it
   shows me, it showed me the original text, not the new text. When I clicked

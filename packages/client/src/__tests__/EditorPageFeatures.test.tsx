@@ -736,7 +736,9 @@ describe("EditorPage preview mode", () => {
     // Preview renders inline — chapter headings visible in preview
     await waitFor(() => {
       // Both chapters should appear as h2 headings in preview
-      expect(screen.getAllByRole("heading", { name: "Chapter One" }).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByRole("heading", { name: "Chapter One" }).length).toBeGreaterThanOrEqual(
+        1,
+      );
     });
   });
 

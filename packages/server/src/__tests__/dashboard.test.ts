@@ -36,7 +36,7 @@ describe("GET /api/projects/:slug/dashboard", () => {
   });
 
   it("returns correct status_summary counts", async () => {
-    const { projectSlug, chapterId } = await createProjectWithChapter(t.app);
+    const { projectSlug } = await createProjectWithChapter(t.app);
 
     // Add a second chapter and change its status
     const ch2Res = await request(t.app).post(`/api/projects/${projectSlug}/chapters`).send();

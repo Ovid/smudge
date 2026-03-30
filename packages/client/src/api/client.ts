@@ -97,7 +97,10 @@ export const api = {
     create: (projectSlug: string) =>
       apiFetch<Chapter>(`/projects/${projectSlug}/chapters`, { method: "POST" }),
 
-    update: (id: string, data: { title?: string; content?: Record<string, unknown>; status?: string }) =>
+    update: (
+      id: string,
+      data: { title?: string; content?: Record<string, unknown>; status?: string },
+    ) =>
       apiFetch<Chapter>(`/chapters/${id}`, {
         method: "PATCH",
         body: JSON.stringify(data),

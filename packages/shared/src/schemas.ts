@@ -2,13 +2,7 @@ import { z } from "zod";
 
 export const ProjectMode = z.enum(["fiction", "nonfiction"]);
 
-export const ChapterStatus = z.enum([
-  "outline",
-  "rough_draft",
-  "revised",
-  "edited",
-  "final",
-]);
+export const ChapterStatus = z.enum(["outline", "rough_draft", "revised", "edited", "final"]);
 
 export const CreateProjectSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(500, "Title is too long"),
@@ -36,6 +30,9 @@ export const UpdateChapterSchema = z
     content: TipTapDocSchema.optional(),
     status: ChapterStatus.optional(),
   })
-  .refine((data) => data.title !== undefined || data.content !== undefined || data.status !== undefined, {
-    message: "Must provide at least title, content, or status",
-  });
+  .refine(
+    (data) => data.title !== undefined || data.content !== undefined || data.status !== undefined,
+    {
+      message: "Must provide at least title, content, or status",
+    },
+  );

@@ -171,9 +171,7 @@ describe("PATCH /api/chapters/:id", () => {
   it("GET /api/projects/:slug includes chapter status and status_label", async () => {
     const { projectSlug, chapterId } = await createProjectWithChapter(t.app);
 
-    await request(t.app)
-      .patch(`/api/chapters/${chapterId}`)
-      .send({ status: "edited" });
+    await request(t.app).patch(`/api/chapters/${chapterId}`).send({ status: "edited" });
 
     const res = await request(t.app).get(`/api/projects/${projectSlug}`);
 
