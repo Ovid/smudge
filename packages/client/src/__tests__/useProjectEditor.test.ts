@@ -499,7 +499,9 @@ describe("useProjectEditor", () => {
     await waitFor(() => expect(result.current.project).toBeTruthy());
 
     await act(async () => {
-      await result.current.handleStatusChange("ch1", "revised");
+      await expect(result.current.handleStatusChange("ch1", "revised")).rejects.toThrow(
+        "status boom",
+      );
     });
 
     // After revert, project should be reloaded from server

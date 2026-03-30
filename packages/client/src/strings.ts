@@ -49,6 +49,7 @@ export const STRINGS = {
     loadTrashFailed: "Failed to load trash",
     restoreChapterFailed: "Failed to restore chapter",
     loadDashboardFailed: "Failed to load dashboard",
+    statusChangeFailed: "Failed to update chapter status",
   },
   editor: {
     placeholder: "Start writing\u2026",

@@ -237,7 +237,7 @@ export function useProjectEditor(slug: string | undefined) {
     }
     try {
       await api.chapters.update(chapterId, { status });
-    } catch {
+    } catch (err) {
       // Revert by reloading from server
       const slug = projectSlugRef.current;
       if (slug) {
@@ -271,6 +271,7 @@ export function useProjectEditor(slug: string | undefined) {
           }
         }
       }
+      throw err;
     }
   }, []);
 

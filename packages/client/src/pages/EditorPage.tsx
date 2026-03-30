@@ -105,6 +105,18 @@ export function EditorPage() {
 
   const editorRef = useRef<{ flushSave: () => Promise<void> } | null>(null);
 
+  const handleStatusChangeWithError = useCallback(
+    async (chapterId: string, status: string) => {
+      try {
+        await handleStatusChange(chapterId, status);
+      } catch (err) {
+        console.error(err);
+        setActionError(err instanceof Error ? err.message : STRINGS.error.statusChangeFailed);
+      }
+    },
+    [handleStatusChange],
+  );
+
   const handleSelectChapterWithFlush = useCallback(
     async (chapterId: string) => {
       await editorRef.current?.flushSave();
@@ -336,7 +348,7 @@ export function EditorPage() {
             onRenameChapter={handleRenameChapter}
             onOpenTrash={openTrash}
             statuses={statuses}
-            onStatusChange={handleStatusChange}
+            onStatusChange={handleStatusChangeWithError}
             width={sidebarWidth}
             onResize={handleSidebarResize}
           />
@@ -375,7 +387,7 @@ export function EditorPage() {
           onRenameChapter={handleRenameChapter}
           onOpenTrash={openTrash}
           statuses={statuses}
-          onStatusChange={handleStatusChange}
+          onStatusChange={handleStatusChangeWithError}
           width={sidebarWidth}
           onResize={handleSidebarResize}
         />
