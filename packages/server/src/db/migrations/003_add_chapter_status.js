@@ -15,7 +15,7 @@ export async function up(knex) {
   ]);
 
   await knex.schema.alterTable("chapters", (table) => {
-    table.string("status").defaultTo("outline");
+    table.string("status").notNullable().defaultTo("outline");
   });
 
   // Backfill existing chapters
