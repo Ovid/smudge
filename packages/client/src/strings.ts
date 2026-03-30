@@ -133,5 +133,8 @@ export const STRINGS = {
     columnStatus: "Status",
     columnWordCount: "Word Count",
     columnLastEdited: "Last Edited",
+    healthSectionLabel: "Manuscript health",
+    statusSummaryLabel: "Status summary",
+    statusDistributionLabel: "Chapter status distribution",
   },
 } as const;

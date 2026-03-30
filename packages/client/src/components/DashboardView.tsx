@@ -88,8 +88,14 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
     switch (sortKey) {
       case "title":
         return dir * a.title.localeCompare(b.title);
-      case "status":
-        return dir * ((statusSortOrder[a.status] ?? 0) - (statusSortOrder[b.status] ?? 0));
+      case "status": {
+        const orderA = statusSortOrder[a.status];
+        const orderB = statusSortOrder[b.status];
+        if (orderA != null && orderB != null) {
+          return dir * (orderA - orderB);
+        }
+        return dir * a.status.localeCompare(b.status);
+      }
       case "word_count":
         return dir * (a.word_count - b.word_count);
       case "updated_at":
@@ -120,7 +126,7 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
       ) : (
         <>
           {/* Health bar */}
-          <section aria-label="Manuscript health" className="mb-8 space-y-1">
+          <section aria-label={STRINGS.dashboard.healthSectionLabel} className="mb-8 space-y-1">
             <p className="text-text-primary font-medium">
               {STRINGS.dashboard.totalWordCount(totals.word_count)}
             </p>
@@ -147,11 +153,11 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
 
           {/* Status summary bar */}
           {totalStatusCount > 0 && (
-            <section aria-label="Status summary" className="mb-8">
+            <section aria-label={STRINGS.dashboard.statusSummaryLabel} className="mb-8">
               <div
                 className="flex h-4 rounded overflow-hidden mb-2"
                 role="img"
-                aria-label="Chapter status distribution"
+                aria-label={STRINGS.dashboard.statusDistributionLabel}
               >
                 {Object.entries(status_summary).map(([status, count]) => {
                   if (count === 0) return null;
@@ -194,7 +200,13 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
                     ["updated_at", STRINGS.dashboard.columnLastEdited, "py-2"],
                   ] as const
                 ).map(([key, label, className]) => (
-                  <th key={key} className={className}>
+                  <th
+                    key={key}
+                    className={className}
+                    aria-sort={
+                      sortKey === key ? (sortAsc ? "ascending" : "descending") : "none"
+                    }
+                  >
                     <button
                       onClick={() => handleSort(key)}
                       className="font-medium text-text-secondary hover:text-text-primary"

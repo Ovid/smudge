@@ -97,16 +97,37 @@ function StatusBadge({ chapter, statuses, onStatusChange, onAnnounce }: StatusBa
                 key={s.status}
                 role="option"
                 aria-selected={s.status === currentStatus}
-                tabIndex={0}
+                tabIndex={s.status === currentStatus ? 0 : -1}
                 onClick={(e) => {
                   e.stopPropagation();
                   selectStatus(s.status);
                 }}
                 onKeyDown={(e) => {
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    (e.currentTarget.nextElementSibling as HTMLElement | null)?.focus();
+                    return;
+                  }
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    (e.currentTarget.previousElementSibling as HTMLElement | null)?.focus();
+                    return;
+                  }
+                  if (e.key === "Home") {
+                    e.preventDefault();
+                    (e.currentTarget.parentElement?.firstElementChild as HTMLElement | null)?.focus();
+                    return;
+                  }
+                  if (e.key === "End") {
+                    e.preventDefault();
+                    (e.currentTarget.parentElement?.lastElementChild as HTMLElement | null)?.focus();
+                    return;
+                  }
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
                     e.stopPropagation();
                     selectStatus(s.status);
+                    return;
                   }
                   if (e.key === "Escape") {
                     e.preventDefault();

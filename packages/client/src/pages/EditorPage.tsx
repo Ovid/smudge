@@ -96,6 +96,7 @@ export function EditorPage() {
     async (chapterId: string) => {
       await editorRef.current?.flushSave();
       setTrashOpen(false);
+      setViewMode("editor");
       await handleSelectChapter(chapterId);
     },
     [handleSelectChapter],
@@ -564,7 +565,7 @@ export function EditorPage() {
         />
       )}
 
-      <div aria-live="polite" className="sr-only">
+      <div aria-live="polite" className="sr-only" data-testid="nav-announcement">
         {navAnnouncement}
       </div>
 
