@@ -60,6 +60,8 @@ export const STRINGS = {
     newChapter: "New chapter",
     toggleSidebar: "Toggle sidebar",
     showShortcuts: "Keyboard shortcuts",
+    prevChapter: "Previous chapter",
+    nextChapter: "Next chapter",
   },
   sidebar: {
     addChapter: "Add Chapter",
@@ -77,6 +79,7 @@ export const STRINGS = {
     statusLabel: (label: string) => `Chapter status: ${label}`,
     statusChanged: (label: string) => `Chapter status changed to ${label}`,
     resizeHandle: "Resize sidebar",
+    navigatedToChapter: (title: string) => `Navigated to ${title}`,
   },
   status: {
     outline: "Outline",

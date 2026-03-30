@@ -83,6 +83,7 @@ export function EditorPage() {
   type ViewMode = "editor" | "preview" | "dashboard";
   const [viewMode, setViewMode] = useState<ViewMode>("editor");
   const [statuses, setStatuses] = useState<ChapterStatusRow[]>([]);
+  const [navAnnouncement, setNavAnnouncement] = useState("");
 
   useEffect(() => {
     api.chapterStatuses.list().then(setStatuses).catch(console.error);
@@ -174,6 +175,19 @@ export function EditorPage() {
         return;
       }
 
+      if (ctrl && e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+        if (viewMode !== "editor" || !activeChapter || !project) return;
+        e.preventDefault();
+        const chapters = project.chapters;
+        const currentIndex = chapters.findIndex((c) => c.id === activeChapter.id);
+        if (currentIndex === -1) return;
+        const nextIndex = e.key === "ArrowUp" ? currentIndex - 1 : currentIndex + 1;
+        if (nextIndex < 0 || nextIndex >= chapters.length) return;
+        handleSelectChapterWithFlush(chapters[nextIndex].id);
+        setNavAnnouncement(STRINGS.sidebar.navigatedToChapter(chapters[nextIndex].title));
+        return;
+      }
+
       if (shortcutHelpOpen && e.key === "Escape") {
         e.preventDefault();
         setShortcutHelpOpen(false);
@@ -182,7 +196,7 @@ export function EditorPage() {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [handleCreateChapter, shortcutHelpOpen]);
+  }, [handleCreateChapter, shortcutHelpOpen, viewMode, activeChapter, project, handleSelectChapterWithFlush]);
 
   function startEditingTitle() {
     if (!activeChapter) return;
@@ -526,6 +540,8 @@ export function EditorPage() {
         />
       )}
 
+      <div aria-live="polite" className="sr-only">{navAnnouncement}</div>
+
       {shortcutHelpOpen && (
         <dialog
           open
@@ -551,6 +567,14 @@ export function EditorPage() {
               <div className="flex justify-between">
                 <dt className="text-text-secondary">{STRINGS.shortcuts.toggleSidebar}</dt>
                 <dd className="font-mono text-text-muted">Ctrl+Shift+\</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-text-secondary">{STRINGS.shortcuts.prevChapter}</dt>
+                <dd className="font-mono text-text-muted">Ctrl+Shift+↑</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-text-secondary">{STRINGS.shortcuts.nextChapter}</dt>
+                <dd className="font-mono text-text-muted">Ctrl+Shift+↓</dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-text-secondary">{STRINGS.shortcuts.showShortcuts}</dt>
