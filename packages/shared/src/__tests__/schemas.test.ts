@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { CreateProjectSchema, UpdateChapterSchema } from "../schemas";
+import { CreateProjectSchema, UpdateChapterSchema, ChapterStatus } from "../schemas";
 
 describe("CreateProjectSchema", () => {
   it("accepts valid project creation input", () => {
@@ -77,6 +77,30 @@ describe("UpdateChapterSchema", () => {
     const result = UpdateChapterSchema.safeParse({
       content: { type: "paragraph", content: [] },
     });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts status-only update", () => {
+    const result = UpdateChapterSchema.safeParse({ status: "revised" });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects invalid status value", () => {
+    const result = UpdateChapterSchema.safeParse({ status: "published" });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("ChapterStatus", () => {
+  it("accepts all valid statuses", () => {
+    for (const status of ["outline", "rough_draft", "revised", "edited", "final"]) {
+      const result = ChapterStatus.safeParse(status);
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it("rejects invalid status", () => {
+    const result = ChapterStatus.safeParse("published");
     expect(result.success).toBe(false);
   });
 });
