@@ -108,11 +108,6 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
 
   const totalStatusCount = Object.values(status_summary).reduce((s, n) => s + n, 0);
 
-  // Build status label map from statuses prop
-  const statusLabelMap: Record<string, string> = Object.fromEntries(
-    statuses.map((s) => [s.status, s.label]),
-  );
-
   return (
     <div className="mx-auto max-w-[720px] px-6 py-8">
       <h2 className="text-2xl font-serif text-text-primary mb-6">{STRINGS.dashboard.heading}</h2>
