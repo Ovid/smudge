@@ -217,45 +217,42 @@ export function useProjectEditor(slug: string | undefined) {
     [],
   );
 
-  const handleStatusChange = useCallback(
-    async (chapterId: string, status: string) => {
-      // Optimistic update
-      setProject((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          chapters: prev.chapters.map((c) => (c.id === chapterId ? { ...c, status } : c)),
-        };
-      });
-      if (activeChapterRef.current?.id === chapterId) {
-        setActiveChapter((prev) => (prev ? { ...prev, status } : prev));
-      }
-      try {
-        await api.chapters.update(chapterId, { status });
-      } catch {
-        // Revert by reloading from server
-        const slug = projectSlugRef.current;
-        if (slug) {
-          try {
-            const data = await api.projects.get(slug);
-            setProject(data);
-            // Also revert activeChapter from reloaded data
-            if (activeChapterRef.current?.id === chapterId) {
-              const revertedChapter = data.chapters.find((c) => c.id === chapterId);
-              if (revertedChapter) {
-                setActiveChapter((prev) =>
-                  prev ? { ...prev, status: revertedChapter.status } : prev,
-                );
-              }
+  const handleStatusChange = useCallback(async (chapterId: string, status: string) => {
+    // Optimistic update
+    setProject((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        chapters: prev.chapters.map((c) => (c.id === chapterId ? { ...c, status } : c)),
+      };
+    });
+    if (activeChapterRef.current?.id === chapterId) {
+      setActiveChapter((prev) => (prev ? { ...prev, status } : prev));
+    }
+    try {
+      await api.chapters.update(chapterId, { status });
+    } catch {
+      // Revert by reloading from server
+      const slug = projectSlugRef.current;
+      if (slug) {
+        try {
+          const data = await api.projects.get(slug);
+          setProject(data);
+          // Also revert activeChapter from reloaded data
+          if (activeChapterRef.current?.id === chapterId) {
+            const revertedChapter = data.chapters.find((c) => c.id === chapterId);
+            if (revertedChapter) {
+              setActiveChapter((prev) =>
+                prev ? { ...prev, status: revertedChapter.status } : prev,
+              );
             }
-          } catch {
-            // If reload also fails, leave optimistic state
           }
+        } catch {
+          // If reload also fails, leave optimistic state
         }
       }
-    },
-    [],
-  );
+    }
+  }, []);
 
   const handleRenameChapter = useCallback(
     async (chapterId: string, title: string) => {
