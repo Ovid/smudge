@@ -115,7 +115,27 @@ export const STRINGS = {
   nav: {
     backToProjects: "\u2190 Projects",
     preview: "Preview",
+    editor: "Editor",
+    dashboard: "Dashboard",
     loading: "Loading...",
     totalSuffix: "total",
+  },
+  dashboard: {
+    heading: "Manuscript Dashboard",
+    totalWordCount: (count: number) => `${count.toLocaleString()} words`,
+    totalChapters: (count: number) => `${count} ${count === 1 ? "chapter" : "chapters"}`,
+    mostRecentEdit: (dateStr: string, title: string) => {
+      const date = new Date(dateStr);
+      return `Most recent: ${date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} (${title})`;
+    },
+    leastRecentEdit: (dateStr: string, title: string) => {
+      const date = new Date(dateStr);
+      return `Least recent: ${date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} (${title})`;
+    },
+    emptyState: "No chapters yet",
+    columnTitle: "Title",
+    columnStatus: "Status",
+    columnWordCount: "Word Count",
+    columnLastEdited: "Last Edited",
   },
 } as const;

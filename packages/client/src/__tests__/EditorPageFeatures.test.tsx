@@ -21,6 +21,7 @@ vi.mock("../api/client", () => ({
       update: vi.fn(),
       reorderChapters: vi.fn(),
       trash: vi.fn(),
+      dashboard: vi.fn(),
     },
     chapters: {
       get: vi.fn(),
@@ -164,11 +165,13 @@ describe("EditorPage sidebar features", () => {
     });
   });
 
-  it("shows preview button in header", async () => {
+  it("shows view mode tabs in header", async () => {
     renderEditorPage();
 
     await waitFor(() => {
+      expect(screen.getByText("Editor")).toBeInTheDocument();
       expect(screen.getByText("Preview")).toBeInTheDocument();
+      expect(screen.getByText("Dashboard")).toBeInTheDocument();
     });
   });
 
@@ -721,7 +724,7 @@ describe("EditorPage preview mode", () => {
     vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
   });
 
-  it("opens preview when clicking Preview button", async () => {
+  it("opens preview when clicking Preview tab", async () => {
     renderEditorPage();
 
     await waitFor(() => {
@@ -730,8 +733,10 @@ describe("EditorPage preview mode", () => {
 
     await userEvent.click(screen.getByText("Preview"));
 
+    // Preview renders inline — chapter headings visible in preview
     await waitFor(() => {
-      expect(screen.getByText("Back to Editor")).toBeInTheDocument();
+      // Both chapters should appear as h2 headings in preview
+      expect(screen.getAllByRole("heading", { name: "Chapter One" }).length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -745,19 +750,20 @@ describe("EditorPage preview mode", () => {
     // Open preview
     fireEvent.keyDown(document, { key: "P", ctrlKey: true, shiftKey: true });
 
+    // Preview tab should be active — TOC navigation should be present
     await waitFor(() => {
-      expect(screen.getByText("Back to Editor")).toBeInTheDocument();
+      expect(screen.getByRole("navigation", { name: "Table of Contents" })).toBeInTheDocument();
     });
 
-    // Close preview
+    // Close preview (back to editor)
     fireEvent.keyDown(document, { key: "P", ctrlKey: true, shiftKey: true });
 
     await waitFor(() => {
-      expect(screen.queryByText("Back to Editor")).toBeNull();
+      expect(screen.queryByRole("navigation", { name: "Table of Contents" })).toBeNull();
     });
   });
 
-  it("closes preview and navigates to chapter when clicking chapter heading", async () => {
+  it("navigates to chapter when clicking chapter heading in preview", async () => {
     vi.mocked(api.chapters.get)
       .mockResolvedValueOnce(mockChapter) // initial load
       .mockResolvedValueOnce(mockProject.chapters[1]); // navigate to ch-2
@@ -771,16 +777,16 @@ describe("EditorPage preview mode", () => {
     await userEvent.click(screen.getByText("Preview"));
 
     await waitFor(() => {
-      expect(screen.getByText("Back to Editor")).toBeInTheDocument();
+      expect(screen.getByRole("navigation", { name: "Table of Contents" })).toBeInTheDocument();
     });
 
     // Click a chapter heading in preview
     const ch2Heading = screen.getByRole("heading", { name: "Chapter Two" });
     await userEvent.click(ch2Heading);
 
-    // Preview should close and chapter should switch
+    // Should switch back to editor view
     await waitFor(() => {
-      expect(screen.queryByText("Back to Editor")).toBeNull();
+      expect(screen.queryByRole("navigation", { name: "Table of Contents" })).toBeNull();
     });
   });
 });

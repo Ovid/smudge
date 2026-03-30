@@ -5,6 +5,7 @@ import { Editor } from "../components/Editor";
 import { Sidebar } from "../components/Sidebar";
 import { TrashView } from "../components/TrashView";
 import { PreviewMode } from "../components/PreviewMode";
+import { DashboardView } from "../components/DashboardView";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { STRINGS } from "../strings";
 import { useProjectEditor } from "../hooks/useProjectEditor";
@@ -79,7 +80,8 @@ export function EditorPage() {
   const [deleteTarget, setDeleteTarget] = useState<Chapter | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
   const [trashedChapters, setTrashedChapters] = useState<Chapter[]>([]);
-  const [previewOpen, setPreviewOpen] = useState(false);
+  type ViewMode = "editor" | "preview" | "dashboard";
+  const [viewMode, setViewMode] = useState<ViewMode>("editor");
   const [statuses, setStatuses] = useState<ChapterStatusRow[]>([]);
 
   useEffect(() => {
@@ -168,7 +170,7 @@ export function EditorPage() {
       if (ctrl && e.shiftKey && e.key === "P") {
         e.preventDefault();
         editorRef.current?.flushSave();
-        setPreviewOpen((prev) => !prev);
+        setViewMode((prev) => (prev === "preview" ? "editor" : "preview"));
         return;
       }
 
@@ -376,15 +378,45 @@ export function EditorPage() {
               </h1>
             )}
           </div>
-          <button
-            onClick={() => {
-              editorRef.current?.flushSave();
-              setPreviewOpen(true);
-            }}
-            className="text-sm text-text-secondary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-focus-ring rounded px-2 py-1"
-          >
-            {STRINGS.nav.preview}
-          </button>
+          <div className="flex gap-1">
+            <button
+              onClick={() => {
+                setViewMode("editor");
+              }}
+              className={`text-sm rounded px-3 py-1 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
+                viewMode === "editor"
+                  ? "bg-accent-light text-accent font-medium"
+                  : "text-text-secondary hover:text-text-primary"
+              }`}
+            >
+              {STRINGS.nav.editor}
+            </button>
+            <button
+              onClick={() => {
+                editorRef.current?.flushSave();
+                setViewMode("preview");
+              }}
+              className={`text-sm rounded px-3 py-1 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
+                viewMode === "preview"
+                  ? "bg-accent-light text-accent font-medium"
+                  : "text-text-secondary hover:text-text-primary"
+              }`}
+            >
+              {STRINGS.nav.preview}
+            </button>
+            <button
+              onClick={() => {
+                setViewMode("dashboard");
+              }}
+              className={`text-sm rounded px-3 py-1 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
+                viewMode === "dashboard"
+                  ? "bg-accent-light text-accent font-medium"
+                  : "text-text-secondary hover:text-text-primary"
+              }`}
+            >
+              {STRINGS.nav.dashboard}
+            </button>
+          </div>
         </header>
 
         {trashOpen ? (
@@ -393,6 +425,27 @@ export function EditorPage() {
               chapters={trashedChapters}
               onRestore={handleRestore}
               onBack={() => setTrashOpen(false)}
+            />
+          </main>
+        ) : viewMode === "preview" ? (
+          <main className="flex-1 overflow-y-auto" aria-label={STRINGS.a11y.mainContent}>
+            <PreviewMode
+              chapters={project.chapters}
+              onNavigateToChapter={(chapterId) => {
+                setViewMode("editor");
+                handleSelectChapterWithFlush(chapterId);
+              }}
+            />
+          </main>
+        ) : viewMode === "dashboard" ? (
+          <main className="flex-1 overflow-y-auto" aria-label={STRINGS.a11y.mainContent}>
+            <DashboardView
+              slug={slug!}
+              statuses={statuses}
+              onNavigateToChapter={(chapterId) => {
+                setViewMode("editor");
+                handleSelectChapterWithFlush(chapterId);
+              }}
             />
           </main>
         ) : (
@@ -505,16 +558,6 @@ export function EditorPage() {
         </dialog>
       )}
 
-      {previewOpen && (
-        <PreviewMode
-          chapters={project.chapters}
-          onClose={() => setPreviewOpen(false)}
-          onNavigateToChapter={(chapterId) => {
-            setPreviewOpen(false);
-            handleSelectChapterWithFlush(chapterId);
-          }}
-        />
-      )}
     </div>
   );
 }

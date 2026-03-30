@@ -69,6 +69,26 @@ export const api = {
       }),
 
     trash: (slug: string) => apiFetch<Chapter[]>(`/projects/${slug}/trash`),
+
+    dashboard: (slug: string) =>
+      apiFetch<{
+        chapters: Array<{
+          id: string;
+          title: string;
+          status: string;
+          status_label: string;
+          word_count: number;
+          updated_at: string;
+          sort_order: number;
+        }>;
+        status_summary: Record<string, number>;
+        totals: {
+          word_count: number;
+          chapter_count: number;
+          most_recent_edit: string | null;
+          least_recent_edit: string | null;
+        };
+      }>(`/projects/${slug}/dashboard`),
   },
 
   chapters: {
