@@ -1,0 +1,3 @@
+- Need help page.
+- Logo should link to github repo. Eventually, to a website.
+- i18n
