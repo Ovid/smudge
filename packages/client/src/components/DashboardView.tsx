@@ -22,6 +22,8 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
 
   useEffect(() => {
     let cancelled = false;
+    setData(null);
+    setError(null);
     api.projects
       .dashboard(slug)
       .then((result) => {
