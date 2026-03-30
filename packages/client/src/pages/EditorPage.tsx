@@ -84,6 +84,7 @@ export function EditorPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("editor");
   const [statuses, setStatuses] = useState<ChapterStatusRow[]>([]);
   const [navAnnouncement, setNavAnnouncement] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     api.chapterStatuses.list().then(setStatuses).catch(console.error);
@@ -108,6 +109,7 @@ export function EditorPage() {
       setTrashOpen(true);
     } catch (err) {
       console.error("Failed to load trash:", err);
+      setActionError(err instanceof Error ? err.message : "Failed to load trash");
     }
   }
 
@@ -129,6 +131,7 @@ export function EditorPage() {
       });
     } catch (err) {
       console.error("Failed to restore chapter:", err);
+      setActionError(err instanceof Error ? err.message : "Failed to restore chapter");
     }
   }
 
@@ -185,6 +188,7 @@ export function EditorPage() {
         if (nextIndex < 0 || nextIndex >= chapters.length) return;
         handleSelectChapterWithFlush(chapters[nextIndex].id);
         setNavAnnouncement(STRINGS.sidebar.navigatedToChapter(chapters[nextIndex].title));
+        setTimeout(() => setNavAnnouncement(""), 1000);
         return;
       }
 
@@ -443,6 +447,22 @@ export function EditorPage() {
             </button>
           </div>
         </header>
+
+        {actionError && (
+          <div
+            role="alert"
+            className="px-6 py-2 bg-status-error/10 text-status-error text-sm flex items-center justify-between"
+          >
+            <span>{actionError}</span>
+            <button
+              onClick={() => setActionError(null)}
+              className="text-status-error hover:text-text-primary text-xs ml-4 focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
+              aria-label="Dismiss error"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {trashOpen ? (
           <main className="flex-1 overflow-y-auto" aria-label={STRINGS.a11y.mainContent}>
