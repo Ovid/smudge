@@ -104,16 +104,13 @@ export function useProjectEditor(slug: string | undefined) {
     [activeChapter],
   );
 
-  const handleContentChange = useCallback(
-    (content: Record<string, unknown>) => {
-      setChapterWordCount(countWords(content));
-      setSaveStatus("unsaved");
-      if (activeChapter) {
-        setCachedContent(activeChapter.id, content);
-      }
-    },
-    [activeChapter],
-  );
+  const handleContentChange = useCallback((content: Record<string, unknown>) => {
+    setChapterWordCount(countWords(content));
+    setSaveStatus("unsaved");
+    if (activeChapterRef.current) {
+      setCachedContent(activeChapterRef.current.id, content);
+    }
+  }, []);
 
   const handleCreateChapter = useCallback(async () => {
     const slug = projectSlugRef.current;
