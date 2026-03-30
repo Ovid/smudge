@@ -53,7 +53,7 @@ export function EditorPage() {
   const [statuses, setStatuses] = useState<ChapterStatusRow[]>([]);
 
   useEffect(() => {
-    api.chapterStatuses.list().then(setStatuses).catch(() => {});
+    api.chapterStatuses.list().then(setStatuses).catch(console.error);
   }, []);
 
   const editorRef = useRef<{ flushSave: () => Promise<void> } | null>(null);

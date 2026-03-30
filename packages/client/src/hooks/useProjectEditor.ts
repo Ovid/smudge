@@ -219,6 +219,9 @@ export function useProjectEditor(slug: string | undefined) {
           chapters: prev.chapters.map((c) => (c.id === chapterId ? { ...c, status } : c)),
         };
       });
+      if (activeChapter?.id === chapterId) {
+        setActiveChapter((prev) => (prev ? { ...prev, status } : prev));
+      }
       try {
         await api.chapters.update(chapterId, { status });
       } catch {
@@ -228,13 +231,20 @@ export function useProjectEditor(slug: string | undefined) {
           try {
             const data = await api.projects.get(slug);
             setProject(data);
+            // Also revert activeChapter from reloaded data
+            if (activeChapter?.id === chapterId) {
+              const revertedChapter = data.chapters.find((c) => c.id === chapterId);
+              if (revertedChapter) {
+                setActiveChapter((prev) => (prev ? { ...prev, status: revertedChapter.status } : prev));
+              }
+            }
           } catch {
             // If reload also fails, leave optimistic state
           }
         }
       }
     },
-    [],
+    [activeChapter],
   );
 
   const handleRenameChapter = useCallback(

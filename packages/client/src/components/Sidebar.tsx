@@ -38,7 +38,8 @@ function StatusBadge({ chapter, statuses, onStatusChange, onAnnounce }: StatusBa
   const containerRef = useRef<HTMLDivElement>(null);
 
   const currentStatus = chapter.status || "outline";
-  const label = STRINGS.status[currentStatus] || currentStatus;
+  const currentStatusRow = statuses.find((s) => s.status === currentStatus);
+  const label = currentStatusRow?.label ?? currentStatus;
   const color = STATUS_COLORS[currentStatus] || STATUS_COLORS.outline;
 
   useEffect(() => {
@@ -64,7 +65,8 @@ function StatusBadge({ chapter, statuses, onStatusChange, onAnnounce }: StatusBa
 
   function selectStatus(status: string) {
     onStatusChange(chapter.id, status);
-    const newLabel = STRINGS.status[status] || status;
+    const newStatusRow = statuses.find((s) => s.status === status);
+    const newLabel = newStatusRow?.label ?? status;
     onAnnounce(STRINGS.sidebar.statusChanged(newLabel));
     setOpen(false);
   }
@@ -98,7 +100,7 @@ function StatusBadge({ chapter, statuses, onStatusChange, onAnnounce }: StatusBa
           onKeyDown={handleKeyDown}
         >
           {statuses.map((s) => {
-            const sLabel = STRINGS.status[s.status] || s.status;
+            const sLabel = s.label ?? s.status;
             const sColor = STATUS_COLORS[s.status] || STATUS_COLORS.outline;
             return (
               <li
