@@ -349,7 +349,9 @@ export function projectsRouter(db: Knex): Router {
       const allStatuses = await db("chapter_statuses")
         .orderBy("sort_order", "asc")
         .select("status", "label");
-      const statusLabelMap = await getStatusLabelMap(db);
+      const statusLabelMap: Record<string, string> = Object.fromEntries(
+        allStatuses.map((r) => [r.status, r.label]),
+      );
 
       const chaptersWithLabels = chapters.map((ch: Record<string, unknown>) => ({
         ...ch,
