@@ -235,13 +235,13 @@ export function useProjectEditor(slug: string | undefined) {
     try {
       await api.chapters.update(chapterId, { status });
     } catch (err) {
-      // Revert by reloading from server
+      // Revert by reloading from server, falling back to local revert
+      let reverted = false;
       const slug = projectSlugRef.current;
       if (slug) {
         try {
           const data = await api.projects.get(slug);
           setProject(data);
-          // Also revert activeChapter from reloaded data
           if (activeChapterRef.current?.id === chapterId) {
             const revertedChapter = data.chapters.find((c) => c.id === chapterId);
             if (revertedChapter) {
@@ -250,22 +250,23 @@ export function useProjectEditor(slug: string | undefined) {
               );
             }
           }
+          reverted = true;
         } catch {
-          // Reload also failed — revert to previous status locally
-          if (previousStatus !== undefined) {
-            setProject((prev) => {
-              if (!prev) return prev;
-              return {
-                ...prev,
-                chapters: prev.chapters.map((c) =>
-                  c.id === chapterId ? { ...c, status: previousStatus } : c,
-                ),
-              };
-            });
-            if (activeChapterRef.current?.id === chapterId) {
-              setActiveChapter((prev) => (prev ? { ...prev, status: previousStatus } : prev));
-            }
-          }
+          // Reload failed — fall through to local revert
+        }
+      }
+      if (!reverted && previousStatus !== undefined) {
+        setProject((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            chapters: prev.chapters.map((c) =>
+              c.id === chapterId ? { ...c, status: previousStatus } : c,
+            ),
+          };
+        });
+        if (activeChapterRef.current?.id === chapterId) {
+          setActiveChapter((prev) => (prev ? { ...prev, status: previousStatus } : prev));
         }
       }
       throw err;
