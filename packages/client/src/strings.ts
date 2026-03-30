@@ -81,13 +81,6 @@ export const STRINGS = {
     resizeHandle: "Resize sidebar",
     navigatedToChapter: (title: string) => `Navigated to ${title}`,
   },
-  status: {
-    outline: "Outline",
-    rough_draft: "Rough Draft",
-    revised: "Revised",
-    edited: "Edited",
-    final: "Final",
-  } as Record<string, string>,
   preview: {
     backToEditor: "Back to Editor",
     tableOfContents: "Table of Contents",

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import type { ChapterStatusRow } from "@smudge/shared";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
+import { STATUS_COLORS } from "../statusColors";
 
 type DashboardData = Awaited<ReturnType<typeof api.projects.dashboard>>;
 
@@ -12,14 +13,6 @@ interface DashboardViewProps {
   statuses: ChapterStatusRow[];
   onNavigateToChapter: (chapterId: string) => void;
 }
-
-const STATUS_COLORS: Record<string, string> = {
-  outline: "#8B9E7C",
-  rough_draft: "#C07850",
-  revised: "#B8973E",
-  edited: "#6B7F94",
-  final: "#6B4E3D",
-};
 
 export function DashboardView({ slug, statuses, onNavigateToChapter }: DashboardViewProps) {
   const [data, setData] = useState<DashboardData | null>(null);

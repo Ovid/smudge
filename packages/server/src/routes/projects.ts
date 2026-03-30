@@ -11,6 +11,15 @@ import { asyncHandler } from "../app";
 import { parseChapterContent } from "./parseChapterContent";
 import { resolveUniqueSlug } from "./resolve-slug";
 
+async function getStatusLabelMap(db: Knex): Promise<Record<string, string>> {
+  const rows = await db("chapter_statuses")
+    .orderBy("sort_order", "asc")
+    .select("status", "label");
+  return Object.fromEntries(
+    rows.map((r: { status: string; label: string }) => [r.status, r.label]),
+  );
+}
+
 export function projectsRouter(db: Knex): Router {
   const router = Router();
 
@@ -205,10 +214,7 @@ export function projectsRouter(db: Knex): Router {
         .orderBy("sort_order", "asc")
         .select("*");
 
-      const statusRows = await db("chapter_statuses").select("status", "label");
-      const statusLabelMap: Record<string, string> = Object.fromEntries(
-        statusRows.map((r: { status: string; label: string }) => [r.status, r.label]),
-      );
+      const statusLabelMap = await getStatusLabelMap(db);
 
       const parsedChapters = chapters.map((ch: Record<string, unknown>) => ({
         ...parseChapterContent(ch),

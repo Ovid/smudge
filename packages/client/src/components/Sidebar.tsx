@@ -17,14 +17,7 @@ import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
 import type { ProjectWithChapters, Chapter, ChapterStatusRow } from "@smudge/shared";
 import { STRINGS } from "../strings";
-
-const STATUS_COLORS: Record<string, string> = {
-  outline: "#8B9E7C",
-  rough_draft: "#C07850",
-  revised: "#B8973E",
-  edited: "#6B7F94",
-  final: "#6B4E3D",
-};
+import { STATUS_COLORS } from "../statusColors";
 
 interface StatusBadgeProps {
   chapter: Chapter;
