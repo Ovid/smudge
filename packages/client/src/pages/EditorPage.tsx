@@ -429,6 +429,7 @@ export function EditorPage() {
             </button>
             <button
               onClick={() => {
+                editorRef.current?.flushSave();
                 setViewMode("dashboard");
               }}
               aria-current={viewMode === "dashboard" ? "page" : undefined}

@@ -83,7 +83,10 @@ export function useProjectEditor(slug: string | undefined) {
           setSaveStatus("saved");
           return true;
         } catch (err) {
-          if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) break;
+          if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
+            clearCachedContent(savingChapterId);
+            break;
+          }
           if (attempt < MAX_RETRIES) {
             await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
           }
@@ -155,9 +158,15 @@ export function useProjectEditor(slug: string | undefined) {
         if (activeChapter?.id === chapter.id) {
           const first = remaining[0];
           if (first) {
-            const ch = await api.chapters.get(first.id);
-            setActiveChapter(ch);
-            setChapterWordCount(countWords(ch.content));
+            try {
+              const ch = await api.chapters.get(first.id);
+              setActiveChapter(ch);
+              setChapterWordCount(countWords(ch.content));
+            } catch {
+              // Secondary fetch failed — fall through to empty state
+              setActiveChapter(null);
+              setChapterWordCount(0);
+            }
           } else {
             setActiveChapter(null);
             setChapterWordCount(0);
@@ -218,7 +227,7 @@ export function useProjectEditor(slug: string | undefined) {
           chapters: prev.chapters.map((c) => (c.id === chapterId ? { ...c, status } : c)),
         };
       });
-      if (activeChapter?.id === chapterId) {
+      if (activeChapterRef.current?.id === chapterId) {
         setActiveChapter((prev) => (prev ? { ...prev, status } : prev));
       }
       try {
@@ -231,7 +240,7 @@ export function useProjectEditor(slug: string | undefined) {
             const data = await api.projects.get(slug);
             setProject(data);
             // Also revert activeChapter from reloaded data
-            if (activeChapter?.id === chapterId) {
+            if (activeChapterRef.current?.id === chapterId) {
               const revertedChapter = data.chapters.find((c) => c.id === chapterId);
               if (revertedChapter) {
                 setActiveChapter((prev) =>
@@ -245,7 +254,7 @@ export function useProjectEditor(slug: string | undefined) {
         }
       }
     },
-    [activeChapter],
+    [],
   );
 
   const handleRenameChapter = useCallback(

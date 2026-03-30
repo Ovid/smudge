@@ -23,11 +23,29 @@ const STATUS_COLORS: Record<string, string> = {
 
 export function DashboardView({ slug, statuses, onNavigateToChapter }: DashboardViewProps) {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("sort_order");
   const [sortAsc, setSortAsc] = useState(true);
 
   useEffect(() => {
-    api.projects.dashboard(slug).then(setData).catch(console.error);
+    let cancelled = false;
+    api.projects
+      .dashboard(slug)
+      .then((result) => {
+        if (!cancelled) {
+          setData(result);
+          setError(null);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error(err);
+          setError(err instanceof Error ? err.message : "Failed to load dashboard");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [slug]);
 
   const handleSort = useCallback(
@@ -41,6 +59,14 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
     },
     [sortKey],
   );
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <p className="text-status-error">{error}</p>
+      </div>
+    );
+  }
 
   if (!data) {
     return (
@@ -108,15 +134,18 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
             <p className="text-text-secondary text-sm">
               {STRINGS.dashboard.totalChapters(totals.chapter_count)}
             </p>
-            {totals.most_recent_edit && mostRecentChapter && (
+            {mostRecentChapter && (
               <p className="text-text-secondary text-sm">
-                {STRINGS.dashboard.mostRecentEdit(totals.most_recent_edit, mostRecentChapter.title)}
+                {STRINGS.dashboard.mostRecentEdit(
+                  mostRecentChapter.updated_at,
+                  mostRecentChapter.title,
+                )}
               </p>
             )}
-            {totals.least_recent_edit && leastRecentChapter && (
+            {leastRecentChapter && (
               <p className="text-text-secondary text-sm">
                 {STRINGS.dashboard.leastRecentEdit(
-                  totals.least_recent_edit,
+                  leastRecentChapter.updated_at,
                   leastRecentChapter.title,
                 )}
               </p>
