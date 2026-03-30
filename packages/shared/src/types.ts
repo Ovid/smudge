@@ -5,6 +5,7 @@ export type ProjectMode = z.infer<typeof ProjectMode>;
 
 export interface Project {
   id: string;
+  slug: string;
   title: string;
   mode: ProjectMode;
   created_at: string;
@@ -28,6 +29,7 @@ export type CreateProjectInput = z.infer<typeof CreateProjectSchema>;
 
 export interface ProjectListItem {
   id: string;
+  slug: string;
   title: string;
   mode: ProjectMode;
   total_word_count: number;

@@ -4,24 +4,25 @@ import { setupTestDb } from "./test-helpers";
 
 const t = setupTestDb();
 
-/** Helper: create a project and return its id + first chapter id */
+/** Helper: create a project and return its id, slug, + first chapter id */
 async function createProjectWithChapter(app: ReturnType<typeof setupTestDb>["app"]) {
   const projectRes = await request(app)
     .post("/api/projects")
     .send({ title: "Test Project", mode: "fiction" });
   const projectId = projectRes.body.id;
+  const projectSlug = projectRes.body.slug;
 
-  const getRes = await request(app).get(`/api/projects/${projectId}`);
+  const getRes = await request(app).get(`/api/projects/${projectSlug}`);
   const chapterId = getRes.body.chapters[0].id;
 
-  return { projectId, chapterId };
+  return { projectId, projectSlug, chapterId };
 }
 
 describe("POST /api/projects/:id/chapters", () => {
   it("creates a new chapter appended to end", async () => {
-    const { projectId } = await createProjectWithChapter(t.app);
+    const { projectId, projectSlug } = await createProjectWithChapter(t.app);
 
-    const res = await request(t.app).post(`/api/projects/${projectId}/chapters`).send();
+    const res = await request(t.app).post(`/api/projects/${projectSlug}/chapters`).send();
 
     expect(res.status).toBe(201);
     expect(res.body.title).toBe("Untitled Chapter");
@@ -36,19 +37,19 @@ describe("POST /api/projects/:id/chapters", () => {
   });
 
   it("returns 404 for deleted project", async () => {
-    const { projectId } = await createProjectWithChapter(t.app);
-    await request(t.app).delete(`/api/projects/${projectId}`);
+    const { projectSlug } = await createProjectWithChapter(t.app);
+    await request(t.app).delete(`/api/projects/${projectSlug}`);
 
-    const res = await request(t.app).post(`/api/projects/${projectId}/chapters`).send();
+    const res = await request(t.app).post(`/api/projects/${projectSlug}/chapters`).send();
 
     expect(res.status).toBe(404);
   });
 
   it("increments sort_order for each new chapter", async () => {
-    const { projectId } = await createProjectWithChapter(t.app);
+    const { projectSlug } = await createProjectWithChapter(t.app);
 
-    await request(t.app).post(`/api/projects/${projectId}/chapters`).send();
-    const res = await request(t.app).post(`/api/projects/${projectId}/chapters`).send();
+    await request(t.app).post(`/api/projects/${projectSlug}/chapters`).send();
+    const res = await request(t.app).post(`/api/projects/${projectSlug}/chapters`).send();
 
     expect(res.body.sort_order).toBe(2);
   });
@@ -186,10 +187,10 @@ describe("DELETE /api/chapters/:id", () => {
   });
 
   it("chapter no longer appears in project chapters after delete", async () => {
-    const { projectId, chapterId } = await createProjectWithChapter(t.app);
+    const { projectSlug, chapterId } = await createProjectWithChapter(t.app);
     await request(t.app).delete(`/api/chapters/${chapterId}`);
 
-    const projectRes = await request(t.app).get(`/api/projects/${projectId}`);
+    const projectRes = await request(t.app).get(`/api/projects/${projectSlug}`);
 
     expect(projectRes.body.chapters).toHaveLength(0);
   });
@@ -197,7 +198,7 @@ describe("DELETE /api/chapters/:id", () => {
 
 describe("POST /api/chapters/:id/restore", () => {
   it("restores a soft-deleted chapter", async () => {
-    const { projectId, chapterId } = await createProjectWithChapter(t.app);
+    const { projectSlug, chapterId } = await createProjectWithChapter(t.app);
     await request(t.app).delete(`/api/chapters/${chapterId}`);
 
     const res = await request(t.app).post(`/api/chapters/${chapterId}/restore`);
@@ -206,22 +207,53 @@ describe("POST /api/chapters/:id/restore", () => {
     expect(res.body.deleted_at).toBeNull();
 
     // Chapter should appear in project again
-    const projectRes = await request(t.app).get(`/api/projects/${projectId}`);
+    const projectRes = await request(t.app).get(`/api/projects/${projectSlug}`);
     expect(projectRes.body.chapters).toHaveLength(1);
   });
 
   it("also restores parent project if it was deleted", async () => {
-    const { projectId, chapterId } = await createProjectWithChapter(t.app);
+    const { projectSlug, chapterId } = await createProjectWithChapter(t.app);
     await request(t.app).delete(`/api/chapters/${chapterId}`);
-    await request(t.app).delete(`/api/projects/${projectId}`);
+    await request(t.app).delete(`/api/projects/${projectSlug}`);
 
     const res = await request(t.app).post(`/api/chapters/${chapterId}/restore`);
 
     expect(res.status).toBe(200);
 
     // Project should be accessible again
-    const projectRes = await request(t.app).get(`/api/projects/${projectId}`);
+    const projectRes = await request(t.app).get(`/api/projects/${projectSlug}`);
     expect(projectRes.status).toBe(200);
+  });
+
+  it("re-slugs restored project when slug is now taken", async () => {
+    // Create project A, delete it
+    const projectA = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Novel", mode: "fiction" });
+    const chapterA = (await request(t.app).get(`/api/projects/${projectA.body.slug}`)).body
+      .chapters[0];
+    await request(t.app).delete(`/api/chapters/${chapterA.id}`);
+    await request(t.app).delete(`/api/projects/${projectA.body.slug}`);
+
+    // Create project B with the same title — slug reuse is allowed after soft-delete
+    const projectB = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "My Novel", mode: "fiction" });
+    expect(projectB.body.slug).toBe("my-novel");
+
+    // Restore chapter from A — this also restores project A
+    const res = await request(t.app).post(`/api/chapters/${chapterA.id}/restore`);
+    expect(res.status).toBe(200);
+
+    // Project A should be accessible with a new slug (not "my-novel", that's taken by B)
+    const restoredProject = await t.db("projects").where({ id: projectA.body.id }).first();
+    expect(restoredProject.deleted_at).toBeNull();
+    expect(restoredProject.slug).toBe("my-novel-2");
+
+    // Project B should be unaffected
+    const projectBRes = await request(t.app).get("/api/projects/my-novel");
+    expect(projectBRes.status).toBe(200);
+    expect(projectBRes.body.id).toBe(projectB.body.id);
   });
 
   it("returns 404 for non-existent chapter", async () => {
@@ -236,5 +268,40 @@ describe("POST /api/chapters/:id/restore", () => {
     const res = await request(t.app).post(`/api/chapters/${chapterId}/restore`);
 
     expect(res.status).toBe(404);
+  });
+
+  it("returns PROJECT_PURGED when parent project has been hard-deleted", async () => {
+    const { projectId, chapterId } = await createProjectWithChapter(t.app);
+
+    // Soft-delete the chapter
+    await request(t.app).delete(`/api/chapters/${chapterId}`);
+
+    // Temporarily disable FK constraints so we can hard-delete the project
+    // while leaving the orphaned chapter behind
+    await t.db.raw("PRAGMA foreign_keys = OFF");
+
+    await t.db("chapters").where({ project_id: projectId }).del();
+    await t.db("projects").where({ id: projectId }).del();
+
+    // Re-insert just the soft-deleted chapter (no parent project)
+    const now = new Date().toISOString();
+    await t.db("chapters").insert({
+      id: chapterId,
+      project_id: projectId,
+      title: "Orphaned Chapter",
+      sort_order: 0,
+      word_count: 0,
+      created_at: now,
+      updated_at: now,
+      deleted_at: now,
+    });
+
+    // Re-enable FK constraints
+    await t.db.raw("PRAGMA foreign_keys = ON");
+
+    const res = await request(t.app).post(`/api/chapters/${chapterId}/restore`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("PROJECT_PURGED");
   });
 });

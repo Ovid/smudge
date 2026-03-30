@@ -3,12 +3,12 @@ import { z } from "zod";
 export const ProjectMode = z.enum(["fiction", "nonfiction"]);
 
 export const CreateProjectSchema = z.object({
-  title: z.string().trim().min(1, "Title is required"),
+  title: z.string().trim().min(1, "Title is required").max(500, "Title is too long"),
   mode: ProjectMode,
 });
 
 export const UpdateProjectSchema = z.object({
-  title: z.string().trim().min(1, "Title is required"),
+  title: z.string().trim().min(1, "Title is required").max(500, "Title is too long"),
 });
 
 const TipTapDocSchema = z

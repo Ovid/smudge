@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import { NewProjectDialog } from "../components/NewProjectDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { STRINGS } from "../strings";
+import smudgeLogo from "../assets/smudge-logo.png";
 
 export function HomePage() {
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
@@ -38,7 +39,7 @@ export function HomePage() {
     try {
       const project = await api.projects.create({ title, mode });
       setDialogOpen(false);
-      navigate(`/projects/${project.id}`);
+      navigate(`/projects/${project.slug}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : STRINGS.error.createFailed);
     }
@@ -47,7 +48,7 @@ export function HomePage() {
   async function handleDelete() {
     if (!deleteTarget) return;
     try {
-      await api.projects.delete(deleteTarget.id);
+      await api.projects.delete(deleteTarget.slug);
       setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
       setDeleteTarget(null);
     } catch (err) {
@@ -59,7 +60,13 @@ export function HomePage() {
   return (
     <div className="min-h-screen bg-bg-primary">
       <header className="border-b border-border px-6 py-4">
-        <h1 className="text-2xl font-serif text-text-primary">{STRINGS.app.name}</h1>
+        <h1>
+          <img
+            src={smudgeLogo}
+            alt={STRINGS.app.name}
+            className="h-8"
+          />
+        </h1>
       </header>
 
       <main className="mx-auto max-w-2xl px-6 py-8" aria-label={STRINGS.a11y.mainContent}>
@@ -90,7 +97,7 @@ export function HomePage() {
             {projects.map((project) => (
               <li key={project.id} className="flex items-center gap-2">
                 <button
-                  onClick={() => navigate(`/projects/${project.id}`)}
+                  onClick={() => navigate(`/projects/${project.slug}`)}
                   className="flex-1 rounded border border-border bg-bg-input p-4 text-left hover:bg-bg-hover focus:outline-none focus:ring-2 focus:ring-focus-ring"
                 >
                   <div className="flex items-center justify-between">

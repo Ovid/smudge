@@ -1,8 +1,9 @@
 import { Router } from "express";
 import type { Knex } from "knex";
-import { UpdateChapterSchema, countWords } from "@smudge/shared";
+import { UpdateChapterSchema, countWords, generateSlug } from "@smudge/shared";
 import { asyncHandler } from "../app";
 import { parseChapterContent } from "./parseChapterContent";
+import { resolveUniqueSlug } from "./resolve-slug";
 
 export function chaptersRouter(db: Knex): Router {
   const router = Router();
@@ -127,17 +128,43 @@ export function chaptersRouter(db: Knex): Router {
         return;
       }
 
-      // Restore the chapter and parent project atomically
-      await db.transaction(async (trx) => {
-        await trx("chapters").where({ id: req.params.id }).update({ deleted_at: null });
-        await trx("projects")
-          .where({ id: chapter.project_id })
-          .whereNotNull("deleted_at")
-          .update({ deleted_at: null });
-      });
+      // Restore the chapter (and parent project if deleted) atomically
+      try {
+        await db.transaction(async (trx) => {
+          await trx("chapters")
+            .where({ id: req.params.id })
+            .update({ deleted_at: null, updated_at: new Date().toISOString() });
+
+          if (parentProject.deleted_at) {
+            const freshSlug = await resolveUniqueSlug(
+              trx,
+              generateSlug(parentProject.title),
+              parentProject.id,
+            );
+            const projectUpdate: Record<string, unknown> = {
+              deleted_at: null,
+              updated_at: new Date().toISOString(),
+              slug: freshSlug,
+            };
+            await trx("projects").where({ id: chapter.project_id }).update(projectUpdate);
+          }
+        });
+      } catch (err: unknown) {
+        if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
+          res.status(409).json({
+            error: {
+              code: "RESTORE_CONFLICT",
+              message: "Could not restore — slug conflict. Please try again.",
+            },
+          });
+          return;
+        }
+        throw err;
+      }
 
       const restored = await db("chapters").where({ id: req.params.id }).first();
-      res.json(parseChapterContent(restored));
+      const updatedProject = await db("projects").where({ id: chapter.project_id }).first();
+      res.json({ ...parseChapterContent(restored), project_slug: updatedProject?.slug });
     }),
   );
 

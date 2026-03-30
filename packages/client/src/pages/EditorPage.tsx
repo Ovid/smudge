@@ -11,11 +11,13 @@ import { useProjectEditor } from "../hooks/useProjectEditor";
 import { api } from "../api/client";
 
 export function EditorPage() {
-  const { projectId } = useParams<{ projectId: string }>();
+  const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const {
     project,
     error,
+    projectTitleError,
+    setProjectTitleError,
     setProject,
     activeChapter,
     saveStatus,
@@ -28,7 +30,7 @@ export function EditorPage() {
     handleReorderChapters,
     handleUpdateProjectTitle,
     handleRenameChapter,
-  } = useProjectEditor(projectId);
+  } = useProjectEditor(slug);
 
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -39,6 +41,8 @@ export function EditorPage() {
   const [projectTitleDraft, setProjectTitleDraft] = useState("");
   const projectTitleInputRef = useRef<HTMLInputElement>(null);
   const projectEscapePressedRef = useRef(false);
+  const isSavingTitleRef = useRef(false);
+  const isSavingProjectTitleRef = useRef(false);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<Chapter | null>(null);
@@ -58,13 +62,13 @@ export function EditorPage() {
   );
 
   async function openTrash() {
-    if (!projectId) return;
+    if (!project) return;
     try {
-      const trashed = await api.projects.trash(projectId);
+      const trashed = await api.projects.trash(project.slug);
       setTrashedChapters(trashed);
       setTrashOpen(true);
-    } catch {
-      // Silently fail — trash view just won't open
+    } catch (err) {
+      console.error("Failed to load trash:", err);
     }
   }
 
@@ -72,16 +76,20 @@ export function EditorPage() {
     try {
       const restored = await api.chapters.restore(chapterId);
       setTrashedChapters((prev) => prev.filter((c) => c.id !== chapterId));
-      setProject((prev) =>
-        prev
-          ? {
-              ...prev,
-              chapters: [...prev.chapters, restored].sort((a, b) => a.sort_order - b.sort_order),
-            }
-          : prev,
-      );
-    } catch {
-      // Silently fail — chapter stays in trash list
+      setProject((prev) => {
+        if (!prev) return prev;
+        const updatedProject = {
+          ...prev,
+          chapters: [...prev.chapters, restored].sort((a, b) => a.sort_order - b.sort_order),
+        };
+        // If the restore also restored the parent project with a new slug, update it
+        if (restored.project_slug && restored.project_slug !== prev.slug) {
+          updatedProject.slug = restored.project_slug;
+        }
+        return updatedProject;
+      });
+    } catch (err) {
+      console.error("Failed to restore chapter:", err);
     }
   }
 
@@ -89,9 +97,9 @@ export function EditorPage() {
     if (!deleteTarget) return;
     await handleDeleteChapter(deleteTarget);
     setDeleteTarget(null);
-    if (trashOpen && projectId) {
+    if (trashOpen && project) {
       try {
-        const trashed = await api.projects.trash(projectId);
+        const trashed = await api.projects.trash(project.slug);
         setTrashedChapters(trashed);
       } catch {
         // Trash refresh failed — stale list is acceptable
@@ -147,6 +155,7 @@ export function EditorPage() {
   }
 
   async function saveTitle() {
+    if (isSavingTitleRef.current) return;
     if (escapePressedRef.current) {
       setEditingTitle(false);
       return;
@@ -155,22 +164,29 @@ export function EditorPage() {
       setEditingTitle(false);
       return;
     }
-    const trimmed = titleDraft.trim();
-    if (trimmed !== activeChapter.title) {
-      await handleRenameChapter(activeChapter.id, trimmed);
+    isSavingTitleRef.current = true;
+    try {
+      const trimmed = titleDraft.trim();
+      if (trimmed !== activeChapter.title) {
+        await handleRenameChapter(activeChapter.id, trimmed);
+      }
+      setEditingTitle(false);
+    } finally {
+      isSavingTitleRef.current = false;
     }
-    setEditingTitle(false);
   }
 
   function startEditingProjectTitle() {
     if (!project) return;
     projectEscapePressedRef.current = false;
+    setProjectTitleError(null);
     setProjectTitleDraft(project.title);
     setEditingProjectTitle(true);
     setTimeout(() => projectTitleInputRef.current?.select(), 0);
   }
 
   async function saveProjectTitle() {
+    if (isSavingProjectTitleRef.current) return;
     if (projectEscapePressedRef.current) {
       setEditingProjectTitle(false);
       return;
@@ -179,11 +195,20 @@ export function EditorPage() {
       setEditingProjectTitle(false);
       return;
     }
-    const trimmed = projectTitleDraft.trim();
-    if (trimmed !== project.title) {
-      await handleUpdateProjectTitle(trimmed);
+    isSavingProjectTitleRef.current = true;
+    try {
+      const trimmed = projectTitleDraft.trim();
+      if (trimmed !== project.title) {
+        const newSlug = await handleUpdateProjectTitle(trimmed);
+        if (newSlug === undefined) return; // keep edit mode open on failure
+        if (newSlug !== slug) {
+          navigate(`/projects/${newSlug}`, { replace: true });
+        }
+      }
+      setEditingProjectTitle(false);
+    } finally {
+      isSavingProjectTitleRef.current = false;
     }
-    setEditingProjectTitle(false);
   }
 
   if (error) {
@@ -275,21 +300,28 @@ export function EditorPage() {
               {STRINGS.nav.backToProjects}
             </button>
             {editingProjectTitle ? (
-              <input
-                ref={projectTitleInputRef}
-                value={projectTitleDraft}
-                onChange={(e) => setProjectTitleDraft(e.target.value)}
-                onBlur={saveProjectTitle}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") saveProjectTitle();
-                  if (e.key === "Escape") {
-                    projectEscapePressedRef.current = true;
-                    setEditingProjectTitle(false);
-                  }
-                }}
-                className="text-lg font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none"
-                aria-label={STRINGS.a11y.projectTitleInput}
-              />
+              <div className="flex flex-col">
+                <input
+                  ref={projectTitleInputRef}
+                  value={projectTitleDraft}
+                  onChange={(e) => setProjectTitleDraft(e.target.value)}
+                  onBlur={saveProjectTitle}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveProjectTitle();
+                    if (e.key === "Escape") {
+                      projectEscapePressedRef.current = true;
+                      setEditingProjectTitle(false);
+                    }
+                  }}
+                  className="text-lg font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none"
+                  aria-label={STRINGS.a11y.projectTitleInput}
+                />
+                {projectTitleError && (
+                  <span role="alert" className="text-xs text-status-error mt-1">
+                    {projectTitleError}
+                  </span>
+                )}
+              </div>
             ) : (
               <h1
                 className="text-lg font-semibold text-text-primary cursor-pointer hover:text-text-secondary"

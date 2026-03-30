@@ -1,9 +1,15 @@
 import { Router } from "express";
 import type { Knex } from "knex";
 import { v4 as uuid } from "uuid";
-import { CreateProjectSchema, UpdateProjectSchema, ReorderChaptersSchema } from "@smudge/shared";
+import {
+  CreateProjectSchema,
+  UpdateProjectSchema,
+  ReorderChaptersSchema,
+  generateSlug,
+} from "@smudge/shared";
 import { asyncHandler } from "../app";
 import { parseChapterContent } from "./parseChapterContent";
+import { resolveUniqueSlug } from "./resolve-slug";
 
 export function projectsRouter(db: Knex): Router {
   const router = Router();
@@ -23,30 +29,59 @@ export function projectsRouter(db: Knex): Router {
       }
 
       const { title, mode } = parsed.data;
+
+      // Check title uniqueness
+      const existingTitle = await db("projects").where({ title }).whereNull("deleted_at").first();
+      if (existingTitle) {
+        res.status(400).json({
+          error: {
+            code: "PROJECT_TITLE_EXISTS",
+            message: "A project with that title already exists",
+          },
+        });
+        return;
+      }
+
       const projectId = uuid();
       const chapterId = uuid();
       const now = new Date().toISOString();
 
-      await db.transaction(async (trx) => {
-        await trx("projects").insert({
-          id: projectId,
-          title,
-          mode,
-          created_at: now,
-          updated_at: now,
-        });
+      try {
+        await db.transaction(async (trx) => {
+          const slug = await resolveUniqueSlug(trx, generateSlug(title));
 
-        await trx("chapters").insert({
-          id: chapterId,
-          project_id: projectId,
-          title: "Untitled Chapter",
-          content: null,
-          sort_order: 0,
-          word_count: 0,
-          created_at: now,
-          updated_at: now,
+          await trx("projects").insert({
+            id: projectId,
+            title,
+            slug,
+            mode,
+            created_at: now,
+            updated_at: now,
+          });
+
+          await trx("chapters").insert({
+            id: chapterId,
+            project_id: projectId,
+            title: "Untitled Chapter",
+            content: null,
+            sort_order: 0,
+            word_count: 0,
+            created_at: now,
+            updated_at: now,
+          });
         });
-      });
+      } catch (err: unknown) {
+        if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
+          res.status(400).json({
+            error: {
+              code: "PROJECT_TITLE_EXISTS",
+              message: "A project with that title already exists",
+            },
+          });
+          return;
+        }
+        throw err;
+      }
 
       const project = await db("projects").where({ id: projectId }).first();
       res.status(201).json(project);
@@ -66,6 +101,7 @@ export function projectsRouter(db: Knex): Router {
         .select(
           "projects.id",
           "projects.title",
+          "projects.slug",
           "projects.mode",
           "projects.updated_at",
           db.raw("COALESCE(SUM(chapters.word_count), 0) as total_word_count"),
@@ -81,7 +117,7 @@ export function projectsRouter(db: Knex): Router {
   );
 
   router.patch(
-    "/:id",
+    "/:slug",
     asyncHandler(async (req, res) => {
       const parsed = UpdateProjectSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -95,7 +131,7 @@ export function projectsRouter(db: Knex): Router {
       }
 
       const project = await db("projects")
-        .where({ id: req.params.id })
+        .where({ slug: req.params.slug })
         .whereNull("deleted_at")
         .first();
 
@@ -106,20 +142,53 @@ export function projectsRouter(db: Knex): Router {
         return;
       }
 
-      await db("projects")
-        .where({ id: req.params.id })
-        .update({ title: parsed.data.title, updated_at: new Date().toISOString() });
+      const { title } = parsed.data;
 
-      const updated = await db("projects").where({ id: req.params.id }).first();
+      const existingTitle = await db("projects")
+        .where({ title })
+        .whereNull("deleted_at")
+        .whereNot({ id: project.id })
+        .first();
+      if (existingTitle) {
+        res.status(400).json({
+          error: {
+            code: "PROJECT_TITLE_EXISTS",
+            message: "A project with that title already exists",
+          },
+        });
+        return;
+      }
+
+      try {
+        await db.transaction(async (trx) => {
+          const newSlug = await resolveUniqueSlug(trx, generateSlug(title), project.id);
+          await trx("projects")
+            .where({ id: project.id })
+            .update({ title, slug: newSlug, updated_at: new Date().toISOString() });
+        });
+      } catch (err: unknown) {
+        if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
+          res.status(400).json({
+            error: {
+              code: "PROJECT_TITLE_EXISTS",
+              message: "A project with that title already exists",
+            },
+          });
+          return;
+        }
+        throw err;
+      }
+
+      const updated = await db("projects").where({ id: project.id }).first();
       res.json(updated);
     }),
   );
 
   router.get(
-    "/:id",
+    "/:slug",
     asyncHandler(async (req, res) => {
       const project = await db("projects")
-        .where({ id: req.params.id })
+        .where({ slug: req.params.slug })
         .whereNull("deleted_at")
         .first();
 
@@ -131,7 +200,7 @@ export function projectsRouter(db: Knex): Router {
       }
 
       const chapters = await db("chapters")
-        .where({ project_id: req.params.id })
+        .where({ project_id: project.id })
         .whereNull("deleted_at")
         .orderBy("sort_order", "asc")
         .select("*");
@@ -143,10 +212,10 @@ export function projectsRouter(db: Knex): Router {
   );
 
   router.post(
-    "/:id/chapters",
+    "/:slug/chapters",
     asyncHandler(async (req, res) => {
       const project = await db("projects")
-        .where({ id: req.params.id })
+        .where({ slug: req.params.slug })
         .whereNull("deleted_at")
         .first();
 
@@ -158,7 +227,7 @@ export function projectsRouter(db: Knex): Router {
       }
 
       const maxOrder = (await db("chapters")
-        .where({ project_id: req.params.id })
+        .where({ project_id: project.id })
         .whereNull("deleted_at")
         .max("sort_order as max")
         .first()) as { max: number | null };
@@ -168,7 +237,7 @@ export function projectsRouter(db: Knex): Router {
 
       await db("chapters").insert({
         id: chapterId,
-        project_id: req.params.id,
+        project_id: project.id,
         title: "Untitled Chapter",
         content: null,
         sort_order: (maxOrder?.max ?? -1) + 1,
@@ -177,7 +246,7 @@ export function projectsRouter(db: Knex): Router {
         updated_at: now,
       });
 
-      await db("projects").where({ id: req.params.id }).update({ updated_at: now });
+      await db("projects").where({ id: project.id }).update({ updated_at: now });
 
       const chapter = await db("chapters").where({ id: chapterId }).first();
       res.status(201).json(parseChapterContent(chapter));
@@ -185,10 +254,10 @@ export function projectsRouter(db: Knex): Router {
   );
 
   router.put(
-    "/:id/chapters/order",
+    "/:slug/chapters/order",
     asyncHandler(async (req, res) => {
       const project = await db("projects")
-        .where({ id: req.params.id })
+        .where({ slug: req.params.slug })
         .whereNull("deleted_at")
         .first();
 
@@ -212,7 +281,7 @@ export function projectsRouter(db: Knex): Router {
       const { chapter_ids } = parsed.data;
 
       const existing = await db("chapters")
-        .where({ project_id: req.params.id })
+        .where({ project_id: project.id })
         .whereNull("deleted_at")
         .select("id");
       const existingIds = existing.map((c: { id: string }) => c.id).sort();
@@ -236,7 +305,7 @@ export function projectsRouter(db: Knex): Router {
           await trx("chapters").where({ id: chapter_ids[i] }).update({ sort_order: i });
         }
         await trx("projects")
-          .where({ id: req.params.id })
+          .where({ id: project.id })
           .update({ updated_at: new Date().toISOString() });
       });
 
@@ -245,9 +314,12 @@ export function projectsRouter(db: Knex): Router {
   );
 
   router.get(
-    "/:id/trash",
+    "/:slug/trash",
     asyncHandler(async (req, res) => {
-      const project = await db("projects").where({ id: req.params.id }).first();
+      const project = await db("projects")
+        .where({ slug: req.params.slug })
+        .whereNull("deleted_at")
+        .first();
 
       if (!project) {
         res.status(404).json({
@@ -257,7 +329,7 @@ export function projectsRouter(db: Knex): Router {
       }
 
       const trashed = await db("chapters")
-        .where({ project_id: req.params.id })
+        .where({ project_id: project.id })
         .whereNotNull("deleted_at")
         .orderBy("deleted_at", "desc")
         .select("*");
@@ -267,10 +339,10 @@ export function projectsRouter(db: Knex): Router {
   );
 
   router.delete(
-    "/:id",
+    "/:slug",
     asyncHandler(async (req, res) => {
       const project = await db("projects")
-        .where({ id: req.params.id })
+        .where({ slug: req.params.slug })
         .whereNull("deleted_at")
         .first();
 
@@ -285,11 +357,11 @@ export function projectsRouter(db: Knex): Router {
 
       await db.transaction(async (trx) => {
         await trx("chapters")
-          .where({ project_id: req.params.id })
+          .where({ project_id: project.id })
           .whereNull("deleted_at")
           .update({ deleted_at: now });
 
-        await trx("projects").where({ id: req.params.id }).update({ deleted_at: now });
+        await trx("projects").where({ id: project.id }).update({ deleted_at: now });
       });
 
       res.json({ message: "Project moved to trash." });
