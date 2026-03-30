@@ -17,6 +17,7 @@ export function useProjectEditor(slug: string | undefined) {
   const activeChapterRef = useRef<Chapter | null>(null);
   const projectSlugRef = useRef(project?.slug);
   const selectChapterSeqRef = useRef(0);
+  const saveSeqRef = useRef(0);
 
   // Keep ref in sync for use in loadProject's closure
   useEffect(() => {
@@ -62,11 +63,13 @@ export function useProjectEditor(slug: string | undefined) {
     async (content: Record<string, unknown>): Promise<boolean> => {
       if (!activeChapter) return false;
       const savingChapterId = activeChapter.id;
+      const seq = ++saveSeqRef.current;
       const BACKOFF_MS = [2000, 4000, 8000];
       const MAX_RETRIES = 3;
 
       setSaveStatus("saving");
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (seq !== saveSeqRef.current) return false; // chapter changed, abort retries
         try {
           const updated = await api.chapters.update(savingChapterId, { content });
           // Don't call setActiveChapter — the editor holds the current truth.
@@ -87,8 +90,6 @@ export function useProjectEditor(slug: string | undefined) {
           return true;
         } catch (err) {
           if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
-            // Don't clear cache on 4xx — the server rejected the content but the
-            // editor still holds it. Cache preserves the draft until a successful save.
             break;
           }
           if (attempt < MAX_RETRIES) {
