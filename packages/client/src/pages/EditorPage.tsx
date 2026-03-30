@@ -485,7 +485,7 @@ export function EditorPage() {
         ) : viewMode === "dashboard" ? (
           <main className="flex-1 overflow-y-auto" aria-label={STRINGS.a11y.mainContent}>
             <DashboardView
-              slug={slug as string}
+              slug={project.slug}
               statuses={statuses}
               onNavigateToChapter={(chapterId) => {
                 setViewMode("editor");
