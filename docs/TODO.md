@@ -6,6 +6,9 @@
   another chapter and clicked back, it was fine. Also, when I clicked back to
   the editor view, it  showed me the first chapter, not the chapter I was
   editing.
+- When clicking on a chapter in the sidebar, I must always enter the "editor"
+  view for that chapter. Currently, if I'm in preview or dashboard, clicking
+  on a chapter does nothing.
 - Dashboard view: when changina a title, it's not immediately reflected in the
   dashboard. Need to refresh the page to see the change.
 - I can't style the chapter titles.
