@@ -159,29 +159,30 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
                 role="img"
                 aria-label={STRINGS.dashboard.statusDistributionLabel}
               >
-                {Object.entries(status_summary).map(([status, count]) => {
+                {statuses.map((s) => {
+                  const count = status_summary[s.status] ?? 0;
                   if (count === 0) return null;
                   const pct = (count / totalStatusCount) * 100;
                   return (
                     <div
-                      key={status}
+                      key={s.status}
                       style={{
                         width: `${pct}%`,
-                        backgroundColor: STATUS_COLORS[status] ?? "#999",
+                        backgroundColor: STATUS_COLORS[s.status] ?? "#999",
                       }}
-                      title={`${statusLabelMap[status] ?? status}: ${count}`}
+                      title={`${s.label}: ${count}`}
                     />
                   );
                 })}
               </div>
               <div className="flex flex-wrap gap-4 text-xs text-text-secondary">
-                {Object.entries(status_summary).map(([status, count]) => (
-                  <span key={status} className="flex items-center gap-1">
+                {statuses.map((s) => (
+                  <span key={s.status} className="flex items-center gap-1">
                     <span
                       className="inline-block w-3 h-3 rounded-full"
-                      style={{ backgroundColor: STATUS_COLORS[status] ?? "#999" }}
+                      style={{ backgroundColor: STATUS_COLORS[s.status] ?? "#999" }}
                     />
-                    {statusLabelMap[status] ?? status}: {count}
+                    {s.label}: {status_summary[s.status] ?? 0}
                   </span>
                 ))}
               </div>
