@@ -205,17 +205,15 @@ export function projectsRouter(db: Knex): Router {
         .orderBy("sort_order", "asc")
         .select("*");
 
-      const parsedChapters = await Promise.all(
-        chapters.map(async (ch: Record<string, unknown>) => {
-          const statusRow = await db("chapter_statuses")
-            .where({ status: ch.status })
-            .first();
-          return {
-            ...parseChapterContent(ch),
-            status_label: statusRow?.label ?? null,
-          };
-        }),
+      const statusRows = await db("chapter_statuses").select("status", "label");
+      const statusLabelMap: Record<string, string> = Object.fromEntries(
+        statusRows.map((r: { status: string; label: string }) => [r.status, r.label]),
       );
+
+      const parsedChapters = chapters.map((ch: Record<string, unknown>) => ({
+        ...parseChapterContent(ch),
+        status_label: statusLabelMap[ch.status as string] ?? (ch.status as string),
+      }));
 
       res.json({ ...project, chapters: parsedChapters });
     }),
@@ -344,20 +342,17 @@ export function projectsRouter(db: Knex): Router {
         .orderBy("sort_order", "asc")
         .select("id", "title", "status", "word_count", "updated_at", "sort_order");
 
-      const chaptersWithLabels = await Promise.all(
-        chapters.map(async (ch: Record<string, unknown>) => {
-          const statusRow = await db("chapter_statuses")
-            .where({ status: ch.status })
-            .first();
-          return {
-            ...ch,
-            status_label: statusRow?.label ?? null,
-          };
-        }),
+      const allStatuses = await db("chapter_statuses").orderBy("sort_order", "asc").select("status", "label");
+      const statusLabelMap: Record<string, string> = Object.fromEntries(
+        allStatuses.map((r: { status: string; label: string }) => [r.status, r.label]),
       );
 
+      const chaptersWithLabels = chapters.map((ch: Record<string, unknown>) => ({
+        ...ch,
+        status_label: statusLabelMap[ch.status as string] ?? (ch.status as string),
+      }));
+
       // Build status_summary with all 5 statuses included
-      const allStatuses = await db("chapter_statuses").orderBy("sort_order", "asc").select("status");
       const statusSummary: Record<string, number> = {};
       for (const s of allStatuses) {
         statusSummary[s.status] = 0;

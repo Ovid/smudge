@@ -73,7 +73,7 @@ export function chaptersRouter(db: Knex): Router {
         if (!validStatus) {
           res.status(400).json({
             error: {
-              code: "INVALID_STATUS",
+              code: "VALIDATION_ERROR",
               message: `Invalid status: ${parsed.data.status}`,
             },
           });

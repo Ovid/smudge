@@ -156,6 +156,7 @@ describe("PATCH /api/chapters/:id", () => {
       .send({ status: "invalid_status" });
 
     expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
   });
 
   it("returns chapter with status in response", async () => {
