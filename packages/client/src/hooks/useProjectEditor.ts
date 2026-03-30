@@ -16,6 +16,7 @@ export function useProjectEditor(slug: string | undefined) {
   const [chapterWordCount, setChapterWordCount] = useState(0);
   const activeChapterRef = useRef<Chapter | null>(null);
   const projectSlugRef = useRef(project?.slug);
+  const selectChapterSeqRef = useRef(0);
 
   // Keep ref in sync for use in loadProject's closure
   useEffect(() => {
@@ -80,11 +81,14 @@ export function useProjectEditor(slug: string | undefined) {
             };
           });
           clearCachedContent(savingChapterId);
-          setSaveStatus("saved");
+          if (activeChapterRef.current?.id === savingChapterId) {
+            setSaveStatus("saved");
+          }
           return true;
         } catch (err) {
           if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
-            clearCachedContent(savingChapterId);
+            // Don't clear cache on 4xx — the server rejected the content but the
+            // editor still holds it. Cache preserves the draft until a successful save.
             break;
           }
           if (attempt < MAX_RETRIES) {
@@ -92,7 +96,9 @@ export function useProjectEditor(slug: string | undefined) {
           }
         }
       }
-      setSaveStatus("error");
+      if (activeChapterRef.current?.id === savingChapterId) {
+        setSaveStatus("error");
+      }
       return false;
     },
     [activeChapter],
@@ -122,21 +128,21 @@ export function useProjectEditor(slug: string | undefined) {
     }
   }, []);
 
-  const handleSelectChapter = useCallback(
-    async (chapterId: string) => {
-      if (activeChapter && chapterId === activeChapter.id) return;
-      try {
-        const chapter = await api.chapters.get(chapterId);
-        const cached = getCachedContent(chapterId);
-        const effectiveChapter = cached ? { ...chapter, content: cached } : chapter;
-        setActiveChapter(effectiveChapter);
-        setChapterWordCount(countWords(effectiveChapter.content));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : STRINGS.error.loadChapterFailed);
-      }
-    },
-    [activeChapter],
-  );
+  const handleSelectChapter = useCallback(async (chapterId: string) => {
+    if (activeChapterRef.current && chapterId === activeChapterRef.current.id) return;
+    const seq = ++selectChapterSeqRef.current;
+    try {
+      const chapter = await api.chapters.get(chapterId);
+      if (seq !== selectChapterSeqRef.current) return; // superseded by a newer selection
+      const cached = getCachedContent(chapterId);
+      const effectiveChapter = cached ? { ...chapter, content: cached } : chapter;
+      setActiveChapter(effectiveChapter);
+      setChapterWordCount(countWords(effectiveChapter.content));
+    } catch (err) {
+      if (seq !== selectChapterSeqRef.current) return;
+      setError(err instanceof Error ? err.message : STRINGS.error.loadChapterFailed);
+    }
+  }, []);
 
   const projectRef = useRef(project);
   useEffect(() => {
@@ -155,7 +161,7 @@ export function useProjectEditor(slug: string | undefined) {
         });
 
         // If deleting the active chapter, switch to the first remaining
-        if (activeChapter?.id === chapter.id) {
+        if (activeChapterRef.current?.id === chapter.id) {
           const first = remaining[0];
           if (first) {
             try {
@@ -176,7 +182,7 @@ export function useProjectEditor(slug: string | undefined) {
         setError(err instanceof Error ? err.message : STRINGS.error.deleteChapterFailed);
       }
     },
-    [activeChapter],
+    [],
   );
 
   const handleReorderChapters = useCallback(async (orderedIds: string[]) => {
@@ -218,6 +224,9 @@ export function useProjectEditor(slug: string | undefined) {
   );
 
   const handleStatusChange = useCallback(async (chapterId: string, status: string) => {
+    // Save previous status for revert
+    const previousStatus = projectRef.current?.chapters.find((c) => c.id === chapterId)?.status;
+
     // Optimistic update
     setProject((prev) => {
       if (!prev) return prev;
@@ -248,7 +257,21 @@ export function useProjectEditor(slug: string | undefined) {
             }
           }
         } catch {
-          // If reload also fails, leave optimistic state
+          // Reload also failed — revert to previous status locally
+          if (previousStatus !== undefined) {
+            setProject((prev) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                chapters: prev.chapters.map((c) =>
+                  c.id === chapterId ? { ...c, status: previousStatus } : c,
+                ),
+              };
+            });
+            if (activeChapterRef.current?.id === chapterId) {
+              setActiveChapter((prev) => (prev ? { ...prev, status: previousStatus } : prev));
+            }
+          }
         }
       }
     }
@@ -258,7 +281,7 @@ export function useProjectEditor(slug: string | undefined) {
     async (chapterId: string, title: string) => {
       try {
         await api.chapters.update(chapterId, { title });
-        if (activeChapter?.id === chapterId) {
+        if (activeChapterRef.current?.id === chapterId) {
           // Only update the title — don't overwrite content with stale server data.
           // The editor holds the current truth (same principle as handleSave).
           setActiveChapter((prev) => (prev ? { ...prev, title } : prev));
@@ -274,7 +297,7 @@ export function useProjectEditor(slug: string | undefined) {
         setError(err instanceof Error ? err.message : STRINGS.error.renameChapterFailed);
       }
     },
-    [activeChapter],
+    [],
   );
 
   return {

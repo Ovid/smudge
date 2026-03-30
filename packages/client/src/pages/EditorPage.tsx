@@ -130,6 +130,10 @@ export function EditorPage() {
         }
         return updatedProject;
       });
+      // If the slug changed (project was also restored), update the URL
+      if (restored.project_slug && restored.project_slug !== slug) {
+        navigate(`/projects/${restored.project_slug}`, { replace: true });
+      }
     } catch (err) {
       console.error("Failed to restore chapter:", err);
       setActionError(err instanceof Error ? err.message : STRINGS.error.restoreChapterFailed);

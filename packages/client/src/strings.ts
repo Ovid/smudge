@@ -133,6 +133,7 @@ export const STRINGS = {
       return `Least recent: ${date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} (${title})`;
     },
     emptyState: "No chapters yet",
+    columnOrder: "#",
     columnTitle: "Title",
     columnStatus: "Status",
     columnWordCount: "Word Count",

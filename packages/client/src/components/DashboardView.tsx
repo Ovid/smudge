@@ -194,6 +194,7 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
               <tr className="border-b border-border text-left">
                 {(
                   [
+                    ["sort_order", STRINGS.dashboard.columnOrder, "py-2 pr-4 w-10"],
                     ["title", STRINGS.dashboard.columnTitle, "py-2 pr-4"],
                     ["status", STRINGS.dashboard.columnStatus, "py-2 pr-4"],
                     ["word_count", STRINGS.dashboard.columnWordCount, "py-2 pr-4"],
@@ -219,6 +220,9 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
             <tbody>
               {sortedChapters.map((chapter) => (
                 <tr key={chapter.id} className="border-b border-border">
+                  <td className="py-2 pr-4 text-text-muted text-center">
+                    {chapter.sort_order + 1}
+                  </td>
                   <td className="py-2 pr-4">
                     <button
                       onClick={() => onNavigateToChapter(chapter.id)}
