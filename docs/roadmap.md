@@ -34,6 +34,7 @@ Phases are ordered by writer impact: Phases 1–3 complete the core writing tool
 ---
 
 ## Phase 1: Writer's Dashboard
+<!-- plan: 2026-03-30-writers-dashboard-design.md -->
 
 ### Goal
 
