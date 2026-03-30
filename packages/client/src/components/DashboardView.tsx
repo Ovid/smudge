@@ -110,6 +110,16 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
 
   const totalStatusCount = Object.values(status_summary).reduce((s, n) => s + n, 0);
 
+  // Fall back to status_summary keys when the statuses prop is empty (fetch failed)
+  const effectiveStatuses: ChapterStatusRow[] =
+    statuses.length > 0
+      ? statuses
+      : Object.entries(status_summary).map(([status], i) => ({
+          status,
+          sort_order: i,
+          label: status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+        }));
+
   return (
     <div className="mx-auto max-w-[720px] px-6 py-8">
       <h2 className="text-2xl font-serif text-text-primary mb-6">{STRINGS.dashboard.heading}</h2>
@@ -156,7 +166,7 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
                 role="img"
                 aria-label={STRINGS.dashboard.statusDistributionLabel}
               >
-                {statuses.map((s) => {
+                {effectiveStatuses.map((s) => {
                   const count = status_summary[s.status] ?? 0;
                   if (count === 0) return null;
                   const pct = (count / totalStatusCount) * 100;
@@ -173,7 +183,7 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
                 })}
               </div>
               <div className="flex flex-wrap gap-4 text-xs text-text-secondary">
-                {statuses.map((s) => (
+                {effectiveStatuses.map((s) => (
                   <span key={s.status} className="flex items-center gap-1">
                     <span
                       className="inline-block w-3 h-3 rounded-full"
