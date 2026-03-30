@@ -87,20 +87,29 @@ export function EditorPage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     let attempts = 0;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
     function fetchStatuses() {
       api.chapterStatuses
         .list()
-        .then(setStatuses)
+        .then((data) => {
+          if (!cancelled) setStatuses(data);
+        })
         .catch((err) => {
+          if (cancelled) return;
           console.error(err);
           if (attempts < 2) {
             attempts++;
-            setTimeout(fetchStatuses, 2000 * attempts);
+            timerId = setTimeout(fetchStatuses, 2000 * attempts);
           }
         });
     }
     fetchStatuses();
+    return () => {
+      cancelled = true;
+      if (timerId !== null) clearTimeout(timerId);
+    };
   }, []);
 
   const editorRef = useRef<{ flushSave: () => Promise<void> } | null>(null);
