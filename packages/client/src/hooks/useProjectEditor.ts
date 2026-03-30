@@ -149,41 +149,38 @@ export function useProjectEditor(slug: string | undefined) {
     projectRef.current = project;
   }, [project]);
 
-  const handleDeleteChapter = useCallback(
-    async (chapter: Chapter) => {
-      try {
-        await api.chapters.delete(chapter.id);
-        // Compute remaining from the ref (current state), not the stale closure
-        const remaining = projectRef.current?.chapters.filter((c) => c.id !== chapter.id) ?? [];
-        setProject((prev) => {
-          if (!prev) return prev;
-          return { ...prev, chapters: prev.chapters.filter((c) => c.id !== chapter.id) };
-        });
+  const handleDeleteChapter = useCallback(async (chapter: Chapter) => {
+    try {
+      await api.chapters.delete(chapter.id);
+      // Compute remaining from the ref (current state), not the stale closure
+      const remaining = projectRef.current?.chapters.filter((c) => c.id !== chapter.id) ?? [];
+      setProject((prev) => {
+        if (!prev) return prev;
+        return { ...prev, chapters: prev.chapters.filter((c) => c.id !== chapter.id) };
+      });
 
-        // If deleting the active chapter, switch to the first remaining
-        if (activeChapterRef.current?.id === chapter.id) {
-          const first = remaining[0];
-          if (first) {
-            try {
-              const ch = await api.chapters.get(first.id);
-              setActiveChapter(ch);
-              setChapterWordCount(countWords(ch.content));
-            } catch {
-              // Secondary fetch failed — fall through to empty state
-              setActiveChapter(null);
-              setChapterWordCount(0);
-            }
-          } else {
+      // If deleting the active chapter, switch to the first remaining
+      if (activeChapterRef.current?.id === chapter.id) {
+        const first = remaining[0];
+        if (first) {
+          try {
+            const ch = await api.chapters.get(first.id);
+            setActiveChapter(ch);
+            setChapterWordCount(countWords(ch.content));
+          } catch {
+            // Secondary fetch failed — fall through to empty state
             setActiveChapter(null);
             setChapterWordCount(0);
           }
+        } else {
+          setActiveChapter(null);
+          setChapterWordCount(0);
         }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : STRINGS.error.deleteChapterFailed);
       }
-    },
-    [],
-  );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : STRINGS.error.deleteChapterFailed);
+    }
+  }, []);
 
   const handleReorderChapters = useCallback(async (orderedIds: string[]) => {
     const slug = projectSlugRef.current;
@@ -277,28 +274,25 @@ export function useProjectEditor(slug: string | undefined) {
     }
   }, []);
 
-  const handleRenameChapter = useCallback(
-    async (chapterId: string, title: string) => {
-      try {
-        await api.chapters.update(chapterId, { title });
-        if (activeChapterRef.current?.id === chapterId) {
-          // Only update the title — don't overwrite content with stale server data.
-          // The editor holds the current truth (same principle as handleSave).
-          setActiveChapter((prev) => (prev ? { ...prev, title } : prev));
-        }
-        setProject((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            chapters: prev.chapters.map((c) => (c.id === chapterId ? { ...c, title } : c)),
-          };
-        });
-      } catch (err) {
-        setError(err instanceof Error ? err.message : STRINGS.error.renameChapterFailed);
+  const handleRenameChapter = useCallback(async (chapterId: string, title: string) => {
+    try {
+      await api.chapters.update(chapterId, { title });
+      if (activeChapterRef.current?.id === chapterId) {
+        // Only update the title — don't overwrite content with stale server data.
+        // The editor holds the current truth (same principle as handleSave).
+        setActiveChapter((prev) => (prev ? { ...prev, title } : prev));
       }
-    },
-    [],
-  );
+      setProject((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          chapters: prev.chapters.map((c) => (c.id === chapterId ? { ...c, title } : c)),
+        };
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : STRINGS.error.renameChapterFailed);
+    }
+  }, []);
 
   return {
     project,
