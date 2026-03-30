@@ -87,7 +87,20 @@ export function EditorPage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.chapterStatuses.list().then(setStatuses).catch(console.error);
+    let attempts = 0;
+    function fetchStatuses() {
+      api.chapterStatuses
+        .list()
+        .then(setStatuses)
+        .catch((err) => {
+          console.error(err);
+          if (attempts < 2) {
+            attempts++;
+            setTimeout(fetchStatuses, 2000 * attempts);
+          }
+        });
+    }
+    fetchStatuses();
   }, []);
 
   const editorRef = useRef<{ flushSave: () => Promise<void> } | null>(null);
