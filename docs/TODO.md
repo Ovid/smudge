@@ -21,8 +21,11 @@
 # Features
 
 - BE ULTRA-PARANOID ABOUT DATA LOSS. Brainstorm on ways to make this
-  super robust.
+  super robust. Have "snapshots" which go back X amount of time.
 
+- Research page width and what formatting features writers really need. Maybe
+  have a "simple" mode and an "advanced" mode? Or just make it simple and add
+  features as needed.
 - Need help page. Not until close to done. CLAUDE.md instructions to ensure
   it's updated after every public-facing change.
 - Logo should link to github repo. Eventually, to a website.
