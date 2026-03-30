@@ -20,6 +20,9 @@
 
 # Features
 
+- BE ULTRA-PARANOID ABOUT DATA LOSS. Brainstorm on ways to make this
+  super robust.
+
 - Need help page. Not until close to done. CLAUDE.md instructions to ensure
   it's updated after every public-facing change.
 - Logo should link to github repo. Eventually, to a website.
