@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   DndContext,
   closestCenter,
@@ -15,8 +15,130 @@ import {
 } from "@dnd-kit/sortable";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
-import type { ProjectWithChapters, Chapter } from "@smudge/shared";
+import type { ProjectWithChapters, Chapter, ChapterStatusRow } from "@smudge/shared";
 import { STRINGS } from "../strings";
+
+const STATUS_COLORS: Record<string, string> = {
+  outline: "#8B9E7C",
+  rough_draft: "#C07850",
+  revised: "#B8973E",
+  edited: "#6B7F94",
+  final: "#6B4E3D",
+};
+
+interface StatusBadgeProps {
+  chapter: Chapter;
+  statuses: ChapterStatusRow[];
+  onStatusChange: (chapterId: string, status: string) => void;
+  onAnnounce: (message: string) => void;
+}
+
+function StatusBadge({ chapter, statuses, onStatusChange, onAnnounce }: StatusBadgeProps) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const currentStatus = chapter.status || "outline";
+  const label = STRINGS.status[currentStatus] || currentStatus;
+  const color = STATUS_COLORS[currentStatus] || STATUS_COLORS.outline;
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setOpen(false);
+      }
+    },
+    [],
+  );
+
+  function selectStatus(status: string) {
+    onStatusChange(chapter.id, status);
+    const newLabel = STRINGS.status[status] || status;
+    onAnnounce(STRINGS.sidebar.statusChanged(newLabel));
+    setOpen(false);
+  }
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((prev) => !prev);
+        }}
+        onKeyDown={handleKeyDown}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={STRINGS.sidebar.statusLabel(label)}
+        className="flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs text-text-secondary bg-bg-hover hover:bg-border focus:outline-none focus:ring-2 focus:ring-focus-ring"
+      >
+        <span
+          style={{ backgroundColor: color }}
+          className="inline-block w-2 h-2 rounded-full"
+          aria-hidden="true"
+        />
+        <span>{label}</span>
+      </button>
+      {open && (
+        <ul
+          role="listbox"
+          aria-label={STRINGS.sidebar.statusLabel(label)}
+          className="absolute left-0 top-full mt-1 z-50 bg-bg-primary border border-border rounded shadow-lg py-1 min-w-[120px]"
+          onKeyDown={handleKeyDown}
+        >
+          {statuses.map((s) => {
+            const sLabel = STRINGS.status[s.status] || s.status;
+            const sColor = STATUS_COLORS[s.status] || STATUS_COLORS.outline;
+            return (
+              <li
+                key={s.status}
+                role="option"
+                aria-selected={s.status === currentStatus}
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  selectStatus(s.status);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    selectStatus(s.status);
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    setOpen(false);
+                  }
+                }}
+                className={`flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer hover:bg-bg-hover focus:outline-none focus:ring-2 focus:ring-focus-ring ${
+                  s.status === currentStatus ? "bg-bg-hover font-semibold" : ""
+                }`}
+              >
+                <span
+                  style={{ backgroundColor: sColor }}
+                  className="inline-block w-2 h-2 rounded-full"
+                  aria-hidden="true"
+                />
+                <span>{sLabel}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 interface SidebarProps {
   project: ProjectWithChapters;
@@ -27,6 +149,8 @@ interface SidebarProps {
   onReorderChapters: (orderedIds: string[]) => void;
   onRenameChapter: (chapterId: string, title: string) => void;
   onOpenTrash: () => void;
+  statuses: ChapterStatusRow[];
+  onStatusChange: (chapterId: string, status: string) => void;
 }
 
 interface SortableChapterItemProps {
@@ -43,6 +167,9 @@ interface SortableChapterItemProps {
   onStartRename: (chapter: Chapter) => void;
   onKeyReorder: (e: React.KeyboardEvent, index: number) => void;
   onDeleteChapter: (chapter: Chapter) => void;
+  statuses: ChapterStatusRow[];
+  onStatusChange: (chapterId: string, status: string) => void;
+  onAnnounce: (message: string) => void;
 }
 
 function SortableChapterItem({
@@ -59,6 +186,9 @@ function SortableChapterItem({
   onStartRename,
   onKeyReorder,
   onDeleteChapter,
+  statuses,
+  onStatusChange,
+  onAnnounce,
 }: SortableChapterItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: chapter.id,
@@ -114,6 +244,12 @@ function SortableChapterItem({
           {chapter.title}
         </button>
       )}
+      <StatusBadge
+        chapter={chapter}
+        statuses={statuses}
+        onStatusChange={onStatusChange}
+        onAnnounce={onAnnounce}
+      />
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -137,6 +273,8 @@ export function Sidebar({
   onReorderChapters,
   onRenameChapter,
   onOpenTrash,
+  statuses,
+  onStatusChange,
 }: SidebarProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
@@ -255,6 +393,9 @@ export function Sidebar({
                   onStartRename={startRename}
                   onKeyReorder={handleKeyReorder}
                   onDeleteChapter={onDeleteChapter}
+                  statuses={statuses}
+                  onStatusChange={onStatusChange}
+                  onAnnounce={setAnnouncement}
                 />
               ))}
             </ul>

@@ -28,6 +28,9 @@ vi.mock("../api/client", () => ({
       delete: vi.fn(),
       restore: vi.fn(),
     },
+    chapterStatuses: {
+      list: vi.fn().mockResolvedValue([]),
+    },
   },
 }));
 
@@ -76,6 +79,7 @@ describe("App", () => {
           content: { type: "doc", content: [{ type: "paragraph" }] },
           sort_order: 0,
           word_count: 0,
+          status: "outline",
           created_at: "",
           updated_at: "",
           deleted_at: null,

@@ -74,7 +74,16 @@ export const STRINGS = {
     dragHandle: "Drag to reorder",
     chapterPosition: (title: string, position: number, total: number) =>
       `Chapter \u201c${title}\u201d moved to position ${position} of ${total}`,
+    statusLabel: (label: string) => `Chapter status: ${label}`,
+    statusChanged: (label: string) => `Chapter status changed to ${label}`,
   },
+  status: {
+    outline: "Outline",
+    rough_draft: "Rough Draft",
+    revised: "Revised",
+    edited: "Edited",
+    final: "Final",
+  } as Record<string, string>,
   preview: {
     backToEditor: "Back to Editor",
     tableOfContents: "Table of Contents",

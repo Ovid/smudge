@@ -2,7 +2,15 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Sidebar } from "../components/Sidebar";
-import type { ProjectWithChapters } from "@smudge/shared";
+import type { ProjectWithChapters, ChapterStatusRow } from "@smudge/shared";
+
+const mockStatuses: ChapterStatusRow[] = [
+  { status: "outline", sort_order: 0, label: "Outline" },
+  { status: "rough_draft", sort_order: 1, label: "Rough Draft" },
+  { status: "revised", sort_order: 2, label: "Revised" },
+  { status: "edited", sort_order: 3, label: "Edited" },
+  { status: "final", sort_order: 4, label: "Final" },
+];
 
 const mockProject: ProjectWithChapters = {
   id: "p1",
@@ -19,6 +27,7 @@ const mockProject: ProjectWithChapters = {
       content: null,
       sort_order: 0,
       word_count: 100,
+      status: "outline",
       created_at: "2026-01-01",
       updated_at: "2026-01-01",
       deleted_at: null,
@@ -30,6 +39,7 @@ const mockProject: ProjectWithChapters = {
       content: null,
       sort_order: 1,
       word_count: 200,
+      status: "revised",
       created_at: "2026-01-01",
       updated_at: "2026-01-01",
       deleted_at: null,
@@ -47,6 +57,8 @@ function renderSidebar(overrides = {}) {
     onReorderChapters: vi.fn(),
     onRenameChapter: vi.fn(),
     onOpenTrash: vi.fn(),
+    statuses: mockStatuses,
+    onStatusChange: vi.fn(),
   };
   return render(<Sidebar {...defaults} {...overrides} />);
 }
@@ -216,5 +228,41 @@ describe("Sidebar", () => {
     await userEvent.keyboard("{Alt>}{ArrowDown}{/Alt}");
 
     expect(onReorder).not.toHaveBeenCalled();
+  });
+
+  it("renders status badge for each chapter", () => {
+    renderSidebar();
+
+    const outlineBadge = screen.getByRole("button", { name: "Chapter status: Outline" });
+    expect(outlineBadge).toBeInTheDocument();
+
+    const revisedBadge = screen.getByRole("button", { name: "Chapter status: Revised" });
+    expect(revisedBadge).toBeInTheDocument();
+  });
+
+  it("opens status dropdown on click", async () => {
+    renderSidebar();
+
+    const badge = screen.getByRole("button", { name: "Chapter status: Outline" });
+    await userEvent.click(badge);
+
+    const listbox = screen.getByRole("listbox");
+    expect(listbox).toBeInTheDocument();
+
+    const options = screen.getAllByRole("option");
+    expect(options).toHaveLength(5);
+  });
+
+  it("calls onStatusChange when selecting a status", async () => {
+    const onStatusChange = vi.fn();
+    renderSidebar({ onStatusChange });
+
+    const badge = screen.getByRole("button", { name: "Chapter status: Outline" });
+    await userEvent.click(badge);
+
+    const editedOption = screen.getByRole("option", { name: "Edited" });
+    await userEvent.click(editedOption);
+
+    expect(onStatusChange).toHaveBeenCalledWith("ch1", "edited");
   });
 });

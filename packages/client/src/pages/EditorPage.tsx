@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import type { Chapter } from "@smudge/shared";
+import type { Chapter, ChapterStatusRow } from "@smudge/shared";
 import { Editor } from "../components/Editor";
 import { Sidebar } from "../components/Sidebar";
 import { TrashView } from "../components/TrashView";
@@ -30,6 +30,7 @@ export function EditorPage() {
     handleReorderChapters,
     handleUpdateProjectTitle,
     handleRenameChapter,
+    handleStatusChange,
   } = useProjectEditor(slug);
 
   const [editingTitle, setEditingTitle] = useState(false);
@@ -49,6 +50,11 @@ export function EditorPage() {
   const [trashOpen, setTrashOpen] = useState(false);
   const [trashedChapters, setTrashedChapters] = useState<Chapter[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [statuses, setStatuses] = useState<ChapterStatusRow[]>([]);
+
+  useEffect(() => {
+    api.chapterStatuses.list().then(setStatuses).catch(() => {});
+  }, []);
 
   const editorRef = useRef<{ flushSave: () => Promise<void> } | null>(null);
 
@@ -252,6 +258,8 @@ export function EditorPage() {
             onReorderChapters={handleReorderChapters}
             onRenameChapter={handleRenameChapter}
             onOpenTrash={openTrash}
+            statuses={statuses}
+            onStatusChange={handleStatusChange}
           />
         )}
         <div className="flex-1 flex flex-col items-center justify-center">
@@ -287,6 +295,8 @@ export function EditorPage() {
           onReorderChapters={handleReorderChapters}
           onRenameChapter={handleRenameChapter}
           onOpenTrash={openTrash}
+          statuses={statuses}
+          onStatusChange={handleStatusChange}
         />
       )}
 

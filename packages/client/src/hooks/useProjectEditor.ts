@@ -209,6 +209,34 @@ export function useProjectEditor(slug: string | undefined) {
     [],
   );
 
+  const handleStatusChange = useCallback(
+    async (chapterId: string, status: string) => {
+      // Optimistic update
+      setProject((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          chapters: prev.chapters.map((c) => (c.id === chapterId ? { ...c, status } : c)),
+        };
+      });
+      try {
+        await api.chapters.update(chapterId, { status });
+      } catch {
+        // Revert by reloading from server
+        const slug = projectSlugRef.current;
+        if (slug) {
+          try {
+            const data = await api.projects.get(slug);
+            setProject(data);
+          } catch {
+            // If reload also fails, leave optimistic state
+          }
+        }
+      }
+    },
+    [],
+  );
+
   const handleRenameChapter = useCallback(
     async (chapterId: string, title: string) => {
       try {
@@ -249,5 +277,6 @@ export function useProjectEditor(slug: string | undefined) {
     handleReorderChapters,
     handleUpdateProjectTitle,
     handleRenameChapter,
+    handleStatusChange,
   };
 }

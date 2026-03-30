@@ -3,6 +3,7 @@ import type {
   ProjectListItem,
   ProjectWithChapters,
   Chapter,
+  ChapterStatusRow,
   CreateProjectInput,
   ApiError,
 } from "@smudge/shared";
@@ -76,7 +77,7 @@ export const api = {
     create: (projectSlug: string) =>
       apiFetch<Chapter>(`/projects/${projectSlug}/chapters`, { method: "POST" }),
 
-    update: (id: string, data: { title?: string; content?: Record<string, unknown> }) =>
+    update: (id: string, data: { title?: string; content?: Record<string, unknown>; status?: string }) =>
       apiFetch<Chapter>(`/chapters/${id}`, {
         method: "PATCH",
         body: JSON.stringify(data),
@@ -86,5 +87,9 @@ export const api = {
 
     restore: (id: string) =>
       apiFetch<Chapter & { project_slug?: string }>(`/chapters/${id}/restore`, { method: "POST" }),
+  },
+
+  chapterStatuses: {
+    list: () => apiFetch<ChapterStatusRow[]>("/chapter-statuses"),
   },
 };
