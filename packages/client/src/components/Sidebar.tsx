@@ -40,7 +40,9 @@ function StatusBadge({ chapter, statuses, onStatusChange, onAnnounce }: StatusBa
   useEffect(() => {
     if (!open) return;
     // Focus the currently-selected option when the dropdown opens
-    const selected = listboxRef.current?.querySelector('[aria-selected="true"]') as HTMLElement | null;
+    const selected = listboxRef.current?.querySelector(
+      '[aria-selected="true"]',
+    ) as HTMLElement | null;
     selected?.focus();
 
     function handleClickOutside(e: MouseEvent) {

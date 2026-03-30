@@ -15,20 +15,20 @@ interface DashboardViewProps {
 }
 
 export function DashboardView({ slug, statuses, onNavigateToChapter }: DashboardViewProps) {
-  const [data, setData] = useState<DashboardData | null>(null);
+  const [dataWithSlug, setDataWithSlug] = useState<{ slug: string; data: DashboardData } | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("sort_order");
   const [sortAsc, setSortAsc] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    setData(null);
-    setError(null);
     api.projects
       .dashboard(slug)
       .then((result) => {
         if (!cancelled) {
-          setData(result);
+          setDataWithSlug({ slug, data: result });
           setError(null);
         }
       })
@@ -54,6 +54,9 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
     },
     [sortKey],
   );
+
+  // Treat data from a different slug as stale (show loading)
+  const data = dataWithSlug?.slug === slug ? dataWithSlug.data : null;
 
   if (error) {
     return (
@@ -219,7 +222,11 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
                       className="font-medium text-text-secondary hover:text-text-primary"
                     >
                       {label}
-                      {sortKey === key ? (sortAsc ? STRINGS.dashboard.sortAscending : STRINGS.dashboard.sortDescending) : ""}
+                      {sortKey === key
+                        ? sortAsc
+                          ? STRINGS.dashboard.sortAscending
+                          : STRINGS.dashboard.sortDescending
+                        : ""}
                     </button>
                   </th>
                 ))}

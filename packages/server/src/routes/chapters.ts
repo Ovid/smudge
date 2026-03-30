@@ -193,7 +193,11 @@ export function chaptersRouter(db: Knex): Router {
       const restored = await db("chapters").where({ id: req.params.id }).first();
       const updatedProject = await db("projects").where({ id: chapter.project_id }).first();
       const restoredStatusLabel = await getStatusLabel(db, restored.status as string);
-      res.json({ ...parseChapterContent(restored), status_label: restoredStatusLabel, project_slug: updatedProject?.slug });
+      res.json({
+        ...parseChapterContent(restored),
+        status_label: restoredStatusLabel,
+        project_slug: updatedProject?.slug,
+      });
     }),
   );
 
