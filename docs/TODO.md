@@ -19,6 +19,7 @@
 - Better styling on main page. Simple is good? Need sorting, filtering.
 
 # Features
+
 - Need help page. Not until close to done. CLAUDE.md instructions to ensure
   it's updated after every public-facing change.
 - Logo should link to github repo. Eventually, to a website.
@@ -26,3 +27,7 @@
 - Import from Word, Google Docs, etc.
 - Screenplay support? Final Draft support? Fountain support?
 - Shareable README
+- Red line for spelling errors needs to be more visible.
+- Can we do grammar checks?
+- Search by regex? Is there a way that non-technical users can use regex?
+  Search should be "this chapter" or "all chapters"?
