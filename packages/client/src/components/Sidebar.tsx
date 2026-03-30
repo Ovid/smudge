@@ -115,12 +115,16 @@ function StatusBadge({ chapter, statuses, onStatusChange, onAnnounce }: StatusBa
                   }
                   if (e.key === "Home") {
                     e.preventDefault();
-                    (e.currentTarget.parentElement?.firstElementChild as HTMLElement | null)?.focus();
+                    (
+                      e.currentTarget.parentElement?.firstElementChild as HTMLElement | null
+                    )?.focus();
                     return;
                   }
                   if (e.key === "End") {
                     e.preventDefault();
-                    (e.currentTarget.parentElement?.lastElementChild as HTMLElement | null)?.focus();
+                    (
+                      e.currentTarget.parentElement?.lastElementChild as HTMLElement | null
+                    )?.focus();
                     return;
                   }
                   if (e.key === "Enter" || e.key === " ") {

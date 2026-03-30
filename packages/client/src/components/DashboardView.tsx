@@ -203,9 +203,7 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
                   <th
                     key={key}
                     className={className}
-                    aria-sort={
-                      sortKey === key ? (sortAsc ? "ascending" : "descending") : "none"
-                    }
+                    aria-sort={sortKey === key ? (sortAsc ? "ascending" : "descending") : "none"}
                   >
                     <button
                       onClick={() => handleSort(key)}
