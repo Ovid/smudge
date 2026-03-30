@@ -273,4 +273,64 @@ describe("Sidebar", () => {
 
     expect(onStatusChange).toHaveBeenCalledWith("ch1", "edited");
   });
+
+  it("closes status dropdown on outside click", async () => {
+    renderSidebar();
+
+    const badge = screen.getByRole("button", { name: "Chapter status: Outline" });
+    await userEvent.click(badge);
+
+    // Dropdown should be open
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+
+    // Click outside the dropdown (on the sidebar heading)
+    await userEvent.click(screen.getByText("Test Project"));
+
+    // Dropdown should be closed
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
+  it("closes status dropdown on Escape key", async () => {
+    renderSidebar();
+
+    const badge = screen.getByRole("button", { name: "Chapter status: Outline" });
+    await userEvent.click(badge);
+
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
+  it("selects status with Enter key in dropdown", async () => {
+    const onStatusChange = vi.fn();
+    renderSidebar({ onStatusChange });
+
+    const badge = screen.getByRole("button", { name: "Chapter status: Outline" });
+    await userEvent.click(badge);
+
+    const revisedOption = screen.getByRole("option", { name: "Revised" });
+    revisedOption.focus();
+    await userEvent.keyboard("{Enter}");
+
+    expect(onStatusChange).toHaveBeenCalledWith("ch1", "revised");
+    // Dropdown should close after selection
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
+  it("adjusts sidebar width with keyboard arrows on resize handle", async () => {
+    const onResize = vi.fn();
+    renderSidebar({ onResize, width: 260 });
+
+    const resizeHandle = screen.getByLabelText("Resize sidebar");
+    resizeHandle.focus();
+
+    await userEvent.keyboard("{ArrowRight}");
+    expect(onResize).toHaveBeenCalledWith(270);
+
+    onResize.mockClear();
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(onResize).toHaveBeenCalledWith(250);
+  });
 });

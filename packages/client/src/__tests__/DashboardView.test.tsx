@@ -149,4 +149,90 @@ describe("DashboardView", () => {
     expect(screen.getByText("0 words")).toBeInTheDocument();
     expect(screen.getByText("0 chapters")).toBeInTheDocument();
   });
+
+  it("sorts chapters by title when clicking Title header", async () => {
+    vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
+
+    render(<DashboardView slug="test-project" statuses={statuses} onNavigateToChapter={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Chapter One")).toBeInTheDocument();
+    });
+
+    // Default sort is by sort_order: Chapter One (0), Chapter Two (1)
+    const rows = screen.getAllByRole("row");
+    // rows[0] is header, rows[1] and rows[2] are data
+    expect(rows[1]).toHaveTextContent("Chapter One");
+    expect(rows[2]).toHaveTextContent("Chapter Two");
+
+    // Click Title header to sort by title ascending
+    await userEvent.click(screen.getByRole("button", { name: /Title/ }));
+
+    const sortedRows = screen.getAllByRole("row");
+    expect(sortedRows[1]).toHaveTextContent("Chapter One");
+    expect(sortedRows[2]).toHaveTextContent("Chapter Two");
+  });
+
+  it("toggles sort direction on second click", async () => {
+    vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
+
+    render(<DashboardView slug="test-project" statuses={statuses} onNavigateToChapter={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Chapter One")).toBeInTheDocument();
+    });
+
+    const titleButton = screen.getByRole("button", { name: /Title/ });
+
+    // First click: ascending by title
+    await userEvent.click(titleButton);
+    // Second click: descending by title
+    await userEvent.click(titleButton);
+
+    const rows = screen.getAllByRole("row");
+    expect(rows[1]).toHaveTextContent("Chapter Two");
+    expect(rows[2]).toHaveTextContent("Chapter One");
+  });
+
+  it("sorts by status using workflow order", async () => {
+    // Create data with chapters in different statuses
+    const statusSortData = {
+      ...dashboardData,
+      chapters: [
+        {
+          id: "ch-1",
+          title: "Chapter One",
+          status: "revised",
+          status_label: "Revised",
+          word_count: 500,
+          updated_at: "2026-03-28T10:00:00Z",
+          sort_order: 0,
+        },
+        {
+          id: "ch-2",
+          title: "Chapter Two",
+          status: "outline",
+          status_label: "Outline",
+          word_count: 1200,
+          updated_at: "2026-03-29T10:00:00Z",
+          sort_order: 1,
+        },
+      ],
+    };
+    vi.mocked(api.projects.dashboard).mockResolvedValue(statusSortData);
+
+    render(<DashboardView slug="test-project" statuses={statuses} onNavigateToChapter={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Chapter One")).toBeInTheDocument();
+    });
+
+    // Click Status header to sort by status
+    await userEvent.click(screen.getByRole("button", { name: /Status/ }));
+
+    const rows = screen.getAllByRole("row");
+    // outline (sort_order 0) should come before revised (sort_order 2)
+    expect(rows[1]).toHaveTextContent("Chapter Two"); // outline
+    expect(rows[2]).toHaveTextContent("Chapter One"); // revised
+  });
 });

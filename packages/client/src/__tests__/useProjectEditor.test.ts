@@ -470,4 +470,52 @@ describe("useProjectEditor", () => {
 
     expect(result.current.error).toBe("rename boom");
   });
+
+  it("handleStatusChange updates chapter status optimistically", async () => {
+    vi.mocked(api.chapters.update).mockResolvedValue({ ...mockChapter1, status: "revised" });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "revised");
+    });
+
+    expect(result.current.project?.chapters[0].status).toBe("revised");
+  });
+
+  it("handleStatusChange reverts on API failure", async () => {
+    vi.mocked(api.chapters.update).mockRejectedValue(new Error("status boom"));
+    // When the status change fails, it reloads the project from server
+    const reloadedProject = {
+      ...mockProject,
+      chapters: [{ ...mockChapter1, status: "outline" }, mockChapter2],
+    };
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockResolvedValueOnce(reloadedProject); // reload after failure
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "revised");
+    });
+
+    // After revert, project should be reloaded from server
+    expect(result.current.project?.chapters[0].status).toBe("outline");
+  });
+
+  it("handleStatusChange updates activeChapter status when it's the active chapter", async () => {
+    vi.mocked(api.chapters.update).mockResolvedValue({ ...mockChapter1, status: "edited" });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "edited");
+    });
+
+    expect(result.current.activeChapter?.status).toBe("edited");
+  });
 });
