@@ -263,12 +263,10 @@ export function projectsRouter(db: Knex): Router {
       const chapter = await db("chapters").where({ id: chapterId }).first();
       const statusLabelMap = await getStatusLabelMap(db);
       const parsedChapter = parseChapterContent(chapter);
-      res
-        .status(201)
-        .json({
-          ...parsedChapter,
-          status_label: statusLabelMap[chapter.status as string] ?? (chapter.status as string),
-        });
+      res.status(201).json({
+        ...parsedChapter,
+        status_label: statusLabelMap[chapter.status as string] ?? (chapter.status as string),
+      });
     }),
   );
 
