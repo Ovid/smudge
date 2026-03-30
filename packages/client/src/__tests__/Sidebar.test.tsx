@@ -59,6 +59,8 @@ function renderSidebar(overrides = {}) {
     onOpenTrash: vi.fn(),
     statuses: mockStatuses,
     onStatusChange: vi.fn(),
+    width: 260,
+    onResize: vi.fn(),
   };
   return render(<Sidebar {...defaults} {...overrides} />);
 }
@@ -251,6 +253,12 @@ describe("Sidebar", () => {
 
     const options = screen.getAllByRole("option");
     expect(options).toHaveLength(5);
+  });
+
+  it("renders resize handle", () => {
+    renderSidebar();
+
+    expect(screen.getByLabelText("Resize sidebar")).toBeInTheDocument();
   });
 
   it("calls onStatusChange when selecting a status", async () => {

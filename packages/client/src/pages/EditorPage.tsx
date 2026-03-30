@@ -10,6 +10,26 @@ import { STRINGS } from "../strings";
 import { useProjectEditor } from "../hooks/useProjectEditor";
 import { api } from "../api/client";
 
+const SIDEBAR_DEFAULT_WIDTH = 260;
+const SIDEBAR_MIN_WIDTH = 180;
+const SIDEBAR_MAX_WIDTH = 480;
+const SIDEBAR_WIDTH_KEY = "smudge:sidebar-width";
+
+function getSavedSidebarWidth(): number {
+  try {
+    const stored = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (stored !== null) {
+      const parsed = Number(stored);
+      if (!Number.isNaN(parsed) && parsed >= SIDEBAR_MIN_WIDTH && parsed <= SIDEBAR_MAX_WIDTH) {
+        return parsed;
+      }
+    }
+  } catch {
+    // localStorage unavailable
+  }
+  return SIDEBAR_DEFAULT_WIDTH;
+}
+
 export function EditorPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
@@ -44,6 +64,16 @@ export function EditorPage() {
   const projectEscapePressedRef = useRef(false);
   const isSavingTitleRef = useRef(false);
   const isSavingProjectTitleRef = useRef(false);
+
+  const [sidebarWidth, setSidebarWidth] = useState(getSavedSidebarWidth);
+  const handleSidebarResize = useCallback((newWidth: number) => {
+    setSidebarWidth(newWidth);
+    try {
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(newWidth));
+    } catch {
+      // localStorage unavailable
+    }
+  }, []);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<Chapter | null>(null);
@@ -260,6 +290,8 @@ export function EditorPage() {
             onOpenTrash={openTrash}
             statuses={statuses}
             onStatusChange={handleStatusChange}
+            width={sidebarWidth}
+            onResize={handleSidebarResize}
           />
         )}
         <div className="flex-1 flex flex-col items-center justify-center">
@@ -297,6 +329,8 @@ export function EditorPage() {
           onOpenTrash={openTrash}
           statuses={statuses}
           onStatusChange={handleStatusChange}
+          width={sidebarWidth}
+          onResize={handleSidebarResize}
         />
       )}
 

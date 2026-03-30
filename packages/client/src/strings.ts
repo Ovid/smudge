@@ -76,6 +76,7 @@ export const STRINGS = {
       `Chapter \u201c${title}\u201d moved to position ${position} of ${total}`,
     statusLabel: (label: string) => `Chapter status: ${label}`,
     statusChanged: (label: string) => `Chapter status changed to ${label}`,
+    resizeHandle: "Resize sidebar",
   },
   status: {
     outline: "Outline",

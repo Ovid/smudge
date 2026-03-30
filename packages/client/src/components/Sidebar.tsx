@@ -153,6 +153,8 @@ interface SidebarProps {
   onOpenTrash: () => void;
   statuses: ChapterStatusRow[];
   onStatusChange: (chapterId: string, status: string) => void;
+  width: number;
+  onResize: (width: number) => void;
 }
 
 interface SortableChapterItemProps {
@@ -277,6 +279,8 @@ export function Sidebar({
   onOpenTrash,
   statuses,
   onStatusChange,
+  width,
+  onResize,
 }: SidebarProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
@@ -362,7 +366,8 @@ export function Sidebar({
   return (
     <aside
       aria-label={STRINGS.a11y.chaptersSidebar}
-      className="w-[260px] min-w-[260px] border-r border-border bg-bg-sidebar flex flex-col h-full overflow-hidden"
+      className="border-r border-border bg-bg-sidebar flex flex-col h-full overflow-hidden relative"
+      style={{ width: `${width}px`, minWidth: `${width}px` }}
     >
       <div className="px-4 py-3 border-b border-border">
         <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wide">
@@ -423,6 +428,38 @@ export function Sidebar({
       <div aria-live="assertive" className="sr-only">
         {announcement}
       </div>
+
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={STRINGS.sidebar.resizeHandle}
+        tabIndex={0}
+        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent-light focus:bg-accent-light focus:outline-none"
+        onMouseDown={(e) => {
+          const startX = e.clientX;
+          const startWidth = width;
+          function onMouseMove(ev: MouseEvent) {
+            const newWidth = Math.min(480, Math.max(180, startWidth + ev.clientX - startX));
+            onResize(newWidth);
+          }
+          function onMouseUp() {
+            document.removeEventListener("mousemove", onMouseMove);
+            document.removeEventListener("mouseup", onMouseUp);
+          }
+          document.addEventListener("mousemove", onMouseMove);
+          document.addEventListener("mouseup", onMouseUp);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowRight") {
+            e.preventDefault();
+            onResize(Math.min(480, width + 10));
+          }
+          if (e.key === "ArrowLeft") {
+            e.preventDefault();
+            onResize(Math.max(180, width - 10));
+          }
+        }}
+      />
     </aside>
   );
 }
