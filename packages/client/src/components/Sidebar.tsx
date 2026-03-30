@@ -29,6 +29,8 @@ interface StatusBadgeProps {
 function StatusBadge({ chapter, statuses, onStatusChange, onAnnounce }: StatusBadgeProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const listboxRef = useRef<HTMLUListElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
 
   const currentStatus = chapter.status || "outline";
   const currentStatusRow = statuses.find((s) => s.status === currentStatus);
@@ -37,6 +39,10 @@ function StatusBadge({ chapter, statuses, onStatusChange, onAnnounce }: StatusBa
 
   useEffect(() => {
     if (!open) return;
+    // Focus the currently-selected option when the dropdown opens
+    const selected = listboxRef.current?.querySelector('[aria-selected="true"]') as HTMLElement | null;
+    selected?.focus();
+
     function handleClickOutside(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
@@ -50,6 +56,7 @@ function StatusBadge({ chapter, statuses, onStatusChange, onAnnounce }: StatusBa
     if (e.key === "Escape") {
       e.preventDefault();
       setOpen(false);
+      toggleRef.current?.focus();
     }
   }, []);
 
@@ -64,12 +71,21 @@ function StatusBadge({ chapter, statuses, onStatusChange, onAnnounce }: StatusBa
   return (
     <div ref={containerRef} className="relative">
       <button
+        ref={toggleRef}
         type="button"
         onClick={(e) => {
           e.stopPropagation();
           setOpen((prev) => !prev);
         }}
-        onKeyDown={handleKeyDown}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!open) setOpen(true);
+          } else {
+            handleKeyDown(e);
+          }
+        }}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={STRINGS.sidebar.statusLabel(label)}
@@ -84,6 +100,7 @@ function StatusBadge({ chapter, statuses, onStatusChange, onAnnounce }: StatusBa
       </button>
       {open && (
         <ul
+          ref={listboxRef}
           role="listbox"
           aria-label={STRINGS.sidebar.statusLabel(label)}
           className="absolute left-0 top-full mt-1 z-50 bg-bg-primary border border-border rounded shadow-lg py-1 min-w-[120px]"
@@ -136,6 +153,7 @@ function StatusBadge({ chapter, statuses, onStatusChange, onAnnounce }: StatusBa
                   if (e.key === "Escape") {
                     e.preventDefault();
                     setOpen(false);
+                    toggleRef.current?.focus();
                   }
                 }}
                 className={`flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer hover:bg-bg-hover focus:outline-none focus:ring-2 focus:ring-focus-ring ${
