@@ -179,6 +179,7 @@ export function EditorPage() {
       if (ctrl && e.shiftKey && e.key === "P") {
         e.preventDefault();
         editorRef.current?.flushSave().then(() => {
+          setTrashOpen(false);
           setViewMode((prev) => (prev === "preview" ? "editor" : "preview"));
         });
         return;
@@ -412,6 +413,7 @@ export function EditorPage() {
           <div className="flex gap-1">
             <button
               onClick={() => {
+                setTrashOpen(false);
                 setViewMode("editor");
               }}
               aria-current={viewMode === "editor" ? "page" : undefined}
@@ -426,6 +428,7 @@ export function EditorPage() {
             <button
               onClick={async () => {
                 await editorRef.current?.flushSave();
+                setTrashOpen(false);
                 setViewMode("preview");
               }}
               aria-current={viewMode === "preview" ? "page" : undefined}
@@ -440,6 +443,7 @@ export function EditorPage() {
             <button
               onClick={async () => {
                 await editorRef.current?.flushSave();
+                setTrashOpen(false);
                 setViewMode("dashboard");
               }}
               aria-current={viewMode === "dashboard" ? "page" : undefined}
