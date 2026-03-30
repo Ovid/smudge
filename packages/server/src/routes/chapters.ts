@@ -66,6 +66,22 @@ export function chaptersRouter(db: Knex): Router {
         updates.word_count = countWords(parsed.data.content as Record<string, unknown>);
       }
 
+      if (parsed.data.status !== undefined) {
+        const validStatus = await db("chapter_statuses")
+          .where({ status: parsed.data.status })
+          .first();
+        if (!validStatus) {
+          res.status(400).json({
+            error: {
+              code: "INVALID_STATUS",
+              message: `Invalid status: ${parsed.data.status}`,
+            },
+          });
+          return;
+        }
+        updates.status = parsed.data.status;
+      }
+
       await db.transaction(async (trx) => {
         await trx("chapters").where({ id: req.params.id }).update(updates);
         await trx("projects")

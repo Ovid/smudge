@@ -205,7 +205,17 @@ export function projectsRouter(db: Knex): Router {
         .orderBy("sort_order", "asc")
         .select("*");
 
-      const parsedChapters = chapters.map((ch: Record<string, unknown>) => parseChapterContent(ch));
+      const parsedChapters = await Promise.all(
+        chapters.map(async (ch: Record<string, unknown>) => {
+          const statusRow = await db("chapter_statuses")
+            .where({ status: ch.status })
+            .first();
+          return {
+            ...parseChapterContent(ch),
+            status_label: statusRow?.label ?? null,
+          };
+        }),
+      );
 
       res.json({ ...project, chapters: parsedChapters });
     }),
@@ -310,6 +320,78 @@ export function projectsRouter(db: Knex): Router {
       });
 
       res.json({ message: "Chapter order updated." });
+    }),
+  );
+
+  router.get(
+    "/:slug/dashboard",
+    asyncHandler(async (req, res) => {
+      const project = await db("projects")
+        .where({ slug: req.params.slug })
+        .whereNull("deleted_at")
+        .first();
+
+      if (!project) {
+        res.status(404).json({
+          error: { code: "NOT_FOUND", message: "Project not found." },
+        });
+        return;
+      }
+
+      const chapters = await db("chapters")
+        .where({ project_id: project.id })
+        .whereNull("deleted_at")
+        .orderBy("sort_order", "asc")
+        .select("id", "title", "status", "word_count", "updated_at", "sort_order");
+
+      const chaptersWithLabels = await Promise.all(
+        chapters.map(async (ch: Record<string, unknown>) => {
+          const statusRow = await db("chapter_statuses")
+            .where({ status: ch.status })
+            .first();
+          return {
+            ...ch,
+            status_label: statusRow?.label ?? null,
+          };
+        }),
+      );
+
+      // Build status_summary with all 5 statuses included
+      const allStatuses = await db("chapter_statuses").orderBy("sort_order", "asc").select("status");
+      const statusSummary: Record<string, number> = {};
+      for (const s of allStatuses) {
+        statusSummary[s.status] = 0;
+      }
+      for (const ch of chapters) {
+        const status = ch.status as string;
+        if (status in statusSummary) {
+          statusSummary[status]++;
+        }
+      }
+
+      // Build totals
+      const totalWordCount = chapters.reduce(
+        (sum: number, ch: Record<string, unknown>) => sum + (ch.word_count as number),
+        0,
+      );
+      const updatedAts = chapters.map((ch: Record<string, unknown>) => ch.updated_at as string);
+      const mostRecentEdit = updatedAts.length > 0
+        ? updatedAts.reduce((a, b) => (a > b ? a : b))
+        : null;
+      const leastRecentEdit = updatedAts.length > 0
+        ? updatedAts.reduce((a, b) => (a < b ? a : b))
+        : null;
+
+      res.json({
+        chapters: chaptersWithLabels,
+        status_summary: statusSummary,
+        totals: {
+          word_count: totalWordCount,
+          chapter_count: chapters.length,
+          most_recent_edit: mostRecentEdit,
+          least_recent_edit: leastRecentEdit,
+        },
+      });
     }),
   );
 
