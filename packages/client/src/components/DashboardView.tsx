@@ -207,7 +207,7 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
                       className="font-medium text-text-secondary hover:text-text-primary"
                     >
                       {label}
-                      {sortKey === key ? (sortAsc ? " \u2191" : " \u2193") : ""}
+                      {sortKey === key ? (sortAsc ? STRINGS.dashboard.sortAscending : STRINGS.dashboard.sortDescending) : ""}
                     </button>
                   </th>
                 ))}

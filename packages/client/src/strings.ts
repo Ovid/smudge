@@ -142,5 +142,7 @@ export const STRINGS = {
     healthSectionLabel: "Manuscript health",
     statusSummaryLabel: "Status summary",
     statusDistributionLabel: "Chapter status distribution",
+    sortAscending: " \u2191",
+    sortDescending: " \u2193",
   },
 } as const;
