@@ -67,6 +67,9 @@ export function chaptersRouter(db: Knex): Router {
       }
 
       if (parsed.data.status !== undefined) {
+        // Intentional: Zod enum validates the status format, but this DB check
+        // guards against drift between the enum and the chapter_statuses table
+        // (e.g., a new status added to the enum without a corresponding migration).
         const validStatus = await db("chapter_statuses")
           .where({ status: parsed.data.status })
           .first();
