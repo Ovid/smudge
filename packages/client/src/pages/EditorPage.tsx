@@ -502,8 +502,6 @@ export function EditorPage() {
         )}
 
         <footer
-          role="status"
-          aria-live="polite"
           className="border-t border-border bg-bg-primary px-6 py-2 flex items-center justify-between text-sm text-text-secondary"
         >
           <div>
@@ -517,7 +515,7 @@ export function EditorPage() {
               </span>
             )}
           </div>
-          <div>
+          <div role="status" aria-live="polite">
             {saveStatus === "unsaved" && STRINGS.editor.unsaved}
             {saveStatus === "saving" && STRINGS.editor.saving}
             {saveStatus === "saved" && STRINGS.editor.saved}

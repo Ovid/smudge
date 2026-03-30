@@ -81,9 +81,9 @@ describe("Status bar", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      const statusBar = document.querySelector("[role='status']");
-      expect(statusBar).not.toBeNull();
-      expect(statusBar?.textContent).toContain("words");
+      const footer = document.querySelector("footer");
+      expect(footer).not.toBeNull();
+      expect(footer?.textContent).toContain("words");
     });
   });
 
@@ -91,8 +91,8 @@ describe("Status bar", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      const statusBar = document.querySelector("[role='status']");
-      expect(statusBar?.textContent).toContain("3");
+      const footer = document.querySelector("footer");
+      expect(footer?.textContent).toContain("3");
     });
   });
 

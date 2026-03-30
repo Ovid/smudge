@@ -433,6 +433,9 @@ export function Sidebar({
         role="separator"
         aria-orientation="vertical"
         aria-label={STRINGS.sidebar.resizeHandle}
+        aria-valuenow={width}
+        aria-valuemin={180}
+        aria-valuemax={480}
         tabIndex={0}
         className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent-light focus:bg-accent-light focus:outline-none"
         onMouseDown={(e) => {

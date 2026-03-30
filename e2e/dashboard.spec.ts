@@ -133,13 +133,7 @@ test.describe("Dashboard and Status E2e Tests", () => {
     await dashboardTab.click();
     await expect(page.getByRole("heading", { name: "Manuscript Dashboard" })).toBeVisible();
 
-    // Run aXe audit — exclude pre-existing violations tracked for future fix:
-    //   aria-allowed-role: footer[role=status] not allowed on <footer>
-    //   aria-required-attr: separator missing aria-valuenow
-    //   color-contrast: several muted/accent colors below 4.5:1
-    const results = await new AxeBuilder({ page })
-      .disableRules(["aria-allowed-role", "aria-required-attr", "color-contrast"])
-      .analyze();
+    const results = await new AxeBuilder({ page }).analyze();
     expect(results.violations).toEqual([]);
   });
 
@@ -149,10 +143,7 @@ test.describe("Dashboard and Status E2e Tests", () => {
     // Wait for the sidebar and status badge to render
     await expect(page.getByLabel(/^Chapter status:/)).toBeVisible();
 
-    // Run aXe audit — same exclusions as dashboard test (pre-existing issues)
-    const results = await new AxeBuilder({ page })
-      .disableRules(["aria-allowed-role", "aria-required-attr", "color-contrast"])
-      .analyze();
+    const results = await new AxeBuilder({ page }).analyze();
     expect(results.violations).toEqual([]);
   });
 });
