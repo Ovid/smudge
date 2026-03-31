@@ -126,6 +126,7 @@ export function useProjectEditor(slug: string | undefined) {
   const handleCreateChapter = useCallback(async () => {
     const slug = projectSlugRef.current;
     if (!slug) return;
+    ++saveSeqRef.current; // cancel any in-flight save retries for the old chapter
     try {
       const newChapter = await api.chapters.create(slug);
       setActiveChapter(newChapter);
@@ -160,6 +161,7 @@ export function useProjectEditor(slug: string | undefined) {
   }, [project]);
 
   const handleDeleteChapter = useCallback(async (chapter: Chapter) => {
+    ++saveSeqRef.current; // cancel any in-flight save retries for the deleted chapter
     try {
       await api.chapters.delete(chapter.id);
       clearCachedContent(chapter.id);
@@ -298,7 +300,8 @@ export function useProjectEditor(slug: string | undefined) {
       if (activeChapterRef.current?.id === chapterId) {
         // Only update the title — don't overwrite content with stale server data.
         // The editor holds the current truth (same principle as handleSave).
-        setActiveChapter((prev) => (prev ? { ...prev, title } : prev));
+        // Guard with ID check to prevent applying title to wrong chapter on rapid switch.
+        setActiveChapter((prev) => (prev?.id === chapterId ? { ...prev, title } : prev));
       }
       setProject((prev) => {
         if (!prev) return prev;
