@@ -87,6 +87,14 @@ export function EditorPage() {
   const [navAnnouncement, setNavAnnouncement] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
+  const [savedWordCount, setSavedWordCount] = useState<string>("");
+
+  // Announce word count to screen readers only on save, not on every keystroke
+  useEffect(() => {
+    if (saveStatus === "saved") {
+      setSavedWordCount(STRINGS.project.wordCount(chapterWordCount));
+    }
+  }, [saveStatus, chapterWordCount]);
 
   useEffect(() => {
     let cancelled = false;
@@ -581,7 +589,7 @@ export function EditorPage() {
         )}
 
         <footer className="border-t border-border bg-bg-primary px-6 py-2 flex items-center justify-between text-sm text-text-secondary">
-          <div aria-live="polite">
+          <div>
             {STRINGS.project.wordCount(chapterWordCount)}
             {project && (
               <span className="ml-3 text-text-muted">
@@ -619,6 +627,9 @@ export function EditorPage() {
 
       <div aria-live="polite" className="sr-only" data-testid="nav-announcement">
         {navAnnouncement}
+      </div>
+      <div aria-live="polite" className="sr-only" data-testid="word-count-announcement">
+        {savedWordCount}
       </div>
 
       {shortcutHelpOpen && (
