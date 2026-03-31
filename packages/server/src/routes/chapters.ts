@@ -112,6 +112,15 @@ export function chaptersRouter(db: Knex): Router {
         });
         return;
       }
+      if (updated.content_corrupt) {
+        res.status(500).json({
+          error: {
+            code: "CORRUPT_CONTENT",
+            message: "Chapter content is corrupted and cannot be loaded.",
+          },
+        });
+        return;
+      }
       const updatedStatusLabel = await getStatusLabel(db, updated.status as string);
 
       res.json({ ...updated, status_label: updatedStatusLabel });
@@ -207,6 +216,15 @@ export function chaptersRouter(db: Knex): Router {
       if (!restored) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Chapter not found." },
+        });
+        return;
+      }
+      if (restored.content_corrupt) {
+        res.status(500).json({
+          error: {
+            code: "CORRUPT_CONTENT",
+            message: "Chapter content is corrupted and cannot be loaded.",
+          },
         });
         return;
       }

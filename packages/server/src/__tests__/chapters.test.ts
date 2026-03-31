@@ -229,6 +229,20 @@ describe("PATCH /api/chapters/:id", () => {
     expect(getRes.status).toBe(200);
     expect(getRes.body.content).toEqual(validContent);
   });
+
+  it("returns 500 CORRUPT_CONTENT when re-fetched chapter has corrupt JSON after title-only update", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { chapterId } = await createProjectWithChapter(t.app);
+
+    // Directly corrupt the content in the DB
+    await t.db("chapters").where({ id: chapterId }).update({ content: "{invalid json!!!" });
+
+    // PATCH only the title — content is not overwritten
+    const res = await request(t.app).patch(`/api/chapters/${chapterId}`).send({ title: "New Title" });
+    expect(res.status).toBe(500);
+    expect(res.body.error.code).toBe("CORRUPT_CONTENT");
+    errorSpy.mockRestore();
+  });
 });
 
 describe("DELETE /api/chapters/:id", () => {
@@ -373,5 +387,21 @@ describe("POST /api/chapters/:id/restore", () => {
 
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe("PROJECT_PURGED");
+  });
+
+  it("returns 500 CORRUPT_CONTENT when restored chapter has corrupt JSON", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { chapterId } = await createProjectWithChapter(t.app);
+
+    // Soft-delete the chapter
+    await request(t.app).delete(`/api/chapters/${chapterId}`);
+
+    // Directly corrupt the content in the DB
+    await t.db("chapters").where({ id: chapterId }).update({ content: "{invalid json!!!" });
+
+    const res = await request(t.app).post(`/api/chapters/${chapterId}/restore`);
+    expect(res.status).toBe(500);
+    expect(res.body.error.code).toBe("CORRUPT_CONTENT");
+    errorSpy.mockRestore();
   });
 });
