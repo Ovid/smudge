@@ -2,7 +2,7 @@ import { Router } from "express";
 import type { Knex } from "knex";
 import { UpdateChapterSchema, countWords, generateSlug } from "@smudge/shared";
 import { asyncHandler } from "../app";
-import { parseChapterContent } from "./parseChapterContent";
+import { queryChapter } from "./chapterQueries";
 import { resolveUniqueSlug } from "./resolve-slug";
 import { getStatusLabel } from "./status-labels";
 
@@ -12,10 +12,9 @@ export function chaptersRouter(db: Knex): Router {
   router.get(
     "/:id",
     asyncHandler(async (req, res) => {
-      const chapter = await db("chapters")
-        .where({ id: req.params.id })
-        .whereNull("deleted_at")
-        .first();
+      const chapter = await queryChapter(
+        db("chapters").where({ id: req.params.id }).whereNull("deleted_at"),
+      );
 
       if (!chapter) {
         res.status(404).json({
@@ -24,9 +23,8 @@ export function chaptersRouter(db: Knex): Router {
         return;
       }
 
-      const parsed = parseChapterContent(chapter);
       const status_label = await getStatusLabel(db, chapter.status as string);
-      res.json({ ...parsed, status_label });
+      res.json({ ...chapter, status_label });
     }),
   );
 
@@ -95,17 +93,18 @@ export function chaptersRouter(db: Knex): Router {
           .update({ updated_at: new Date().toISOString() });
       });
 
-      const updated = await db("chapters").where({ id: req.params.id }).first();
+      const updated = await queryChapter(
+        db("chapters").where({ id: req.params.id }),
+      );
       if (!updated) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Chapter not found." },
         });
         return;
       }
-      const parsedUpdated = parseChapterContent(updated);
       const updatedStatusLabel = await getStatusLabel(db, updated.status as string);
 
-      res.json({ ...parsedUpdated, status_label: updatedStatusLabel });
+      res.json({ ...updated, status_label: updatedStatusLabel });
     }),
   );
 
@@ -192,7 +191,9 @@ export function chaptersRouter(db: Knex): Router {
         throw err;
       }
 
-      const restored = await db("chapters").where({ id: req.params.id }).first();
+      const restored = await queryChapter(
+        db("chapters").where({ id: req.params.id }),
+      );
       if (!restored) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Chapter not found." },
@@ -202,7 +203,7 @@ export function chaptersRouter(db: Knex): Router {
       const updatedProject = await db("projects").where({ id: chapter.project_id }).first();
       const restoredStatusLabel = await getStatusLabel(db, restored.status as string);
       res.json({
-        ...parseChapterContent(restored),
+        ...restored,
         status_label: restoredStatusLabel,
         project_slug: updatedProject?.slug,
       });

@@ -170,7 +170,7 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Status:** Fixed
 - **Status reason:** Added console.error logging with chapter ID and error details on corrupt JSON parse failure
 - **Status date:** 2026-03-31 11:16 UTC
-- **Status commit:** (pending)
+- **Status commit:** 6098193
 
 ### [F-4] EditorPage.tsx is a large page-level orchestrator
 - **Category:** 2 (God object)
@@ -192,6 +192,10 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** Every route handler that reads chapters must remember to call `parseChapterContent()` to convert SQLite-stored JSON strings to objects. There are 7 manual call sites. Missing a call would serve raw JSON strings to the client. The storage detail leaks into every endpoint.
 - **Evidence:** Call sites in `projects.ts:212,265,421` and `chapters.ts:27,105,195,205`
 - **Found by:** Coupling & Dependencies
+- **Status:** Fixed
+- **Status reason:** Extracted queryChapter/queryChapters helpers that encapsulate JSON parsing. Routes now use these instead of raw queries + manual parseChapterContent. Only chapterQueries.ts imports parseChapterContent.
+- **Status date:** 2026-03-31 11:20 UTC
+- **Status commit:** (pending)
 
 ### [F-7] flushSave must be called manually before chapter/mode switch
 - **Category:** 27 (Temporal coupling)

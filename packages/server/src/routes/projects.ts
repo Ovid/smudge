@@ -8,7 +8,7 @@ import {
   generateSlug,
 } from "@smudge/shared";
 import { asyncHandler } from "../app";
-import { parseChapterContent } from "./parseChapterContent";
+import { queryChapter, queryChapters } from "./chapterQueries";
 import { resolveUniqueSlug } from "./resolve-slug";
 import { getStatusLabelMap } from "./status-labels";
 
@@ -200,20 +200,22 @@ export function projectsRouter(db: Knex): Router {
         return;
       }
 
-      const chapters = await db("chapters")
-        .where({ project_id: project.id })
-        .whereNull("deleted_at")
-        .orderBy("sort_order", "asc")
-        .select("*");
+      const chapters = await queryChapters(
+        db("chapters")
+          .where({ project_id: project.id })
+          .whereNull("deleted_at")
+          .orderBy("sort_order", "asc")
+          .select("*"),
+      );
 
       const statusLabelMap = await getStatusLabelMap(db);
 
-      const parsedChapters = chapters.map((ch: Record<string, unknown>) => ({
-        ...parseChapterContent(ch),
+      const chaptersWithLabels = chapters.map((ch) => ({
+        ...ch,
         status_label: statusLabelMap[ch.status as string] ?? (ch.status as string),
       }));
 
-      res.json({ ...project, chapters: parsedChapters });
+      res.json({ ...project, chapters: chaptersWithLabels });
     }),
   );
 
@@ -254,7 +256,9 @@ export function projectsRouter(db: Knex): Router {
 
       await db("projects").where({ id: project.id }).update({ updated_at: now });
 
-      const chapter = await db("chapters").where({ id: chapterId }).first();
+      const chapter = await queryChapter(
+        db("chapters").where({ id: chapterId }),
+      );
       if (!chapter) {
         res.status(500).json({
           error: { code: "INTERNAL_ERROR", message: "Failed to retrieve created chapter." },
@@ -262,9 +266,8 @@ export function projectsRouter(db: Knex): Router {
         return;
       }
       const statusLabelMap = await getStatusLabelMap(db);
-      const parsedChapter = parseChapterContent(chapter);
       res.status(201).json({
-        ...parsedChapter,
+        ...chapter,
         status_label: statusLabelMap[chapter.status as string] ?? (chapter.status as string),
       });
     }),
@@ -412,13 +415,15 @@ export function projectsRouter(db: Knex): Router {
         return;
       }
 
-      const trashed = await db("chapters")
-        .where({ project_id: project.id })
-        .whereNotNull("deleted_at")
-        .orderBy("deleted_at", "desc")
-        .select("*");
+      const trashed = await queryChapters(
+        db("chapters")
+          .where({ project_id: project.id })
+          .whereNotNull("deleted_at")
+          .orderBy("deleted_at", "desc")
+          .select("*"),
+      );
 
-      res.json(trashed.map((ch: Record<string, unknown>) => parseChapterContent(ch)));
+      res.json(trashed);
     }),
   );
 
