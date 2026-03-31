@@ -200,11 +200,16 @@ describe("PATCH /api/chapters/:id", () => {
     // Remove a status from the DB table to simulate drift between Zod enum and DB
     await t.db("chapter_statuses").where({ status: "final" }).del();
 
-    const res = await request(t.app).patch(`/api/chapters/${chapterId}`).send({ status: "final" });
+    try {
+      const res = await request(t.app).patch(`/api/chapters/${chapterId}`).send({ status: "final" });
 
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe("VALIDATION_ERROR");
-    expect(res.body.error.message).toContain("Invalid status");
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+      expect(res.body.error.message).toContain("Invalid status");
+    } finally {
+      // Restore the deleted row so subsequent tests see all statuses
+      await t.db("chapter_statuses").insert({ status: "final", sort_order: 5, label: "Final" });
+    }
   });
 
   it("preserves content on invalid update", async () => {
