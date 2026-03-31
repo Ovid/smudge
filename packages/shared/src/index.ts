@@ -9,6 +9,7 @@ export {
 } from "./schemas";
 export { countWords } from "./wordcount";
 export { generateSlug } from "./slugify";
+export { UNTITLED_CHAPTER } from "./constants";
 export type {
   Project,
   Chapter,

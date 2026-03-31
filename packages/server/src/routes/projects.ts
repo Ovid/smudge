@@ -6,6 +6,7 @@ import {
   UpdateProjectSchema,
   ReorderChaptersSchema,
   generateSlug,
+  UNTITLED_CHAPTER,
 } from "@smudge/shared";
 import { asyncHandler } from "../app";
 import { queryChapter, queryChapters, stripCorruptFlag } from "./chapterQueries";
@@ -63,7 +64,7 @@ export function projectsRouter(db: Knex): Router {
           await trx("chapters").insert({
             id: chapterId,
             project_id: projectId,
-            title: "Untitled Chapter",
+            title: UNTITLED_CHAPTER,
             content: null,
             sort_order: 0,
             word_count: 0,
@@ -247,7 +248,7 @@ export function projectsRouter(db: Knex): Router {
         await trx("chapters").insert({
           id: chapterId,
           project_id: project.id,
-          title: "Untitled Chapter",
+          title: UNTITLED_CHAPTER,
           content: null,
           sort_order: (maxOrder?.max ?? -1) + 1,
           word_count: 0,

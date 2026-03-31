@@ -1,3 +1,5 @@
+import { UNTITLED_CHAPTER } from "@smudge/shared";
+
 export const STRINGS = {
   app: {
     name: "Smudge",
@@ -23,7 +25,7 @@ export const STRINGS = {
     },
   },
   chapter: {
-    untitledDefault: "Untitled Chapter",
+    untitledDefault: UNTITLED_CHAPTER,
   },
   delete: {
     buttonLabel: "Delete",

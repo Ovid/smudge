@@ -218,6 +218,9 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** The default chapter title "Untitled Chapter" appears as raw strings in the server (`projects.ts:66,247`) and as `STRINGS.chapter.untitledDefault` in the client. Also hardcoded in the initial migration. These independent sources could drift.
 - **Evidence:** `projects.ts:66` and `:247` — `title: "Untitled Chapter"` (raw). `strings.ts:26` — `untitledDefault: "Untitled Chapter"` (externalized). `001_create_projects_and_chapters.js:15`.
 - **Found by:** Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** Extracted UNTITLED_CHAPTER constant to @smudge/shared/constants.ts; server and client both import from shared
+- **Status date:** 2026-03-31 15:46 UTC
 
 ### [F-9] 30-day purge cutoff duplicated across packages
 - **Category:** 28 (Magic numbers/strings everywhere)
