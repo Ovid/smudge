@@ -116,7 +116,7 @@ describe("EditorPage error handling", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Project not found")).toBeInTheDocument();
+      expect(screen.getByText("Project not found.")).toBeInTheDocument();
     });
 
     expect(screen.getByRole("link", { name: "Back to Projects" })).toBeInTheDocument();
@@ -806,7 +806,7 @@ describe("EditorPage error view on project load failure", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Project not found")).toBeInTheDocument();
+      expect(screen.getByText("Server error")).toBeInTheDocument();
     });
 
     const backLink = screen.getByRole("link", { name: "Back to Projects" });

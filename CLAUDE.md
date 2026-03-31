@@ -8,7 +8,7 @@ When you have finished reading this file, announce "CLAUDE.md loaded"
 
 Smudge is a web-based writing application for long-form fiction and non-fiction, organized as projects containing chapters. It replaces Google Docs for book-length work. Single-user, no auth. The full MVP spec lives in `docs/plans/mvp.md`.
 
-**Current status:** Greenfield — spec complete, no source code yet.
+**Current status:** Active development — MVP implementation in progress.
 
 ## Tech Stack
 

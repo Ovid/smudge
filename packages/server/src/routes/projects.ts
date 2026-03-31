@@ -361,9 +361,7 @@ export function projectsRouter(db: Knex): Router {
       const allStatuses = await db("chapter_statuses")
         .orderBy("sort_order", "asc")
         .select("status", "label");
-      const statusLabelMap: Record<string, string> = Object.fromEntries(
-        allStatuses.map((r: { status: string; label: string }) => [r.status, r.label]),
-      );
+      const statusLabelMap = await getStatusLabelMap(db);
 
       const chaptersWithLabels = chapters.map((ch: Record<string, unknown>) => ({
         ...ch,
@@ -421,13 +419,13 @@ export function projectsRouter(db: Knex): Router {
         return;
       }
 
-      const trashed = await queryChapters(
-        db("chapters")
-          .where({ project_id: project.id })
-          .whereNotNull("deleted_at")
-          .orderBy("deleted_at", "desc")
-          .select("*"),
-      );
+      // Intentionally not using queryChapters here — trash view only needs metadata
+      // columns, not content. Loading full TipTap JSON for every chapter would be wasteful.
+      const trashed = await db("chapters")
+        .where({ project_id: project.id })
+        .whereNotNull("deleted_at")
+        .orderBy("deleted_at", "desc")
+        .select("id", "title", "status", "word_count", "sort_order", "deleted_at", "created_at", "updated_at");
 
       res.json(trashed);
     }),

@@ -325,7 +325,7 @@ export function EditorPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-primary">
         <div className="text-center">
-          <p className="text-text-primary text-lg mb-4">{STRINGS.error.projectNotFound}</p>
+          <p className="text-text-primary text-lg mb-4">{error}</p>
           <a
             href="/"
             onClick={(e) => {
@@ -582,7 +582,7 @@ export function EditorPage() {
         )}
 
         <footer className="border-t border-border bg-bg-primary px-6 py-2 flex items-center justify-between text-sm text-text-secondary">
-          <div>
+          <div aria-live="polite">
             {STRINGS.project.wordCount(chapterWordCount)}
             {project && (
               <span className="ml-3 text-text-muted">

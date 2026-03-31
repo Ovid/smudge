@@ -130,6 +130,7 @@ export function useProjectEditor(slug: string | undefined) {
   const handleSelectChapter = useCallback(async (chapterId: string) => {
     if (activeChapterRef.current && chapterId === activeChapterRef.current.id) return;
     ++saveSeqRef.current; // cancel any in-flight save retries for the old chapter
+    setSaveStatus("idle");
     const seq = ++selectChapterSeqRef.current;
     try {
       const chapter = await api.chapters.get(chapterId);
@@ -152,6 +153,7 @@ export function useProjectEditor(slug: string | undefined) {
   const handleDeleteChapter = useCallback(async (chapter: Chapter) => {
     try {
       await api.chapters.delete(chapter.id);
+      clearCachedContent(chapter.id);
       // Compute remaining from the ref (current state), not the stale closure
       const remaining = projectRef.current?.chapters.filter((c) => c.id !== chapter.id) ?? [];
       setProject((prev) => {
