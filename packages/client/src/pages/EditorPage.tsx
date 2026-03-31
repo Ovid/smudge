@@ -117,11 +117,9 @@ export function EditorPage() {
 
   const handleStatusChangeWithError = useCallback(
     async (chapterId: string, status: string) => {
-      try {
-        await handleStatusChange(chapterId, status);
-      } catch (err) {
-        console.error(err);
-        setActionError(err instanceof Error ? err.message : STRINGS.error.statusChangeFailed);
+      const errorMessage = await handleStatusChange(chapterId, status);
+      if (errorMessage) {
+        setActionError(errorMessage);
       }
     },
     [handleStatusChange],

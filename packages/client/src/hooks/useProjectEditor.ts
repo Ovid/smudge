@@ -279,8 +279,12 @@ export function useProjectEditor(slug: string | undefined) {
           setActiveChapter((prev) => (prev ? { ...prev, status: previousStatus } : prev));
         }
       }
-      throw err;
+      // Return error message for the caller to display (e.g., as a dismissible banner).
+      // Unlike other handlers that use setError (full-page overlay), status change
+      // failures are non-fatal — the revert already restored consistent state.
+      return err instanceof Error ? err.message : STRINGS.error.statusChangeFailed;
     }
+    return undefined;
   }, []);
 
   const handleRenameChapter = useCallback(async (chapterId: string, title: string) => {

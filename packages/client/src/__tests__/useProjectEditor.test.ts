@@ -498,12 +498,13 @@ describe("useProjectEditor", () => {
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
 
+    let errorMessage: string | undefined;
     await act(async () => {
-      await expect(result.current.handleStatusChange("ch1", "revised")).rejects.toThrow(
-        "status boom",
-      );
+      errorMessage = await result.current.handleStatusChange("ch1", "revised");
     });
 
+    // Should return the error message instead of throwing
+    expect(errorMessage).toBe("status boom");
     // After revert, project should be reloaded from server
     expect(result.current.project?.chapters[0].status).toBe("outline");
   });
@@ -593,12 +594,13 @@ describe("useProjectEditor", () => {
     // Confirm initial status
     expect(result.current.project?.chapters[0].status).toBe("outline");
 
+    let errorMessage: string | undefined;
     await act(async () => {
-      await expect(result.current.handleStatusChange("ch1", "revised")).rejects.toThrow(
-        "status update failed",
-      );
+      errorMessage = await result.current.handleStatusChange("ch1", "revised");
     });
 
+    // Should return the error message instead of throwing
+    expect(errorMessage).toBe("status update failed");
     // After both API update and reload fail, local revert should restore previous status
     expect(result.current.project?.chapters[0].status).toBe("outline");
     expect(result.current.activeChapter?.status).toBe("outline");
