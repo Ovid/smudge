@@ -94,11 +94,11 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
       case "title":
         return dir * a.title.localeCompare(b.title);
       case "status": {
-        const orderA = statusSortOrder[a.status];
-        const orderB = statusSortOrder[b.status];
-        if (orderA != null && orderB != null) {
-          return dir * (orderA - orderB);
-        }
+        const orderA = statusSortOrder[a.status] ?? null;
+        const orderB = statusSortOrder[b.status] ?? null;
+        if (orderA !== null && orderB !== null) return dir * (orderA - orderB);
+        if (orderA !== null) return -1; // known before unknown
+        if (orderB !== null) return 1;
         return dir * a.status.localeCompare(b.status);
       }
       case "word_count":
