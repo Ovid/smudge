@@ -239,9 +239,9 @@ export function useProjectEditor(slug: string | undefined) {
         chapters: prev.chapters.map((c) => (c.id === chapterId ? { ...c, status } : c)),
       };
     });
-    if (activeChapterRef.current?.id === chapterId) {
-      setActiveChapter((prev) => (prev ? { ...prev, status } : prev));
-    }
+    // Guard all setActiveChapter updaters with ID check to prevent applying
+    // status to the wrong chapter if the user rapidly switches chapters.
+    setActiveChapter((prev) => (prev?.id === chapterId ? { ...prev, status } : prev));
     try {
       await api.chapters.update(chapterId, { status });
     } catch (err) {
@@ -252,13 +252,11 @@ export function useProjectEditor(slug: string | undefined) {
         try {
           const data = await api.projects.get(slug);
           setProject(data);
-          if (activeChapterRef.current?.id === chapterId) {
-            const revertedChapter = data.chapters.find((c) => c.id === chapterId);
-            if (revertedChapter) {
-              setActiveChapter((prev) =>
-                prev ? { ...prev, status: revertedChapter.status } : prev,
-              );
-            }
+          const revertedChapter = data.chapters.find((c) => c.id === chapterId);
+          if (revertedChapter) {
+            setActiveChapter((prev) =>
+              prev?.id === chapterId ? { ...prev, status: revertedChapter.status } : prev,
+            );
           }
           reverted = true;
         } catch {
@@ -275,9 +273,9 @@ export function useProjectEditor(slug: string | undefined) {
             ),
           };
         });
-        if (activeChapterRef.current?.id === chapterId) {
-          setActiveChapter((prev) => (prev ? { ...prev, status: previousStatus } : prev));
-        }
+        setActiveChapter((prev) =>
+          prev?.id === chapterId ? { ...prev, status: previousStatus } : prev,
+        );
       }
       // Return error message for the caller to display (e.g., as a dismissible banner).
       // Unlike other handlers that use setError (full-page overlay), status change
