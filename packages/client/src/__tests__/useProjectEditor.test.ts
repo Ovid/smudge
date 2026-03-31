@@ -521,6 +521,29 @@ describe("useProjectEditor", () => {
     expect(result.current.activeChapter?.status).toBe("edited");
   });
 
+  it("handleContentChange preserves error save status instead of overwriting", async () => {
+    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("Bad Request", 400));
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    // Trigger a save failure to set status to "error"
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+    expect(result.current.saveStatus).toBe("error");
+
+    // Typing new content should NOT overwrite the error status
+    act(() => {
+      result.current.handleContentChange({
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "more typing" }] }],
+      });
+    });
+
+    expect(result.current.saveStatus).toBe("error");
+  });
+
   it("handleSave breaks immediately on 4xx ApiRequestError without retrying", async () => {
     vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("Bad Request", 400));
 

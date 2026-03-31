@@ -108,7 +108,9 @@ export function useProjectEditor(slug: string | undefined) {
 
   const handleContentChange = useCallback((content: Record<string, unknown>) => {
     setChapterWordCount(countWords(content));
-    setSaveStatus("unsaved");
+    // Don't overwrite "error" — the persistent save failure indicator must stay visible
+    // until a new save attempt succeeds (the debounced save will retry automatically).
+    setSaveStatus((prev) => (prev === "error" ? "error" : "unsaved"));
     if (activeChapterRef.current) {
       setCachedContent(activeChapterRef.current.id, content);
     }
