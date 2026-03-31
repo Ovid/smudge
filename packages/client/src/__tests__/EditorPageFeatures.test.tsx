@@ -878,7 +878,7 @@ describe("EditorPage view mode toggles", () => {
         status_color: "#ccc",
       })),
       status_summary: { outline: 2 },
-      totals: { word_count: 11, chapters: 2 },
+      totals: { word_count: 11, chapter_count: 2 },
     });
   });
 
