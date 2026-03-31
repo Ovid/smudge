@@ -100,6 +100,12 @@ export function chaptersRouter(db: Knex): Router {
       });
 
       const updated = await db("chapters").where({ id: req.params.id }).first();
+      if (!updated) {
+        res.status(404).json({
+          error: { code: "NOT_FOUND", message: "Chapter not found." },
+        });
+        return;
+      }
       const parsedUpdated = parseChapterContent(updated);
       const updatedStatusLabel = await getStatusLabel(db, updated.status as string);
 
@@ -191,6 +197,12 @@ export function chaptersRouter(db: Knex): Router {
       }
 
       const restored = await db("chapters").where({ id: req.params.id }).first();
+      if (!restored) {
+        res.status(404).json({
+          error: { code: "NOT_FOUND", message: "Chapter not found." },
+        });
+        return;
+      }
       const updatedProject = await db("projects").where({ id: chapter.project_id }).first();
       const restoredStatusLabel = await getStatusLabel(db, restored.status as string);
       res.json({
