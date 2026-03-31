@@ -72,6 +72,7 @@ export function useProjectEditor(slug: string | undefined) {
         if (seq !== saveSeqRef.current) return false; // chapter changed, abort retries
         try {
           const updated = await api.chapters.update(savingChapterId, { content });
+          if (seq !== saveSeqRef.current) return false; // chapter changed during request
           // Don't call setActiveChapter — the editor holds the current truth.
           // Only sync the server-computed word_count into project.chapters.
           setProject((prev) => {
