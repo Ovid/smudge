@@ -145,9 +145,7 @@ export function chaptersRouter(db: Knex): Router {
       const now = new Date().toISOString();
       await db.transaction(async (trx) => {
         await trx("chapters").where({ id: req.params.id }).update({ deleted_at: now });
-        await trx("projects")
-          .where({ id: chapter.project_id })
-          .update({ updated_at: now });
+        await trx("projects").where({ id: chapter.project_id }).update({ updated_at: now });
       });
 
       res.json({ message: "Chapter moved to trash." });

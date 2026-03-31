@@ -425,7 +425,16 @@ export function projectsRouter(db: Knex): Router {
         .where({ project_id: project.id })
         .whereNotNull("deleted_at")
         .orderBy("deleted_at", "desc")
-        .select("id", "title", "status", "word_count", "sort_order", "deleted_at", "created_at", "updated_at");
+        .select(
+          "id",
+          "title",
+          "status",
+          "word_count",
+          "sort_order",
+          "deleted_at",
+          "created_at",
+          "updated_at",
+        );
 
       res.json(trashed);
     }),
