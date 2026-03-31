@@ -87,14 +87,7 @@ export function EditorPage() {
   const [navAnnouncement, setNavAnnouncement] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
-  const [savedWordCount, setSavedWordCount] = useState<string>("");
-
-  // Announce word count to screen readers only on save, not on every keystroke
-  useEffect(() => {
-    if (saveStatus === "saved") {
-      setSavedWordCount(STRINGS.project.wordCount(chapterWordCount));
-    }
-  }, [saveStatus, chapterWordCount]);
+  const [wordCountAnnouncement, setWordCountAnnouncement] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -227,6 +220,16 @@ export function EditorPage() {
         return;
       }
 
+      if (ctrl && e.shiftKey && e.key === "W") {
+        e.preventDefault();
+        // Clear first so re-pressing announces again even if the count hasn't changed
+        setWordCountAnnouncement("");
+        requestAnimationFrame(() => {
+          setWordCountAnnouncement(STRINGS.project.wordCount(chapterWordCount));
+        });
+        return;
+      }
+
       if (ctrl && e.shiftKey && e.key === "P") {
         e.preventDefault();
         editorRef.current?.flushSave().then(() => {
@@ -261,6 +264,7 @@ export function EditorPage() {
     activeChapter,
     project,
     handleSelectChapterWithFlush,
+    chapterWordCount,
   ]);
 
   function startEditingTitle() {
@@ -629,7 +633,7 @@ export function EditorPage() {
         {navAnnouncement}
       </div>
       <div aria-live="polite" className="sr-only" data-testid="word-count-announcement">
-        {savedWordCount}
+        {wordCountAnnouncement}
       </div>
 
       {shortcutHelpOpen && (
@@ -665,6 +669,10 @@ export function EditorPage() {
               <div className="flex justify-between">
                 <dt className="text-text-secondary">{STRINGS.shortcuts.nextChapter}</dt>
                 <dd className="font-mono text-text-muted">Ctrl+Shift+↓</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-text-secondary">{STRINGS.shortcuts.announceWordCount}</dt>
+                <dd className="font-mono text-text-muted">Ctrl+Shift+W</dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-text-secondary">{STRINGS.shortcuts.showShortcuts}</dt>
