@@ -242,7 +242,6 @@ export function EditorPage() {
         setTimeout(() => setNavAnnouncement(""), 1000);
         return;
       }
-
     }
 
     document.addEventListener("keydown", handleKeyDown);

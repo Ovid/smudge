@@ -15,6 +15,12 @@ export default defineConfig({
         "**/vite-env.d.ts",
         "**/types.ts",
       ],
+      thresholds: {
+        statements: 95,
+        branches: 85,
+        functions: 90,
+        lines: 95,
+      },
     },
     projects: ["packages/shared", "packages/server", "packages/client"],
   },

@@ -93,9 +93,7 @@ export function chaptersRouter(db: Knex): Router {
           .update({ updated_at: new Date().toISOString() });
       });
 
-      const updated = await queryChapter(
-        db("chapters").where({ id: req.params.id }),
-      );
+      const updated = await queryChapter(db("chapters").where({ id: req.params.id }));
       if (!updated) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Chapter not found." },
@@ -191,9 +189,7 @@ export function chaptersRouter(db: Knex): Router {
         throw err;
       }
 
-      const restored = await queryChapter(
-        db("chapters").where({ id: req.params.id }),
-      );
+      const restored = await queryChapter(db("chapters").where({ id: req.params.id }));
       if (!restored) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Chapter not found." },

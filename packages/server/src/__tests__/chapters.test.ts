@@ -180,6 +180,19 @@ describe("PATCH /api/chapters/:id", () => {
     expect(res.body.chapters[0].status_label).toBe("Edited");
   });
 
+  it("returns 400 when status is valid in schema but missing from DB", async () => {
+    const { chapterId } = await createProjectWithChapter(t.app);
+
+    // Remove a status from the DB table to simulate drift between Zod enum and DB
+    await t.db("chapter_statuses").where({ status: "final" }).del();
+
+    const res = await request(t.app).patch(`/api/chapters/${chapterId}`).send({ status: "final" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    expect(res.body.error.message).toContain("Invalid status");
+  });
+
   it("preserves content on invalid update", async () => {
     const { chapterId } = await createProjectWithChapter(t.app);
 

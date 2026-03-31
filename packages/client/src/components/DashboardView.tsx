@@ -15,7 +15,12 @@ interface DashboardViewProps {
   refreshKey: number;
 }
 
-export function DashboardView({ slug, statuses, onNavigateToChapter, refreshKey }: DashboardViewProps) {
+export function DashboardView({
+  slug,
+  statuses,
+  onNavigateToChapter,
+  refreshKey,
+}: DashboardViewProps) {
   const [dataWithSlug, setDataWithSlug] = useState<{ slug: string; data: DashboardData } | null>(
     null,
   );

@@ -98,22 +98,16 @@ describe("queryChapter / queryChapters helpers", async () => {
     const chapterId = getRes.body.chapters[0].id;
 
     const content = { type: "doc", content: [{ type: "paragraph" }] };
-    await request(t.app)
-      .patch(`/api/chapters/${chapterId}`)
-      .send({ content });
+    await request(t.app).patch(`/api/chapters/${chapterId}`).send({ content });
 
-    const chapter = await queryChapter(
-      t.db("chapters").where({ id: chapterId }),
-    );
+    const chapter = await queryChapter(t.db("chapters").where({ id: chapterId }));
     expect(chapter).not.toBeNull();
-    expect(chapter!.content).toEqual(content);
-    expect(typeof chapter!.content).toBe("object");
+    expect(chapter?.content).toEqual(content);
+    expect(typeof chapter?.content).toBe("object");
   });
 
   it("queryChapter returns null when no row matches", async () => {
-    const chapter = await queryChapter(
-      t.db("chapters").where({ id: "nonexistent-id" }),
-    );
+    const chapter = await queryChapter(t.db("chapters").where({ id: "nonexistent-id" }));
     expect(chapter).toBeNull();
   });
 
@@ -137,9 +131,7 @@ describe("queryChapter / queryChapters helpers", async () => {
   });
 
   it("queryChapters returns empty array when no rows match", async () => {
-    const chapters = await queryChapters(
-      t.db("chapters").where({ project_id: "nonexistent" }),
-    );
+    const chapters = await queryChapters(t.db("chapters").where({ project_id: "nonexistent" }));
     expect(chapters).toEqual([]);
   });
 });

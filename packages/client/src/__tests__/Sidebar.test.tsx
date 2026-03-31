@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Sidebar } from "../components/Sidebar";
 import type { ProjectWithChapters, ChapterStatusRow } from "@smudge/shared";
@@ -332,5 +332,136 @@ describe("Sidebar", () => {
     onResize.mockClear();
     await userEvent.keyboard("{ArrowLeft}");
     expect(onResize).toHaveBeenCalledWith(250);
+  });
+
+  it("opens status dropdown when pressing ArrowDown on status badge", async () => {
+    renderSidebar();
+
+    const badge = screen.getByRole("button", { name: "Chapter status: Outline" });
+    badge.focus();
+    await userEvent.keyboard("{ArrowDown}");
+
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+  });
+
+  it("opens status dropdown when pressing ArrowUp on status badge", async () => {
+    renderSidebar();
+
+    const badge = screen.getByRole("button", { name: "Chapter status: Outline" });
+    badge.focus();
+    await userEvent.keyboard("{ArrowUp}");
+
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+  });
+
+  it("does not open dropdown for non-arrow keys on status badge (falls through to handleKeyDown)", async () => {
+    renderSidebar();
+
+    const badge = screen.getByRole("button", { name: "Chapter status: Outline" });
+    badge.focus();
+    await userEvent.keyboard("{Tab}");
+
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
+  it("navigates listbox options with ArrowDown", async () => {
+    renderSidebar();
+
+    const badge = screen.getByRole("button", { name: "Chapter status: Outline" });
+    await userEvent.click(badge);
+
+    const options = screen.getAllByRole("option");
+    // Focus the first option (Outline, which is currently selected)
+    options[0].focus();
+    expect(document.activeElement).toBe(options[0]);
+
+    // Press ArrowDown to move to the next option
+    fireEvent.keyDown(options[0], { key: "ArrowDown" });
+    expect(document.activeElement).toBe(options[1]);
+  });
+
+  it("navigates listbox options with ArrowUp", async () => {
+    renderSidebar();
+
+    const badge = screen.getByRole("button", { name: "Chapter status: Outline" });
+    await userEvent.click(badge);
+
+    const options = screen.getAllByRole("option");
+    // Focus the second option
+    options[1].focus();
+
+    // Press ArrowUp to move to the previous option
+    fireEvent.keyDown(options[1], { key: "ArrowUp" });
+    expect(document.activeElement).toBe(options[0]);
+  });
+
+  it("navigates to first listbox option with Home key", async () => {
+    renderSidebar();
+
+    const badge = screen.getByRole("button", { name: "Chapter status: Outline" });
+    await userEvent.click(badge);
+
+    const options = screen.getAllByRole("option");
+    // Focus the last option
+    options[4].focus();
+
+    // Press Home to move to the first option
+    fireEvent.keyDown(options[4], { key: "Home" });
+    expect(document.activeElement).toBe(options[0]);
+  });
+
+  it("navigates to last listbox option with End key", async () => {
+    renderSidebar();
+
+    const badge = screen.getByRole("button", { name: "Chapter status: Outline" });
+    await userEvent.click(badge);
+
+    const options = screen.getAllByRole("option");
+    // Focus the first option
+    options[0].focus();
+
+    // Press End to move to the last option
+    fireEvent.keyDown(options[0], { key: "End" });
+    expect(document.activeElement).toBe(options[4]);
+  });
+
+  it("resizes sidebar via mouse drag on resize handle", () => {
+    const onResize = vi.fn();
+    renderSidebar({ onResize, width: 260 });
+
+    const resizeHandle = screen.getByLabelText("Resize sidebar");
+
+    // Start the drag at clientX = 260
+    fireEvent.mouseDown(resizeHandle, { clientX: 260 });
+
+    // Move the mouse to the right by 50px
+    fireEvent.mouseMove(document, { clientX: 310 });
+    expect(onResize).toHaveBeenCalledWith(310);
+
+    // Move left past the minimum (180)
+    onResize.mockClear();
+    fireEvent.mouseMove(document, { clientX: 100 });
+    expect(onResize).toHaveBeenCalledWith(180);
+
+    // Release the mouse
+    fireEvent.mouseUp(document);
+
+    // After mouseUp, further moves should not trigger onResize
+    onResize.mockClear();
+    fireEvent.mouseMove(document, { clientX: 400 });
+    expect(onResize).not.toHaveBeenCalled();
+  });
+
+  it("clamps resize to max width of 480", () => {
+    const onResize = vi.fn();
+    renderSidebar({ onResize, width: 260 });
+
+    const resizeHandle = screen.getByLabelText("Resize sidebar");
+
+    fireEvent.mouseDown(resizeHandle, { clientX: 260 });
+    fireEvent.mouseMove(document, { clientX: 800 });
+    expect(onResize).toHaveBeenCalledWith(480);
+
+    fireEvent.mouseUp(document);
   });
 });
