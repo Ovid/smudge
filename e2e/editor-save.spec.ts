@@ -55,6 +55,47 @@ test.describe("Editor save pipeline E2e Tests", () => {
     await expect(editorAfterReload).toContainText(testText, { timeout: 5000 });
   });
 
+  test("shows error on save failure and recovers when network returns", async ({ page }) => {
+    await page.goto(`/projects/${project.slug}`);
+
+    const editor = page.getByRole("textbox");
+    await expect(editor).toBeVisible();
+
+    // Intercept PATCH requests to chapters to simulate network failure
+    await page.route("**/api/chapters/**", (route) => {
+      if (route.request().method() === "PATCH") {
+        route.abort("connectionrefused");
+      } else {
+        route.continue();
+      }
+    });
+
+    // Type content — this will trigger auto-save which will fail
+    const testText = `Failure test ${Date.now()}`;
+    await editor.click();
+    await editor.pressSequentially(testText, { delay: 20 });
+
+    // Wait for the save error to appear (after debounce + retry exhaustion)
+    // Retries: 3 attempts at 2s/4s/8s = ~14s + 1.5s debounce
+    const statusRegion = page.locator("[role='status'][aria-live='polite']");
+    await expect(statusRegion).toContainText("Unable to save", { timeout: 25000 });
+
+    // Remove the network interception — allow saves to succeed
+    await page.unroute("**/api/chapters/**");
+
+    // Type more to trigger a new save attempt
+    await editor.pressSequentially(" recovered", { delay: 20 });
+
+    // The save should now succeed
+    await expect(statusRegion).toContainText("Saved", { timeout: 15000 });
+
+    // Verify content persisted by reloading
+    await page.reload();
+    const editorAfterReload = page.getByRole("textbox");
+    await expect(editorAfterReload).toBeVisible();
+    await expect(editorAfterReload).toContainText(testText, { timeout: 5000 });
+  });
+
   test("content persists across chapter switches", async ({ page, request }) => {
     // Add a second chapter
     await request.post(`/api/projects/${project.slug}/chapters`);

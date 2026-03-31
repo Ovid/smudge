@@ -156,7 +156,7 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Status:** Fixed
 - **Status reason:** Added e2e/editor-save.spec.ts with two tests: auto-save persistence after reload, and content persistence across chapter switches
 - **Status date:** 2026-03-31 11:22 UTC
-- **Status commit:** (pending)
+- **Status commit:** 5329631
 
 ### [F-2] No e2e test for save-failure recovery (contradicts CLAUDE.md)
 - **Category:** 32 (Missing test coverage for critical paths)
@@ -164,6 +164,10 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** CLAUDE.md explicitly states "E2e tests cover all user stories including save-failure recovery via network interception." This is not implemented. The steering file is stale with respect to e2e coverage.
 - **Evidence:** CLAUDE.md testing section vs. actual `e2e/dashboard.spec.ts` — no network interception tests exist
 - **Found by:** Security & Code Quality
+- **Status:** Fixed
+- **Status reason:** Added save-failure recovery e2e test using Playwright route interception: blocks PATCH, verifies error state, unblocks, verifies recovery and persistence after reload
+- **Status date:** 2026-03-31 11:24 UTC
+- **Status commit:** (pending)
 
 ### [F-3] parseChapterContent silently swallows JSON parse errors
 - **Category:** 20 (Weak error handling strategy)
