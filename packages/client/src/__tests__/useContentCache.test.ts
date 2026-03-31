@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from "vitest";
 import { getCachedContent, setCachedContent, clearCachedContent } from "../hooks/useContentCache";
 
 // Vitest jsdom may not provide a fully standard localStorage.
@@ -17,9 +17,12 @@ Object.defineProperty(globalThis, "localStorage", {
 });
 
 describe("useContentCache", () => {
+  let warnSpy: MockInstance;
+
   beforeEach(() => {
     store.clear();
     vi.clearAllMocks();
+    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -47,7 +50,7 @@ describe("useContentCache", () => {
       expect(result).toBeNull();
     });
 
-    it("returns null when localStorage.getItem throws", () => {
+    it("returns null and warns when localStorage.getItem throws", () => {
       mockLocalStorage.getItem.mockImplementation(() => {
         throw new Error("unavailable");
       });
@@ -55,6 +58,10 @@ describe("useContentCache", () => {
       const result = getCachedContent("ch-1");
 
       expect(result).toBeNull();
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[useContentCache] getCachedContent failed:",
+        expect.any(Error),
+      );
     });
 
     it("returns null when stored value is invalid JSON", () => {
@@ -79,7 +86,7 @@ describe("useContentCache", () => {
       expect(store.get("smudge:draft:ch-2")).toBe(JSON.stringify(content));
     });
 
-    it("silently handles localStorage.setItem throwing", () => {
+    it("warns when localStorage.setItem throws", () => {
       mockLocalStorage.setItem.mockImplementation(() => {
         throw new Error("QuotaExceededError");
       });
@@ -87,6 +94,10 @@ describe("useContentCache", () => {
       expect(() => {
         setCachedContent("ch-2", { type: "doc" });
       }).not.toThrow();
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[useContentCache] setCachedContent failed:",
+        expect.any(Error),
+      );
     });
   });
 
@@ -100,7 +111,7 @@ describe("useContentCache", () => {
       expect(store.has("smudge:draft:ch-3")).toBe(false);
     });
 
-    it("silently handles localStorage.removeItem throwing", () => {
+    it("warns when localStorage.removeItem throws", () => {
       mockLocalStorage.removeItem.mockImplementation(() => {
         throw new Error("unavailable");
       });
@@ -108,6 +119,10 @@ describe("useContentCache", () => {
       expect(() => {
         clearCachedContent("ch-3");
       }).not.toThrow();
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[useContentCache] clearCachedContent failed:",
+        expect.any(Error),
+      );
     });
   });
 });

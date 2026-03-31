@@ -250,6 +250,7 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Status:** Fixed
 - **Status reason:** handleStatusChange now accepts optional onError callback instead of returning error; aligns with other handlers' catch-and-handle pattern while preserving non-fatal semantics
 - **Status date:** 2026-03-31 17:42 UTC
+- **Status commit:** 7e0ba50
 
 ### [F-12] useContentCache silently swallows localStorage errors
 - **Category:** 20 (Weak error handling strategy)
@@ -257,6 +258,9 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** All three functions in useContentCache have empty catch blocks. If `setCachedContent` fails (storage full, corrupted), the safety net for unsaved content — a core spec requirement — silently stops working with no user indication.
 - **Evidence:** `packages/client/src/hooks/useContentCache.ts:8-9,17-18,24-25` — empty catch blocks
 - **Found by:** Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** Added console.warn logging in all three catch blocks with function name prefix for dev tools filtering
+- **Status date:** 2026-03-31 17:48 UTC
 
 ### [F-13] No security headers middleware
 - **Category:** 30 (Security as an afterthought)
