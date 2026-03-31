@@ -365,7 +365,7 @@ describe("EditorPage save status", () => {
     await capturedOnSave?.({ type: "doc", content: [{ type: "paragraph" }] });
 
     await waitFor(() => {
-      expect(screen.getByText("Unable to save \u2014 check connection")).toBeInTheDocument();
+      expect(screen.getByText("Network error")).toBeInTheDocument();
     });
   }, 25000);
 

@@ -14,6 +14,7 @@ export function useProjectEditor(slug: string | undefined) {
   const [error, setError] = useState<string | null>(null);
   const [projectTitleError, setProjectTitleError] = useState<string | null>(null);
   const [chapterWordCount, setChapterWordCount] = useState(0);
+  const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
   const activeChapterRef = useRef<Chapter | null>(null);
   const projectSlugRef = useRef(project?.slug);
   const selectChapterSeqRef = useRef(0);
@@ -68,6 +69,8 @@ export function useProjectEditor(slug: string | undefined) {
       const MAX_RETRIES = 3;
 
       setSaveStatus("saving");
+      setSaveErrorMessage(null);
+      let lastError: unknown;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (seq !== saveSeqRef.current) return false; // chapter changed, abort retries
         try {
@@ -90,6 +93,7 @@ export function useProjectEditor(slug: string | undefined) {
           }
           return true;
         } catch (err) {
+          lastError = err;
           if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
             break;
           }
@@ -100,6 +104,9 @@ export function useProjectEditor(slug: string | undefined) {
       }
       if (activeChapterRef.current?.id === savingChapterId) {
         setSaveStatus("error");
+        setSaveErrorMessage(
+          lastError instanceof Error ? lastError.message : STRINGS.editor.saveFailed,
+        );
       }
       return false;
     },
@@ -108,7 +115,9 @@ export function useProjectEditor(slug: string | undefined) {
 
   const handleContentChange = useCallback((content: Record<string, unknown>) => {
     setChapterWordCount(countWords(content));
-    setSaveStatus("unsaved");
+    // Don't overwrite "error" — the persistent save failure indicator must stay visible
+    // until a new save attempt succeeds (the debounced save will retry automatically).
+    setSaveStatus((prev) => (prev === "error" ? "error" : "unsaved"));
     if (activeChapterRef.current) {
       setCachedContent(activeChapterRef.current.id, content);
     }
@@ -117,6 +126,7 @@ export function useProjectEditor(slug: string | undefined) {
   const handleCreateChapter = useCallback(async () => {
     const slug = projectSlugRef.current;
     if (!slug) return;
+    ++saveSeqRef.current; // cancel any in-flight save retries for the old chapter
     try {
       const newChapter = await api.chapters.create(slug);
       setActiveChapter(newChapter);
@@ -130,6 +140,7 @@ export function useProjectEditor(slug: string | undefined) {
   const handleSelectChapter = useCallback(async (chapterId: string) => {
     if (activeChapterRef.current && chapterId === activeChapterRef.current.id) return;
     ++saveSeqRef.current; // cancel any in-flight save retries for the old chapter
+    setSaveStatus("idle");
     const seq = ++selectChapterSeqRef.current;
     try {
       const chapter = await api.chapters.get(chapterId);
@@ -150,8 +161,10 @@ export function useProjectEditor(slug: string | undefined) {
   }, [project]);
 
   const handleDeleteChapter = useCallback(async (chapter: Chapter) => {
+    ++saveSeqRef.current; // cancel any in-flight save retries for the deleted chapter
     try {
       await api.chapters.delete(chapter.id);
+      clearCachedContent(chapter.id);
       // Compute remaining from the ref (current state), not the stale closure
       const remaining = projectRef.current?.chapters.filter((c) => c.id !== chapter.id) ?? [];
       setProject((prev) => {
@@ -235,9 +248,9 @@ export function useProjectEditor(slug: string | undefined) {
         chapters: prev.chapters.map((c) => (c.id === chapterId ? { ...c, status } : c)),
       };
     });
-    if (activeChapterRef.current?.id === chapterId) {
-      setActiveChapter((prev) => (prev ? { ...prev, status } : prev));
-    }
+    // Guard all setActiveChapter updaters with ID check to prevent applying
+    // status to the wrong chapter if the user rapidly switches chapters.
+    setActiveChapter((prev) => (prev?.id === chapterId ? { ...prev, status } : prev));
     try {
       await api.chapters.update(chapterId, { status });
     } catch (err) {
@@ -248,13 +261,11 @@ export function useProjectEditor(slug: string | undefined) {
         try {
           const data = await api.projects.get(slug);
           setProject(data);
-          if (activeChapterRef.current?.id === chapterId) {
-            const revertedChapter = data.chapters.find((c) => c.id === chapterId);
-            if (revertedChapter) {
-              setActiveChapter((prev) =>
-                prev ? { ...prev, status: revertedChapter.status } : prev,
-              );
-            }
+          const revertedChapter = data.chapters.find((c) => c.id === chapterId);
+          if (revertedChapter) {
+            setActiveChapter((prev) =>
+              prev?.id === chapterId ? { ...prev, status: revertedChapter.status } : prev,
+            );
           }
           reverted = true;
         } catch {
@@ -271,12 +282,16 @@ export function useProjectEditor(slug: string | undefined) {
             ),
           };
         });
-        if (activeChapterRef.current?.id === chapterId) {
-          setActiveChapter((prev) => (prev ? { ...prev, status: previousStatus } : prev));
-        }
+        setActiveChapter((prev) =>
+          prev?.id === chapterId ? { ...prev, status: previousStatus } : prev,
+        );
       }
-      throw err;
+      // Return error message for the caller to display (e.g., as a dismissible banner).
+      // Unlike other handlers that use setError (full-page overlay), status change
+      // failures are non-fatal — the revert already restored consistent state.
+      return err instanceof Error ? err.message : STRINGS.error.statusChangeFailed;
     }
+    return undefined;
   }, []);
 
   const handleRenameChapter = useCallback(async (chapterId: string, title: string) => {
@@ -285,7 +300,8 @@ export function useProjectEditor(slug: string | undefined) {
       if (activeChapterRef.current?.id === chapterId) {
         // Only update the title — don't overwrite content with stale server data.
         // The editor holds the current truth (same principle as handleSave).
-        setActiveChapter((prev) => (prev ? { ...prev, title } : prev));
+        // Guard with ID check to prevent applying title to wrong chapter on rapid switch.
+        setActiveChapter((prev) => (prev?.id === chapterId ? { ...prev, title } : prev));
       }
       setProject((prev) => {
         if (!prev) return prev;
@@ -307,6 +323,7 @@ export function useProjectEditor(slug: string | undefined) {
     setProject,
     activeChapter,
     saveStatus,
+    saveErrorMessage,
     chapterWordCount,
     handleSave,
     handleContentChange,

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
 
@@ -69,6 +69,20 @@ describe("GET /api/chapters/:id", () => {
     const res = await request(t.app).get("/api/chapters/nonexistent-id");
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("returns 500 CORRUPT_CONTENT when chapter has corrupt JSON in DB", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { chapterId } = await createProjectWithChapter(t.app);
+
+    // Directly corrupt the content in the DB (bypassing the API validation)
+    await t.db("chapters").where({ id: chapterId }).update({ content: "{invalid json!!!" });
+
+    const res = await request(t.app).get(`/api/chapters/${chapterId}`);
+    expect(res.status).toBe(500);
+    expect(res.body.error.code).toBe("CORRUPT_CONTENT");
+    expect(res.body.error.message).toContain("corrupted");
+    errorSpy.mockRestore();
   });
 });
 
@@ -180,6 +194,26 @@ describe("PATCH /api/chapters/:id", () => {
     expect(res.body.chapters[0].status_label).toBe("Edited");
   });
 
+  it("returns 400 when status is valid in schema but missing from DB", async () => {
+    const { chapterId } = await createProjectWithChapter(t.app);
+
+    // Remove a status from the DB table to simulate drift between Zod enum and DB
+    await t.db("chapter_statuses").where({ status: "final" }).del();
+
+    try {
+      const res = await request(t.app)
+        .patch(`/api/chapters/${chapterId}`)
+        .send({ status: "final" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+      expect(res.body.error.message).toContain("Invalid status");
+    } finally {
+      // Restore the deleted row so subsequent tests see all statuses
+      await t.db("chapter_statuses").insert({ status: "final", sort_order: 5, label: "Final" });
+    }
+  });
+
   it("preserves content on invalid update", async () => {
     const { chapterId } = await createProjectWithChapter(t.app);
 
@@ -201,6 +235,22 @@ describe("PATCH /api/chapters/:id", () => {
     const getRes = await request(t.app).get(`/api/chapters/${chapterId}`);
     expect(getRes.status).toBe(200);
     expect(getRes.body.content).toEqual(validContent);
+  });
+
+  it("succeeds for title-only update even when chapter has corrupt content", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { chapterId } = await createProjectWithChapter(t.app);
+
+    // Directly corrupt the content in the DB
+    await t.db("chapters").where({ id: chapterId }).update({ content: "{invalid json!!!" });
+
+    // PATCH only the title — should succeed despite corrupt content
+    const res = await request(t.app)
+      .patch(`/api/chapters/${chapterId}`)
+      .send({ title: "New Title" });
+    expect(res.status).toBe(200);
+    expect(res.body.title).toBe("New Title");
+    errorSpy.mockRestore();
   });
 });
 
@@ -346,5 +396,22 @@ describe("POST /api/chapters/:id/restore", () => {
 
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe("PROJECT_PURGED");
+  });
+
+  it("succeeds when restoring a chapter with corrupt JSON content", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { chapterId } = await createProjectWithChapter(t.app);
+
+    // Soft-delete the chapter
+    await request(t.app).delete(`/api/chapters/${chapterId}`);
+
+    // Directly corrupt the content in the DB
+    await t.db("chapters").where({ id: chapterId }).update({ content: "{invalid json!!!" });
+
+    // Restore should succeed — corruption is surfaced when the user opens the chapter
+    const res = await request(t.app).post(`/api/chapters/${chapterId}/restore`);
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(chapterId);
+    errorSpy.mockRestore();
   });
 });

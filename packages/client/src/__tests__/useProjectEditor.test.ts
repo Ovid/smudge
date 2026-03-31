@@ -34,7 +34,7 @@ vi.mock("../hooks/useContentCache", () => ({
   clearCachedContent: vi.fn(),
 }));
 
-import { api } from "../api/client";
+import { api, ApiRequestError } from "../api/client";
 import { useProjectEditor } from "../hooks/useProjectEditor";
 
 const mockChapter1 = {
@@ -498,12 +498,13 @@ describe("useProjectEditor", () => {
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
 
+    let errorMessage: string | undefined;
     await act(async () => {
-      await expect(result.current.handleStatusChange("ch1", "revised")).rejects.toThrow(
-        "status boom",
-      );
+      errorMessage = await result.current.handleStatusChange("ch1", "revised");
     });
 
+    // Should return the error message instead of throwing
+    expect(errorMessage).toBe("status boom");
     // After revert, project should be reloaded from server
     expect(result.current.project?.chapters[0].status).toBe("outline");
   });
@@ -519,5 +520,125 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.activeChapter?.status).toBe("edited");
+  });
+
+  it("handleContentChange preserves error save status instead of overwriting", async () => {
+    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("Bad Request", 400));
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    // Trigger a save failure to set status to "error"
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+    expect(result.current.saveStatus).toBe("error");
+
+    // Typing new content should NOT overwrite the error status
+    act(() => {
+      result.current.handleContentChange({
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "more typing" }] }],
+      });
+    });
+
+    expect(result.current.saveStatus).toBe("error");
+  });
+
+  it("handleSave breaks immediately on 4xx ApiRequestError without retrying", async () => {
+    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("Bad Request", 400));
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    // No need for fake timers — 4xx should not trigger any retry delays
+    let returnValue = true;
+    await act(async () => {
+      returnValue = await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(returnValue).toBe(false);
+    expect(result.current.saveStatus).toBe("error");
+    // Should only be called once — no retries on client errors
+    expect(api.chapters.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("handleSave exposes server error message on 4xx failure", async () => {
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("Invalid status: xyz", 400),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(result.current.saveStatus).toBe("error");
+    expect(result.current.saveErrorMessage).toBe("Invalid status: xyz");
+  });
+
+  it("handleSave clears saveErrorMessage on next save attempt", async () => {
+    vi.mocked(api.chapters.update)
+      .mockRejectedValueOnce(new ApiRequestError("Bad Request", 400))
+      .mockResolvedValueOnce({ ...mockChapter1, word_count: 3 });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+    expect(result.current.saveErrorMessage).toBe("Bad Request");
+
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+    expect(result.current.saveStatus).toBe("saved");
+    expect(result.current.saveErrorMessage).toBeNull();
+  });
+
+  it("handleDeleteChapter falls through to empty state when secondary chapter fetch fails", async () => {
+    vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
+    vi.mocked(api.chapters.get)
+      .mockResolvedValueOnce(mockChapter1) // initial load
+      .mockRejectedValueOnce(new Error("fetch failed")); // secondary fetch after delete
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleDeleteChapter(mockChapter1);
+    });
+
+    // Secondary fetch for ch2 failed, so should fall through to null/0
+    expect(result.current.activeChapter).toBeNull();
+    expect(result.current.chapterWordCount).toBe(0);
+  });
+
+  it("handleStatusChange falls back to local revert when both API update and server reload fail", async () => {
+    vi.mocked(api.chapters.update).mockRejectedValue(new Error("status update failed"));
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockRejectedValueOnce(new Error("reload failed")); // reload after status change failure
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    // Confirm initial status
+    expect(result.current.project?.chapters[0].status).toBe("outline");
+
+    let errorMessage: string | undefined;
+    await act(async () => {
+      errorMessage = await result.current.handleStatusChange("ch1", "revised");
+    });
+
+    // Should return the error message instead of throwing
+    expect(errorMessage).toBe("status update failed");
+    // After both API update and reload fail, local revert should restore previous status
+    expect(result.current.project?.chapters[0].status).toBe("outline");
+    expect(result.current.activeChapter?.status).toBe("outline");
   });
 });

@@ -8,7 +8,7 @@ When you have finished reading this file, announce "CLAUDE.md loaded"
 
 Smudge is a web-based writing application for long-form fiction and non-fiction, organized as projects containing chapters. It replaces Google Docs for book-length work. Single-user, no auth. The full MVP spec lives in `docs/plans/mvp.md`.
 
-**Current status:** Greenfield — spec complete, no source code yet.
+**Current status:** Active development — MVP implementation in progress.
 
 ## Tech Stack
 
@@ -84,7 +84,7 @@ Key endpoints:
 
 This is a first-class design constraint, not optional:
 - Semantic HTML (`<nav>`, `<main>`, `<aside>`, `<button>`, `<dialog>`) — no `<div>`/`<span>` as interactive elements
-- ARIA landmarks on all major regions; `aria-live="polite"` for save status and word count
+- ARIA landmarks on all major regions; `aria-live="polite"` for save status; word count announced on demand via Ctrl+Shift+W
 - Full keyboard navigation; visible focus indicators (3:1 contrast)
 - Chapter reordering via Alt+Up/Down as drag-and-drop alternative, with live region feedback
 - `prefers-reduced-motion` respected; text readable at 200% zoom
@@ -104,3 +104,5 @@ Two tables: **Project** (id, title, mode, created_at, updated_at, deleted_at) an
 ## Testing Philosophy
 
 The save pipeline gets the most rigorous coverage — it's the core trust promise. Integration tests run against real SQLite (not mocks). E2e tests cover all user stories including save-failure recovery via network interception. aXe-core runs in Playwright for automated a11y checks. ALL CODE MUST USE RED-GREEN-REFACTOR if feasible.
+
+**Coverage thresholds are enforced in `vitest.config.ts` (95% statements, 85% branches, 90% functions, 95% lines).** If coverage drops below these thresholds, the goal is always to increase coverage as much as possible by writing meaningful tests for the uncovered code — never simply adjust the thresholds downward or write minimal/trivial tests just to meet the minimum. Aim to push coverage higher, not coast at the floor.

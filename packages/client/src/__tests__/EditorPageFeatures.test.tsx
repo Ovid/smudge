@@ -116,7 +116,7 @@ describe("EditorPage error handling", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Project not found")).toBeInTheDocument();
+      expect(screen.getByText("Project not found.")).toBeInTheDocument();
     });
 
     expect(screen.getByRole("link", { name: "Back to Projects" })).toBeInTheDocument();
@@ -790,5 +790,151 @@ describe("EditorPage preview mode", () => {
     await waitFor(() => {
       expect(screen.queryByRole("navigation", { name: "Table of Contents" })).toBeNull();
     });
+  });
+});
+
+describe("EditorPage error view on project load failure", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders error view with back link when project load fails", async () => {
+    vi.mocked(api.projects.get).mockRejectedValue(new Error("Server error"));
+
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Server error")).toBeInTheDocument();
+    });
+
+    const backLink = screen.getByRole("link", { name: "Back to Projects" });
+    expect(backLink).toBeInTheDocument();
+  });
+});
+
+describe("EditorPage handleStatusChangeWithError", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.projects.get).mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
+    // Provide statuses so the StatusBadge renders in the sidebar
+    vi.mocked(api.chapterStatuses.list).mockResolvedValue([
+      { status: "outline", sort_order: 0, label: "Outline" },
+      { status: "revised", sort_order: 1, label: "Revised" },
+    ]);
+  });
+
+  it("catches error from handleStatusChange and shows actionError banner", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    // The status change API call will fail
+    vi.mocked(api.chapters.update).mockRejectedValue(new Error("status boom"));
+
+    renderEditorPage();
+
+    // Wait for sidebar and statuses to load (StatusBadge requires statuses array)
+    await waitFor(() => {
+      expect(screen.getByRole("complementary", { name: "Chapters" })).toBeInTheDocument();
+      expect(screen.getAllByLabelText(/Chapter status:/).length).toBeGreaterThan(0);
+    });
+
+    // After initial load succeeds, make reload also fail so handleStatusChange throws
+    vi.mocked(api.projects.get).mockRejectedValue(new Error("reload failed"));
+
+    // StatusBadge renders a button with the current status label — click to open dropdown
+    const statusButtons = screen.getAllByLabelText(/Chapter status:/);
+    await userEvent.click(statusButtons[0]);
+
+    // Click the "Revised" option in the listbox
+    await waitFor(() => {
+      expect(screen.getByText("Revised")).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByText("Revised"));
+
+    await waitFor(() => {
+      // The actionError banner should appear
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+      expect(screen.getByText("status boom")).toBeInTheDocument();
+    });
+
+    consoleSpy.mockRestore();
+  });
+});
+
+describe("EditorPage view mode toggles", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.projects.get).mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
+    vi.mocked(api.projects.dashboard).mockResolvedValue({
+      chapters: mockProject.chapters.map((c) => ({
+        ...c,
+        status_label: "Outline",
+        status_color: "#ccc",
+      })),
+      status_summary: { outline: 2 },
+      totals: { word_count: 11, chapter_count: 2 },
+    });
+  });
+
+  it("switches to editor view when clicking Editor tab button", async () => {
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Editor")).toBeInTheDocument();
+    });
+
+    // First switch to preview
+    await userEvent.click(screen.getByText("Preview"));
+    await waitFor(() => {
+      expect(screen.getByRole("navigation", { name: "Table of Contents" })).toBeInTheDocument();
+    });
+
+    // Now click Editor to switch back
+    await userEvent.click(screen.getByText("Editor"));
+    await waitFor(() => {
+      expect(screen.queryByRole("navigation", { name: "Table of Contents" })).toBeNull();
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+  });
+
+  it("switches to dashboard view when clicking Dashboard tab button", async () => {
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Dashboard")).toBeInTheDocument();
+    });
+
+    // Click Dashboard tab
+    await userEvent.click(screen.getByText("Dashboard"));
+
+    // Dashboard view should render
+    await waitFor(() => {
+      expect(screen.getByText("Manuscript Dashboard")).toBeInTheDocument();
+    });
+  });
+
+  it("renders dashboard view with DashboardView component", async () => {
+    renderEditorPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Dashboard")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByText("Dashboard"));
+
+    await waitFor(() => {
+      // The DashboardView component should be rendered within a main element
+      expect(screen.getByText("Manuscript Dashboard")).toBeInTheDocument();
+    });
+
+    // The Dashboard tab should show as current
+    const dashboardButton = screen.getByText("Dashboard");
+    expect(dashboardButton).toHaveAttribute("aria-current", "page");
   });
 });

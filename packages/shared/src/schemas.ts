@@ -26,7 +26,7 @@ export const ReorderChaptersSchema = z.object({
 
 export const UpdateChapterSchema = z
   .object({
-    title: z.string().trim().min(1).optional(),
+    title: z.string().trim().min(1).max(500, "Title is too long").optional(),
     content: TipTapDocSchema.optional(),
     status: ChapterStatus.optional(),
   })

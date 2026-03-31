@@ -42,6 +42,7 @@ export function EditorPage() {
     setProject,
     activeChapter,
     saveStatus,
+    saveErrorMessage,
     chapterWordCount,
     handleSave,
     handleContentChange,
@@ -86,6 +87,7 @@ export function EditorPage() {
   const [navAnnouncement, setNavAnnouncement] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
+  const [wordCountAnnouncement, setWordCountAnnouncement] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -117,11 +119,9 @@ export function EditorPage() {
 
   const handleStatusChangeWithError = useCallback(
     async (chapterId: string, status: string) => {
-      try {
-        await handleStatusChange(chapterId, status);
-      } catch (err) {
-        console.error(err);
-        setActionError(err instanceof Error ? err.message : STRINGS.error.statusChangeFailed);
+      const errorMessage = await handleStatusChange(chapterId, status);
+      if (errorMessage) {
+        setActionError(errorMessage);
       }
     },
     [handleStatusChange],
@@ -220,6 +220,16 @@ export function EditorPage() {
         return;
       }
 
+      if (ctrl && e.shiftKey && e.key === "W") {
+        e.preventDefault();
+        // Clear first so re-pressing announces again even if the count hasn't changed
+        setWordCountAnnouncement("");
+        requestAnimationFrame(() => {
+          setWordCountAnnouncement(STRINGS.project.wordCount(chapterWordCount));
+        });
+        return;
+      }
+
       if (ctrl && e.shiftKey && e.key === "P") {
         e.preventDefault();
         editorRef.current?.flushSave().then(() => {
@@ -242,7 +252,6 @@ export function EditorPage() {
         setTimeout(() => setNavAnnouncement(""), 1000);
         return;
       }
-
     }
 
     document.addEventListener("keydown", handleKeyDown);
@@ -255,6 +264,7 @@ export function EditorPage() {
     activeChapter,
     project,
     handleSelectChapterWithFlush,
+    chapterWordCount,
   ]);
 
   function startEditingTitle() {
@@ -326,7 +336,7 @@ export function EditorPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-primary">
         <div className="text-center">
-          <p className="text-text-primary text-lg mb-4">{STRINGS.error.projectNotFound}</p>
+          <p className="text-text-primary text-lg mb-4">{error}</p>
           <a
             href="/"
             onClick={(e) => {
@@ -599,7 +609,9 @@ export function EditorPage() {
             {saveStatus === "saving" && STRINGS.editor.saving}
             {saveStatus === "saved" && STRINGS.editor.saved}
             {saveStatus === "error" && (
-              <span className="text-status-error">{STRINGS.editor.saveFailed}</span>
+              <span className="text-status-error">
+                {saveErrorMessage ?? STRINGS.editor.saveFailed}
+              </span>
             )}
             {saveStatus === "idle" && ""}
           </div>
@@ -619,6 +631,9 @@ export function EditorPage() {
 
       <div aria-live="polite" className="sr-only" data-testid="nav-announcement">
         {navAnnouncement}
+      </div>
+      <div aria-live="polite" className="sr-only" data-testid="word-count-announcement">
+        {wordCountAnnouncement}
       </div>
 
       {shortcutHelpOpen && (
@@ -654,6 +669,10 @@ export function EditorPage() {
               <div className="flex justify-between">
                 <dt className="text-text-secondary">{STRINGS.shortcuts.nextChapter}</dt>
                 <dd className="font-mono text-text-muted">Ctrl+Shift+↓</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-text-secondary">{STRINGS.shortcuts.announceWordCount}</dt>
+                <dd className="font-mono text-text-muted">Ctrl+Shift+W</dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-text-secondary">{STRINGS.shortcuts.showShortcuts}</dt>

@@ -2,8 +2,11 @@ export function parseChapterContent(chapter: Record<string, unknown>) {
   if (typeof chapter.content === "string") {
     try {
       return { ...chapter, content: JSON.parse(chapter.content) };
-    } catch {
-      return { ...chapter, content: null };
+    } catch (err) {
+      console.error(
+        `[parseChapterContent] corrupt JSON in chapter ${chapter.id ?? "unknown"} (${err instanceof Error ? err.name : "UnknownError"})`,
+      );
+      return { ...chapter, content: null, content_corrupt: true };
     }
   }
   return { ...chapter, content: chapter.content ?? null };

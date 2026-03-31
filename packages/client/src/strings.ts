@@ -66,6 +66,7 @@ export const STRINGS = {
     showShortcuts: "Keyboard shortcuts",
     prevChapter: "Previous chapter",
     nextChapter: "Next chapter",
+    announceWordCount: "Announce word count",
   },
   sidebar: {
     addChapter: "Add Chapter",
