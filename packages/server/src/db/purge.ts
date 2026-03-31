@@ -1,7 +1,8 @@
 import type { Knex } from "knex";
+import { TRASH_RETENTION_MS } from "@smudge/shared";
 
 export async function purgeOldTrash(db: Knex): Promise<{ chapters: number; projects: number }> {
-  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const cutoff = new Date(Date.now() - TRASH_RETENTION_MS).toISOString();
 
   return db.transaction(async (trx) => {
     // Delete chapters that expired on their own

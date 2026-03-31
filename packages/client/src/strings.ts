@@ -1,4 +1,4 @@
-import { UNTITLED_CHAPTER } from "@smudge/shared";
+import { UNTITLED_CHAPTER, TRASH_RETENTION_MS } from "@smudge/shared";
 
 export const STRINGS = {
   app: {
@@ -76,7 +76,7 @@ export const STRINGS = {
     trashEmpty: "No chapters in trash.",
     restore: "Restore",
     permanentDeleteDate: (deletedAt: string) => {
-      const purgeDate = new Date(new Date(deletedAt).getTime() + 30 * 24 * 60 * 60 * 1000);
+      const purgeDate = new Date(new Date(deletedAt).getTime() + TRASH_RETENTION_MS);
       return `Permanently deleted ${purgeDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
     },
     backToEditor: "Back to editor",

@@ -221,6 +221,7 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Status:** Fixed
 - **Status reason:** Extracted UNTITLED_CHAPTER constant to @smudge/shared/constants.ts; server and client both import from shared
 - **Status date:** 2026-03-31 15:46 UTC
+- **Status commit:** 66f102e
 
 ### [F-9] 30-day purge cutoff duplicated across packages
 - **Category:** 28 (Magic numbers/strings everywhere)
@@ -228,6 +229,9 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** The 30-day soft-delete retention period is independently computed as `30 * 24 * 60 * 60 * 1000` in both the server purge logic and the client's trash display. No shared constant exists.
 - **Evidence:** `packages/server/src/db/purge.ts:4`, `packages/client/src/strings.ts:76` — identical computation
 - **Found by:** Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** Extracted TRASH_RETENTION_MS constant to @smudge/shared/constants.ts; server purge and client strings both import from shared
+- **Status date:** 2026-03-31 15:56 UTC
 
 ### [F-10] No structured server-side logging
 - **Category:** 21 (No observability plan)
