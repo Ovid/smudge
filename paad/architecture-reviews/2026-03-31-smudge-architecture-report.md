@@ -272,6 +272,7 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Status:** Fixed
 - **Status reason:** Added helmet middleware to createApp(); sets CSP, X-Content-Type-Options, X-Frame-Options, and other security headers
 - **Status date:** 2026-03-31 17:56 UTC
+- **Status commit:** c63bf5c
 
 ### [F-14] useProjectEditor.ts concentrates all project mutations
 - **Category:** 2 (God object)
