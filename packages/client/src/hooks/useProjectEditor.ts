@@ -190,7 +190,10 @@ export function useProjectEditor(slug: string | undefined) {
       setProject((prev) => {
         if (!prev) return prev;
         const reordered = orderedIds
-          .map((id) => prev.chapters.find((c) => c.id === id))
+          .map((id, index) => {
+            const ch = prev.chapters.find((c) => c.id === id);
+            return ch ? { ...ch, sort_order: index } : undefined;
+          })
           .filter(Boolean) as Chapter[];
         return { ...prev, chapters: reordered };
       });
