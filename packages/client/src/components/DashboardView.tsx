@@ -12,9 +12,10 @@ interface DashboardViewProps {
   slug: string;
   statuses: ChapterStatusRow[];
   onNavigateToChapter: (chapterId: string) => void;
+  refreshKey: number;
 }
 
-export function DashboardView({ slug, statuses, onNavigateToChapter }: DashboardViewProps) {
+export function DashboardView({ slug, statuses, onNavigateToChapter, refreshKey }: DashboardViewProps) {
   const [dataWithSlug, setDataWithSlug] = useState<{ slug: string; data: DashboardData } | null>(
     null,
   );
@@ -41,7 +42,7 @@ export function DashboardView({ slug, statuses, onNavigateToChapter }: Dashboard
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slug, refreshKey]);
 
   const handleSort = useCallback(
     (key: SortKey) => {

@@ -85,6 +85,7 @@ export function EditorPage() {
   const [statuses, setStatuses] = useState<ChapterStatusRow[]>([]);
   const [navAnnouncement, setNavAnnouncement] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -485,6 +486,7 @@ export function EditorPage() {
                 await editorRef.current?.flushSave();
                 setTrashOpen(false);
                 setViewMode("dashboard");
+                setDashboardRefreshKey((k) => k + 1);
               }}
               aria-current={viewMode === "dashboard" ? "page" : undefined}
               className={`text-sm rounded px-3 py-1 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
@@ -537,6 +539,7 @@ export function EditorPage() {
             <DashboardView
               slug={project.slug}
               statuses={statuses}
+              refreshKey={dashboardRefreshKey}
               onNavigateToChapter={(chapterId) => {
                 setViewMode("editor");
                 handleSelectChapterWithFlush(chapterId);
