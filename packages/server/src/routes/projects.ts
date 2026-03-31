@@ -361,7 +361,9 @@ export function projectsRouter(db: Knex): Router {
       const allStatuses = await db("chapter_statuses")
         .orderBy("sort_order", "asc")
         .select("status", "label");
-      const statusLabelMap = await getStatusLabelMap(db);
+      const statusLabelMap = Object.fromEntries(
+        allStatuses.map((r: { status: string; label: string }) => [r.status, r.label]),
+      );
 
       const chaptersWithLabels = chapters.map((ch: Record<string, unknown>) => ({
         ...ch,
@@ -436,7 +438,12 @@ export function projectsRouter(db: Knex): Router {
           "updated_at",
         );
 
-      res.json(trashed);
+      // Include content: null so the response matches the shared Chapter type contract
+      const normalizedTrashed = trashed.map((ch: Record<string, unknown>) => ({
+        ...ch,
+        content: null,
+      }));
+      res.json(normalizedTrashed);
     }),
   );
 
