@@ -346,6 +346,8 @@ export function projectsRouter(db: Knex): Router {
         return;
       }
 
+      // Intentionally not using queryChapters here — dashboard only needs metadata
+      // columns, not content. Loading full TipTap JSON for every chapter would be wasteful.
       const chapters = await db("chapters")
         .where({ project_id: project.id })
         .whereNull("deleted_at")
