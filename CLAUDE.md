@@ -84,7 +84,7 @@ Key endpoints:
 
 This is a first-class design constraint, not optional:
 - Semantic HTML (`<nav>`, `<main>`, `<aside>`, `<button>`, `<dialog>`) — no `<div>`/`<span>` as interactive elements
-- ARIA landmarks on all major regions; `aria-live="polite"` for save status and word count
+- ARIA landmarks on all major regions; `aria-live="polite"` for save status; word count announced on demand via Ctrl+Shift+W
 - Full keyboard navigation; visible focus indicators (3:1 contrast)
 - Chapter reordering via Alt+Up/Down as drag-and-drop alternative, with live region feedback
 - `prefers-reduced-motion` respected; text readable at 200% zoom
