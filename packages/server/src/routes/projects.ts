@@ -255,6 +255,12 @@ export function projectsRouter(db: Knex): Router {
       await db("projects").where({ id: project.id }).update({ updated_at: now });
 
       const chapter = await db("chapters").where({ id: chapterId }).first();
+      if (!chapter) {
+        res.status(500).json({
+          error: { code: "INTERNAL_ERROR", message: "Failed to retrieve created chapter." },
+        });
+        return;
+      }
       const statusLabelMap = await getStatusLabelMap(db);
       const parsedChapter = parseChapterContent(chapter);
       res.status(201).json({
