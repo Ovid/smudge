@@ -429,6 +429,7 @@ export function projectsRouter(db: Knex): Router {
         .orderBy("deleted_at", "desc")
         .select(
           "id",
+          "project_id",
           "title",
           "status",
           "word_count",
