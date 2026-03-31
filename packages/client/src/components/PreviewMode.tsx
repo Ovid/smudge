@@ -52,6 +52,7 @@ export function PreviewMode({ chapters, onNavigateToChapter }: PreviewModeProps)
               id={chapter.id}
               ref={(el) => {
                 if (el) chapterRefs.current.set(chapter.id, el);
+                else chapterRefs.current.delete(chapter.id);
               }}
               className="mb-16"
             >
