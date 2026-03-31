@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach, beforeAll } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeAll, afterAll } from "vitest";
 import { render, screen, cleanup, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PreviewMode } from "../components/PreviewMode";
@@ -7,6 +7,8 @@ import type { Chapter } from "@smudge/shared";
 const mockObserve = vi.fn();
 const mockDisconnect = vi.fn();
 let observerCallback: IntersectionObserverCallback;
+
+const originalIntersectionObserver = global.IntersectionObserver;
 
 beforeAll(() => {
   // Mock IntersectionObserver for jsdom
@@ -20,8 +22,14 @@ beforeAll(() => {
   });
 });
 
+afterAll(() => {
+  global.IntersectionObserver = originalIntersectionObserver;
+});
+
 afterEach(() => {
   cleanup();
+  mockObserve.mockClear();
+  mockDisconnect.mockClear();
 });
 
 const chapters: Chapter[] = [

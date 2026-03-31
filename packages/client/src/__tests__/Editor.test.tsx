@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, within, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render, within, fireEvent, waitFor, cleanup, act } from "@testing-library/react";
 import { Editor } from "../components/Editor";
 
 afterEach(() => {
@@ -76,8 +76,8 @@ describe("Editor", () => {
     fireEvent.focus(editorEl);
     fireEvent.blur(editorEl);
 
-    // Give it a tick to ensure nothing fires
-    await new Promise((r) => setTimeout(r, 50));
+    // Flush microtasks to ensure nothing fires
+    await act(async () => {});
     expect(onSave).not.toHaveBeenCalled();
   });
 
@@ -193,8 +193,8 @@ describe("Editor", () => {
       expect(onSave).toHaveBeenCalledTimes(1);
     });
 
-    // Wait for the .catch() to complete
-    await new Promise((r) => setTimeout(r, 50));
+    // Flush microtasks so the .catch() handler completes
+    await act(async () => {});
 
     // After rejection, dirtyRef stayed true, so a subsequent blur should still try to save
     onSave.mockClear();
@@ -231,15 +231,15 @@ describe("Editor", () => {
       expect(onSave).toHaveBeenCalledTimes(1);
     });
 
-    // Wait for the .then() to complete and set dirtyRef = false
-    await new Promise((r) => setTimeout(r, 50));
+    // Flush microtasks so the .then() handler completes and sets dirtyRef = false
+    await act(async () => {});
 
     // Blur again — dirtyRef should be false now, so onSave should NOT be called again
     onSave.mockClear();
     fireEvent.focus(editorEl);
     fireEvent.blur(editorEl);
 
-    await new Promise((r) => setTimeout(r, 50));
+    await act(async () => {});
     expect(onSave).not.toHaveBeenCalled();
   });
 
@@ -375,7 +375,7 @@ describe("Editor", () => {
     // Unmount without typing — should not save
     unmount();
 
-    await new Promise((r) => setTimeout(r, 50));
+    await act(async () => {});
     expect(onSave).not.toHaveBeenCalled();
   });
 

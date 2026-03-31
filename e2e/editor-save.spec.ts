@@ -18,7 +18,8 @@ async function createTestProject(request: APIRequestContext): Promise<TestProjec
 }
 
 async function deleteProject(request: APIRequestContext, slug: string) {
-  await request.delete(`/api/projects/${slug}`);
+  const res = await request.delete(`/api/projects/${slug}`);
+  expect(res.ok()).toBeTruthy();
 }
 
 test.describe("Editor save pipeline E2e Tests", () => {
