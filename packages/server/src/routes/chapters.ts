@@ -23,6 +23,16 @@ export function chaptersRouter(db: Knex): Router {
         return;
       }
 
+      if (chapter.content_corrupt) {
+        res.status(500).json({
+          error: {
+            code: "CORRUPT_CONTENT",
+            message: "Chapter content is corrupted and cannot be loaded.",
+          },
+        });
+        return;
+      }
+
       const status_label = await getStatusLabel(db, chapter.status as string);
       res.json({ ...chapter, status_label });
     }),

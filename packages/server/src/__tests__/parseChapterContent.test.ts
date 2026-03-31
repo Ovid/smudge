@@ -11,11 +11,12 @@ describe("parseChapterContent", () => {
     };
     const result = parseChapterContent(chapter);
     expect(result.content).toEqual({ type: "doc", content: [] });
+    expect(result.content_corrupt).toBeUndefined();
     expect(result.id).toBe("abc");
     expect(result.title).toBe("Test");
   });
 
-  it("returns null content and logs error when JSON is corrupt", () => {
+  it("returns null content with content_corrupt flag and logs error when JSON is corrupt", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const chapter = {
       id: "abc",
@@ -24,6 +25,7 @@ describe("parseChapterContent", () => {
     };
     const result = parseChapterContent(chapter);
     expect(result.content).toBeNull();
+    expect(result.content_corrupt).toBe(true);
     expect(result.id).toBe("abc");
     expect(errorSpy).toHaveBeenCalledOnce();
     expect(errorSpy.mock.calls[0][0]).toContain("corrupt");
@@ -76,6 +78,7 @@ describe("parseChapterContent integration — corrupt DB content", () => {
     };
     const result = parseChapterContent(chapter);
     expect(result.content).toBeNull();
+    expect(result.content_corrupt).toBe(true);
     expect(result.title).toBe("Corrupt Chapter");
     // Must log the chapter id so the corrupt row can be found
     expect(errorSpy.mock.calls[0][0]).toContain("test-123");

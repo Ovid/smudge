@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
 
@@ -69,6 +69,20 @@ describe("GET /api/chapters/:id", () => {
     const res = await request(t.app).get("/api/chapters/nonexistent-id");
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("returns 500 CORRUPT_CONTENT when chapter has corrupt JSON in DB", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { chapterId } = await createProjectWithChapter(t.app);
+
+    // Directly corrupt the content in the DB (bypassing the API validation)
+    await t.db("chapters").where({ id: chapterId }).update({ content: "{invalid json!!!" });
+
+    const res = await request(t.app).get(`/api/chapters/${chapterId}`);
+    expect(res.status).toBe(500);
+    expect(res.body.error.code).toBe("CORRUPT_CONTENT");
+    expect(res.body.error.message).toContain("corrupted");
+    errorSpy.mockRestore();
   });
 });
 
