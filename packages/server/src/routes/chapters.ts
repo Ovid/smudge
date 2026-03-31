@@ -2,7 +2,7 @@ import { Router } from "express";
 import type { Knex } from "knex";
 import { UpdateChapterSchema, countWords, generateSlug } from "@smudge/shared";
 import { asyncHandler } from "../app";
-import { queryChapter } from "./chapterQueries";
+import { queryChapter, sendCorruptContentError } from "./chapterQueries";
 import { resolveUniqueSlug } from "./resolve-slug";
 import { getStatusLabel } from "./status-labels";
 
@@ -23,15 +23,7 @@ export function chaptersRouter(db: Knex): Router {
         return;
       }
 
-      if (chapter.content_corrupt) {
-        res.status(500).json({
-          error: {
-            code: "CORRUPT_CONTENT",
-            message: "Chapter content is corrupted and cannot be loaded.",
-          },
-        });
-        return;
-      }
+      if (sendCorruptContentError(chapter, res)) return;
 
       const status_label = await getStatusLabel(db, chapter.status as string);
       res.json({ ...chapter, status_label });
@@ -112,15 +104,11 @@ export function chaptersRouter(db: Knex): Router {
         });
         return;
       }
-      if (updated.content_corrupt) {
-        res.status(500).json({
-          error: {
-            code: "CORRUPT_CONTENT",
-            message: "Chapter content is corrupted and cannot be loaded.",
-          },
-        });
-        return;
-      }
+      // Only check corruption when content was part of the update.
+      // Non-content updates (title, status) should succeed even if the
+      // chapter has pre-existing corrupt content.
+      if (parsed.data.content !== undefined && sendCorruptContentError(updated, res)) return;
+
       const updatedStatusLabel = await getStatusLabel(db, updated.status as string);
 
       res.json({ ...updated, status_label: updatedStatusLabel });
@@ -222,15 +210,9 @@ export function chaptersRouter(db: Knex): Router {
         });
         return;
       }
-      if (restored.content_corrupt) {
-        res.status(500).json({
-          error: {
-            code: "CORRUPT_CONTENT",
-            message: "Chapter content is corrupted and cannot be loaded.",
-          },
-        });
-        return;
-      }
+      // Do NOT check content_corrupt here. Restoring a chapter from trash
+      // should always succeed — the GET /chapters/:id endpoint will surface
+      // corruption when the user actually opens the chapter.
       const updatedProject = await db("projects").where({ id: chapter.project_id }).first();
       const restoredStatusLabel = await getStatusLabel(db, restored.status as string);
       res.json({

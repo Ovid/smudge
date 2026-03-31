@@ -237,19 +237,19 @@ describe("PATCH /api/chapters/:id", () => {
     expect(getRes.body.content).toEqual(validContent);
   });
 
-  it("returns 500 CORRUPT_CONTENT when re-fetched chapter has corrupt JSON after title-only update", async () => {
+  it("succeeds for title-only update even when chapter has corrupt content", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const { chapterId } = await createProjectWithChapter(t.app);
 
     // Directly corrupt the content in the DB
     await t.db("chapters").where({ id: chapterId }).update({ content: "{invalid json!!!" });
 
-    // PATCH only the title — content is not overwritten
+    // PATCH only the title — should succeed despite corrupt content
     const res = await request(t.app)
       .patch(`/api/chapters/${chapterId}`)
       .send({ title: "New Title" });
-    expect(res.status).toBe(500);
-    expect(res.body.error.code).toBe("CORRUPT_CONTENT");
+    expect(res.status).toBe(200);
+    expect(res.body.title).toBe("New Title");
     errorSpy.mockRestore();
   });
 });
@@ -398,7 +398,7 @@ describe("POST /api/chapters/:id/restore", () => {
     expect(res.body.error.code).toBe("PROJECT_PURGED");
   });
 
-  it("returns 500 CORRUPT_CONTENT when restored chapter has corrupt JSON", async () => {
+  it("succeeds when restoring a chapter with corrupt JSON content", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const { chapterId } = await createProjectWithChapter(t.app);
 
@@ -408,9 +408,10 @@ describe("POST /api/chapters/:id/restore", () => {
     // Directly corrupt the content in the DB
     await t.db("chapters").where({ id: chapterId }).update({ content: "{invalid json!!!" });
 
+    // Restore should succeed — corruption is surfaced when the user opens the chapter
     const res = await request(t.app).post(`/api/chapters/${chapterId}/restore`);
-    expect(res.status).toBe(500);
-    expect(res.body.error.code).toBe("CORRUPT_CONTENT");
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(chapterId);
     errorSpy.mockRestore();
   });
 });

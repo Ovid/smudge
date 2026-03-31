@@ -8,7 +8,7 @@ import {
   generateSlug,
 } from "@smudge/shared";
 import { asyncHandler } from "../app";
-import { queryChapter, queryChapters } from "./chapterQueries";
+import { queryChapter, queryChapters, stripCorruptFlag } from "./chapterQueries";
 import { resolveUniqueSlug } from "./resolve-slug";
 import { getStatusLabelMap } from "./status-labels";
 
@@ -211,7 +211,7 @@ export function projectsRouter(db: Knex): Router {
       const statusLabelMap = await getStatusLabelMap(db);
 
       const chaptersWithLabels = chapters.map((ch) => ({
-        ...ch,
+        ...stripCorruptFlag(ch),
         status_label: statusLabelMap[ch.status as string] ?? (ch.status as string),
       }));
 
