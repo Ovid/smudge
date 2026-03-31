@@ -234,27 +234,29 @@ export function projectsRouter(db: Knex): Router {
         return;
       }
 
-      const maxOrder = (await db("chapters")
-        .where({ project_id: project.id })
-        .whereNull("deleted_at")
-        .max("sort_order as max")
-        .first()) as { max: number | null };
-
       const chapterId = uuid();
       const now = new Date().toISOString();
 
-      await db("chapters").insert({
-        id: chapterId,
-        project_id: project.id,
-        title: "Untitled Chapter",
-        content: null,
-        sort_order: (maxOrder?.max ?? -1) + 1,
-        word_count: 0,
-        created_at: now,
-        updated_at: now,
-      });
+      await db.transaction(async (trx) => {
+        const maxOrder = (await trx("chapters")
+          .where({ project_id: project.id })
+          .whereNull("deleted_at")
+          .max("sort_order as max")
+          .first()) as { max: number | null };
 
-      await db("projects").where({ id: project.id }).update({ updated_at: now });
+        await trx("chapters").insert({
+          id: chapterId,
+          project_id: project.id,
+          title: "Untitled Chapter",
+          content: null,
+          sort_order: (maxOrder?.max ?? -1) + 1,
+          word_count: 0,
+          created_at: now,
+          updated_at: now,
+        });
+
+        await trx("projects").where({ id: project.id }).update({ updated_at: now });
+      });
 
       const chapter = await queryChapter(db("chapters").where({ id: chapterId }).whereNull("deleted_at"));
       if (!chapter) {
