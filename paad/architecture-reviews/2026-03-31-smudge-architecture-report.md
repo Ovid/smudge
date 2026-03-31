@@ -261,6 +261,7 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Status:** Fixed
 - **Status reason:** Added console.warn logging in all three catch blocks with function name prefix for dev tools filtering
 - **Status date:** 2026-03-31 17:48 UTC
+- **Status commit:** 6641bbe
 
 ### [F-13] No security headers middleware
 - **Category:** 30 (Security as an afterthought)
@@ -268,6 +269,9 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** The Express app has no Helmet middleware, no Content-Security-Policy, no X-Frame-Options, no X-Content-Type-Options. The app is designed for Docker deployment which implies network exposure.
 - **Evidence:** `packages/server/src/app.ts:17-23` — middleware chain is only `express.json()` followed by routes. No `helmet` import anywhere.
 - **Found by:** Security & Code Quality
+- **Status:** Fixed
+- **Status reason:** Added helmet middleware to createApp(); sets CSP, X-Content-Type-Options, X-Frame-Options, and other security headers
+- **Status date:** 2026-03-31 17:56 UTC
 
 ### [F-14] useProjectEditor.ts concentrates all project mutations
 - **Category:** 2 (God object)

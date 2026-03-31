@@ -10,6 +10,12 @@ describe("GET /api/health", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ status: "ok" });
   });
+
+  it("includes security headers from helmet", async () => {
+    const res = await request(ctx.app).get("/api/health");
+    expect(res.headers["x-content-type-options"]).toBe("nosniff");
+    expect(res.headers["x-frame-options"]).toBeDefined();
+  });
 });
 
 describe("Global error handler via malformed JSON", () => {

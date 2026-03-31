@@ -1,6 +1,7 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import type { Knex } from "knex";
+import helmet from "helmet";
 import { projectsRouter } from "./routes/projects";
 import { chaptersRouter } from "./routes/chapters";
 import { chapterStatusesRouter } from "./routes/chapter-statuses";
@@ -16,6 +17,7 @@ export function asyncHandler(
 export function createApp(db: Knex): express.Express {
   const app = express();
 
+  app.use(helmet());
   app.use(express.json({ limit: "5mb" }));
 
   app.use("/api/projects", projectsRouter(db));

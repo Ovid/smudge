@@ -13,6 +13,7 @@
     "@smudge/shared": "*",
     "better-sqlite3": "^11.9.1",
     "express": "^4.21.2",
+    "helmet": "^8.1.0",
     "knex": "^3.1.0",
     "uuid": "^11.1.0"
   },
