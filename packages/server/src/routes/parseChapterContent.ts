@@ -4,7 +4,7 @@ export function parseChapterContent(chapter: Record<string, unknown>) {
       return { ...chapter, content: JSON.parse(chapter.content) };
     } catch (err) {
       console.error(
-        `[parseChapterContent] corrupt JSON in chapter ${chapter.id ?? "unknown"}: ${err instanceof Error ? err.message : err}`,
+        `[parseChapterContent] corrupt JSON in chapter ${chapter.id ?? "unknown"} (${err instanceof Error ? err.name : "UnknownError"})`,
       );
       return { ...chapter, content: null, content_corrupt: true };
     }
