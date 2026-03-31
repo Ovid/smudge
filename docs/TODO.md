@@ -23,6 +23,7 @@
 - BE ULTRA-PARANOID ABOUT DATA LOSS. Brainstorm on ways to make this
   super robust. Have "snapshots" which go back X amount of time.
 
+- Save files in .smg format? (Is that extension taken?)
 - Research page width and what formatting features writers really need. Maybe
   have a "simple" mode and an "advanced" mode? Or just make it simple and add
   features as needed.
@@ -37,3 +38,11 @@
 - Can we do grammar checks?
 - Search by regex? Is there a way that non-technical users can use regex?
   Search should be "this chapter" or "all chapters"?
+
+# Explore
+
+- Plaiwright — like Playwright, but it's a test that Claude can run and
+  examine screenshots for issues. Brainstorm this. jsonl log for what each
+  screenshot represents? Clean up after? Artifacts in .gitignore. Kiro/Claude
+  skill? Run as data-driven loop? AI feeds in data, plaiwright validates, and
+  then it runs. AIAT (vs. UAT)
