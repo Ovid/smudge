@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { parseChapterContent } from "../routes/parseChapterContent";
 
 describe("parseChapterContent", () => {
@@ -14,16 +14,19 @@ describe("parseChapterContent", () => {
     expect(result.title).toBe("Test");
   });
 
-  it("returns null content when JSON is corrupt", () => {
+  it("returns null content and logs error when JSON is corrupt", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const chapter = {
       id: "abc",
       title: "Test",
       content: "{invalid json!!!",
     };
     const result = parseChapterContent(chapter);
-    // Current behavior: silently returns null
     expect(result.content).toBeNull();
     expect(result.id).toBe("abc");
+    expect(errorSpy).toHaveBeenCalledOnce();
+    expect(errorSpy.mock.calls[0][0]).toContain("corrupt");
+    errorSpy.mockRestore();
   });
 
   it("returns null when content is null", () => {
@@ -62,11 +65,8 @@ describe("parseChapterContent", () => {
 });
 
 describe("parseChapterContent integration — corrupt DB content", () => {
-  it("route returns chapter with null content when DB has corrupt JSON", async () => {
-    // This test documents the current behavior: if a chapter's content
-    // in SQLite is corrupt JSON, the API returns content: null silently.
-    // Safety net: any fix to F-3 must still return a valid response
-    // (not crash the server) when encountering corrupt content.
+  it("logs error with chapter id when DB has corrupt JSON", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const chapter = {
       id: "test-123",
       title: "Corrupt Chapter",
@@ -76,5 +76,8 @@ describe("parseChapterContent integration — corrupt DB content", () => {
     const result = parseChapterContent(chapter);
     expect(result.content).toBeNull();
     expect(result.title).toBe("Corrupt Chapter");
+    // Must log the chapter id so the corrupt row can be found
+    expect(errorSpy.mock.calls[0][0]).toContain("test-123");
+    errorSpy.mockRestore();
   });
 });

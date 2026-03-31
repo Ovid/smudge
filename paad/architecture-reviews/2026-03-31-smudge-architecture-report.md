@@ -167,6 +167,10 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** If chapter content stored in SQLite becomes corrupted JSON, the parse error is silently caught and the content becomes `null`. The user sees an empty chapter with no error message, no server-side alert, and no indication data was lost. The original corrupted data remains in the DB but is invisible.
 - **Evidence:** `packages/server/src/routes/parseChapterContent.ts:4-5` — `try { ... JSON.parse(chapter.content) } catch { return { ...chapter, content: null } }`
 - **Found by:** Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** Added console.error logging with chapter ID and error details on corrupt JSON parse failure
+- **Status date:** 2026-03-31 11:16 UTC
+- **Status commit:** (pending)
 
 ### [F-4] EditorPage.tsx is a large page-level orchestrator
 - **Category:** 2 (God object)
