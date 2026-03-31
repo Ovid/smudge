@@ -153,6 +153,10 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** The most fundamental user story — type text, auto-save, reload, verify persistence — has no end-to-end test. The e2e directory contains a single spec focused on dashboard/status features. The save pipeline's debounce, blur-save, and content cache are only tested at unit/integration level with mocked APIs.
 - **Evidence:** `e2e/` contains only `dashboard.spec.ts` (5 tests, none exercise content saving)
 - **Found by:** Security & Code Quality
+- **Status:** Fixed
+- **Status reason:** Added e2e/editor-save.spec.ts with two tests: auto-save persistence after reload, and content persistence across chapter switches
+- **Status date:** 2026-03-31 11:22 UTC
+- **Status commit:** (pending)
 
 ### [F-2] No e2e test for save-failure recovery (contradicts CLAUDE.md)
 - **Category:** 32 (Missing test coverage for critical paths)
@@ -195,7 +199,7 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Status:** Fixed
 - **Status reason:** Extracted queryChapter/queryChapters helpers that encapsulate JSON parsing. Routes now use these instead of raw queries + manual parseChapterContent. Only chapterQueries.ts imports parseChapterContent.
 - **Status date:** 2026-03-31 11:20 UTC
-- **Status commit:** (pending)
+- **Status commit:** 56dc1c1
 
 ### [F-7] flushSave must be called manually before chapter/mode switch
 - **Category:** 27 (Temporal coupling)
