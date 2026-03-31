@@ -258,7 +258,9 @@ export function projectsRouter(db: Knex): Router {
         await trx("projects").where({ id: project.id }).update({ updated_at: now });
       });
 
-      const chapter = await queryChapter(db("chapters").where({ id: chapterId }).whereNull("deleted_at"));
+      const chapter = await queryChapter(
+        db("chapters").where({ id: chapterId }).whereNull("deleted_at"),
+      );
       if (!chapter) {
         res.status(500).json({
           error: { code: "INTERNAL_ERROR", message: "Failed to retrieve created chapter." },

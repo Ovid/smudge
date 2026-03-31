@@ -201,7 +201,9 @@ describe("PATCH /api/chapters/:id", () => {
     await t.db("chapter_statuses").where({ status: "final" }).del();
 
     try {
-      const res = await request(t.app).patch(`/api/chapters/${chapterId}`).send({ status: "final" });
+      const res = await request(t.app)
+        .patch(`/api/chapters/${chapterId}`)
+        .send({ status: "final" });
 
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe("VALIDATION_ERROR");
@@ -243,7 +245,9 @@ describe("PATCH /api/chapters/:id", () => {
     await t.db("chapters").where({ id: chapterId }).update({ content: "{invalid json!!!" });
 
     // PATCH only the title — content is not overwritten
-    const res = await request(t.app).patch(`/api/chapters/${chapterId}`).send({ title: "New Title" });
+    const res = await request(t.app)
+      .patch(`/api/chapters/${chapterId}`)
+      .send({ title: "New Title" });
     expect(res.status).toBe(500);
     expect(res.body.error.code).toBe("CORRUPT_CONTENT");
     errorSpy.mockRestore();
