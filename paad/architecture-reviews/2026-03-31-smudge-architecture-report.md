@@ -167,7 +167,7 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Status:** Fixed
 - **Status reason:** Added save-failure recovery e2e test using Playwright route interception: blocks PATCH, verifies error state, unblocks, verifies recovery and persistence after reload
 - **Status date:** 2026-03-31 11:24 UTC
-- **Status commit:** (pending)
+- **Status commit:** f1798e7
 
 ### [F-3] parseChapterContent silently swallows JSON parse errors
 - **Category:** 20 (Weak error handling strategy)
