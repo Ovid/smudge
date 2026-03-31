@@ -321,6 +321,13 @@ export function Sidebar({
   const [editDraft, setEditDraft] = useState("");
   const editInputRef = useRef<HTMLInputElement>(null);
   const [announcement, setAnnouncement] = useState("");
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      resizeCleanupRef.current?.();
+    };
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -482,11 +489,16 @@ export function Sidebar({
             onResize(newWidth);
           }
           function onMouseUp() {
+            cleanupResize();
+          }
+          function cleanupResize() {
             document.removeEventListener("mousemove", onMouseMove);
             document.removeEventListener("mouseup", onMouseUp);
+            resizeCleanupRef.current = null;
           }
           document.addEventListener("mousemove", onMouseMove);
           document.addEventListener("mouseup", onMouseUp);
+          resizeCleanupRef.current = cleanupResize;
         }}
         onKeyDown={(e) => {
           if (e.key === "ArrowRight") {
