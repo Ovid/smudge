@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
+import request from "supertest";
 import { parseChapterContent } from "../routes/parseChapterContent";
+import { queryChapter, queryChapters } from "../routes/chapterQueries";
 import { setupTestDb } from "./test-helpers";
 
 describe("parseChapterContent", () => {
@@ -86,10 +88,7 @@ describe("parseChapterContent integration — corrupt DB content", () => {
   });
 });
 
-describe("queryChapter / queryChapters helpers", async () => {
-  const { queryChapter, queryChapters } = await import("../routes/chapterQueries");
-  const request = (await import("supertest")).default;
-
+describe("queryChapter / queryChapters helpers", () => {
   const t = setupTestDb();
 
   it("queryChapter returns parsed content for a single chapter", async () => {
