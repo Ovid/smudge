@@ -71,6 +71,14 @@ afterEach(() => {
 });
 
 describe("Sidebar", () => {
+  it("renders the Smudge logo at the top", () => {
+    renderSidebar();
+
+    const logo = screen.getByAltText("Smudge");
+    expect(logo).toBeInTheDocument();
+    expect(logo.tagName).toBe("IMG");
+  });
+
   it("renders chapter list", () => {
     renderSidebar();
 
@@ -284,8 +292,8 @@ describe("Sidebar", () => {
     // Dropdown should be open
     expect(screen.getByRole("listbox")).toBeInTheDocument();
 
-    // Click outside the dropdown (on the sidebar heading)
-    await userEvent.click(screen.getByText("Test Project"));
+    // Click outside the dropdown (on the sidebar logo)
+    await userEvent.click(screen.getByAltText("Smudge"));
 
     // Dropdown should be closed
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
