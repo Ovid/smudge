@@ -128,6 +128,7 @@ export function useProjectEditor(slug: string | undefined) {
 
   const handleSelectChapter = useCallback(async (chapterId: string) => {
     if (activeChapterRef.current && chapterId === activeChapterRef.current.id) return;
+    ++saveSeqRef.current; // cancel any in-flight save retries for the old chapter
     const seq = ++selectChapterSeqRef.current;
     try {
       const chapter = await api.chapters.get(chapterId);
