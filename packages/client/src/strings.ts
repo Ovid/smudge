@@ -46,6 +46,10 @@ export const STRINGS = {
     updateTitleFailed: "Failed to update project title",
     renameChapterFailed: "Failed to rename chapter",
     deleteFailed: "Failed to delete project",
+    loadTrashFailed: "Failed to load trash",
+    restoreChapterFailed: "Failed to restore chapter",
+    loadDashboardFailed: "Failed to load dashboard",
+    statusChangeFailed: "Failed to update chapter status",
   },
   editor: {
     placeholder: "Start writing\u2026",
@@ -60,6 +64,8 @@ export const STRINGS = {
     newChapter: "New chapter",
     toggleSidebar: "Toggle sidebar",
     showShortcuts: "Keyboard shortcuts",
+    prevChapter: "Previous chapter",
+    nextChapter: "Next chapter",
   },
   sidebar: {
     addChapter: "Add Chapter",
@@ -74,6 +80,10 @@ export const STRINGS = {
     dragHandle: "Drag to reorder",
     chapterPosition: (title: string, position: number, total: number) =>
       `Chapter \u201c${title}\u201d moved to position ${position} of ${total}`,
+    statusLabel: (label: string) => `Chapter status: ${label}`,
+    statusChanged: (label: string) => `Chapter status changed to ${label}`,
+    resizeHandle: "Resize sidebar",
+    navigatedToChapter: (title: string) => `Navigated to ${title}`,
   },
   preview: {
     backToEditor: "Back to Editor",
@@ -87,6 +97,7 @@ export const STRINGS = {
     chapterTitleInput: "Chapter title",
     projectTitleInput: "Project title",
     editorContent: "Chapter content",
+    dismissError: "Dismiss error",
   },
   toolbar: {
     bold: "Bold",
@@ -105,7 +116,33 @@ export const STRINGS = {
   nav: {
     backToProjects: "\u2190 Projects",
     preview: "Preview",
+    editor: "Editor",
+    dashboard: "Dashboard",
     loading: "Loading...",
     totalSuffix: "total",
+  },
+  dashboard: {
+    heading: "Manuscript Dashboard",
+    totalWordCount: (count: number) => `${count.toLocaleString()} words`,
+    totalChapters: (count: number) => `${count} ${count === 1 ? "chapter" : "chapters"}`,
+    mostRecentEdit: (dateStr: string, title: string) => {
+      const date = new Date(dateStr);
+      return `Most recent: ${date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} (${title})`;
+    },
+    leastRecentEdit: (dateStr: string, title: string) => {
+      const date = new Date(dateStr);
+      return `Least recent: ${date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} (${title})`;
+    },
+    emptyState: "No chapters yet",
+    columnOrder: "#",
+    columnTitle: "Title",
+    columnStatus: "Status",
+    columnWordCount: "Word Count",
+    columnLastEdited: "Last Edited",
+    healthSectionLabel: "Manuscript health",
+    statusSummaryLabel: "Status summary",
+    statusDistributionLabel: "Chapter status distribution",
+    sortAscending: " \u2191",
+    sortDescending: " \u2193",
   },
 } as const;

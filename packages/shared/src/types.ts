@@ -20,6 +20,8 @@ export interface Chapter {
   content: Record<string, unknown> | null;
   sort_order: number;
   word_count: number;
+  status: string;
+  status_label?: string;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -38,6 +40,12 @@ export interface ProjectListItem {
 
 export interface ProjectWithChapters extends Project {
   chapters: Chapter[];
+}
+
+export interface ChapterStatusRow {
+  status: string;
+  sort_order: number;
+  label: string;
 }
 
 export interface ApiError {

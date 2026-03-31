@@ -5,6 +5,7 @@ export {
   UpdateChapterSchema,
   ReorderChaptersSchema,
   ProjectMode,
+  ChapterStatus,
 } from "./schemas";
 export { countWords } from "./wordcount";
 export { generateSlug } from "./slugify";
@@ -15,5 +16,6 @@ export type {
   CreateProjectInput,
   ProjectListItem,
   ProjectWithChapters,
+  ChapterStatusRow,
   ApiError,
 } from "./types";

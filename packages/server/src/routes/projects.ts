@@ -10,6 +10,7 @@ import {
 import { asyncHandler } from "../app";
 import { parseChapterContent } from "./parseChapterContent";
 import { resolveUniqueSlug } from "./resolve-slug";
+import { getStatusLabelMap } from "./status-labels";
 
 export function projectsRouter(db: Knex): Router {
   const router = Router();
@@ -205,7 +206,12 @@ export function projectsRouter(db: Knex): Router {
         .orderBy("sort_order", "asc")
         .select("*");
 
-      const parsedChapters = chapters.map((ch: Record<string, unknown>) => parseChapterContent(ch));
+      const statusLabelMap = await getStatusLabelMap(db);
+
+      const parsedChapters = chapters.map((ch: Record<string, unknown>) => ({
+        ...parseChapterContent(ch),
+        status_label: statusLabelMap[ch.status as string] ?? (ch.status as string),
+      }));
 
       res.json({ ...project, chapters: parsedChapters });
     }),
@@ -249,7 +255,18 @@ export function projectsRouter(db: Knex): Router {
       await db("projects").where({ id: project.id }).update({ updated_at: now });
 
       const chapter = await db("chapters").where({ id: chapterId }).first();
-      res.status(201).json(parseChapterContent(chapter));
+      if (!chapter) {
+        res.status(500).json({
+          error: { code: "INTERNAL_ERROR", message: "Failed to retrieve created chapter." },
+        });
+        return;
+      }
+      const statusLabelMap = await getStatusLabelMap(db);
+      const parsedChapter = parseChapterContent(chapter);
+      res.status(201).json({
+        ...parsedChapter,
+        status_label: statusLabelMap[chapter.status as string] ?? (chapter.status as string),
+      });
     }),
   );
 
@@ -310,6 +327,73 @@ export function projectsRouter(db: Knex): Router {
       });
 
       res.json({ message: "Chapter order updated." });
+    }),
+  );
+
+  router.get(
+    "/:slug/dashboard",
+    asyncHandler(async (req, res) => {
+      const project = await db("projects")
+        .where({ slug: req.params.slug })
+        .whereNull("deleted_at")
+        .first();
+
+      if (!project) {
+        res.status(404).json({
+          error: { code: "NOT_FOUND", message: "Project not found." },
+        });
+        return;
+      }
+
+      const chapters = await db("chapters")
+        .where({ project_id: project.id })
+        .whereNull("deleted_at")
+        .orderBy("sort_order", "asc")
+        .select("id", "title", "status", "word_count", "updated_at", "sort_order");
+
+      const allStatuses = await db("chapter_statuses")
+        .orderBy("sort_order", "asc")
+        .select("status", "label");
+      const statusLabelMap = await getStatusLabelMap(db);
+
+      const chaptersWithLabels = chapters.map((ch: Record<string, unknown>) => ({
+        ...ch,
+        status_label: statusLabelMap[ch.status as string] ?? (ch.status as string),
+      }));
+
+      // Build status_summary with all 5 statuses included
+      const statusSummary: Record<string, number> = {};
+      for (const s of allStatuses) {
+        statusSummary[s.status] = 0;
+      }
+      for (const ch of chapters) {
+        const status = ch.status as string;
+        if (status in statusSummary) {
+          statusSummary[status] = (statusSummary[status] ?? 0) + 1;
+        }
+      }
+
+      // Build totals
+      const totalWordCount = chapters.reduce(
+        (sum: number, ch: Record<string, unknown>) => sum + (ch.word_count as number),
+        0,
+      );
+      const updatedAts = chapters.map((ch: Record<string, unknown>) => ch.updated_at as string);
+      const mostRecentEdit =
+        updatedAts.length > 0 ? updatedAts.reduce((a, b) => (a > b ? a : b)) : null;
+      const leastRecentEdit =
+        updatedAts.length > 0 ? updatedAts.reduce((a, b) => (a < b ? a : b)) : null;
+
+      res.json({
+        chapters: chaptersWithLabels,
+        status_summary: statusSummary,
+        totals: {
+          word_count: totalWordCount,
+          chapter_count: chapters.length,
+          most_recent_edit: mostRecentEdit,
+          least_recent_edit: leastRecentEdit,
+        },
+      });
     }),
   );
 

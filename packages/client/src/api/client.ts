@@ -3,6 +3,7 @@ import type {
   ProjectListItem,
   ProjectWithChapters,
   Chapter,
+  ChapterStatusRow,
   CreateProjectInput,
   ApiError,
 } from "@smudge/shared";
@@ -68,6 +69,26 @@ export const api = {
       }),
 
     trash: (slug: string) => apiFetch<Chapter[]>(`/projects/${slug}/trash`),
+
+    dashboard: (slug: string) =>
+      apiFetch<{
+        chapters: Array<{
+          id: string;
+          title: string;
+          status: string;
+          status_label: string;
+          word_count: number;
+          updated_at: string;
+          sort_order: number;
+        }>;
+        status_summary: Record<string, number>;
+        totals: {
+          word_count: number;
+          chapter_count: number;
+          most_recent_edit: string | null;
+          least_recent_edit: string | null;
+        };
+      }>(`/projects/${slug}/dashboard`),
   },
 
   chapters: {
@@ -76,7 +97,10 @@ export const api = {
     create: (projectSlug: string) =>
       apiFetch<Chapter>(`/projects/${projectSlug}/chapters`, { method: "POST" }),
 
-    update: (id: string, data: { title?: string; content?: Record<string, unknown> }) =>
+    update: (
+      id: string,
+      data: { title?: string; content?: Record<string, unknown>; status?: string },
+    ) =>
       apiFetch<Chapter>(`/chapters/${id}`, {
         method: "PATCH",
         body: JSON.stringify(data),
@@ -86,5 +110,9 @@ export const api = {
 
     restore: (id: string) =>
       apiFetch<Chapter & { project_slug?: string }>(`/chapters/${id}/restore`, { method: "POST" }),
+  },
+
+  chapterStatuses: {
+    list: () => apiFetch<ChapterStatusRow[]>("/chapter-statuses"),
   },
 };

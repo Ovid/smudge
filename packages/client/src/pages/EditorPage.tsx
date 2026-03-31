@@ -1,14 +1,35 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import type { Chapter } from "@smudge/shared";
+import type { Chapter, ChapterStatusRow } from "@smudge/shared";
 import { Editor } from "../components/Editor";
 import { Sidebar } from "../components/Sidebar";
 import { TrashView } from "../components/TrashView";
 import { PreviewMode } from "../components/PreviewMode";
+import { DashboardView } from "../components/DashboardView";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { STRINGS } from "../strings";
 import { useProjectEditor } from "../hooks/useProjectEditor";
 import { api } from "../api/client";
+
+const SIDEBAR_DEFAULT_WIDTH = 260;
+const SIDEBAR_MIN_WIDTH = 180;
+const SIDEBAR_MAX_WIDTH = 480;
+const SIDEBAR_WIDTH_KEY = "smudge:sidebar-width";
+
+function getSavedSidebarWidth(): number {
+  try {
+    const stored = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (stored !== null) {
+      const parsed = Number(stored);
+      if (!Number.isNaN(parsed) && parsed >= SIDEBAR_MIN_WIDTH && parsed <= SIDEBAR_MAX_WIDTH) {
+        return parsed;
+      }
+    }
+  } catch {
+    // localStorage unavailable
+  }
+  return SIDEBAR_DEFAULT_WIDTH;
+}
 
 export function EditorPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -30,6 +51,7 @@ export function EditorPage() {
     handleReorderChapters,
     handleUpdateProjectTitle,
     handleRenameChapter,
+    handleStatusChange,
   } = useProjectEditor(slug);
 
   const [editingTitle, setEditingTitle] = useState(false);
@@ -44,18 +66,72 @@ export function EditorPage() {
   const isSavingTitleRef = useRef(false);
   const isSavingProjectTitleRef = useRef(false);
 
+  const [sidebarWidth, setSidebarWidth] = useState(getSavedSidebarWidth);
+  const handleSidebarResize = useCallback((newWidth: number) => {
+    setSidebarWidth(newWidth);
+    try {
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(newWidth));
+    } catch {
+      // localStorage unavailable
+    }
+  }, []);
+
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<Chapter | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
   const [trashedChapters, setTrashedChapters] = useState<Chapter[]>([]);
-  const [previewOpen, setPreviewOpen] = useState(false);
+  type ViewMode = "editor" | "preview" | "dashboard";
+  const [viewMode, setViewMode] = useState<ViewMode>("editor");
+  const [statuses, setStatuses] = useState<ChapterStatusRow[]>([]);
+  const [navAnnouncement, setNavAnnouncement] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    let attempts = 0;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    function fetchStatuses() {
+      api.chapterStatuses
+        .list()
+        .then((data) => {
+          if (!cancelled) setStatuses(data);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          console.error(err);
+          if (attempts < 2) {
+            attempts++;
+            timerId = setTimeout(fetchStatuses, 2000 * attempts);
+          }
+        });
+    }
+    fetchStatuses();
+    return () => {
+      cancelled = true;
+      if (timerId !== null) clearTimeout(timerId);
+    };
+  }, []);
 
   const editorRef = useRef<{ flushSave: () => Promise<void> } | null>(null);
+
+  const handleStatusChangeWithError = useCallback(
+    async (chapterId: string, status: string) => {
+      try {
+        await handleStatusChange(chapterId, status);
+      } catch (err) {
+        console.error(err);
+        setActionError(err instanceof Error ? err.message : STRINGS.error.statusChangeFailed);
+      }
+    },
+    [handleStatusChange],
+  );
 
   const handleSelectChapterWithFlush = useCallback(
     async (chapterId: string) => {
       await editorRef.current?.flushSave();
       setTrashOpen(false);
+      setViewMode("editor");
       await handleSelectChapter(chapterId);
     },
     [handleSelectChapter],
@@ -69,6 +145,7 @@ export function EditorPage() {
       setTrashOpen(true);
     } catch (err) {
       console.error("Failed to load trash:", err);
+      setActionError(err instanceof Error ? err.message : STRINGS.error.loadTrashFailed);
     }
   }
 
@@ -88,8 +165,13 @@ export function EditorPage() {
         }
         return updatedProject;
       });
+      // If the slug changed (project was also restored), update the URL
+      if (restored.project_slug && restored.project_slug !== slug) {
+        navigate(`/projects/${restored.project_slug}`, { replace: true });
+      }
     } catch (err) {
       console.error("Failed to restore chapter:", err);
+      setActionError(err instanceof Error ? err.message : STRINGS.error.restoreChapterFailed);
     }
   }
 
@@ -117,6 +199,15 @@ export function EditorPage() {
         return;
       }
 
+      if (shortcutHelpOpen && e.key === "Escape") {
+        e.preventDefault();
+        setShortcutHelpOpen(false);
+        return;
+      }
+
+      // Don't process shortcuts when a dialog is open (focus trap)
+      if (shortcutHelpOpen || deleteTarget) return;
+
       if (ctrl && e.shiftKey && e.key === "N") {
         e.preventDefault();
         handleCreateChapter();
@@ -131,20 +222,40 @@ export function EditorPage() {
 
       if (ctrl && e.shiftKey && e.key === "P") {
         e.preventDefault();
-        editorRef.current?.flushSave();
-        setPreviewOpen((prev) => !prev);
+        editorRef.current?.flushSave().then(() => {
+          setTrashOpen(false);
+          setViewMode((prev) => (prev === "preview" ? "editor" : "preview"));
+        });
         return;
       }
 
-      if (shortcutHelpOpen && e.key === "Escape") {
+      if (ctrl && e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+        if (viewMode !== "editor" || !activeChapter || !project) return;
         e.preventDefault();
-        setShortcutHelpOpen(false);
+        const chapters = project.chapters;
+        const currentIndex = chapters.findIndex((c) => c.id === activeChapter.id);
+        if (currentIndex === -1) return;
+        const nextIndex = e.key === "ArrowUp" ? currentIndex - 1 : currentIndex + 1;
+        if (nextIndex < 0 || nextIndex >= chapters.length) return;
+        handleSelectChapterWithFlush(chapters[nextIndex].id);
+        setNavAnnouncement(STRINGS.sidebar.navigatedToChapter(chapters[nextIndex].title));
+        setTimeout(() => setNavAnnouncement(""), 1000);
+        return;
       }
+
     }
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [handleCreateChapter, shortcutHelpOpen]);
+  }, [
+    handleCreateChapter,
+    shortcutHelpOpen,
+    deleteTarget,
+    viewMode,
+    activeChapter,
+    project,
+    handleSelectChapterWithFlush,
+  ]);
 
   function startEditingTitle() {
     if (!activeChapter) return;
@@ -252,6 +363,10 @@ export function EditorPage() {
             onReorderChapters={handleReorderChapters}
             onRenameChapter={handleRenameChapter}
             onOpenTrash={openTrash}
+            statuses={statuses}
+            onStatusChange={handleStatusChangeWithError}
+            width={sidebarWidth}
+            onResize={handleSidebarResize}
           />
         )}
         <div className="flex-1 flex flex-col items-center justify-center">
@@ -287,6 +402,10 @@ export function EditorPage() {
           onReorderChapters={handleReorderChapters}
           onRenameChapter={handleRenameChapter}
           onOpenTrash={openTrash}
+          statuses={statuses}
+          onStatusChange={handleStatusChangeWithError}
+          width={sidebarWidth}
+          onResize={handleSidebarResize}
         />
       )}
 
@@ -332,16 +451,70 @@ export function EditorPage() {
               </h1>
             )}
           </div>
-          <button
-            onClick={() => {
-              editorRef.current?.flushSave();
-              setPreviewOpen(true);
-            }}
-            className="text-sm text-text-secondary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-focus-ring rounded px-2 py-1"
-          >
-            {STRINGS.nav.preview}
-          </button>
+          <div className="flex gap-1">
+            <button
+              onClick={() => {
+                setTrashOpen(false);
+                setViewMode("editor");
+              }}
+              aria-current={viewMode === "editor" ? "page" : undefined}
+              className={`text-sm rounded px-3 py-1 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
+                viewMode === "editor"
+                  ? "bg-accent-light text-accent font-medium"
+                  : "text-text-secondary hover:text-text-primary"
+              }`}
+            >
+              {STRINGS.nav.editor}
+            </button>
+            <button
+              onClick={async () => {
+                await editorRef.current?.flushSave();
+                setTrashOpen(false);
+                setViewMode("preview");
+              }}
+              aria-current={viewMode === "preview" ? "page" : undefined}
+              className={`text-sm rounded px-3 py-1 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
+                viewMode === "preview"
+                  ? "bg-accent-light text-accent font-medium"
+                  : "text-text-secondary hover:text-text-primary"
+              }`}
+            >
+              {STRINGS.nav.preview}
+            </button>
+            <button
+              onClick={async () => {
+                await editorRef.current?.flushSave();
+                setTrashOpen(false);
+                setViewMode("dashboard");
+                setDashboardRefreshKey((k) => k + 1);
+              }}
+              aria-current={viewMode === "dashboard" ? "page" : undefined}
+              className={`text-sm rounded px-3 py-1 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
+                viewMode === "dashboard"
+                  ? "bg-accent-light text-accent font-medium"
+                  : "text-text-secondary hover:text-text-primary"
+              }`}
+            >
+              {STRINGS.nav.dashboard}
+            </button>
+          </div>
         </header>
+
+        {actionError && (
+          <div
+            role="alert"
+            className="px-6 py-2 bg-status-error/10 text-status-error text-sm flex items-center justify-between"
+          >
+            <span>{actionError}</span>
+            <button
+              onClick={() => setActionError(null)}
+              className="text-status-error hover:text-text-primary text-xs ml-4 focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
+              aria-label={STRINGS.a11y.dismissError}
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {trashOpen ? (
           <main className="flex-1 overflow-y-auto" aria-label={STRINGS.a11y.mainContent}>
@@ -349,6 +522,28 @@ export function EditorPage() {
               chapters={trashedChapters}
               onRestore={handleRestore}
               onBack={() => setTrashOpen(false)}
+            />
+          </main>
+        ) : viewMode === "preview" ? (
+          <main className="flex-1 overflow-y-auto" aria-label={STRINGS.a11y.mainContent}>
+            <PreviewMode
+              chapters={project.chapters}
+              onNavigateToChapter={(chapterId) => {
+                setViewMode("editor");
+                handleSelectChapterWithFlush(chapterId);
+              }}
+            />
+          </main>
+        ) : viewMode === "dashboard" ? (
+          <main className="flex-1 overflow-y-auto" aria-label={STRINGS.a11y.mainContent}>
+            <DashboardView
+              slug={project.slug}
+              statuses={statuses}
+              refreshKey={dashboardRefreshKey}
+              onNavigateToChapter={(chapterId) => {
+                setViewMode("editor");
+                handleSelectChapterWithFlush(chapterId);
+              }}
             />
           </main>
         ) : (
@@ -387,11 +582,7 @@ export function EditorPage() {
           </main>
         )}
 
-        <footer
-          role="status"
-          aria-live="polite"
-          className="border-t border-border bg-bg-primary px-6 py-2 flex items-center justify-between text-sm text-text-secondary"
-        >
+        <footer className="border-t border-border bg-bg-primary px-6 py-2 flex items-center justify-between text-sm text-text-secondary">
           <div>
             {STRINGS.project.wordCount(chapterWordCount)}
             {project && (
@@ -403,7 +594,7 @@ export function EditorPage() {
               </span>
             )}
           </div>
-          <div>
+          <div role="status" aria-live="polite">
             {saveStatus === "unsaved" && STRINGS.editor.unsaved}
             {saveStatus === "saving" && STRINGS.editor.saving}
             {saveStatus === "saved" && STRINGS.editor.saved}
@@ -425,6 +616,10 @@ export function EditorPage() {
           onCancel={() => setDeleteTarget(null)}
         />
       )}
+
+      <div aria-live="polite" className="sr-only" data-testid="nav-announcement">
+        {navAnnouncement}
+      </div>
 
       {shortcutHelpOpen && (
         <dialog
@@ -453,23 +648,20 @@ export function EditorPage() {
                 <dd className="font-mono text-text-muted">Ctrl+Shift+\</dd>
               </div>
               <div className="flex justify-between">
+                <dt className="text-text-secondary">{STRINGS.shortcuts.prevChapter}</dt>
+                <dd className="font-mono text-text-muted">Ctrl+Shift+↑</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-text-secondary">{STRINGS.shortcuts.nextChapter}</dt>
+                <dd className="font-mono text-text-muted">Ctrl+Shift+↓</dd>
+              </div>
+              <div className="flex justify-between">
                 <dt className="text-text-secondary">{STRINGS.shortcuts.showShortcuts}</dt>
                 <dd className="font-mono text-text-muted">Ctrl+/</dd>
               </div>
             </dl>
           </div>
         </dialog>
-      )}
-
-      {previewOpen && (
-        <PreviewMode
-          chapters={project.chapters}
-          onClose={() => setPreviewOpen(false)}
-          onNavigateToChapter={(chapterId) => {
-            setPreviewOpen(false);
-            handleSelectChapterWithFlush(chapterId);
-          }}
-        />
       )}
     </div>
   );

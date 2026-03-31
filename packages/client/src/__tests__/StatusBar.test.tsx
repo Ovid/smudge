@@ -23,6 +23,9 @@ vi.mock("../api/client", () => ({
       get: vi.fn(),
       update: vi.fn(),
     },
+    chapterStatuses: {
+      list: vi.fn().mockResolvedValue([]),
+    },
   },
 }));
 
@@ -45,6 +48,7 @@ const mockProject = {
       },
       sort_order: 0,
       word_count: 3,
+      status: "outline",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
       deleted_at: null,
@@ -77,9 +81,9 @@ describe("Status bar", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      const statusBar = document.querySelector("[role='status']");
-      expect(statusBar).not.toBeNull();
-      expect(statusBar?.textContent).toContain("words");
+      const footer = document.querySelector("footer");
+      expect(footer).not.toBeNull();
+      expect(footer?.textContent).toContain("words");
     });
   });
 
@@ -87,8 +91,8 @@ describe("Status bar", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      const statusBar = document.querySelector("[role='status']");
-      expect(statusBar?.textContent).toContain("3");
+      const footer = document.querySelector("footer");
+      expect(footer?.textContent).toContain("3");
     });
   });
 

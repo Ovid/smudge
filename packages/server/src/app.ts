@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from "express";
 import type { Knex } from "knex";
 import { projectsRouter } from "./routes/projects";
 import { chaptersRouter } from "./routes/chapters";
+import { chapterStatusesRouter } from "./routes/chapter-statuses";
 
 export function asyncHandler(
   fn: (req: Request, res: Response, next: NextFunction) => Promise<void>,
@@ -19,6 +20,7 @@ export function createApp(db: Knex): express.Express {
 
   app.use("/api/projects", projectsRouter(db));
   app.use("/api/chapters", chaptersRouter(db));
+  app.use("/api/chapter-statuses", chapterStatusesRouter(db));
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok" });

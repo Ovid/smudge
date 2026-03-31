@@ -4,6 +4,7 @@ import { UpdateChapterSchema, countWords, generateSlug } from "@smudge/shared";
 import { asyncHandler } from "../app";
 import { parseChapterContent } from "./parseChapterContent";
 import { resolveUniqueSlug } from "./resolve-slug";
+import { getStatusLabel } from "./status-labels";
 
 export function chaptersRouter(db: Knex): Router {
   const router = Router();
@@ -23,7 +24,9 @@ export function chaptersRouter(db: Knex): Router {
         return;
       }
 
-      res.json(parseChapterContent(chapter));
+      const parsed = parseChapterContent(chapter);
+      const status_label = await getStatusLabel(db, chapter.status as string);
+      res.json({ ...parsed, status_label });
     }),
   );
 
@@ -66,6 +69,25 @@ export function chaptersRouter(db: Knex): Router {
         updates.word_count = countWords(parsed.data.content as Record<string, unknown>);
       }
 
+      if (parsed.data.status !== undefined) {
+        // Intentional: Zod enum validates the status format, but this DB check
+        // guards against drift between the enum and the chapter_statuses table
+        // (e.g., a new status added to the enum without a corresponding migration).
+        const validStatus = await db("chapter_statuses")
+          .where({ status: parsed.data.status })
+          .first();
+        if (!validStatus) {
+          res.status(400).json({
+            error: {
+              code: "VALIDATION_ERROR",
+              message: `Invalid status: ${parsed.data.status}`,
+            },
+          });
+          return;
+        }
+        updates.status = parsed.data.status;
+      }
+
       await db.transaction(async (trx) => {
         await trx("chapters").where({ id: req.params.id }).update(updates);
         await trx("projects")
@@ -74,8 +96,16 @@ export function chaptersRouter(db: Knex): Router {
       });
 
       const updated = await db("chapters").where({ id: req.params.id }).first();
+      if (!updated) {
+        res.status(404).json({
+          error: { code: "NOT_FOUND", message: "Chapter not found." },
+        });
+        return;
+      }
+      const parsedUpdated = parseChapterContent(updated);
+      const updatedStatusLabel = await getStatusLabel(db, updated.status as string);
 
-      res.json(parseChapterContent(updated));
+      res.json({ ...parsedUpdated, status_label: updatedStatusLabel });
     }),
   );
 
@@ -163,8 +193,19 @@ export function chaptersRouter(db: Knex): Router {
       }
 
       const restored = await db("chapters").where({ id: req.params.id }).first();
+      if (!restored) {
+        res.status(404).json({
+          error: { code: "NOT_FOUND", message: "Chapter not found." },
+        });
+        return;
+      }
       const updatedProject = await db("projects").where({ id: chapter.project_id }).first();
-      res.json({ ...parseChapterContent(restored), project_slug: updatedProject?.slug });
+      const restoredStatusLabel = await getStatusLabel(db, restored.status as string);
+      res.json({
+        ...parseChapterContent(restored),
+        status_label: restoredStatusLabel,
+        project_slug: updatedProject?.slug,
+      });
     }),
   );
 

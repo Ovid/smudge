@@ -34,9 +34,9 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
         clearTimeout(debounceTimerRef.current);
       }
       debounceTimerRef.current = setTimeout(async () => {
+        debounceTimerRef.current = null; // Clear before async work so flushSave knows the timer fired
         const ok = await onSaveRef.current(editorInstance.getJSON() as Record<string, unknown>);
         dirtyRef.current = !ok;
-        debounceTimerRef.current = null;
       }, AUTO_SAVE_DEBOUNCE_MS);
     },
     [],

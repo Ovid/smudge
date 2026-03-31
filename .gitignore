@@ -140,3 +140,7 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
 scratch/
+
+# Playwright
+test-results/
+playwright-report/

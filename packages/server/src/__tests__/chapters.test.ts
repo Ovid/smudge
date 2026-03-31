@@ -137,6 +137,49 @@ describe("PATCH /api/chapters/:id", () => {
     expect(res.status).toBe(404);
   });
 
+  it("updates chapter status", async () => {
+    const { chapterId } = await createProjectWithChapter(t.app);
+
+    const res = await request(t.app)
+      .patch(`/api/chapters/${chapterId}`)
+      .send({ status: "rough_draft" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("rough_draft");
+  });
+
+  it("returns 400 for invalid status", async () => {
+    const { chapterId } = await createProjectWithChapter(t.app);
+
+    const res = await request(t.app)
+      .patch(`/api/chapters/${chapterId}`)
+      .send({ status: "invalid_status" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
+  it("returns chapter with status in response", async () => {
+    const { chapterId } = await createProjectWithChapter(t.app);
+
+    const res = await request(t.app).get(`/api/chapters/${chapterId}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("outline");
+  });
+
+  it("GET /api/projects/:slug includes chapter status and status_label", async () => {
+    const { projectSlug, chapterId } = await createProjectWithChapter(t.app);
+
+    await request(t.app).patch(`/api/chapters/${chapterId}`).send({ status: "edited" });
+
+    const res = await request(t.app).get(`/api/projects/${projectSlug}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.chapters[0].status).toBe("edited");
+    expect(res.body.chapters[0].status_label).toBe("Edited");
+  });
+
   it("preserves content on invalid update", async () => {
     const { chapterId } = await createProjectWithChapter(t.app);
 

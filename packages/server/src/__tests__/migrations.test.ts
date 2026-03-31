@@ -112,3 +112,63 @@ describe("migration 002 slug backfill", () => {
     expect(slugs).toEqual(["my-novel", "my-novel-2"]);
   });
 });
+
+describe("migration 003 chapter statuses", () => {
+  let db: Knex;
+
+  beforeAll(async () => {
+    db = knex(createTestKnexConfig());
+  });
+
+  afterAll(async () => {
+    await db.destroy();
+  });
+
+  it("seeds chapter_statuses table with 5 statuses", async () => {
+    await db.migrate.latest();
+
+    const statuses = await db("chapter_statuses").orderBy("sort_order");
+    expect(statuses).toEqual([
+      { status: "outline", sort_order: 1, label: "Outline" },
+      { status: "rough_draft", sort_order: 2, label: "Rough Draft" },
+      { status: "revised", sort_order: 3, label: "Revised" },
+      { status: "edited", sort_order: 4, label: "Edited" },
+      { status: "final", sort_order: 5, label: "Final" },
+    ]);
+  });
+
+  it("adds status column to chapters with default 'outline'", async () => {
+    // Roll back everything and start fresh
+    await db.migrate.rollback(undefined, true);
+
+    // Run migrations 001 and 002
+    await db.migrate.up();
+    await db.migrate.up();
+
+    // Insert a project and chapter before migration 003
+    const now = new Date().toISOString();
+    await db("projects").insert({
+      id: "p1",
+      slug: "test-project",
+      title: "Test Project",
+      mode: "fiction",
+      created_at: now,
+      updated_at: now,
+    });
+    await db("chapters").insert({
+      id: "c1",
+      project_id: "p1",
+      title: "Chapter 1",
+      sort_order: 0,
+      word_count: 0,
+      created_at: now,
+      updated_at: now,
+    });
+
+    // Run migration 003
+    await db.migrate.up();
+
+    const chapter = await db("chapters").where({ id: "c1" }).first();
+    expect(chapter.status).toBe("outline");
+  });
+});

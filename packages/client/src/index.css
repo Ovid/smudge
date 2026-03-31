@@ -13,12 +13,12 @@
   /* Text colors */
   --color-text-primary: #2d2d2d;
   --color-text-secondary: #5c5c5c;
-  --color-text-muted: #8a8a8a;
+  --color-text-muted: #736b63;
   --color-text-inverse: #ffffff;
 
   /* Accent colors */
-  --color-accent: #c0874f;
-  --color-accent-hover: #a8733d;
+  --color-accent: #85571f;
+  --color-accent-hover: #6e4819;
   --color-accent-light: #f5e6d3;
 
   /* Border colors */
@@ -31,7 +31,7 @@
   --color-status-warning: #d4a843;
 
   /* Focus */
-  --color-focus-ring: #c0874f;
+  --color-focus-ring: #85571f;
 
   /* Typography */
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
