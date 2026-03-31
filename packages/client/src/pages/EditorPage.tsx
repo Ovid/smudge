@@ -198,6 +198,15 @@ export function EditorPage() {
         return;
       }
 
+      if (shortcutHelpOpen && e.key === "Escape") {
+        e.preventDefault();
+        setShortcutHelpOpen(false);
+        return;
+      }
+
+      // Don't process shortcuts when a dialog is open (focus trap)
+      if (shortcutHelpOpen || deleteTarget) return;
+
       if (ctrl && e.shiftKey && e.key === "N") {
         e.preventDefault();
         handleCreateChapter();
@@ -233,10 +242,6 @@ export function EditorPage() {
         return;
       }
 
-      if (shortcutHelpOpen && e.key === "Escape") {
-        e.preventDefault();
-        setShortcutHelpOpen(false);
-      }
     }
 
     document.addEventListener("keydown", handleKeyDown);
@@ -244,6 +249,7 @@ export function EditorPage() {
   }, [
     handleCreateChapter,
     shortcutHelpOpen,
+    deleteTarget,
     viewMode,
     activeChapter,
     project,
