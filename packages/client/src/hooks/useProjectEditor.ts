@@ -14,6 +14,7 @@ export function useProjectEditor(slug: string | undefined) {
   const [error, setError] = useState<string | null>(null);
   const [projectTitleError, setProjectTitleError] = useState<string | null>(null);
   const [chapterWordCount, setChapterWordCount] = useState(0);
+  const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
   const activeChapterRef = useRef<Chapter | null>(null);
   const projectSlugRef = useRef(project?.slug);
   const selectChapterSeqRef = useRef(0);
@@ -68,6 +69,8 @@ export function useProjectEditor(slug: string | undefined) {
       const MAX_RETRIES = 3;
 
       setSaveStatus("saving");
+      setSaveErrorMessage(null);
+      let lastError: unknown;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (seq !== saveSeqRef.current) return false; // chapter changed, abort retries
         try {
@@ -90,6 +93,7 @@ export function useProjectEditor(slug: string | undefined) {
           }
           return true;
         } catch (err) {
+          lastError = err;
           if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
             break;
           }
@@ -100,6 +104,9 @@ export function useProjectEditor(slug: string | undefined) {
       }
       if (activeChapterRef.current?.id === savingChapterId) {
         setSaveStatus("error");
+        setSaveErrorMessage(
+          lastError instanceof Error ? lastError.message : STRINGS.editor.saveFailed,
+        );
       }
       return false;
     },
@@ -313,6 +320,7 @@ export function useProjectEditor(slug: string | undefined) {
     setProject,
     activeChapter,
     saveStatus,
+    saveErrorMessage,
     chapterWordCount,
     handleSave,
     handleContentChange,

@@ -42,6 +42,7 @@ export function EditorPage() {
     setProject,
     activeChapter,
     saveStatus,
+    saveErrorMessage,
     chapterWordCount,
     handleSave,
     handleContentChange,
@@ -596,7 +597,9 @@ export function EditorPage() {
             {saveStatus === "saving" && STRINGS.editor.saving}
             {saveStatus === "saved" && STRINGS.editor.saved}
             {saveStatus === "error" && (
-              <span className="text-status-error">{STRINGS.editor.saveFailed}</span>
+              <span className="text-status-error">
+                {saveErrorMessage ?? STRINGS.editor.saveFailed}
+              </span>
             )}
             {saveStatus === "idle" && ""}
           </div>

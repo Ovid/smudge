@@ -563,6 +563,42 @@ describe("useProjectEditor", () => {
     expect(api.chapters.update).toHaveBeenCalledTimes(1);
   });
 
+  it("handleSave exposes server error message on 4xx failure", async () => {
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("Invalid status: xyz", 400),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(result.current.saveStatus).toBe("error");
+    expect(result.current.saveErrorMessage).toBe("Invalid status: xyz");
+  });
+
+  it("handleSave clears saveErrorMessage on next save attempt", async () => {
+    vi.mocked(api.chapters.update)
+      .mockRejectedValueOnce(new ApiRequestError("Bad Request", 400))
+      .mockResolvedValueOnce({ ...mockChapter1, word_count: 3 });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+    expect(result.current.saveErrorMessage).toBe("Bad Request");
+
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+    expect(result.current.saveStatus).toBe("saved");
+    expect(result.current.saveErrorMessage).toBeNull();
+  });
+
   it("handleDeleteChapter falls through to empty state when secondary chapter fetch fails", async () => {
     vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
     vi.mocked(api.chapters.get)
