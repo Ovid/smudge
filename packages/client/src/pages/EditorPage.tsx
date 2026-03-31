@@ -119,10 +119,7 @@ export function EditorPage() {
 
   const handleStatusChangeWithError = useCallback(
     async (chapterId: string, status: string) => {
-      const errorMessage = await handleStatusChange(chapterId, status);
-      if (errorMessage) {
-        setActionError(errorMessage);
-      }
+      await handleStatusChange(chapterId, status, setActionError);
     },
     [handleStatusChange],
   );

@@ -484,7 +484,7 @@ describe("useProjectEditor", () => {
     expect(result.current.project?.chapters[0].status).toBe("revised");
   });
 
-  it("handleStatusChange reverts on API failure", async () => {
+  it("handleStatusChange reverts on API failure and calls onError", async () => {
     vi.mocked(api.chapters.update).mockRejectedValue(new Error("status boom"));
     // When the status change fails, it reloads the project from server
     const reloadedProject = {
@@ -495,16 +495,16 @@ describe("useProjectEditor", () => {
       .mockResolvedValueOnce(mockProject) // initial load
       .mockResolvedValueOnce(reloadedProject); // reload after failure
 
+    const onError = vi.fn();
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
 
-    let errorMessage: string | undefined;
     await act(async () => {
-      errorMessage = await result.current.handleStatusChange("ch1", "revised");
+      await result.current.handleStatusChange("ch1", "revised", onError);
     });
 
-    // Should return the error message instead of throwing
-    expect(errorMessage).toBe("status boom");
+    // Should call onError callback instead of returning the error
+    expect(onError).toHaveBeenCalledWith("status boom");
     // After revert, project should be reloaded from server
     expect(result.current.project?.chapters[0].status).toBe("outline");
   });
@@ -623,6 +623,7 @@ describe("useProjectEditor", () => {
       .mockResolvedValueOnce(mockProject) // initial load
       .mockRejectedValueOnce(new Error("reload failed")); // reload after status change failure
 
+    const onError = vi.fn();
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
@@ -630,13 +631,12 @@ describe("useProjectEditor", () => {
     // Confirm initial status
     expect(result.current.project?.chapters[0].status).toBe("outline");
 
-    let errorMessage: string | undefined;
     await act(async () => {
-      errorMessage = await result.current.handleStatusChange("ch1", "revised");
+      await result.current.handleStatusChange("ch1", "revised", onError);
     });
 
-    // Should return the error message instead of throwing
-    expect(errorMessage).toBe("status update failed");
+    // Should call onError callback instead of returning the error
+    expect(onError).toHaveBeenCalledWith("status update failed");
     // After both API update and reload fail, local revert should restore previous status
     expect(result.current.project?.chapters[0].status).toBe("outline");
     expect(result.current.activeChapter?.status).toBe("outline");

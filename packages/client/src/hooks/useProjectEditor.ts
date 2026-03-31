@@ -236,7 +236,7 @@ export function useProjectEditor(slug: string | undefined) {
     [],
   );
 
-  const handleStatusChange = useCallback(async (chapterId: string, status: string) => {
+  const handleStatusChange = useCallback(async (chapterId: string, status: string, onError?: (message: string) => void) => {
     // Save previous status for revert
     const previousStatus = projectRef.current?.chapters.find((c) => c.id === chapterId)?.status;
 
@@ -286,12 +286,12 @@ export function useProjectEditor(slug: string | undefined) {
           prev?.id === chapterId ? { ...prev, status: previousStatus } : prev,
         );
       }
-      // Return error message for the caller to display (e.g., as a dismissible banner).
-      // Unlike other handlers that use setError (full-page overlay), status change
-      // failures are non-fatal — the revert already restored consistent state.
-      return err instanceof Error ? err.message : STRINGS.error.statusChangeFailed;
+      // Status change failures are non-fatal — the revert already restored consistent state.
+      // Call the optional onError callback for the caller to display (e.g., as a dismissible banner),
+      // rather than setError which triggers the full-page error overlay.
+      const message = err instanceof Error ? err.message : STRINGS.error.statusChangeFailed;
+      onError?.(message);
     }
-    return undefined;
   }, []);
 
   const handleRenameChapter = useCallback(async (chapterId: string, title: string) => {

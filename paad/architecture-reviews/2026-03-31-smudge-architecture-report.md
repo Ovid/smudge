@@ -232,6 +232,7 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Status:** Fixed
 - **Status reason:** Extracted TRASH_RETENTION_MS constant to @smudge/shared/constants.ts; server purge and client strings both import from shared
 - **Status date:** 2026-03-31 15:56 UTC
+- **Status commit:** 76edd9a
 
 ### [F-10] No structured server-side logging
 - **Category:** 21 (No observability plan)
@@ -246,6 +247,9 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** `handleStatusChange` is the only handler in `useProjectEditor` that re-throws its error. All other handlers catch and call `setError()`. The caller in EditorPage must wrap it specially in `handleStatusChangeWithError`. A developer adding a new handler could easily choose the wrong pattern.
 - **Evidence:** `useProjectEditor.ts:278` — `throw err`. Compare with `handleDeleteChapter` at line 181 — `setError(...)`. `EditorPage.tsx:118-128` — special wrapper.
 - **Found by:** Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** handleStatusChange now accepts optional onError callback instead of returning error; aligns with other handlers' catch-and-handle pattern while preserving non-fatal semantics
+- **Status date:** 2026-03-31 17:42 UTC
 
 ### [F-12] useContentCache silently swallows localStorage errors
 - **Category:** 20 (Weak error handling strategy)
