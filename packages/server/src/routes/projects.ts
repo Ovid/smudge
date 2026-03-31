@@ -10,13 +10,7 @@ import {
 import { asyncHandler } from "../app";
 import { parseChapterContent } from "./parseChapterContent";
 import { resolveUniqueSlug } from "./resolve-slug";
-
-async function getStatusLabelMap(db: Knex): Promise<Record<string, string>> {
-  const rows = await db("chapter_statuses").orderBy("sort_order", "asc").select("status", "label");
-  return Object.fromEntries(
-    rows.map((r: { status: string; label: string }) => [r.status, r.label]),
-  );
-}
+import { getStatusLabelMap } from "./status-labels";
 
 export function projectsRouter(db: Knex): Router {
   const router = Router();

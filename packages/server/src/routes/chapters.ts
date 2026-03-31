@@ -4,11 +4,7 @@ import { UpdateChapterSchema, countWords, generateSlug } from "@smudge/shared";
 import { asyncHandler } from "../app";
 import { parseChapterContent } from "./parseChapterContent";
 import { resolveUniqueSlug } from "./resolve-slug";
-
-async function getStatusLabel(db: Knex, status: string): Promise<string> {
-  const row = await db("chapter_statuses").where({ status }).first("label");
-  return row?.label ?? status;
-}
+import { getStatusLabel } from "./status-labels";
 
 export function chaptersRouter(db: Knex): Router {
   const router = Router();
