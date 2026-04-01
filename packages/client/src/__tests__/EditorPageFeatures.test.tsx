@@ -96,7 +96,7 @@ const mockProject = {
   ],
 };
 
-const mockChapter = mockProject.chapters[0];
+const mockChapter = mockProject.chapters[0]!;
 
 function renderEditorPage() {
   return render(
@@ -209,7 +209,7 @@ describe("EditorPage delete confirmation", () => {
 
     // Click the delete button (✕) on first chapter
     const deleteButtons = screen.getAllByRole("button", { name: /Delete/ });
-    await userEvent.click(deleteButtons[0]);
+    await userEvent.click(deleteButtons[0]!);
 
     // Should show confirmation dialog
     expect(screen.getByRole("alertdialog", { name: /Move .+ to trash/ })).toBeInTheDocument();
@@ -224,7 +224,7 @@ describe("EditorPage delete confirmation", () => {
     });
 
     const deleteButtons = screen.getAllByRole("button", { name: /Delete/ });
-    await userEvent.click(deleteButtons[0]);
+    await userEvent.click(deleteButtons[0]!);
 
     await userEvent.click(screen.getByText("Cancel"));
     expect(screen.queryByRole("alertdialog")).toBeNull();
@@ -239,7 +239,7 @@ describe("EditorPage delete confirmation", () => {
     });
 
     const deleteButtons = screen.getAllByRole("button", { name: /Delete/ });
-    await userEvent.click(deleteButtons[0]);
+    await userEvent.click(deleteButtons[0]!);
 
     await userEvent.click(screen.getByText("Confirm"));
 
@@ -342,13 +342,13 @@ describe("EditorPage trash view", () => {
 
     // Now delete a chapter — mock trash to return the deleted chapter
     const trashedChapter = {
-      ...mockProject.chapters[1],
+      ...mockProject.chapters[1]!,
       deleted_at: "2026-03-29T10:00:00.000Z",
     };
     vi.mocked(api.projects.trash).mockResolvedValue([trashedChapter]);
 
     const deleteButtons = screen.getAllByRole("button", { name: /Delete/ });
-    await userEvent.click(deleteButtons[1]);
+    await userEvent.click(deleteButtons[1]!);
     await userEvent.click(screen.getByText("Confirm"));
 
     // Trash should refresh and show the deleted chapter
@@ -361,7 +361,7 @@ describe("EditorPage trash view", () => {
     vi.mocked(api.projects.trash).mockResolvedValue([]);
     vi.mocked(api.chapters.get)
       .mockResolvedValueOnce(mockChapter) // initial load
-      .mockResolvedValueOnce(mockProject.chapters[1]); // select ch-2
+      .mockResolvedValueOnce(mockProject.chapters[1]!); // select ch-2
 
     renderEditorPage();
 
@@ -604,7 +604,7 @@ describe("EditorPage confirmDeleteChapter trash refresh failure", () => {
 
     // Delete a chapter while trash is open
     const deleteButtons = screen.getAllByRole("button", { name: /Delete/ });
-    await userEvent.click(deleteButtons[1]);
+    await userEvent.click(deleteButtons[1]!);
     await userEvent.click(screen.getByText("Confirm"));
 
     // Should not throw — the empty catch handles it
@@ -693,10 +693,13 @@ describe("EditorPage title editing guards", () => {
 
   it("navigates when project title update returns a different slug", async () => {
     vi.mocked(api.projects.update).mockResolvedValue({
-      ...mockProject,
-      title: "New Title",
+      id: mockProject.id,
       slug: "new-title",
-      chapters: undefined as never,
+      title: "New Title",
+      mode: mockProject.mode,
+      created_at: mockProject.created_at,
+      updated_at: mockProject.updated_at,
+      deleted_at: mockProject.deleted_at,
     });
 
     renderEditorPage();
@@ -774,7 +777,7 @@ describe("EditorPage preview mode", () => {
   it("navigates to chapter when clicking chapter heading in preview", async () => {
     vi.mocked(api.chapters.get)
       .mockResolvedValueOnce(mockChapter) // initial load
-      .mockResolvedValueOnce(mockProject.chapters[1]); // navigate to ch-2
+      .mockResolvedValueOnce(mockProject.chapters[1]!); // navigate to ch-2
 
     renderEditorPage();
 
@@ -852,7 +855,7 @@ describe("EditorPage handleStatusChangeWithError", () => {
 
     // StatusBadge renders a button with the current status label — click to open dropdown
     const statusButtons = screen.getAllByLabelText(/Chapter status:/);
-    await userEvent.click(statusButtons[0]);
+    await userEvent.click(statusButtons[0]!);
 
     // Click the "Revised" option in the listbox
     await waitFor(() => {
@@ -884,7 +887,7 @@ describe("EditorPage view mode toggles", () => {
         status_color: "#ccc",
       })),
       status_summary: { outline: 2 },
-      totals: { word_count: 11, chapter_count: 2 },
+      totals: { word_count: 11, chapter_count: 2, most_recent_edit: null, least_recent_edit: null },
     });
   });
 

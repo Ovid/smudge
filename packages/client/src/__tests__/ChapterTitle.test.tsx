@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { EditorPage } from "../pages/EditorPage";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api/client";
+import { STRINGS } from "../strings";
 
 vi.mock("../hooks/useContentCache", () => ({
   getCachedContent: vi.fn().mockReturnValue(null),
@@ -222,10 +223,13 @@ describe("Project title editing", () => {
     vi.mocked(api.projects.get).mockResolvedValue(mockProject);
     vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
     vi.mocked(api.projects.update).mockResolvedValue({
-      ...mockProject,
-      title: "Renamed Project",
+      id: mockProject.id,
       slug: "renamed-project",
-      chapters: mockProject.chapters,
+      title: "Renamed Project",
+      mode: mockProject.mode,
+      created_at: mockProject.created_at,
+      updated_at: mockProject.updated_at,
+      deleted_at: mockProject.deleted_at,
     });
   });
 
@@ -362,7 +366,7 @@ describe("EditorPage save status", () => {
   });
 
   it("shows error message on save failure", async () => {
-    vi.mocked(api.chapters.update).mockRejectedValue(new Error("Network error"));
+    vi.mocked(api.chapters.update).mockRejectedValue(new TypeError("Failed to fetch"));
     renderEditorPage();
 
     await waitFor(() => {
@@ -375,7 +379,7 @@ describe("EditorPage save status", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Network error")).toBeInTheDocument();
+      expect(screen.getByText(STRINGS.editor.saveFailed)).toBeInTheDocument();
     });
   }, 25000);
 

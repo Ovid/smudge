@@ -98,7 +98,7 @@ describe("PreviewMode", () => {
   it("renders empty string for null content", () => {
     const chaptersWithNull: Chapter[] = [
       {
-        ...chapters[0],
+        ...chapters[0]!,
         content: null,
       },
     ];
@@ -158,7 +158,7 @@ describe("PreviewMode", () => {
   it("renders error message when generateHTML throws on malformed content", () => {
     const chaptersWithBadContent: Chapter[] = [
       {
-        ...chapters[0],
+        ...chapters[0]!,
         content: { type: "invalid_type_that_doesnt_exist" } as unknown as Chapter["content"],
       },
     ];

@@ -11,7 +11,7 @@ describe("parseChapterContent", () => {
       title: "Test",
       content: JSON.stringify({ type: "doc", content: [] }),
     };
-    const result = parseChapterContent(chapter);
+    const result = parseChapterContent(chapter) as Record<string, unknown>;
     expect(result.content).toEqual({ type: "doc", content: [] });
     expect(result.content_corrupt).toBeUndefined();
     expect(result.id).toBe("abc");
@@ -25,12 +25,12 @@ describe("parseChapterContent", () => {
       title: "Test",
       content: "{invalid json!!!",
     };
-    const result = parseChapterContent(chapter);
+    const result = parseChapterContent(chapter) as Record<string, unknown>;
     expect(result.content).toBeNull();
     expect(result.content_corrupt).toBe(true);
     expect(result.id).toBe("abc");
     expect(errorSpy).toHaveBeenCalledOnce();
-    expect(errorSpy.mock.calls[0][0]).toContain("corrupt");
+    expect(errorSpy.mock.calls[0]![0]).toContain("corrupt");
     errorSpy.mockRestore();
   });
 
@@ -62,7 +62,7 @@ describe("parseChapterContent", () => {
       sort_order: 3,
       status: "outline",
     };
-    const result = parseChapterContent(chapter);
+    const result = parseChapterContent(chapter) as Record<string, unknown>;
     expect(result.word_count).toBe(42);
     expect(result.sort_order).toBe(3);
     expect(result.status).toBe("outline");
@@ -78,12 +78,12 @@ describe("parseChapterContent integration — corrupt DB content", () => {
       content: "not valid json {{{",
       word_count: 0,
     };
-    const result = parseChapterContent(chapter);
+    const result = parseChapterContent(chapter) as Record<string, unknown>;
     expect(result.content).toBeNull();
     expect(result.content_corrupt).toBe(true);
     expect(result.title).toBe("Corrupt Chapter");
     // Must log the chapter id so the corrupt row can be found
-    expect(errorSpy.mock.calls[0][0]).toContain("test-123");
+    expect(errorSpy.mock.calls[0]![0]).toContain("test-123");
     errorSpy.mockRestore();
   });
 });

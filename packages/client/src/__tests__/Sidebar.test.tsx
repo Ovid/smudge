@@ -14,6 +14,7 @@ const mockStatuses: ChapterStatusRow[] = [
 
 const mockProject: ProjectWithChapters = {
   id: "p1",
+  slug: "test-project",
   title: "Test Project",
   mode: "fiction",
   created_at: "2026-01-01",
@@ -159,7 +160,7 @@ describe("Sidebar", () => {
     renderSidebar({ onDeleteChapter: onDelete });
 
     const deleteButtons = screen.getAllByRole("button", { name: /Delete/ });
-    await userEvent.click(deleteButtons[0]);
+    await userEvent.click(deleteButtons[0]!);
     expect(onDelete).toHaveBeenCalledWith(mockProject.chapters[0]);
   });
 
@@ -372,11 +373,11 @@ describe("Sidebar", () => {
 
     const options = screen.getAllByRole("option");
     // Focus the first option (Outline, which is currently selected)
-    options[0].focus();
+    options[0]!.focus();
     expect(document.activeElement).toBe(options[0]);
 
     // Press ArrowDown to move to the next option
-    fireEvent.keyDown(options[0], { key: "ArrowDown" });
+    fireEvent.keyDown(options[0]!, { key: "ArrowDown" });
     expect(document.activeElement).toBe(options[1]);
   });
 
@@ -388,10 +389,10 @@ describe("Sidebar", () => {
 
     const options = screen.getAllByRole("option");
     // Focus the second option
-    options[1].focus();
+    options[1]!.focus();
 
     // Press ArrowUp to move to the previous option
-    fireEvent.keyDown(options[1], { key: "ArrowUp" });
+    fireEvent.keyDown(options[1]!, { key: "ArrowUp" });
     expect(document.activeElement).toBe(options[0]);
   });
 
@@ -403,10 +404,10 @@ describe("Sidebar", () => {
 
     const options = screen.getAllByRole("option");
     // Focus the last option
-    options[4].focus();
+    options[4]!.focus();
 
     // Press Home to move to the first option
-    fireEvent.keyDown(options[4], { key: "Home" });
+    fireEvent.keyDown(options[4]!, { key: "Home" });
     expect(document.activeElement).toBe(options[0]);
   });
 
@@ -418,10 +419,10 @@ describe("Sidebar", () => {
 
     const options = screen.getAllByRole("option");
     // Focus the first option
-    options[0].focus();
+    options[0]!.focus();
 
     // Press End to move to the last option
-    fireEvent.keyDown(options[0], { key: "End" });
+    fireEvent.keyDown(options[0]!, { key: "End" });
     expect(document.activeElement).toBe(options[4]);
   });
 

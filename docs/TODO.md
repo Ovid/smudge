@@ -21,6 +21,14 @@
 # Features
 
 - CI/CD
+- CI currently runs E2E tests against Chromium only, and `playwright.config.ts`
+  is configured to match. Since Smudge is targeting Electron (which bundles
+  Chromium), multi-browser testing has limited value — Firefox and WebKit
+  rendering differences won't affect the shipped app. If we ever add a
+  web-hosted version or want to validate cross-browser HTML export rendering,
+  revisit this by adding Firefox/WebKit to the Playwright `projects` array and
+  installing all browsers in the CI E2E job
+  (`npx playwright install --with-deps` instead of just `chromium`).
 - Headings listed as H1, H2, H3
 - BE ULTRA-PARANOID ABOUT DATA LOSS. Brainstorm on ways to make this
   super robust. Have "snapshots" which go back X amount of time.

@@ -353,38 +353,30 @@ export function Sidebar({
     const chapters = project.chapters;
 
     if (e.key === "ArrowUp" && chapterIndex > 0) {
+      const current = chapters[chapterIndex];
+      const prev = chapters[chapterIndex - 1];
+      if (!current || !prev) return;
       e.preventDefault();
       const reordered = [...chapters];
-      [reordered[chapterIndex - 1], reordered[chapterIndex]] = [
-        reordered[chapterIndex],
-        reordered[chapterIndex - 1],
-      ];
+      [reordered[chapterIndex - 1], reordered[chapterIndex]] = [current, prev];
       const ids = reordered.map((c) => c.id);
       onReorderChapters(ids);
       setAnnouncement(
-        STRINGS.sidebar.chapterPosition(
-          chapters[chapterIndex].title,
-          chapterIndex,
-          chapters.length,
-        ),
+        STRINGS.sidebar.chapterPosition(current.title, chapterIndex, chapters.length),
       );
     }
 
     if (e.key === "ArrowDown" && chapterIndex < chapters.length - 1) {
+      const current = chapters[chapterIndex];
+      const next = chapters[chapterIndex + 1];
+      if (!current || !next) return;
       e.preventDefault();
       const reordered = [...chapters];
-      [reordered[chapterIndex], reordered[chapterIndex + 1]] = [
-        reordered[chapterIndex + 1],
-        reordered[chapterIndex],
-      ];
+      [reordered[chapterIndex], reordered[chapterIndex + 1]] = [next, current];
       const ids = reordered.map((c) => c.id);
       onReorderChapters(ids);
       setAnnouncement(
-        STRINGS.sidebar.chapterPosition(
-          chapters[chapterIndex].title,
-          chapterIndex + 2,
-          chapters.length,
-        ),
+        STRINGS.sidebar.chapterPosition(current.title, chapterIndex + 2, chapters.length),
       );
     }
   }

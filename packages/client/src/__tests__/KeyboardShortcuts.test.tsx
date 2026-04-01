@@ -107,7 +107,7 @@ const mockMultiChapterProject = {
   ],
 };
 
-const mockChapter = mockProject.chapters[0] as (typeof mockProject.chapters)[0];
+const mockChapter = mockProject.chapters[0]!;
 
 function renderEditorPage() {
   return render(
@@ -250,14 +250,14 @@ describe("Ctrl+Shift+Arrow chapter navigation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(api.projects.get).mockResolvedValue(mockMultiChapterProject);
-    vi.mocked(api.chapters.get).mockResolvedValue(mockMultiChapterProject.chapters[0]);
-    vi.mocked(api.chapters.update).mockResolvedValue(mockMultiChapterProject.chapters[0]);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockMultiChapterProject.chapters[0]!);
+    vi.mocked(api.chapters.update).mockResolvedValue(mockMultiChapterProject.chapters[0]!);
   });
 
   it("Ctrl+Shift+ArrowDown navigates to next chapter", async () => {
     vi.mocked(api.chapters.get)
-      .mockResolvedValueOnce(mockMultiChapterProject.chapters[0])
-      .mockResolvedValueOnce(mockMultiChapterProject.chapters[1]);
+      .mockResolvedValueOnce(mockMultiChapterProject.chapters[0]!)
+      .mockResolvedValueOnce(mockMultiChapterProject.chapters[1]!);
 
     renderEditorPage();
     await waitFor(() => {
@@ -273,9 +273,9 @@ describe("Ctrl+Shift+Arrow chapter navigation", () => {
 
   it("Ctrl+Shift+ArrowUp navigates to previous chapter", async () => {
     vi.mocked(api.chapters.get)
-      .mockResolvedValueOnce(mockMultiChapterProject.chapters[0]) // initial load
-      .mockResolvedValueOnce(mockMultiChapterProject.chapters[1]) // navigate down
-      .mockResolvedValueOnce(mockMultiChapterProject.chapters[0]); // navigate back up
+      .mockResolvedValueOnce(mockMultiChapterProject.chapters[0]!) // initial load
+      .mockResolvedValueOnce(mockMultiChapterProject.chapters[1]!) // navigate down
+      .mockResolvedValueOnce(mockMultiChapterProject.chapters[0]!); // navigate back up
 
     renderEditorPage();
     await waitFor(() => {
@@ -299,7 +299,7 @@ describe("Ctrl+Shift+Arrow chapter navigation", () => {
 
   it("Ctrl+Shift+ArrowDown does nothing on last chapter", async () => {
     // Start on last chapter
-    vi.mocked(api.chapters.get).mockResolvedValue(mockMultiChapterProject.chapters[2]);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockMultiChapterProject.chapters[2]!);
 
     renderEditorPage();
     await waitFor(() => {
