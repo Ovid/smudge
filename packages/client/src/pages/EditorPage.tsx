@@ -375,7 +375,7 @@ export function EditorPage() {
           <span className="text-border mx-4" aria-hidden="true">
             /
           </span>
-          <span className="text-sm font-semibold text-text-primary">{project.title}</span>
+          <span className="text-sm font-serif font-semibold text-text-primary">{project.title}</span>
         </header>
         <div className="flex flex-1 overflow-hidden">
           {sidebarOpen && (
@@ -443,7 +443,7 @@ export function EditorPage() {
                     setEditingProjectTitle(false);
                   }
                 }}
-                className="text-sm font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none"
+                className="text-sm font-serif font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none"
                 aria-label={STRINGS.a11y.projectTitleInput}
               />
               {projectTitleError && (
@@ -454,7 +454,7 @@ export function EditorPage() {
             </div>
           ) : (
             <h1
-              className="text-sm font-semibold text-text-primary cursor-pointer hover:text-text-secondary"
+              className="text-sm font-serif font-semibold text-text-primary cursor-pointer hover:text-text-secondary"
               onDoubleClick={startEditingProjectTitle}
               aria-label={project.title}
             >

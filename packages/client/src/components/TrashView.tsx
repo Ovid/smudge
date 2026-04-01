@@ -11,9 +11,7 @@ export function TrashView({ chapters, onRestore, onBack }: TrashViewProps) {
   return (
     <div className="mx-auto max-w-[720px] py-10 px-8 page-enter">
       <div className="flex items-center justify-between mb-8">
-        <h2 className="text-lg font-semibold text-text-primary">
-          {STRINGS.sidebar.trash}
-        </h2>
+        <h2 className="text-lg font-semibold text-text-primary">{STRINGS.sidebar.trash}</h2>
         <button
           onClick={onBack}
           className="text-sm text-text-muted hover:text-text-secondary focus:outline-none focus:ring-2 focus:ring-focus-ring rounded-md px-3 py-1.5"
@@ -23,9 +21,7 @@ export function TrashView({ chapters, onRestore, onBack }: TrashViewProps) {
       </div>
 
       {chapters.length === 0 ? (
-        <p className="text-text-muted text-center py-16">
-          {STRINGS.sidebar.trashEmpty}
-        </p>
+        <p className="text-text-muted text-center py-16">{STRINGS.sidebar.trashEmpty}</p>
       ) : (
         <ul className="flex flex-col gap-3">
           {chapters.map((chapter) => (

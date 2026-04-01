@@ -131,9 +131,7 @@ export function DashboardView({
 
   return (
     <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
-      <h2 className="text-lg font-semibold text-text-primary mb-8">
-        {STRINGS.dashboard.heading}
-      </h2>
+      <h2 className="text-lg font-semibold text-text-primary mb-8">{STRINGS.dashboard.heading}</h2>
 
       {chapters.length === 0 ? (
         <div data-testid="dashboard-empty">

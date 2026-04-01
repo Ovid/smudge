@@ -89,9 +89,7 @@ export function HomePage() {
 
         {projects.length === 0 ? (
           <div className="text-center py-20">
-            <p className="text-text-muted text-base">
-              {STRINGS.project.emptyState}
-            </p>
+            <p className="text-text-muted text-base">{STRINGS.project.emptyState}</p>
           </div>
         ) : (
           <ul className="flex flex-col gap-3">

@@ -45,9 +45,7 @@ export function NewProjectDialog({ open, onClose, onCreate }: NewProjectDialogPr
       className="rounded-xl border border-border/60 bg-bg-primary p-8 shadow-xl backdrop:bg-black/30 max-w-md w-full"
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-        <h2 className="text-lg font-semibold text-text-primary">
-          {STRINGS.project.createNew}
-        </h2>
+        <h2 className="text-lg font-semibold text-text-primary">{STRINGS.project.createNew}</h2>
 
         <label className="flex flex-col gap-1.5">
           <span className="text-sm text-text-secondary">{STRINGS.project.titlePlaceholder}</span>
