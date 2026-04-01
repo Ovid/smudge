@@ -76,4 +76,56 @@ describe("purgeOldTrash", () => {
 
     await db.destroy();
   });
+
+  it("preserves non-deleted chapters when purging their expired project", async () => {
+    const db = knex(createTestKnexConfig());
+    await db.raw("PRAGMA foreign_keys = ON");
+    await db.migrate.latest();
+
+    const now = new Date();
+    const old = new Date(now.getTime() - 31 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Project is expired
+    await db("projects").insert({
+      id: "p-expired",
+      title: "Expired Project",
+      mode: "fiction",
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+      deleted_at: old,
+    });
+
+    // Chapter was restored (deleted_at is null) even though project is expired
+    await db("chapters").insert({
+      id: "ch-restored",
+      project_id: "p-expired",
+      title: "Restored Chapter",
+      sort_order: 0,
+      word_count: 0,
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+      deleted_at: null,
+    });
+
+    // Soft-deleted chapter should still be purged
+    await db("chapters").insert({
+      id: "ch-deleted",
+      project_id: "p-expired",
+      title: "Deleted Chapter",
+      sort_order: 1,
+      word_count: 0,
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+      deleted_at: old,
+    });
+
+    const count = await purgeOldTrash(db);
+
+    // ch-deleted is purged (expired on its own), ch-restored is preserved
+    const remaining = await db("chapters").select("id");
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].id).toBe("ch-restored");
+
+    await db.destroy();
+  });
 });
