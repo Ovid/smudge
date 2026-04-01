@@ -10,7 +10,7 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
     <div
       role="toolbar"
       aria-label={STRINGS.a11y.formattingToolbar}
-      className="toolbar-breathe flex gap-0.5 items-center"
+      className="flex gap-0.5 items-center"
     >
       <button
         onClick={() => editor.chain().focus().toggleBold().run()}

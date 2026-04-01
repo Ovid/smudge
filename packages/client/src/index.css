@@ -80,17 +80,6 @@ input {
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* ─── Toolbar breathe effect ─── */
-.toolbar-breathe {
-  opacity: 0.75;
-  transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.toolbar-breathe:hover,
-.toolbar-breathe:focus-within {
-  opacity: 1;
-}
-
 /* ─── TipTap editor refinements ─── */
 .tiptap {
   caret-color: var(--color-accent);
@@ -180,7 +169,4 @@ input {
     scroll-behavior: auto !important;
   }
 
-  .toolbar-breathe {
-    opacity: 1 !important;
-  }
 }
