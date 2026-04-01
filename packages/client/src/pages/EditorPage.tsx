@@ -364,7 +364,7 @@ export function EditorPage() {
   if (!activeChapter && project.chapters.length === 0) {
     return (
       <div className="flex flex-col h-screen bg-bg-primary">
-        <header className="border-b border-border/60 px-6 py-3 flex items-center shrink-0">
+        <header className="border-b border-border/60 px-6 h-12 flex items-center shrink-0">
           <button
             onClick={() => navigate("/")}
             className="focus:outline-none focus:ring-2 focus:ring-focus-ring rounded-md"
@@ -421,7 +421,7 @@ export function EditorPage() {
 
   return (
     <div className="flex flex-col h-screen bg-bg-primary">
-      <header className="border-b border-border/60 px-6 py-3 flex items-center justify-between shrink-0">
+      <header className="border-b border-border/60 px-6 h-12 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4">
           <button
             onClick={() => navigate("/")}

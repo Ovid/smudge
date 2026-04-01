@@ -59,7 +59,7 @@ export function HomePage() {
 
   return (
     <div className="min-h-screen bg-bg-primary">
-      <header className="border-b border-border/60 px-6 py-3">
+      <header className="border-b border-border/60 px-6 h-12 flex items-center shrink-0">
         <Logo as="h1" />
       </header>
 
