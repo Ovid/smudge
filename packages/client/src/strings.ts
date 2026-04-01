@@ -102,6 +102,7 @@ export const STRINGS = {
     projectTitleInput: "Project title",
     editorContent: "Chapter content",
     dismissError: "Dismiss error",
+    viewModesNav: "View modes",
   },
   toolbar: {
     bold: "Bold",

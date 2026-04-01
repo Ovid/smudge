@@ -478,7 +478,7 @@ export function EditorPage() {
           )}
         </div>
         {viewMode === "editor" && toolbarEditor && <EditorToolbar editor={toolbarEditor} />}
-        <nav className="flex gap-0.5 bg-bg-sidebar/60 rounded-lg p-0.5" aria-label="View modes">
+        <nav className="flex gap-0.5 bg-bg-sidebar/60 rounded-lg p-0.5" aria-label={STRINGS.a11y.viewModesNav}>
           <button
             onClick={() => {
               setTrashOpen(false);
