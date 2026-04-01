@@ -31,7 +31,7 @@ vi.mock("../api/client", () => ({
 
 vi.mock("../hooks/useContentCache", () => ({
   getCachedContent: vi.fn().mockReturnValue(null),
-  setCachedContent: vi.fn(),
+  setCachedContent: vi.fn().mockReturnValue(true),
   clearCachedContent: vi.fn(),
 }));
 
@@ -575,6 +575,33 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.cacheWarning).toBe(false);
+  });
+
+  it("handleSave clears cacheWarning on successful save", async () => {
+    const { setCachedContent } = await import("../hooks/useContentCache");
+    vi.mocked(setCachedContent).mockReturnValue(false);
+    vi.mocked(api.chapters.update).mockResolvedValue({ ...mockChapter1, word_count: 2 });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    // Trigger cache failure
+    act(() => {
+      result.current.handleContentChange({
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "hello" }] }],
+      });
+    });
+    expect(result.current.cacheWarning).toBe(true);
+
+    // Successful save should clear the warning
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [{ type: "paragraph" }] });
+    });
+    expect(result.current.cacheWarning).toBe(false);
+
+    // Restore default mock
+    vi.mocked(setCachedContent).mockReturnValue(true);
   });
 
   it("handleContentChange preserves error save status instead of overwriting", async () => {

@@ -90,6 +90,7 @@ export function useProjectEditor(slug: string | undefined) {
             };
           });
           clearCachedContent(savingChapterId);
+          setCacheWarning(false);
           if (activeChapterRef.current?.id === savingChapterId) {
             setSaveStatus("saved");
           }
@@ -130,6 +131,7 @@ export function useProjectEditor(slug: string | undefined) {
     const slug = projectSlugRef.current;
     if (!slug) return;
     ++saveSeqRef.current; // cancel any in-flight save retries for the old chapter
+    setCacheWarning(false);
     try {
       const newChapter = await api.chapters.create(slug);
       setActiveChapter(newChapter);
@@ -144,6 +146,7 @@ export function useProjectEditor(slug: string | undefined) {
     if (activeChapterRef.current && chapterId === activeChapterRef.current.id) return;
     ++saveSeqRef.current; // cancel any in-flight save retries for the old chapter
     setSaveStatus("idle");
+    setCacheWarning(false);
     const seq = ++selectChapterSeqRef.current;
     try {
       const chapter = await api.chapters.get(chapterId);

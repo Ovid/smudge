@@ -6,7 +6,7 @@ import { api } from "../api/client";
 
 vi.mock("../hooks/useContentCache", () => ({
   getCachedContent: vi.fn().mockReturnValue(null),
-  setCachedContent: vi.fn(),
+  setCachedContent: vi.fn().mockReturnValue(true),
   clearCachedContent: vi.fn(),
 }));
 
