@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
+import { UNTITLED_CHAPTER } from "@smudge/shared";
 import { setupTestDb } from "./test-helpers";
 
 const t = setupTestDb();
@@ -28,7 +29,7 @@ describe("POST /api/projects", () => {
 
     const chapters = await t.db("chapters").where({ project_id: res.body.id }).select("*");
     expect(chapters).toHaveLength(1);
-    expect(chapters[0].title).toBe("Untitled Chapter");
+    expect(chapters[0].title).toBe(UNTITLED_CHAPTER);
     expect(chapters[0].sort_order).toBe(0);
   });
 
@@ -236,7 +237,7 @@ describe("GET /api/projects/:slug", () => {
     expect(res.body.title).toBe("My Novel");
     expect(res.body.slug).toBe("my-novel");
     expect(res.body.chapters).toHaveLength(1);
-    expect(res.body.chapters[0].title).toBe("Untitled Chapter");
+    expect(res.body.chapters[0].title).toBe(UNTITLED_CHAPTER);
   });
 
   it("returns 404 for non-existent project", async () => {
@@ -276,7 +277,7 @@ describe("GET /api/projects/:slug", () => {
 
     const res = await request(t.app).get(`/api/projects/${createRes.body.slug}`);
     expect(res.body.chapters).toHaveLength(2);
-    expect(res.body.chapters[0].title).toBe("Untitled Chapter");
+    expect(res.body.chapters[0].title).toBe(UNTITLED_CHAPTER);
     expect(res.body.chapters[1].title).toBe("Chapter Two");
   });
 });
