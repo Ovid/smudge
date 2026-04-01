@@ -16,6 +16,17 @@ describe("GET /api/health", () => {
     expect(res.headers["x-content-type-options"]).toBe("nosniff");
     expect(res.headers["x-frame-options"]).toBeDefined();
   });
+
+  it("includes Content-Security-Policy header", async () => {
+    const res = await request(ctx.app).get("/api/health");
+    const csp = res.headers["content-security-policy"];
+    expect(csp).toBeDefined();
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).toContain("style-src 'self' 'unsafe-inline'");
+    expect(csp).toContain("object-src 'none'");
+    expect(csp).toContain("frame-ancestors 'none'");
+  });
 });
 
 describe("Global error handler via malformed JSON", () => {
