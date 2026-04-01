@@ -13,7 +13,7 @@ Last audited: 2026-04-01
 | License | Count | Commercial use | Ships in production |
 |---------|-------|----------------|---------------------|
 | MIT | ~45 | Yes, unrestricted | Most dependencies |
-| Apache-2.0 | 3 | Yes, unrestricted | No (dev only), except dompurify (elected) |
+| Apache-2.0 | 3 | Yes, unrestricted | Yes (DOMPurify in client; others dev-only) |
 | SIL OFL 1.1 | 2 | Yes, bundling permitted | Yes (fonts) |
 | MPL-2.0 | 1 | Yes, with file-level copyleft | No (dev only) |
 
