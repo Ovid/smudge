@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { EditorPage } from "../pages/EditorPage";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api/client";
+import { STRINGS } from "../strings";
 
 vi.mock("../hooks/useContentCache", () => ({
   getCachedContent: vi.fn().mockReturnValue(null),
@@ -365,7 +366,7 @@ describe("EditorPage save status", () => {
   });
 
   it("shows error message on save failure", async () => {
-    vi.mocked(api.chapters.update).mockRejectedValue(new Error("Network error"));
+    vi.mocked(api.chapters.update).mockRejectedValue(new TypeError("Failed to fetch"));
     renderEditorPage();
 
     await waitFor(() => {
@@ -378,7 +379,7 @@ describe("EditorPage save status", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Network error")).toBeInTheDocument();
+      expect(screen.getByText(STRINGS.editor.saveFailed)).toBeInTheDocument();
     });
   }, 25000);
 
