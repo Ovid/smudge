@@ -639,7 +639,7 @@ export function EditorPage() {
             <div className="flex items-center gap-4">
               <span className="font-medium">{STRINGS.project.wordCount(chapterWordCount)}</span>
               {project && (
-                <span className="opacity-60">
+                <span className="text-text-secondary">
                   {STRINGS.project.wordCount(
                     project.chapters.reduce((sum, c) => sum + c.word_count, 0),
                   )}{" "}
