@@ -1,4 +1,4 @@
-import { UNTITLED_CHAPTER, TRASH_RETENTION_MS } from "@smudge/shared";
+import { UNTITLED_CHAPTER, TRASH_RETENTION_DAYS, TRASH_RETENTION_MS } from "@smudge/shared";
 
 export const STRINGS = {
   app: {
@@ -31,7 +31,7 @@ export const STRINGS = {
     buttonLabel: "Delete",
     deleteChapterAriaLabel: (title: string) => `Delete ${title}`,
     confirmTitle: (name: string) => `Move \u201c${name}\u201d to trash?`,
-    confirmBody: "You can restore it within 30 days.",
+    confirmBody: `You can restore it within ${TRASH_RETENTION_DAYS} days.`,
     confirmButton: "Confirm",
     cancelButton: "Cancel",
   },

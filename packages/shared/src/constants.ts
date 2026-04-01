@@ -1,2 +1,3 @@
 export const UNTITLED_CHAPTER = "Untitled Chapter";
-export const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+export const TRASH_RETENTION_DAYS = 30;
+export const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
