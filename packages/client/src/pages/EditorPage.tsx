@@ -375,7 +375,9 @@ export function EditorPage() {
           <span className="text-border mx-4" aria-hidden="true">
             /
           </span>
-          <span className="text-sm font-serif font-semibold text-text-primary">{project.title}</span>
+          <span className="text-sm font-serif font-semibold text-text-primary">
+            {project.title}
+          </span>
         </header>
         <div className="flex flex-1 overflow-hidden">
           {sidebarOpen && (
