@@ -22,7 +22,8 @@
 - BE ULTRA-PARANOID ABOUT DATA LOSS. Brainstorm on ways to make this
   super robust. Have "snapshots" which go back X amount of time.
 
-- Save files in .smg format? (Is that extension taken?)
+- Save files in .smg format? (Is that extension taken?) if we try to load an
+  .smg file, we need handle if we face data loss.
 - Research page width and what formatting features writers really need. Maybe
   have a "simple" mode and an "advanced" mode? Or just make it simple and add
   features as needed.
