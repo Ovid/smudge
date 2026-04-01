@@ -20,6 +20,7 @@ jobs:
       - run: npm ci
       - run: npm run lint:check
       - run: npm run format:check
+      - run: npm run typecheck
 
   test-build:
     runs-on: ubuntu-latest

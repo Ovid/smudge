@@ -1,6 +1,6 @@
-.PHONY: all test cover lint format dev build clean loc help
+.PHONY: all test cover lint format typecheck dev build clean loc help
 
-all: lint format test ## Lint, format, and test
+all: lint format typecheck test ## Lint, format, typecheck, and test
 
 test: ## Run full test suite
 	npx vitest run
@@ -13,6 +13,9 @@ lint: ## Lint with autofix
 
 format: ## Format code
 	npm run format
+
+typecheck: ## Type-check all packages
+	npm run typecheck
 
 dev: ## Start dev servers (server + client)
 	npm run dev
