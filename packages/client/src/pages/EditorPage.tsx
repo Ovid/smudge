@@ -477,9 +477,7 @@ export function EditorPage() {
             </h1>
           )}
         </div>
-        {viewMode === "editor" && toolbarEditor && (
-          <EditorToolbar editor={toolbarEditor} />
-        )}
+        {viewMode === "editor" && toolbarEditor && <EditorToolbar editor={toolbarEditor} />}
         <nav className="flex gap-0.5 bg-bg-sidebar/60 rounded-lg p-0.5" aria-label="View modes">
           <button
             onClick={() => {

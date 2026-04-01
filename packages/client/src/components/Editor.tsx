@@ -19,7 +19,13 @@ interface EditorProps {
 
 const AUTO_SAVE_DEBOUNCE_MS = 1500;
 
-export function Editor({ content, onSave, onContentChange, editorRef, onEditorReady }: EditorProps) {
+export function Editor({
+  content,
+  onSave,
+  onContentChange,
+  editorRef,
+  onEditorReady,
+}: EditorProps) {
   const onSaveRef = useRef(onSave);
   const onContentChangeRef = useRef(onContentChange);
 
