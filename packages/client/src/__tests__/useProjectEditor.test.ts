@@ -134,22 +134,21 @@ describe("useProjectEditor", () => {
     });
   });
 
-  it("does not overwrite activeChapter content on save response", async () => {
+  it("syncs activeChapter content and word_count after successful save", async () => {
     const updatedChapter = { ...mockChapter1, word_count: 5 };
     vi.mocked(api.chapters.update).mockResolvedValue(updatedChapter);
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
-    const originalContent = result.current.activeChapter?.content;
-
     await act(async () => {
       await result.current.handleSave({ type: "doc", content: [] });
     });
 
-    // activeChapter.content should NOT be replaced by the save response
-    expect(result.current.activeChapter?.content).toEqual(originalContent);
-    // But word_count should be synced into project.chapters
+    // activeChapter.content should be updated to match saved content
+    // so that re-mounting the editor (e.g. after Preview → Editor) uses latest content
+    expect(result.current.activeChapter?.content).toEqual({ type: "doc", content: [] });
+    // word_count should be synced into project.chapters
     expect(result.current.project?.chapters[0]!.word_count).toBe(5);
   });
 

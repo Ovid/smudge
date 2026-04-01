@@ -137,17 +137,6 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
     }
   }, [editor, editorRef]);
 
-  useEffect(() => {
-    if (!editor) return;
-    const effectiveContent = content ?? { type: "doc", content: [{ type: "paragraph" }] };
-    const currentJSON = JSON.stringify(editor.getJSON());
-    const newJSON = JSON.stringify(effectiveContent);
-    if (currentJSON !== newJSON) {
-      editor.commands.setContent(effectiveContent);
-      dirtyRef.current = false;
-    }
-  }, [editor, content]);
-
   if (!editor) return null;
 
   return (

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { EditorPage } from "../pages/EditorPage";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -758,8 +758,11 @@ describe("EditorPage preview mode", () => {
       expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
     });
 
-    // Open preview
-    fireEvent.keyDown(document, { key: "P", ctrlKey: true, shiftKey: true });
+    // Open preview — wrap in act to flush the flushSave().then(setViewMode) microtask
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "P", ctrlKey: true, shiftKey: true });
+      await Promise.resolve();
+    });
 
     // Preview tab should be active — TOC navigation should be present
     await waitFor(() => {
@@ -767,7 +770,10 @@ describe("EditorPage preview mode", () => {
     });
 
     // Close preview (back to editor)
-    fireEvent.keyDown(document, { key: "P", ctrlKey: true, shiftKey: true });
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "P", ctrlKey: true, shiftKey: true });
+      await Promise.resolve();
+    });
 
     await waitFor(() => {
       expect(screen.queryByRole("navigation", { name: "Table of Contents" })).toBeNull();

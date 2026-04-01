@@ -584,6 +584,7 @@ export function EditorPage() {
               </h2>
             )}
             <Editor
+              key={activeChapter.id}
               content={activeChapter.content}
               onSave={handleSave}
               onContentChange={handleContentChange}

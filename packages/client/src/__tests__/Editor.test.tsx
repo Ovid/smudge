@@ -103,37 +103,22 @@ describe("Editor", () => {
     );
   });
 
-  it("clears content when prop changes to null (new chapter)", async () => {
-    const content1 = {
-      type: "doc",
-      content: [{ type: "paragraph", content: [{ type: "text", text: "Existing content" }] }],
-    };
-
-    const { container, rerender } = render(<Editor content={content1} onSave={mockOnSave()} />);
-    expect(within(container).getByText("Existing content")).toBeInTheDocument();
-
-    rerender(<Editor content={null} onSave={mockOnSave()} />);
+  it("mounts with empty editor when content is null (new chapter)", async () => {
+    const { container } = render(<Editor content={null} onSave={mockOnSave()} />);
     await waitFor(() => {
       expect(container.querySelector(".is-editor-empty")).not.toBeNull();
     });
   });
 
-  it("syncs content when prop changes", async () => {
+  it("mounts with provided content", async () => {
     const content1 = {
       type: "doc",
       content: [{ type: "paragraph", content: [{ type: "text", text: "First" }] }],
     };
-    const content2 = {
-      type: "doc",
-      content: [{ type: "paragraph", content: [{ type: "text", text: "Second" }] }],
-    };
 
-    const { container, rerender } = render(<Editor content={content1} onSave={mockOnSave()} />);
-    expect(within(container).getByText("First")).toBeInTheDocument();
-
-    rerender(<Editor content={content2} onSave={mockOnSave()} />);
+    const { container } = render(<Editor content={content1} onSave={mockOnSave()} />);
     await waitFor(() => {
-      expect(within(container).getByText("Second")).toBeInTheDocument();
+      expect(within(container).getByText("First")).toBeInTheDocument();
     });
   });
 
