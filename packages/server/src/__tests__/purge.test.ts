@@ -119,7 +119,7 @@ describe("purgeOldTrash", () => {
       deleted_at: old,
     });
 
-    const count = await purgeOldTrash(db);
+    await purgeOldTrash(db);
 
     // ch-deleted is purged (expired on its own), ch-restored is preserved
     const remaining = await db("chapters").select("id");

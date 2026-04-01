@@ -675,7 +675,7 @@ describe("useProjectEditor", () => {
   it("handleStatusChange discards stale revert when superseded by a newer call", async () => {
     // Race: Call A (outline -> rough_draft) fails slowly, Call B (outline -> revised) succeeds fast.
     // Call A's revert should be discarded because Call B already updated to "revised".
-    let rejectCallA: (reason: Error) => void;
+    let rejectCallA: (reason: Error) => void = () => {};
     const callAPromise = new Promise<typeof mockChapter1>((_resolve, reject) => {
       rejectCallA = reject;
     });
@@ -712,7 +712,7 @@ describe("useProjectEditor", () => {
 
     // Now Call A fails — its revert should be discarded
     await act(async () => {
-      rejectCallA!(new Error("slow failure"));
+      rejectCallA(new Error("slow failure"));
       await new Promise((r) => setTimeout(r, 0));
     });
 

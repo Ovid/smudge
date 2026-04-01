@@ -14,13 +14,14 @@ export async function purgeOldTrash(db: Knex): Promise<{ chapters: number; proje
     // Delete any remaining chapters belonging to purged projects (prevents orphans)
     if (projectsToPurge.length > 0) {
       const ids = projectsToPurge.map((p: { id: string }) => p.id);
-      chapters += await trx("chapters").whereIn("project_id", ids).whereNotNull("deleted_at").delete();
+      chapters += await trx("chapters")
+        .whereIn("project_id", ids)
+        .whereNotNull("deleted_at")
+        .delete();
     }
 
     // Only purge projects that have no remaining non-deleted chapters (defense-in-depth)
-    const projectsWithLiveChapters = trx("chapters")
-      .whereNull("deleted_at")
-      .select("project_id");
+    const projectsWithLiveChapters = trx("chapters").whereNull("deleted_at").select("project_id");
     const projects = await trx("projects")
       .where("deleted_at", "<", cutoff)
       .whereNotIn("id", projectsWithLiveChapters)
