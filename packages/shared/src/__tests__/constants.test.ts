@@ -7,6 +7,6 @@ describe("constants", () => {
   });
 
   it("exports TRASH_RETENTION_MS as 30 days in milliseconds", () => {
-    expect(TRASH_RETENTION_MS).toBe(30 * 24 * 60 * 60 * 1000);
+    expect(TRASH_RETENTION_MS).toBe(2_592_000_000);
   });
 });

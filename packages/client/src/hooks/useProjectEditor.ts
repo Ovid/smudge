@@ -260,9 +260,19 @@ export function useProjectEditor(slug: string | undefined) {
       if (slug) {
         try {
           const data = await api.projects.get(slug);
-          setProject(data);
           const revertedChapter = data.chapters.find((c) => c.id === chapterId);
           if (revertedChapter) {
+            // Surgically revert only the status field to avoid overwriting
+            // concurrent optimistic updates (reorder, rename, create).
+            setProject((prev) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                chapters: prev.chapters.map((c) =>
+                  c.id === chapterId ? { ...c, status: revertedChapter.status } : c,
+                ),
+              };
+            });
             setActiveChapter((prev) =>
               prev?.id === chapterId ? { ...prev, status: revertedChapter.status } : prev,
             );

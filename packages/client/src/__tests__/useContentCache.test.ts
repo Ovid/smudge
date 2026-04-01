@@ -26,6 +26,7 @@ describe("useContentCache", () => {
   });
 
   afterEach(() => {
+    warnSpy.mockRestore();
     // Reset implementations in case a test overrode them
     mockLocalStorage.getItem.mockImplementation((key: string) => store.get(key) ?? null);
     mockLocalStorage.setItem.mockImplementation((key: string, value: string) =>

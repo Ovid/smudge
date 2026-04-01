@@ -841,7 +841,7 @@ describe("EditorPage handleStatusChangeWithError", () => {
       expect(screen.getAllByLabelText(/Chapter status:/).length).toBeGreaterThan(0);
     });
 
-    // After initial load succeeds, make reload also fail so handleStatusChange throws
+    // After initial load succeeds, make reload also fail so handleStatusChange calls onError
     vi.mocked(api.projects.get).mockRejectedValue(new Error("reload failed"));
 
     // StatusBadge renders a button with the current status label — click to open dropdown
