@@ -405,7 +405,8 @@ export function Sidebar({
       style={{ width: `${width}px`, minWidth: `${width}px` }}
     >
       <div className="px-4 py-3 border-b border-border">
-        <img src={smudgeLogo} alt={STRINGS.app.name} className="h-8" />
+        <h2 className="sr-only">{STRINGS.app.name}</h2>
+        <img src={smudgeLogo} alt="" aria-hidden="true" className="h-8" />
       </div>
 
       <nav className="flex-1 overflow-y-auto py-2">

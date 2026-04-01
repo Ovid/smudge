@@ -134,7 +134,7 @@ describe("useProjectEditor", () => {
     });
   });
 
-  it("does not overwrite activeChapter content on save response", async () => {
+  it("syncs activeChapter content and word_count after successful save", async () => {
     const updatedChapter = { ...mockChapter1, word_count: 5 };
     vi.mocked(api.chapters.update).mockResolvedValue(updatedChapter);
 
