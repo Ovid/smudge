@@ -13,6 +13,18 @@ A single workflow file (`.github/workflows/ci.yml`) triggers on:
 - Every push to any branch
 - Every pull request targeting `main`
 
+### Concurrency
+
+Cancel in-progress runs when a new push arrives on the same branch, so superseded commits don't waste Actions minutes:
+
+```yaml
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+```
+
+### Jobs
+
 Three jobs run **in parallel**:
 
 ```
@@ -34,7 +46,7 @@ Runs on `ubuntu-latest`, Node 22.
 | Checkout | `actions/checkout@v4` |
 | Setup Node | `actions/setup-node@v4` (Node 22) |
 | Install deps | `npm ci` |
-| Lint | `npm run lint` |
+| Lint | `npm run lint:check` |
 | Format check | `npm run format:check` |
 
 Uses `npm ci` (not `npm install`) for faster, reproducible installs that fail if `package-lock.json` is out of sync.
@@ -50,10 +62,10 @@ Runs on `ubuntu-latest`, **matrix** of Node 20 and Node 22 (two parallel runners
 | Checkout | `actions/checkout@v4` |
 | Setup Node | `actions/setup-node@v4` (from matrix) |
 | Install deps | `npm ci` |
-| Run tests | `npx vitest run --coverage` |
+| Run tests | `npx vitest run --coverage` (Node 22 only) / `npx vitest run` (Node 20) |
 | Build client | `npm run build -w packages/client` |
 
-**Coverage enforcement:** `vitest.config.ts` already defines thresholds (95% statements, 85% branches, 90% functions, 95% lines). Vitest exits non-zero when thresholds aren't met, which fails the CI job automatically.
+**Coverage enforcement:** `vitest.config.ts` already defines thresholds (95% statements, 85% branches, 90% functions, 95% lines). Vitest exits non-zero when thresholds aren't met, which fails the CI job automatically. Coverage only runs on Node 22 (the primary target) — Node 20 runs tests without coverage to verify compatibility without duplicating the instrumentation work.
 
 **Build step** runs after tests. Catches TypeScript errors and Vite production-mode strictness issues. Skipped if tests fail (no wasted time).
 
@@ -80,11 +92,23 @@ Runs on `ubuntu-latest`, Node 22.
 
 Single Node version — E2E tests browser behavior, not Node compatibility.
 
+## Prerequisite: Playwright Browser Config
+
+The current `playwright.config.ts` has no `projects` array, so Playwright defaults to running all three browsers (Chromium, Firefox, WebKit). Since the E2E job only installs Chromium, add an explicit `projects` config before the CI workflow will pass:
+
+```ts
+projects: [
+  { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+],
+```
+
+This makes the single-browser choice explicit in code rather than relying on a CI-side install filter.
+
 ## Supporting File Changes
 
 ### `.nvmrc` (new)
 
-Contains `20`. Documents target Node LTS version and enables `nvm use` to pick it up automatically.
+Contains `22`. Documents target Node LTS version and enables `nvm use` to pick it up automatically.
 
 ### `package.json` (modified)
 
