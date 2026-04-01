@@ -10,7 +10,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { STRINGS } from "../strings";
 import { useProjectEditor } from "../hooks/useProjectEditor";
 import { api } from "../api/client";
-import smudgeLogo from "../assets/smudge-logo.png";
+import { Logo } from "../components/Logo";
 
 const SIDEBAR_DEFAULT_WIDTH = 260;
 const SIDEBAR_MIN_WIDTH = 180;
@@ -369,7 +369,7 @@ export function EditorPage() {
             onClick={() => navigate("/")}
             className="focus:outline-none focus:ring-2 focus:ring-focus-ring rounded-md"
           >
-            <img src={smudgeLogo} alt={STRINGS.app.name} className="h-7 mix-blend-multiply" />
+            <Logo />
           </button>
           <span className="text-border mx-4" aria-hidden="true">
             /
@@ -427,7 +427,7 @@ export function EditorPage() {
             onClick={() => navigate("/")}
             className="focus:outline-none focus:ring-2 focus:ring-focus-ring rounded-md"
           >
-            <img src={smudgeLogo} alt={STRINGS.app.name} className="h-7 mix-blend-multiply" />
+            <Logo />
           </button>
           <span className="text-border" aria-hidden="true">
             /

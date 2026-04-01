@@ -390,9 +390,9 @@ describe("EditorPage save status", () => {
       expect(screen.getByRole("heading", { level: 2, name: "My Chapter" })).toBeInTheDocument();
     });
 
-    const logoImg = screen.getByRole("img", { name: "Smudge" });
-    expect(logoImg).toBeInTheDocument();
-    const backButton = logoImg.closest("button");
+    const logoText = screen.getByText("Smudge");
+    expect(logoText).toBeInTheDocument();
+    const backButton = logoText.closest("button");
     expect(backButton).toBeInTheDocument();
   });
 

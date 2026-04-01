@@ -149,11 +149,11 @@ describe("HomePage", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/projects/my-book");
   });
 
-  it("displays the app logo in the header", async () => {
+  it("displays the app name in the header", async () => {
     vi.mocked(api.projects.list).mockResolvedValue([]);
     renderHomePage();
 
-    expect(screen.getByAltText("Smudge")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Smudge", level: 1 })).toBeInTheDocument();
   });
 
   it("has accessible main landmark", async () => {
