@@ -43,6 +43,7 @@ export function EditorPage() {
     activeChapter,
     saveStatus,
     saveErrorMessage,
+    cacheWarning,
     chapterWordCount,
     handleSave,
     handleContentChange,
@@ -611,6 +612,9 @@ export function EditorPage() {
               </span>
             )}
             {saveStatus === "idle" && ""}
+            {cacheWarning && saveStatus !== "error" && (
+              <span className="text-status-warning ml-2">{STRINGS.editor.cacheUnavailable}</span>
+            )}
           </div>
         </footer>
       </div>

@@ -59,6 +59,7 @@ export const STRINGS = {
     saved: "Saved",
     unsaved: "Unsaved changes",
     saveFailed: "Unable to save \u2014 check connection",
+    cacheUnavailable: "Local backup unavailable",
   },
   shortcuts: {
     dialogTitle: "Keyboard Shortcuts",

@@ -15,6 +15,7 @@ export function useProjectEditor(slug: string | undefined) {
   const [projectTitleError, setProjectTitleError] = useState<string | null>(null);
   const [chapterWordCount, setChapterWordCount] = useState(0);
   const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
+  const [cacheWarning, setCacheWarning] = useState(false);
   const activeChapterRef = useRef<Chapter | null>(null);
   const projectSlugRef = useRef(project?.slug);
   const selectChapterSeqRef = useRef(0);
@@ -120,7 +121,8 @@ export function useProjectEditor(slug: string | undefined) {
     // until a new save attempt succeeds (the debounced save will retry automatically).
     setSaveStatus((prev) => (prev === "error" ? "error" : "unsaved"));
     if (activeChapterRef.current) {
-      setCachedContent(activeChapterRef.current.id, content);
+      const cached = setCachedContent(activeChapterRef.current.id, content);
+      setCacheWarning(!cached);
     }
   }, []);
 
@@ -340,6 +342,7 @@ export function useProjectEditor(slug: string | undefined) {
     activeChapter,
     saveStatus,
     saveErrorMessage,
+    cacheWarning,
     chapterWordCount,
     handleSave,
     handleContentChange,

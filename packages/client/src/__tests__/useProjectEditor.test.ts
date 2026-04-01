@@ -546,6 +546,36 @@ describe("useProjectEditor", () => {
     expect(result.current.activeChapter?.status).toBe("edited");
   });
 
+  it("handleContentChange sets cacheWarning when setCachedContent returns false", async () => {
+    const { setCachedContent } = await import("../hooks/useContentCache");
+    vi.mocked(setCachedContent).mockReturnValue(false);
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    expect(result.current.cacheWarning).toBe(false);
+
+    act(() => {
+      result.current.handleContentChange({
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "hello" }] }],
+      });
+    });
+
+    expect(result.current.cacheWarning).toBe(true);
+
+    // Clears when cache write succeeds again
+    vi.mocked(setCachedContent).mockReturnValue(true);
+    act(() => {
+      result.current.handleContentChange({
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "hello again" }] }],
+      });
+    });
+
+    expect(result.current.cacheWarning).toBe(false);
+  });
+
   it("handleContentChange preserves error save status instead of overwriting", async () => {
     vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("Bad Request", 400));
 
