@@ -92,8 +92,11 @@ This is a first-class design constraint, not optional:
 
 ## Visual Design
 
-- Warm earth tones: off-white background (#FAF8F5), dark charcoal text (#2D2D2D), warm amber/ochre accent
-- Sans-serif UI chrome (Inter), serif writing area (Libre Baskerville/Lora/Merriweather, 18-20px)
+- Warm earth tones: off-white background (#F7F3ED), dark charcoal text (#1C1917), warm amber/ochre accent (#8B5E2F)
+- Sans-serif UI chrome (DM Sans), serif for the writer's words (Cormorant Garamond, 18-20px)
+- **Serif = the manuscript:** editor content, chapter titles, project titles, preview mode, logo
+- **Sans-serif = the tool:** navigation, buttons, dialogs, labels, status indicators
+- Fonts are self-hosted via `@fontsource` packages (no external CDN) for offline reliability
 - Editor max-width 720px; preview max-width ~680px centered
 - Sidebar ~260px, collapsible
 
@@ -106,3 +109,14 @@ Two tables: **Project** (id, title, mode, created_at, updated_at, deleted_at) an
 The save pipeline gets the most rigorous coverage — it's the core trust promise. Integration tests run against real SQLite (not mocks). E2e tests cover all user stories including save-failure recovery via network interception. aXe-core runs in Playwright for automated a11y checks. ALL CODE MUST USE RED-GREEN-REFACTOR if feasible.
 
 **Coverage thresholds are enforced in `vitest.config.ts` (95% statements, 85% branches, 90% functions, 95% lines).** If coverage drops below these thresholds, the goal is always to increase coverage as much as possible by writing meaningful tests for the uncovered code — never simply adjust the thresholds downward or write minimal/trivial tests just to meet the minimum. Aim to push coverage higher, not coast at the floor.
+
+## Dependency Licenses
+
+**All dependencies must be compatible with commercial use.** A full audit lives in `docs/dependency-licenses.md`. When adding a new dependency or updating an existing one:
+
+1. Check its license in `node_modules/{package}/package.json`
+2. **Acceptable licenses:** MIT, ISC, BSD-2-Clause, BSD-3-Clause, Apache-2.0, OFL-1.1, 0BSD, CC0-1.0
+3. **Acceptable with care:** MPL-2.0 (weak copyleft — fine for dev-only; if production, document the file-level copyleft scope)
+4. **Not acceptable:** GPL, AGPL, SSPL, EUPL, or any strong-copyleft license. These would impose licensing requirements on Smudge itself. Flag immediately if encountered.
+5. **Dual-licensed packages:** Explicitly elect the permissive option and document the election in `docs/dependency-licenses.md`
+6. Update `docs/dependency-licenses.md` with the new dependency, its license, and any notes
