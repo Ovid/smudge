@@ -42,12 +42,14 @@ export function NewProjectDialog({ open, onClose, onCreate }: NewProjectDialogPr
     <dialog
       ref={dialogRef}
       onClose={onClose}
-      className="rounded-lg border border-border bg-bg-primary p-6 shadow-lg backdrop:bg-black/40 max-w-md w-full"
+      className="rounded-xl border border-border/60 bg-bg-primary p-8 shadow-xl backdrop:bg-black/30 max-w-md w-full"
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <h2 className="text-xl font-semibold text-text-primary">{STRINGS.project.createNew}</h2>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        <h2 className="text-xl font-serif font-semibold text-text-primary">
+          {STRINGS.project.createNew}
+        </h2>
 
-        <label className="flex flex-col gap-1">
+        <label className="flex flex-col gap-1.5">
           <span className="text-sm text-text-secondary">{STRINGS.project.titlePlaceholder}</span>
           <input
             type="text"
@@ -55,14 +57,14 @@ export function NewProjectDialog({ open, onClose, onCreate }: NewProjectDialogPr
             onChange={(e) => setTitle(e.target.value)}
             autoFocus
             required
-            className="rounded border border-border bg-bg-input px-3 py-2 text-text-primary focus:outline-none focus:ring-2 focus:ring-focus-ring"
+            className="rounded-lg border border-border bg-bg-input px-4 py-2.5 text-text-primary focus:outline-none focus:ring-2 focus:ring-focus-ring focus:border-transparent"
           />
         </label>
 
-        <fieldset className="flex flex-col gap-1">
+        <fieldset className="flex flex-col gap-1.5">
           <legend className="text-sm text-text-secondary">{STRINGS.project.modeLabel}</legend>
-          <div className="flex gap-4 mt-1">
-            <label className="flex items-center gap-2 cursor-pointer">
+          <div className="flex gap-6 mt-1">
+            <label className="flex items-center gap-2.5 cursor-pointer">
               <input
                 type="radio"
                 name="mode"
@@ -71,9 +73,9 @@ export function NewProjectDialog({ open, onClose, onCreate }: NewProjectDialogPr
                 onChange={() => setMode("fiction")}
                 className="accent-accent"
               />
-              <span className="text-text-primary">{STRINGS.project.fiction}</span>
+              <span className="text-text-primary text-sm">{STRINGS.project.fiction}</span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label className="flex items-center gap-2.5 cursor-pointer">
               <input
                 type="radio"
                 name="mode"
@@ -82,22 +84,22 @@ export function NewProjectDialog({ open, onClose, onCreate }: NewProjectDialogPr
                 onChange={() => setMode("nonfiction")}
                 className="accent-accent"
               />
-              <span className="text-text-primary">{STRINGS.project.nonfiction}</span>
+              <span className="text-text-primary text-sm">{STRINGS.project.nonfiction}</span>
             </label>
           </div>
         </fieldset>
 
-        <div className="flex justify-end gap-3 mt-2">
+        <div className="flex justify-end gap-3 mt-3">
           <button
             type="button"
             onClick={handleCancel}
-            className="rounded px-4 py-2 text-text-secondary hover:bg-bg-hover focus:outline-none focus:ring-2 focus:ring-focus-ring"
+            className="rounded-lg px-5 py-2.5 text-sm text-text-secondary hover:bg-bg-hover focus:outline-none focus:ring-2 focus:ring-focus-ring"
           >
             {STRINGS.project.cancelButton}
           </button>
           <button
             type="submit"
-            className="rounded bg-accent px-4 py-2 text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring"
+            className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring shadow-sm"
           >
             {STRINGS.project.createButton}
           </button>

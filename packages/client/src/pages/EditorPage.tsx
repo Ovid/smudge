@@ -335,8 +335,8 @@ export function EditorPage() {
   if (error) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-primary">
-        <div className="text-center">
-          <p className="text-text-primary text-lg mb-4">{error}</p>
+        <div className="text-center page-enter">
+          <p className="text-text-primary text-lg font-serif mb-4">{error}</p>
           <a
             href="/"
             onClick={(e) => {
@@ -355,7 +355,7 @@ export function EditorPage() {
   if (!project) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-primary">
-        <p className="text-text-muted">{STRINGS.nav.loading}</p>
+        <p className="text-text-muted font-serif italic">{STRINGS.nav.loading}</p>
       </div>
     );
   }
@@ -379,11 +379,13 @@ export function EditorPage() {
             onResize={handleSidebarResize}
           />
         )}
-        <div className="flex-1 flex flex-col items-center justify-center">
-          <p className="text-text-muted mb-4">{STRINGS.project.emptyChapters}</p>
+        <div className="flex-1 flex flex-col items-center justify-center page-enter">
+          <p className="text-text-muted mb-6 font-serif italic text-lg">
+            {STRINGS.project.emptyChapters}
+          </p>
           <button
             onClick={handleCreateChapter}
-            className="rounded bg-accent px-4 py-2 text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring"
+            className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring focus:ring-offset-2 focus:ring-offset-bg-primary shadow-sm"
           >
             {STRINGS.sidebar.addChapter}
           </button>
@@ -395,7 +397,7 @@ export function EditorPage() {
   if (!activeChapter) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-primary">
-        <p className="text-text-muted">{STRINGS.nav.loading}</p>
+        <p className="text-text-muted font-serif italic">{STRINGS.nav.loading}</p>
       </div>
     );
   }
@@ -420,14 +422,17 @@ export function EditorPage() {
       )}
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="border-b border-border px-6 py-3 flex items-center justify-between">
+        <header className="border-b border-border/60 px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button
               onClick={() => navigate("/")}
-              className="text-text-secondary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-focus-ring rounded px-2 py-1"
+              className="text-text-muted hover:text-text-secondary focus:outline-none focus:ring-2 focus:ring-focus-ring rounded-md px-2 py-1 text-sm"
             >
               {STRINGS.nav.backToProjects}
             </button>
+            <span className="text-border" aria-hidden="true">
+              /
+            </span>
             {editingProjectTitle ? (
               <div className="flex flex-col">
                 <input
@@ -442,7 +447,7 @@ export function EditorPage() {
                       setEditingProjectTitle(false);
                     }
                   }}
-                  className="text-lg font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none"
+                  className="text-base font-serif font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none"
                   aria-label={STRINGS.a11y.projectTitleInput}
                 />
                 {projectTitleError && (
@@ -453,7 +458,7 @@ export function EditorPage() {
               </div>
             ) : (
               <h1
-                className="text-lg font-semibold text-text-primary cursor-pointer hover:text-text-secondary"
+                className="text-base font-serif font-semibold text-text-primary cursor-pointer hover:text-text-secondary"
                 onDoubleClick={startEditingProjectTitle}
                 aria-label={project.title}
               >
@@ -461,17 +466,17 @@ export function EditorPage() {
               </h1>
             )}
           </div>
-          <div className="flex gap-1">
+          <nav className="flex gap-0.5 bg-bg-sidebar/60 rounded-lg p-0.5" aria-label="View modes">
             <button
               onClick={() => {
                 setTrashOpen(false);
                 setViewMode("editor");
               }}
               aria-current={viewMode === "editor" ? "page" : undefined}
-              className={`text-sm rounded px-3 py-1 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
+              className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
                 viewMode === "editor"
-                  ? "bg-accent-light text-accent font-medium"
-                  : "text-text-secondary hover:text-text-primary"
+                  ? "bg-bg-primary text-text-primary font-medium shadow-sm"
+                  : "text-text-muted hover:text-text-secondary"
               }`}
             >
               {STRINGS.nav.editor}
@@ -483,10 +488,10 @@ export function EditorPage() {
                 setViewMode("preview");
               }}
               aria-current={viewMode === "preview" ? "page" : undefined}
-              className={`text-sm rounded px-3 py-1 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
+              className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
                 viewMode === "preview"
-                  ? "bg-accent-light text-accent font-medium"
-                  : "text-text-secondary hover:text-text-primary"
+                  ? "bg-bg-primary text-text-primary font-medium shadow-sm"
+                  : "text-text-muted hover:text-text-secondary"
               }`}
             >
               {STRINGS.nav.preview}
@@ -499,21 +504,21 @@ export function EditorPage() {
                 setDashboardRefreshKey((k) => k + 1);
               }}
               aria-current={viewMode === "dashboard" ? "page" : undefined}
-              className={`text-sm rounded px-3 py-1 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
+              className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
                 viewMode === "dashboard"
-                  ? "bg-accent-light text-accent font-medium"
-                  : "text-text-secondary hover:text-text-primary"
+                  ? "bg-bg-primary text-text-primary font-medium shadow-sm"
+                  : "text-text-muted hover:text-text-secondary"
               }`}
             >
               {STRINGS.nav.dashboard}
             </button>
-          </div>
+          </nav>
         </header>
 
         {actionError && (
           <div
             role="alert"
-            className="px-6 py-2 bg-status-error/10 text-status-error text-sm flex items-center justify-between"
+            className="px-6 py-2 bg-status-error/8 text-status-error text-sm flex items-center justify-between border-b border-status-error/15"
           >
             <span>{actionError}</span>
             <button
@@ -557,7 +562,10 @@ export function EditorPage() {
             />
           </main>
         ) : (
-          <main className="flex-1 overflow-y-auto px-6 py-8" aria-label={STRINGS.a11y.mainContent}>
+          <main
+            className="flex-1 overflow-y-auto px-6 py-8 page-enter"
+            aria-label={STRINGS.a11y.mainContent}
+          >
             {editingTitle ? (
               <input
                 ref={titleInputRef}
@@ -571,12 +579,12 @@ export function EditorPage() {
                     setEditingTitle(false);
                   }
                 }}
-                className="mx-auto block max-w-[720px] mb-4 text-2xl font-serif text-text-primary bg-transparent border-b-2 border-accent focus:outline-none w-full"
+                className="mx-auto block max-w-[720px] mb-6 text-3xl font-serif font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none w-full tracking-tight"
                 aria-label={STRINGS.a11y.chapterTitleInput}
               />
             ) : (
               <h2
-                className="mx-auto max-w-[720px] mb-4 text-2xl font-serif text-text-primary cursor-pointer hover:text-text-secondary"
+                className="mx-auto max-w-[720px] mb-6 text-3xl font-serif font-semibold text-text-primary cursor-pointer hover:text-text-secondary tracking-tight"
                 onDoubleClick={startEditingTitle}
                 aria-label={activeChapter.title}
               >
@@ -593,11 +601,11 @@ export function EditorPage() {
           </main>
         )}
 
-        <footer className="border-t border-border bg-bg-primary px-6 py-2 flex items-center justify-between text-sm text-text-secondary">
-          <div>
-            {STRINGS.project.wordCount(chapterWordCount)}
+        <footer className="border-t border-border/40 bg-bg-primary px-6 py-2 flex items-center justify-between text-xs text-text-muted">
+          <div className="flex items-center gap-4">
+            <span className="font-medium">{STRINGS.project.wordCount(chapterWordCount)}</span>
             {project && (
-              <span className="ml-3 text-text-muted">
+              <span className="opacity-60">
                 {STRINGS.project.wordCount(
                   project.chapters.reduce((sum, c) => sum + c.word_count, 0),
                 )}{" "}
@@ -606,9 +614,15 @@ export function EditorPage() {
             )}
           </div>
           <div role="status" aria-live="polite">
-            {saveStatus === "unsaved" && STRINGS.editor.unsaved}
-            {saveStatus === "saving" && STRINGS.editor.saving}
-            {saveStatus === "saved" && STRINGS.editor.saved}
+            {saveStatus === "unsaved" && (
+              <span className="text-text-muted">{STRINGS.editor.unsaved}</span>
+            )}
+            {saveStatus === "saving" && (
+              <span className="text-text-muted">{STRINGS.editor.saving}</span>
+            )}
+            {saveStatus === "saved" && (
+              <span className="text-status-success/70">{STRINGS.editor.saved}</span>
+            )}
             {saveStatus === "error" && (
               <span className="text-status-error">
                 {saveErrorMessage ?? STRINGS.editor.saveFailed}
@@ -644,43 +658,57 @@ export function EditorPage() {
         <dialog
           open
           aria-label={STRINGS.shortcuts.dialogTitle}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 m-0 p-0 w-full h-full border-none bg-transparent"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 m-0 p-0 w-full h-full border-none bg-transparent"
           onClick={(e) => {
             if (e.target === e.currentTarget) setShortcutHelpOpen(false);
           }}
         >
-          <div className="rounded bg-bg-primary p-6 shadow-lg max-w-sm w-full mx-auto mt-[20vh]">
-            <h3 className="text-lg font-semibold text-text-primary mb-4">
+          <div className="rounded-xl bg-bg-primary p-8 shadow-xl max-w-sm w-full mx-auto mt-[20vh] border border-border/60">
+            <h3 className="text-lg font-serif font-semibold text-text-primary mb-5">
               {STRINGS.shortcuts.dialogTitle}
             </h3>
-            <dl className="flex flex-col gap-2 text-sm">
-              <div className="flex justify-between">
+            <dl className="flex flex-col gap-2.5 text-sm">
+              <div className="flex justify-between items-center">
                 <dt className="text-text-secondary">{STRINGS.shortcuts.togglePreview}</dt>
-                <dd className="font-mono text-text-muted">Ctrl+Shift+P</dd>
+                <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
+                  Ctrl+Shift+P
+                </dd>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <dt className="text-text-secondary">{STRINGS.shortcuts.newChapter}</dt>
-                <dd className="font-mono text-text-muted">Ctrl+Shift+N</dd>
+                <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
+                  Ctrl+Shift+N
+                </dd>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <dt className="text-text-secondary">{STRINGS.shortcuts.toggleSidebar}</dt>
-                <dd className="font-mono text-text-muted">Ctrl+Shift+\</dd>
+                <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
+                  Ctrl+Shift+\
+                </dd>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <dt className="text-text-secondary">{STRINGS.shortcuts.prevChapter}</dt>
-                <dd className="font-mono text-text-muted">Ctrl+Shift+↑</dd>
+                <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
+                  Ctrl+Shift+↑
+                </dd>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <dt className="text-text-secondary">{STRINGS.shortcuts.nextChapter}</dt>
-                <dd className="font-mono text-text-muted">Ctrl+Shift+↓</dd>
+                <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
+                  Ctrl+Shift+↓
+                </dd>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <dt className="text-text-secondary">{STRINGS.shortcuts.announceWordCount}</dt>
-                <dd className="font-mono text-text-muted">Ctrl+Shift+W</dd>
+                <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
+                  Ctrl+Shift+W
+                </dd>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between items-center">
                 <dt className="text-text-secondary">{STRINGS.shortcuts.showShortcuts}</dt>
-                <dd className="font-mono text-text-muted">Ctrl+/</dd>
+                <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
+                  Ctrl+/
+                </dd>
               </div>
             </dl>
           </div>

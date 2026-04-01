@@ -59,53 +59,64 @@ export function HomePage() {
 
   return (
     <div className="min-h-screen bg-bg-primary">
-      <header className="border-b border-border px-6 py-4">
+      <header className="border-b border-border/60 px-8 py-5">
         <h1>
-          <img src={smudgeLogo} alt={STRINGS.app.name} className="h-8" />
+          <img src={smudgeLogo} alt={STRINGS.app.name} className="h-9 opacity-90" />
         </h1>
       </header>
 
-      <main className="mx-auto max-w-2xl px-6 py-8" aria-label={STRINGS.a11y.mainContent}>
+      <main
+        className="mx-auto max-w-2xl px-8 py-12 page-enter"
+        aria-label={STRINGS.a11y.mainContent}
+      >
         {error && (
           <div
             role="alert"
-            className="mb-4 rounded bg-status-error/10 px-4 py-3 text-status-error text-sm"
+            className="mb-6 rounded-lg bg-status-error/8 px-5 py-3 text-status-error text-sm border border-status-error/15"
           >
             {error}
           </div>
         )}
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-text-primary">
+        <div className="flex items-center justify-between mb-10">
+          <h2 className="text-2xl font-serif font-semibold text-text-primary tracking-tight">
             {STRINGS.home.projectsHeading}
           </h2>
           <button
             onClick={() => setDialogOpen(true)}
-            className="rounded bg-accent px-4 py-2 text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring"
+            className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring focus:ring-offset-2 focus:ring-offset-bg-primary shadow-sm"
           >
             {STRINGS.project.createNew}
           </button>
         </div>
 
         {projects.length === 0 ? (
-          <p className="text-text-muted text-center py-12">{STRINGS.project.emptyState}</p>
+          <div className="text-center py-20">
+            <p className="text-text-muted text-lg font-serif italic">
+              {STRINGS.project.emptyState}
+            </p>
+          </div>
         ) : (
-          <ul className="flex flex-col gap-2">
+          <ul className="flex flex-col gap-3">
             {projects.map((project) => (
-              <li key={project.id} className="flex items-center gap-2">
+              <li key={project.id} className="flex items-center gap-2 group">
                 <button
                   onClick={() => navigate(`/projects/${project.slug}`)}
-                  className="flex-1 rounded border border-border bg-bg-input p-4 text-left hover:bg-bg-hover focus:outline-none focus:ring-2 focus:ring-focus-ring"
+                  className="flex-1 rounded-lg border border-border/70 bg-bg-input p-5 text-left hover:bg-bg-hover hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-medium text-text-primary">{project.title}</span>
-                    <span className="text-sm text-text-muted">
+                    <span className="text-lg font-serif font-medium text-text-primary tracking-tight">
+                      {project.title}
+                    </span>
+                    <span className="text-xs tracking-wide uppercase text-text-muted font-medium">
                       {project.mode === "fiction"
                         ? STRINGS.project.fiction
                         : STRINGS.project.nonfiction}
                     </span>
                   </div>
-                  <div className="mt-1 text-sm text-text-secondary flex items-center gap-3">
-                    <span>{STRINGS.project.wordCount(project.total_word_count)}</span>
+                  <div className="mt-2 text-sm text-text-secondary flex items-center gap-4">
+                    <span className="font-medium">
+                      {STRINGS.project.wordCount(project.total_word_count)}
+                    </span>
                     <span className="text-text-muted">
                       {STRINGS.project.lastEdited(project.updated_at)}
                     </span>
@@ -113,7 +124,7 @@ export function HomePage() {
                 </button>
                 <button
                   onClick={() => setDeleteTarget(project)}
-                  className="rounded p-2 text-text-muted hover:text-status-error focus:outline-none focus:ring-2 focus:ring-focus-ring"
+                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 rounded-lg p-2.5 text-text-muted hover:text-status-error hover:bg-status-error/8 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200"
                   aria-label={STRINGS.delete.buttonLabel}
                 >
                   {STRINGS.delete.buttonLabel}
