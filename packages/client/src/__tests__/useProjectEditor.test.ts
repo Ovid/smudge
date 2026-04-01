@@ -641,6 +641,55 @@ describe("useProjectEditor", () => {
     expect(result.current.chapterWordCount).toBe(0);
   });
 
+  it("handleStatusChange discards stale revert when superseded by a newer call", async () => {
+    // Race: Call A (outline -> rough_draft) fails slowly, Call B (outline -> revised) succeeds fast.
+    // Call A's revert should be discarded because Call B already updated to "revised".
+    let rejectCallA: (reason: Error) => void;
+    const callAPromise = new Promise<typeof mockChapter1>((_resolve, reject) => {
+      rejectCallA = reject;
+    });
+
+    vi.mocked(api.chapters.update)
+      .mockImplementationOnce(() => callAPromise) // Call A: slow, will fail
+      .mockResolvedValueOnce({ ...mockChapter1, status: "revised" }); // Call B: fast, succeeds
+
+    // When Call A fails, the revert path reloads the project — return "outline" (the original)
+    const reloadedProject = {
+      ...mockProject,
+      chapters: [{ ...mockChapter1, status: "outline" }, mockChapter2],
+    };
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockResolvedValueOnce(reloadedProject); // reload after Call A failure
+
+    const onErrorA = vi.fn();
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    // Fire Call A (slow) — don't await
+    act(() => {
+      result.current.handleStatusChange("ch1", "rough_draft", onErrorA);
+    });
+
+    // Fire Call B (fast) — it resolves immediately
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "revised");
+    });
+
+    // Call B should have set status to "revised"
+    expect(result.current.project?.chapters[0].status).toBe("revised");
+
+    // Now Call A fails — its revert should be discarded
+    await act(async () => {
+      rejectCallA!(new Error("slow failure"));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    // Status should still be "revised" from Call B, NOT reverted to "outline"
+    expect(result.current.project?.chapters[0].status).toBe("revised");
+    expect(result.current.activeChapter?.status).toBe("revised");
+  });
+
   it("handleStatusChange falls back to local revert when both API update and server reload fail", async () => {
     vi.mocked(api.chapters.update).mockRejectedValue(new Error("status update failed"));
     vi.mocked(api.projects.get)

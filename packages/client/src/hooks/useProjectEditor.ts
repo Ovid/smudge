@@ -19,6 +19,7 @@ export function useProjectEditor(slug: string | undefined) {
   const projectSlugRef = useRef(project?.slug);
   const selectChapterSeqRef = useRef(0);
   const saveSeqRef = useRef(0);
+  const statusChangeSeqRef = useRef(0);
 
   // Keep ref in sync for use in loadProject's closure
   useEffect(() => {
@@ -238,6 +239,7 @@ export function useProjectEditor(slug: string | undefined) {
 
   const handleStatusChange = useCallback(
     async (chapterId: string, status: string, onError?: (message: string) => void) => {
+      const seq = ++statusChangeSeqRef.current;
       // Save previous status for revert
       const previousStatus = projectRef.current?.chapters.find((c) => c.id === chapterId)?.status;
 
@@ -255,6 +257,7 @@ export function useProjectEditor(slug: string | undefined) {
       try {
         await api.chapters.update(chapterId, { status });
       } catch (err) {
+        if (seq !== statusChangeSeqRef.current) return; // newer call owns state
         // Revert by reloading from server, falling back to local revert
         let reverted = false;
         const slug = projectSlugRef.current;
