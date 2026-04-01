@@ -75,11 +75,12 @@ describe("useContentCache", () => {
   });
 
   describe("setCachedContent", () => {
-    it("stores stringified content", () => {
+    it("stores stringified content and returns true", () => {
       const content = { type: "doc", content: [{ type: "paragraph" }] };
 
-      setCachedContent("ch-2", content);
+      const result = setCachedContent("ch-2", content);
 
+      expect(result).toBe(true);
       expect(mockLocalStorage.setItem).toHaveBeenCalledWith(
         "smudge:draft:ch-2",
         JSON.stringify(content),
@@ -87,14 +88,14 @@ describe("useContentCache", () => {
       expect(store.get("smudge:draft:ch-2")).toBe(JSON.stringify(content));
     });
 
-    it("warns when localStorage.setItem throws", () => {
+    it("returns false and warns when localStorage.setItem throws", () => {
       mockLocalStorage.setItem.mockImplementation(() => {
         throw new Error("QuotaExceededError");
       });
 
-      expect(() => {
-        setCachedContent("ch-2", { type: "doc" });
-      }).not.toThrow();
+      const result = setCachedContent("ch-2", { type: "doc" });
+
+      expect(result).toBe(false);
       expect(warnSpy).toHaveBeenCalledWith(
         "[useContentCache] setCachedContent failed:",
         expect.any(Error),

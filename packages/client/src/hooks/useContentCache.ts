@@ -11,11 +11,13 @@ export function getCachedContent(chapterId: string): Record<string, unknown> | n
   }
 }
 
-export function setCachedContent(chapterId: string, content: Record<string, unknown>): void {
+export function setCachedContent(chapterId: string, content: Record<string, unknown>): boolean {
   try {
     localStorage.setItem(`${CACHE_PREFIX}${chapterId}`, JSON.stringify(content));
+    return true;
   } catch (err) {
     console.warn("[useContentCache] setCachedContent failed:", err);
+    return false;
   }
 }
 
