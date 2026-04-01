@@ -13,12 +13,12 @@
   /* Text colors — graphite and charcoal */
   --color-text-primary: #1c1917;
   --color-text-secondary: #57534e;
-  --color-text-muted: #6f6055;
+  --color-text-muted: #5c4f44;
   --color-text-inverse: #fafaf9;
 
   /* Accent colors — warm amber/ochre */
-  --color-accent: #7d5427;
-  --color-accent-hover: #664520;
+  --color-accent: #6b4720;
+  --color-accent-hover: #583a1a;
   --color-accent-light: #f0e3d1;
 
   /* Border colors — warm and subtle */
@@ -31,7 +31,7 @@
   --color-status-warning: #c49a38;
 
   /* Focus */
-  --color-focus-ring: #7d5427;
+  --color-focus-ring: #6b4720;
 
   /* Typography */
   --font-sans: "DM Sans Variable", "DM Sans", ui-sans-serif, system-ui, sans-serif;
