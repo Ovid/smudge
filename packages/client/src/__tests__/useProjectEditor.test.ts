@@ -141,8 +141,6 @@ describe("useProjectEditor", () => {
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
-    const originalContent = result.current.activeChapter?.content;
-
     await act(async () => {
       await result.current.handleSave({ type: "doc", content: [] });
     });
