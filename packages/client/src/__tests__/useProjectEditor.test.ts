@@ -149,7 +149,7 @@ describe("useProjectEditor", () => {
     // so that re-mounting the editor (e.g. after Preview → Editor) uses latest content
     expect(result.current.activeChapter?.content).toEqual({ type: "doc", content: [] });
     // word_count should be synced into project.chapters
-    expect(result.current.project?.chapters[0].word_count).toBe(5);
+    expect(result.current.project?.chapters[0]!.word_count).toBe(5);
   });
 
   it("sets save status to error after exhausting retries", async () => {
