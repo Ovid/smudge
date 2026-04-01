@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import type { Chapter, ChapterStatusRow } from "@smudge/shared";
 import { Editor, type EditorHandle } from "../components/Editor";
 import { EditorToolbar } from "../components/EditorToolbar";
+import type { Editor as TipTapEditor } from "@tiptap/react";
 import { Sidebar } from "../components/Sidebar";
 import { TrashView } from "../components/TrashView";
 import { PreviewMode } from "../components/PreviewMode";
@@ -63,6 +64,7 @@ export function EditorPage() {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const escapePressedRef = useRef(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const shortcutDialogRef = useRef<HTMLDialogElement>(null);
   const [editingProjectTitle, setEditingProjectTitle] = useState(false);
   const [projectTitleDraft, setProjectTitleDraft] = useState("");
   const projectTitleInputRef = useRef<HTMLInputElement>(null);
@@ -118,7 +120,18 @@ export function EditorPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const dialog = shortcutDialogRef.current;
+    if (!dialog) return;
+    if (shortcutHelpOpen) {
+      if (!dialog.open) dialog.showModal();
+    } else {
+      if (dialog.open) dialog.close();
+    }
+  }, [shortcutHelpOpen]);
+
   const editorRef = useRef<EditorHandle | null>(null);
+  const [toolbarEditor, setToolbarEditor] = useState<TipTapEditor | null>(null);
 
   const handleStatusChangeWithError = useCallback(
     async (chapterId: string, status: string) => {
@@ -464,8 +477,8 @@ export function EditorPage() {
             </h1>
           )}
         </div>
-        {viewMode === "editor" && editorRef.current?.editor && (
-          <EditorToolbar editor={editorRef.current.editor} />
+        {viewMode === "editor" && toolbarEditor && (
+          <EditorToolbar editor={toolbarEditor} />
         )}
         <nav className="flex gap-0.5 bg-bg-sidebar/60 rounded-lg p-0.5" aria-label="View modes">
           <button
@@ -617,6 +630,7 @@ export function EditorPage() {
                 onSave={handleSave}
                 onContentChange={handleContentChange}
                 editorRef={editorRef}
+                onEditorReady={setToolbarEditor}
               />
             </main>
           )}
@@ -675,66 +689,63 @@ export function EditorPage() {
         {wordCountAnnouncement}
       </div>
 
-      {shortcutHelpOpen && (
-        <dialog
-          open
-          aria-label={STRINGS.shortcuts.dialogTitle}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 m-0 p-0 w-full h-full border-none bg-transparent"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShortcutHelpOpen(false);
-          }}
-        >
-          <div className="rounded-xl bg-bg-primary p-8 shadow-xl max-w-sm w-full mx-auto mt-[20vh] border border-border/60">
-            <h3 className="text-lg font-semibold text-text-primary mb-5">
-              {STRINGS.shortcuts.dialogTitle}
-            </h3>
-            <dl className="flex flex-col gap-2.5 text-sm">
-              <div className="flex justify-between items-center">
-                <dt className="text-text-secondary">{STRINGS.shortcuts.togglePreview}</dt>
-                <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-                  Ctrl+Shift+P
-                </dd>
-              </div>
-              <div className="flex justify-between items-center">
-                <dt className="text-text-secondary">{STRINGS.shortcuts.newChapter}</dt>
-                <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-                  Ctrl+Shift+N
-                </dd>
-              </div>
-              <div className="flex justify-between items-center">
-                <dt className="text-text-secondary">{STRINGS.shortcuts.toggleSidebar}</dt>
-                <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-                  Ctrl+Shift+\
-                </dd>
-              </div>
-              <div className="flex justify-between items-center">
-                <dt className="text-text-secondary">{STRINGS.shortcuts.prevChapter}</dt>
-                <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-                  Ctrl+Shift+↑
-                </dd>
-              </div>
-              <div className="flex justify-between items-center">
-                <dt className="text-text-secondary">{STRINGS.shortcuts.nextChapter}</dt>
-                <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-                  Ctrl+Shift+↓
-                </dd>
-              </div>
-              <div className="flex justify-between items-center">
-                <dt className="text-text-secondary">{STRINGS.shortcuts.announceWordCount}</dt>
-                <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-                  Ctrl+Shift+W
-                </dd>
-              </div>
-              <div className="flex justify-between items-center">
-                <dt className="text-text-secondary">{STRINGS.shortcuts.showShortcuts}</dt>
-                <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-                  Ctrl+/
-                </dd>
-              </div>
-            </dl>
+      <dialog
+        ref={shortcutDialogRef}
+        aria-label={STRINGS.shortcuts.dialogTitle}
+        className="z-50 rounded-xl bg-bg-primary p-8 shadow-xl max-w-sm w-full border border-border/60 backdrop:bg-black/30"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setShortcutHelpOpen(false);
+        }}
+        onClose={() => setShortcutHelpOpen(false)}
+      >
+        <h3 className="text-lg font-semibold text-text-primary mb-5">
+          {STRINGS.shortcuts.dialogTitle}
+        </h3>
+        <dl className="flex flex-col gap-2.5 text-sm">
+          <div className="flex justify-between items-center">
+            <dt className="text-text-secondary">{STRINGS.shortcuts.togglePreview}</dt>
+            <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
+              Ctrl+Shift+P
+            </dd>
           </div>
-        </dialog>
-      )}
+          <div className="flex justify-between items-center">
+            <dt className="text-text-secondary">{STRINGS.shortcuts.newChapter}</dt>
+            <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
+              Ctrl+Shift+N
+            </dd>
+          </div>
+          <div className="flex justify-between items-center">
+            <dt className="text-text-secondary">{STRINGS.shortcuts.toggleSidebar}</dt>
+            <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
+              Ctrl+Shift+\
+            </dd>
+          </div>
+          <div className="flex justify-between items-center">
+            <dt className="text-text-secondary">{STRINGS.shortcuts.prevChapter}</dt>
+            <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
+              Ctrl+Shift+↑
+            </dd>
+          </div>
+          <div className="flex justify-between items-center">
+            <dt className="text-text-secondary">{STRINGS.shortcuts.nextChapter}</dt>
+            <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
+              Ctrl+Shift+↓
+            </dd>
+          </div>
+          <div className="flex justify-between items-center">
+            <dt className="text-text-secondary">{STRINGS.shortcuts.announceWordCount}</dt>
+            <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
+              Ctrl+Shift+W
+            </dd>
+          </div>
+          <div className="flex justify-between items-center">
+            <dt className="text-text-secondary">{STRINGS.shortcuts.showShortcuts}</dt>
+            <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
+              Ctrl+/
+            </dd>
+          </div>
+        </dl>
+      </dialog>
     </div>
   );
 }

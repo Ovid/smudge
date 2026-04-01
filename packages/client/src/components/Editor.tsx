@@ -14,11 +14,12 @@ interface EditorProps {
   onSave: (content: Record<string, unknown>) => Promise<boolean>;
   onContentChange?: (content: Record<string, unknown>) => void;
   editorRef?: React.MutableRefObject<EditorHandle | null>;
+  onEditorReady?: (editor: TipTapEditor | null) => void;
 }
 
 const AUTO_SAVE_DEBOUNCE_MS = 1500;
 
-export function Editor({ content, onSave, onContentChange, editorRef }: EditorProps) {
+export function Editor({ content, onSave, onContentChange, editorRef, onEditorReady }: EditorProps) {
   const onSaveRef = useRef(onSave);
   const onContentChangeRef = useRef(onContentChange);
 
@@ -142,6 +143,11 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
       };
     }
   }, [editor, editorRef]);
+
+  useEffect(() => {
+    onEditorReady?.(editor);
+    return () => onEditorReady?.(null);
+  }, [editor, onEditorReady]);
 
   if (!editor) return null;
 
