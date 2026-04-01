@@ -15,10 +15,12 @@ export function useProjectEditor(slug: string | undefined) {
   const [projectTitleError, setProjectTitleError] = useState<string | null>(null);
   const [chapterWordCount, setChapterWordCount] = useState(0);
   const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
+  const [cacheWarning, setCacheWarning] = useState(false);
   const activeChapterRef = useRef<Chapter | null>(null);
   const projectSlugRef = useRef(project?.slug);
   const selectChapterSeqRef = useRef(0);
   const saveSeqRef = useRef(0);
+  const statusChangeSeqRef = useRef(0);
 
   // Keep ref in sync for use in loadProject's closure
   useEffect(() => {
@@ -88,6 +90,7 @@ export function useProjectEditor(slug: string | undefined) {
             };
           });
           clearCachedContent(savingChapterId);
+          setCacheWarning(false);
           if (activeChapterRef.current?.id === savingChapterId) {
             setSaveStatus("saved");
           }
@@ -119,7 +122,8 @@ export function useProjectEditor(slug: string | undefined) {
     // until a new save attempt succeeds (the debounced save will retry automatically).
     setSaveStatus((prev) => (prev === "error" ? "error" : "unsaved"));
     if (activeChapterRef.current) {
-      setCachedContent(activeChapterRef.current.id, content);
+      const cached = setCachedContent(activeChapterRef.current.id, content);
+      setCacheWarning(!cached);
     }
   }, []);
 
@@ -127,6 +131,7 @@ export function useProjectEditor(slug: string | undefined) {
     const slug = projectSlugRef.current;
     if (!slug) return;
     ++saveSeqRef.current; // cancel any in-flight save retries for the old chapter
+    setCacheWarning(false);
     try {
       const newChapter = await api.chapters.create(slug);
       setActiveChapter(newChapter);
@@ -141,6 +146,7 @@ export function useProjectEditor(slug: string | undefined) {
     if (activeChapterRef.current && chapterId === activeChapterRef.current.id) return;
     ++saveSeqRef.current; // cancel any in-flight save retries for the old chapter
     setSaveStatus("idle");
+    setCacheWarning(false);
     const seq = ++selectChapterSeqRef.current;
     try {
       const chapter = await api.chapters.get(chapterId);
@@ -236,63 +242,78 @@ export function useProjectEditor(slug: string | undefined) {
     [],
   );
 
-  const handleStatusChange = useCallback(async (chapterId: string, status: string) => {
-    // Save previous status for revert
-    const previousStatus = projectRef.current?.chapters.find((c) => c.id === chapterId)?.status;
+  const handleStatusChange = useCallback(
+    async (chapterId: string, status: string, onError?: (message: string) => void) => {
+      const seq = ++statusChangeSeqRef.current;
+      // Save previous status for revert
+      const previousStatus = projectRef.current?.chapters.find((c) => c.id === chapterId)?.status;
 
-    // Optimistic update
-    setProject((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        chapters: prev.chapters.map((c) => (c.id === chapterId ? { ...c, status } : c)),
-      };
-    });
-    // Guard all setActiveChapter updaters with ID check to prevent applying
-    // status to the wrong chapter if the user rapidly switches chapters.
-    setActiveChapter((prev) => (prev?.id === chapterId ? { ...prev, status } : prev));
-    try {
-      await api.chapters.update(chapterId, { status });
-    } catch (err) {
-      // Revert by reloading from server, falling back to local revert
-      let reverted = false;
-      const slug = projectSlugRef.current;
-      if (slug) {
-        try {
-          const data = await api.projects.get(slug);
-          setProject(data);
-          const revertedChapter = data.chapters.find((c) => c.id === chapterId);
-          if (revertedChapter) {
-            setActiveChapter((prev) =>
-              prev?.id === chapterId ? { ...prev, status: revertedChapter.status } : prev,
-            );
+      // Optimistic update
+      setProject((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          chapters: prev.chapters.map((c) => (c.id === chapterId ? { ...c, status } : c)),
+        };
+      });
+      // Guard all setActiveChapter updaters with ID check to prevent applying
+      // status to the wrong chapter if the user rapidly switches chapters.
+      setActiveChapter((prev) => (prev?.id === chapterId ? { ...prev, status } : prev));
+      try {
+        await api.chapters.update(chapterId, { status });
+      } catch (err) {
+        if (seq !== statusChangeSeqRef.current) return; // newer call owns state
+        // Revert by reloading from server, falling back to local revert
+        let reverted = false;
+        const slug = projectSlugRef.current;
+        if (slug) {
+          try {
+            const data = await api.projects.get(slug);
+            const revertedChapter = data.chapters.find((c) => c.id === chapterId);
+            if (revertedChapter) {
+              // Surgically revert only the status field to avoid overwriting
+              // concurrent optimistic updates (reorder, rename, create).
+              setProject((prev) => {
+                if (!prev) return prev;
+                return {
+                  ...prev,
+                  chapters: prev.chapters.map((c) =>
+                    c.id === chapterId ? { ...c, status: revertedChapter.status } : c,
+                  ),
+                };
+              });
+              setActiveChapter((prev) =>
+                prev?.id === chapterId ? { ...prev, status: revertedChapter.status } : prev,
+              );
+              reverted = true;
+            }
+          } catch {
+            // Reload failed — fall through to local revert
           }
-          reverted = true;
-        } catch {
-          // Reload failed — fall through to local revert
         }
+        if (!reverted && previousStatus !== undefined) {
+          setProject((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              chapters: prev.chapters.map((c) =>
+                c.id === chapterId ? { ...c, status: previousStatus } : c,
+              ),
+            };
+          });
+          setActiveChapter((prev) =>
+            prev?.id === chapterId ? { ...prev, status: previousStatus } : prev,
+          );
+        }
+        // Status change failures are non-fatal — the revert already restored consistent state.
+        // Call the optional onError callback for the caller to display (e.g., as a dismissible banner),
+        // rather than setError which triggers the full-page error overlay.
+        const message = err instanceof Error ? err.message : STRINGS.error.statusChangeFailed;
+        onError?.(message);
       }
-      if (!reverted && previousStatus !== undefined) {
-        setProject((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            chapters: prev.chapters.map((c) =>
-              c.id === chapterId ? { ...c, status: previousStatus } : c,
-            ),
-          };
-        });
-        setActiveChapter((prev) =>
-          prev?.id === chapterId ? { ...prev, status: previousStatus } : prev,
-        );
-      }
-      // Return error message for the caller to display (e.g., as a dismissible banner).
-      // Unlike other handlers that use setError (full-page overlay), status change
-      // failures are non-fatal — the revert already restored consistent state.
-      return err instanceof Error ? err.message : STRINGS.error.statusChangeFailed;
-    }
-    return undefined;
-  }, []);
+    },
+    [],
+  );
 
   const handleRenameChapter = useCallback(async (chapterId: string, title: string) => {
     try {
@@ -324,6 +345,7 @@ export function useProjectEditor(slug: string | undefined) {
     activeChapter,
     saveStatus,
     saveErrorMessage,
+    cacheWarning,
     chapterWordCount,
     handleSave,
     handleContentChange,

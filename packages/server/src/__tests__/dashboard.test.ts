@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
+import { UNTITLED_CHAPTER } from "@smudge/shared";
 import { setupTestDb } from "./test-helpers";
 
 const t = setupTestDb();
@@ -27,7 +28,7 @@ describe("GET /api/projects/:slug/dashboard", () => {
     expect(res.status).toBe(200);
     expect(res.body.chapters).toHaveLength(1);
     expect(res.body.chapters[0].id).toBe(chapterId);
-    expect(res.body.chapters[0].title).toBe("Untitled Chapter");
+    expect(res.body.chapters[0].title).toBe(UNTITLED_CHAPTER);
     expect(res.body.chapters[0].status).toBe("outline");
     expect(res.body.chapters[0].status_label).toBe("Outline");
     expect(res.body.chapters[0].word_count).toBe(0);

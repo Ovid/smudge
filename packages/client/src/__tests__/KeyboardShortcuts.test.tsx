@@ -1,8 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { UNTITLED_CHAPTER } from "@smudge/shared";
 import { EditorPage } from "../pages/EditorPage";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api/client";
+
+vi.mock("../hooks/useContentCache", () => ({
+  getCachedContent: vi.fn().mockReturnValue(null),
+  setCachedContent: vi.fn().mockReturnValue(true),
+  clearCachedContent: vi.fn(),
+}));
 
 vi.mock("../api/client", () => ({
   ApiRequestError: class ApiRequestError extends Error {
@@ -212,7 +219,7 @@ describe("Ctrl+Shift+N creates a new chapter", () => {
     vi.mocked(api.chapters.create).mockResolvedValue({
       id: "ch-2",
       project_id: "proj-1",
-      title: "Untitled Chapter",
+      title: UNTITLED_CHAPTER,
       content: null,
       sort_order: 1,
       word_count: 0,

@@ -43,6 +43,7 @@ export function EditorPage() {
     activeChapter,
     saveStatus,
     saveErrorMessage,
+    cacheWarning,
     chapterWordCount,
     handleSave,
     handleContentChange,
@@ -119,10 +120,7 @@ export function EditorPage() {
 
   const handleStatusChangeWithError = useCallback(
     async (chapterId: string, status: string) => {
-      const errorMessage = await handleStatusChange(chapterId, status);
-      if (errorMessage) {
-        setActionError(errorMessage);
-      }
+      await handleStatusChange(chapterId, status, setActionError);
     },
     [handleStatusChange],
   );
@@ -614,6 +612,9 @@ export function EditorPage() {
               </span>
             )}
             {saveStatus === "idle" && ""}
+            {cacheWarning && saveStatus !== "error" && (
+              <span className="text-status-warning ml-2">{STRINGS.editor.cacheUnavailable}</span>
+            )}
           </div>
         </footer>
       </div>

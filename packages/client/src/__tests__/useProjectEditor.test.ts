@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
+import { UNTITLED_CHAPTER } from "@smudge/shared";
 
 vi.mock("../api/client", () => ({
   ApiRequestError: class ApiRequestError extends Error {
@@ -30,7 +31,7 @@ vi.mock("../api/client", () => ({
 
 vi.mock("../hooks/useContentCache", () => ({
   getCachedContent: vi.fn().mockReturnValue(null),
-  setCachedContent: vi.fn(),
+  setCachedContent: vi.fn().mockReturnValue(true),
   clearCachedContent: vi.fn(),
 }));
 
@@ -94,7 +95,7 @@ describe("useProjectEditor", () => {
     const newChapter = {
       id: "ch3",
       project_id: "p1",
-      title: "Untitled Chapter",
+      title: UNTITLED_CHAPTER,
       content: null,
       sort_order: 2,
       word_count: 0,
@@ -484,7 +485,7 @@ describe("useProjectEditor", () => {
     expect(result.current.project?.chapters[0].status).toBe("revised");
   });
 
-  it("handleStatusChange reverts on API failure", async () => {
+  it("handleStatusChange reverts on API failure and calls onError", async () => {
     vi.mocked(api.chapters.update).mockRejectedValue(new Error("status boom"));
     // When the status change fails, it reloads the project from server
     const reloadedProject = {
@@ -495,17 +496,41 @@ describe("useProjectEditor", () => {
       .mockResolvedValueOnce(mockProject) // initial load
       .mockResolvedValueOnce(reloadedProject); // reload after failure
 
+    const onError = vi.fn();
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
 
-    let errorMessage: string | undefined;
     await act(async () => {
-      errorMessage = await result.current.handleStatusChange("ch1", "revised");
+      await result.current.handleStatusChange("ch1", "revised", onError);
     });
 
-    // Should return the error message instead of throwing
-    expect(errorMessage).toBe("status boom");
+    // Should call onError callback instead of returning the error
+    expect(onError).toHaveBeenCalledWith("status boom");
     // After revert, project should be reloaded from server
+    expect(result.current.project?.chapters[0].status).toBe("outline");
+  });
+
+  it("handleStatusChange falls back to local revert when chapter absent from reloaded project", async () => {
+    vi.mocked(api.chapters.update).mockRejectedValue(new Error("status boom"));
+    // Reload succeeds but chapter is absent (e.g., concurrently deleted)
+    const reloadedProject = {
+      ...mockProject,
+      chapters: [mockChapter2], // ch1 is missing
+    };
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockResolvedValueOnce(reloadedProject); // reload after failure — ch1 absent
+
+    const onError = vi.fn();
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "revised", onError);
+    });
+
+    expect(onError).toHaveBeenCalledWith("status boom");
+    // Local fallback should fire since ch1 was not in the reloaded data
     expect(result.current.project?.chapters[0].status).toBe("outline");
   });
 
@@ -520,6 +545,63 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.activeChapter?.status).toBe("edited");
+  });
+
+  it("handleContentChange sets cacheWarning when setCachedContent returns false", async () => {
+    const { setCachedContent } = await import("../hooks/useContentCache");
+    vi.mocked(setCachedContent).mockReturnValue(false);
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    expect(result.current.cacheWarning).toBe(false);
+
+    act(() => {
+      result.current.handleContentChange({
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "hello" }] }],
+      });
+    });
+
+    expect(result.current.cacheWarning).toBe(true);
+
+    // Clears when cache write succeeds again
+    vi.mocked(setCachedContent).mockReturnValue(true);
+    act(() => {
+      result.current.handleContentChange({
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "hello again" }] }],
+      });
+    });
+
+    expect(result.current.cacheWarning).toBe(false);
+  });
+
+  it("handleSave clears cacheWarning on successful save", async () => {
+    const { setCachedContent } = await import("../hooks/useContentCache");
+    vi.mocked(setCachedContent).mockReturnValue(false);
+    vi.mocked(api.chapters.update).mockResolvedValue({ ...mockChapter1, word_count: 2 });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    // Trigger cache failure
+    act(() => {
+      result.current.handleContentChange({
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "hello" }] }],
+      });
+    });
+    expect(result.current.cacheWarning).toBe(true);
+
+    // Successful save should clear the warning
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [{ type: "paragraph" }] });
+    });
+    expect(result.current.cacheWarning).toBe(false);
+
+    // Restore default mock
+    vi.mocked(setCachedContent).mockReturnValue(true);
   });
 
   it("handleContentChange preserves error save status instead of overwriting", async () => {
@@ -617,12 +699,62 @@ describe("useProjectEditor", () => {
     expect(result.current.chapterWordCount).toBe(0);
   });
 
+  it("handleStatusChange discards stale revert when superseded by a newer call", async () => {
+    // Race: Call A (outline -> rough_draft) fails slowly, Call B (outline -> revised) succeeds fast.
+    // Call A's revert should be discarded because Call B already updated to "revised".
+    let rejectCallA: (reason: Error) => void = () => {};
+    const callAPromise = new Promise<typeof mockChapter1>((_resolve, reject) => {
+      rejectCallA = reject;
+    });
+
+    vi.mocked(api.chapters.update)
+      .mockImplementationOnce(() => callAPromise) // Call A: slow, will fail
+      .mockResolvedValueOnce({ ...mockChapter1, status: "revised" }); // Call B: fast, succeeds
+
+    // When Call A fails, the revert path reloads the project — return "outline" (the original)
+    const reloadedProject = {
+      ...mockProject,
+      chapters: [{ ...mockChapter1, status: "outline" }, mockChapter2],
+    };
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockResolvedValueOnce(reloadedProject); // reload after Call A failure
+
+    const onErrorA = vi.fn();
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    // Fire Call A (slow) — don't await
+    act(() => {
+      result.current.handleStatusChange("ch1", "rough_draft", onErrorA);
+    });
+
+    // Fire Call B (fast) — it resolves immediately
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "revised");
+    });
+
+    // Call B should have set status to "revised"
+    expect(result.current.project?.chapters[0].status).toBe("revised");
+
+    // Now Call A fails — its revert should be discarded
+    await act(async () => {
+      rejectCallA(new Error("slow failure"));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    // Status should still be "revised" from Call B, NOT reverted to "outline"
+    expect(result.current.project?.chapters[0].status).toBe("revised");
+    expect(result.current.activeChapter?.status).toBe("revised");
+  });
+
   it("handleStatusChange falls back to local revert when both API update and server reload fail", async () => {
     vi.mocked(api.chapters.update).mockRejectedValue(new Error("status update failed"));
     vi.mocked(api.projects.get)
       .mockResolvedValueOnce(mockProject) // initial load
       .mockRejectedValueOnce(new Error("reload failed")); // reload after status change failure
 
+    const onError = vi.fn();
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
@@ -630,13 +762,12 @@ describe("useProjectEditor", () => {
     // Confirm initial status
     expect(result.current.project?.chapters[0].status).toBe("outline");
 
-    let errorMessage: string | undefined;
     await act(async () => {
-      errorMessage = await result.current.handleStatusChange("ch1", "revised");
+      await result.current.handleStatusChange("ch1", "revised", onError);
     });
 
-    // Should return the error message instead of throwing
-    expect(errorMessage).toBe("status update failed");
+    // Should call onError callback instead of returning the error
+    expect(onError).toHaveBeenCalledWith("status update failed");
     // After both API update and reload fail, local revert should restore previous status
     expect(result.current.project?.chapters[0].status).toBe("outline");
     expect(result.current.activeChapter?.status).toBe("outline");

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from "vitest";
 import { getCachedContent, setCachedContent, clearCachedContent } from "../hooks/useContentCache";
 
 // Vitest jsdom may not provide a fully standard localStorage.
@@ -17,12 +17,16 @@ Object.defineProperty(globalThis, "localStorage", {
 });
 
 describe("useContentCache", () => {
+  let warnSpy: MockInstance;
+
   beforeEach(() => {
     store.clear();
     vi.clearAllMocks();
+    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
   afterEach(() => {
+    warnSpy.mockRestore();
     // Reset implementations in case a test overrode them
     mockLocalStorage.getItem.mockImplementation((key: string) => store.get(key) ?? null);
     mockLocalStorage.setItem.mockImplementation((key: string, value: string) =>
@@ -47,7 +51,7 @@ describe("useContentCache", () => {
       expect(result).toBeNull();
     });
 
-    it("returns null when localStorage.getItem throws", () => {
+    it("returns null and warns when localStorage.getItem throws", () => {
       mockLocalStorage.getItem.mockImplementation(() => {
         throw new Error("unavailable");
       });
@@ -55,6 +59,10 @@ describe("useContentCache", () => {
       const result = getCachedContent("ch-1");
 
       expect(result).toBeNull();
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[useContentCache] getCachedContent failed:",
+        expect.any(Error),
+      );
     });
 
     it("returns null when stored value is invalid JSON", () => {
@@ -67,11 +75,12 @@ describe("useContentCache", () => {
   });
 
   describe("setCachedContent", () => {
-    it("stores stringified content", () => {
+    it("stores stringified content and returns true", () => {
       const content = { type: "doc", content: [{ type: "paragraph" }] };
 
-      setCachedContent("ch-2", content);
+      const result = setCachedContent("ch-2", content);
 
+      expect(result).toBe(true);
       expect(mockLocalStorage.setItem).toHaveBeenCalledWith(
         "smudge:draft:ch-2",
         JSON.stringify(content),
@@ -79,14 +88,18 @@ describe("useContentCache", () => {
       expect(store.get("smudge:draft:ch-2")).toBe(JSON.stringify(content));
     });
 
-    it("silently handles localStorage.setItem throwing", () => {
+    it("returns false and warns when localStorage.setItem throws", () => {
       mockLocalStorage.setItem.mockImplementation(() => {
         throw new Error("QuotaExceededError");
       });
 
-      expect(() => {
-        setCachedContent("ch-2", { type: "doc" });
-      }).not.toThrow();
+      const result = setCachedContent("ch-2", { type: "doc" });
+
+      expect(result).toBe(false);
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[useContentCache] setCachedContent failed:",
+        expect.any(Error),
+      );
     });
   });
 
@@ -100,7 +113,7 @@ describe("useContentCache", () => {
       expect(store.has("smudge:draft:ch-3")).toBe(false);
     });
 
-    it("silently handles localStorage.removeItem throwing", () => {
+    it("warns when localStorage.removeItem throws", () => {
       mockLocalStorage.removeItem.mockImplementation(() => {
         throw new Error("unavailable");
       });
@@ -108,6 +121,10 @@ describe("useContentCache", () => {
       expect(() => {
         clearCachedContent("ch-3");
       }).not.toThrow();
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[useContentCache] clearCachedContent failed:",
+        expect.any(Error),
+      );
     });
   });
 });

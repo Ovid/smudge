@@ -5,23 +5,26 @@ export function getCachedContent(chapterId: string): Record<string, unknown> | n
     const raw = localStorage.getItem(`${CACHE_PREFIX}${chapterId}`);
     if (!raw) return null;
     return JSON.parse(raw) as Record<string, unknown>;
-  } catch {
+  } catch (err) {
+    console.warn("[useContentCache] getCachedContent failed:", err);
     return null;
   }
 }
 
-export function setCachedContent(chapterId: string, content: Record<string, unknown>): void {
+export function setCachedContent(chapterId: string, content: Record<string, unknown>): boolean {
   try {
     localStorage.setItem(`${CACHE_PREFIX}${chapterId}`, JSON.stringify(content));
-  } catch {
-    // Storage full or unavailable — best effort
+    return true;
+  } catch (err) {
+    console.warn("[useContentCache] setCachedContent failed:", err);
+    return false;
   }
 }
 
 export function clearCachedContent(chapterId: string): void {
   try {
     localStorage.removeItem(`${CACHE_PREFIX}${chapterId}`);
-  } catch {
-    // Best effort
+  } catch (err) {
+    console.warn("[useContentCache] clearCachedContent failed:", err);
   }
 }

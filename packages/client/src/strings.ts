@@ -1,3 +1,5 @@
+import { UNTITLED_CHAPTER, TRASH_RETENTION_DAYS, TRASH_RETENTION_MS } from "@smudge/shared";
+
 export const STRINGS = {
   app: {
     name: "Smudge",
@@ -23,13 +25,13 @@ export const STRINGS = {
     },
   },
   chapter: {
-    untitledDefault: "Untitled Chapter",
+    untitledDefault: UNTITLED_CHAPTER,
   },
   delete: {
     buttonLabel: "Delete",
     deleteChapterAriaLabel: (title: string) => `Delete ${title}`,
     confirmTitle: (name: string) => `Move \u201c${name}\u201d to trash?`,
-    confirmBody: "You can restore it within 30 days.",
+    confirmBody: `You can restore it within ${TRASH_RETENTION_DAYS} days.`,
     confirmButton: "Confirm",
     cancelButton: "Cancel",
   },
@@ -57,6 +59,7 @@ export const STRINGS = {
     saved: "Saved",
     unsaved: "Unsaved changes",
     saveFailed: "Unable to save \u2014 check connection",
+    cacheUnavailable: "Local backup unavailable",
   },
   shortcuts: {
     dialogTitle: "Keyboard Shortcuts",
@@ -74,7 +77,7 @@ export const STRINGS = {
     trashEmpty: "No chapters in trash.",
     restore: "Restore",
     permanentDeleteDate: (deletedAt: string) => {
-      const purgeDate = new Date(new Date(deletedAt).getTime() + 30 * 24 * 60 * 60 * 1000);
+      const purgeDate = new Date(new Date(deletedAt).getTime() + TRASH_RETENTION_MS);
       return `Permanently deleted ${purgeDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
     },
     backToEditor: "Back to editor",

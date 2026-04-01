@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import request from "supertest";
+import { UNTITLED_CHAPTER } from "@smudge/shared";
 import { setupTestDb } from "./test-helpers";
 
 const t = setupTestDb();
@@ -25,7 +26,7 @@ describe("POST /api/projects/:id/chapters", () => {
     const res = await request(t.app).post(`/api/projects/${projectSlug}/chapters`).send();
 
     expect(res.status).toBe(201);
-    expect(res.body.title).toBe("Untitled Chapter");
+    expect(res.body.title).toBe(UNTITLED_CHAPTER);
     expect(res.body.project_id).toBe(projectId);
     expect(res.body.sort_order).toBe(1); // after the auto-created chapter at 0
   });
@@ -62,7 +63,7 @@ describe("GET /api/chapters/:id", () => {
     const res = await request(t.app).get(`/api/chapters/${chapterId}`);
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(chapterId);
-    expect(res.body.title).toBe("Untitled Chapter");
+    expect(res.body.title).toBe(UNTITLED_CHAPTER);
   });
 
   it("returns 404 for non-existent chapter", async () => {

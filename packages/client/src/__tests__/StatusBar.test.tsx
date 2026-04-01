@@ -4,6 +4,12 @@ import { EditorPage } from "../pages/EditorPage";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api/client";
 
+vi.mock("../hooks/useContentCache", () => ({
+  getCachedContent: vi.fn().mockReturnValue(null),
+  setCachedContent: vi.fn().mockReturnValue(true),
+  clearCachedContent: vi.fn(),
+}));
+
 vi.mock("../api/client", () => ({
   ApiRequestError: class ApiRequestError extends Error {
     constructor(

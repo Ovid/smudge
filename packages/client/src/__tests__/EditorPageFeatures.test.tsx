@@ -5,6 +5,12 @@ import { EditorPage } from "../pages/EditorPage";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api/client";
 
+vi.mock("../hooks/useContentCache", () => ({
+  getCachedContent: vi.fn().mockReturnValue(null),
+  setCachedContent: vi.fn().mockReturnValue(true),
+  clearCachedContent: vi.fn(),
+}));
+
 vi.mock("../api/client", () => ({
   ApiRequestError: class ApiRequestError extends Error {
     constructor(
@@ -841,7 +847,7 @@ describe("EditorPage handleStatusChangeWithError", () => {
       expect(screen.getAllByLabelText(/Chapter status:/).length).toBeGreaterThan(0);
     });
 
-    // After initial load succeeds, make reload also fail so handleStatusChange throws
+    // After initial load succeeds, make reload also fail so handleStatusChange calls onError
     vi.mocked(api.projects.get).mockRejectedValue(new Error("reload failed"));
 
     // StatusBadge renders a button with the current status label — click to open dropdown

@@ -218,6 +218,10 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** The default chapter title "Untitled Chapter" appears as raw strings in the server (`projects.ts:66,247`) and as `STRINGS.chapter.untitledDefault` in the client. Also hardcoded in the initial migration. These independent sources could drift.
 - **Evidence:** `projects.ts:66` and `:247` — `title: "Untitled Chapter"` (raw). `strings.ts:26` — `untitledDefault: "Untitled Chapter"` (externalized). `001_create_projects_and_chapters.js:15`.
 - **Found by:** Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** Extracted UNTITLED_CHAPTER constant to @smudge/shared/constants.ts; server and client both import from shared
+- **Status date:** 2026-03-31 15:46 UTC
+- **Status commit:** 66f102e
 
 ### [F-9] 30-day purge cutoff duplicated across packages
 - **Category:** 28 (Magic numbers/strings everywhere)
@@ -225,6 +229,10 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** The 30-day soft-delete retention period is independently computed as `30 * 24 * 60 * 60 * 1000` in both the server purge logic and the client's trash display. No shared constant exists.
 - **Evidence:** `packages/server/src/db/purge.ts:4`, `packages/client/src/strings.ts:76` — identical computation
 - **Found by:** Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** Extracted TRASH_RETENTION_MS constant to @smudge/shared/constants.ts; server purge and client strings both import from shared
+- **Status date:** 2026-03-31 15:56 UTC
+- **Status commit:** 76edd9a
 
 ### [F-10] No structured server-side logging
 - **Category:** 21 (No observability plan)
@@ -239,6 +247,10 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** `handleStatusChange` is the only handler in `useProjectEditor` that re-throws its error. All other handlers catch and call `setError()`. The caller in EditorPage must wrap it specially in `handleStatusChangeWithError`. A developer adding a new handler could easily choose the wrong pattern.
 - **Evidence:** `useProjectEditor.ts:278` — `throw err`. Compare with `handleDeleteChapter` at line 181 — `setError(...)`. `EditorPage.tsx:118-128` — special wrapper.
 - **Found by:** Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** handleStatusChange now accepts optional onError callback instead of returning error; aligns with other handlers' catch-and-handle pattern while preserving non-fatal semantics
+- **Status date:** 2026-03-31 17:42 UTC
+- **Status commit:** 7e0ba50
 
 ### [F-12] useContentCache silently swallows localStorage errors
 - **Category:** 20 (Weak error handling strategy)
@@ -246,6 +258,10 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** All three functions in useContentCache have empty catch blocks. If `setCachedContent` fails (storage full, corrupted), the safety net for unsaved content — a core spec requirement — silently stops working with no user indication.
 - **Evidence:** `packages/client/src/hooks/useContentCache.ts:8-9,17-18,24-25` — empty catch blocks
 - **Found by:** Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** Added console.warn logging in all three catch blocks with function name prefix for dev tools filtering
+- **Status date:** 2026-03-31 17:48 UTC
+- **Status commit:** 6641bbe
 
 ### [F-13] No security headers middleware
 - **Category:** 30 (Security as an afterthought)
@@ -253,6 +269,10 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** The Express app has no Helmet middleware, no Content-Security-Policy, no X-Frame-Options, no X-Content-Type-Options. The app is designed for Docker deployment which implies network exposure.
 - **Evidence:** `packages/server/src/app.ts:17-23` — middleware chain is only `express.json()` followed by routes. No `helmet` import anywhere.
 - **Found by:** Security & Code Quality
+- **Status:** Fixed
+- **Status reason:** Added helmet middleware to createApp(); sets CSP, X-Content-Type-Options, X-Frame-Options, and other security headers
+- **Status date:** 2026-03-31 17:56 UTC
+- **Status commit:** c63bf5c
 
 ### [F-14] useProjectEditor.ts concentrates all project mutations
 - **Category:** 2 (God object)
