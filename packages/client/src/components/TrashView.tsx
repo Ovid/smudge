@@ -36,7 +36,7 @@ export function TrashView({ chapters, onRestore, onBack }: TrashViewProps) {
                     <span className="text-text-muted">
                       {STRINGS.project.lastDeleted(chapter.deleted_at)}
                     </span>
-                    <span className="text-status-error/80">
+                    <span className="text-status-error">
                       {STRINGS.sidebar.permanentDeleteDate(chapter.deleted_at)}
                     </span>
                   </div>
