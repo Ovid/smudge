@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { EditorPage } from "../pages/EditorPage";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -352,7 +352,9 @@ describe("EditorPage save status", () => {
     });
 
     expect(capturedOnSave).toBeTruthy();
-    await capturedOnSave?.({ type: "doc", content: [{ type: "paragraph" }] });
+    await act(async () => {
+      await capturedOnSave?.({ type: "doc", content: [{ type: "paragraph" }] });
+    });
 
     await waitFor(() => {
       expect(screen.getByText("Saved")).toBeInTheDocument();
@@ -368,7 +370,9 @@ describe("EditorPage save status", () => {
     });
 
     expect(capturedOnSave).toBeTruthy();
-    await capturedOnSave?.({ type: "doc", content: [{ type: "paragraph" }] });
+    await act(async () => {
+      await capturedOnSave?.({ type: "doc", content: [{ type: "paragraph" }] });
+    });
 
     await waitFor(() => {
       expect(screen.getByText("Network error")).toBeInTheDocument();
