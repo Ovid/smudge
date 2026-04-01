@@ -277,8 +277,8 @@ export function useProjectEditor(slug: string | undefined) {
               setActiveChapter((prev) =>
                 prev?.id === chapterId ? { ...prev, status: revertedChapter.status } : prev,
               );
+              reverted = true;
             }
-            reverted = true;
           } catch {
             // Reload failed — fall through to local revert
           }

@@ -509,6 +509,30 @@ describe("useProjectEditor", () => {
     expect(result.current.project?.chapters[0].status).toBe("outline");
   });
 
+  it("handleStatusChange falls back to local revert when chapter absent from reloaded project", async () => {
+    vi.mocked(api.chapters.update).mockRejectedValue(new Error("status boom"));
+    // Reload succeeds but chapter is absent (e.g., concurrently deleted)
+    const reloadedProject = {
+      ...mockProject,
+      chapters: [mockChapter2], // ch1 is missing
+    };
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockResolvedValueOnce(reloadedProject); // reload after failure — ch1 absent
+
+    const onError = vi.fn();
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "revised", onError);
+    });
+
+    expect(onError).toHaveBeenCalledWith("status boom");
+    // Local fallback should fire since ch1 was not in the reloaded data
+    expect(result.current.project?.chapters[0].status).toBe("outline");
+  });
+
   it("handleStatusChange updates activeChapter status when it's the active chapter", async () => {
     vi.mocked(api.chapters.update).mockResolvedValue({ ...mockChapter1, status: "edited" });
 
