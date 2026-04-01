@@ -81,7 +81,9 @@ export function useProjectEditor(slug: string | undefined) {
           // Keep activeChapter in sync so that re-mounting the editor
           // (e.g. after toggling Preview → Editor) uses the latest content.
           if (activeChapterRef.current?.id === savingChapterId) {
-            setActiveChapter((prev) => (prev ? { ...prev, content, word_count: updated.word_count } : prev));
+            setActiveChapter((prev) =>
+              prev ? { ...prev, content, word_count: updated.word_count } : prev,
+            );
           }
           setProject((prev) => {
             if (!prev) return prev;
