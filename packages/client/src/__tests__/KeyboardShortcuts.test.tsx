@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { UNTITLED_CHAPTER } from "@smudge/shared";
 import { EditorPage } from "../pages/EditorPage";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api/client";
@@ -218,7 +219,7 @@ describe("Ctrl+Shift+N creates a new chapter", () => {
     vi.mocked(api.chapters.create).mockResolvedValue({
       id: "ch-2",
       project_id: "proj-1",
-      title: "Untitled Chapter",
+      title: UNTITLED_CHAPTER,
       content: null,
       sort_order: 1,
       word_count: 0,

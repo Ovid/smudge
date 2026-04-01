@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
+import { UNTITLED_CHAPTER } from "@smudge/shared";
 
 vi.mock("../api/client", () => ({
   ApiRequestError: class ApiRequestError extends Error {
@@ -94,7 +95,7 @@ describe("useProjectEditor", () => {
     const newChapter = {
       id: "ch3",
       project_id: "p1",
-      title: "Untitled Chapter",
+      title: UNTITLED_CHAPTER,
       content: null,
       sort_order: 2,
       word_count: 0,

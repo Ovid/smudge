@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { UNTITLED_CHAPTER } from "@smudge/shared";
 import { api } from "../api/client";
 
 const mockFetch = vi.fn();
@@ -113,7 +114,7 @@ describe("api.chapters", () => {
   });
 
   it("create(projectSlug) sends POST /api/projects/:slug/chapters", async () => {
-    const chapter = { id: "ch-new", title: "Untitled Chapter" };
+    const chapter = { id: "ch-new", title: UNTITLED_CHAPTER };
     mockFetch.mockResolvedValue(jsonResponse(chapter, 201));
 
     const result = await api.chapters.create("p1");
