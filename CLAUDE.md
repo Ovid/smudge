@@ -93,7 +93,7 @@ This is a first-class design constraint, not optional:
 
 ## Visual Design
 
-- Warm earth tones: off-white background (#F7F3ED), dark charcoal text (#1C1917), warm amber/ochre accent (#8B5E2F)
+- Warm earth tones: off-white background (#F7F3ED), dark charcoal text (#1C1917), warm amber/ochre accent (#7D5427)
 - Sans-serif UI chrome (DM Sans), serif for the writer's words (Cormorant Garamond, 18-20px)
 - **Serif = the manuscript:** editor content, chapter titles, project titles, preview mode, logo
 - **Sans-serif = the tool:** navigation, buttons, dialogs, labels, status indicators

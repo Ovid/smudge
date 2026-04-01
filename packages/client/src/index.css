@@ -17,8 +17,8 @@
   --color-text-inverse: #fafaf9;
 
   /* Accent colors — warm amber/ochre */
-  --color-accent: #8b5e2f;
-  --color-accent-hover: #724b22;
+  --color-accent: #7d5427;
+  --color-accent-hover: #664520;
   --color-accent-light: #f0e3d1;
 
   /* Border colors — warm and subtle */
@@ -31,7 +31,7 @@
   --color-status-warning: #c49a38;
 
   /* Focus */
-  --color-focus-ring: #8b5e2f;
+  --color-focus-ring: #7d5427;
 
   /* Typography */
   --font-sans: "DM Sans Variable", "DM Sans", ui-sans-serif, system-ui, sans-serif;
