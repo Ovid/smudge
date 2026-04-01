@@ -20,6 +20,7 @@
 
 # Features
 
+- CI/CD
 - BE ULTRA-PARANOID ABOUT DATA LOSS. Brainstorm on ways to make this
   super robust. Have "snapshots" which go back X amount of time.
 
