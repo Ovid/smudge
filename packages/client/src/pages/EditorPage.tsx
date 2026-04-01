@@ -245,8 +245,10 @@ export function EditorPage() {
         if (currentIndex === -1) return;
         const nextIndex = e.key === "ArrowUp" ? currentIndex - 1 : currentIndex + 1;
         if (nextIndex < 0 || nextIndex >= chapters.length) return;
-        handleSelectChapterWithFlush(chapters[nextIndex].id);
-        setNavAnnouncement(STRINGS.sidebar.navigatedToChapter(chapters[nextIndex].title));
+        const nextChapter = chapters[nextIndex];
+        if (!nextChapter) return;
+        handleSelectChapterWithFlush(nextChapter.id);
+        setNavAnnouncement(STRINGS.sidebar.navigatedToChapter(nextChapter.title));
         setTimeout(() => setNavAnnouncement(""), 1000);
         return;
       }

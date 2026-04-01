@@ -150,7 +150,7 @@ describe("useProjectEditor", () => {
     // activeChapter.content should NOT be replaced by the save response
     expect(result.current.activeChapter?.content).toEqual(originalContent);
     // But word_count should be synced into project.chapters
-    expect(result.current.project?.chapters[0].word_count).toBe(5);
+    expect(result.current.project?.chapters[0]!.word_count).toBe(5);
   });
 
   it("sets save status to error after exhausting retries", async () => {
@@ -269,16 +269,16 @@ describe("useProjectEditor", () => {
       await result.current.handleReorderChapters(["ch2", "ch1"]);
     });
 
-    expect(result.current.project?.chapters[0].id).toBe("ch2");
-    expect(result.current.project?.chapters[1].id).toBe("ch1");
+    expect(result.current.project?.chapters[0]!.id).toBe("ch2");
+    expect(result.current.project?.chapters[1]!.id).toBe("ch1");
   });
 
   it("updates the project title", async () => {
+    const { chapters: _, ...projectWithoutChapters } = mockProject;
     vi.mocked(api.projects.update).mockResolvedValue({
-      ...mockProject,
+      ...projectWithoutChapters,
       title: "New Title",
       slug: "new-title",
-      chapters: undefined as never,
     });
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -306,7 +306,7 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.activeChapter?.title).toBe("Renamed");
-    expect(result.current.project?.chapters[0].title).toBe("Renamed");
+    expect(result.current.project?.chapters[0]!.title).toBe("Renamed");
   });
 
   it("renames a chapter via handleRenameChapter", async () => {
@@ -322,7 +322,7 @@ describe("useProjectEditor", () => {
       await result.current.handleRenameChapter("ch2", "Better Name");
     });
 
-    expect(result.current.project?.chapters[1].title).toBe("Better Name");
+    expect(result.current.project?.chapters[1]!.title).toBe("Better Name");
   });
 
   it("renames the active chapter and updates activeChapter state", async () => {
@@ -482,7 +482,7 @@ describe("useProjectEditor", () => {
       await result.current.handleStatusChange("ch1", "revised");
     });
 
-    expect(result.current.project?.chapters[0].status).toBe("revised");
+    expect(result.current.project?.chapters[0]!.status).toBe("revised");
   });
 
   it("handleStatusChange reverts on API failure and calls onError", async () => {
@@ -507,7 +507,7 @@ describe("useProjectEditor", () => {
     // Should call onError callback instead of returning the error
     expect(onError).toHaveBeenCalledWith("status boom");
     // After revert, project should be reloaded from server
-    expect(result.current.project?.chapters[0].status).toBe("outline");
+    expect(result.current.project?.chapters[0]!.status).toBe("outline");
   });
 
   it("handleStatusChange falls back to local revert when chapter absent from reloaded project", async () => {
@@ -531,7 +531,7 @@ describe("useProjectEditor", () => {
 
     expect(onError).toHaveBeenCalledWith("status boom");
     // Local fallback should fire since ch1 was not in the reloaded data
-    expect(result.current.project?.chapters[0].status).toBe("outline");
+    expect(result.current.project?.chapters[0]!.status).toBe("outline");
   });
 
   it("handleStatusChange updates activeChapter status when it's the active chapter", async () => {
@@ -735,7 +735,7 @@ describe("useProjectEditor", () => {
     });
 
     // Call B should have set status to "revised"
-    expect(result.current.project?.chapters[0].status).toBe("revised");
+    expect(result.current.project?.chapters[0]!.status).toBe("revised");
 
     // Now Call A fails — its revert should be discarded
     await act(async () => {
@@ -744,7 +744,7 @@ describe("useProjectEditor", () => {
     });
 
     // Status should still be "revised" from Call B, NOT reverted to "outline"
-    expect(result.current.project?.chapters[0].status).toBe("revised");
+    expect(result.current.project?.chapters[0]!.status).toBe("revised");
     expect(result.current.activeChapter?.status).toBe("revised");
   });
 
@@ -760,7 +760,7 @@ describe("useProjectEditor", () => {
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
     // Confirm initial status
-    expect(result.current.project?.chapters[0].status).toBe("outline");
+    expect(result.current.project?.chapters[0]!.status).toBe("outline");
 
     await act(async () => {
       await result.current.handleStatusChange("ch1", "revised", onError);
@@ -769,7 +769,7 @@ describe("useProjectEditor", () => {
     // Should call onError callback instead of returning the error
     expect(onError).toHaveBeenCalledWith("status update failed");
     // After both API update and reload fail, local revert should restore previous status
-    expect(result.current.project?.chapters[0].status).toBe("outline");
+    expect(result.current.project?.chapters[0]!.status).toBe("outline");
     expect(result.current.activeChapter?.status).toBe("outline");
   });
 });

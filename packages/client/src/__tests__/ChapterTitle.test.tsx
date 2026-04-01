@@ -222,10 +222,13 @@ describe("Project title editing", () => {
     vi.mocked(api.projects.get).mockResolvedValue(mockProject);
     vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
     vi.mocked(api.projects.update).mockResolvedValue({
-      ...mockProject,
-      title: "Renamed Project",
+      id: mockProject.id,
       slug: "renamed-project",
-      chapters: mockProject.chapters,
+      title: "Renamed Project",
+      mode: mockProject.mode,
+      created_at: mockProject.created_at,
+      updated_at: mockProject.updated_at,
+      deleted_at: mockProject.deleted_at,
     });
   });
 
