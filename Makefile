@@ -1,12 +1,15 @@
-.PHONY: all test cover lint format typecheck dev build clean loc help
+.PHONY: all test cover e2e lint format typecheck dev build clean loc help
 
-all: lint format typecheck test ## Lint, format, typecheck, and test
+all: lint format typecheck cover e2e ## Full CI pass: lint, format, typecheck, test+coverage, e2e
 
-test: ## Run full test suite
+test: ## Run full test suite (fast, no coverage)
 	npx vitest run
 
-cover: ## Generate code coverage report (one-shot)
+cover: ## Run tests with coverage enforcement
 	npx vitest run --coverage
+
+e2e: ## Run Playwright e2e tests (starts dev servers automatically)
+	npx playwright test
 
 lint: ## Lint with autofix
 	npm run lint
@@ -30,4 +33,4 @@ clean: ## Remove SQLite database files (full reset)
 	rm -f packages/server/data/smudge.db packages/server/data/smudge.db-shm packages/server/data/smudge.db-wal
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'

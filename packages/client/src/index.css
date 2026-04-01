@@ -2,43 +2,89 @@
 @plugin "@tailwindcss/typography";
 
 @theme {
-  /* Background colors */
-  --color-bg-primary: #faf8f5;
-  --color-bg-sidebar: #f3f0eb;
-  --color-bg-hover: #ede9e3;
-  --color-bg-active: #e5e0d8;
-  --color-bg-input: #ffffff;
-  --color-bg-toolbar: #f7f5f2;
+  /* Background colors — aged paper warmth */
+  --color-bg-primary: #f7f3ed;
+  --color-bg-sidebar: #efeae2;
+  --color-bg-hover: #e8e2d8;
+  --color-bg-active: #ded7cb;
+  --color-bg-input: #fcfaf7;
+  --color-bg-toolbar: #f3efe8;
 
-  /* Text colors */
-  --color-text-primary: #2d2d2d;
-  --color-text-secondary: #5c5c5c;
-  --color-text-muted: #736b63;
-  --color-text-inverse: #ffffff;
+  /* Text colors — graphite and charcoal */
+  --color-text-primary: #1c1917;
+  --color-text-secondary: #57534e;
+  --color-text-muted: #5c4f44;
+  --color-text-inverse: #fafaf9;
 
-  /* Accent colors */
-  --color-accent: #85571f;
-  --color-accent-hover: #6e4819;
-  --color-accent-light: #f5e6d3;
+  /* Accent colors — warm amber/ochre */
+  --color-accent: #6b4720;
+  --color-accent-hover: #583a1a;
+  --color-accent-light: #f0e3d1;
 
-  /* Border colors */
-  --color-border: #ddd8d0;
-  --color-border-strong: #c5bfb5;
+  /* Border colors — warm and subtle */
+  --color-border: #ddd5c8;
+  --color-border-strong: #c4b9a8;
 
-  /* Status colors */
-  --color-status-success: #5d8c61;
-  --color-status-error: #c25450;
-  --color-status-warning: #d4a843;
+  /* Status colors — muted, earthy */
+  --color-status-success: #5b7f5e;
+  --color-status-error: #b84c48;
+  --color-status-warning: #c49a38;
 
   /* Focus */
-  --color-focus-ring: #85571f;
+  --color-focus-ring: #6b4720;
 
   /* Typography */
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Libre Baskerville", "Georgia", ui-serif, serif;
+  --font-sans: "DM Sans Variable", "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Cormorant Garamond", "Georgia", ui-serif, serif;
 }
 
-/* Tighten list spacing in the editor — Tailwind prose adds too much margin */
+/* ─── Paper grain texture ─── */
+body {
+  background-color: var(--color-bg-primary);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+/* ─── Elegant scrollbar ─── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-strong);
+}
+
+/* ─── Global transitions ─── */
+button,
+a,
+input {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ─── TipTap editor refinements ─── */
+.tiptap {
+  caret-color: var(--color-accent);
+}
+
 .tiptap ul li,
 .tiptap ol li {
   margin-top: 0.25em;
@@ -51,7 +97,68 @@
   margin-bottom: 0;
 }
 
-/* Respect reduced-motion preference (WCAG 2.1 AA) */
+/* TipTap placeholder */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--color-text-muted);
+  pointer-events: none;
+  height: 0;
+  font-style: italic;
+  opacity: 0.6;
+}
+
+/* ─── Ink-like selection ─── */
+::selection {
+  background: #d4c4a8;
+  color: var(--color-text-primary);
+}
+
+/* ─── Writing area prose enhancements ─── */
+.tiptap.prose {
+  font-size: 1.2rem;
+  line-height: 1.85;
+  letter-spacing: 0.01em;
+}
+
+.tiptap.prose h3,
+.tiptap.prose h4,
+.tiptap.prose h5 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.tiptap.prose blockquote {
+  border-left-color: var(--color-accent-light);
+  border-left-width: 3px;
+  font-style: italic;
+  color: var(--color-text-secondary);
+}
+
+.tiptap.prose hr {
+  border-color: var(--color-border);
+  margin: 2.5em auto;
+  max-width: 120px;
+}
+
+/* ─── Smooth page transitions ─── */
+.page-enter {
+  animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ─── Respect reduced-motion preference (WCAG 2.1 AA) ─── */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -61,13 +168,4 @@
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
   }
-}
-
-/* TipTap placeholder */
-.tiptap p.is-editor-empty:first-child::before {
-  content: attr(data-placeholder);
-  float: left;
-  color: var(--color-text-muted);
-  pointer-events: none;
-  height: 0;
 }

@@ -130,8 +130,8 @@ export function DashboardView({
         }));
 
   return (
-    <div className="mx-auto max-w-[720px] px-6 py-8">
-      <h2 className="text-2xl font-serif text-text-primary mb-6">{STRINGS.dashboard.heading}</h2>
+    <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
+      <h2 className="text-lg font-semibold text-text-primary mb-8">{STRINGS.dashboard.heading}</h2>
 
       {chapters.length === 0 ? (
         <div data-testid="dashboard-empty">
@@ -141,16 +141,16 @@ export function DashboardView({
         </div>
       ) : (
         <>
-          {/* Health bar */}
-          <section aria-label={STRINGS.dashboard.healthSectionLabel} className="mb-8 space-y-1">
-            <p className="text-text-primary font-medium">
+          {/* Health summary */}
+          <section aria-label={STRINGS.dashboard.healthSectionLabel} className="mb-10 space-y-1.5">
+            <p className="text-2xl font-semibold text-text-primary">
               {STRINGS.dashboard.totalWordCount(totals.word_count)}
             </p>
             <p className="text-text-secondary text-sm">
               {STRINGS.dashboard.totalChapters(totals.chapter_count)}
             </p>
             {mostRecentChapter && (
-              <p className="text-text-secondary text-sm">
+              <p className="text-text-muted text-sm">
                 {STRINGS.dashboard.mostRecentEdit(
                   mostRecentChapter.updated_at,
                   mostRecentChapter.title,
@@ -158,7 +158,7 @@ export function DashboardView({
               </p>
             )}
             {leastRecentChapter && (
-              <p className="text-text-secondary text-sm">
+              <p className="text-text-muted text-sm">
                 {STRINGS.dashboard.leastRecentEdit(
                   leastRecentChapter.updated_at,
                   leastRecentChapter.title,
@@ -169,9 +169,9 @@ export function DashboardView({
 
           {/* Status summary bar */}
           {totalStatusCount > 0 && (
-            <section aria-label={STRINGS.dashboard.statusSummaryLabel} className="mb-8">
+            <section aria-label={STRINGS.dashboard.statusSummaryLabel} className="mb-10">
               <div
-                className="flex h-4 rounded overflow-hidden mb-2"
+                className="flex h-3 rounded-full overflow-hidden mb-3"
                 role="img"
                 aria-label={STRINGS.dashboard.statusDistributionLabel}
               >
@@ -191,11 +191,11 @@ export function DashboardView({
                   );
                 })}
               </div>
-              <div className="flex flex-wrap gap-4 text-xs text-text-secondary">
+              <div className="flex flex-wrap gap-5 text-xs text-text-muted">
                 {effectiveStatuses.map((s) => (
-                  <span key={s.status} className="flex items-center gap-1">
+                  <span key={s.status} className="flex items-center gap-1.5">
                     <span
-                      className="inline-block w-3 h-3 rounded-full"
+                      className="inline-block w-2.5 h-2.5 rounded-full"
                       style={{ backgroundColor: STATUS_COLORS[s.status] ?? "#999" }}
                     />
                     {s.label}: {status_summary[s.status] ?? 0}
@@ -211,11 +211,11 @@ export function DashboardView({
               <tr className="border-b border-border text-left">
                 {(
                   [
-                    ["sort_order", STRINGS.dashboard.columnOrder, "py-2 pr-4 w-10"],
-                    ["title", STRINGS.dashboard.columnTitle, "py-2 pr-4"],
-                    ["status", STRINGS.dashboard.columnStatus, "py-2 pr-4"],
-                    ["word_count", STRINGS.dashboard.columnWordCount, "py-2 pr-4"],
-                    ["updated_at", STRINGS.dashboard.columnLastEdited, "py-2"],
+                    ["sort_order", STRINGS.dashboard.columnOrder, "py-2.5 pr-4 w-10"],
+                    ["title", STRINGS.dashboard.columnTitle, "py-2.5 pr-4"],
+                    ["status", STRINGS.dashboard.columnStatus, "py-2.5 pr-4"],
+                    ["word_count", STRINGS.dashboard.columnWordCount, "py-2.5 pr-4"],
+                    ["updated_at", STRINGS.dashboard.columnLastEdited, "py-2.5"],
                   ] as const
                 ).map(([key, label, className]) => (
                   <th
@@ -225,7 +225,7 @@ export function DashboardView({
                   >
                     <button
                       onClick={() => handleSort(key)}
-                      className="font-medium text-text-secondary hover:text-text-primary"
+                      className="font-medium text-text-muted hover:text-text-primary text-xs uppercase tracking-wide"
                     >
                       {label}
                       {sortKey === key
@@ -240,32 +240,35 @@ export function DashboardView({
             </thead>
             <tbody>
               {sortedChapters.map((chapter) => (
-                <tr key={chapter.id} className="border-b border-border">
-                  <td className="py-2 pr-4 text-text-muted text-center">
+                <tr
+                  key={chapter.id}
+                  className="border-b border-border/50 hover:bg-bg-hover/40 transition-colors duration-150"
+                >
+                  <td className="py-3 pr-4 text-text-muted text-center text-xs">
                     {chapter.sort_order + 1}
                   </td>
-                  <td className="py-2 pr-4">
+                  <td className="py-3 pr-4">
                     <button
                       onClick={() => onNavigateToChapter(chapter.id)}
-                      className="text-accent hover:underline focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
+                      className="text-accent font-serif hover:underline focus:outline-none focus:ring-2 focus:ring-focus-ring rounded font-medium"
                     >
                       {chapter.title}
                     </button>
                   </td>
-                  <td className="py-2 pr-4">
+                  <td className="py-3 pr-4">
                     <span className="flex items-center gap-2">
                       <span
-                        className="inline-block w-2.5 h-2.5 rounded-full"
+                        className="inline-block w-2 h-2 rounded-full"
                         style={{ backgroundColor: STATUS_COLORS[chapter.status] ?? "#999" }}
                         aria-hidden="true"
                       />
-                      {chapter.status_label}
+                      <span className="text-text-secondary text-xs">{chapter.status_label}</span>
                     </span>
                   </td>
-                  <td className="py-2 pr-4 text-text-secondary">
+                  <td className="py-3 pr-4 text-text-secondary">
                     {chapter.word_count.toLocaleString()}
                   </td>
-                  <td className="py-2 text-text-secondary">
+                  <td className="py-3 text-text-muted text-xs">
                     {new Date(chapter.updated_at).toLocaleDateString(undefined, {
                       month: "short",
                       day: "numeric",

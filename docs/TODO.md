@@ -10,6 +10,8 @@
 # Features
 
 - CI/CD
+- Validate the toolbar and what we really need there. It's too barebones right
+  now. How to handle different fonts cleanly?
 - CI currently runs E2E tests against Chromium only, and `playwright.config.ts`
   is configured to match. Since Smudge is targeting Electron (which bundles
   Chromium), multi-browser testing has limited value — Firefox and WebKit

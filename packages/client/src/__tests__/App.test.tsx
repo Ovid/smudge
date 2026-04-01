@@ -63,7 +63,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByAltText("Smudge")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Smudge", level: 1 })).toBeInTheDocument();
     });
     expect(screen.getByRole("button", { name: "New Project" })).toBeInTheDocument();
   });

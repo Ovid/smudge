@@ -18,7 +18,6 @@ import { CSS } from "@dnd-kit/utilities";
 import type { ProjectWithChapters, Chapter, ChapterStatusRow } from "@smudge/shared";
 import { STRINGS } from "../strings";
 import { STATUS_COLORS } from "../statusColors";
-import smudgeLogo from "../assets/smudge-logo.png";
 
 interface StatusBadgeProps {
   chapter: Chapter;
@@ -92,11 +91,11 @@ function StatusBadge({ chapter, statuses, onStatusChange, onAnnounce }: StatusBa
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={STRINGS.sidebar.statusLabel(label)}
-        className="flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs text-text-secondary bg-bg-hover hover:bg-border focus:outline-none focus:ring-2 focus:ring-focus-ring"
+        className="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs text-text-muted bg-bg-hover/60 hover:bg-bg-active focus:outline-none focus:ring-2 focus:ring-focus-ring"
       >
         <span
           style={{ backgroundColor: color }}
-          className="inline-block w-2 h-2 rounded-full"
+          className="inline-block w-1.5 h-1.5 rounded-full"
           aria-hidden="true"
         />
         <span>{label}</span>
@@ -106,7 +105,7 @@ function StatusBadge({ chapter, statuses, onStatusChange, onAnnounce }: StatusBa
           ref={listboxRef}
           role="listbox"
           aria-label={STRINGS.sidebar.statusLabel(label)}
-          className="absolute left-0 top-full mt-1 z-50 bg-bg-primary border border-border rounded shadow-lg py-1 min-w-[120px]"
+          className="absolute left-0 top-full mt-1 z-50 bg-bg-primary border border-border/70 rounded-lg shadow-lg py-1 min-w-[130px]"
           onKeyDown={handleKeyDown}
         >
           {statuses.map((s) => {
@@ -244,11 +243,11 @@ function SortableChapterItem({
       ref={setNodeRef}
       style={style}
       aria-current={isActive ? "true" : undefined}
-      className={`flex items-center gap-2 px-4 py-2 cursor-pointer group ${
+      className={`flex items-center gap-2 px-4 py-2.5 cursor-pointer group transition-colors duration-150 ${
         isDragging
           ? "opacity-50 bg-accent-light"
           : isActive
-            ? "bg-accent-light"
+            ? "bg-accent-light/60 border-r-2 border-r-accent"
             : "hover:bg-bg-hover"
       }`}
     >
@@ -257,7 +256,7 @@ function SortableChapterItem({
         {...attributes}
         {...listeners}
         aria-label={STRINGS.sidebar.dragHandle}
-        className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-text-muted cursor-grab active:cursor-grabbing text-sm select-none focus:outline-none focus:ring-2 focus:ring-focus-ring rounded border-none bg-transparent p-0"
+        className="opacity-0 group-hover:opacity-40 focus:opacity-60 text-text-muted cursor-grab active:cursor-grabbing text-sm select-none focus:outline-none focus:ring-2 focus:ring-focus-ring rounded border-none bg-transparent p-0"
       >
         ⠿
       </button>
@@ -271,7 +270,7 @@ function SortableChapterItem({
             if (e.key === "Enter") onCommitRename();
             if (e.key === "Escape") onCancelRename();
           }}
-          className="flex-1 text-sm text-text-primary bg-bg-input border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-focus-ring"
+          className="flex-1 text-sm text-text-primary bg-bg-input border border-border rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-focus-ring"
           aria-label={STRINGS.a11y.chapterTitleInput}
         />
       ) : (
@@ -279,7 +278,7 @@ function SortableChapterItem({
           onClick={() => onSelectChapter(chapter.id)}
           onDoubleClick={() => onStartRename(chapter)}
           onKeyDown={(e) => onKeyReorder(e, index)}
-          className="flex-1 text-left text-sm text-text-primary truncate focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
+          className="flex-1 text-left text-sm font-serif text-text-primary truncate focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
         >
           {chapter.title}
         </button>
@@ -295,7 +294,7 @@ function SortableChapterItem({
           e.stopPropagation();
           onDeleteChapter(chapter);
         }}
-        className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-text-muted hover:text-status-error text-xs p-1 rounded focus:outline-none focus:ring-2 focus:ring-focus-ring"
+        className="opacity-0 group-hover:opacity-40 focus:opacity-100 text-text-muted hover:text-status-error text-xs p-1 rounded focus:outline-none focus:ring-2 focus:ring-focus-ring"
         aria-label={STRINGS.delete.deleteChapterAriaLabel(chapter.title)}
       >
         ✕
@@ -401,14 +400,9 @@ export function Sidebar({
   return (
     <aside
       aria-label={STRINGS.a11y.chaptersSidebar}
-      className="border-r border-border bg-bg-sidebar flex flex-col h-full overflow-hidden relative"
+      className="border-r border-border/60 bg-bg-sidebar flex flex-col h-full overflow-hidden relative"
       style={{ width: `${width}px`, minWidth: `${width}px` }}
     >
-      <div className="px-4 py-3 border-b border-border">
-        <h2 className="sr-only">{STRINGS.app.name}</h2>
-        <img src={smudgeLogo} alt="" aria-hidden="true" className="h-8" />
-      </div>
-
       <nav className="flex-1 overflow-y-auto py-2">
         <DndContext
           sensors={sensors}
@@ -444,16 +438,16 @@ export function Sidebar({
         </DndContext>
       </nav>
 
-      <div className="border-t border-border px-4 py-3 flex flex-col gap-2">
+      <div className="border-t border-border/40 px-4 py-4 flex flex-col gap-2">
         <button
           onClick={onAddChapter}
-          className="w-full rounded bg-accent px-3 py-2 text-sm text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring"
+          className="w-full rounded-lg bg-accent px-3 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring shadow-sm"
         >
           {STRINGS.sidebar.addChapter}
         </button>
         <button
           onClick={onOpenTrash}
-          className="w-full text-sm text-text-muted hover:text-text-secondary focus:outline-none focus:ring-2 focus:ring-focus-ring rounded py-1"
+          className="w-full text-xs text-text-muted hover:text-text-secondary focus:outline-none focus:ring-2 focus:ring-focus-ring rounded-md py-1.5"
         >
           {STRINGS.sidebar.trash}
         </button>
@@ -471,7 +465,7 @@ export function Sidebar({
         aria-valuemin={180}
         aria-valuemax={480}
         tabIndex={0}
-        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent-light focus:bg-accent-light focus:outline-none"
+        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/20 focus:bg-accent/20 focus:outline-none transition-colors duration-200"
         onMouseDown={(e) => {
           e.preventDefault();
           const startX = e.clientX;

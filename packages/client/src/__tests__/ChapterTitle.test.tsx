@@ -390,9 +390,10 @@ describe("EditorPage save status", () => {
       expect(screen.getByRole("heading", { level: 2, name: "My Chapter" })).toBeInTheDocument();
     });
 
-    const backButton = screen.getByText(/Projects/);
+    const logoText = screen.getByText("Smudge");
+    expect(logoText).toBeInTheDocument();
+    const backButton = logoText.closest("button");
     expect(backButton).toBeInTheDocument();
-    expect(backButton.tagName).toBe("BUTTON");
   });
 
   it("displays the project title in the header", async () => {

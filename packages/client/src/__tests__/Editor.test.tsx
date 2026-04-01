@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, within, fireEvent, waitFor, cleanup, act } from "@testing-library/react";
-import { Editor } from "../components/Editor";
+import { Editor, type EditorHandle } from "../components/Editor";
 
 afterEach(() => {
   cleanup();
@@ -28,20 +28,12 @@ describe("Editor", () => {
     expect(emptyParagraph).toBeNull();
   });
 
-  it("renders formatting toolbar with expected buttons", () => {
-    const { container } = render(<Editor content={null} onSave={mockOnSave()} />);
-    const toolbar = container.querySelector("[role='toolbar'][aria-label='Formatting']");
-    expect(toolbar).not.toBeNull();
-    const toolbarEl = toolbar as HTMLElement;
-    expect(within(toolbarEl).getByRole("button", { name: "Bold" })).toBeInTheDocument();
-    expect(within(toolbarEl).getByRole("button", { name: "Italic" })).toBeInTheDocument();
-    expect(within(toolbarEl).getByRole("button", { name: "H3" })).toBeInTheDocument();
-    expect(within(toolbarEl).getByRole("button", { name: "H4" })).toBeInTheDocument();
-    expect(within(toolbarEl).getByRole("button", { name: "H5" })).toBeInTheDocument();
-    expect(within(toolbarEl).getByRole("button", { name: "Quote" })).toBeInTheDocument();
-    expect(within(toolbarEl).getByRole("button", { name: "List" })).toBeInTheDocument();
-    expect(within(toolbarEl).getByRole("button", { name: "Numbered" })).toBeInTheDocument();
-    expect(within(toolbarEl).getByRole("button", { name: "HR" })).toBeInTheDocument();
+  it("exposes the editor instance via editorRef", async () => {
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+    render(<Editor content={null} onSave={mockOnSave()} editorRef={editorRef} />);
+    await waitFor(() => {
+      expect(editorRef.current?.editor).not.toBeNull();
+    });
   });
 
   it("has correct ARIA attributes on the editor", () => {
@@ -52,16 +44,10 @@ describe("Editor", () => {
     expect(editor?.getAttribute("spellcheck")).toBe("true");
   });
 
-  it("toolbar buttons are clickable", () => {
+  it("renders editor content area without toolbar", () => {
     const { container } = render(<Editor content={null} onSave={mockOnSave()} />);
-    const toolbar = container.querySelector("[role='toolbar']") as HTMLElement;
-
-    // Click each toolbar button — should not throw
-    const buttons = within(toolbar).getAllByRole("button");
-    expect(buttons.length).toBe(9);
-    for (const button of buttons) {
-      fireEvent.click(button);
-    }
+    expect(container.querySelector("[role='textbox']")).not.toBeNull();
+    expect(container.querySelector("[role='toolbar']")).toBeNull();
   });
 
   it("does not fire onSave on blur when content is unchanged", async () => {
@@ -231,9 +217,7 @@ describe("Editor", () => {
   it("exposes flushSave via editorRef that calls onSave when dirty", async () => {
     const onSave = vi.fn().mockResolvedValue(true);
     const onContentChange = vi.fn();
-    const editorRef = { current: null } as React.MutableRefObject<{
-      flushSave: () => Promise<void>;
-    } | null>;
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
 
     const { container } = render(
       <Editor
@@ -268,9 +252,7 @@ describe("Editor", () => {
 
   it("flushSave is a no-op when not dirty", async () => {
     const onSave = vi.fn().mockResolvedValue(true);
-    const editorRef = { current: null } as React.MutableRefObject<{
-      flushSave: () => Promise<void>;
-    } | null>;
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
 
     render(<Editor content={null} onSave={onSave} editorRef={editorRef} />);
 
@@ -286,9 +268,7 @@ describe("Editor", () => {
   it("flushSave keeps dirtyRef true when onSave rejects", async () => {
     const onSave = vi.fn().mockRejectedValueOnce(new Error("save failed")).mockResolvedValue(true);
     const onContentChange = vi.fn();
-    const editorRef = { current: null } as React.MutableRefObject<{
-      flushSave: () => Promise<void>;
-    } | null>;
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
 
     const { container } = render(
       <Editor
