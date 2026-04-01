@@ -101,6 +101,7 @@ These trigger the same forced-save-then-switch behavior defined in the MVP.
 ---
 
 ## Phase 2: Goals & Velocity
+<!-- plan: 2026-04-01-goals-velocity-design.md -->
 
 ### Goal
 
