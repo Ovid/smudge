@@ -1,15 +1,12 @@
 # Bugs
 
-- Formatting bar scrolls away as chapter gets longer. Need to make it sticky,
-  put it in the topbar, or something.
+- When changing chapter status and I'm in the dashboard, the chapter status
+  isn't changed there.
 - I can't style the chapter titles.
-- Logo on every page. When I'm on chapters, for example, sidebar has the title
-  up top, not the logo.
 - Better styling on main page. Simple is good? Need sorting, filtering.
 
 # Features
 
-- CI/CD
 - Validate the toolbar and what we really need there. It's too barebones right
   now. How to handle different fonts cleanly?
 - CI currently runs E2E tests against Chromium only, and `playwright.config.ts`
@@ -24,6 +21,7 @@
 - BE ULTRA-PARANOID ABOUT DATA LOSS. Brainstorm on ways to make this
   super robust. Have "snapshots" which go back X amount of time.
 
+- Export entire database to reimport in another instance?
 - Save files in .smg format? (Is that extension taken?) if we try to load an
   .smg file, we need handle if we face data loss.
 - Research page width and what formatting features writers really need. Maybe
