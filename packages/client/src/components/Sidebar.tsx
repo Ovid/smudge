@@ -18,7 +18,6 @@ import { CSS } from "@dnd-kit/utilities";
 import type { ProjectWithChapters, Chapter, ChapterStatusRow } from "@smudge/shared";
 import { STRINGS } from "../strings";
 import { STATUS_COLORS } from "../statusColors";
-import smudgeLogo from "../assets/smudge-logo.png";
 
 interface StatusBadgeProps {
   chapter: Chapter;
@@ -404,11 +403,6 @@ export function Sidebar({
       className="border-r border-border/60 bg-bg-sidebar flex flex-col h-full overflow-hidden relative"
       style={{ width: `${width}px`, minWidth: `${width}px` }}
     >
-      <div className="px-5 py-4 border-b border-border/40">
-        <h2 className="sr-only">{STRINGS.app.name}</h2>
-        <img src={smudgeLogo} alt="" aria-hidden="true" className="h-8 opacity-85" />
-      </div>
-
       <nav className="flex-1 overflow-y-auto py-2">
         <DndContext
           sensors={sensors}

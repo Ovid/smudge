@@ -61,7 +61,7 @@ export function HomePage() {
     <div className="min-h-screen bg-bg-primary">
       <header className="border-b border-border/60 px-8 py-5">
         <h1>
-          <img src={smudgeLogo} alt={STRINGS.app.name} className="h-9 opacity-90" />
+          <img src={smudgeLogo} alt={STRINGS.app.name} className="h-9 mix-blend-multiply" />
         </h1>
       </header>
 

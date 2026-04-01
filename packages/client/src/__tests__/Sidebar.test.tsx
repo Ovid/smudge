@@ -71,15 +71,11 @@ afterEach(() => {
 });
 
 describe("Sidebar", () => {
-  it("renders the Smudge logo and visually-hidden heading at the top", () => {
+  it("renders the sidebar with chapters region", () => {
     renderSidebar();
 
-    const heading = screen.getByRole("heading", { name: "Smudge", level: 2 });
-    expect(heading).toBeInTheDocument();
-
-    const logo = heading.parentElement?.querySelector("img");
-    expect(logo).toBeInTheDocument();
-    expect(logo).toHaveAttribute("aria-hidden", "true");
+    const sidebar = screen.getByRole("complementary", { name: "Chapters" });
+    expect(sidebar).toBeInTheDocument();
   });
 
   it("renders chapter list", () => {
@@ -295,8 +291,8 @@ describe("Sidebar", () => {
     // Dropdown should be open
     expect(screen.getByRole("listbox")).toBeInTheDocument();
 
-    // Click outside the dropdown (on the sidebar heading area)
-    await userEvent.click(screen.getByRole("heading", { name: "Smudge", level: 2 }));
+    // Click outside the dropdown (on the sidebar region)
+    await userEvent.click(screen.getByRole("complementary", { name: "Chapters" }));
 
     // Dropdown should be closed
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
