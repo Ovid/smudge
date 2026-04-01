@@ -5,6 +5,12 @@ import { EditorPage } from "../pages/EditorPage";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api/client";
 
+vi.mock("../hooks/useContentCache", () => ({
+  getCachedContent: vi.fn().mockReturnValue(null),
+  setCachedContent: vi.fn(),
+  clearCachedContent: vi.fn(),
+}));
+
 // Store the onSave callback so tests can trigger saves directly
 let capturedOnSave: ((content: Record<string, unknown>) => Promise<boolean>) | null = null;
 

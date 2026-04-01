@@ -3,6 +3,12 @@ import { render, screen, waitFor, cleanup } from "@testing-library/react";
 import { App } from "../App";
 import { api } from "../api/client";
 
+vi.mock("../hooks/useContentCache", () => ({
+  getCachedContent: vi.fn().mockReturnValue(null),
+  setCachedContent: vi.fn(),
+  clearCachedContent: vi.fn(),
+}));
+
 vi.mock("../api/client", () => ({
   ApiRequestError: class ApiRequestError extends Error {
     constructor(
