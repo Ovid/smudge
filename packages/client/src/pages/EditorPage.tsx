@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import type { Chapter, ChapterStatusRow } from "@smudge/shared";
-import { Editor } from "../components/Editor";
+import { Editor, type EditorHandle } from "../components/Editor";
+import { EditorToolbar } from "../components/EditorToolbar";
 import { Sidebar } from "../components/Sidebar";
 import { TrashView } from "../components/TrashView";
 import { PreviewMode } from "../components/PreviewMode";
@@ -117,7 +118,7 @@ export function EditorPage() {
     };
   }, []);
 
-  const editorRef = useRef<{ flushSave: () => Promise<void> } | null>(null);
+  const editorRef = useRef<EditorHandle | null>(null);
 
   const handleStatusChangeWithError = useCallback(
     async (chapterId: string, status: string) => {
@@ -374,9 +375,7 @@ export function EditorPage() {
           <span className="text-border mx-4" aria-hidden="true">
             /
           </span>
-          <span className="text-sm font-semibold text-text-primary">
-            {project.title}
-          </span>
+          <span className="text-sm font-semibold text-text-primary">{project.title}</span>
         </header>
         <div className="flex flex-1 overflow-hidden">
           {sidebarOpen && (
@@ -396,9 +395,7 @@ export function EditorPage() {
             />
           )}
           <div className="flex-1 flex flex-col items-center justify-center page-enter">
-            <p className="text-text-muted mb-6 text-base">
-              {STRINGS.project.emptyChapters}
-            </p>
+            <p className="text-text-muted mb-6 text-base">{STRINGS.project.emptyChapters}</p>
             <button
               onClick={handleCreateChapter}
               className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring focus:ring-offset-2 focus:ring-offset-bg-primary shadow-sm"
@@ -465,6 +462,9 @@ export function EditorPage() {
             </h1>
           )}
         </div>
+        {viewMode === "editor" && editorRef.current?.editor && (
+          <EditorToolbar editor={editorRef.current.editor} />
+        )}
         <nav className="flex gap-0.5 bg-bg-sidebar/60 rounded-lg p-0.5" aria-label="View modes">
           <button
             onClick={() => {

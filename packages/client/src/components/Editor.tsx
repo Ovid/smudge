@@ -1,14 +1,19 @@
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, type Editor as TipTapEditor } from "@tiptap/react";
 import Placeholder from "@tiptap/extension-placeholder";
 import { useEffect, useRef, useCallback } from "react";
 import { editorExtensions } from "../editorExtensions";
 import { STRINGS } from "../strings";
 
+export interface EditorHandle {
+  flushSave: () => Promise<void>;
+  editor: TipTapEditor | null;
+}
+
 interface EditorProps {
   content: Record<string, unknown> | null;
   onSave: (content: Record<string, unknown>) => Promise<boolean>;
   onContentChange?: (content: Record<string, unknown>) => void;
-  editorRef?: React.MutableRefObject<{ flushSave: () => Promise<void> } | null>;
+  editorRef?: React.MutableRefObject<EditorHandle | null>;
 }
 
 const AUTO_SAVE_DEBOUNCE_MS = 1500;
@@ -116,10 +121,10 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
   }, [editor]);
 
   useEffect(() => {
-    if (editorRef && editor) {
+    if (editorRef) {
       editorRef.current = {
         flushSave: () => {
-          if (!dirtyRef.current) return Promise.resolve();
+          if (!dirtyRef.current || !editor) return Promise.resolve();
           if (debounceTimerRef.current) {
             clearTimeout(debounceTimerRef.current);
             debounceTimerRef.current = null;
@@ -133,6 +138,7 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
               dirtyRef.current = true;
             });
         },
+        editor: editor,
       };
     }
   }, [editor, editorRef]);
@@ -141,108 +147,6 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
 
   return (
     <div className="mx-auto max-w-[720px]">
-      <div
-        role="toolbar"
-        aria-label={STRINGS.a11y.formattingToolbar}
-        className="toolbar-breathe mb-6 flex gap-0.5 border-b border-border/50 pb-3"
-      >
-        <button
-          onClick={() => editor.chain().focus().toggleBold().run()}
-          aria-pressed={editor.isActive("bold")}
-          className={`rounded-md px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-focus-ring ${
-            editor.isActive("bold")
-              ? "bg-accent-light text-accent"
-              : "text-text-muted hover:text-text-secondary hover:bg-bg-hover"
-          }`}
-        >
-          {STRINGS.toolbar.bold}
-        </button>
-        <button
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-          aria-pressed={editor.isActive("italic")}
-          className={`rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring ${
-            editor.isActive("italic")
-              ? "bg-accent-light text-accent italic"
-              : "text-text-muted hover:text-text-secondary hover:bg-bg-hover"
-          }`}
-        >
-          {STRINGS.toolbar.italic}
-        </button>
-        <span className="mx-1 self-stretch w-px bg-border/40" aria-hidden="true" />
-        <button
-          onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-          aria-pressed={editor.isActive("heading", { level: 3 })}
-          className={`rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring ${
-            editor.isActive("heading", { level: 3 })
-              ? "bg-accent-light text-accent"
-              : "text-text-muted hover:text-text-secondary hover:bg-bg-hover"
-          }`}
-        >
-          {STRINGS.toolbar.heading1}
-        </button>
-        <button
-          onClick={() => editor.chain().focus().toggleHeading({ level: 4 }).run()}
-          aria-pressed={editor.isActive("heading", { level: 4 })}
-          className={`rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring ${
-            editor.isActive("heading", { level: 4 })
-              ? "bg-accent-light text-accent"
-              : "text-text-muted hover:text-text-secondary hover:bg-bg-hover"
-          }`}
-        >
-          {STRINGS.toolbar.heading2}
-        </button>
-        <button
-          onClick={() => editor.chain().focus().toggleHeading({ level: 5 }).run()}
-          aria-pressed={editor.isActive("heading", { level: 5 })}
-          className={`rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring ${
-            editor.isActive("heading", { level: 5 })
-              ? "bg-accent-light text-accent"
-              : "text-text-muted hover:text-text-secondary hover:bg-bg-hover"
-          }`}
-        >
-          {STRINGS.toolbar.heading3}
-        </button>
-        <span className="mx-1 self-stretch w-px bg-border/40" aria-hidden="true" />
-        <button
-          onClick={() => editor.chain().focus().toggleBlockquote().run()}
-          aria-pressed={editor.isActive("blockquote")}
-          className={`rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring ${
-            editor.isActive("blockquote")
-              ? "bg-accent-light text-accent"
-              : "text-text-muted hover:text-text-secondary hover:bg-bg-hover"
-          }`}
-        >
-          {STRINGS.toolbar.quote}
-        </button>
-        <button
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-          aria-pressed={editor.isActive("bulletList")}
-          className={`rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring ${
-            editor.isActive("bulletList")
-              ? "bg-accent-light text-accent"
-              : "text-text-muted hover:text-text-secondary hover:bg-bg-hover"
-          }`}
-        >
-          {STRINGS.toolbar.bulletList}
-        </button>
-        <button
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          aria-pressed={editor.isActive("orderedList")}
-          className={`rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring ${
-            editor.isActive("orderedList")
-              ? "bg-accent-light text-accent"
-              : "text-text-muted hover:text-text-secondary hover:bg-bg-hover"
-          }`}
-        >
-          {STRINGS.toolbar.numberedList}
-        </button>
-        <button
-          onClick={() => editor.chain().focus().setHorizontalRule().run()}
-          className="rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-focus-ring text-text-muted hover:text-text-secondary hover:bg-bg-hover"
-        >
-          {STRINGS.toolbar.horizontalRule}
-        </button>
-      </div>
       <EditorContent editor={editor} />
     </div>
   );
