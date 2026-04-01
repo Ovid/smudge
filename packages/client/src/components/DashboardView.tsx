@@ -250,7 +250,7 @@ export function DashboardView({
                   <td className="py-3 pr-4">
                     <button
                       onClick={() => onNavigateToChapter(chapter.id)}
-                      className="text-accent hover:underline focus:outline-none focus:ring-2 focus:ring-focus-ring rounded font-medium"
+                      className="text-accent font-serif hover:underline focus:outline-none focus:ring-2 focus:ring-focus-ring rounded font-medium"
                     >
                       {chapter.title}
                     </button>

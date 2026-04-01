@@ -98,7 +98,7 @@ export function PreviewMode({ chapters, onNavigateToChapter }: PreviewModeProps)
               <a
                 href={`#${chapter.id}`}
                 aria-current={activeTocId === chapter.id ? "true" : undefined}
-                className={`block text-sm py-1.5 rounded-md px-2.5 transition-all duration-200 ${
+                className={`block text-sm font-serif py-1.5 rounded-md px-2.5 transition-all duration-200 ${
                   activeTocId === chapter.id
                     ? "text-accent font-medium bg-accent-light/50"
                     : "text-text-muted hover:text-text-secondary hover:bg-bg-hover"

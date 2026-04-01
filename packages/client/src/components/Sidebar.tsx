@@ -278,7 +278,7 @@ function SortableChapterItem({
           onClick={() => onSelectChapter(chapter.id)}
           onDoubleClick={() => onStartRename(chapter)}
           onKeyDown={(e) => onKeyReorder(e, index)}
-          className="flex-1 text-left text-sm text-text-primary truncate focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
+          className="flex-1 text-left text-sm font-serif text-text-primary truncate focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
         >
           {chapter.title}
         </button>
