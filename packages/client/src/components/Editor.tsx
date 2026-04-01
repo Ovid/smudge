@@ -137,7 +137,6 @@ export function Editor({ content, onSave, onContentChange, editorRef }: EditorPr
     }
   }, [editor, editorRef]);
 
-
   if (!editor) return null;
 
   return (
