@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { STRINGS } from "../strings";
 
 interface LogoProps {
@@ -5,12 +6,13 @@ interface LogoProps {
 }
 
 export function Logo({ as: Tag = "span" }: LogoProps) {
+  const filterId = useId();
   return (
     <Tag className="select-none leading-none">
       {/* SVG filter for charcoal smudge effect — hidden, referenced by the text */}
       <svg aria-hidden="true" className="absolute w-0 h-0 overflow-hidden">
         <defs>
-          <filter id="smudge">
+          <filter id={filterId}>
             {/* Rough, organic edge distortion like ink on textured paper */}
             <feTurbulence
               type="fractalNoise"
@@ -38,7 +40,7 @@ export function Logo({ as: Tag = "span" }: LogoProps) {
       </svg>
       <span
         className="text-xl font-serif font-semibold tracking-tight text-text-primary"
-        style={{ filter: "url(#smudge)" }}
+        style={{ filter: `url(#${filterId})` }}
       >
         {STRINGS.app.name}
       </span>
