@@ -37,11 +37,12 @@ make dev                             # Start both server + client dev servers
 npm install                          # Install all workspace dependencies
 
 # Testing & Quality
-make test                            # Run full test suite (all packages)
+make test                            # Run full test suite (fast, no coverage)
 make lint                            # Lint with autofix
 make format                          # Format code
-make all                             # Lint + format + test (full CI pass)
-make cover                           # Generate code coverage report
+make all                             # Full CI pass: lint + format + typecheck + coverage + e2e
+make cover                           # Run tests with coverage enforcement
+make e2e                             # Run Playwright e2e tests (starts dev servers)
 
 # Per-package testing (when working on one package)
 npm test -w packages/shared          # Unit tests (Vitest)
