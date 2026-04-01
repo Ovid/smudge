@@ -51,7 +51,7 @@ export function ConfirmDialog({
       }}
     >
       <div className="rounded-xl bg-bg-primary p-8 shadow-xl max-w-sm w-full mx-auto mt-[20vh] border border-border/60">
-        <p className="text-text-primary font-serif font-semibold text-lg mb-2">{title}</p>
+        <p className="text-text-primary font-semibold text-base mb-2">{title}</p>
         <p id="confirm-dialog-body" className="text-text-secondary text-sm mb-6 leading-relaxed">
           {body}
         </p>

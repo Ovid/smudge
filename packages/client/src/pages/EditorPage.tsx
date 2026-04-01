@@ -337,7 +337,7 @@ export function EditorPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-primary">
         <div className="text-center page-enter">
-          <p className="text-text-primary text-lg font-serif mb-4">{error}</p>
+          <p className="text-text-primary text-lg mb-4">{error}</p>
           <a
             href="/"
             onClick={(e) => {
@@ -356,7 +356,7 @@ export function EditorPage() {
   if (!project) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-primary">
-        <p className="text-text-muted font-serif italic">{STRINGS.nav.loading}</p>
+        <p className="text-text-muted">{STRINGS.nav.loading}</p>
       </div>
     );
   }
@@ -374,7 +374,7 @@ export function EditorPage() {
           <span className="text-border mx-4" aria-hidden="true">
             /
           </span>
-          <span className="text-base font-serif font-semibold text-text-primary">
+          <span className="text-sm font-semibold text-text-primary">
             {project.title}
           </span>
         </header>
@@ -396,7 +396,7 @@ export function EditorPage() {
             />
           )}
           <div className="flex-1 flex flex-col items-center justify-center page-enter">
-            <p className="text-text-muted mb-6 font-serif italic text-lg">
+            <p className="text-text-muted mb-6 text-base">
               {STRINGS.project.emptyChapters}
             </p>
             <button
@@ -414,7 +414,7 @@ export function EditorPage() {
   if (!activeChapter) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-primary">
-        <p className="text-text-muted font-serif italic">{STRINGS.nav.loading}</p>
+        <p className="text-text-muted">{STRINGS.nav.loading}</p>
       </div>
     );
   }
@@ -446,7 +446,7 @@ export function EditorPage() {
                     setEditingProjectTitle(false);
                   }
                 }}
-                className="text-base font-serif font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none"
+                className="text-sm font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none"
                 aria-label={STRINGS.a11y.projectTitleInput}
               />
               {projectTitleError && (
@@ -457,7 +457,7 @@ export function EditorPage() {
             </div>
           ) : (
             <h1
-              className="text-base font-serif font-semibold text-text-primary cursor-pointer hover:text-text-secondary"
+              className="text-sm font-semibold text-text-primary cursor-pointer hover:text-text-secondary"
               onDoubleClick={startEditingProjectTitle}
               aria-label={project.title}
             >
@@ -683,7 +683,7 @@ export function EditorPage() {
           }}
         >
           <div className="rounded-xl bg-bg-primary p-8 shadow-xl max-w-sm w-full mx-auto mt-[20vh] border border-border/60">
-            <h3 className="text-lg font-serif font-semibold text-text-primary mb-5">
+            <h3 className="text-lg font-semibold text-text-primary mb-5">
               {STRINGS.shortcuts.dialogTitle}
             </h3>
             <dl className="flex flex-col gap-2.5 text-sm">

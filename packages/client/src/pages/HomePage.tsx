@@ -76,7 +76,7 @@ export function HomePage() {
           </div>
         )}
         <div className="flex items-center justify-between mb-10">
-          <h2 className="text-2xl font-serif font-semibold text-text-primary tracking-tight">
+          <h2 className="text-lg font-semibold text-text-primary">
             {STRINGS.home.projectsHeading}
           </h2>
           <button
@@ -89,7 +89,7 @@ export function HomePage() {
 
         {projects.length === 0 ? (
           <div className="text-center py-20">
-            <p className="text-text-muted text-lg font-serif italic">
+            <p className="text-text-muted text-base">
               {STRINGS.project.emptyState}
             </p>
           </div>

@@ -75,7 +75,7 @@ export function DashboardView({
   if (!data) {
     return (
       <div className="flex items-center justify-center py-16">
-        <p className="text-text-muted font-serif italic">{STRINGS.nav.loading}</p>
+        <p className="text-text-muted">{STRINGS.nav.loading}</p>
       </div>
     );
   }
@@ -131,7 +131,7 @@ export function DashboardView({
 
   return (
     <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
-      <h2 className="text-2xl font-serif font-semibold text-text-primary mb-8 tracking-tight">
+      <h2 className="text-lg font-semibold text-text-primary mb-8">
         {STRINGS.dashboard.heading}
       </h2>
 
@@ -145,7 +145,7 @@ export function DashboardView({
         <>
           {/* Health summary */}
           <section aria-label={STRINGS.dashboard.healthSectionLabel} className="mb-10 space-y-1.5">
-            <p className="text-2xl font-serif font-medium text-text-primary">
+            <p className="text-2xl font-semibold text-text-primary">
               {STRINGS.dashboard.totalWordCount(totals.word_count)}
             </p>
             <p className="text-text-secondary text-sm">
