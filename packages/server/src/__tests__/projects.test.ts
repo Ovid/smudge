@@ -392,6 +392,59 @@ describe("GET /api/projects/:slug/trash", () => {
   });
 });
 
+describe("PATCH /api/projects/:slug — target fields", () => {
+  it("sets target_word_count", async () => {
+    const create = await request(t.app).post("/api/projects").send({ title: "Goals Test", mode: "fiction" });
+    const res = await request(t.app)
+      .patch(`/api/projects/${create.body.slug}`)
+      .send({ target_word_count: 80000 });
+    expect(res.status).toBe(200);
+    expect(res.body.target_word_count).toBe(80000);
+  });
+
+  it("clears target_word_count with null", async () => {
+    const create = await request(t.app).post("/api/projects").send({ title: "Clear Test", mode: "fiction" });
+    await request(t.app).patch(`/api/projects/${create.body.slug}`).send({ target_word_count: 80000 });
+    const res = await request(t.app).patch(`/api/projects/${create.body.slug}`).send({ target_word_count: null });
+    expect(res.status).toBe(200);
+    expect(res.body.target_word_count).toBeNull();
+  });
+
+  it("sets target_deadline", async () => {
+    const create = await request(t.app).post("/api/projects").send({ title: "Deadline Test", mode: "fiction" });
+    const res = await request(t.app)
+      .patch(`/api/projects/${create.body.slug}`)
+      .send({ target_deadline: "2026-09-01" });
+    expect(res.status).toBe(200);
+    expect(res.body.target_deadline).toBe("2026-09-01");
+  });
+
+  it("sets completion_threshold", async () => {
+    const create = await request(t.app).post("/api/projects").send({ title: "Threshold Test", mode: "fiction" });
+    const res = await request(t.app)
+      .patch(`/api/projects/${create.body.slug}`)
+      .send({ completion_threshold: "revised" });
+    expect(res.status).toBe(200);
+    expect(res.body.completion_threshold).toBe("revised");
+  });
+
+  it("rejects invalid completion_threshold", async () => {
+    const create = await request(t.app).post("/api/projects").send({ title: "Bad Threshold", mode: "fiction" });
+    const res = await request(t.app)
+      .patch(`/api/projects/${create.body.slug}`)
+      .send({ completion_threshold: "garbage" });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects negative target_word_count", async () => {
+    const create = await request(t.app).post("/api/projects").send({ title: "Neg Test", mode: "fiction" });
+    const res = await request(t.app)
+      .patch(`/api/projects/${create.body.slug}`)
+      .send({ target_word_count: -100 });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("DELETE /api/projects/:slug", () => {
   it("soft-deletes a project and returns 200", async () => {
     const createRes = await request(t.app)

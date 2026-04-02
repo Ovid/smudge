@@ -144,29 +144,47 @@ export function projectsRouter(db: Knex): Router {
         return;
       }
 
-      const { title } = parsed.data;
+      // Title-specific: uniqueness check + slug regeneration
+      if (parsed.data.title !== undefined) {
+        const existingTitle = await db("projects")
+          .where({ title: parsed.data.title })
+          .whereNull("deleted_at")
+          .whereNot({ id: project.id })
+          .first();
+        if (existingTitle) {
+          res.status(400).json({
+            error: {
+              code: "PROJECT_TITLE_EXISTS",
+              message: "A project with that title already exists",
+            },
+          });
+          return;
+        }
+      }
 
-      const existingTitle = await db("projects")
-        .where({ title })
-        .whereNull("deleted_at")
-        .whereNot({ id: project.id })
-        .first();
-      if (existingTitle) {
-        res.status(400).json({
-          error: {
-            code: "PROJECT_TITLE_EXISTS",
-            message: "A project with that title already exists",
-          },
-        });
-        return;
+      // Build updates
+      const updates: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+      };
+
+      if (parsed.data.target_word_count !== undefined) {
+        updates.target_word_count = parsed.data.target_word_count;
+      }
+      if (parsed.data.target_deadline !== undefined) {
+        updates.target_deadline = parsed.data.target_deadline;
+      }
+      if (parsed.data.completion_threshold !== undefined) {
+        updates.completion_threshold = parsed.data.completion_threshold;
       }
 
       try {
         await db.transaction(async (trx) => {
-          const newSlug = await resolveUniqueSlug(trx, generateSlug(title), project.id);
-          await trx("projects")
-            .where({ id: project.id })
-            .update({ title, slug: newSlug, updated_at: new Date().toISOString() });
+          if (parsed.data.title !== undefined) {
+            const newSlug = await resolveUniqueSlug(trx, generateSlug(parsed.data.title), project.id);
+            updates.title = parsed.data.title;
+            updates.slug = newSlug;
+          }
+          await trx("projects").where({ id: project.id }).update(updates);
         });
       } catch (err: unknown) {
         if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
