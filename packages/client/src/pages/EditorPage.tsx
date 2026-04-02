@@ -10,6 +10,7 @@ import { PreviewMode } from "../components/PreviewMode";
 import { DashboardView } from "../components/DashboardView";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { SettingsDialog } from "../components/SettingsDialog";
+import { ProjectSettingsDialog } from "../components/ProjectSettingsDialog";
 import { STRINGS } from "../strings";
 import { useProjectEditor } from "../hooks/useProjectEditor";
 import { api } from "../api/client";
@@ -95,6 +96,7 @@ export function EditorPage() {
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
   const [wordCountAnnouncement, setWordCountAnnouncement] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -531,6 +533,15 @@ export function EditorPage() {
             {STRINGS.nav.dashboard}
           </button>
         </nav>
+        {viewMode === "dashboard" && (
+          <button
+            onClick={() => setProjectSettingsOpen(true)}
+            aria-label={STRINGS.projectSettings.heading}
+            className="text-sm text-text-muted hover:text-text-secondary rounded-md p-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring"
+          >
+            &#x2699;
+          </button>
+        )}
       </header>
 
       <div className="flex flex-1 overflow-hidden">
@@ -695,6 +706,13 @@ export function EditorPage() {
       </div>
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
+      <ProjectSettingsDialog
+        open={projectSettingsOpen}
+        project={project}
+        onClose={() => setProjectSettingsOpen(false)}
+        onUpdate={() => setDashboardRefreshKey((k) => k + 1)}
+      />
 
       <dialog
         ref={shortcutDialogRef}
