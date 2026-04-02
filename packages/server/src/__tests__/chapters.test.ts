@@ -416,3 +416,30 @@ describe("POST /api/chapters/:id/restore", () => {
     errorSpy.mockRestore();
   });
 });
+
+describe("PATCH /api/chapters/:id — target_word_count", () => {
+  it("sets target_word_count", async () => {
+    const { chapterId } = await createProjectWithChapter(t.app);
+    const res = await request(t.app)
+      .patch(`/api/chapters/${chapterId}`)
+      .send({ target_word_count: 5000 });
+    expect(res.status).toBe(200);
+    expect(res.body.target_word_count).toBe(5000);
+  });
+
+  it("clears target_word_count with null", async () => {
+    const { chapterId } = await createProjectWithChapter(t.app);
+    await request(t.app).patch(`/api/chapters/${chapterId}`).send({ target_word_count: 5000 });
+    const res = await request(t.app).patch(`/api/chapters/${chapterId}`).send({ target_word_count: null });
+    expect(res.status).toBe(200);
+    expect(res.body.target_word_count).toBeNull();
+  });
+
+  it("rejects zero target_word_count", async () => {
+    const { chapterId } = await createProjectWithChapter(t.app);
+    const res = await request(t.app)
+      .patch(`/api/chapters/${chapterId}`)
+      .send({ target_word_count: 0 });
+    expect(res.status).toBe(400);
+  });
+});

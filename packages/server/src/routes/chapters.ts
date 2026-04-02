@@ -70,6 +70,10 @@ export function chaptersRouter(db: Knex): Router {
         updates.word_count = countWords(parsed.data.content as Record<string, unknown>);
       }
 
+      if (parsed.data.target_word_count !== undefined) {
+        updates.target_word_count = parsed.data.target_word_count;
+      }
+
       if (parsed.data.status !== undefined) {
         // Intentional: Zod enum validates the status format, but this DB check
         // guards against drift between the enum and the chapter_statuses table
