@@ -9,6 +9,7 @@ import { TrashView } from "../components/TrashView";
 import { PreviewMode } from "../components/PreviewMode";
 import { DashboardView } from "../components/DashboardView";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { SettingsDialog } from "../components/SettingsDialog";
 import { STRINGS } from "../strings";
 import { useProjectEditor } from "../hooks/useProjectEditor";
 import { api } from "../api/client";
@@ -93,6 +94,7 @@ export function EditorPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
   const [wordCountAnnouncement, setWordCountAnnouncement] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -403,6 +405,7 @@ export function EditorPage() {
               onReorderChapters={handleReorderChapters}
               onRenameChapter={handleRenameChapter}
               onOpenTrash={openTrash}
+              onOpenSettings={() => setSettingsOpen(true)}
               statuses={statuses}
               onStatusChange={handleStatusChangeWithError}
               width={sidebarWidth}
@@ -541,6 +544,7 @@ export function EditorPage() {
             onReorderChapters={handleReorderChapters}
             onRenameChapter={handleRenameChapter}
             onOpenTrash={openTrash}
+            onOpenSettings={() => setSettingsOpen(true)}
             statuses={statuses}
             onStatusChange={handleStatusChangeWithError}
             width={sidebarWidth}
@@ -689,6 +693,8 @@ export function EditorPage() {
       <div aria-live="polite" className="sr-only" data-testid="word-count-announcement">
         {wordCountAnnouncement}
       </div>
+
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <dialog
         ref={shortcutDialogRef}
