@@ -5,6 +5,7 @@ import { asyncHandler } from "../app";
 import { queryChapter, sendCorruptContentError } from "./chapterQueries";
 import { resolveUniqueSlug } from "./resolve-slug";
 import { getStatusLabel } from "./status-labels";
+import { insertSaveEvent, upsertDailySnapshot } from "./velocityHelpers";
 
 export function chaptersRouter(db: Knex): Router {
   const router = Router();
@@ -94,6 +95,12 @@ export function chaptersRouter(db: Knex): Router {
           .where({ id: chapter.project_id })
           .update({ updated_at: new Date().toISOString() });
       });
+
+      // Fire velocity side-effects (best-effort, after the main save transaction succeeds)
+      if (parsed.data.content !== undefined) {
+        await insertSaveEvent(db, req.params.id, chapter.project_id, updates.word_count as number);
+        await upsertDailySnapshot(db, chapter.project_id);
+      }
 
       const updated = await queryChapter(
         db("chapters").where({ id: req.params.id }).whereNull("deleted_at"),
