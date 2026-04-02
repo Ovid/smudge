@@ -12,7 +12,7 @@ Last audited: 2026-04-01
 
 | License | Count | Commercial use | Ships in production |
 |---------|-------|----------------|---------------------|
-| MIT | ~45 | Yes, unrestricted | Most dependencies |
+| MIT | ~46 | Yes, unrestricted | Most dependencies |
 | Apache-2.0 | 3 | Yes, unrestricted | Yes (DOMPurify in client; others dev-only) |
 | SIL OFL 1.1 | 2 | Yes, bundling permitted | Yes (fonts) |
 | MPL-2.0 | 1 | Yes, with file-level copyleft | No (dev only) |
@@ -58,6 +58,7 @@ or other strong-copyleft licenses are present.
 | @tiptap/starter-kit | MIT | |
 | dompurify | MPL-2.0 OR Apache-2.0 | We elect **Apache-2.0**. See [DOMPurify](#dompurify) |
 | react | MIT | |
+| recharts | MIT | Charting library for velocity charts |
 | react-dom | MIT | |
 | react-router-dom | MIT | |
 
