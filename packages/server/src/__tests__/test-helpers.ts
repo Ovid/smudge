@@ -17,6 +17,9 @@ export function setupTestDb() {
   });
 
   beforeEach(async () => {
+    await testDb("save_events").del();
+    await testDb("daily_snapshots").del();
+    await testDb("settings").del();
     await testDb("chapters").del();
     await testDb("projects").del();
   });
