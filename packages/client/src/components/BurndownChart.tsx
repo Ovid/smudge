@@ -7,6 +7,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { STRINGS } from "../strings";
+import { useReducedMotion } from "../hooks/useReducedMotion";
 
 interface BurndownChartProps {
   snapshots: Array<{ date: string; total_word_count: number }>;
@@ -21,6 +22,8 @@ export function BurndownChart({
   targetDeadline,
   startDate,
 }: BurndownChartProps) {
+  const prefersReducedMotion = useReducedMotion();
+
   if (targetWordCount === null || targetDeadline === null) return null;
   if (snapshots.length === 0) return null;
 
@@ -76,6 +79,7 @@ export function BurndownChart({
             strokeOpacity={0.4}
             strokeDasharray="6 3"
             dot={false}
+            isAnimationActive={!prefersReducedMotion}
           />
           <Line
             type="monotone"
@@ -84,9 +88,32 @@ export function BurndownChart({
             strokeWidth={2}
             dot={false}
             connectNulls
+            isAnimationActive={!prefersReducedMotion}
           />
         </LineChart>
       </ResponsiveContainer>
+
+      {/* Hidden data table for screen readers */}
+      <div className="sr-only">
+        <table aria-label={STRINGS.velocity.chartBurndownLabel}>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Planned</th>
+              <th>Actual</th>
+            </tr>
+          </thead>
+          <tbody>
+            {chartData.map((d) => (
+              <tr key={d.date}>
+                <td>{d.date}</td>
+                <td>{d.planned}</td>
+                <td>{d.actual ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

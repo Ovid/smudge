@@ -8,6 +8,7 @@ import {
   ReferenceLine,
 } from "recharts";
 import { STRINGS } from "../strings";
+import { useReducedMotion } from "../hooks/useReducedMotion";
 
 interface DailyWordChartProps {
   data: Array<{ date: string; net_words: number }>;
@@ -15,6 +16,8 @@ interface DailyWordChartProps {
 }
 
 export function DailyWordChart({ data, dailyAverage }: DailyWordChartProps) {
+  const prefersReducedMotion = useReducedMotion();
+
   if (data.length === 0) return null;
 
   return (
@@ -33,7 +36,12 @@ export function DailyWordChart({ data, dailyAverage }: DailyWordChartProps) {
           <Tooltip
             formatter={(value: number) => [value.toLocaleString(), STRINGS.velocity.netWords]}
           />
-          <Bar dataKey="net_words" fill="#6B4720" radius={[2, 2, 0, 0]} />
+          <Bar
+            dataKey="net_words"
+            fill="#6B4720"
+            radius={[2, 2, 0, 0]}
+            isAnimationActive={!prefersReducedMotion}
+          />
           {dailyAverage > 0 && (
             <ReferenceLine
               y={dailyAverage}
@@ -44,6 +52,26 @@ export function DailyWordChart({ data, dailyAverage }: DailyWordChartProps) {
           )}
         </BarChart>
       </ResponsiveContainer>
+
+      {/* Hidden data table for screen readers */}
+      <div className="sr-only">
+        <table aria-label={STRINGS.velocity.chartDailyLabel}>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Net Words</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((d) => (
+              <tr key={d.date}>
+                <td>{d.date}</td>
+                <td>{d.net_words}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

@@ -128,7 +128,7 @@ describe("VelocityView", () => {
   it("adaptive: both set — shows burndown chart", async () => {
     render(<VelocityView slug="test" />);
     await waitFor(() => {
-      expect(screen.getByLabelText(/burndown/i)).toBeInTheDocument();
+      expect(screen.getAllByLabelText(/burndown/i).length).toBeGreaterThanOrEqual(1);
     });
   });
 });
