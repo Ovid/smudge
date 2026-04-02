@@ -112,6 +112,7 @@ export const api = {
           status: string;
           status_label: string;
           word_count: number;
+          target_word_count: number | null;
           updated_at: string;
           sort_order: number;
         }>;

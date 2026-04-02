@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { STRINGS } from "../strings";
 import { STATUS_COLORS } from "../statusColors";
 import { VelocityView } from "./VelocityView";
+import { ChapterTargetPopover } from "./ChapterTargetPopover";
 
 type DashboardData = Awaited<ReturnType<typeof api.projects.dashboard>>;
 
@@ -314,7 +315,12 @@ export function DashboardView({
                     </span>
                   </td>
                   <td className="py-3 pr-4 text-text-secondary">
-                    {chapter.word_count.toLocaleString()}
+                    <ChapterTargetPopover
+                      chapterId={chapter.id}
+                      currentWordCount={chapter.word_count}
+                      targetWordCount={chapter.target_word_count ?? null}
+                      onUpdate={() => {/* refresh handled by parent */}}
+                    />
                   </td>
                   <td className="py-3 text-text-muted text-xs">
                     {new Date(chapter.updated_at).toLocaleDateString(undefined, {

@@ -378,7 +378,7 @@ export function projectsRouter(db: Knex): Router {
         .where({ project_id: project.id })
         .whereNull("deleted_at")
         .orderBy("sort_order", "asc")
-        .select("id", "title", "status", "word_count", "updated_at", "sort_order");
+        .select("id", "title", "status", "word_count", "target_word_count", "updated_at", "sort_order");
 
       const allStatuses = await db("chapter_statuses")
         .orderBy("sort_order", "asc")
