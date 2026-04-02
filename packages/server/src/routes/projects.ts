@@ -12,6 +12,7 @@ import { asyncHandler } from "../app";
 import { queryChapter, queryChapters, stripCorruptFlag } from "./chapterQueries";
 import { resolveUniqueSlug } from "./resolve-slug";
 import { getStatusLabelMap } from "./status-labels";
+import { velocityHandler } from "./velocity";
 
 export function projectsRouter(db: Knex): Router {
   const router = Router();
@@ -203,6 +204,8 @@ export function projectsRouter(db: Knex): Router {
       res.json(updated);
     }),
   );
+
+  router.get("/:slug/velocity", velocityHandler(db));
 
   router.get(
     "/:slug",
