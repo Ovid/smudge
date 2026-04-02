@@ -3,6 +3,7 @@ import type { ChapterStatusRow } from "@smudge/shared";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
 import { STATUS_COLORS } from "../statusColors";
+import { VelocityView } from "./VelocityView";
 
 type DashboardData = Awaited<ReturnType<typeof api.projects.dashboard>>;
 
@@ -21,6 +22,7 @@ export function DashboardView({
   onNavigateToChapter,
   refreshKey,
 }: DashboardViewProps) {
+  const [activeTab, setActiveTab] = useState<"velocity" | "chapters">("velocity");
   const [dataWithSlug, setDataWithSlug] = useState<{ slug: string; data: DashboardData } | null>(
     null,
   );
@@ -64,18 +66,64 @@ export function DashboardView({
   // Treat data from a different slug as stale (show loading)
   const data = dataWithSlug?.slug === slug ? dataWithSlug.data : null;
 
+  // Tab navigation is always rendered, content depends on active tab
+  const tabBar = (
+    <div className="flex items-center gap-4 mb-8" role="tablist" aria-label={STRINGS.dashboard.heading}>
+      <button
+        role="tab"
+        aria-selected={activeTab === "velocity"}
+        onClick={() => setActiveTab("velocity")}
+        className={`text-sm font-medium rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
+          activeTab === "velocity"
+            ? "bg-accent/10 text-accent"
+            : "text-text-muted hover:text-text-secondary"
+        }`}
+      >
+        {STRINGS.velocity.tabLabel}
+      </button>
+      <button
+        role="tab"
+        aria-selected={activeTab === "chapters"}
+        onClick={() => setActiveTab("chapters")}
+        className={`text-sm font-medium rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
+          activeTab === "chapters"
+            ? "bg-accent/10 text-accent"
+            : "text-text-muted hover:text-text-secondary"
+        }`}
+      >
+        {STRINGS.velocity.chaptersTabLabel}
+      </button>
+    </div>
+  );
+
+  if (activeTab === "velocity") {
+    return (
+      <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
+        {tabBar}
+        <VelocityView slug={slug} />
+      </div>
+    );
+  }
+
+  // Chapters tab — existing dashboard content
   if (error) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <p className="text-status-error">{error}</p>
+      <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
+        {tabBar}
+        <div className="flex items-center justify-center py-16">
+          <p className="text-status-error">{error}</p>
+        </div>
       </div>
     );
   }
 
   if (!data) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <p className="text-text-muted">{STRINGS.nav.loading}</p>
+      <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
+        {tabBar}
+        <div className="flex items-center justify-center py-16">
+          <p className="text-text-muted">{STRINGS.nav.loading}</p>
+        </div>
       </div>
     );
   }
@@ -131,7 +179,7 @@ export function DashboardView({
 
   return (
     <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
-      <h2 className="text-lg font-semibold text-text-primary mb-8">{STRINGS.dashboard.heading}</h2>
+      {tabBar}
 
       {chapters.length === 0 ? (
         <div data-testid="dashboard-empty">

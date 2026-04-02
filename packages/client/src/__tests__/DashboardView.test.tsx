@@ -9,6 +9,13 @@ vi.mock("../api/client", () => ({
   api: {
     projects: {
       dashboard: vi.fn(),
+      velocity: vi.fn().mockResolvedValue({
+        daily_snapshots: [],
+        sessions: [],
+        streak: { current: 0, best: 0 },
+        projection: { target_word_count: null, target_deadline: null, projected_date: null, daily_average_30d: 0 },
+        completion: { threshold_status: "final", total_chapters: 0, completed_chapters: 0 },
+      }),
     },
   },
 }));
@@ -78,6 +85,10 @@ const emptyDashboardData = {
   },
 };
 
+async function switchToChaptersTab() {
+  await userEvent.click(screen.getByRole("tab", { name: /Chapters/i }));
+}
+
 describe("DashboardView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -94,6 +105,8 @@ describe("DashboardView", () => {
         refreshKey={0}
       />,
     );
+
+    await switchToChaptersTab();
 
     await waitFor(() => {
       expect(screen.getByText("1,700 words")).toBeInTheDocument();
@@ -115,6 +128,8 @@ describe("DashboardView", () => {
         refreshKey={0}
       />,
     );
+
+    await switchToChaptersTab();
 
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
@@ -138,6 +153,8 @@ describe("DashboardView", () => {
       />,
     );
 
+    await switchToChaptersTab();
+
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
     });
@@ -158,6 +175,8 @@ describe("DashboardView", () => {
       />,
     );
 
+    await switchToChaptersTab();
+
     await waitFor(() => {
       expect(screen.getByText(/Outline: 1/)).toBeInTheDocument();
     });
@@ -176,6 +195,8 @@ describe("DashboardView", () => {
         refreshKey={0}
       />,
     );
+
+    await switchToChaptersTab();
 
     await waitFor(() => {
       expect(screen.getByText("No chapters yet")).toBeInTheDocument();
@@ -196,6 +217,8 @@ describe("DashboardView", () => {
         refreshKey={0}
       />,
     );
+
+    await switchToChaptersTab();
 
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
@@ -227,6 +250,8 @@ describe("DashboardView", () => {
       />,
     );
 
+    await switchToChaptersTab();
+
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
     });
@@ -243,7 +268,7 @@ describe("DashboardView", () => {
     expect(rows[2]).toHaveTextContent("Chapter One");
   });
 
-  it("shows loading state before data arrives", () => {
+  it("shows loading state before data arrives", async () => {
     // Never resolve the promise — component stays in loading state
     vi.mocked(api.projects.dashboard).mockReturnValue(new Promise(() => {}));
 
@@ -255,6 +280,8 @@ describe("DashboardView", () => {
         refreshKey={0}
       />,
     );
+
+    await switchToChaptersTab();
 
     expect(screen.getByText("Loading...")).toBeInTheDocument();
   });
@@ -271,6 +298,8 @@ describe("DashboardView", () => {
         refreshKey={0}
       />,
     );
+
+    await switchToChaptersTab();
 
     await waitFor(() => {
       expect(screen.getByText("Network failure")).toBeInTheDocument();
@@ -291,6 +320,8 @@ describe("DashboardView", () => {
       />,
     );
 
+    await switchToChaptersTab();
+
     await waitFor(() => {
       expect(screen.getByText("Failed to load dashboard")).toBeInTheDocument();
     });
@@ -308,6 +339,8 @@ describe("DashboardView", () => {
         refreshKey={0}
       />,
     );
+
+    await switchToChaptersTab();
 
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
@@ -341,6 +374,8 @@ describe("DashboardView", () => {
       />,
     );
 
+    await switchToChaptersTab();
+
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
     });
@@ -364,6 +399,8 @@ describe("DashboardView", () => {
         refreshKey={0}
       />,
     );
+
+    await switchToChaptersTab();
 
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
@@ -395,6 +432,8 @@ describe("DashboardView", () => {
         refreshKey={0}
       />,
     );
+
+    await switchToChaptersTab();
 
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
@@ -441,6 +480,8 @@ describe("DashboardView", () => {
         refreshKey={0}
       />,
     );
+
+    await switchToChaptersTab();
 
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();

@@ -28,6 +28,13 @@ vi.mock("../api/client", () => ({
       reorderChapters: vi.fn(),
       trash: vi.fn(),
       dashboard: vi.fn(),
+      velocity: vi.fn().mockResolvedValue({
+        daily_snapshots: [],
+        sessions: [],
+        streak: { current: 0, best: 0 },
+        projection: { target_word_count: null, target_deadline: null, projected_date: null, daily_average_30d: 0 },
+        completion: { threshold_status: "final", total_chapters: 0, completed_chapters: 0 },
+      }),
     },
     chapters: {
       get: vi.fn(),
@@ -928,9 +935,9 @@ describe("EditorPage view mode toggles", () => {
     // Click Dashboard tab
     await userEvent.click(screen.getByText("Dashboard"));
 
-    // Dashboard view should render
+    // Dashboard view should render with sub-tabs (Velocity is default)
     await waitFor(() => {
-      expect(screen.getByText("Manuscript Dashboard")).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: /Velocity/i })).toBeInTheDocument();
     });
   });
 
@@ -944,8 +951,8 @@ describe("EditorPage view mode toggles", () => {
     await userEvent.click(screen.getByText("Dashboard"));
 
     await waitFor(() => {
-      // The DashboardView component should be rendered within a main element
-      expect(screen.getByText("Manuscript Dashboard")).toBeInTheDocument();
+      // The DashboardView component should render sub-tabs
+      expect(screen.getByRole("tab", { name: /Velocity/i })).toBeInTheDocument();
     });
 
     // The Dashboard tab should show as current
