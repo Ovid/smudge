@@ -22,4 +22,5 @@ export type {
   ProjectWithChapters,
   ChapterStatusRow,
   ApiError,
+  CompletionThresholdValue,
 } from "./types";

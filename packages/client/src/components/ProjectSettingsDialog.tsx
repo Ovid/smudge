@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import type { CompletionThresholdValue } from "@smudge/shared";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
 
@@ -8,7 +9,7 @@ interface ProjectSettingsDialogProps {
     slug: string;
     target_word_count: number | null;
     target_deadline: string | null;
-    completion_threshold: string;
+    completion_threshold: CompletionThresholdValue;
   };
   onClose: () => void;
   onUpdate: () => void;
@@ -76,7 +77,7 @@ export function ProjectSettingsDialog({
     saveField({ target_deadline: value || null });
   }
 
-  function handleThresholdChange(value: string) {
+  function handleThresholdChange(value: CompletionThresholdValue) {
     setThreshold(value);
     saveField({ completion_threshold: value });
   }
@@ -174,7 +175,7 @@ export function ProjectSettingsDialog({
           <select
             id="project-completion-threshold"
             value={threshold}
-            onChange={(e) => handleThresholdChange(e.target.value)}
+            onChange={(e) => handleThresholdChange(e.target.value as CompletionThresholdValue)}
             className="w-full rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring"
           >
             {THRESHOLD_OPTIONS.map((opt) => (

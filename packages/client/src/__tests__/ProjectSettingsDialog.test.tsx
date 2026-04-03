@@ -13,7 +13,7 @@ const defaultProject = {
   mode: "fiction" as const,
   target_word_count: null as number | null,
   target_deadline: null as string | null,
-  completion_threshold: "final" as string,
+  completion_threshold: "final" as const,
   created_at: "",
   updated_at: "",
 };

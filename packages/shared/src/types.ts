@@ -1,7 +1,8 @@
 import type { z } from "zod";
-import type { CreateProjectSchema, ProjectMode } from "./schemas";
+import type { CompletionThreshold, CreateProjectSchema, ProjectMode } from "./schemas";
 
 export type ProjectMode = z.infer<typeof ProjectMode>;
+export type CompletionThresholdValue = z.infer<typeof CompletionThreshold>;
 
 export interface Project {
   id: string;
@@ -10,7 +11,7 @@ export interface Project {
   mode: ProjectMode;
   target_word_count: number | null;
   target_deadline: string | null;
-  completion_threshold: string;
+  completion_threshold: z.infer<typeof CompletionThreshold>;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

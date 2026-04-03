@@ -67,7 +67,7 @@ const mockProject = {
   deleted_at: null,
   target_word_count: null,
   target_deadline: null,
-  completion_threshold: "final",
+  completion_threshold: "final" as const,
   chapters: [
     {
       id: "ch-1",
