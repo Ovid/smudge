@@ -51,24 +51,14 @@ export function deriveSessions(
   // recording the last word_count seen per chapter before each session starts.
   // This replaces the previous O(n²) approach of scanning backwards per chapter per session.
   const lastSeenWordCount: Record<string, number> = { ...preWindowBaselines };
-  // Pre-build a set of session start indices for quick lookup
-  const sessionStartIndices = new Set<number>();
-  let idx = 0;
-  for (const group of sessionGroups) {
-    sessionStartIndices.add(idx);
-    idx += group.length;
-  }
-
   // Single pass: snapshot baselines at each session boundary
   const sessionBaselines: Record<string, number>[] = [];
-  let eventIdx = 0;
   for (const group of sessionGroups) {
     // Capture baselines before this session starts
     sessionBaselines.push({ ...lastSeenWordCount });
     // Update lastSeenWordCount with all events in this session
     for (const evt of group) {
       lastSeenWordCount[evt.chapter_id] = evt.word_count;
-      eventIdx++;
     }
   }
 
@@ -98,10 +88,11 @@ export function deriveSessions(
     const chapterIds = Object.keys(lastInSessionByChapter);
 
     // Calculate net_words using precomputed baselines
-    const baselines = sessionBaselines[groupIdx]!;
+    const baselines = sessionBaselines[groupIdx] ?? {};
     let netWords = 0;
     for (const chapterId of chapterIds) {
-      const lastInSession = lastInSessionByChapter[chapterId]!;
+      const lastInSession = lastInSessionByChapter[chapterId];
+      if (!lastInSession) continue;
       const baseline = baselines[chapterId] ?? 0;
       netWords += lastInSession.word_count - baseline;
     }
