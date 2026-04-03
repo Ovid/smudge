@@ -36,6 +36,15 @@ export function ProjectSettingsDialog({
   const [deadline, setDeadline] = useState(project.target_deadline ?? "");
   const [threshold, setThreshold] = useState(project.completion_threshold ?? "final");
 
+  // Sync local state when project prop changes (e.g., after saving settings)
+  useEffect(() => {
+    setWordCountTarget(
+      project.target_word_count != null ? String(project.target_word_count) : "",
+    );
+    setDeadline(project.target_deadline ?? "");
+    setThreshold(project.completion_threshold ?? "final");
+  }, [project.target_word_count, project.target_deadline, project.completion_threshold]);
+
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;

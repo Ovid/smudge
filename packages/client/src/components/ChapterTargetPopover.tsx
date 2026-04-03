@@ -19,6 +19,11 @@ export function ChapterTargetPopover({
   const [draft, setDraft] = useState(targetWordCount?.toString() ?? "");
   const popoverRef = useRef<HTMLDivElement>(null);
 
+  // Sync draft when prop changes
+  useEffect(() => {
+    setDraft(targetWordCount?.toString() ?? "");
+  }, [targetWordCount]);
+
   // Close on outside click
   useEffect(() => {
     if (!open) return;
