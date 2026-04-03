@@ -74,7 +74,7 @@ export async function up(knex) {
       .where({ project_id: project.id })
       .whereNull("deleted_at")
       .sum("word_count as total");
-    const total = result[0]?.total || 0;
+    const total = Number(result[0]?.total) || 0;
 
     await knex("daily_snapshots").insert({
       id: uuid(),
