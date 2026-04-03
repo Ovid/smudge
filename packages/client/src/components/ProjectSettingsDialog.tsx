@@ -67,7 +67,7 @@ export function ProjectSettingsDialog({
 
   function handleWordCountBlur() {
     const parsed = wordCountTarget.trim() === "" ? null : Number(wordCountTarget);
-    if (parsed !== null && (Number.isNaN(parsed) || parsed < 0)) return;
+    if (parsed !== null && (Number.isNaN(parsed) || parsed <= 0)) return;
     saveField({ target_word_count: parsed });
   }
 
@@ -116,7 +116,7 @@ export function ProjectSettingsDialog({
             <input
               id="project-word-count-target"
               type="number"
-              min="0"
+              min="1"
               value={wordCountTarget}
               onChange={(e) => setWordCountTarget(e.target.value)}
               onBlur={handleWordCountBlur}
