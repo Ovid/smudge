@@ -29,6 +29,7 @@ export interface VelocityResponse {
     total_chapters: number;
     completed_chapters: number;
   };
+  today: string;
 }
 
 const BASE = "/api";

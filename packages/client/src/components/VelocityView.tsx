@@ -81,8 +81,8 @@ export function VelocityView({ slug }: VelocityViewProps) {
     );
   }
 
-  // `now` is captured once via useState lazy initializer (pure during render)
-  const today = new Date(now).toISOString().slice(0, 10);
+  // Server provides `today` in the writer's configured timezone
+  const today = data.today;
   const daysRemaining = data.projection.target_deadline
     ? Math.max(
         0,

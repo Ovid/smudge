@@ -324,12 +324,15 @@ export function velocityHandler(db: Knex) {
       completed_chapters: completedChapters,
     };
 
+    const today = await getTodayDate(db);
+
     res.json({
       daily_snapshots: dailySnapshots,
       sessions,
       streak,
       projection,
       completion,
+      today,
     });
   });
 }
