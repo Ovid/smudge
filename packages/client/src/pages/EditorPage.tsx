@@ -686,7 +686,8 @@ export function EditorPage() {
             </div>
             {lastSession && (
               <span className="text-text-muted">
-                {STRINGS.velocity.lastSession}: {lastSession.duration_minutes} min, +
+                {STRINGS.velocity.lastSession}: {lastSession.duration_minutes} min,{" "}
+                {lastSession.net_words >= 0 ? "+" : ""}
                 {lastSession.net_words.toLocaleString()} words
               </span>
             )}
