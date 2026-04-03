@@ -41,6 +41,7 @@ const mockVelocity = {
     total_chapters: 12,
     completed_chapters: 7,
   },
+  today: "2026-04-01",
 };
 
 describe("VelocityView", () => {
@@ -77,6 +78,7 @@ describe("VelocityView", () => {
         daily_average_30d: 0,
       },
       completion: { threshold_status: "final", total_chapters: 0, completed_chapters: 0 },
+      today: "2026-04-01",
     });
     render(<VelocityView slug="test" />);
     await waitFor(() => {
