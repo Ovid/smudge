@@ -233,15 +233,25 @@ export function velocityHandler(db: Knex) {
     // to prevent inflated net_words for chapters with older history
     const chapterIdsInWindow = [...new Set(recentEvents.map((e) => e.chapter_id))];
     const preWindowBaselines: Record<string, number> = {};
-    for (const chapterId of chapterIdsInWindow) {
-      const baseline = await db("save_events")
-        .where({ project_id: project.id, chapter_id: chapterId })
-        .where("saved_at", "<", thirtyDaysAgoStr)
-        .orderBy("saved_at", "desc")
-        .first()
-        .select("word_count");
-      if (baseline) {
-        preWindowBaselines[chapterId] = baseline.word_count;
+    if (chapterIdsInWindow.length > 0) {
+      try {
+        const baselines = await db("save_events as se1")
+          .whereIn("se1.chapter_id", chapterIdsInWindow)
+          .where("se1.project_id", project.id)
+          .where("se1.saved_at", "<", thirtyDaysAgoStr)
+          .whereNotExists(
+            db("save_events as se2")
+              .where("se2.chapter_id", db.raw("se1.chapter_id"))
+              .where("se2.project_id", project.id)
+              .where("se2.saved_at", "<", thirtyDaysAgoStr)
+              .where("se2.saved_at", ">", db.raw("se1.saved_at")),
+          )
+          .select("se1.chapter_id", "se1.word_count");
+        for (const row of baselines) {
+          preWindowBaselines[row.chapter_id] = row.word_count;
+        }
+      } catch {
+        // Best-effort: default to no baselines (net_words calculated from first event in window)
       }
     }
 
