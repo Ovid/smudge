@@ -125,13 +125,20 @@ export function EditorPage() {
     };
   }, []);
 
-  // Fetch last session for status bar (on load and after each successful save)
+  // Fetch last session for status bar (on load, then throttled after saves)
   const hasFetchedInitial = useRef(false);
+  const lastVelocityFetch = useRef(0);
+  const VELOCITY_THROTTLE_MS = 60_000;
   useEffect(() => {
     if (!slug) return;
     const isInitialLoad = !hasFetchedInitial.current;
-    if (!isInitialLoad && saveStatus !== "saved") return;
+    if (!isInitialLoad) {
+      if (saveStatus !== "saved") return;
+      const now = Date.now();
+      if (now - lastVelocityFetch.current < VELOCITY_THROTTLE_MS) return;
+    }
     hasFetchedInitial.current = true;
+    lastVelocityFetch.current = Date.now();
     let cancelled = false;
     api.projects
       .velocity(slug)
