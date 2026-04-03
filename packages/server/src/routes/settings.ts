@@ -43,7 +43,9 @@ export function settingsRouter(db: Knex): Router {
       const errors: Record<string, string> = {};
       for (const { key, value } of parsed.data.settings) {
         const validator = SETTING_VALIDATORS[key];
-        if (validator && !validator(value)) {
+        if (!validator) {
+          errors[key] = `Unknown setting: ${key}`;
+        } else if (!validator(value)) {
           errors[key] = `Invalid value for ${key}: ${value}`;
         }
       }
