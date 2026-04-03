@@ -19,11 +19,6 @@ export function ChapterTargetPopover({
   const [draft, setDraft] = useState(targetWordCount?.toString() ?? "");
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  // Sync draft when prop changes
-  useEffect(() => {
-    setDraft(targetWordCount?.toString() ?? "");
-  }, [targetWordCount]);
-
   // Close on outside click
   useEffect(() => {
     if (!open) return;
@@ -66,7 +61,10 @@ export function ChapterTargetPopover({
   return (
     <span className="relative" ref={popoverRef}>
       <button
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          if (!open) setDraft(targetWordCount?.toString() ?? "");
+          setOpen(!open);
+        }}
         className="text-text-secondary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-focus-ring rounded px-1"
       >
         {displayText}

@@ -737,7 +737,7 @@ export function EditorPage() {
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <ProjectSettingsDialog
-        key={project.slug}
+        key={`${project.slug}-${project.target_word_count}-${project.target_deadline}-${project.completion_threshold}`}
         open={projectSettingsOpen}
         project={project}
         onClose={() => setProjectSettingsOpen(false)}
