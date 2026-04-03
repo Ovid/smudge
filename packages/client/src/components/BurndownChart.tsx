@@ -21,8 +21,8 @@ export function BurndownChart({
   if (snapshots.length === 0) return null;
 
   // Build planned pace data: linear from start to target
-  const startMs = new Date(startDate + "T00:00:00").getTime();
-  const endMs = new Date(targetDeadline + "T00:00:00").getTime();
+  const startMs = new Date(startDate + "T00:00:00Z").getTime();
+  const endMs = new Date(targetDeadline + "T00:00:00Z").getTime();
   const firstSnapshot = snapshots[0];
   if (!firstSnapshot) return null;
   const startWordCount = firstSnapshot.total_word_count;
@@ -35,7 +35,7 @@ export function BurndownChart({
   const chartData = Array.from(allDates)
     .sort()
     .map((date) => {
-      const dateMs = new Date(date + "T00:00:00").getTime();
+      const dateMs = new Date(date + "T00:00:00Z").getTime();
       const dayIndex = Math.ceil((dateMs - startMs) / (1000 * 60 * 60 * 24));
       const planned = startWordCount + ((targetWordCount - startWordCount) * dayIndex) / totalDays;
 
