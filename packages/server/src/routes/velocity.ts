@@ -165,7 +165,7 @@ export function calculateProjection(
   projected_date: string | null;
   daily_average_30d: number;
 } {
-  if (!targetWordCount) {
+  if (targetWordCount == null) {
     return {
       target_word_count: targetWordCount,
       target_deadline: targetDeadline,
