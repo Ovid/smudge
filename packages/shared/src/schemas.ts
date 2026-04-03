@@ -19,12 +19,13 @@ export const UpdateProjectSchema = z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format")
       .refine((d) => {
-        const [y, m, day] = d.split("-").map(Number);
-        const date = new Date(Date.UTC(y!, m! - 1, day!));
+        const parts = d.split("-").map(Number);
+        const y = parts[0] ?? 0;
+        const m = parts[1] ?? 0;
+        const day = parts[2] ?? 0;
+        const date = new Date(Date.UTC(y, m - 1, day));
         return (
-          date.getUTCFullYear() === y &&
-          date.getUTCMonth() === m! - 1 &&
-          date.getUTCDate() === day
+          date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === day
         );
       }, "Must be a valid date")
       .nullable(),

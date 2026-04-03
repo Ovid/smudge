@@ -38,7 +38,10 @@ export async function insertSaveEvent(
       saved_at: new Date().toISOString(),
     });
   } catch (err) {
-    console.error(`Failed to insert save event for chapter=${chapterId} project=${projectId}:`, err);
+    console.error(
+      `Failed to insert save event for chapter=${chapterId} project=${projectId}:`,
+      err,
+    );
   }
 }
 
