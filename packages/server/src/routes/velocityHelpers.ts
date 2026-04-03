@@ -37,8 +37,8 @@ export async function insertSaveEvent(
       word_count: wordCount,
       saved_at: new Date().toISOString(),
     });
-  } catch {
-    // Best-effort: next save retries
+  } catch (err) {
+    console.error(`Failed to insert save event for chapter=${chapterId} project=${projectId}:`, err);
   }
 }
 
@@ -68,7 +68,7 @@ export async function upsertDailySnapshot(db: Knex, projectId: string): Promise<
         created_at: new Date().toISOString(),
       });
     }
-  } catch {
-    // Best-effort: next save retries
+  } catch (err) {
+    console.error(`Failed to upsert daily snapshot for project=${projectId}:`, err);
   }
 }
