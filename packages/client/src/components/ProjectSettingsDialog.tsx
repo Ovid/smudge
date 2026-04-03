@@ -88,7 +88,6 @@ export function ProjectSettingsDialog({
     <dialog
       ref={dialogRef}
       onClose={onClose}
-      open
       className="rounded-xl bg-bg-primary p-6 shadow-lg backdrop:bg-black/50 max-w-md w-full"
     >
       <div className="flex items-center justify-between mb-4">

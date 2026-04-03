@@ -73,7 +73,6 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     <dialog
       ref={dialogRef}
       onClose={onClose}
-      open
       className="rounded-xl bg-bg-primary p-6 shadow-lg backdrop:bg-black/50 max-w-md w-full"
     >
       <h2 className="text-lg font-semibold text-text-primary mb-4 font-sans">
