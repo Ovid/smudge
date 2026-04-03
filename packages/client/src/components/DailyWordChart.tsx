@@ -12,8 +12,12 @@ export function DailyWordChart({ data, dailyAverage }: DailyWordChartProps) {
 
   if (data.length === 0) return null;
 
+  const firstDate = data[0]?.date;
+  const lastDate = data[data.length - 1]?.date;
+  const dynamicLabel = `${STRINGS.velocity.chartDailyLabel}. ${data.length} days shown${firstDate && lastDate ? `, ${firstDate} to ${lastDate}` : ""}. 30-day average: ${Math.round(dailyAverage).toLocaleString()} words per day`;
+
   return (
-    <div aria-label={STRINGS.velocity.chartDailyLabel} className="mb-8">
+    <div aria-label={dynamicLabel} className="mb-8">
       <ResponsiveContainer width="100%" height={200}>
         <BarChart data={data} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
           <XAxis

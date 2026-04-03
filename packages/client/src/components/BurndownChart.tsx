@@ -48,8 +48,10 @@ export function BurndownChart({
       };
     });
 
+  const dynamicLabel = `${STRINGS.velocity.chartBurndownLabel}. Target: ${targetWordCount.toLocaleString()} words by ${targetDeadline}. Tracking from ${startDate}`;
+
   return (
-    <div aria-label={STRINGS.velocity.chartBurndownLabel} className="mb-8">
+    <div aria-label={dynamicLabel} className="mb-8">
       <ResponsiveContainer width="100%" height={200}>
         <LineChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
           <XAxis
