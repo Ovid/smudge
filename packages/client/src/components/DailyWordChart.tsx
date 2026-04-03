@@ -50,8 +50,8 @@ export function DailyWordChart({ data, dailyAverage }: DailyWordChartProps) {
         <table aria-label={STRINGS.velocity.chartDailyLabel}>
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Net Words</th>
+              <th>{STRINGS.velocity.columnDate}</th>
+              <th>{STRINGS.velocity.columnNetWords}</th>
             </tr>
           </thead>
           <tbody>

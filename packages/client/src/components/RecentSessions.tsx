@@ -29,7 +29,7 @@ export function RecentSessions({ sessions }: RecentSessionsProps) {
               {dateStr} &middot; {session.duration_minutes} min &middot; {sign}
               {session.net_words.toLocaleString()} {STRINGS.velocity.netWords} &middot;{" "}
               {session.chapters_touched.length}{" "}
-              {session.chapters_touched.length === 1 ? "chapter" : "chapters"}
+              {session.chapters_touched.length === 1 ? STRINGS.velocity.chapterSingular : STRINGS.velocity.chapterPlural}
             </li>
           );
         })}

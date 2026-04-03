@@ -16,11 +16,11 @@ interface ProjectSettingsDialogProps {
 }
 
 const THRESHOLD_OPTIONS = [
-  { value: "outline", label: "Outline" },
-  { value: "rough_draft", label: "Rough Draft" },
-  { value: "revised", label: "Revised" },
-  { value: "edited", label: "Edited" },
-  { value: "final", label: "Final" },
+  { value: "outline", label: STRINGS.projectSettings.thresholdOutline },
+  { value: "rough_draft", label: STRINGS.projectSettings.thresholdRoughDraft },
+  { value: "revised", label: STRINGS.projectSettings.thresholdRevised },
+  { value: "edited", label: STRINGS.projectSettings.thresholdEdited },
+  { value: "final", label: STRINGS.projectSettings.thresholdFinal },
 ];
 
 export function ProjectSettingsDialog({
@@ -98,7 +98,7 @@ export function ProjectSettingsDialog({
           type="button"
           onClick={onClose}
           className="text-text-muted hover:text-text-secondary rounded-md p-1 focus:outline-none focus:ring-2 focus:ring-focus-ring"
-          aria-label="Close"
+          aria-label={STRINGS.projectSettings.close}
         >
           ✕
         </button>
@@ -121,7 +121,7 @@ export function ProjectSettingsDialog({
               onChange={(e) => setWordCountTarget(e.target.value)}
               onBlur={handleWordCountBlur}
               className="flex-1 rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring"
-              placeholder="e.g. 80000"
+              placeholder={STRINGS.projectSettings.wordCountPlaceholder}
             />
             <button
               type="button"

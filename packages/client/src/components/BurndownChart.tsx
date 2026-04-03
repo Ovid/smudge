@@ -64,7 +64,7 @@ export function BurndownChart({
           <Tooltip
             formatter={(value, name) => [
               Number(value ?? 0).toLocaleString(),
-              name === "planned" ? "Planned" : "Actual",
+              name === "planned" ? STRINGS.velocity.tooltipPlanned : STRINGS.velocity.tooltipActual,
             ]}
           />
           <Line
@@ -93,9 +93,9 @@ export function BurndownChart({
         <table aria-label={STRINGS.velocity.chartBurndownLabel}>
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Planned</th>
-              <th>Actual</th>
+              <th>{STRINGS.velocity.columnDate}</th>
+              <th>{STRINGS.velocity.columnPlanned}</th>
+              <th>{STRINGS.velocity.columnActual}</th>
             </tr>
           </thead>
           <tbody>
