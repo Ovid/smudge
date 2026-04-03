@@ -2,6 +2,17 @@ import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
 import { v4 as uuid } from "uuid";
+import { safeTimezone } from "../routes/velocityHelpers";
+
+describe("safeTimezone", () => {
+  it("returns the timezone unchanged when valid", () => {
+    expect(safeTimezone("America/New_York")).toBe("America/New_York");
+  });
+
+  it("returns UTC for an invalid timezone string", () => {
+    expect(safeTimezone("Not/AReal_Zone")).toBe("UTC");
+  });
+});
 
 const t = setupTestDb();
 

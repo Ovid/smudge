@@ -17,7 +17,7 @@ export function useProjectEditor(slug: string | undefined) {
   const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
   const [cacheWarning, setCacheWarning] = useState(false);
   const activeChapterRef = useRef<Chapter | null>(null);
-  const projectSlugRef = useRef(project?.slug);
+  const projectSlugRef = useRef(slug);
   const selectChapterSeqRef = useRef(0);
   const saveSeqRef = useRef(0);
   const statusChangeSeqRef = useRef(0);
