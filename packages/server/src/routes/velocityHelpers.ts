@@ -1,4 +1,4 @@
-import { Knex } from "knex";
+import type { Knex } from "knex";
 import { v4 as uuid } from "uuid";
 
 export async function getTodayDate(db: Knex): Promise<string> {

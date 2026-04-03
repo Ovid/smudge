@@ -5,6 +5,21 @@ import { v4 as uuid } from "uuid";
 
 const t = setupTestDb();
 
+/** Return an ISO date string for N days ago (YYYY-MM-DD) */
+function daysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Return an ISO timestamp for N days ago at a given hour (UTC) */
+function daysAgoAt(n: number, hour: number, minute = 0): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  d.setUTCHours(hour, minute, 0, 0);
+  return d.toISOString();
+}
+
 async function createProjectWithChapter() {
   const res = await request(t.app)
     .post("/api/projects")
@@ -111,10 +126,10 @@ describe("GET /api/projects/:slug/velocity", () => {
     const { slug, projectId, chapterId } = await createProjectWithChapter();
     await t.db("save_events").where({ project_id: projectId }).del();
 
-    // 3 consecutive days ending today (2026-04-02 = today per test context)
-    await insertSaveEvent(projectId, chapterId, 100, "2026-03-31T10:00:00Z");
-    await insertSaveEvent(projectId, chapterId, 200, "2026-04-01T10:00:00Z");
-    await insertSaveEvent(projectId, chapterId, 300, "2026-04-02T10:00:00Z");
+    // 3 consecutive days ending today
+    await insertSaveEvent(projectId, chapterId, 100, daysAgoAt(2, 10));
+    await insertSaveEvent(projectId, chapterId, 200, daysAgoAt(1, 10));
+    await insertSaveEvent(projectId, chapterId, 300, daysAgoAt(0, 10));
 
     const res = await request(t.app).get(`/api/projects/${slug}/velocity`);
     expect(res.body.streak.current).toBe(3);
@@ -185,9 +200,9 @@ describe("GET /api/projects/:slug/velocity", () => {
     const { slug, projectId, chapterId } = await createProjectWithChapter();
     await t.db("save_events").where({ project_id: projectId }).del();
 
-    // Saves on March 31 and April 1, but NOT today (April 2)
-    await insertSaveEvent(projectId, chapterId, 100, "2026-03-31T10:00:00Z");
-    await insertSaveEvent(projectId, chapterId, 200, "2026-04-01T10:00:00Z");
+    // Saves yesterday and day before, but NOT today
+    await insertSaveEvent(projectId, chapterId, 100, daysAgoAt(2, 10));
+    await insertSaveEvent(projectId, chapterId, 200, daysAgoAt(1, 10));
 
     const res = await request(t.app).get(`/api/projects/${slug}/velocity`);
     expect(res.body.streak.current).toBe(2);
@@ -197,26 +212,26 @@ describe("GET /api/projects/:slug/velocity", () => {
     const { slug, projectId, chapterId } = await createProjectWithChapter();
     await t.db("save_events").where({ project_id: projectId }).del();
 
-    // 3-day run ending March 29, gap March 30, then March 31 + April 1 + April 2
-    await insertSaveEvent(projectId, chapterId, 100, "2026-03-27T10:00:00Z");
-    await insertSaveEvent(projectId, chapterId, 200, "2026-03-28T10:00:00Z");
-    await insertSaveEvent(projectId, chapterId, 300, "2026-03-29T10:00:00Z");
-    // gap on March 30
-    await insertSaveEvent(projectId, chapterId, 400, "2026-03-31T10:00:00Z");
-    await insertSaveEvent(projectId, chapterId, 500, "2026-04-01T10:00:00Z");
-    await insertSaveEvent(projectId, chapterId, 600, "2026-04-02T10:00:00Z");
+    // 3-day run (6-4 days ago), gap (3 days ago), then 2-0 days ago
+    await insertSaveEvent(projectId, chapterId, 100, daysAgoAt(6, 10));
+    await insertSaveEvent(projectId, chapterId, 200, daysAgoAt(5, 10));
+    await insertSaveEvent(projectId, chapterId, 300, daysAgoAt(4, 10));
+    // gap on day 3
+    await insertSaveEvent(projectId, chapterId, 400, daysAgoAt(2, 10));
+    await insertSaveEvent(projectId, chapterId, 500, daysAgoAt(1, 10));
+    await insertSaveEvent(projectId, chapterId, 600, daysAgoAt(0, 10));
 
     const res = await request(t.app).get(`/api/projects/${slug}/velocity`);
-    expect(res.body.streak.current).toBe(3); // March 31 + April 1 + April 2
-    expect(res.body.streak.best).toBe(3); // tied: March 27-29 and March 31-April 2
+    expect(res.body.streak.current).toBe(3); // days 2, 1, 0
+    expect(res.body.streak.best).toBe(3); // tied: days 6-4 and days 2-0
   });
 
   it("streak: zero-word-change save still counts as writing day", async () => {
     const { slug, projectId, chapterId } = await createProjectWithChapter();
     await t.db("save_events").where({ project_id: projectId }).del();
 
-    await insertSaveEvent(projectId, chapterId, 500, "2026-04-01T10:00:00Z");
-    await insertSaveEvent(projectId, chapterId, 500, "2026-04-02T10:00:00Z");
+    await insertSaveEvent(projectId, chapterId, 500, daysAgoAt(1, 10));
+    await insertSaveEvent(projectId, chapterId, 500, daysAgoAt(0, 10));
 
     const res = await request(t.app).get(`/api/projects/${slug}/velocity`);
     expect(res.body.streak.current).toBe(2);

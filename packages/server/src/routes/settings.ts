@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { Knex } from "knex";
+import type { Knex } from "knex";
 import { UpdateSettingsSchema } from "@smudge/shared";
 import { asyncHandler } from "../app";
 
