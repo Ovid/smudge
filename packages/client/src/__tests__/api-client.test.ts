@@ -174,6 +174,7 @@ describe("api.projects (additional methods)", () => {
         daily_average_30d: 500,
       },
       completion: { threshold_status: "final", total_chapters: 10, completed_chapters: 3 },
+      today: "2026-04-03",
     };
     mockFetch.mockResolvedValue(jsonResponse(velocityData));
 
