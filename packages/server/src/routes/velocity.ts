@@ -260,9 +260,11 @@ export function velocityHandler(db: Knex) {
     // Use daily_snapshots for streak calculation (already one row per day,
     // dates are timezone-correct from getTodayDate). Avoids loading unbounded
     // save_events into memory.
+    // Cap at 400 days — sufficient for accurate streak calculation
     const allSnapshotDates: { date: string }[] = await db("daily_snapshots")
       .where({ project_id: project.id })
       .orderBy("date", "desc")
+      .limit(400)
       .select("date");
 
     const allDates = allSnapshotDates.map((s) => s.date);
