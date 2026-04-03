@@ -51,12 +51,14 @@ export const UpdateChapterSchema = z
   });
 
 export const UpdateSettingsSchema = z.object({
-  settings: z.array(
-    z.object({
-      key: z.string().min(1),
-      value: z.string(),
-    }),
-  ),
+  settings: z
+    .array(
+      z.object({
+        key: z.string().min(1),
+        value: z.string(),
+      }),
+    )
+    .min(1, "At least one setting must be provided"),
 });
 
 export function calculateWordsToday(
