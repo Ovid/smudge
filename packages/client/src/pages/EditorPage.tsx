@@ -125,9 +125,10 @@ export function EditorPage() {
     };
   }, []);
 
-  // Fetch last session for status bar
+  // Fetch last session for status bar (on load and after each successful save)
   useEffect(() => {
     if (!slug) return;
+    if (saveStatus !== "saved" && saveStatus !== "idle") return;
     let cancelled = false;
     api.projects
       .velocity(slug)
@@ -143,7 +144,7 @@ export function EditorPage() {
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slug, saveStatus]);
 
   useEffect(() => {
     const dialog = shortcutDialogRef.current;
