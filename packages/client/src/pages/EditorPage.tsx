@@ -735,6 +735,7 @@ export function EditorPage() {
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <ProjectSettingsDialog
+        key={project.slug}
         open={projectSettingsOpen}
         project={project}
         onClose={() => setProjectSettingsOpen(false)}

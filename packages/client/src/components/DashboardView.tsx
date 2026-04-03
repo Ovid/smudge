@@ -105,7 +105,7 @@ export function DashboardView({
     return (
       <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
         {tabBar}
-        <VelocityView slug={slug} />
+        <VelocityView slug={slug} refreshKey={refreshKey} />
       </div>
     );
   }

@@ -10,6 +10,7 @@ import { RecentSessions } from "./RecentSessions";
 
 interface VelocityViewProps {
   slug: string;
+  refreshKey?: number;
 }
 
 function computeDailyNetWords(
@@ -30,7 +31,7 @@ function computeDailyNetWords(
   return result;
 }
 
-export function VelocityView({ slug }: VelocityViewProps) {
+export function VelocityView({ slug, refreshKey }: VelocityViewProps) {
   const [data, setData] = useState<VelocityResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now] = useState(() => Date.now());
@@ -54,7 +55,7 @@ export function VelocityView({ slug }: VelocityViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slug, refreshKey]);
 
   if (error) {
     return (
