@@ -51,11 +51,11 @@ export function settingsRouter(db: Knex): Router {
       }
 
       if (Object.keys(errors).length > 0) {
+        const messages = Object.values(errors).join("; ");
         res.status(400).json({
           error: {
             code: "VALIDATION_ERROR",
-            message: "Invalid settings",
-            details: errors,
+            message: `Invalid settings: ${messages}`,
           },
         });
         return;
