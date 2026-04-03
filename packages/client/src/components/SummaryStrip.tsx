@@ -9,6 +9,7 @@ interface SummaryStripProps {
   daysRemaining: number | null;
   projection: VelocityResponse["projection"];
   completion: VelocityResponse["completion"];
+  currentTotal: number;
 }
 
 function MetricCard({ label, value }: { label: string; value: string }) {
@@ -28,6 +29,7 @@ export function SummaryStrip({
   daysRemaining,
   projection,
   completion,
+  currentTotal,
 }: SummaryStripProps) {
   return (
     <section className="flex flex-wrap gap-6 mb-8" aria-label={STRINGS.velocity.summaryLabel}>
@@ -63,7 +65,7 @@ export function SummaryStrip({
       {projection.target_word_count !== null && (
         <MetricCard
           label={STRINGS.velocity.target}
-          value={projection.target_word_count.toLocaleString()}
+          value={`${currentTotal.toLocaleString()} / ${projection.target_word_count.toLocaleString()} (${Math.round((currentTotal / projection.target_word_count) * 100)}%)`}
         />
       )}
 
@@ -74,7 +76,7 @@ export function SummaryStrip({
       {completion.total_chapters > 0 && (
         <MetricCard
           label={STRINGS.velocity.chaptersComplete}
-          value={`${completion.completed_chapters} of ${completion.total_chapters}`}
+          value={`${completion.completed_chapters} of ${completion.total_chapters}${completion.threshold_status ? ` ${STRINGS.velocity.atOrBeyond(completion.threshold_status)}` : ""}`}
         />
       )}
     </section>
