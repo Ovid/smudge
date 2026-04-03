@@ -126,9 +126,12 @@ export function EditorPage() {
   }, []);
 
   // Fetch last session for status bar (on load and after each successful save)
+  const hasFetchedInitial = useRef(false);
   useEffect(() => {
     if (!slug) return;
-    if (saveStatus !== "saved" && saveStatus !== "idle") return;
+    const isInitialLoad = !hasFetchedInitial.current;
+    if (!isInitialLoad && saveStatus !== "saved") return;
+    hasFetchedInitial.current = true;
     let cancelled = false;
     api.projects
       .velocity(slug)
