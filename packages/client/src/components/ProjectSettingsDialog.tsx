@@ -35,6 +35,7 @@ export function ProjectSettingsDialog({
   );
   const [deadline, setDeadline] = useState(project.target_deadline ?? "");
   const [threshold, setThreshold] = useState(project.completion_threshold ?? "final");
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -58,11 +59,17 @@ export function ProjectSettingsDialog({
   }, [open]);
 
   async function saveField(data: Parameters<typeof api.projects.update>[1]) {
+    setSaveError(null);
     try {
       await api.projects.update(project.slug, data);
       onUpdate();
     } catch (err) {
       console.error("Failed to save project setting:", err);
+      setSaveError(STRINGS.projectSettings.saveError);
+      // Revert local state to match the last-known persisted values
+      setWordCountTarget(project.target_word_count != null ? String(project.target_word_count) : "");
+      setDeadline(project.target_deadline ?? "");
+      setThreshold(project.completion_threshold ?? "final");
     }
   }
 
@@ -106,6 +113,12 @@ export function ProjectSettingsDialog({
           ✕
         </button>
       </div>
+
+      {saveError && (
+        <p className="mb-4 text-sm text-status-error" role="alert">
+          {saveError}
+        </p>
+      )}
 
       <div className="flex flex-col gap-4">
         <div>

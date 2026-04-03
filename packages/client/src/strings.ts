@@ -205,5 +205,6 @@ export const STRINGS = {
     thresholdRevised: "Revised",
     thresholdEdited: "Edited",
     thresholdFinal: "Final",
+    saveError: "Failed to save. Please try again.",
   },
 } as const;
