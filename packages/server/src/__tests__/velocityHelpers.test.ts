@@ -21,7 +21,11 @@ describe("upsertDailySnapshot error handling", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const fakeDb = Object.assign(
       () => ({ where: () => ({ first: () => Promise.resolve(null) }) }),
-      { raw: () => { throw new Error("DB write failed"); } },
+      {
+        raw: () => {
+          throw new Error("DB write failed");
+        },
+      },
     ) as unknown as import("knex").Knex;
     await expect(upsertDailySnapshot(fakeDb, "p1")).resolves.toBeUndefined();
     expect(spy).toHaveBeenCalledWith(

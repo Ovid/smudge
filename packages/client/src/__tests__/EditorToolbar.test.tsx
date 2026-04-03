@@ -73,24 +73,19 @@ describe("EditorToolbar", () => {
   });
 
   it("reflects active state for all toggle buttons", () => {
-    const editor = createMockEditor([
-      "italic",
-      "heading",
-      "bulletList",
-      "orderedList",
-    ]);
+    const editor = createMockEditor(["italic", "heading", "bulletList", "orderedList"]);
     const { container } = render(<EditorToolbar editor={editor} />);
     const toolbar = container.querySelector("[role='toolbar']") as HTMLElement;
 
     expect(
       within(toolbar).getByRole("button", { name: "Italic" }).getAttribute("aria-pressed"),
     ).toBe("true");
-    expect(
-      within(toolbar).getByRole("button", { name: "H3" }).getAttribute("aria-pressed"),
-    ).toBe("true");
-    expect(
-      within(toolbar).getByRole("button", { name: "List" }).getAttribute("aria-pressed"),
-    ).toBe("true");
+    expect(within(toolbar).getByRole("button", { name: "H3" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(within(toolbar).getByRole("button", { name: "List" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
     expect(
       within(toolbar).getByRole("button", { name: "Numbered" }).getAttribute("aria-pressed"),
     ).toBe("true");
