@@ -61,7 +61,10 @@ export function SummaryStrip({
       )}
 
       {projection.target_word_count !== null && (
-        <MetricCard label={STRINGS.velocity.target} value={projection.target_word_count.toLocaleString()} />
+        <MetricCard
+          label={STRINGS.velocity.target}
+          value={projection.target_word_count.toLocaleString()}
+        />
       )}
 
       {projection.target_deadline !== null && daysRemaining !== null && (
