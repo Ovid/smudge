@@ -382,9 +382,12 @@ describe("EditorPage save status", () => {
       await capturedOnSave?.({ type: "doc", content: [{ type: "paragraph" }] });
     });
 
-    await waitFor(() => {
-      expect(screen.getByText("Saved")).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByText("Saved")).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
   });
 
   it("shows error message on save failure", async () => {

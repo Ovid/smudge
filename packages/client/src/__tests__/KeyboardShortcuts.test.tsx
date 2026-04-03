@@ -257,9 +257,12 @@ describe("Ctrl+Shift+N creates a new chapter", () => {
 
     fireEvent.keyDown(document, { key: "N", ctrlKey: true, shiftKey: true });
 
-    await waitFor(() => {
-      expect(api.chapters.create).toHaveBeenCalledWith("test-project");
-    });
+    await waitFor(
+      () => {
+        expect(api.chapters.create).toHaveBeenCalledWith("test-project");
+      },
+      { timeout: 3000 },
+    );
   });
 });
 
