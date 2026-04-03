@@ -5,7 +5,7 @@ const originalProcessEmitWarning = process.emitWarning;
 process.emitWarning = function (warning: string | Error, ...args: unknown[]) {
   const msg = typeof warning === "string" ? warning : warning.message;
   if (msg.includes("--localstorage-file")) return;
-  return (originalProcessEmitWarning as Function).call(this, warning, ...args);
+  return (originalProcessEmitWarning as (...a: unknown[]) => void).call(this, warning, ...args);
 };
 
 // Polyfill HTMLDialogElement.showModal/close for happy-dom
