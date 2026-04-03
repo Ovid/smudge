@@ -95,7 +95,7 @@ describe("App", () => {
       deleted_at: null,
       target_word_count: null,
       target_deadline: null,
-      completion_threshold: "100",
+      completion_threshold: "final",
       chapters: [
         {
           id: "ch-1",

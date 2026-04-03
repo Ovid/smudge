@@ -124,7 +124,7 @@ describe("HomePage", () => {
       mode: "fiction",
       target_word_count: null,
       target_deadline: null,
-      completion_threshold: "100",
+      completion_threshold: "final",
       created_at: "",
       updated_at: "",
       deleted_at: null,
