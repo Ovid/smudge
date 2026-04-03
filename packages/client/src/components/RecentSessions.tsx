@@ -8,7 +8,7 @@ interface RecentSessionsProps {
 export function RecentSessions({ sessions }: RecentSessionsProps) {
   if (sessions.length === 0) return null;
 
-  const recentFive = sessions.slice(0, 5);
+  const recentFive = sessions.slice(-5).reverse();
 
   return (
     <section className="mb-8">
