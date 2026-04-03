@@ -167,6 +167,8 @@ export const STRINGS = {
     netWords: "net words",
     chartDailyLabel: "Daily word count over the last 30 days",
     chartBurndownLabel: "Burndown chart comparing planned pace vs actual pace",
+    summaryLabel: "Velocity summary",
+    target: "Target",
     noAverage: "\u2014",
     noProjection: "\u2014",
     lastSession: "Last session",
