@@ -47,8 +47,33 @@ export function deriveSessions(
   }
   sessionGroups.push(currentGroup);
 
-  // For each session, calculate net_words using baselines from before the session
-  return sessionGroups.map((group) => {
+  // Build per-chapter baseline tracking: walk all events once,
+  // recording the last word_count seen per chapter before each session starts.
+  // This replaces the previous O(n²) approach of scanning backwards per chapter per session.
+  const lastSeenWordCount: Record<string, number> = { ...preWindowBaselines };
+  // Pre-build a set of session start indices for quick lookup
+  const sessionStartIndices = new Set<number>();
+  let idx = 0;
+  for (const group of sessionGroups) {
+    sessionStartIndices.add(idx);
+    idx += group.length;
+  }
+
+  // Single pass: snapshot baselines at each session boundary
+  const sessionBaselines: Record<string, number>[] = [];
+  let eventIdx = 0;
+  for (const group of sessionGroups) {
+    // Capture baselines before this session starts
+    sessionBaselines.push({ ...lastSeenWordCount });
+    // Update lastSeenWordCount with all events in this session
+    for (const evt of group) {
+      lastSeenWordCount[evt.chapter_id] = evt.word_count;
+      eventIdx++;
+    }
+  }
+
+  // For each session, calculate net_words using precomputed baselines
+  return sessionGroups.map((group, groupIdx) => {
     const groupFirst = group[0];
     const groupLast = group[group.length - 1];
     if (!groupFirst || !groupLast) {
@@ -65,29 +90,19 @@ export function deriveSessions(
     const durationMs = new Date(end).getTime() - new Date(start).getTime();
     const durationMinutes = Math.round(durationMs / 60000);
 
-    const chapterIds = [...new Set(group.map((e) => e.chapter_id))];
+    // Track last event per chapter in this session and unique chapter IDs
+    const lastInSessionByChapter: Record<string, SaveEvent> = {};
+    for (const evt of group) {
+      lastInSessionByChapter[evt.chapter_id] = evt;
+    }
+    const chapterIds = Object.keys(lastInSessionByChapter);
 
-    // Calculate net_words per chapter
+    // Calculate net_words using precomputed baselines
+    const baselines = sessionBaselines[groupIdx]!;
     let netWords = 0;
     for (const chapterId of chapterIds) {
-      const chapterEventsInSession = group.filter((e) => e.chapter_id === chapterId);
-      const lastInSession = chapterEventsInSession[chapterEventsInSession.length - 1];
-      if (!lastInSession) continue;
-
-      // Find baseline: most recent event for this chapter BEFORE session start
-      // Falls back to pre-window baseline for chapters with history older than the query window
-      const sessionStartTime = new Date(start).getTime();
-      let baseline = preWindowBaselines[chapterId] ?? 0;
-      const groupStartIndex = events.indexOf(groupFirst);
-      for (let i = groupStartIndex - 1; i >= 0; i--) {
-        const evt = events[i];
-        if (!evt) continue;
-        if (evt.chapter_id === chapterId && new Date(evt.saved_at).getTime() < sessionStartTime) {
-          baseline = evt.word_count;
-          break;
-        }
-      }
-
+      const lastInSession = lastInSessionByChapter[chapterId]!;
+      const baseline = baselines[chapterId] ?? 0;
       netWords += lastInSession.word_count - baseline;
     }
 

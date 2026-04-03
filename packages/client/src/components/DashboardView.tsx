@@ -77,7 +77,9 @@ export function DashboardView({
     >
       <button
         role="tab"
+        id="tab-velocity"
         aria-selected={activeTab === "velocity"}
+        aria-controls="tabpanel-velocity"
         onClick={() => setActiveTab("velocity")}
         className={`text-sm font-medium rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
           activeTab === "velocity"
@@ -89,7 +91,9 @@ export function DashboardView({
       </button>
       <button
         role="tab"
+        id="tab-chapters"
         aria-selected={activeTab === "chapters"}
+        aria-controls="tabpanel-chapters"
         onClick={() => setActiveTab("chapters")}
         className={`text-sm font-medium rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
           activeTab === "chapters"
@@ -106,7 +110,9 @@ export function DashboardView({
     return (
       <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
         {tabBar}
-        <VelocityView slug={slug} refreshKey={refreshKey} />
+        <div role="tabpanel" id="tabpanel-velocity" aria-labelledby="tab-velocity">
+          <VelocityView slug={slug} refreshKey={refreshKey} />
+        </div>
       </div>
     );
   }
@@ -116,8 +122,10 @@ export function DashboardView({
     return (
       <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
         {tabBar}
-        <div className="flex items-center justify-center py-16">
-          <p className="text-status-error">{error}</p>
+        <div role="tabpanel" id="tabpanel-chapters" aria-labelledby="tab-chapters">
+          <div className="flex items-center justify-center py-16">
+            <p className="text-status-error">{error}</p>
+          </div>
         </div>
       </div>
     );
@@ -127,8 +135,10 @@ export function DashboardView({
     return (
       <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
         {tabBar}
-        <div className="flex items-center justify-center py-16">
-          <p className="text-text-muted">{STRINGS.nav.loading}</p>
+        <div role="tabpanel" id="tabpanel-chapters" aria-labelledby="tab-chapters">
+          <div className="flex items-center justify-center py-16">
+            <p className="text-text-muted">{STRINGS.nav.loading}</p>
+          </div>
         </div>
       </div>
     );
@@ -186,7 +196,7 @@ export function DashboardView({
   return (
     <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
       {tabBar}
-
+      <div role="tabpanel" id="tabpanel-chapters" aria-labelledby="tab-chapters">
       {chapters.length === 0 ? (
         <div data-testid="dashboard-empty">
           <p className="text-text-muted mb-2">{STRINGS.dashboard.emptyState}</p>
@@ -340,6 +350,7 @@ export function DashboardView({
           </table>
         </>
       )}
+      </div>
     </div>
   );
 }

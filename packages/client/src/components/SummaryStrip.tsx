@@ -68,7 +68,7 @@ export function SummaryStrip({
       {projection.target_word_count !== null && (
         <MetricCard
           label={STRINGS.velocity.target}
-          value={`${currentTotal.toLocaleString()} / ${projection.target_word_count.toLocaleString()} (${Math.round((currentTotal / projection.target_word_count) * 100)}%)`}
+          value={`${currentTotal.toLocaleString()} / ${projection.target_word_count.toLocaleString()}${projection.target_word_count > 0 ? ` (${Math.round((currentTotal / projection.target_word_count) * 100)}%)` : ""}`}
         />
       )}
 
