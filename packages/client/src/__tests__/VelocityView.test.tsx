@@ -42,6 +42,8 @@ const mockVelocity = {
     completed_chapters: 7,
   },
   today: "2026-04-01",
+  current_total: 41200,
+  chapter_names: { ch1: "Chapter 1", ch2: "Chapter 2" },
 };
 
 describe("VelocityView", () => {
@@ -79,6 +81,8 @@ describe("VelocityView", () => {
       },
       completion: { threshold_status: "final", total_chapters: 0, completed_chapters: 0 },
       today: "2026-04-01",
+      current_total: 0,
+      chapter_names: {},
     });
     render(<VelocityView slug="test" />);
     await waitFor(() => {
@@ -173,7 +177,7 @@ describe("VelocityView", () => {
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
   });
 
-  it("renders singular chapter text in recent sessions", async () => {
+  it("renders chapter name in recent sessions", async () => {
     vi.mocked(api.projects.velocity).mockResolvedValue({
       ...mockVelocity,
       sessions: [
@@ -188,7 +192,7 @@ describe("VelocityView", () => {
     });
     render(<VelocityView slug="test" />);
     await waitFor(() => {
-      expect(screen.getByText(/1 chapter/)).toBeInTheDocument();
+      expect(screen.getByText(/Chapter 1/)).toBeInTheDocument();
     });
   });
 
