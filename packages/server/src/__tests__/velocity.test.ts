@@ -19,15 +19,15 @@ const t = setupTestDb();
 /** Return an ISO timestamp for N days ago at a given hour (UTC) */
 function daysAgoAt(n: number, hour: number, minute = 0): string {
   const d = new Date();
-  d.setDate(d.getDate() - n);
+  d.setUTCDate(d.getUTCDate() - n);
   d.setUTCHours(hour, minute, 0, 0);
   return d.toISOString();
 }
 
-/** Return a YYYY-MM-DD date string for N days ago */
+/** Return a YYYY-MM-DD date string for N days ago (UTC, matches server default) */
 function daysAgoDate(n: number): string {
   const d = new Date();
-  d.setDate(d.getDate() - n);
+  d.setUTCDate(d.getUTCDate() - n);
   return d.toISOString().slice(0, 10);
 }
 
