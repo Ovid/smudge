@@ -86,17 +86,18 @@ When sorting by timestamp (e.g., `updated_at DESC`), records created in the same
 
 Mock data must match production schemas. If a field is an enum (`outline|rough_draft|revised|edited|final`), don't use arbitrary values like `"100"`. Invalid mock data causes tests to pass in isolation but fail when validation is tightened.
 
-### 7. Silence expected console noise
+### 7. Assert (not just silence) expected console errors
 
-When testing error paths that intentionally `console.error`, spy and suppress:
+When testing error paths, spy on `console.error`, **assert it was called**, then restore. Don't just suppress — if you only suppress, the spy becomes dead code when the error path changes and nobody notices.
 
 ```typescript
 const spy = vi.spyOn(console, "error").mockImplementation(() => {});
 // ... test error path ...
+expect(spy).toHaveBeenCalledOnce();
 spy.mockRestore();
 ```
 
-This keeps test output clean and makes real errors visible.
+This keeps output clean AND ensures the error path is actually exercised.
 
 ### 8. Mock environment-dependent modules
 
@@ -124,5 +125,5 @@ Coverage thresholds are enforced (95% statements, 85% branches, 90% functions, 9
 | State update missed by assertion | Wrap trigger in `act(async ...)` |
 | ECONNRESET in server tests | Reuse single `http.Server` via `setupTestDb()` |
 | Non-deterministic sort order | Add monotonic tiebreaker column |
-| Console noise from error paths | `vi.spyOn(console, "error").mockImplementation(() => {})` |
+| Console noise from error paths | Spy, assert called, then `mockRestore()` |
 | Mock data doesn't match schema | Use valid enum values from production types |
