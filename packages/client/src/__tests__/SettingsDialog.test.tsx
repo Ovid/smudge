@@ -64,6 +64,20 @@ describe("SettingsDialog", () => {
     expect(container.innerHTML).toBe("");
   });
 
+  it("shows error message when save fails", async () => {
+    vi.mocked(api.settings.update).mockRejectedValue(new Error("Network error"));
+    const user = userEvent.setup();
+    render(<SettingsDialog open={true} onClose={onClose} />);
+    await waitFor(() => screen.getByLabelText(/timezone/i));
+
+    await user.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(/failed to save/i);
+    });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("falls back to UTC when settings fetch fails", async () => {
     vi.mocked(api.settings.get).mockRejectedValue(new Error("Network error"));
     render(<SettingsDialog open={true} onClose={onClose} />);
