@@ -254,7 +254,9 @@ export function velocityHandler(db: Knex) {
           (new Date(newest.date).getTime() - new Date(oldest.date).getTime()) /
           (1000 * 60 * 60 * 24);
         if (daysBetween > 0) {
-          dailyAvg30d = (newest.total_word_count - oldest.total_word_count) / daysBetween;
+          dailyAvg30d = Math.round(
+            (newest.total_word_count - oldest.total_word_count) / daysBetween,
+          );
         }
       }
     }
