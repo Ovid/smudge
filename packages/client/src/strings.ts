@@ -172,6 +172,7 @@ export const STRINGS = {
     noAverage: "\u2014",
     noProjection: "\u2014",
     lastSession: "Last session",
+    lessThanOneMin: "< 1 min",
     chapterSingular: "chapter",
     chapterPlural: "chapters",
     columnDate: "Date",

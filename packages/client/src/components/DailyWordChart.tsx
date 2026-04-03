@@ -1,12 +1,4 @@
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
-} from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import type { RectangleProps } from "recharts";
 import { STRINGS } from "../strings";
 import { useReducedMotion } from "../hooks/useReducedMotion";
@@ -59,11 +51,7 @@ export function DailyWordChart({ data, dailyAverage }: DailyWordChartProps) {
           <Tooltip
             formatter={(value) => [Number(value ?? 0).toLocaleString(), STRINGS.velocity.netWords]}
           />
-          <Bar
-            dataKey="net_words"
-            isAnimationActive={!prefersReducedMotion}
-            shape={<WordBar />}
-          />
+          <Bar dataKey="net_words" isAnimationActive={!prefersReducedMotion} shape={<WordBar />} />
           {dailyAverage > 0 && (
             <ReferenceLine
               y={dailyAverage}

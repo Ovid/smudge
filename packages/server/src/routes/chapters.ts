@@ -102,13 +102,17 @@ export function chaptersRouter(db: Knex): Router {
 
       // Fire velocity side-effects (best-effort, after the main save transaction succeeds)
       if (parsed.data.content !== undefined) {
-        await insertSaveEvent(
-          db,
-          chapter.id as string,
-          chapter.project_id,
-          updates.word_count as number,
-        );
-        await upsertDailySnapshot(db, chapter.project_id);
+        try {
+          await insertSaveEvent(
+            db,
+            chapter.id as string,
+            chapter.project_id,
+            updates.word_count as number,
+          );
+          await upsertDailySnapshot(db, chapter.project_id);
+        } catch {
+          // Best-effort: don't let velocity tracking failures affect save response
+        }
       }
 
       const updated = await queryChapter(

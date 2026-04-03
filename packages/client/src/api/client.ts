@@ -6,6 +6,7 @@ import type {
   ChapterStatusRow,
   CreateProjectInput,
   ApiError,
+  CompletionThresholdValue,
 } from "@smudge/shared";
 
 export interface VelocityResponse {
@@ -25,7 +26,7 @@ export interface VelocityResponse {
     daily_average_30d: number;
   };
   completion: {
-    threshold_status: string | null;
+    threshold_status: CompletionThresholdValue | null;
     total_chapters: number;
     completed_chapters: number;
   };
@@ -83,7 +84,7 @@ export const api = {
         title?: string;
         target_word_count?: number | null;
         target_deadline?: string | null;
-        completion_threshold?: string;
+        completion_threshold?: CompletionThresholdValue;
       },
     ) =>
       apiFetch<Project>(`/projects/${slug}`, {

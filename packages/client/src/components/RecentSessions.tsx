@@ -26,7 +26,7 @@ export function RecentSessions({ sessions }: RecentSessionsProps) {
 
           return (
             <li key={i} className="text-sm text-text-secondary font-sans">
-              {dateStr} &middot; {session.duration_minutes} min &middot; {sign}
+              {dateStr} &middot; {session.duration_minutes > 0 ? `${session.duration_minutes} min` : STRINGS.velocity.lessThanOneMin} &middot; {sign}
               {session.net_words.toLocaleString()} {STRINGS.velocity.netWords} &middot;{" "}
               {session.chapters_touched.length}{" "}
               {session.chapters_touched.length === 1

@@ -44,6 +44,10 @@ export function ChapterTargetPopover({
     // Skip save when focus is moving to the Clear button to avoid racing PATCHes
     const related = e.relatedTarget as HTMLElement | null;
     if (related?.dataset.clearWordCount) return;
+    if (draft.trim() === "") {
+      handleSave(null);
+      return;
+    }
     const parsed = parseInt(draft, 10);
     if (!isNaN(parsed) && parsed > 0) {
       handleSave(parsed);
