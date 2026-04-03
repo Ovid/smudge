@@ -24,6 +24,7 @@ export interface Chapter {
   content: Record<string, unknown> | null;
   sort_order: number;
   word_count: number;
+  target_word_count: number | null;
   status: string;
   status_label?: string;
   created_at: string;
