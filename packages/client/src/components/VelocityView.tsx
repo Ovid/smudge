@@ -16,8 +16,11 @@ interface VelocityViewProps {
 function computeDailyNetWords(
   snapshots: Array<{ date: string; total_word_count: number }>,
 ): Array<{ date: string; net_words: number }> {
-  if (snapshots.length < 2) return [];
+  if (snapshots.length === 0) return [];
   const sorted = [...snapshots].sort((a, b) => a.date.localeCompare(b.date));
+  if (sorted.length === 1) {
+    return [{ date: sorted[0]!.date, net_words: sorted[0]!.total_word_count }];
+  }
   const result: Array<{ date: string; net_words: number }> = [];
   for (let i = 1; i < sorted.length; i++) {
     const current = sorted[i];
@@ -110,6 +113,7 @@ export function VelocityView({ slug, refreshKey }: VelocityViewProps) {
         daysRemaining={daysRemaining}
         projection={data.projection}
         completion={data.completion}
+        currentTotal={currentTotal}
       />
 
       <DailyWordChart data={dailyNetWords} dailyAverage={data.projection.daily_average_30d} />
