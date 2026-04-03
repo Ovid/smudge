@@ -1,9 +1,18 @@
 import type { Knex } from "knex";
 import { v4 as uuid } from "uuid";
 
+export function safeTimezone(tz: string): string {
+  try {
+    Intl.DateTimeFormat("en-CA", { timeZone: tz });
+    return tz;
+  } catch {
+    return "UTC";
+  }
+}
+
 export async function getTodayDate(db: Knex): Promise<string> {
   const row = await db("settings").where({ key: "timezone" }).first();
-  const tz = row?.value || "UTC";
+  const tz = safeTimezone(row?.value || "UTC");
   const now = new Date();
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: tz,

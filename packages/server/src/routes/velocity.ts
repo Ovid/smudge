@@ -1,6 +1,6 @@
 import type { Knex } from "knex";
 import { asyncHandler } from "../app";
-import { getTodayDate } from "./velocityHelpers";
+import { getTodayDate, safeTimezone } from "./velocityHelpers";
 
 interface SaveEvent {
   id: string;
@@ -203,7 +203,7 @@ export function velocityHandler(db: Knex) {
 
     // Get timezone
     const tzRow = await db("settings").where({ key: "timezone" }).first();
-    const tz = tzRow?.value || "UTC";
+    const tz = safeTimezone(tzRow?.value || "UTC");
 
     const today = await getTodayDate(db);
 
