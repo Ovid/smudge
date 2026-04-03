@@ -65,6 +65,7 @@ describe("SettingsDialog", () => {
   });
 
   it("shows error message when save fails", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(api.settings.update).mockRejectedValue(new Error("Network error"));
     const user = userEvent.setup();
     render(<SettingsDialog open={true} onClose={onClose} />);
@@ -76,6 +77,7 @@ describe("SettingsDialog", () => {
       expect(screen.getByRole("alert")).toHaveTextContent(/failed to save/i);
     });
     expect(onClose).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 
   it("falls back to UTC when settings fetch fails", async () => {

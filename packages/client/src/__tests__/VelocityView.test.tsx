@@ -148,19 +148,23 @@ describe("VelocityView", () => {
   });
 
   it("shows error state when API rejects with an Error", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(api.projects.velocity).mockRejectedValue(new Error("Network failure"));
     render(<VelocityView slug="test" />);
     await waitFor(() => {
       expect(screen.getByText("Network failure")).toBeInTheDocument();
     });
+    spy.mockRestore();
   });
 
   it("shows error state when API rejects with a non-Error", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(api.projects.velocity).mockRejectedValue("string error");
     render(<VelocityView slug="test" />);
     await waitFor(() => {
       expect(screen.getByText(/failed to load velocity data/i)).toBeInTheDocument();
     });
+    spy.mockRestore();
   });
 
   it("shows loading state initially", () => {

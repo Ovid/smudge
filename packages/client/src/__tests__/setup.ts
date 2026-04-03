@@ -1,5 +1,13 @@
 import "@testing-library/jest-dom/vitest";
 
+// Suppress Node 22+ --localstorage-file warning from jsdom worker threads
+const originalProcessEmitWarning = process.emitWarning;
+process.emitWarning = function (warning: string | Error, ...args: unknown[]) {
+  const msg = typeof warning === "string" ? warning : warning.message;
+  if (msg.includes("--localstorage-file")) return;
+  return (originalProcessEmitWarning as Function).call(this, warning, ...args);
+};
+
 // Polyfill HTMLDialogElement.showModal/close for happy-dom
 if (typeof HTMLDialogElement !== "undefined") {
   HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
