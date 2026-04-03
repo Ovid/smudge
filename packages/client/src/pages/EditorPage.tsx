@@ -691,7 +691,7 @@ export function EditorPage() {
                 <span className="text-text-muted">{STRINGS.editor.saving}</span>
               )}
               {saveStatus === "saved" && (
-                <span className="text-status-success/70">{STRINGS.editor.saved}</span>
+                <span className="text-status-success">{STRINGS.editor.saved}</span>
               )}
               {saveStatus === "error" && (
                 <span className="text-status-error">

@@ -12,9 +12,9 @@ export function RecentSessions({ sessions }: RecentSessionsProps) {
 
   return (
     <section className="mb-8">
-      <h3 className="text-sm font-medium text-text-muted font-sans uppercase tracking-wide mb-3">
+      <h2 className="text-sm font-medium text-text-muted font-sans uppercase tracking-wide mb-3">
         {STRINGS.velocity.recentSessions}
-      </h3>
+      </h2>
       <ol className="space-y-2">
         {recentFive.map((session, i) => {
           const date = new Date(session.start);
