@@ -98,8 +98,7 @@ export function VelocityView({ slug, refreshKey }: VelocityViewProps) {
         ),
       )
     : null;
-  const lastSnapshot = data.daily_snapshots[data.daily_snapshots.length - 1];
-  const currentTotal = lastSnapshot ? lastSnapshot.total_word_count : 0;
+  const currentTotal = data.current_total;
   const wordsToday = calculateWordsToday(currentTotal, data.daily_snapshots, today);
   const dailyNetWords = computeDailyNetWords(data.daily_snapshots);
   const sortedSnapshots = [...data.daily_snapshots].sort((a, b) => a.date.localeCompare(b.date));
@@ -127,7 +126,7 @@ export function VelocityView({ slug, refreshKey }: VelocityViewProps) {
         startDate={startDate}
       />
 
-      <RecentSessions sessions={data.sessions} />
+      <RecentSessions sessions={data.sessions} chapterNames={data.chapter_names} />
     </div>
   );
 }

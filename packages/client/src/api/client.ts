@@ -31,6 +31,8 @@ export interface VelocityResponse {
     completed_chapters: number;
   };
   today: string;
+  current_total: number;
+  chapter_names: Record<string, string>;
 }
 
 const BASE = "/api";

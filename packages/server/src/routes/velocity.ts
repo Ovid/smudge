@@ -311,7 +311,7 @@ export function velocityHandler(db: Knex) {
     const chapters = await db("chapters")
       .where({ project_id: project.id })
       .whereNull("deleted_at")
-      .select("id", "status");
+      .select("id", "title", "status");
 
     let completedChapters = 0;
     if (completionThreshold) {
@@ -342,6 +342,12 @@ export function velocityHandler(db: Knex) {
       completed_chapters: completedChapters,
     };
 
+    // Build chapter ID → title map for client display
+    const chapterNames: Record<string, string> = {};
+    for (const ch of chapters) {
+      chapterNames[ch.id] = ch.title;
+    }
+
     res.json({
       daily_snapshots: dailySnapshots,
       sessions,
@@ -349,6 +355,8 @@ export function velocityHandler(db: Knex) {
       projection,
       completion,
       today,
+      current_total: currentTotal,
+      chapter_names: chapterNames,
     });
   });
 }
