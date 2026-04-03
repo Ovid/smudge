@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, cleanup } from "@testing-library/react";
 import { VelocityView } from "../components/VelocityView";
-import { api } from "../api/client";
+import { api, type VelocityResponse } from "../api/client";
 
 vi.mock("../api/client", () => ({
   api: {
@@ -15,7 +15,7 @@ afterEach(() => {
   cleanup();
 });
 
-const mockVelocity = {
+const mockVelocity: VelocityResponse = {
   daily_snapshots: [
     { date: "2026-03-31", total_word_count: 40000 },
     { date: "2026-04-01", total_word_count: 41200 },
@@ -69,7 +69,7 @@ describe("VelocityView", () => {
   });
 
   it("shows empty state when no data", async () => {
-    vi.mocked(api.projects.velocity).mockResolvedValue({
+    const emptyData: VelocityResponse = {
       daily_snapshots: [],
       sessions: [],
       streak: { current: 0, best: 0 },
@@ -83,7 +83,8 @@ describe("VelocityView", () => {
       today: "2026-04-01",
       current_total: 0,
       chapter_names: {},
-    });
+    };
+    vi.mocked(api.projects.velocity).mockResolvedValue(emptyData);
     render(<VelocityView slug="test" />);
     await waitFor(() => {
       expect(screen.getByText(/start writing/i)).toBeInTheDocument();
