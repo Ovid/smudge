@@ -54,23 +54,12 @@ export async function upsertDailySnapshot(db: Knex, projectId: string): Promise<
       .sum("word_count as total");
     const totalWordCount = Number(result[0]?.total) || 0;
 
-    const existing = await db("daily_snapshots")
-      .where({ project_id: projectId, date: today })
-      .first();
-
-    if (existing) {
-      await db("daily_snapshots")
-        .where({ id: existing.id })
-        .update({ total_word_count: totalWordCount });
-    } else {
-      await db("daily_snapshots").insert({
-        id: uuid(),
-        project_id: projectId,
-        date: today,
-        total_word_count: totalWordCount,
-        created_at: new Date().toISOString(),
-      });
-    }
+    await db.raw(
+      `INSERT INTO daily_snapshots (id, project_id, date, total_word_count, created_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(project_id, date) DO UPDATE SET total_word_count = excluded.total_word_count`,
+      [uuid(), projectId, today, totalWordCount, new Date().toISOString()],
+    );
   } catch (err) {
     console.error(`Failed to upsert daily snapshot for project=${projectId}:`, err);
   }
