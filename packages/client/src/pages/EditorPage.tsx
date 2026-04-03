@@ -231,6 +231,27 @@ export function EditorPage() {
     }
   }
 
+  // Use refs so the keydown handler always reads current state without
+  // needing to be re-registered on every state change. This eliminates a
+  // stale-closure race where the handler fires between a render and the
+  // effect that would re-register it with updated values.
+  const shortcutHelpOpenRef = useRef(shortcutHelpOpen);
+  shortcutHelpOpenRef.current = shortcutHelpOpen;
+  const deleteTargetRef = useRef(deleteTarget);
+  deleteTargetRef.current = deleteTarget;
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
+  const activeChapterRef = useRef(activeChapter);
+  activeChapterRef.current = activeChapter;
+  const projectRef = useRef(project);
+  projectRef.current = project;
+  const chapterWordCountRef = useRef(chapterWordCount);
+  chapterWordCountRef.current = chapterWordCount;
+  const handleCreateChapterRef = useRef(handleCreateChapter);
+  handleCreateChapterRef.current = handleCreateChapter;
+  const handleSelectChapterWithFlushRef = useRef(handleSelectChapterWithFlush);
+  handleSelectChapterWithFlushRef.current = handleSelectChapterWithFlush;
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       const ctrl = e.ctrlKey || e.metaKey;
@@ -241,18 +262,18 @@ export function EditorPage() {
         return;
       }
 
-      if (shortcutHelpOpen && e.key === "Escape") {
+      if (shortcutHelpOpenRef.current && e.key === "Escape") {
         e.preventDefault();
         setShortcutHelpOpen(false);
         return;
       }
 
       // Don't process shortcuts when a dialog is open (focus trap)
-      if (shortcutHelpOpen || deleteTarget) return;
+      if (shortcutHelpOpenRef.current || deleteTargetRef.current) return;
 
       if (ctrl && e.shiftKey && e.key === "N") {
         e.preventDefault();
-        handleCreateChapter();
+        handleCreateChapterRef.current();
         return;
       }
 
@@ -267,7 +288,7 @@ export function EditorPage() {
         // Clear first so re-pressing announces again even if the count hasn't changed
         setWordCountAnnouncement("");
         requestAnimationFrame(() => {
-          setWordCountAnnouncement(STRINGS.project.wordCount(chapterWordCount));
+          setWordCountAnnouncement(STRINGS.project.wordCount(chapterWordCountRef.current));
         });
         return;
       }
@@ -282,16 +303,18 @@ export function EditorPage() {
       }
 
       if (ctrl && e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
-        if (viewMode !== "editor" || !activeChapter || !project) return;
+        const currentProject = projectRef.current;
+        const currentChapter = activeChapterRef.current;
+        if (viewModeRef.current !== "editor" || !currentChapter || !currentProject) return;
         e.preventDefault();
-        const chapters = project.chapters;
-        const currentIndex = chapters.findIndex((c) => c.id === activeChapter.id);
+        const chapters = currentProject.chapters;
+        const currentIndex = chapters.findIndex((c) => c.id === currentChapter.id);
         if (currentIndex === -1) return;
         const nextIndex = e.key === "ArrowUp" ? currentIndex - 1 : currentIndex + 1;
         if (nextIndex < 0 || nextIndex >= chapters.length) return;
         const nextChapter = chapters[nextIndex];
         if (!nextChapter) return;
-        handleSelectChapterWithFlush(nextChapter.id);
+        handleSelectChapterWithFlushRef.current(nextChapter.id);
         setNavAnnouncement(STRINGS.sidebar.navigatedToChapter(nextChapter.title));
         setTimeout(() => setNavAnnouncement(""), 1000);
         return;
@@ -300,16 +323,7 @@ export function EditorPage() {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [
-    handleCreateChapter,
-    shortcutHelpOpen,
-    deleteTarget,
-    viewMode,
-    activeChapter,
-    project,
-    handleSelectChapterWithFlush,
-    chapterWordCount,
-  ]);
+  }, []);
 
   function startEditingTitle() {
     if (!activeChapter) return;
