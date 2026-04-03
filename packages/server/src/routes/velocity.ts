@@ -18,7 +18,10 @@ interface Session {
   net_words: number;
 }
 
-export function deriveSessions(events: SaveEvent[]): Session[] {
+export function deriveSessions(
+  events: SaveEvent[],
+  preWindowBaselines: Record<string, number> = {},
+): Session[] {
   if (events.length === 0) return [];
 
   const SESSION_GAP_MS = 30 * 60 * 1000; // 30 minutes
@@ -72,8 +75,9 @@ export function deriveSessions(events: SaveEvent[]): Session[] {
       if (!lastInSession) continue;
 
       // Find baseline: most recent event for this chapter BEFORE session start
+      // Falls back to pre-window baseline for chapters with history older than the query window
       const sessionStartTime = new Date(start).getTime();
-      let baseline = 0;
+      let baseline = preWindowBaselines[chapterId] ?? 0;
       const groupStartIndex = events.indexOf(groupFirst);
       for (let i = groupStartIndex - 1; i >= 0; i--) {
         const evt = events[i];
@@ -225,7 +229,23 @@ export function velocityHandler(db: Knex) {
       .orderBy("saved_at", "asc")
       .select("id", "chapter_id", "project_id", "word_count", "saved_at");
 
-    const sessions = deriveSessions(recentEvents);
+    // Fetch per-chapter baselines from immediately before the 30-day window
+    // to prevent inflated net_words for chapters with older history
+    const chapterIdsInWindow = [...new Set(recentEvents.map((e) => e.chapter_id))];
+    const preWindowBaselines: Record<string, number> = {};
+    for (const chapterId of chapterIdsInWindow) {
+      const baseline = await db("save_events")
+        .where({ project_id: project.id, chapter_id: chapterId })
+        .where("saved_at", "<", thirtyDaysAgoStr)
+        .orderBy("saved_at", "desc")
+        .first()
+        .select("word_count");
+      if (baseline) {
+        preWindowBaselines[chapterId] = baseline.word_count;
+      }
+    }
+
+    const sessions = deriveSessions(recentEvents, preWindowBaselines);
 
     // Use daily_snapshots for streak calculation (already one row per day,
     // dates are timezone-correct from getTodayDate). Avoids loading unbounded
