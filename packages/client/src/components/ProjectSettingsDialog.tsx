@@ -67,7 +67,9 @@ export function ProjectSettingsDialog({
       console.error("Failed to save project setting:", err);
       setSaveError(STRINGS.projectSettings.saveError);
       // Revert local state to match the last-known persisted values
-      setWordCountTarget(project.target_word_count != null ? String(project.target_word_count) : "");
+      setWordCountTarget(
+        project.target_word_count != null ? String(project.target_word_count) : "",
+      );
       setDeadline(project.target_deadline ?? "");
       setThreshold(project.completion_threshold ?? "final");
     }

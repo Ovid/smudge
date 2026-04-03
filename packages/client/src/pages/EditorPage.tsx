@@ -769,7 +769,10 @@ export function EditorPage() {
           setDashboardRefreshKey((k) => k + 1);
           // Re-fetch project to update local state with new settings
           if (slug) {
-            api.projects.get(slug).then((data) => setProject(data)).catch(() => {});
+            api.projects
+              .get(slug)
+              .then((data) => setProject(data))
+              .catch(() => {});
           }
         }}
       />

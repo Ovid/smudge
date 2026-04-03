@@ -33,7 +33,10 @@ export function SummaryStrip({
 }: SummaryStripProps) {
   return (
     <section className="flex flex-wrap gap-6 mb-8" aria-label={STRINGS.velocity.summaryLabel}>
-      <MetricCard label={STRINGS.velocity.wordsToday} value={`${wordsToday > 0 ? "+" : ""}${wordsToday.toLocaleString()}`} />
+      <MetricCard
+        label={STRINGS.velocity.wordsToday}
+        value={`${wordsToday > 0 ? "+" : ""}${wordsToday.toLocaleString()}`}
+      />
       <MetricCard
         label={STRINGS.velocity.dailyAverage}
         value={dailyAverage !== 0 ? dailyAverage.toLocaleString() : STRINGS.velocity.noAverage}
