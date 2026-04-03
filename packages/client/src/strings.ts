@@ -176,6 +176,7 @@ export const STRINGS = {
     timezoneLabel: "Timezone",
     save: "Save",
     cancel: "Cancel",
+    saveError: "Failed to save settings. Please try again.",
   },
   projectSettings: {
     heading: "Project Settings",

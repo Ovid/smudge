@@ -44,11 +44,19 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     }
   }, [open]);
 
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   const handleSave = async () => {
-    if (timezone) {
-      await api.settings.update([{ key: "timezone", value: timezone }]);
+    try {
+      if (timezone) {
+        await api.settings.update([{ key: "timezone", value: timezone }]);
+      }
+      setSaveError(null);
+      onClose();
+    } catch (err) {
+      console.error("Failed to save settings:", err);
+      setSaveError(STRINGS.settings.saveError);
     }
-    onClose();
   };
 
   const timezones = (() => {
@@ -96,6 +104,11 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
               </option>
             ))}
           </select>
+          {saveError && (
+            <p className="mt-2 text-sm text-status-error" role="alert">
+              {saveError}
+            </p>
+          )}
           <div className="mt-6 flex justify-end gap-3">
             <button
               type="button"
