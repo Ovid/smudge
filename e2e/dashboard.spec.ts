@@ -116,11 +116,6 @@ test.describe("Dashboard and Status E2e Tests", () => {
     // The sidebar should now show a different chapter as active
     await expect(page.locator("li[aria-current='true']")).toHaveCount(1);
 
-    // Verify the second sidebar item is now active by checking that
-    // the active chapter title changed (we had two "Untitled Chapter" items,
-    // so let's check the sidebar buttons)
-    const chapterButtons = page.locator("aside ul li button").filter({ hasNotText: /[^\w\s]/ });
-
     // The page should have navigated; check the live-region announcement
     const announcement = page.locator("[data-testid='nav-announcement']");
     await expect(announcement).not.toBeEmpty();
