@@ -19,7 +19,9 @@ function computeDailyNetWords(
   if (snapshots.length === 0) return [];
   const sorted = [...snapshots].sort((a, b) => a.date.localeCompare(b.date));
   if (sorted.length === 1) {
-    return [{ date: sorted[0]!.date, net_words: sorted[0]!.total_word_count }];
+    const only = sorted[0];
+    if (only) return [{ date: only.date, net_words: only.total_word_count }];
+    return [];
   }
   const result: Array<{ date: string; net_words: number }> = [];
   for (let i = 1; i < sorted.length; i++) {
