@@ -101,6 +101,7 @@ export function projectsRouter(db: Knex): Router {
         .whereNull("projects.deleted_at")
         .groupBy("projects.id")
         .orderBy("projects.updated_at", "desc")
+        .orderBy("projects.rowid", "desc")
         .select(
           "projects.id",
           "projects.title",
