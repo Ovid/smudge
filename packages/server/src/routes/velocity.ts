@@ -1,6 +1,6 @@
 import type { Knex } from "knex";
 import { asyncHandler } from "../app";
-import { getTodayDate, safeTimezone } from "./velocityHelpers";
+import { getTodayDate } from "./velocityHelpers";
 
 interface SaveEvent {
   id: string;
@@ -201,10 +201,6 @@ export function velocityHandler(db: Knex) {
       return;
     }
 
-    // Get timezone
-    const tzRow = await db("settings").where({ key: "timezone" }).first();
-    const tz = safeTimezone(tzRow?.value || "UTC");
-
     const today = await getTodayDate(db);
 
     // Daily snapshots: last 90 days
@@ -231,25 +227,15 @@ export function velocityHandler(db: Knex) {
 
     const sessions = deriveSessions(recentEvents);
 
-    // ALL save events for streak calculation
-    const allEventTimestamps: { saved_at: string }[] = await db("save_events")
+    // Use daily_snapshots for streak calculation (already one row per day,
+    // dates are timezone-correct from getTodayDate). Avoids loading unbounded
+    // save_events into memory.
+    const allSnapshotDates: { date: string }[] = await db("daily_snapshots")
       .where({ project_id: project.id })
-      .orderBy("saved_at", "asc")
-      .select("saved_at");
+      .orderBy("date", "desc")
+      .select("date");
 
-    // Convert to timezone-aware dates
-    const dateFormatter = new Intl.DateTimeFormat("en-CA", {
-      timeZone: tz,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
-
-    const allDates = [
-      ...new Set(allEventTimestamps.map((e) => dateFormatter.format(new Date(e.saved_at)))),
-    ];
-    // Sort descending for calculateStreaks
-    allDates.sort((a, b) => (a > b ? -1 : 1));
+    const allDates = allSnapshotDates.map((s) => s.date);
 
     const streak = calculateStreaks(allDates, today);
 
