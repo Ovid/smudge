@@ -175,6 +175,51 @@ describe("ProjectSettingsDialog", () => {
     expect(onUpdate).toHaveBeenCalled();
   });
 
+  it("rejects negative word count without saving", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+    const input = screen.getByLabelText(/word count target/i);
+    await user.clear(input);
+    await user.type(input, "-5");
+    // Clear mock before the blur that should be rejected
+    vi.mocked(api.projects.update).mockClear();
+    vi.mocked(api.projects.update).mockResolvedValue(defaultProject as never);
+    await user.tab();
+
+    // Negative value should be rejected — no update call
+    expect(api.projects.update).not.toHaveBeenCalled();
+  });
+
+  it("logs error when save fails", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(api.projects.update).mockRejectedValue(new Error("save failed"));
+    const user = userEvent.setup();
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+    const input = screen.getByLabelText(/word count target/i);
+    await user.clear(input);
+    await user.type(input, "50000");
+    await user.tab();
+
+    await waitFor(() => {
+      expect(spy).toHaveBeenCalledWith("Failed to save project setting:", expect.any(Error));
+    });
+    spy.mockRestore();
+  });
+
   it("returns null when open is false", () => {
     const { container } = render(
       <ProjectSettingsDialog

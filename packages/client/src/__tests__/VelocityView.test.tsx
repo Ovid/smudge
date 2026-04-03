@@ -147,6 +147,65 @@ describe("VelocityView", () => {
     });
   });
 
+  it("shows error state when API rejects with an Error", async () => {
+    vi.mocked(api.projects.velocity).mockRejectedValue(new Error("Network failure"));
+    render(<VelocityView slug="test" />);
+    await waitFor(() => {
+      expect(screen.getByText("Network failure")).toBeInTheDocument();
+    });
+  });
+
+  it("shows error state when API rejects with a non-Error", async () => {
+    vi.mocked(api.projects.velocity).mockRejectedValue("string error");
+    render(<VelocityView slug="test" />);
+    await waitFor(() => {
+      expect(screen.getByText(/failed to load velocity data/i)).toBeInTheDocument();
+    });
+  });
+
+  it("shows loading state initially", () => {
+    vi.mocked(api.projects.velocity).mockReturnValue(new Promise(() => {})); // never resolves
+    render(<VelocityView slug="test" />);
+    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+  });
+
+  it("renders singular chapter text in recent sessions", async () => {
+    vi.mocked(api.projects.velocity).mockResolvedValue({
+      ...mockVelocity,
+      sessions: [
+        {
+          start: "2026-04-01T14:15:00Z",
+          end: "2026-04-01T15:40:00Z",
+          duration_minutes: 45,
+          chapters_touched: ["ch1"],
+          net_words: 500,
+        },
+      ],
+    });
+    render(<VelocityView slug="test" />);
+    await waitFor(() => {
+      expect(screen.getByText(/1 chapter/)).toBeInTheDocument();
+    });
+  });
+
+  it("shows noProjection dash when target set but no projected_date", async () => {
+    vi.mocked(api.projects.velocity).mockResolvedValue({
+      ...mockVelocity,
+      projection: {
+        target_word_count: 80000,
+        target_deadline: null,
+        projected_date: null,
+        daily_average_30d: 0,
+      },
+    });
+    render(<VelocityView slug="test" />);
+    await waitFor(() => {
+      expect(screen.getByText(/projected/i)).toBeInTheDocument();
+      // Both noProjection and noAverage render "\u2014", so expect at least 2
+      expect(screen.getAllByText("\u2014").length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
   it("adaptive: both set — shows burndown chart", async () => {
     render(<VelocityView slug="test" />);
     await waitFor(() => {

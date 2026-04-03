@@ -19,6 +19,12 @@ describe("timezone auto-detection", () => {
     ]);
   });
 
+  it("silently catches errors without throwing", async () => {
+    vi.mocked(api.settings.get).mockRejectedValue(new Error("network error"));
+    const { detectAndSetTimezone } = await import("../hooks/useTimezoneDetection");
+    await expect(detectAndSetTimezone()).resolves.toBeUndefined();
+  });
+
   it("does not overwrite existing timezone setting", async () => {
     vi.mocked(api.settings.get).mockResolvedValue({ timezone: "Europe/London" });
 
