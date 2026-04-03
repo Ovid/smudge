@@ -25,7 +25,7 @@ export interface VelocityResponse {
     daily_average_30d: number;
   };
   completion: {
-    threshold_status: string;
+    threshold_status: string | null;
     total_chapters: number;
     completed_chapters: number;
   };
