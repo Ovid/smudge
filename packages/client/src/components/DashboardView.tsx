@@ -30,6 +30,7 @@ export function DashboardView({
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("sort_order");
   const [sortAsc, setSortAsc] = useState(true);
+  const [localRefreshKey, setLocalRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,7 +51,7 @@ export function DashboardView({
     return () => {
       cancelled = true;
     };
-  }, [slug, refreshKey]);
+  }, [slug, refreshKey, localRefreshKey]);
 
   const handleSort = useCallback(
     (key: SortKey) => {
@@ -323,9 +324,7 @@ export function DashboardView({
                       chapterId={chapter.id}
                       currentWordCount={chapter.word_count}
                       targetWordCount={chapter.target_word_count ?? null}
-                      onUpdate={() => {
-                        /* refresh handled by parent */
-                      }}
+                      onUpdate={() => setLocalRefreshKey((k) => k + 1)}
                     />
                   </td>
                   <td className="py-3 text-text-muted text-xs">
