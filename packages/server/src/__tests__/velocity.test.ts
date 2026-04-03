@@ -24,6 +24,13 @@ function daysAgoAt(n: number, hour: number, minute = 0): string {
   return d.toISOString();
 }
 
+/** Return a YYYY-MM-DD date string for N days ago */
+function daysAgoDate(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
 async function createProjectWithChapter() {
   const res = await request(t.app)
     .post("/api/projects")
@@ -124,14 +131,18 @@ describe("GET /api/projects/:slug/velocity", () => {
     expect(session.net_words).toBe(150); // 250 - 100
   });
 
-  it("calculates streaks from SaveEvent dates", async () => {
+  it("calculates streaks from daily snapshot dates", async () => {
     const { slug, projectId, chapterId } = await createProjectWithChapter();
     await t.db("save_events").where({ project_id: projectId }).del();
+    await t.db("daily_snapshots").where({ project_id: projectId }).del();
 
     // 3 consecutive days ending today
     await insertSaveEvent(projectId, chapterId, 100, daysAgoAt(2, 10));
     await insertSaveEvent(projectId, chapterId, 200, daysAgoAt(1, 10));
     await insertSaveEvent(projectId, chapterId, 300, daysAgoAt(0, 10));
+    await insertSnapshot(projectId, daysAgoDate(2), 100);
+    await insertSnapshot(projectId, daysAgoDate(1), 200);
+    await insertSnapshot(projectId, daysAgoDate(0), 300);
 
     const res = await request(t.app).get(`/api/projects/${slug}/velocity`);
     expect(res.body.streak.current).toBe(3);
@@ -195,10 +206,13 @@ describe("GET /api/projects/:slug/velocity", () => {
   it("streak: no saves today — counts from yesterday", async () => {
     const { slug, projectId, chapterId } = await createProjectWithChapter();
     await t.db("save_events").where({ project_id: projectId }).del();
+    await t.db("daily_snapshots").where({ project_id: projectId }).del();
 
     // Saves yesterday and day before, but NOT today
     await insertSaveEvent(projectId, chapterId, 100, daysAgoAt(2, 10));
     await insertSaveEvent(projectId, chapterId, 200, daysAgoAt(1, 10));
+    await insertSnapshot(projectId, daysAgoDate(2), 100);
+    await insertSnapshot(projectId, daysAgoDate(1), 200);
 
     const res = await request(t.app).get(`/api/projects/${slug}/velocity`);
     expect(res.body.streak.current).toBe(2);
@@ -207,6 +221,7 @@ describe("GET /api/projects/:slug/velocity", () => {
   it("streak: gap in the middle resets current but not best", async () => {
     const { slug, projectId, chapterId } = await createProjectWithChapter();
     await t.db("save_events").where({ project_id: projectId }).del();
+    await t.db("daily_snapshots").where({ project_id: projectId }).del();
 
     // 3-day run (6-4 days ago), gap (3 days ago), then 2-0 days ago
     await insertSaveEvent(projectId, chapterId, 100, daysAgoAt(6, 10));
@@ -216,6 +231,12 @@ describe("GET /api/projects/:slug/velocity", () => {
     await insertSaveEvent(projectId, chapterId, 400, daysAgoAt(2, 10));
     await insertSaveEvent(projectId, chapterId, 500, daysAgoAt(1, 10));
     await insertSaveEvent(projectId, chapterId, 600, daysAgoAt(0, 10));
+    await insertSnapshot(projectId, daysAgoDate(6), 100);
+    await insertSnapshot(projectId, daysAgoDate(5), 200);
+    await insertSnapshot(projectId, daysAgoDate(4), 300);
+    await insertSnapshot(projectId, daysAgoDate(2), 400);
+    await insertSnapshot(projectId, daysAgoDate(1), 500);
+    await insertSnapshot(projectId, daysAgoDate(0), 600);
 
     const res = await request(t.app).get(`/api/projects/${slug}/velocity`);
     expect(res.body.streak.current).toBe(3); // days 2, 1, 0
@@ -225,9 +246,12 @@ describe("GET /api/projects/:slug/velocity", () => {
   it("streak: zero-word-change save still counts as writing day", async () => {
     const { slug, projectId, chapterId } = await createProjectWithChapter();
     await t.db("save_events").where({ project_id: projectId }).del();
+    await t.db("daily_snapshots").where({ project_id: projectId }).del();
 
     await insertSaveEvent(projectId, chapterId, 500, daysAgoAt(1, 10));
     await insertSaveEvent(projectId, chapterId, 500, daysAgoAt(0, 10));
+    await insertSnapshot(projectId, daysAgoDate(1), 500);
+    await insertSnapshot(projectId, daysAgoDate(0), 500);
 
     const res = await request(t.app).get(`/api/projects/${slug}/velocity`);
     expect(res.body.streak.current).toBe(2);
