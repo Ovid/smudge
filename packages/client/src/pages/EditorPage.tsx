@@ -13,7 +13,7 @@ import { SettingsDialog } from "../components/SettingsDialog";
 import { ProjectSettingsDialog } from "../components/ProjectSettingsDialog";
 import { STRINGS } from "../strings";
 import { useProjectEditor } from "../hooks/useProjectEditor";
-import { api } from "../api/client";
+import { api, type VelocityResponse } from "../api/client";
 import { Logo } from "../components/Logo";
 
 const SIDEBAR_DEFAULT_WIDTH = 260;
@@ -97,6 +97,7 @@ export function EditorPage() {
   const [wordCountAnnouncement, setWordCountAnnouncement] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
+  const [lastSession, setLastSession] = useState<VelocityResponse["sessions"][0] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,6 +124,20 @@ export function EditorPage() {
       if (timerId !== null) clearTimeout(timerId);
     };
   }, []);
+
+  // Fetch last session for status bar
+  useEffect(() => {
+    if (!slug) return;
+    let cancelled = false;
+    api.projects.velocity(slug).then((data) => {
+      if (!cancelled && data.sessions.length > 0) {
+        setLastSession(data.sessions[data.sessions.length - 1]);
+      }
+    }).catch(() => {
+      // Best-effort
+    });
+    return () => { cancelled = true; };
+  }, [slug]);
 
   useEffect(() => {
     const dialog = shortcutDialogRef.current;
@@ -663,6 +678,11 @@ export function EditorPage() {
                 </span>
               )}
             </div>
+            {lastSession && (
+              <span className="text-text-muted">
+                {STRINGS.velocity.lastSession}: {lastSession.duration_minutes} min, +{lastSession.net_words.toLocaleString()} words
+              </span>
+            )}
             <div role="status" aria-live="polite">
               {saveStatus === "unsaved" && (
                 <span className="text-text-muted">{STRINGS.editor.unsaved}</span>
