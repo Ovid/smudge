@@ -1,6 +1,33 @@
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine,
+} from "recharts";
+import type { RectangleProps } from "recharts";
 import { STRINGS } from "../strings";
 import { useReducedMotion } from "../hooks/useReducedMotion";
+
+function WordBar(props: RectangleProps & { net_words?: number }) {
+  const { x, y, width, height, net_words } = props;
+  const isNegative = (net_words ?? 0) < 0;
+  const rx = isNegative ? 0 : 2;
+  return (
+    <rect
+      x={x}
+      y={y}
+      width={width}
+      height={height}
+      rx={rx}
+      ry={rx}
+      fill="#6B4720"
+      fillOpacity={isNegative ? 0.4 : 1}
+    />
+  );
+}
 
 interface DailyWordChartProps {
   data: Array<{ date: string; net_words: number }>;
@@ -34,9 +61,8 @@ export function DailyWordChart({ data, dailyAverage }: DailyWordChartProps) {
           />
           <Bar
             dataKey="net_words"
-            fill="#6B4720"
-            radius={[2, 2, 0, 0]}
             isAnimationActive={!prefersReducedMotion}
+            shape={<WordBar />}
           />
           {dailyAverage > 0 && (
             <ReferenceLine
