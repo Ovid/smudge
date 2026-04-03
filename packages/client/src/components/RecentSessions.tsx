@@ -26,8 +26,8 @@ export function RecentSessions({ sessions }: RecentSessionsProps) {
 
           return (
             <li key={i} className="text-sm text-text-secondary font-sans">
-              {dateStr} &middot; {session.duration_minutes} min &middot;{" "}
-              {sign}{session.net_words.toLocaleString()} {STRINGS.velocity.netWords} &middot;{" "}
+              {dateStr} &middot; {session.duration_minutes} min &middot; {sign}
+              {session.net_words.toLocaleString()} {STRINGS.velocity.netWords} &middot;{" "}
               {session.chapters_touched.length}{" "}
               {session.chapters_touched.length === 1 ? "chapter" : "chapters"}
             </li>

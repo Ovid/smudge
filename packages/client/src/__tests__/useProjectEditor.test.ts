@@ -18,7 +18,18 @@ vi.mock("../api/client", () => ({
       update: vi.fn(),
       reorderChapters: vi.fn(),
       trash: vi.fn(),
-      velocity: vi.fn().mockResolvedValue({ daily_snapshots: [], sessions: [], streak: { current: 0, best: 0 }, projection: { target_word_count: null, target_deadline: null, projected_date: null, daily_average_30d: 0 }, completion: { threshold_status: "final", total_chapters: 0, completed_chapters: 0 } }),
+      velocity: vi.fn().mockResolvedValue({
+        daily_snapshots: [],
+        sessions: [],
+        streak: { current: 0, best: 0 },
+        projection: {
+          target_word_count: null,
+          target_deadline: null,
+          projected_date: null,
+          daily_average_30d: 0,
+        },
+        completion: { threshold_status: "final", total_chapters: 0, completed_chapters: 0 },
+      }),
     },
     chapters: {
       get: vi.fn(),
@@ -77,6 +88,9 @@ const mockProject = {
   created_at: "2026-01-01",
   updated_at: "2026-01-01",
   deleted_at: null,
+  target_word_count: null,
+  target_deadline: null,
+  completion_threshold: "100",
   chapters: [mockChapter1, mockChapter2],
 };
 

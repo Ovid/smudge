@@ -8,6 +8,9 @@ export interface Project {
   slug: string;
   title: string;
   mode: ProjectMode;
+  target_word_count: number | null;
+  target_deadline: string | null;
+  completion_threshold: string;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

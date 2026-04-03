@@ -69,7 +69,11 @@ export function DashboardView({
 
   // Tab navigation is always rendered, content depends on active tab
   const tabBar = (
-    <div className="flex items-center gap-4 mb-8" role="tablist" aria-label={STRINGS.dashboard.heading}>
+    <div
+      className="flex items-center gap-4 mb-8"
+      role="tablist"
+      aria-label={STRINGS.dashboard.heading}
+    >
       <button
         role="tab"
         aria-selected={activeTab === "velocity"}
@@ -319,7 +323,9 @@ export function DashboardView({
                       chapterId={chapter.id}
                       currentWordCount={chapter.word_count}
                       targetWordCount={chapter.target_word_count ?? null}
-                      onUpdate={() => {/* refresh handled by parent */}}
+                      onUpdate={() => {
+                        /* refresh handled by parent */
+                      }}
                     />
                   </td>
                   <td className="py-3 text-text-muted text-xs">

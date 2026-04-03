@@ -33,9 +33,10 @@ export function settingsRouter(db: Knex): Router {
     asyncHandler(async (req, res) => {
       const parsed = UpdateSettingsSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({
+        res.status(400).json({
           error: { code: "VALIDATION_ERROR", message: parsed.error.message },
         });
+        return;
       }
 
       // Validate all values before applying any
@@ -48,13 +49,14 @@ export function settingsRouter(db: Knex): Router {
       }
 
       if (Object.keys(errors).length > 0) {
-        return res.status(400).json({
+        res.status(400).json({
           error: {
             code: "VALIDATION_ERROR",
             message: "Invalid settings",
             details: errors,
           },
         });
+        return;
       }
 
       // Apply atomically

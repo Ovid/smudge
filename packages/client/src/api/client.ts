@@ -90,8 +90,7 @@ export const api = {
         body: JSON.stringify(data),
       }),
 
-    velocity: (slug: string) =>
-      apiFetch<VelocityResponse>(`/projects/${slug}/velocity`),
+    velocity: (slug: string) => apiFetch<VelocityResponse>(`/projects/${slug}/velocity`),
 
     delete: (slug: string) =>
       apiFetch<{ message: string }>(`/projects/${slug}`, { method: "DELETE" }),

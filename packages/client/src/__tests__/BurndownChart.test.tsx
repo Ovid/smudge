@@ -23,21 +23,17 @@ describe("BurndownChart", () => {
     render(<BurndownChart {...sampleData} />);
     const tables = screen.getAllByRole("table", { name: /burndown/i });
     expect(tables.length).toBeGreaterThanOrEqual(1);
-    const table = tables[0];
+    const table = tables[0]!;
     expect(table.closest(".sr-only")).toBeTruthy();
   });
 
   it("does not render when target_word_count is null", () => {
-    const { container } = render(
-      <BurndownChart {...sampleData} targetWordCount={null} />,
-    );
+    const { container } = render(<BurndownChart {...sampleData} targetWordCount={null} />);
     expect(container.innerHTML).toBe("");
   });
 
   it("does not render when target_deadline is null", () => {
-    const { container } = render(
-      <BurndownChart {...sampleData} targetDeadline={null} />,
-    );
+    const { container } = render(<BurndownChart {...sampleData} targetDeadline={null} />);
     expect(container.innerHTML).toBe("");
   });
 });

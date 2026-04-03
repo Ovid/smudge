@@ -18,7 +18,7 @@ describe("DailyWordChart", () => {
     render(<DailyWordChart data={sampleData} dailyAverage={450} />);
     const tables = screen.getAllByRole("table", { name: /daily word count/i });
     expect(tables.length).toBeGreaterThanOrEqual(1);
-    const table = tables[0];
+    const table = tables[0]!;
     expect(table.closest(".sr-only")).toBeTruthy();
   });
 

@@ -129,14 +129,20 @@ export function EditorPage() {
   useEffect(() => {
     if (!slug) return;
     let cancelled = false;
-    api.projects.velocity(slug).then((data) => {
-      if (!cancelled && data.sessions.length > 0) {
-        setLastSession(data.sessions[data.sessions.length - 1]);
-      }
-    }).catch(() => {
-      // Best-effort
-    });
-    return () => { cancelled = true; };
+    api.projects
+      .velocity(slug)
+      .then((data) => {
+        if (!cancelled && data.sessions.length > 0) {
+          const last = data.sessions[data.sessions.length - 1];
+          if (last) setLastSession(last);
+        }
+      })
+      .catch(() => {
+        // Best-effort
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [slug]);
 
   useEffect(() => {
@@ -680,7 +686,8 @@ export function EditorPage() {
             </div>
             {lastSession && (
               <span className="text-text-muted">
-                {STRINGS.velocity.lastSession}: {lastSession.duration_minutes} min, +{lastSession.net_words.toLocaleString()} words
+                {STRINGS.velocity.lastSession}: {lastSession.duration_minutes} min, +
+                {lastSession.net_words.toLocaleString()} words
               </span>
             )}
             <div role="status" aria-live="polite">

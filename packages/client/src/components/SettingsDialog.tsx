@@ -9,31 +9,32 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [timezone, setTimezone] = useState("UTC");
-  const [loading, setLoading] = useState(true);
+  const [timezone, setTimezone] = useState<string | null>(null);
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
 
     if (open) {
-      // Use showModal() for proper modal behavior (backdrop, focus trap)
-      // but fall back to the open attribute (set in JSX) for test environments
       if (!dialog.open) {
         try {
           dialog.showModal();
         } catch {
-          // happy-dom does not support showModal — open attribute handles visibility
+          // happy-dom does not support showModal
         }
       }
-      setLoading(true);
+      let cancelled = false;
       api.settings
         .get()
         .then((settings) => {
-          setTimezone(settings.timezone || "UTC");
-          setLoading(false);
+          if (!cancelled) setTimezone(settings.timezone || "UTC");
         })
-        .catch(() => setLoading(false));
+        .catch(() => {
+          if (!cancelled) setTimezone("UTC");
+        });
+      return () => {
+        cancelled = true;
+      };
     } else {
       try {
         dialog.close();
@@ -44,7 +45,9 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   }, [open]);
 
   const handleSave = async () => {
-    await api.settings.update([{ key: "timezone", value: timezone }]);
+    if (timezone) {
+      await api.settings.update([{ key: "timezone", value: timezone }]);
+    }
     onClose();
   };
 
@@ -68,7 +71,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
       <h2 className="text-lg font-semibold text-text-primary mb-4 font-sans">
         {STRINGS.settings.heading}
       </h2>
-      {loading ? null : (
+      {timezone === null ? null : (
         <form
           onSubmit={(e) => {
             e.preventDefault();

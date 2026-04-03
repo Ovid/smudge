@@ -29,13 +29,9 @@ export function SummaryStrip({
   projection,
   completion,
 }: SummaryStripProps) {
-
   return (
     <section className="flex flex-wrap gap-6 mb-8" aria-label="Velocity summary">
-      <MetricCard
-        label={STRINGS.velocity.wordsToday}
-        value={wordsToday.toLocaleString()}
-      />
+      <MetricCard label={STRINGS.velocity.wordsToday} value={wordsToday.toLocaleString()} />
       <MetricCard
         label={STRINGS.velocity.dailyAverage}
         value={dailyAverage > 0 ? dailyAverage.toLocaleString() : STRINGS.velocity.noAverage}
@@ -65,17 +61,11 @@ export function SummaryStrip({
       )}
 
       {projection.target_word_count !== null && (
-        <MetricCard
-          label="Target"
-          value={projection.target_word_count.toLocaleString()}
-        />
+        <MetricCard label="Target" value={projection.target_word_count.toLocaleString()} />
       )}
 
       {projection.target_deadline !== null && daysRemaining !== null && (
-        <MetricCard
-          label={STRINGS.velocity.daysRemaining}
-          value={`${daysRemaining}`}
-        />
+        <MetricCard label={STRINGS.velocity.daysRemaining} value={`${daysRemaining}`} />
       )}
 
       {completion.total_chapters > 0 && (

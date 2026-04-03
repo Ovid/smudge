@@ -9,9 +9,7 @@ async function createProjectWithChapter() {
     .post("/api/projects")
     .send({ title: "Test Project", mode: "fiction" });
   const project = res.body;
-  const chapters = await t.db("chapters")
-    .where({ project_id: project.id })
-    .select("id");
+  const chapters = await t.db("chapters").where({ project_id: project.id }).select("id");
   return { projectId: project.id, chapterId: chapters[0].id, slug: project.slug };
 }
 
@@ -20,7 +18,12 @@ describe("PATCH /api/chapters/:id — side effects", () => {
     const { chapterId } = await createProjectWithChapter();
     await request(t.app)
       .patch(`/api/chapters/${chapterId}`)
-      .send({ content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hello world" }] }] } });
+      .send({
+        content: {
+          type: "doc",
+          content: [{ type: "paragraph", content: [{ type: "text", text: "Hello world" }] }],
+        },
+      });
 
     const events = await t.db("save_events").where({ chapter_id: chapterId });
     expect(events.length).toBeGreaterThanOrEqual(1);
@@ -31,9 +34,7 @@ describe("PATCH /api/chapters/:id — side effects", () => {
     const { chapterId } = await createProjectWithChapter();
     await t.db("save_events").where({ chapter_id: chapterId }).del();
 
-    await request(t.app)
-      .patch(`/api/chapters/${chapterId}`)
-      .send({ title: "New Title" });
+    await request(t.app).patch(`/api/chapters/${chapterId}`).send({ title: "New Title" });
 
     const events = await t.db("save_events").where({ chapter_id: chapterId });
     expect(events).toHaveLength(0);
@@ -45,7 +46,12 @@ describe("PATCH /api/chapters/:id — side effects", () => {
 
     await request(t.app)
       .patch(`/api/chapters/${chapterId}`)
-      .send({ content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }] } });
+      .send({
+        content: {
+          type: "doc",
+          content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }],
+        },
+      });
 
     const snapshots = await t.db("daily_snapshots").where({ project_id: projectId });
     expect(snapshots).toHaveLength(1);
@@ -58,11 +64,21 @@ describe("PATCH /api/chapters/:id — side effects", () => {
 
     await request(t.app)
       .patch(`/api/chapters/${chapterId}`)
-      .send({ content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }] } });
+      .send({
+        content: {
+          type: "doc",
+          content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }],
+        },
+      });
 
     await request(t.app)
       .patch(`/api/chapters/${chapterId}`)
-      .send({ content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hello world again" }] }] } });
+      .send({
+        content: {
+          type: "doc",
+          content: [{ type: "paragraph", content: [{ type: "text", text: "Hello world again" }] }],
+        },
+      });
 
     const snapshots = await t.db("daily_snapshots").where({ project_id: projectId });
     expect(snapshots).toHaveLength(1);
@@ -73,7 +89,12 @@ describe("PATCH /api/chapters/:id — side effects", () => {
     const { chapterId } = await createProjectWithChapter();
     const res = await request(t.app)
       .patch(`/api/chapters/${chapterId}`)
-      .send({ content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "test" }] }] } });
+      .send({
+        content: {
+          type: "doc",
+          content: [{ type: "paragraph", content: [{ type: "text", text: "test" }] }],
+        },
+      });
     expect(res.status).toBe(200);
   });
 });

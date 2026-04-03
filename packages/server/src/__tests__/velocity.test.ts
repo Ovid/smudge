@@ -5,13 +5,6 @@ import { v4 as uuid } from "uuid";
 
 const t = setupTestDb();
 
-/** Return an ISO date string for N days ago (YYYY-MM-DD) */
-function daysAgo(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
-}
-
 /** Return an ISO timestamp for N days ago at a given hour (UTC) */
 function daysAgoAt(n: number, hour: number, minute = 0): string {
   const d = new Date();
@@ -25,9 +18,7 @@ async function createProjectWithChapter() {
     .post("/api/projects")
     .send({ title: "Velocity Test", mode: "fiction" });
   const project = res.body;
-  const chapters = await t.db("chapters")
-    .where({ project_id: project.id })
-    .select("id");
+  const chapters = await t.db("chapters").where({ project_id: project.id }).select("id");
   return { projectId: project.id, chapterId: chapters[0].id, slug: project.slug };
 }
 
@@ -35,7 +26,7 @@ async function insertSaveEvent(
   projectId: string,
   chapterId: string,
   wordCount: number,
-  savedAt: string
+  savedAt: string,
 ) {
   await t.db("save_events").insert({
     id: uuid(),
@@ -116,7 +107,7 @@ describe("GET /api/projects/:slug/velocity", () => {
 
     const res = await request(t.app).get(`/api/projects/${slug}/velocity`);
     const session = res.body.sessions.find(
-      (s: { start: string }) => s.start === "2026-03-31T14:00:00Z"
+      (s: { start: string }) => s.start === "2026-03-31T14:00:00Z",
     );
     expect(session).toBeDefined();
     expect(session.net_words).toBe(150); // 250 - 100
@@ -157,14 +148,10 @@ describe("GET /api/projects/:slug/velocity", () => {
   it("returns completion stats based on threshold", async () => {
     const { slug, projectId } = await createProjectWithChapter();
 
-    await request(t.app)
-      .patch(`/api/projects/${slug}`)
-      .send({ completion_threshold: "revised" });
+    await request(t.app).patch(`/api/projects/${slug}`).send({ completion_threshold: "revised" });
 
     const chapters = await t.db("chapters").where({ project_id: projectId }).select("id");
-    await request(t.app)
-      .patch(`/api/chapters/${chapters[0].id}`)
-      .send({ status: "revised" });
+    await request(t.app).patch(`/api/chapters/${chapters[0].id}`).send({ status: "revised" });
 
     const res = await request(t.app).get(`/api/projects/${slug}/velocity`);
     expect(res.body.completion.threshold_status).toBe("revised");
@@ -174,9 +161,7 @@ describe("GET /api/projects/:slug/velocity", () => {
 
   it("calculates net_words across multiple chapters in one session", async () => {
     const { slug, projectId, chapterId } = await createProjectWithChapter();
-    const ch2Res = await request(t.app)
-      .post(`/api/projects/${slug}/chapters`)
-      .send({});
+    const ch2Res = await request(t.app).post(`/api/projects/${slug}/chapters`).send({});
     const chapterId2 = ch2Res.body.id;
     await t.db("save_events").where({ project_id: projectId }).del();
 
@@ -189,7 +174,7 @@ describe("GET /api/projects/:slug/velocity", () => {
 
     const res = await request(t.app).get(`/api/projects/${slug}/velocity`);
     const session = res.body.sessions.find(
-      (s: { start: string }) => s.start === "2026-03-31T14:00:00Z"
+      (s: { start: string }) => s.start === "2026-03-31T14:00:00Z",
     );
     expect(session).toBeDefined();
     expect(session.net_words).toBe(170); // (200-100) + (120-50)
@@ -240,14 +225,13 @@ describe("GET /api/projects/:slug/velocity", () => {
   it("completion: counts chapters at or beyond threshold using sort_order", async () => {
     const { slug, projectId } = await createProjectWithChapter();
     await request(t.app).post(`/api/projects/${slug}/chapters`).send({});
-    const chapters = await t.db("chapters")
+    const chapters = await t
+      .db("chapters")
       .where({ project_id: projectId })
       .whereNull("deleted_at")
       .select("id");
 
-    await request(t.app)
-      .patch(`/api/projects/${slug}`)
-      .send({ completion_threshold: "revised" });
+    await request(t.app).patch(`/api/projects/${slug}`).send({ completion_threshold: "revised" });
 
     // Chapter 1: "edited" (sort_order 4 — beyond threshold)
     await request(t.app).patch(`/api/chapters/${chapters[0].id}`).send({ status: "edited" });
@@ -270,7 +254,7 @@ describe("GET /api/projects/:slug/velocity", () => {
 
     const res = await request(t.app).get(`/api/projects/${slug}/velocity`);
     const session = res.body.sessions.find(
-      (s: { start: string }) => s.start === "2026-03-31T14:00:00Z"
+      (s: { start: string }) => s.start === "2026-03-31T14:00:00Z",
     );
     expect(session).toBeDefined();
     expect(session.net_words).toBe(500);

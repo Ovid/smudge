@@ -19,7 +19,7 @@ describe("ChapterTargetPopover", () => {
         currentWordCount={2500}
         targetWordCount={null}
         onUpdate={vi.fn()}
-      />
+      />,
     );
     await user.click(screen.getByText("2,500"));
     expect(screen.getByLabelText(/word count target/i)).toBeInTheDocument();
@@ -36,7 +36,7 @@ describe("ChapterTargetPopover", () => {
         currentWordCount={2500}
         targetWordCount={null}
         onUpdate={onUpdate}
-      />
+      />,
     );
     await user.click(screen.getByText("2,500"));
     const input = screen.getByLabelText(/word count target/i);
@@ -58,7 +58,7 @@ describe("ChapterTargetPopover", () => {
         currentWordCount={2500}
         targetWordCount={5000}
         onUpdate={vi.fn()}
-      />
+      />,
     );
     await user.click(screen.getByText(/2,500/));
     await user.click(screen.getByRole("button", { name: /clear/i }));

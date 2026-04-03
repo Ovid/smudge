@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import knex, { Knex } from "knex";
+import knex, { type Knex } from "knex";
 import { createTestKnexConfig } from "../db/knexfile";
 
 describe("migration 004: goals & velocity", () => {
@@ -57,9 +57,7 @@ describe("migration 004: goals & velocity", () => {
     expect(colNames).toContain("created_at");
 
     const indexes = await db.raw("PRAGMA index_list(daily_snapshots)");
-    const uniqueIndexes = indexes.filter(
-      (i: { unique: number }) => i.unique === 1,
-    );
+    const uniqueIndexes = indexes.filter((i: { unique: number }) => i.unique === 1);
     expect(uniqueIndexes.length).toBeGreaterThan(0);
   });
 
@@ -71,9 +69,7 @@ describe("migration 004: goals & velocity", () => {
   it("creates index on chapters(project_id)", async () => {
     const indexes = await db.raw("PRAGMA index_list(chapters)");
     const indexNames = indexes.map((i: { name: string }) => i.name);
-    expect(indexNames.some((n: string) => n.includes("project_id"))).toBe(
-      true,
-    );
+    expect(indexNames.some((n: string) => n.includes("project_id"))).toBe(true);
   });
 
   it("seeds baseline SaveEvents and DailySnapshots for existing data", async () => {

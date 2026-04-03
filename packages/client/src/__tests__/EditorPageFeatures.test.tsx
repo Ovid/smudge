@@ -32,7 +32,12 @@ vi.mock("../api/client", () => ({
         daily_snapshots: [],
         sessions: [],
         streak: { current: 0, best: 0 },
-        projection: { target_word_count: null, target_deadline: null, projected_date: null, daily_average_30d: 0 },
+        projection: {
+          target_word_count: null,
+          target_deadline: null,
+          projected_date: null,
+          daily_average_30d: 0,
+        },
         completion: { threshold_status: "final", total_chapters: 0, completed_chapters: 0 },
       }),
     },
@@ -72,6 +77,9 @@ const mockProject = {
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
   deleted_at: null,
+  target_word_count: null,
+  target_deadline: null,
+  completion_threshold: "100",
   chapters: [
     {
       id: "ch-1",
@@ -704,6 +712,9 @@ describe("EditorPage title editing guards", () => {
       slug: "new-title",
       title: "New Title",
       mode: mockProject.mode,
+      target_word_count: mockProject.target_word_count,
+      target_deadline: mockProject.target_deadline,
+      completion_threshold: mockProject.completion_threshold,
       created_at: mockProject.created_at,
       updated_at: mockProject.updated_at,
       deleted_at: mockProject.deleted_at,
@@ -896,6 +907,7 @@ describe("EditorPage view mode toggles", () => {
     vi.mocked(api.projects.dashboard).mockResolvedValue({
       chapters: mockProject.chapters.map((c) => ({
         ...c,
+        target_word_count: null,
         status_label: "Outline",
         status_color: "#ccc",
       })),

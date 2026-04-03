@@ -20,6 +20,9 @@ const mockProject: ProjectWithChapters = {
   created_at: "2026-01-01",
   updated_at: "2026-01-01",
   deleted_at: null,
+  target_word_count: null,
+  target_deadline: null,
+  completion_threshold: "100",
   chapters: [
     {
       id: "ch1",
@@ -58,6 +61,7 @@ function renderSidebar(overrides = {}) {
     onReorderChapters: vi.fn(),
     onRenameChapter: vi.fn(),
     onOpenTrash: vi.fn(),
+    onOpenSettings: vi.fn(),
     statuses: mockStatuses,
     onStatusChange: vi.fn(),
     width: 260,

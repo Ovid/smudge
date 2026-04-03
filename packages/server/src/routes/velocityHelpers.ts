@@ -33,10 +33,7 @@ export async function insertSaveEvent(
   }
 }
 
-export async function upsertDailySnapshot(
-  db: Knex,
-  projectId: string,
-): Promise<void> {
+export async function upsertDailySnapshot(db: Knex, projectId: string): Promise<void> {
   try {
     const today = await getTodayDate(db);
     const result = await db("chapters")

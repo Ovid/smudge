@@ -70,7 +70,12 @@ describe("VelocityView", () => {
       daily_snapshots: [],
       sessions: [],
       streak: { current: 0, best: 0 },
-      projection: { target_word_count: null, target_deadline: null, projected_date: null, daily_average_30d: 0 },
+      projection: {
+        target_word_count: null,
+        target_deadline: null,
+        projected_date: null,
+        daily_average_30d: 0,
+      },
       completion: { threshold_status: "final", total_chapters: 0, completed_chapters: 0 },
     });
     render(<VelocityView slug="test" />);
@@ -89,7 +94,12 @@ describe("VelocityView", () => {
   it("adaptive: nothing set — shows daily words, streaks, sessions, no projection", async () => {
     vi.mocked(api.projects.velocity).mockResolvedValue({
       ...mockVelocity,
-      projection: { target_word_count: null, target_deadline: null, projected_date: null, daily_average_30d: 1200 },
+      projection: {
+        target_word_count: null,
+        target_deadline: null,
+        projected_date: null,
+        daily_average_30d: 1200,
+      },
     });
     render(<VelocityView slug="test" />);
     await waitFor(() => {
@@ -103,7 +113,12 @@ describe("VelocityView", () => {
   it("adaptive: word target only — shows progress + projected date, no countdown", async () => {
     vi.mocked(api.projects.velocity).mockResolvedValue({
       ...mockVelocity,
-      projection: { target_word_count: 80000, target_deadline: null, projected_date: "2026-08-28", daily_average_30d: 1200 },
+      projection: {
+        target_word_count: 80000,
+        target_deadline: null,
+        projected_date: "2026-08-28",
+        daily_average_30d: 1200,
+      },
     });
     render(<VelocityView slug="test" />);
     await waitFor(() => {
@@ -116,7 +131,12 @@ describe("VelocityView", () => {
   it("adaptive: deadline only — shows days remaining, no progress bar", async () => {
     vi.mocked(api.projects.velocity).mockResolvedValue({
       ...mockVelocity,
-      projection: { target_word_count: null, target_deadline: "2026-09-01", projected_date: null, daily_average_30d: 1200 },
+      projection: {
+        target_word_count: null,
+        target_deadline: "2026-09-01",
+        projected_date: null,
+        daily_average_30d: 1200,
+      },
     });
     render(<VelocityView slug="test" />);
     await waitFor(() => {

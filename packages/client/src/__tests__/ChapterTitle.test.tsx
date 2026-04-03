@@ -50,7 +50,18 @@ vi.mock("../api/client", () => ({
       update: vi.fn(),
       reorderChapters: vi.fn(),
       trash: vi.fn(),
-      velocity: vi.fn().mockResolvedValue({ daily_snapshots: [], sessions: [], streak: { current: 0, best: 0 }, projection: { target_word_count: null, target_deadline: null, projected_date: null, daily_average_30d: 0 }, completion: { threshold_status: "final", total_chapters: 0, completed_chapters: 0 } }),
+      velocity: vi.fn().mockResolvedValue({
+        daily_snapshots: [],
+        sessions: [],
+        streak: { current: 0, best: 0 },
+        projection: {
+          target_word_count: null,
+          target_deadline: null,
+          projected_date: null,
+          daily_average_30d: 0,
+        },
+        completion: { threshold_status: "final", total_chapters: 0, completed_chapters: 0 },
+      }),
     },
     chapters: {
       get: vi.fn(),
@@ -77,6 +88,9 @@ const mockProject = {
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
   deleted_at: null,
+  target_word_count: null,
+  target_deadline: null,
+  completion_threshold: "100",
   chapters: [
     {
       id: "ch-1",
@@ -232,6 +246,9 @@ describe("Project title editing", () => {
       slug: "renamed-project",
       title: "Renamed Project",
       mode: mockProject.mode,
+      target_word_count: mockProject.target_word_count,
+      target_deadline: mockProject.target_deadline,
+      completion_threshold: mockProject.completion_threshold,
       created_at: mockProject.created_at,
       updated_at: mockProject.updated_at,
       deleted_at: mockProject.deleted_at,

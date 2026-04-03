@@ -19,9 +19,12 @@ function computeDailyNetWords(
   const sorted = [...snapshots].sort((a, b) => a.date.localeCompare(b.date));
   const result: Array<{ date: string; net_words: number }> = [];
   for (let i = 1; i < sorted.length; i++) {
+    const current = sorted[i];
+    const previous = sorted[i - 1];
+    if (!current || !previous) continue;
     result.push({
-      date: sorted[i].date,
-      net_words: sorted[i].total_word_count - sorted[i - 1].total_word_count,
+      date: current.date,
+      net_words: current.total_word_count - previous.total_word_count,
     });
   }
   return result;
@@ -80,25 +83,20 @@ export function VelocityView({ slug }: VelocityViewProps) {
 
   // `now` is captured once via useState lazy initializer (pure during render)
   const today = new Date(now).toISOString().slice(0, 10);
-  const daysRemaining =
-    data.projection.target_deadline
-      ? Math.max(
-          0,
-          Math.ceil(
-            (new Date(data.projection.target_deadline).getTime() - now) / (1000 * 60 * 60 * 24),
-          ),
-        )
-      : null;
-  const currentTotal =
-    data.daily_snapshots.length > 0
-      ? data.daily_snapshots[data.daily_snapshots.length - 1].total_word_count
-      : 0;
+  const daysRemaining = data.projection.target_deadline
+    ? Math.max(
+        0,
+        Math.ceil(
+          (new Date(data.projection.target_deadline).getTime() - now) / (1000 * 60 * 60 * 24),
+        ),
+      )
+    : null;
+  const lastSnapshot = data.daily_snapshots[data.daily_snapshots.length - 1];
+  const currentTotal = lastSnapshot ? lastSnapshot.total_word_count : 0;
   const wordsToday = calculateWordsToday(currentTotal, data.daily_snapshots, today);
   const dailyNetWords = computeDailyNetWords(data.daily_snapshots);
-  const startDate =
-    data.daily_snapshots.length > 0
-      ? [...data.daily_snapshots].sort((a, b) => a.date.localeCompare(b.date))[0].date
-      : today;
+  const sortedSnapshots = [...data.daily_snapshots].sort((a, b) => a.date.localeCompare(b.date));
+  const startDate = sortedSnapshots[0]?.date ?? today;
 
   return (
     <div>

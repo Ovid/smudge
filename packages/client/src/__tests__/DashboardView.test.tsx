@@ -13,7 +13,12 @@ vi.mock("../api/client", () => ({
         daily_snapshots: [],
         sessions: [],
         streak: { current: 0, best: 0 },
-        projection: { target_word_count: null, target_deadline: null, projected_date: null, daily_average_30d: 0 },
+        projection: {
+          target_word_count: null,
+          target_deadline: null,
+          projected_date: null,
+          daily_average_30d: 0,
+        },
         completion: { threshold_status: "final", total_chapters: 0, completed_chapters: 0 },
       }),
     },
@@ -40,6 +45,7 @@ const dashboardData = {
       status: "outline",
       status_label: "Outline",
       word_count: 500,
+      target_word_count: null,
       updated_at: "2026-03-28T10:00:00Z",
       sort_order: 0,
     },
@@ -49,6 +55,7 @@ const dashboardData = {
       status: "rough_draft",
       status_label: "Rough Draft",
       word_count: 1200,
+      target_word_count: null,
       updated_at: "2026-03-29T10:00:00Z",
       sort_order: 1,
     },
@@ -445,6 +452,54 @@ describe("DashboardView", () => {
     expect(screen.getByText(/Rough Draft: 1/)).toBeInTheDocument();
   });
 
+  it("defaults to velocity tab and shows VelocityView", async () => {
+    vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
+
+    render(
+      <DashboardView
+        slug="test-project"
+        statuses={statuses}
+        onNavigateToChapter={vi.fn()}
+        refreshKey={0}
+      />,
+    );
+
+    // Velocity tab should be selected by default
+    const velocityTab = screen.getByRole("tab", { name: /Velocity/i });
+    expect(velocityTab).toHaveAttribute("aria-selected", "true");
+
+    const chaptersTab = screen.getByRole("tab", { name: /Chapters/i });
+    expect(chaptersTab).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("switches between velocity and chapters tabs", async () => {
+    vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
+
+    render(
+      <DashboardView
+        slug="test-project"
+        statuses={statuses}
+        onNavigateToChapter={vi.fn()}
+        refreshKey={0}
+      />,
+    );
+
+    // Start on velocity tab
+    expect(screen.getByRole("tab", { name: /Velocity/i })).toHaveAttribute("aria-selected", "true");
+
+    // Switch to chapters tab
+    await userEvent.click(screen.getByRole("tab", { name: /Chapters/i }));
+    expect(screen.getByRole("tab", { name: /Chapters/i })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /Velocity/i })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+
+    // Switch back to velocity tab
+    await userEvent.click(screen.getByRole("tab", { name: /Velocity/i }));
+    expect(screen.getByRole("tab", { name: /Velocity/i })).toHaveAttribute("aria-selected", "true");
+  });
+
   it("sorts by status using workflow order", async () => {
     // Create data with chapters in different statuses
     const statusSortData = {
@@ -456,6 +511,7 @@ describe("DashboardView", () => {
           status: "revised",
           status_label: "Revised",
           word_count: 500,
+          target_word_count: null,
           updated_at: "2026-03-28T10:00:00Z",
           sort_order: 0,
         },
@@ -465,6 +521,7 @@ describe("DashboardView", () => {
           status: "outline",
           status_label: "Outline",
           word_count: 1200,
+          target_word_count: null,
           updated_at: "2026-03-29T10:00:00Z",
           sort_order: 1,
         },

@@ -181,7 +181,11 @@ export function projectsRouter(db: Knex): Router {
       try {
         await db.transaction(async (trx) => {
           if (parsed.data.title !== undefined) {
-            const newSlug = await resolveUniqueSlug(trx, generateSlug(parsed.data.title), project.id);
+            const newSlug = await resolveUniqueSlug(
+              trx,
+              generateSlug(parsed.data.title),
+              project.id,
+            );
             updates.title = parsed.data.title;
             updates.slug = newSlug;
           }
@@ -378,7 +382,15 @@ export function projectsRouter(db: Knex): Router {
         .where({ project_id: project.id })
         .whereNull("deleted_at")
         .orderBy("sort_order", "asc")
-        .select("id", "title", "status", "word_count", "target_word_count", "updated_at", "sort_order");
+        .select(
+          "id",
+          "title",
+          "status",
+          "word_count",
+          "target_word_count",
+          "updated_at",
+          "sort_order",
+        );
 
       const allStatuses = await db("chapter_statuses")
         .orderBy("sort_order", "asc")

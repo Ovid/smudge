@@ -1,11 +1,4 @@
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { STRINGS } from "../strings";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 
@@ -30,7 +23,9 @@ export function BurndownChart({
   // Build planned pace data: linear from start to target
   const startMs = new Date(startDate + "T00:00:00").getTime();
   const endMs = new Date(targetDeadline + "T00:00:00").getTime();
-  const startWordCount = snapshots[0].total_word_count;
+  const firstSnapshot = snapshots[0];
+  if (!firstSnapshot) return null;
+  const startWordCount = firstSnapshot.total_word_count;
   const totalDays = Math.max(1, Math.ceil((endMs - startMs) / (1000 * 60 * 60 * 24)));
 
   // Generate planned pace points for each snapshot date plus the deadline
@@ -67,8 +62,8 @@ export function BurndownChart({
           />
           <YAxis tick={{ fontSize: 10, fill: "#78716c" }} width={60} />
           <Tooltip
-            formatter={(value: number, name: string) => [
-              value.toLocaleString(),
+            formatter={(value, name) => [
+              Number(value ?? 0).toLocaleString(),
               name === "planned" ? "Planned" : "Actual",
             ]}
           />

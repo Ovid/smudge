@@ -25,24 +25,40 @@ export function deriveSessions(events: SaveEvent[]): Session[] {
 
   // Split into session groups
   const sessionGroups: SaveEvent[][] = [];
-  let currentGroup: SaveEvent[] = [events[0]];
+  const firstEvent = events[0];
+  if (!firstEvent) return [];
+  let currentGroup: SaveEvent[] = [firstEvent];
 
   for (let i = 1; i < events.length; i++) {
-    const prev = new Date(events[i - 1].saved_at).getTime();
-    const curr = new Date(events[i].saved_at).getTime();
+    const prevEvent = events[i - 1];
+    const currEvent = events[i];
+    if (!prevEvent || !currEvent) continue;
+    const prev = new Date(prevEvent.saved_at).getTime();
+    const curr = new Date(currEvent.saved_at).getTime();
     if (curr - prev > SESSION_GAP_MS) {
       sessionGroups.push(currentGroup);
-      currentGroup = [events[i]];
+      currentGroup = [currEvent];
     } else {
-      currentGroup.push(events[i]);
+      currentGroup.push(currEvent);
     }
   }
   sessionGroups.push(currentGroup);
 
   // For each session, calculate net_words using baselines from before the session
   return sessionGroups.map((group) => {
-    const start = group[0].saved_at;
-    const end = group[group.length - 1].saved_at;
+    const groupFirst = group[0];
+    const groupLast = group[group.length - 1];
+    if (!groupFirst || !groupLast) {
+      return {
+        start: "",
+        end: "",
+        duration_minutes: 0,
+        chapters_touched: [],
+        net_words: 0,
+      };
+    }
+    const start = groupFirst.saved_at;
+    const end = groupLast.saved_at;
     const durationMs = new Date(end).getTime() - new Date(start).getTime();
     const durationMinutes = Math.round(durationMs / 60000);
 
@@ -53,16 +69,17 @@ export function deriveSessions(events: SaveEvent[]): Session[] {
     for (const chapterId of chapterIds) {
       const chapterEventsInSession = group.filter((e) => e.chapter_id === chapterId);
       const lastInSession = chapterEventsInSession[chapterEventsInSession.length - 1];
+      if (!lastInSession) continue;
 
       // Find baseline: most recent event for this chapter BEFORE session start
       const sessionStartTime = new Date(start).getTime();
       let baseline = 0;
-      for (let i = events.indexOf(group[0]) - 1; i >= 0; i--) {
-        if (
-          events[i].chapter_id === chapterId &&
-          new Date(events[i].saved_at).getTime() < sessionStartTime
-        ) {
-          baseline = events[i].word_count;
+      const groupStartIndex = events.indexOf(groupFirst);
+      for (let i = groupStartIndex - 1; i >= 0; i--) {
+        const evt = events[i];
+        if (!evt) continue;
+        if (evt.chapter_id === chapterId && new Date(evt.saved_at).getTime() < sessionStartTime) {
+          baseline = evt.word_count;
           break;
         }
       }
@@ -99,8 +116,9 @@ export function calculateStreaks(
   // Current streak: start from today or yesterday
   let current = 0;
   let checkDate = today;
+  const mostRecent = sorted[0];
 
-  if (sorted[0] !== today) {
+  if (mostRecent !== undefined && mostRecent !== today) {
     // Today not in list; start from yesterday
     checkDate = prevDay(today);
   }
@@ -115,8 +133,11 @@ export function calculateStreaks(
   let best = 0;
   let run = 1;
   for (let i = 1; i < sorted.length; i++) {
-    const expected = prevDay(sorted[i - 1]);
-    if (sorted[i] === expected) {
+    const prevDate = sorted[i - 1];
+    const currDate = sorted[i];
+    if (!prevDate || !currDate) continue;
+    const expected = prevDay(prevDate);
+    if (currDate === expected) {
       run++;
     } else {
       best = Math.max(best, run);
@@ -225,9 +246,7 @@ export function velocityHandler(db: Knex) {
     });
 
     const allDates = [
-      ...new Set(
-        allEventTimestamps.map((e) => dateFormatter.format(new Date(e.saved_at))),
-      ),
+      ...new Set(allEventTimestamps.map((e) => dateFormatter.format(new Date(e.saved_at)))),
     ];
     // Sort descending for calculateStreaks
     allDates.sort((a, b) => (a > b ? -1 : 1));
@@ -244,11 +263,13 @@ export function velocityHandler(db: Knex) {
     if (snapshotsLast30.length >= 2) {
       const oldest = snapshotsLast30[0];
       const newest = snapshotsLast30[snapshotsLast30.length - 1];
-      const daysBetween =
-        (new Date(newest.date).getTime() - new Date(oldest.date).getTime()) /
-        (1000 * 60 * 60 * 24);
-      if (daysBetween > 0) {
-        dailyAvg30d = (newest.total_word_count - oldest.total_word_count) / daysBetween;
+      if (oldest && newest) {
+        const daysBetween =
+          (new Date(newest.date).getTime() - new Date(oldest.date).getTime()) /
+          (1000 * 60 * 60 * 24);
+        if (daysBetween > 0) {
+          dailyAvg30d = (newest.total_word_count - oldest.total_word_count) / daysBetween;
+        }
       }
     }
 

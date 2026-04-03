@@ -394,7 +394,9 @@ describe("GET /api/projects/:slug/trash", () => {
 
 describe("PATCH /api/projects/:slug — target fields", () => {
   it("sets target_word_count", async () => {
-    const create = await request(t.app).post("/api/projects").send({ title: "Goals Test", mode: "fiction" });
+    const create = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Goals Test", mode: "fiction" });
     const res = await request(t.app)
       .patch(`/api/projects/${create.body.slug}`)
       .send({ target_word_count: 80000 });
@@ -403,15 +405,23 @@ describe("PATCH /api/projects/:slug — target fields", () => {
   });
 
   it("clears target_word_count with null", async () => {
-    const create = await request(t.app).post("/api/projects").send({ title: "Clear Test", mode: "fiction" });
-    await request(t.app).patch(`/api/projects/${create.body.slug}`).send({ target_word_count: 80000 });
-    const res = await request(t.app).patch(`/api/projects/${create.body.slug}`).send({ target_word_count: null });
+    const create = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Clear Test", mode: "fiction" });
+    await request(t.app)
+      .patch(`/api/projects/${create.body.slug}`)
+      .send({ target_word_count: 80000 });
+    const res = await request(t.app)
+      .patch(`/api/projects/${create.body.slug}`)
+      .send({ target_word_count: null });
     expect(res.status).toBe(200);
     expect(res.body.target_word_count).toBeNull();
   });
 
   it("sets target_deadline", async () => {
-    const create = await request(t.app).post("/api/projects").send({ title: "Deadline Test", mode: "fiction" });
+    const create = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Deadline Test", mode: "fiction" });
     const res = await request(t.app)
       .patch(`/api/projects/${create.body.slug}`)
       .send({ target_deadline: "2026-09-01" });
@@ -420,7 +430,9 @@ describe("PATCH /api/projects/:slug — target fields", () => {
   });
 
   it("sets completion_threshold", async () => {
-    const create = await request(t.app).post("/api/projects").send({ title: "Threshold Test", mode: "fiction" });
+    const create = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Threshold Test", mode: "fiction" });
     const res = await request(t.app)
       .patch(`/api/projects/${create.body.slug}`)
       .send({ completion_threshold: "revised" });
@@ -429,7 +441,9 @@ describe("PATCH /api/projects/:slug — target fields", () => {
   });
 
   it("rejects invalid completion_threshold", async () => {
-    const create = await request(t.app).post("/api/projects").send({ title: "Bad Threshold", mode: "fiction" });
+    const create = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Bad Threshold", mode: "fiction" });
     const res = await request(t.app)
       .patch(`/api/projects/${create.body.slug}`)
       .send({ completion_threshold: "garbage" });
@@ -437,7 +451,9 @@ describe("PATCH /api/projects/:slug — target fields", () => {
   });
 
   it("rejects negative target_word_count", async () => {
-    const create = await request(t.app).post("/api/projects").send({ title: "Neg Test", mode: "fiction" });
+    const create = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Neg Test", mode: "fiction" });
     const res = await request(t.app)
       .patch(`/api/projects/${create.body.slug}`)
       .send({ target_word_count: -100 });

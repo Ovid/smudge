@@ -29,17 +29,11 @@ export function ProjectSettingsDialog({
   onUpdate,
 }: ProjectSettingsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [wordCountTarget, setWordCountTarget] = useState<string>("");
-  const [deadline, setDeadline] = useState<string>("");
-  const [threshold, setThreshold] = useState<string>("final");
-
-  useEffect(() => {
-    setWordCountTarget(
-      project.target_word_count != null ? String(project.target_word_count) : "",
-    );
-    setDeadline(project.target_deadline ?? "");
-    setThreshold(project.completion_threshold ?? "final");
-  }, [project.target_word_count, project.target_deadline, project.completion_threshold]);
+  const [wordCountTarget, setWordCountTarget] = useState(
+    project.target_word_count != null ? String(project.target_word_count) : "",
+  );
+  const [deadline, setDeadline] = useState(project.target_deadline ?? "");
+  const [threshold, setThreshold] = useState(project.completion_threshold ?? "final");
 
   useEffect(() => {
     const dialog = dialogRef.current;
