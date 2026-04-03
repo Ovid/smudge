@@ -66,7 +66,10 @@ export function ProjectSettingsDialog({
     }
   }
 
-  function handleWordCountBlur() {
+  function handleWordCountBlur(e: React.FocusEvent<HTMLInputElement>) {
+    // Skip save when focus is moving to the Clear button to avoid racing PATCHes
+    const related = e.relatedTarget as HTMLElement | null;
+    if (related?.dataset.clearWordCount) return;
     const parsed = wordCountTarget.trim() === "" ? null : Number(wordCountTarget);
     if (parsed !== null && (Number.isNaN(parsed) || parsed <= 0)) return;
     saveField({ target_word_count: parsed });
@@ -125,6 +128,7 @@ export function ProjectSettingsDialog({
             />
             <button
               type="button"
+              data-clear-word-count
               onClick={() => {
                 setWordCountTarget("");
                 saveField({ target_word_count: null });

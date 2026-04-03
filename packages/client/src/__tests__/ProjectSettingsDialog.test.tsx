@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, waitFor, cleanup, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ProjectSettingsDialog } from "../components/ProjectSettingsDialog";
 import { api } from "../api/client";
@@ -81,7 +81,8 @@ describe("ProjectSettingsDialog", () => {
     const input = screen.getByLabelText(/word count target/i);
     await user.clear(input);
     await user.type(input, "80000");
-    await user.tab(); // blur triggers save
+    // Blur to a non-Clear element so the relatedTarget check doesn't skip save
+    fireEvent.blur(input, { relatedTarget: screen.getByLabelText(/chapter counts as complete/i) });
 
     await waitFor(() => {
       expect(api.projects.update).toHaveBeenCalled();
@@ -212,7 +213,8 @@ describe("ProjectSettingsDialog", () => {
     const input = screen.getByLabelText(/word count target/i);
     await user.clear(input);
     await user.type(input, "50000");
-    await user.tab();
+    // Blur to a non-Clear element so the relatedTarget check doesn't skip save
+    fireEvent.blur(input, { relatedTarget: screen.getByLabelText(/chapter counts as complete/i) });
 
     await waitFor(() => {
       expect(spy).toHaveBeenCalledWith("Failed to save project setting:", expect.any(Error));

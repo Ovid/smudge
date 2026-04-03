@@ -40,7 +40,10 @@ export function ChapterTargetPopover({
     }
   };
 
-  const handleBlur = () => {
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    // Skip save when focus is moving to the Clear button to avoid racing PATCHes
+    const related = e.relatedTarget as HTMLElement | null;
+    if (related?.dataset.clearWordCount) return;
     const parsed = parseInt(draft, 10);
     if (!isNaN(parsed) && parsed > 0) {
       handleSave(parsed);
@@ -88,6 +91,7 @@ export function ChapterTargetPopover({
           />
           {targetWordCount !== null && (
             <button
+              data-clear-word-count
               onClick={handleClear}
               className="mt-2 text-xs text-text-muted hover:text-text-secondary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
             >
