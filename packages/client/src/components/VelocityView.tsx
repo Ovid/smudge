@@ -34,7 +34,6 @@ function computeDailyNetWords(
 export function VelocityView({ slug, refreshKey }: VelocityViewProps) {
   const [data, setData] = useState<VelocityResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [now] = useState(() => Date.now());
 
   useEffect(() => {
     let cancelled = false;
@@ -88,7 +87,9 @@ export function VelocityView({ slug, refreshKey }: VelocityViewProps) {
     ? Math.max(
         0,
         Math.ceil(
-          (new Date(data.projection.target_deadline).getTime() - now) / (1000 * 60 * 60 * 24),
+          (new Date(data.projection.target_deadline + "T00:00:00Z").getTime() -
+            new Date(today + "T00:00:00Z").getTime()) /
+            (1000 * 60 * 60 * 24),
         ),
       )
     : null;
