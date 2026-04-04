@@ -156,6 +156,9 @@ export function chaptersRouter(db: Knex): Router {
         await trx("projects").where({ id: chapter.project_id }).update({ updated_at: now });
       });
 
+      // Update daily snapshot so deleted chapter's words are excluded
+      await upsertDailySnapshot(db, chapter.project_id);
+
       res.json({ message: "Chapter moved to trash." });
     }),
   );
@@ -220,6 +223,9 @@ export function chaptersRouter(db: Knex): Router {
         }
         throw err;
       }
+
+      // Update daily snapshot so restored chapter's words are included
+      await upsertDailySnapshot(db, chapter.project_id);
 
       const restored = await queryChapter(
         db("chapters").where({ id: req.params.id }).whereNull("deleted_at"),
