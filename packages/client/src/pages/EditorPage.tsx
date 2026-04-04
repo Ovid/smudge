@@ -322,7 +322,7 @@ export function EditorPage() {
 
       if (ctrl && e.shiftKey && e.key === "P") {
         e.preventDefault();
-        editorRef.current?.flushSave().then(() => {
+        (editorRef.current?.flushSave() ?? Promise.resolve()).then(() => {
           setTrashOpen(false);
           setViewMode((prev) => (prev === "preview" ? "editor" : "preview"));
         });
