@@ -256,8 +256,9 @@ export function velocityHandler(db: Knex) {
         for (const row of baselines) {
           preWindowBaselines[row.chapter_id] = row.word_count;
         }
-      } catch {
-        // Best-effort: default to no baselines (net_words calculated from first event in window)
+      } catch (err) {
+        console.error("Failed to fetch pre-window baselines for session net_words:", err);
+        // Fallback: net_words calculated from first event in window (may be inflated)
       }
     }
 
