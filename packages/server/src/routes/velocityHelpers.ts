@@ -33,12 +33,14 @@ export async function insertSaveEvent(
   wordCount: number,
 ): Promise<void> {
   try {
+    const today = await getTodayDate(db);
     await db("save_events").insert({
       id: uuid(),
       chapter_id: chapterId,
       project_id: projectId,
       word_count: wordCount,
       saved_at: new Date().toISOString(),
+      save_date: today,
     });
   } catch (err) {
     console.error(

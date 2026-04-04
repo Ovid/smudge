@@ -284,7 +284,7 @@ export function velocityHandler(db: Knex) {
       .whereExists(
         db("save_events")
           .where("save_events.project_id", project.id)
-          .whereRaw(`date(save_events.saved_at) = daily_snapshots.date`)
+          .whereRaw(`save_events.save_date = daily_snapshots.date`)
           .select(db.raw("1")),
       )
       .orderBy("date", "desc")

@@ -52,6 +52,7 @@ async function insertSaveEvent(
     project_id: projectId,
     word_count: wordCount,
     saved_at: savedAt,
+    save_date: savedAt.slice(0, 10),
   });
 }
 
