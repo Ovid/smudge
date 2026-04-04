@@ -4,15 +4,17 @@ import { STRINGS } from "../strings";
 interface RecentSessionsProps {
   sessions: VelocityResponse["sessions"];
   chapterNames: Record<string, string>;
+  today: string;
 }
 
-function formatSessionDate(start: string, end: string): string {
+function formatSessionDate(start: string, end: string, todayStr: string): string {
   const startDate = new Date(start);
   const endDate = new Date(end);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const today = new Date(todayStr + "T00:00:00Z");
   const yesterday = new Date(today.getTime() - 86400000);
-  const sessionDay = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+  const sessionDay = new Date(
+    Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate()),
+  );
 
   let dayLabel: string;
   if (sessionDay.getTime() === today.getTime()) {
@@ -30,7 +32,7 @@ function formatSessionDate(start: string, end: string): string {
   return `${dayLabel}, ${startTime}\u2009\u2013\u2009${endTime}`;
 }
 
-export function RecentSessions({ sessions, chapterNames }: RecentSessionsProps) {
+export function RecentSessions({ sessions, chapterNames, today }: RecentSessionsProps) {
   if (sessions.length === 0) return null;
 
   const recentFive = sessions.slice(-5).reverse();
@@ -42,7 +44,7 @@ export function RecentSessions({ sessions, chapterNames }: RecentSessionsProps) 
       </h2>
       <ol className="space-y-2">
         {recentFive.map((session) => {
-          const dateStr = formatSessionDate(session.start, session.end);
+          const dateStr = formatSessionDate(session.start, session.end, today);
           const sign = session.net_words >= 0 ? "+" : "";
           const chapterLabel = session.chapters_touched
             .map((id) => chapterNames[id] ?? STRINGS.velocity.unknownChapter)

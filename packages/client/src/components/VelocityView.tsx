@@ -128,7 +128,7 @@ export function VelocityView({ slug, refreshKey }: VelocityViewProps) {
         startDate={startDate}
       />
 
-      <RecentSessions sessions={data.sessions} chapterNames={data.chapter_names} />
+      <RecentSessions sessions={data.sessions} chapterNames={data.chapter_names} today={today} />
     </div>
   );
 }
