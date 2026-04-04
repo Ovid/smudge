@@ -28,7 +28,9 @@ export function useProjectEditor(slug: string | undefined) {
   }, [activeChapter]);
 
   useEffect(() => {
-    projectSlugRef.current = project?.slug;
+    if (project?.slug !== undefined) {
+      projectSlugRef.current = project.slug;
+    }
   }, [project?.slug]);
 
   useEffect(() => {
