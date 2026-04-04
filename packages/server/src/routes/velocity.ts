@@ -291,7 +291,8 @@ export function velocityHandler(db: Knex) {
         .reverse()
         .find((s: { date: string }) => s.date <= thirtyDaysAgoDateStr);
       const baselineTotal = baselineSnapshot ? baselineSnapshot.total_word_count : 0;
-      const baselineDate = baselineSnapshot ? baselineSnapshot.date : dailySnapshots[0]!.date;
+      const firstSnapshot = dailySnapshots[0];
+      const baselineDate = baselineSnapshot ? baselineSnapshot.date : (firstSnapshot ? firstSnapshot.date : newest.date);
       const msPerDay = 86_400_000;
       const daysCovered = Math.min(
         30,
