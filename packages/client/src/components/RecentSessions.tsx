@@ -49,7 +49,10 @@ export function RecentSessions({ sessions, chapterNames }: RecentSessionsProps) 
             .join(", ");
 
           return (
-            <li key={`${session.start}-${session.end}`} className="text-sm text-text-secondary font-sans">
+            <li
+              key={`${session.start}-${session.end}`}
+              className="text-sm text-text-secondary font-sans"
+            >
               {dateStr} &middot;{" "}
               {session.duration_minutes > 0
                 ? `${session.duration_minutes} min`
