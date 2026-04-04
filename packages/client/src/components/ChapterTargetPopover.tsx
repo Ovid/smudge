@@ -17,6 +17,7 @@ export function ChapterTargetPopover({
 }: ChapterTargetPopoverProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(targetWordCount?.toString() ?? "");
+  const [saveError, setSaveError] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
 
   // Close on outside click
@@ -32,11 +33,13 @@ export function ChapterTargetPopover({
   }, [open]);
 
   const handleSave = async (value: number | null) => {
+    setSaveError(false);
     try {
       await api.chapters.update(chapterId, { target_word_count: value });
       onUpdate();
     } catch {
-      // Best-effort
+      setDraft(targetWordCount?.toString() ?? "");
+      setSaveError(true);
     }
   };
 
@@ -93,6 +96,11 @@ export function ChapterTargetPopover({
             onBlur={handleBlur}
             className="w-full rounded border border-border px-2 py-1 text-sm text-text-primary bg-bg-primary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring"
           />
+          {saveError && (
+            <p className="text-xs text-red-600 mt-1 font-sans">
+              {STRINGS.projectSettings.saveError}
+            </p>
+          )}
           {targetWordCount !== null && (
             <button
               data-clear-word-count

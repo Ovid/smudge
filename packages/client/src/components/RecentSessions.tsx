@@ -41,7 +41,7 @@ export function RecentSessions({ sessions, chapterNames }: RecentSessionsProps) 
         {STRINGS.velocity.recentSessions}
       </h2>
       <ol className="space-y-2">
-        {recentFive.map((session, i) => {
+        {recentFive.map((session) => {
           const dateStr = formatSessionDate(session.start, session.end);
           const sign = session.net_words >= 0 ? "+" : "";
           const chapterLabel = session.chapters_touched
@@ -49,7 +49,7 @@ export function RecentSessions({ sessions, chapterNames }: RecentSessionsProps) 
             .join(", ");
 
           return (
-            <li key={i} className="text-sm text-text-secondary font-sans">
+            <li key={`${session.start}-${session.end}`} className="text-sm text-text-secondary font-sans">
               {dateStr} &middot;{" "}
               {session.duration_minutes > 0
                 ? `${session.duration_minutes} min`
