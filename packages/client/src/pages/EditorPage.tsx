@@ -129,6 +129,13 @@ export function EditorPage() {
   const hasFetchedInitial = useRef(false);
   const lastVelocityFetch = useRef(0);
   const VELOCITY_THROTTLE_MS = 60_000;
+
+  // Reset velocity state when navigating between projects
+  useEffect(() => {
+    hasFetchedInitial.current = false;
+    lastVelocityFetch.current = 0;
+    setLastSession(null);
+  }, [slug]);
   useEffect(() => {
     if (!slug) return;
     const isInitialLoad = !hasFetchedInitial.current;
@@ -143,9 +150,12 @@ export function EditorPage() {
     api.projects
       .velocity(slug)
       .then((data) => {
-        if (!cancelled && data.sessions.length > 0) {
+        if (cancelled) return;
+        if (data.sessions.length > 0) {
           const last = data.sessions[data.sessions.length - 1];
           if (last) setLastSession(last);
+        } else {
+          setLastSession(null);
         }
       })
       .catch(() => {
