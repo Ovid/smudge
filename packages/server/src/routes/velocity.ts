@@ -298,12 +298,16 @@ export function velocityHandler(db: Knex) {
     let dailyAvg30d = 0;
     const newest = dailySnapshots[dailySnapshots.length - 1];
     if (newest) {
+      const firstSnapshot = dailySnapshots[0];
       // Find the baseline: latest snapshot at or before 30 days ago
       const baselineSnapshot = [...dailySnapshots]
         .reverse()
         .find((s: { date: string }) => s.date <= thirtyDaysAgoDateStr);
-      const baselineTotal = baselineSnapshot ? baselineSnapshot.total_word_count : 0;
-      const firstSnapshot = dailySnapshots[0];
+      const baselineTotal = baselineSnapshot
+        ? baselineSnapshot.total_word_count
+        : firstSnapshot
+          ? firstSnapshot.total_word_count
+          : 0;
       const baselineDate = baselineSnapshot
         ? baselineSnapshot.date
         : firstSnapshot

@@ -81,9 +81,9 @@ export function calculateWordsToday(
 
   const lastPrior = priorDaySnapshots[0];
   if (!lastPrior) {
-    // No prior-day snapshot: either first day of tracking or no history.
-    // Return 0 to avoid showing the entire manuscript total as "words today".
-    return 0;
+    // No prior-day snapshot: first day of tracking.
+    // Design: show current total so writers see progress on day one.
+    return currentTotal;
   }
 
   return currentTotal - lastPrior.total_word_count;
