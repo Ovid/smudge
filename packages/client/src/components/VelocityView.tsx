@@ -116,7 +116,10 @@ export function VelocityView({ slug, refreshKey }: VelocityViewProps) {
         currentTotal={currentTotal}
       />
 
-      <DailyWordChart data={dailyNetWords} dailyAverage={data.projection.daily_average_30d} />
+      <DailyWordChart
+        data={dailyNetWords.slice(-30)}
+        dailyAverage={data.projection.daily_average_30d}
+      />
 
       <BurndownChart
         snapshots={data.daily_snapshots}

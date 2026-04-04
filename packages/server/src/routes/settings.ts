@@ -46,7 +46,7 @@ export function settingsRouter(db: Knex): Router {
         if (!validator) {
           errors[key] = `Unknown setting: ${key}`;
         } else if (!validator(value)) {
-          errors[key] = `Invalid value for ${key}: ${value}`;
+          errors[key] = `Invalid value for ${key}`;
         }
       }
 
