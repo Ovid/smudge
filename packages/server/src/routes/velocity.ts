@@ -278,9 +278,10 @@ export function velocityHandler(db: Knex) {
 
     const streak = calculateStreaks(allDates, today);
 
-    // 30-day daily average: total change over a fixed 30-day calendar window.
-    // Uses snapshot at/before the window start as baseline, divides by 30 days.
-    // This avoids inflated averages when gaps exist (days with no writing).
+    // 30-day daily average: total change over the actual days covered (capped at 30).
+    // Uses snapshot at/before the window start as baseline.
+    // For projects with fewer than 30 days of history, divides by actual days
+    // to avoid under-reporting the average and producing pessimistic projections.
     const thirtyDaysAgoDateStr = thirtyDaysAgo.toISOString().slice(0, 10);
     let dailyAvg30d = 0;
     const newest = dailySnapshots[dailySnapshots.length - 1];
@@ -290,7 +291,20 @@ export function velocityHandler(db: Knex) {
         .reverse()
         .find((s: { date: string }) => s.date <= thirtyDaysAgoDateStr);
       const baselineTotal = baselineSnapshot ? baselineSnapshot.total_word_count : 0;
-      dailyAvg30d = Math.round((newest.total_word_count - baselineTotal) / 30);
+      const baselineDate = baselineSnapshot ? baselineSnapshot.date : dailySnapshots[0]!.date;
+      const msPerDay = 86_400_000;
+      const daysCovered = Math.min(
+        30,
+        Math.max(
+          1,
+          Math.round(
+            (new Date(newest.date + "T00:00:00Z").getTime() -
+              new Date(baselineDate + "T00:00:00Z").getTime()) /
+              msPerDay,
+          ),
+        ),
+      );
+      dailyAvg30d = Math.round((newest.total_word_count - baselineTotal) / daysCovered);
     }
 
     // Current total word count
