@@ -219,9 +219,9 @@ describe("calculateWordsToday", () => {
     expect(result).toBe(5000);
   });
 
-  it("returns 0 when no snapshots exist", () => {
-    const result = calculateWordsToday(0, [], "2026-04-01");
-    expect(result).toBe(0);
+  it("returns current total when no snapshots exist (first day)", () => {
+    expect(calculateWordsToday(0, [], "2026-04-01")).toBe(0);
+    expect(calculateWordsToday(3000, [], "2026-04-01")).toBe(3000);
   });
 
   it("uses most recent prior-day snapshot, not strictly yesterday", () => {

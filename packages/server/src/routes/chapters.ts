@@ -100,19 +100,19 @@ export function chaptersRouter(db: Knex): Router {
           .update({ updated_at: new Date().toISOString() });
       });
 
-      // Fire velocity side-effects (best-effort, after the main save transaction succeeds)
+      // Fire velocity side-effects (best-effort, after the main save transaction succeeds).
+      // Helpers handle their own errors internally — no outer catch needed.
+      // Run in parallel to minimize latency on the save path.
       if (parsed.data.content !== undefined) {
-        try {
-          await insertSaveEvent(
+        await Promise.all([
+          insertSaveEvent(
             db,
             chapter.id as string,
             chapter.project_id,
             updates.word_count as number,
-          );
-          await upsertDailySnapshot(db, chapter.project_id);
-        } catch {
-          // Best-effort: don't let velocity tracking failures affect save response
-        }
+          ),
+          upsertDailySnapshot(db, chapter.project_id),
+        ]);
       }
 
       const updated = await queryChapter(

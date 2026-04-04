@@ -12,8 +12,11 @@ function formatSessionDate(start: string, end: string, todayStr: string): string
   const endDate = new Date(end);
   const today = new Date(todayStr + "T00:00:00Z");
   const yesterday = new Date(today.getTime() - 86400000);
+  // Use local date components (not UTC) — the browser timezone matches the
+  // server's configured timezone via useTimezoneDetection, and todayStr is
+  // computed in that same timezone.
   const sessionDay = new Date(
-    Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate()),
+    Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()),
   );
 
   let dayLabel: string;

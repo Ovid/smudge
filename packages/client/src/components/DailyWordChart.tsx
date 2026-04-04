@@ -3,9 +3,9 @@ import type { RectangleProps } from "recharts";
 import { STRINGS } from "../strings";
 import { useReducedMotion } from "../hooks/useReducedMotion";
 
-function WordBar(props: RectangleProps & { net_words?: number }) {
-  const { x, y, width, height, net_words } = props;
-  const isNegative = (net_words ?? 0) < 0;
+function WordBar(props: RectangleProps & { payload?: { net_words?: number } }) {
+  const { x, y, width, height, payload } = props;
+  const isNegative = (payload?.net_words ?? 0) < 0;
   const rx = isNegative ? 0 : 2;
   return (
     <rect
