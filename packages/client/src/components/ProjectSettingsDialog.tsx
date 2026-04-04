@@ -79,7 +79,7 @@ export function ProjectSettingsDialog({
     // Skip save when focus is moving to the Clear button to avoid racing PATCHes
     const related = e.relatedTarget as HTMLElement | null;
     if (related?.dataset.clearWordCount) return;
-    const parsed = wordCountTarget.trim() === "" ? null : Number(wordCountTarget);
+    const parsed = wordCountTarget.trim() === "" ? null : parseInt(wordCountTarget, 10);
     if (parsed !== null && (Number.isNaN(parsed) || parsed <= 0)) return;
     saveField({ target_word_count: parsed });
   }
@@ -135,6 +135,7 @@ export function ProjectSettingsDialog({
               id="project-word-count-target"
               type="number"
               min="1"
+              step="1"
               value={wordCountTarget}
               onChange={(e) => setWordCountTarget(e.target.value)}
               onBlur={handleWordCountBlur}

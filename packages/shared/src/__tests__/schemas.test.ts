@@ -210,13 +210,13 @@ describe("calculateWordsToday", () => {
     expect(result).toBe(1200);
   });
 
-  it("returns current total when no prior-day snapshot exists (first day)", () => {
+  it("returns 0 when no prior-day snapshot exists (first day)", () => {
     const result = calculateWordsToday(
       5000,
       [{ date: "2026-04-01", total_word_count: 5000 }],
       "2026-04-01",
     );
-    expect(result).toBe(5000);
+    expect(result).toBe(0);
   });
 
   it("returns 0 when no snapshots exist", () => {

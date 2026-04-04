@@ -18,12 +18,11 @@ function computeDailyNetWords(
 ): Array<{ date: string; net_words: number }> {
   if (snapshots.length === 0) return [];
   const sorted = [...snapshots].sort((a, b) => a.date.localeCompare(b.date));
-  if (sorted.length === 1) {
-    const only = sorted[0];
-    if (only) return [{ date: only.date, net_words: only.total_word_count }];
-    return [];
-  }
-  const result: Array<{ date: string; net_words: number }> = [];
+  const first = sorted[0];
+  if (!first) return [];
+  const result: Array<{ date: string; net_words: number }> = [
+    { date: first.date, net_words: first.total_word_count },
+  ];
   for (let i = 1; i < sorted.length; i++) {
     const current = sorted[i];
     const previous = sorted[i - 1];
@@ -53,7 +52,7 @@ export function VelocityView({ slug, refreshKey }: VelocityViewProps) {
       .catch((err) => {
         if (!cancelled) {
           console.error(err);
-          setError(err instanceof Error ? err.message : "Failed to load velocity data");
+          setError(err instanceof Error ? err.message : STRINGS.error.loadVelocityFailed);
         }
       });
     return () => {

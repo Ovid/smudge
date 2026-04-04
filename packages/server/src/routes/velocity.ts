@@ -258,21 +258,33 @@ export function velocityHandler(db: Knex) {
         }
       } catch (err) {
         console.error("Failed to fetch pre-window baselines for session net_words:", err);
-        // Fallback: net_words calculated from first event in window (may be inflated)
+        // Fallback: use each chapter's first event in the window as baseline
+        // so the first session shows 0 net_words rather than the full word count
+        for (const evt of recentEvents) {
+          if (!(evt.chapter_id in preWindowBaselines)) {
+            preWindowBaselines[evt.chapter_id] = evt.word_count;
+          }
+        }
       }
     }
 
     const sessions = deriveSessions(recentEvents, preWindowBaselines);
 
-    // Use daily_snapshots for streak calculation (already one row per day,
-    // dates are timezone-correct from getTodayDate). Avoids loading unbounded
-    // save_events into memory.
-    // Cap at 400 days — sufficient for accurate streak calculation
+    // Use daily_snapshots for streak calculation, but only include days that
+    // also have save_events (actual writing). This excludes days where the
+    // snapshot was updated only due to chapter delete/restore operations.
+    // Cap at 400 days — sufficient for accurate streak calculation.
     const allSnapshotDates: { date: string }[] = await db("daily_snapshots")
-      .where({ project_id: project.id })
+      .where("daily_snapshots.project_id", project.id)
+      .whereExists(
+        db("save_events")
+          .where("save_events.project_id", project.id)
+          .whereRaw(`date(save_events.saved_at) = daily_snapshots.date`)
+          .select(db.raw("1")),
+      )
       .orderBy("date", "desc")
       .limit(400)
-      .select("date");
+      .select("daily_snapshots.date");
 
     const allDates = allSnapshotDates.map((s) => s.date);
 

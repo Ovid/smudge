@@ -264,6 +264,10 @@ export function EditorPage() {
   projectRef.current = project;
   const chapterWordCountRef = useRef(chapterWordCount);
   chapterWordCountRef.current = chapterWordCount;
+  const settingsOpenRef = useRef(settingsOpen);
+  settingsOpenRef.current = settingsOpen;
+  const projectSettingsOpenRef = useRef(projectSettingsOpen);
+  projectSettingsOpenRef.current = projectSettingsOpen;
   const handleCreateChapterRef = useRef(handleCreateChapter);
   handleCreateChapterRef.current = handleCreateChapter;
   const handleSelectChapterWithFlushRef = useRef(handleSelectChapterWithFlush);
@@ -286,7 +290,7 @@ export function EditorPage() {
       }
 
       // Don't process shortcuts when a dialog is open (focus trap)
-      if (shortcutHelpOpenRef.current || deleteTargetRef.current) return;
+      if (shortcutHelpOpenRef.current || deleteTargetRef.current || settingsOpenRef.current || projectSettingsOpenRef.current) return;
 
       if (ctrl && e.shiftKey && e.key === "N") {
         e.preventDefault();

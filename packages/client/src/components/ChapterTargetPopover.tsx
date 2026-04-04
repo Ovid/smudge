@@ -32,14 +32,16 @@ export function ChapterTargetPopover({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
-  const handleSave = async (value: number | null) => {
+  const handleSave = async (value: number | null): Promise<boolean> => {
     setSaveError(false);
     try {
       await api.chapters.update(chapterId, { target_word_count: value });
       onUpdate();
+      return true;
     } catch {
       setDraft(targetWordCount?.toString() ?? "");
       setSaveError(true);
+      return false;
     }
   };
 
@@ -57,10 +59,11 @@ export function ChapterTargetPopover({
     }
   };
 
-  const handleClear = () => {
+  const handleClear = async () => {
     setDraft("");
-    handleSave(null);
-    setOpen(false);
+    const ok = await handleSave(null);
+    if (ok) setOpen(false);
+    // On failure, handleSave sets saveError — keep popover open so user sees it
   };
 
   // Display: "2,500 / 5,000" when target is set, just "2,500" otherwise
@@ -97,7 +100,7 @@ export function ChapterTargetPopover({
             className="w-full rounded border border-border px-2 py-1 text-sm text-text-primary bg-bg-primary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring"
           />
           {saveError && (
-            <p className="text-xs text-red-600 mt-1 font-sans">
+            <p className="text-xs text-status-error mt-1 font-sans">
               {STRINGS.projectSettings.saveError}
             </p>
           )}

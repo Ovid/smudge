@@ -52,6 +52,7 @@ export const STRINGS = {
     restoreChapterFailed: "Failed to restore chapter",
     loadDashboardFailed: "Failed to load dashboard",
     statusChangeFailed: "Failed to update chapter status",
+    loadVelocityFailed: "Failed to load velocity data",
   },
   editor: {
     placeholder: "Start writing\u2026",
