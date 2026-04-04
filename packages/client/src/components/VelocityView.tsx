@@ -20,9 +20,7 @@ function computeDailyNetWords(
   const sorted = [...snapshots].sort((a, b) => a.date.localeCompare(b.date));
   const first = sorted[0];
   if (!first) return [];
-  const result: Array<{ date: string; net_words: number }> = [
-    { date: first.date, net_words: 0 },
-  ];
+  const result: Array<{ date: string; net_words: number }> = [{ date: first.date, net_words: 0 }];
   for (let i = 1; i < sorted.length; i++) {
     const current = sorted[i];
     const previous = sorted[i - 1];

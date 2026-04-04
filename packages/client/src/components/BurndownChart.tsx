@@ -36,10 +36,7 @@ export function BurndownChart({
     .sort()
     .map((date) => {
       const dateMs = new Date(date + "T00:00:00Z").getTime();
-      const dayIndex = Math.min(
-        totalDays,
-        Math.ceil((dateMs - startMs) / (1000 * 60 * 60 * 24)),
-      );
+      const dayIndex = Math.min(totalDays, Math.ceil((dateMs - startMs) / (1000 * 60 * 60 * 24)));
       const planned = startWordCount + ((targetWordCount - startWordCount) * dayIndex) / totalDays;
 
       const snapshot = snapshots.find((s) => s.date === date);
