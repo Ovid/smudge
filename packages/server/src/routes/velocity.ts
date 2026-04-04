@@ -4,7 +4,7 @@ import { getTodayDate } from "./velocityHelpers";
 
 interface SaveEvent {
   id: string;
-  chapter_id: string;
+  chapter_id: string | null;
   project_id: string;
   word_count: number;
   saved_at: string;
@@ -58,7 +58,8 @@ export function deriveSessions(
     sessionBaselines.push({ ...lastSeenWordCount });
     // Update lastSeenWordCount with all events in this session
     for (const evt of group) {
-      lastSeenWordCount[evt.chapter_id] = evt.word_count;
+      const key = evt.chapter_id ?? `_purged_${evt.id}`;
+      lastSeenWordCount[key] = evt.word_count;
     }
   }
 
@@ -83,7 +84,8 @@ export function deriveSessions(
     // Track last event per chapter in this session and unique chapter IDs
     const lastInSessionByChapter: Record<string, SaveEvent> = {};
     for (const evt of group) {
-      lastInSessionByChapter[evt.chapter_id] = evt;
+      const key = evt.chapter_id ?? `_purged_${evt.id}`;
+      lastInSessionByChapter[key] = evt;
     }
     const chapterIds = Object.keys(lastInSessionByChapter);
 
@@ -101,7 +103,7 @@ export function deriveSessions(
       start,
       end,
       duration_minutes: durationMinutes,
-      chapters_touched: chapterIds,
+      chapters_touched: chapterIds.filter((id) => !id.startsWith("_purged_")),
       net_words: netWords,
     };
   });
@@ -237,7 +239,9 @@ export function velocityHandler(db: Knex) {
 
     // Fetch per-chapter baselines from immediately before the 30-day window
     // to prevent inflated net_words for chapters with older history
-    const chapterIdsInWindow = [...new Set(recentEvents.map((e) => e.chapter_id))];
+    const chapterIdsInWindow = [
+      ...new Set(recentEvents.map((e) => e.chapter_id).filter((id): id is string => id !== null)),
+    ];
     const preWindowBaselines: Record<string, number> = {};
     if (chapterIdsInWindow.length > 0) {
       try {
@@ -254,15 +258,16 @@ export function velocityHandler(db: Knex) {
           )
           .select("se1.chapter_id", "se1.word_count");
         for (const row of baselines) {
-          preWindowBaselines[row.chapter_id] = row.word_count;
+          if (row.chapter_id) preWindowBaselines[row.chapter_id] = row.word_count;
         }
       } catch (err) {
         console.error("Failed to fetch pre-window baselines for session net_words:", err);
         // Fallback: use each chapter's first event in the window as baseline
         // so the first session shows 0 net_words rather than the full word count
         for (const evt of recentEvents) {
-          if (!(evt.chapter_id in preWindowBaselines)) {
-            preWindowBaselines[evt.chapter_id] = evt.word_count;
+          const key = evt.chapter_id ?? `_purged_${evt.id}`;
+          if (!(key in preWindowBaselines)) {
+            preWindowBaselines[key] = evt.word_count;
           }
         }
       }
@@ -379,9 +384,13 @@ export function velocityHandler(db: Knex) {
       completed_chapters: completedChapters,
     };
 
-    // Build chapter ID → title map for client display
+    // Build chapter ID → title map for client display (include soft-deleted
+    // chapters so sessions referencing them don't show "Unknown chapter")
+    const allChaptersForNames = await db("chapters")
+      .where({ project_id: project.id })
+      .select("id", "title");
     const chapterNames: Record<string, string> = {};
-    for (const ch of chapters) {
+    for (const ch of allChaptersForNames) {
       chapterNames[ch.id] = ch.title;
     }
 

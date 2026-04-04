@@ -21,7 +21,7 @@ function computeDailyNetWords(
   const first = sorted[0];
   if (!first) return [];
   const result: Array<{ date: string; net_words: number }> = [
-    { date: first.date, net_words: first.total_word_count },
+    { date: first.date, net_words: 0 },
   ];
   for (let i = 1; i < sorted.length; i++) {
     const current = sorted[i];
