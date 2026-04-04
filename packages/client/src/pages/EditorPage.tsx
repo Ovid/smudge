@@ -290,7 +290,13 @@ export function EditorPage() {
       }
 
       // Don't process shortcuts when a dialog is open (focus trap)
-      if (shortcutHelpOpenRef.current || deleteTargetRef.current || settingsOpenRef.current || projectSettingsOpenRef.current) return;
+      if (
+        shortcutHelpOpenRef.current ||
+        deleteTargetRef.current ||
+        settingsOpenRef.current ||
+        projectSettingsOpenRef.current
+      )
+        return;
 
       if (ctrl && e.shiftKey && e.key === "N") {
         e.preventDefault();
