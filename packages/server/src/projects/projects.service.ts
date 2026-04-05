@@ -282,23 +282,23 @@ export async function reorderChapters(
   }
   const { chapter_ids } = parsed.data;
 
-  const existingIds = (await ChapterRepo.listIdsByProject(db, project.id)).sort();
-  const providedIds = [...chapter_ids].sort();
+  return db.transaction(async (trx) => {
+    const existingIds = (await ChapterRepo.listIdsByProject(trx, project.id)).sort();
+    const providedIds = [...chapter_ids].sort();
 
-  if (
-    existingIds.length !== providedIds.length ||
-    !existingIds.every((id, i) => id === providedIds[i])
-  ) {
-    return { mismatch: true };
-  }
+    if (
+      existingIds.length !== providedIds.length ||
+      !existingIds.every((id, i) => id === providedIds[i])
+    ) {
+      return { mismatch: true } as const;
+    }
 
-  await db.transaction(async (trx) => {
     const orders = chapter_ids.map((id, i) => ({ id, sort_order: i }));
     await ChapterRepo.updateSortOrders(trx, orders);
     await ProjectRepo.updateTimestamp(trx, project.id);
-  });
 
-  return { success: true };
+    return { success: true } as const;
+  });
 }
 
 export async function getDashboard(slug: string): Promise<DashboardResponse | null> {
