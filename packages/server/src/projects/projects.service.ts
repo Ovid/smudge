@@ -14,6 +14,26 @@ import * as VelocityService from "../velocity/velocity.service";
 import type { ProjectRow, ProjectListRow } from "./projects.types";
 import type { ChapterRow } from "../chapters/chapters.types";
 
+// --- Injectable velocity service for testing ---
+
+interface VelocityServiceInterface {
+  updateDailySnapshot(projectId: string): Promise<void>;
+}
+
+let velocityServiceOverride: VelocityServiceInterface | null = null;
+
+export function setVelocityService(svc: VelocityServiceInterface): void {
+  velocityServiceOverride = svc;
+}
+
+export function resetVelocityService(): void {
+  velocityServiceOverride = null;
+}
+
+function getVelocityService(): VelocityServiceInterface {
+  return velocityServiceOverride ?? VelocityService;
+}
+
 // --- Errors ---
 
 export class ProjectTitleExistsError extends Error {
@@ -184,7 +204,11 @@ export async function deleteProject(slug: string): Promise<boolean> {
     await ProjectRepo.softDelete(trx, project.id, now);
   });
 
-  await VelocityService.updateDailySnapshot(project.id);
+  try {
+    await getVelocityService().updateDailySnapshot(project.id);
+  } catch {
+    // Velocity tracking is best-effort; delete must still succeed
+  }
 
   return true;
 }
