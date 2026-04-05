@@ -12,7 +12,9 @@ export function setupTestDb() {
     testDb = knex(createTestKnexConfig());
     await testDb.raw("PRAGMA foreign_keys = ON");
     await testDb.migrate.latest();
-    testServer = createApp(testDb).listen(0);
+    const app = createApp(testDb);
+    testServer = app.listen(0);
+    await new Promise<void>((resolve) => testServer.on("listening", resolve));
   });
 
   afterAll(async () => {
