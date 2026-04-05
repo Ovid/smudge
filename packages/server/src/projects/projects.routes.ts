@@ -45,7 +45,7 @@ export function projectsRouter(): Router {
     "/:slug",
     asyncHandler(async (req, res) => {
       try {
-        const result = await ProjectService.updateProject(req.params.slug!, req.body);
+        const result = await ProjectService.updateProject(req.params.slug as string, req.body);
         if (!result) {
           res.status(404).json({
             error: { code: "NOT_FOUND", message: "Project not found." },
@@ -79,7 +79,7 @@ export function projectsRouter(): Router {
   router.get(
     "/:slug",
     asyncHandler(async (req, res) => {
-      const result = await ProjectService.getProject(req.params.slug!);
+      const result = await ProjectService.getProject(req.params.slug as string);
       if (!result) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Project not found." },
@@ -93,7 +93,7 @@ export function projectsRouter(): Router {
   router.post(
     "/:slug/chapters",
     asyncHandler(async (req, res) => {
-      const result = await ProjectService.createChapter(req.params.slug!);
+      const result = await ProjectService.createChapter(req.params.slug as string);
       if (result === "project_not_found") {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Project not found." },
@@ -113,7 +113,7 @@ export function projectsRouter(): Router {
   router.put(
     "/:slug/chapters/order",
     asyncHandler(async (req, res) => {
-      const result = await ProjectService.reorderChapters(req.params.slug!, req.body);
+      const result = await ProjectService.reorderChapters(req.params.slug as string, req.body);
       if (!result) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Project not found." },
@@ -142,7 +142,7 @@ export function projectsRouter(): Router {
   router.get(
     "/:slug/dashboard",
     asyncHandler(async (req, res) => {
-      const result = await ProjectService.getDashboard(req.params.slug!);
+      const result = await ProjectService.getDashboard(req.params.slug as string);
       if (!result) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Project not found." },
@@ -156,7 +156,7 @@ export function projectsRouter(): Router {
   router.get(
     "/:slug/trash",
     asyncHandler(async (req, res) => {
-      const result = await ProjectService.getTrash(req.params.slug!);
+      const result = await ProjectService.getTrash(req.params.slug as string);
       if (result === null) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Project not found." },
@@ -170,7 +170,7 @@ export function projectsRouter(): Router {
   router.delete(
     "/:slug",
     asyncHandler(async (req, res) => {
-      const deleted = await ProjectService.deleteProject(req.params.slug!);
+      const deleted = await ProjectService.deleteProject(req.params.slug as string);
       if (!deleted) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Project not found." },
