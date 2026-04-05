@@ -12,34 +12,34 @@ export async function insert(
 export async function findById(
   trx: Knex.Transaction | Knex,
   id: string,
-): Promise<ProjectRow | undefined> {
-  return trx("projects").where({ id }).whereNull("deleted_at").first();
+): Promise<ProjectRow | null> {
+  return (await trx("projects").where({ id }).whereNull("deleted_at").first()) ?? null;
 }
 
 export async function findByIdIncludingDeleted(
   trx: Knex.Transaction | Knex,
   id: string,
-): Promise<ProjectRow | undefined> {
-  return trx("projects").where({ id }).first();
+): Promise<ProjectRow | null> {
+  return (await trx("projects").where({ id }).first()) ?? null;
 }
 
 export async function findBySlug(
   trx: Knex.Transaction | Knex,
   slug: string,
-): Promise<ProjectRow | undefined> {
-  return trx("projects").where({ slug }).whereNull("deleted_at").first();
+): Promise<ProjectRow | null> {
+  return (await trx("projects").where({ slug }).whereNull("deleted_at").first()) ?? null;
 }
 
 export async function findByTitle(
   trx: Knex.Transaction | Knex,
   title: string,
   excludeId?: string,
-): Promise<ProjectRow | undefined> {
+): Promise<ProjectRow | null> {
   const query = trx("projects").where({ title }).whereNull("deleted_at");
   if (excludeId) {
     query.whereNot({ id: excludeId });
   }
-  return query.first();
+  return (await query.first()) ?? null;
 }
 
 export async function listAll(trx: Knex.Transaction | Knex): Promise<ProjectListRow[]> {

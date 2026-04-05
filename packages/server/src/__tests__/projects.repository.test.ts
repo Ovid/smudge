@@ -35,9 +35,9 @@ describe("projects repository", () => {
       expect(found!.title).toBe(data.title);
     });
 
-    it("findById() returns undefined for nonexistent id", async () => {
+    it("findById() returns null for nonexistent id", async () => {
       const found = await ProjectRepo.findById(t.db, uuid());
-      expect(found).toBeUndefined();
+      expect(found).toBeNull();
     });
   });
 
@@ -55,7 +55,7 @@ describe("projects repository", () => {
       await ProjectRepo.insert(t.db, data);
       await ProjectRepo.softDelete(t.db, data.id, new Date().toISOString());
       const found = await ProjectRepo.findBySlug(t.db, "deleted-slug");
-      expect(found).toBeUndefined();
+      expect(found).toBeNull();
     });
   });
 
@@ -68,16 +68,16 @@ describe("projects repository", () => {
       expect(found!.id).toBe(data.id);
     });
 
-    it("returns undefined when title does not exist", async () => {
+    it("returns null when title does not exist", async () => {
       const found = await ProjectRepo.findByTitle(t.db, "Nonexistent");
-      expect(found).toBeUndefined();
+      expect(found).toBeNull();
     });
 
     it("excludes a project with excludeId", async () => {
       const data = makeProject({ title: "Same Title", slug: "same-title" });
       await ProjectRepo.insert(t.db, data);
       const found = await ProjectRepo.findByTitle(t.db, "Same Title", data.id);
-      expect(found).toBeUndefined();
+      expect(found).toBeNull();
     });
 
     it("finds other projects with same title when excludeId does not match", async () => {
@@ -216,13 +216,13 @@ describe("projects repository", () => {
   });
 
   describe("softDelete()", () => {
-    it("sets deleted_at so findById returns undefined", async () => {
+    it("sets deleted_at so findById returns null", async () => {
       const data = makeProject({ slug: "soft-del" });
       await ProjectRepo.insert(t.db, data);
       await ProjectRepo.softDelete(t.db, data.id, new Date().toISOString());
 
       const found = await ProjectRepo.findById(t.db, data.id);
-      expect(found).toBeUndefined();
+      expect(found).toBeNull();
     });
 
     it("findByIdIncludingDeleted still returns the project", async () => {
