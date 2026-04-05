@@ -10,6 +10,10 @@ export function getDb(): Knex {
   return db;
 }
 
+export function setDb(instance: Knex): void {
+  db = instance;
+}
+
 export async function initDb(config?: Knex.Config): Promise<Knex> {
   db = knex(config ?? createKnexConfig());
   await db.raw("PRAGMA journal_mode = WAL");

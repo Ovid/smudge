@@ -1,5 +1,6 @@
+import knex from "knex";
 import { describe, it, expect, afterEach } from "vitest";
-import { initDb, getDb, closeDb } from "../db/connection";
+import { initDb, getDb, closeDb, setDb } from "../db/connection";
 import { createTestKnexConfig } from "../db/knexfile";
 
 describe("db/connection", () => {
@@ -55,5 +56,14 @@ describe("db/connection", () => {
   it("closeDb is safe to call when no db exists", async () => {
     // closeDb should handle the case gracefully
     await expect(closeDb()).resolves.toBeUndefined();
+  });
+
+  it("setDb() sets the database instance used by getDb()", async () => {
+    const { closeDb, setDb, getDb } = await import("../db/connection");
+    await closeDb();
+    const customDb = knex(createTestKnexConfig());
+    setDb(customDb);
+    expect(getDb()).toBe(customDb);
+    await customDb.destroy();
   });
 });
