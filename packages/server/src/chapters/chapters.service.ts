@@ -100,14 +100,18 @@ export async function updateChapter(
     await ProjectRepo.updateTimestamp(trx, chapter.project_id as string);
   });
 
-  // Fire velocity side-effects (best-effort)
+  // Fire velocity side-effects (best-effort — must not break the save)
   if (parsed.data.content !== undefined) {
-    const svc = getVelocityService();
-    await svc.recordSave(
-      chapter.project_id as string,
-      chapter.id as string,
-      updates.word_count as number,
-    );
+    try {
+      const svc = getVelocityService();
+      await svc.recordSave(
+        chapter.project_id as string,
+        chapter.id as string,
+        updates.word_count as number,
+      );
+    } catch {
+      // Velocity tracking is best-effort; save must still succeed
+    }
   }
 
   const updated = await ChapterRepo.findById(db, id);
@@ -138,7 +142,11 @@ export async function deleteChapter(id: string): Promise<boolean> {
     await ProjectRepo.updateTimestamp(trx, chapter.project_id as string);
   });
 
-  await getVelocityService().updateDailySnapshot(chapter.project_id as string);
+  try {
+    await getVelocityService().updateDailySnapshot(chapter.project_id as string);
+  } catch {
+    // Velocity tracking is best-effort; delete must still succeed
+  }
   return true;
 }
 
@@ -177,7 +185,11 @@ export async function restoreChapter(
     throw err;
   }
 
-  await getVelocityService().updateDailySnapshot(chapter.project_id as string);
+  try {
+    await getVelocityService().updateDailySnapshot(chapter.project_id as string);
+  } catch {
+    // Velocity tracking is best-effort; restore must still succeed
+  }
 
   const restored = await ChapterRepo.findById(db, id);
   if (!restored) return null;
