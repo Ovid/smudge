@@ -1,6 +1,7 @@
-import { initDb } from "./db/connection";
+import { initDb, closeDb } from "./db/connection";
 import { createApp } from "./app";
 import { purgeOldTrash } from "./db/purge";
+import type { Server } from "node:http";
 
 const PORT = parseInt(process.env.SMUDGE_PORT ?? "3456", 10);
 const DB_PATH = process.env.DB_PATH;
@@ -42,6 +43,33 @@ async function main() {
     }
     process.exit(1);
   });
+
+  setupGracefulShutdown(server);
+}
+
+function setupGracefulShutdown(server: Server): void {
+  let shuttingDown = false;
+
+  const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log("Shutting down gracefully…");
+
+    server.close(() => {
+      closeDb()
+        .then(() => {
+          console.log("Database connection closed.");
+          process.exit(0);
+        })
+        .catch((err) => {
+          console.error("Error closing database:", err);
+          process.exit(1);
+        });
+    });
+  };
+
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
 }
 
 main().catch((err: unknown) => {
