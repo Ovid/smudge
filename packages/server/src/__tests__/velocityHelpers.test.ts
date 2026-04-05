@@ -8,7 +8,7 @@ describe("insertSaveEvent error handling", () => {
     const fakeDb = (() => {
       throw new Error("DB write failed");
     }) as unknown as import("knex").Knex;
-    await expect(insertSaveEvent(fakeDb, "ch1", "p1", 100)).resolves.toBeUndefined();
+    await expect(insertSaveEvent(fakeDb, "ch1", "p1", 100, "2026-04-03")).resolves.toBeUndefined();
     expect(spy).toHaveBeenCalledWith(
       expect.stringContaining("Failed to insert save event"),
       expect.any(Error),
@@ -28,7 +28,7 @@ describe("upsertDailySnapshot error handling", () => {
         },
       },
     ) as unknown as import("knex").Knex;
-    await expect(upsertDailySnapshot(fakeDb, "p1")).resolves.toBeUndefined();
+    await expect(upsertDailySnapshot(fakeDb, "p1", "2026-04-03")).resolves.toBeUndefined();
     expect(spy).toHaveBeenCalledWith(
       expect.stringContaining("Failed to upsert daily snapshot"),
       expect.any(Error),

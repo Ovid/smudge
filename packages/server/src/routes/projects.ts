@@ -13,7 +13,7 @@ import { queryChapter, queryChapters, stripCorruptFlag } from "./chapterQueries"
 import { resolveUniqueSlug } from "./resolve-slug";
 import { getStatusLabelMap } from "./status-labels";
 import { velocityHandler } from "./velocity";
-import { upsertDailySnapshot } from "./velocityHelpers";
+import { getTodayDate, upsertDailySnapshot } from "./velocityHelpers";
 
 export function projectsRouter(db: Knex): Router {
   const router = Router();
@@ -511,7 +511,8 @@ export function projectsRouter(db: Knex): Router {
       });
 
       // Update daily snapshot to reflect the new word count (0 after all chapters deleted)
-      await upsertDailySnapshot(db, project.id);
+      const today = await getTodayDate(db);
+      await upsertDailySnapshot(db, project.id, today);
 
       res.json({ message: "Project moved to trash." });
     }),

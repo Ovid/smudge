@@ -31,9 +31,9 @@ export async function insertSaveEvent(
   chapterId: string,
   projectId: string,
   wordCount: number,
+  today: string,
 ): Promise<void> {
   try {
-    const today = await getTodayDate(db);
     await db("save_events").insert({
       id: uuid(),
       chapter_id: chapterId,
@@ -50,9 +50,8 @@ export async function insertSaveEvent(
   }
 }
 
-export async function upsertDailySnapshot(db: Knex, projectId: string): Promise<void> {
+export async function upsertDailySnapshot(db: Knex, projectId: string, today: string): Promise<void> {
   try {
-    const today = await getTodayDate(db);
     const result = await db("chapters")
       .where({ project_id: projectId })
       .whereNull("deleted_at")

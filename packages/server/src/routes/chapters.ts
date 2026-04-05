@@ -5,7 +5,7 @@ import { asyncHandler } from "../app";
 import { queryChapter, sendCorruptContentError } from "./chapterQueries";
 import { resolveUniqueSlug } from "./resolve-slug";
 import { getStatusLabel } from "./status-labels";
-import { insertSaveEvent, upsertDailySnapshot } from "./velocityHelpers";
+import { getTodayDate, insertSaveEvent, upsertDailySnapshot } from "./velocityHelpers";
 
 export function chaptersRouter(db: Knex): Router {
   const router = Router();
@@ -104,14 +104,16 @@ export function chaptersRouter(db: Knex): Router {
       // Helpers handle their own errors internally — no outer catch needed.
       // Run in parallel to minimize latency on the save path.
       if (parsed.data.content !== undefined) {
+        const today = await getTodayDate(db);
         await Promise.all([
           insertSaveEvent(
             db,
             chapter.id as string,
             chapter.project_id,
             updates.word_count as number,
+            today,
           ),
-          upsertDailySnapshot(db, chapter.project_id),
+          upsertDailySnapshot(db, chapter.project_id, today),
         ]);
       }
 
@@ -157,7 +159,8 @@ export function chaptersRouter(db: Knex): Router {
       });
 
       // Update daily snapshot so deleted chapter's words are excluded
-      await upsertDailySnapshot(db, chapter.project_id);
+      const todayForDelete = await getTodayDate(db);
+      await upsertDailySnapshot(db, chapter.project_id, todayForDelete);
 
       res.json({ message: "Chapter moved to trash." });
     }),
@@ -225,7 +228,8 @@ export function chaptersRouter(db: Knex): Router {
       }
 
       // Update daily snapshot so restored chapter's words are included
-      await upsertDailySnapshot(db, chapter.project_id);
+      const todayForRestore = await getTodayDate(db);
+      await upsertDailySnapshot(db, chapter.project_id, todayForRestore);
 
       const restored = await queryChapter(
         db("chapters").where({ id: req.params.id }).whereNull("deleted_at"),
