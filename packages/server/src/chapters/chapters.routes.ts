@@ -8,7 +8,7 @@ export function chaptersRouter(): Router {
   router.get(
     "/:id",
     asyncHandler(async (req, res) => {
-      const result = await ChapterService.getChapter(req.params.id);
+      const result = await ChapterService.getChapter(req.params.id!);
       if (result === null) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Chapter not found." },
@@ -31,7 +31,7 @@ export function chaptersRouter(): Router {
   router.patch(
     "/:id",
     asyncHandler(async (req, res) => {
-      const result = await ChapterService.updateChapter(req.params.id, req.body);
+      const result = await ChapterService.updateChapter(req.params.id!, req.body);
       if (result === null) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Chapter not found." },
@@ -60,7 +60,7 @@ export function chaptersRouter(): Router {
   router.delete(
     "/:id",
     asyncHandler(async (req, res) => {
-      const deleted = await ChapterService.deleteChapter(req.params.id);
+      const deleted = await ChapterService.deleteChapter(req.params.id!);
       if (!deleted) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Chapter not found." },
@@ -74,7 +74,7 @@ export function chaptersRouter(): Router {
   router.post(
     "/:id/restore",
     asyncHandler(async (req, res) => {
-      const result = await ChapterService.restoreChapter(req.params.id);
+      const result = await ChapterService.restoreChapter(req.params.id!);
       if (result === null) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Deleted chapter not found." },

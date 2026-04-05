@@ -14,6 +14,7 @@ describe("projects.service", () => {
     it("creates a project with an auto-generated first chapter", async () => {
       const result = await createProject({ title: "My Novel", mode: "fiction" });
       expect(result).toHaveProperty("project");
+      if (!("project" in result)) throw new Error("unexpected");
       expect(result.project.title).toBe("My Novel");
 
       const chapters = await t.db("chapters").where({ project_id: result.project.id });
@@ -44,6 +45,7 @@ describe("projects.service", () => {
 
     it("includes status labels on chapters", async () => {
       const created = await createProject({ title: "Status Test", mode: "fiction" });
+      if (!("project" in created)) throw new Error("unexpected");
       const result = await getProject(created.project.slug);
       expect(result).not.toBeNull();
       expect(result!.chapters.length).toBeGreaterThanOrEqual(1);
@@ -56,6 +58,7 @@ describe("projects.service", () => {
   describe("deleteProject()", () => {
     it("soft-deletes both the project and its chapters", async () => {
       const created = await createProject({ title: "Delete Me", mode: "fiction" });
+      if (!("project" in created)) throw new Error("unexpected");
       const slug = created.project.slug;
 
       const deleted = await deleteProject(slug);

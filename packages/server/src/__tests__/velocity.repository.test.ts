@@ -108,10 +108,10 @@ describe("velocity repository", () => {
 
       const snapshots = await VelocityRepo.getDailySnapshots(t.db, projectId, "2026-04-03");
       expect(snapshots).toHaveLength(2);
-      expect(snapshots[0].date).toBe("2026-04-03");
-      expect(snapshots[0].total_word_count).toBe(200);
-      expect(snapshots[1].date).toBe("2026-04-05");
-      expect(snapshots[1].total_word_count).toBe(300);
+      expect(snapshots[0]!.date).toBe("2026-04-03");
+      expect(snapshots[0]!.total_word_count).toBe(200);
+      expect(snapshots[1]!.date).toBe("2026-04-05");
+      expect(snapshots[1]!.total_word_count).toBe(300);
     });
 
     it("returns empty array when no snapshots match", async () => {
@@ -153,8 +153,8 @@ describe("velocity repository", () => {
         "2026-04-03T00:00:00.000Z",
       );
       expect(events).toHaveLength(1);
-      expect(events[0].word_count).toBe(100);
-      expect(events[0].chapter_id).toBe(chapterId);
+      expect(events[0]!.word_count).toBe(100);
+      expect(events[0]!.chapter_id).toBe(chapterId);
     });
 
     it("returns empty array when no events match", async () => {
@@ -194,8 +194,8 @@ describe("velocity repository", () => {
         "2026-04-05T00:00:00.000Z",
       );
       expect(events).toHaveLength(2);
-      expect(events[0].word_count).toBe(100);
-      expect(events[1].word_count).toBe(200);
+      expect(events[0]!.word_count).toBe(100);
+      expect(events[1]!.word_count).toBe(200);
     });
   });
 

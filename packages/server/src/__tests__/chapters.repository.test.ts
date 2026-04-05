@@ -168,10 +168,10 @@ describe("chapters repository", () => {
 
       const chapters = await ChapterRepo.listByProject(t.db, projectId);
       expect(chapters).toHaveLength(2);
-      expect(chapters[0].title).toBe("Ch 1");
-      expect(chapters[1].title).toBe("Ch 2");
+      expect(chapters[0]!.title).toBe("Ch 1");
+      expect(chapters[1]!.title).toBe("Ch 2");
       // Content should be parsed
-      expect(typeof chapters[0].content).toBe("object");
+      expect(typeof chapters[0]!.content).toBe("object");
     });
 
     it("returns empty array when no chapters exist", async () => {
@@ -206,8 +206,8 @@ describe("chapters repository", () => {
 
       const deleted = await ChapterRepo.listDeletedByProject(t.db, projectId);
       expect(deleted).toHaveLength(1);
-      expect(deleted[0].title).toBe("Deleted Ch");
-      expect(deleted[0].content).toBeNull();
+      expect(deleted[0]!.title).toBe("Deleted Ch");
+      expect(deleted[0]!.content).toBeNull();
     });
 
     it("returns empty array when no deleted chapters", async () => {

@@ -375,7 +375,7 @@ export async function getVelocityBySlug(slug: string): Promise<VelocityResponse 
   }
 
   const completion = {
-    threshold_status: completionThreshold,
+    threshold_status: completionThreshold as VelocityResponse["completion"]["threshold_status"],
     total_chapters: chapters.length,
     completed_chapters: completedChapters,
   };

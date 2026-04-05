@@ -8,14 +8,14 @@ describe("chapter-statuses repository", () => {
   it("list() returns all 5 statuses in sort_order", async () => {
     const statuses = await ChapterStatusRepo.list(t.db);
     expect(statuses).toHaveLength(5);
-    expect(statuses[0].status).toBe("outline");
-    expect(statuses[1].status).toBe("rough_draft");
-    expect(statuses[2].status).toBe("revised");
-    expect(statuses[3].status).toBe("edited");
-    expect(statuses[4].status).toBe("final");
+    expect(statuses[0]!.status).toBe("outline");
+    expect(statuses[1]!.status).toBe("rough_draft");
+    expect(statuses[2]!.status).toBe("revised");
+    expect(statuses[3]!.status).toBe("edited");
+    expect(statuses[4]!.status).toBe("final");
     // Verify sort_order is ascending
     for (let i = 1; i < statuses.length; i++) {
-      expect(statuses[i].sort_order).toBeGreaterThan(statuses[i - 1].sort_order);
+      expect(statuses[i]!.sort_order).toBeGreaterThan(statuses[i - 1]!.sort_order);
     }
   });
 

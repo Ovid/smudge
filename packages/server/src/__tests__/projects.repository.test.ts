@@ -152,7 +152,7 @@ describe("projects repository", () => {
 
       const list = await ProjectRepo.listAll(t.db);
       expect(list).toHaveLength(1);
-      expect(list[0].total_word_count).toBe(300);
+      expect(list[0]!.total_word_count).toBe(300);
     });
 
     it("excludes deleted projects", async () => {
@@ -183,7 +183,7 @@ describe("projects repository", () => {
 
       const list = await ProjectRepo.listAll(t.db);
       expect(list).toHaveLength(1);
-      expect(list[0].total_word_count).toBe(0);
+      expect(list[0]!.total_word_count).toBe(0);
     });
   });
 
