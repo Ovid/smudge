@@ -226,11 +226,3 @@ export async function restore(
     .where({ id })
     .update({ deleted_at: null, updated_at: new Date().toISOString() });
 }
-
-export async function validateStatus(
-  trx: Knex.Transaction | Knex,
-  status: string,
-): Promise<boolean> {
-  const row = await trx("chapter_statuses").where({ status }).first();
-  return !!row;
-}

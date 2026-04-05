@@ -336,7 +336,7 @@ export async function getVelocityBySlug(slug: string): Promise<VelocityResponse 
         ),
       ),
     );
-    dailyAvg30d = Math.round((newest.total_word_count - baselineTotal) / daysCovered);
+    dailyAvg30d = Math.max(0, Math.round((newest.total_word_count - baselineTotal) / daysCovered));
   }
 
   // Current total (via chapters repository)

@@ -275,9 +275,7 @@ export async function getDashboard(slug: string): Promise<Record<string, unknown
   const chapters = await ChapterRepo.listMetadataByProject(db, project.id);
 
   const allStatuses = await ChapterStatusRepo.list(db);
-  const statusLabelMap = Object.fromEntries(
-    allStatuses.map((r) => [r.status, r.label]),
-  );
+  const statusLabelMap = await ChapterStatusRepo.getStatusLabelMap(db);
 
   const chaptersWithLabels = chapters.map((ch) => ({
     ...ch,

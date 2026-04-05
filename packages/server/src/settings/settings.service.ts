@@ -4,7 +4,8 @@ import * as SettingsRepo from "./settings.repository";
 const SETTING_VALIDATORS: Record<string, (value: string) => boolean> = {
   timezone: (value) => {
     try {
-      return Intl.supportedValuesOf("timeZone").includes(value);
+      Intl.DateTimeFormat("en-CA", { timeZone: value });
+      return true;
     } catch {
       return false;
     }

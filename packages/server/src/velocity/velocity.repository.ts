@@ -54,7 +54,7 @@ export async function getRecentSaveEvents(
     .where({ project_id: projectId })
     .where("saved_at", ">=", sinceTimestamp)
     .orderBy("saved_at", "asc")
-    .select("id", "chapter_id", "project_id", "word_count", "saved_at");
+    .select("id", "chapter_id", "project_id", "word_count", "saved_at", "save_date");
 }
 
 export async function getPreWindowBaselines(

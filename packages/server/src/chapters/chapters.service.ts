@@ -88,7 +88,7 @@ export async function updateChapter(
   }
 
   if (parsed.data.status !== undefined) {
-    const valid = await ChapterRepo.validateStatus(db, parsed.data.status);
+    const valid = !!(await ChapterStatusRepo.findByStatus(db, parsed.data.status));
     if (!valid) {
       return { validationError: `Invalid status: ${parsed.data.status}` };
     }

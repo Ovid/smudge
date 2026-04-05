@@ -15,7 +15,7 @@ export async function findByKey(
 }
 
 export async function upsert(
-  trx: Knex.Transaction,
+  trx: Knex.Transaction | Knex,
   key: string,
   value: string,
 ): Promise<void> {
