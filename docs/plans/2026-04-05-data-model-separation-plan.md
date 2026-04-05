@@ -10,19 +10,26 @@
 
 **Design doc:** `docs/plans/2026-04-05-data-model-separation-design.md`
 
+**Alignment review:** 5 issues found and resolved — see Alignment Review Log at end of document.
+
 ---
 
 ## Task 1: Foundation — Update `db/connection.ts` with `setDb()`
 
-This task modifies the database connection module to support direct import by services and test injection.
+**Requirement:** Design §Database Connection Management — services import `db` from singleton; `setDb()` for test injection.
+
+### RED
+- Existing `connection.test.ts` tests define expected behavior for `getDb()`, `initDb()`, `closeDb()`
+- Write a new test: `setDb()` sets the database instance used by `getDb()`
+- Expected failure: `setDb` is not exported from `connection.ts`
+
+### GREEN
 
 **Files:**
 - Modify: `packages/server/src/db/connection.ts`
-- Test: `packages/server/src/__tests__/connection.test.ts`
+- Modify: `packages/server/src/__tests__/connection.test.ts`
 
-**Step 1: Update connection.ts to add `setDb()`**
-
-Replace the entire file with:
+Update `connection.ts`:
 
 ```typescript
 import knex, { type Knex } from "knex";
@@ -57,9 +64,7 @@ export async function closeDb(): Promise<void> {
 }
 ```
 
-**Step 2: Add test for `setDb()`**
-
-Add this test to `packages/server/src/__tests__/connection.test.ts` in the existing describe block:
+Add test to `connection.test.ts`:
 
 ```typescript
 it("setDb() sets the database instance used by getDb()", async () => {
@@ -72,13 +77,13 @@ it("setDb() sets the database instance used by getDb()", async () => {
 });
 ```
 
-**Step 3: Run tests**
-
 Run: `npm test -w packages/server -- --run connection`
 Expected: All tests pass including new `setDb()` test
 
-**Step 4: Commit**
+### REFACTOR
+- Check that `setDb` is only used in test code — no production code should call it except `initDb`
 
+**Commit:**
 ```bash
 git add packages/server/src/db/connection.ts packages/server/src/__tests__/connection.test.ts
 git commit -m "feat: add setDb() to connection module for test injection and service imports"
@@ -88,14 +93,24 @@ git commit -m "feat: add setDb() to connection module for test injection and ser
 
 ## Task 2: Chapter Statuses Domain (simplest — proves the pattern)
 
+**Requirement:** Design §Directory Structure, §Type Flow, §Repository Boundaries
+
+### RED
+- Existing `chapter-statuses.test.ts` (1 test) defines expected HTTP behavior
+- The test must pass unchanged after extraction
+- If it passes: the new domain folder, types, repository, service, and route are wired correctly
+
+### GREEN
+
 **Files:**
 - Create: `packages/server/src/chapter-statuses/chapter-statuses.types.ts`
 - Create: `packages/server/src/chapter-statuses/chapter-statuses.repository.ts`
 - Create: `packages/server/src/chapter-statuses/chapter-statuses.service.ts`
 - Create: `packages/server/src/chapter-statuses/chapter-statuses.routes.ts`
-- Test: `packages/server/src/__tests__/chapter-statuses.test.ts` (existing — must still pass)
+- Modify: `packages/server/src/app.ts` (swap import)
+- Modify: `packages/server/src/__tests__/test-helpers.ts` (add `setDb`)
 
-**Step 1: Create internal types**
+**Internal types:**
 
 ```typescript
 // packages/server/src/chapter-statuses/chapter-statuses.types.ts
@@ -106,7 +121,7 @@ export interface ChapterStatusRow {
 }
 ```
 
-**Step 2: Create repository**
+**Repository:**
 
 ```typescript
 // packages/server/src/chapter-statuses/chapter-statuses.repository.ts
@@ -146,7 +161,7 @@ export async function getStatusLabelMap(
 }
 ```
 
-**Step 3: Create service**
+**Service:**
 
 ```typescript
 // packages/server/src/chapter-statuses/chapter-statuses.service.ts
@@ -170,7 +185,7 @@ export async function listStatuses(): Promise<SharedChapterStatusRow[]> {
 }
 ```
 
-**Step 4: Create route**
+**Route:**
 
 ```typescript
 // packages/server/src/chapter-statuses/chapter-statuses.routes.ts
@@ -193,43 +208,33 @@ export function chapterStatusesRouter(): Router {
 }
 ```
 
-**Step 5: Update `app.ts` to use the new router**
-
-Change the import and mounting for chapter-statuses:
+**Update `app.ts`** — change chapter-statuses import and mounting:
 
 ```typescript
-// In app.ts, change:
-import { chapterStatusesRouter } from "./routes/chapter-statuses";
-// to:
+// Change import:
 import { chapterStatusesRouter } from "./chapter-statuses/chapter-statuses.routes";
-
-// Change:
-app.use("/api/chapter-statuses", chapterStatusesRouter(db));
-// to:
+// Change mounting:
 app.use("/api/chapter-statuses", chapterStatusesRouter());
 ```
 
-**Step 6: Update test-helpers.ts to call `setDb()`**
-
-Add `setDb` import and call in `setupTestDb()`:
+**Update `test-helpers.ts`** — add `setDb` call:
 
 ```typescript
-// In test-helpers.ts, add import:
 import { setDb } from "../db/connection";
-
-// In beforeAll, after creating testDb and before creating app:
+// In beforeAll, after creating testDb:
 setDb(testDb);
 ```
 
-Note: Keep `createApp(testDb)` working for now — it still passes `db` to the other routers that haven't been migrated yet. The `setDb()` call makes the singleton available for the migrated chapter-statuses service.
-
-**Step 7: Run existing tests**
+Keep `createApp(testDb)` working for now — other routers still accept `db`.
 
 Run: `npm test -w packages/server`
-Expected: ALL existing tests pass (185+ tests). The chapter-statuses test validates that the new domain folder works end-to-end.
+Expected: ALL existing tests pass (185+ tests)
 
-**Step 8: Commit**
+### REFACTOR
+- Verify no duplicate status-label logic remains — `status-labels.ts` will be removed later when old routes are deleted
+- Check that the mapping function `toChapterStatus` is trivial here (1:1) — that's fine for this domain
 
+**Commit:**
 ```bash
 git add packages/server/src/chapter-statuses/ packages/server/src/app.ts packages/server/src/__tests__/test-helpers.ts
 git commit -m "refactor: extract chapter-statuses domain (types, repository, service, routes)"
@@ -239,14 +244,22 @@ git commit -m "refactor: extract chapter-statuses domain (types, repository, ser
 
 ## Task 3: Settings Domain
 
+**Requirement:** Design §Directory Structure, §Transaction Handling
+
+### RED
+- Existing `settings.test.ts` (8 tests) defines expected HTTP behavior
+- Must pass unchanged after extraction
+
+### GREEN
+
 **Files:**
 - Create: `packages/server/src/settings/settings.types.ts`
 - Create: `packages/server/src/settings/settings.repository.ts`
 - Create: `packages/server/src/settings/settings.service.ts`
 - Create: `packages/server/src/settings/settings.routes.ts`
-- Test: `packages/server/src/__tests__/settings.test.ts` (existing — must still pass)
+- Modify: `packages/server/src/app.ts`
 
-**Step 1: Create internal types**
+**Internal types:**
 
 ```typescript
 // packages/server/src/settings/settings.types.ts
@@ -256,7 +269,7 @@ export interface SettingRow {
 }
 ```
 
-**Step 2: Create repository**
+**Repository:**
 
 ```typescript
 // packages/server/src/settings/settings.repository.ts
@@ -288,7 +301,7 @@ export async function upsert(
 }
 ```
 
-**Step 3: Create service**
+**Service:**
 
 ```typescript
 // packages/server/src/settings/settings.service.ts
@@ -343,7 +356,7 @@ export async function update(
 }
 ```
 
-**Step 4: Create route**
+**Route:**
 
 ```typescript
 // packages/server/src/settings/settings.routes.ts
@@ -394,29 +407,20 @@ export function settingsRouter(): Router {
 }
 ```
 
-**Step 5: Update `app.ts`**
-
-Change the settings import and mounting:
+**Update `app.ts`:**
 
 ```typescript
-// Change import from:
-import { settingsRouter } from "./routes/settings";
-// to:
 import { settingsRouter } from "./settings/settings.routes";
-
-// Change:
-app.use("/api/settings", settingsRouter(db));
-// to:
 app.use("/api/settings", settingsRouter());
 ```
-
-**Step 6: Run existing tests**
 
 Run: `npm test -w packages/server`
 Expected: ALL existing tests pass
 
-**Step 7: Commit**
+### REFACTOR
+- Confirm SETTING_VALIDATORS is the only place setting validation lives (no duplication)
 
+**Commit:**
 ```bash
 git add packages/server/src/settings/ packages/server/src/app.ts
 git commit -m "refactor: extract settings domain (types, repository, service, routes)"
@@ -426,17 +430,23 @@ git commit -m "refactor: extract settings domain (types, repository, service, ro
 
 ## Task 4: Velocity Domain
 
-Extract velocity before projects/chapters because it's self-contained and the other domains will call into it.
+Extract velocity before projects/chapters because it's self-contained and the other domains call into it for side effects.
+
+**Requirement:** Design §Directory Structure, §Velocity Side Effects
+
+### RED
+- Existing `velocity.test.ts` (31 tests) and `velocityHelpers.test.ts` (5 tests) define expected behavior
+- Must pass unchanged after extraction
+
+### GREEN
 
 **Files:**
 - Create: `packages/server/src/velocity/velocity.types.ts`
 - Create: `packages/server/src/velocity/velocity.repository.ts`
 - Create: `packages/server/src/velocity/velocity.service.ts`
 - Create: `packages/server/src/velocity/velocity.routes.ts`
-- Test: `packages/server/src/__tests__/velocity.test.ts` (existing — must still pass)
-- Test: `packages/server/src/__tests__/velocityHelpers.test.ts` (existing — must still pass)
 
-**Step 1: Create internal types**
+**Internal types:**
 
 ```typescript
 // packages/server/src/velocity/velocity.types.ts
@@ -458,13 +468,13 @@ export interface DailySnapshotRow {
 }
 ```
 
-**Step 2: Create repository**
+**Repository:**
 
 ```typescript
 // packages/server/src/velocity/velocity.repository.ts
 import type { Knex } from "knex";
 import { v4 as uuid } from "uuid";
-import type { SaveEventRow, DailySnapshotRow } from "./velocity.types";
+import type { SaveEventRow } from "./velocity.types";
 
 export async function insertSaveEvent(
   db: Knex.Transaction | Knex,
@@ -567,22 +577,11 @@ export async function getWritingDates(
     .select("daily_snapshots.date");
   return rows.map((r) => r.date);
 }
-
-export async function getProjectTotalWordCount(
-  db: Knex.Transaction | Knex,
-  projectId: string,
-): Promise<number> {
-  const result = await db("chapters")
-    .where({ project_id: projectId })
-    .whereNull("deleted_at")
-    .sum("word_count as total");
-  return Number(result[0]?.total) || 0;
-}
 ```
 
-**Step 3: Create service**
+**Service** — contains pure business logic (`deriveSessions`, `calculateStreaks`, `calculateProjection`), timezone helpers, side-effect recording, and the velocity dashboard query.
 
-This service contains the pure business logic functions (`deriveSessions`, `calculateStreaks`, `calculateProjection`) plus the orchestration for recording saves and building the velocity response.
+Note: All cross-domain imports are static (alignment fix #4). Chapter queries use the chapters repository (alignment fix #1).
 
 ```typescript
 // packages/server/src/velocity/velocity.service.ts
@@ -590,6 +589,9 @@ import type { VelocityResponse } from "@smudge/shared";
 import { getDb } from "../db/connection";
 import * as VelocityRepo from "./velocity.repository";
 import * as SettingsRepo from "../settings/settings.repository";
+import * as ChapterStatusRepo from "../chapter-statuses/chapter-statuses.repository";
+import * as ChapterRepo from "../chapters/chapters.repository";
+import * as ProjectRepo from "../projects/projects.repository";
 
 // --- Pure business logic (exported for unit testing) ---
 
@@ -814,7 +816,7 @@ export async function recordSave(
     );
   }
   try {
-    const totalWordCount = await VelocityRepo.getProjectTotalWordCount(db, projectId);
+    const totalWordCount = await ChapterRepo.sumWordCountByProject(db, projectId);
     await VelocityRepo.upsertDailySnapshot(db, projectId, today, totalWordCount);
   } catch (err) {
     console.error(`Failed to upsert daily snapshot for project=${projectId}:`, err);
@@ -825,7 +827,7 @@ export async function updateDailySnapshot(projectId: string): Promise<void> {
   const db = getDb();
   const today = await getTodayDate();
   try {
-    const totalWordCount = await VelocityRepo.getProjectTotalWordCount(db, projectId);
+    const totalWordCount = await ChapterRepo.sumWordCountByProject(db, projectId);
     await VelocityRepo.upsertDailySnapshot(db, projectId, today, totalWordCount);
   } catch (err) {
     console.error(`Failed to upsert daily snapshot for project=${projectId}:`, err);
@@ -834,13 +836,13 @@ export async function updateDailySnapshot(projectId: string): Promise<void> {
 
 // --- Velocity dashboard query ---
 
-export async function getVelocity(
-  projectId: string,
-  targetWordCount: number | null,
-  targetDeadline: string | null,
-  completionThreshold: string | null,
-): Promise<VelocityResponse> {
+export async function getVelocityBySlug(slug: string): Promise<VelocityResponse | null> {
   const db = getDb();
+
+  const project = await ProjectRepo.findBySlug(db, slug);
+  if (!project) return null;
+
+  const projectId = project.id;
   const today = await getTodayDate();
 
   // Daily snapshots: last 90 days
@@ -864,10 +866,7 @@ export async function getVelocity(
   let preWindowBaselines: Record<string, number> = {};
   try {
     preWindowBaselines = await VelocityRepo.getPreWindowBaselines(
-      db,
-      projectId,
-      chapterIdsInWindow,
-      thirtyDaysAgoStr,
+      db, projectId, chapterIdsInWindow, thirtyDaysAgoStr,
     );
   } catch (err) {
     console.error("Failed to fetch pre-window baselines for session net_words:", err);
@@ -919,29 +918,26 @@ export async function getVelocity(
     dailyAvg30d = Math.round((newest.total_word_count - baselineTotal) / daysCovered);
   }
 
-  // Current total
-  const currentTotal = await VelocityRepo.getProjectTotalWordCount(db, projectId);
+  // Current total (via chapters repository — alignment fix #1)
+  const currentTotal = await ChapterRepo.sumWordCountByProject(db, projectId);
 
   const projection = calculateProjection(
-    targetWordCount,
-    targetDeadline,
+    project.target_word_count ?? null,
+    project.target_deadline ?? null,
     dailyAvg30d,
     currentTotal,
     today,
   );
 
-  // Completion stats
+  // Completion stats (via repositories — alignment fix #1)
+  const chapters = await ChapterRepo.listIdTitleStatusByProject(db, projectId);
   let completedChapters = 0;
-  const chapters = await db("chapters")
-    .where({ project_id: projectId })
-    .whereNull("deleted_at")
-    .select("id", "title", "status");
+  const completionThreshold = project.completion_threshold ?? null;
 
   if (completionThreshold) {
-    const { findByStatus } = await import("../chapter-statuses/chapter-statuses.repository");
-    const thresholdRow = await findByStatus(db, completionThreshold);
+    const thresholdRow = await ChapterStatusRepo.findByStatus(db, completionThreshold);
     const thresholdSortOrder = thresholdRow?.sort_order ?? 999;
-    const allStatuses = await (await import("../chapter-statuses/chapter-statuses.repository")).list(db);
+    const allStatuses = await ChapterStatusRepo.list(db);
     const statusSortMap: Record<string, number> = {};
     for (const s of allStatuses) {
       statusSortMap[s.status] = s.sort_order;
@@ -960,14 +956,8 @@ export async function getVelocity(
     completed_chapters: completedChapters,
   };
 
-  // Chapter names
-  const allChaptersForNames = await db("chapters")
-    .where({ project_id: projectId })
-    .select("id", "title");
-  const chapterNames: Record<string, string> = {};
-  for (const ch of allChaptersForNames) {
-    chapterNames[ch.id] = ch.title;
-  }
+  // Chapter names (including deleted — via repository)
+  const chapterNames = await ChapterRepo.getChapterNamesMap(db, projectId);
 
   return {
     daily_snapshots: dailySnapshots,
@@ -982,56 +972,35 @@ export async function getVelocity(
 }
 ```
 
-**Step 4: Create route**
+**Route** — no db access, just calls service (alignment fix #3):
 
 ```typescript
 // packages/server/src/velocity/velocity.routes.ts
-import { Router } from "express";
 import { asyncHandler } from "../app";
 import * as VelocityService from "./velocity.service";
 
-// Note: This router is mounted under /api/projects by the projects router.
-// The velocity route is GET /:slug/velocity, but it needs the project lookup
-// to happen first. So we export a handler factory instead of a full router.
-
 export const velocityHandler = asyncHandler(async (req, res) => {
-  // The project is looked up by the projects route. We need the project data.
-  // Since the velocity route is mounted within the projects router context,
-  // we receive the slug and need to look up the project ourselves.
-  const { getDb } = await import("../db/connection");
-  const db = getDb();
-
-  const project = await db("projects")
-    .where({ slug: req.params.slug })
-    .whereNull("deleted_at")
-    .first();
-
-  if (!project) {
+  const result = await VelocityService.getVelocityBySlug(req.params.slug);
+  if (!result) {
     res.status(404).json({
       error: { code: "NOT_FOUND", message: "Project not found." },
     });
     return;
   }
-
-  const body = await VelocityService.getVelocity(
-    project.id,
-    project.target_word_count ?? null,
-    project.target_deadline ?? null,
-    project.completion_threshold ?? null,
-  );
-  res.json(body);
+  res.json(result);
 });
 ```
 
-**Step 5: Run existing tests**
+Note: The velocity route is mounted by the projects router at `GET /:slug/velocity`. It's not a standalone router.
 
 Run: `npm test -w packages/server`
-Expected: ALL existing tests pass. The velocity and velocityHelpers tests validate correctness.
+Expected: ALL existing tests pass
 
-Note: The velocity route is still mounted by the projects router. We'll update the mounting in Task 6 when we extract projects.
+### REFACTOR
+- Verify no dynamic imports remain (alignment fix #4 — all imports are static)
+- Verify no raw `db("table")` calls in service — all go through repos
 
-**Step 6: Commit**
-
+**Commit:**
 ```bash
 git add packages/server/src/velocity/
 git commit -m "refactor: extract velocity domain (types, repository, service, routes)"
@@ -1039,16 +1008,267 @@ git commit -m "refactor: extract velocity domain (types, repository, service, ro
 
 ---
 
-## Task 5: Projects Domain
+## Task 5: Projects + Chapters Domains (merged — they depend on each other)
 
-**Files:**
-- Create: `packages/server/src/projects/projects.types.ts`
-- Create: `packages/server/src/projects/projects.repository.ts`
-- Create: `packages/server/src/projects/projects.service.ts`
-- Create: `packages/server/src/projects/projects.routes.ts`
-- Test: Multiple existing tests must still pass
+These two domains are extracted together because the projects service imports `ChapterRepo` and the chapters service imports `ProjectRepo`. Creating them separately would produce intermediate states that don't compile.
 
-**Step 1: Create internal types**
+**Requirement:** Design §Directory Structure, §Transaction Handling, §Cross-Domain Coordination, §Dashboard Aggregation, §Slug Resolution
+
+### RED
+- Existing tests: `projects.test.ts` (34), `chapters.test.ts` (36), `dashboard.test.ts` (6), `save-side-effects.test.ts` (4), `resolve-slug.test.ts` (7), `parseChapterContent.test.ts` (12)
+- All must pass unchanged after extraction
+
+### GREEN
+
+**Order of creation:** Both repos first, then both services, then both routes.
+
+#### Step 1: Create chapters internal types
+
+```typescript
+// packages/server/src/chapters/chapters.types.ts
+export interface ChapterRow {
+  id: string;
+  project_id: string;
+  title: string;
+  content: Record<string, unknown> | null;
+  content_corrupt?: boolean;
+  sort_order: number;
+  word_count: number;
+  target_word_count: number | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+export interface CreateChapterRow {
+  id: string;
+  project_id: string;
+  title: string;
+  content: string | null;
+  sort_order: number;
+  word_count: number;
+  created_at: string;
+  updated_at: string;
+}
+```
+
+#### Step 2: Create chapters repository
+
+Returns typed `ChapterRow` (alignment fix #2). All `Record<string, unknown>` from old code becomes `ChapterRow`. JSON parsing is internal.
+
+```typescript
+// packages/server/src/chapters/chapters.repository.ts
+import type { Knex } from "knex";
+import type { ChapterRow, CreateChapterRow } from "./chapters.types";
+
+// --- Internal: JSON parsing (absorbed from parseChapterContent.ts) ---
+
+function parseContent(row: Record<string, unknown>): ChapterRow {
+  if (typeof row.content === "string") {
+    try {
+      return { ...row, content: JSON.parse(row.content) } as ChapterRow;
+    } catch (err) {
+      console.error(
+        `[parseChapterContent] corrupt JSON in chapter ${row.id ?? "unknown"} (${err instanceof Error ? err.name : "UnknownError"})`,
+      );
+      return { ...row, content: null, content_corrupt: true } as ChapterRow;
+    }
+  }
+  return { ...row, content: (row.content as Record<string, unknown>) ?? null } as ChapterRow;
+}
+
+// Exported for backward compat with existing parseChapterContent tests
+export { parseContent as parseChapterContent };
+
+// --- Public API ---
+
+export async function findById(
+  trx: Knex.Transaction | Knex,
+  id: string,
+): Promise<ChapterRow | null> {
+  const row = await trx("chapters").where({ id }).whereNull("deleted_at").first();
+  return row ? parseContent(row) : null;
+}
+
+export async function findDeletedById(
+  trx: Knex.Transaction | Knex,
+  id: string,
+): Promise<ChapterRow | null> {
+  const row = await trx("chapters").where({ id }).whereNotNull("deleted_at").first();
+  return row ? (row as ChapterRow) : null;
+}
+
+export async function findByIdRaw(
+  trx: Knex.Transaction | Knex,
+  id: string,
+): Promise<ChapterRow | null> {
+  const row = await trx("chapters").where({ id }).whereNull("deleted_at").first();
+  return row ? (row as ChapterRow) : null;
+}
+
+export async function listByProject(
+  trx: Knex.Transaction | Knex,
+  projectId: string,
+): Promise<ChapterRow[]> {
+  const rows = await trx("chapters")
+    .where({ project_id: projectId })
+    .whereNull("deleted_at")
+    .orderBy("sort_order", "asc")
+    .select("*");
+  return rows.map((row: Record<string, unknown>) => parseContent(row));
+}
+
+export async function listMetadataByProject(
+  trx: Knex.Transaction | Knex,
+  projectId: string,
+): Promise<ChapterRow[]> {
+  const rows = await trx("chapters")
+    .where({ project_id: projectId })
+    .whereNull("deleted_at")
+    .orderBy("sort_order", "asc")
+    .select("id", "title", "status", "word_count", "target_word_count", "updated_at", "sort_order");
+  return rows as ChapterRow[];
+}
+
+export async function listDeletedByProject(
+  trx: Knex.Transaction | Knex,
+  projectId: string,
+): Promise<ChapterRow[]> {
+  const trashed = await trx("chapters")
+    .where({ project_id: projectId })
+    .whereNotNull("deleted_at")
+    .orderBy("deleted_at", "desc")
+    .select(
+      "id", "project_id", "title", "status", "word_count",
+      "sort_order", "deleted_at", "created_at", "updated_at",
+    );
+  return trashed.map((ch: Record<string, unknown>) => ({ ...ch, content: null } as ChapterRow));
+}
+
+export async function listIdsByProject(
+  trx: Knex.Transaction | Knex,
+  projectId: string,
+): Promise<string[]> {
+  const existing = await trx("chapters")
+    .where({ project_id: projectId })
+    .whereNull("deleted_at")
+    .select("id");
+  return existing.map((c: { id: string }) => c.id);
+}
+
+// Used by velocity service for completion stats
+export async function listIdTitleStatusByProject(
+  trx: Knex.Transaction | Knex,
+  projectId: string,
+): Promise<Array<{ id: string; title: string; status: string }>> {
+  return trx("chapters")
+    .where({ project_id: projectId })
+    .whereNull("deleted_at")
+    .select("id", "title", "status");
+}
+
+// Used by velocity service for chapter names (including deleted)
+export async function getChapterNamesMap(
+  trx: Knex.Transaction | Knex,
+  projectId: string,
+): Promise<Record<string, string>> {
+  const rows = await trx("chapters")
+    .where({ project_id: projectId })
+    .select("id", "title");
+  const map: Record<string, string> = {};
+  for (const row of rows) {
+    map[row.id] = row.title;
+  }
+  return map;
+}
+
+// Used by velocity service for daily snapshot word count
+export async function sumWordCountByProject(
+  trx: Knex.Transaction | Knex,
+  projectId: string,
+): Promise<number> {
+  const result = await trx("chapters")
+    .where({ project_id: projectId })
+    .whereNull("deleted_at")
+    .sum("word_count as total");
+  return Number(result[0]?.total) || 0;
+}
+
+export async function insert(
+  trx: Knex.Transaction,
+  data: CreateChapterRow,
+): Promise<void> {
+  await trx("chapters").insert(data);
+}
+
+export async function getMaxSortOrder(
+  trx: Knex.Transaction | Knex,
+  projectId: string,
+): Promise<number | null> {
+  const result = (await trx("chapters")
+    .where({ project_id: projectId })
+    .whereNull("deleted_at")
+    .max("sort_order as max")
+    .first()) as { max: number | null };
+  return result?.max ?? null;
+}
+
+export async function update(
+  trx: Knex.Transaction,
+  id: string,
+  updates: Record<string, unknown>,
+): Promise<void> {
+  await trx("chapters").where({ id }).update(updates);
+}
+
+export async function updateSortOrders(
+  trx: Knex.Transaction,
+  orders: Array<{ id: string; sortOrder: number }>,
+): Promise<void> {
+  for (const { id, sortOrder } of orders) {
+    await trx("chapters").where({ id }).update({ sort_order: sortOrder });
+  }
+}
+
+export async function softDelete(
+  trx: Knex.Transaction,
+  id: string,
+  now: string,
+): Promise<void> {
+  await trx("chapters").where({ id }).update({ deleted_at: now });
+}
+
+export async function softDeleteByProject(
+  trx: Knex.Transaction,
+  projectId: string,
+  now: string,
+): Promise<void> {
+  await trx("chapters")
+    .where({ project_id: projectId })
+    .whereNull("deleted_at")
+    .update({ deleted_at: now });
+}
+
+export async function restore(
+  trx: Knex.Transaction,
+  id: string,
+): Promise<void> {
+  await trx("chapters")
+    .where({ id })
+    .update({ deleted_at: null, updated_at: new Date().toISOString() });
+}
+
+export async function validateStatus(
+  trx: Knex.Transaction | Knex,
+  status: string,
+): Promise<boolean> {
+  const row = await trx("chapter_statuses").where({ status }).first();
+  return !!row;
+}
+```
+
+#### Step 3: Create projects internal types
 
 ```typescript
 // packages/server/src/projects/projects.types.ts
@@ -1084,7 +1304,9 @@ export interface ProjectListRow {
 }
 ```
 
-**Step 2: Create repository**
+#### Step 4: Create projects repository
+
+Includes `resolveUniqueSlug` (design §Slug Resolution) and `updateTimestamp` (alignment fix #1).
 
 ```typescript
 // packages/server/src/projects/projects.repository.ts
@@ -1152,10 +1374,18 @@ export async function listAll(trx: Knex.Transaction | Knex): Promise<ProjectList
 export async function update(
   trx: Knex.Transaction,
   id: string,
-  data: Partial<ProjectRow>,
+  data: Record<string, unknown>,
 ): Promise<ProjectRow> {
   await trx("projects").where({ id }).update(data);
   return trx("projects").where({ id }).first();
+}
+
+// Common pattern: touch updated_at on a project (alignment fix #1)
+export async function updateTimestamp(
+  trx: Knex.Transaction,
+  id: string,
+): Promise<void> {
+  await trx("projects").where({ id }).update({ updated_at: new Date().toISOString() });
 }
 
 export async function softDelete(
@@ -1192,16 +1422,14 @@ export async function resolveUniqueSlug(
 }
 ```
 
-**Step 3: Create service**
+#### Step 5: Create projects service
+
+All data access goes through repos — no raw `trx("table")` calls (alignment fix #1).
 
 ```typescript
 // packages/server/src/projects/projects.service.ts
 import { v4 as uuid } from "uuid";
-import type {
-  Project,
-  ProjectListItem,
-  ProjectWithChapters,
-} from "@smudge/shared";
+import type { Project, ProjectListItem, ProjectWithChapters, Chapter } from "@smudge/shared";
 import { generateSlug, UNTITLED_CHAPTER } from "@smudge/shared";
 import { getDb } from "../db/connection";
 import * as ProjectRepo from "./projects.repository";
@@ -1209,6 +1437,7 @@ import * as ChapterRepo from "../chapters/chapters.repository";
 import * as ChapterStatusRepo from "../chapter-statuses/chapter-statuses.repository";
 import * as VelocityService from "../velocity/velocity.service";
 import type { ProjectRow, ProjectListRow } from "./projects.types";
+import type { ChapterRow } from "../chapters/chapters.types";
 
 function toProject(row: ProjectRow): Project {
   return {
@@ -1219,6 +1448,22 @@ function toProject(row: ProjectRow): Project {
     target_word_count: row.target_word_count,
     target_deadline: row.target_deadline,
     completion_threshold: row.completion_threshold as Project["completion_threshold"],
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    deleted_at: row.deleted_at,
+  };
+}
+
+function toChapter(row: ChapterRow): Chapter {
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    title: row.title,
+    content: row.content,
+    sort_order: row.sort_order,
+    word_count: row.word_count,
+    target_word_count: row.target_word_count,
+    status: row.status,
     created_at: row.created_at,
     updated_at: row.updated_at,
     deleted_at: row.deleted_at,
@@ -1236,16 +1481,11 @@ function toProjectListItem(row: ProjectListRow): ProjectListItem {
   };
 }
 
-export async function createProject(
-  title: string,
-  mode: string,
-): Promise<Project> {
+export async function createProject(title: string, mode: string): Promise<Project> {
   const db = getDb();
 
   const existing = await ProjectRepo.findByTitle(db, title);
-  if (existing) {
-    throw new ProjectTitleExistsError();
-  }
+  if (existing) throw new ProjectTitleExistsError();
 
   const projectId = uuid();
   const chapterId = uuid();
@@ -1255,22 +1495,11 @@ export async function createProject(
     await db.transaction(async (trx) => {
       const slug = await ProjectRepo.resolveUniqueSlug(trx, generateSlug(title));
       await ProjectRepo.insert(trx, {
-        id: projectId,
-        title,
-        slug,
-        mode,
-        created_at: now,
-        updated_at: now,
+        id: projectId, title, slug, mode, created_at: now, updated_at: now,
       });
       await ChapterRepo.insert(trx, {
-        id: chapterId,
-        project_id: projectId,
-        title: UNTITLED_CHAPTER,
-        content: null,
-        sort_order: 0,
-        word_count: 0,
-        created_at: now,
-        updated_at: now,
+        id: chapterId, project_id: projectId, title: UNTITLED_CHAPTER,
+        content: null, sort_order: 0, word_count: 0, created_at: now, updated_at: now,
       });
     });
   } catch (err: unknown) {
@@ -1298,10 +1527,15 @@ export async function getProject(slug: string): Promise<ProjectWithChapters | nu
   const chapters = await ChapterRepo.listByProject(db, project.id);
   const statusLabelMap = await ChapterStatusRepo.getStatusLabelMap(db);
 
-  const chaptersWithLabels = chapters.map((ch) => ({
-    ...ch,
-    status_label: statusLabelMap[ch.status] ?? ch.status,
-  }));
+  const chaptersWithLabels = chapters.map((ch) => {
+    const mapped = toChapter(ch);
+    const { content_corrupt: _, ...clean } = ch;
+    return {
+      ...mapped,
+      ...(!ch.content_corrupt ? {} : {}),
+      status_label: statusLabelMap[ch.status] ?? ch.status,
+    };
+  });
 
   return { ...toProject(project), chapters: chaptersWithLabels };
 }
@@ -1336,14 +1570,12 @@ export async function updateProject(
     await db.transaction(async (trx) => {
       if (data.title !== undefined) {
         const newSlug = await ProjectRepo.resolveUniqueSlug(
-          trx,
-          generateSlug(data.title),
-          project.id,
+          trx, generateSlug(data.title), project.id,
         );
         updates.title = data.title;
         updates.slug = newSlug;
       }
-      await trx("projects").where({ id: project.id }).update(updates);
+      await ProjectRepo.update(trx, project.id, updates);
     });
   } catch (err: unknown) {
     if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
@@ -1371,7 +1603,7 @@ export async function deleteProject(slug: string): Promise<boolean> {
   return true;
 }
 
-export async function createChapter(slug: string): Promise<Record<string, unknown> | null> {
+export async function createChapter(slug: string): Promise<(Chapter & { status_label: string }) | null> {
   const db = getDb();
   const project = await ProjectRepo.findBySlug(db, slug);
   if (!project) return null;
@@ -1382,22 +1614,20 @@ export async function createChapter(slug: string): Promise<Record<string, unknow
   await db.transaction(async (trx) => {
     const maxOrder = await ChapterRepo.getMaxSortOrder(trx, project.id);
     await ChapterRepo.insert(trx, {
-      id: chapterId,
-      project_id: project.id,
-      title: UNTITLED_CHAPTER,
-      content: null,
-      sort_order: (maxOrder ?? -1) + 1,
-      word_count: 0,
-      created_at: now,
-      updated_at: now,
+      id: chapterId, project_id: project.id, title: UNTITLED_CHAPTER,
+      content: null, sort_order: (maxOrder ?? -1) + 1, word_count: 0,
+      created_at: now, updated_at: now,
     });
-    await trx("projects").where({ id: project.id }).update({ updated_at: now });
+    await ProjectRepo.updateTimestamp(trx, project.id);
   });
 
   const chapter = await ChapterRepo.findById(db, chapterId);
   if (!chapter) return null;
   const statusLabelMap = await ChapterStatusRepo.getStatusLabelMap(db);
-  return { ...chapter, status_label: statusLabelMap[chapter.status] ?? chapter.status };
+  return {
+    ...toChapter(chapter),
+    status_label: statusLabelMap[chapter.status] ?? chapter.status,
+  };
 }
 
 export async function reorderChapters(
@@ -1429,9 +1659,7 @@ export async function reorderChapters(
       trx,
       chapterIds.map((id, i) => ({ id, sortOrder: i })),
     );
-    await trx("projects")
-      .where({ id: project.id })
-      .update({ updated_at: new Date().toISOString() });
+    await ProjectRepo.updateTimestamp(trx, project.id);
   });
 
   return {};
@@ -1445,9 +1673,9 @@ export async function getDashboard(slug: string): Promise<Record<string, unknown
   const chapters = await ChapterRepo.listMetadataByProject(db, project.id);
   const statusLabelMap = await ChapterStatusRepo.getStatusLabelMap(db);
 
-  const chaptersWithLabels = chapters.map((ch: Record<string, unknown>) => ({
+  const chaptersWithLabels = chapters.map((ch) => ({
     ...ch,
-    status_label: statusLabelMap[ch.status as string] ?? (ch.status as string),
+    status_label: statusLabelMap[ch.status] ?? ch.status,
   }));
 
   const allStatuses = await ChapterStatusRepo.list(db);
@@ -1456,17 +1684,13 @@ export async function getDashboard(slug: string): Promise<Record<string, unknown
     statusSummary[s.status] = 0;
   }
   for (const ch of chapters) {
-    const status = ch.status as string;
-    if (status in statusSummary) {
-      statusSummary[status] = (statusSummary[status] ?? 0) + 1;
+    if (ch.status in statusSummary) {
+      statusSummary[ch.status] = (statusSummary[ch.status] ?? 0) + 1;
     }
   }
 
-  const totalWordCount = chapters.reduce(
-    (sum: number, ch: Record<string, unknown>) => sum + (ch.word_count as number),
-    0,
-  );
-  const updatedAts = chapters.map((ch: Record<string, unknown>) => ch.updated_at as string);
+  const totalWordCount = chapters.reduce((sum, ch) => sum + ch.word_count, 0);
+  const updatedAts = chapters.map((ch) => ch.updated_at);
   const mostRecentEdit =
     updatedAts.length > 0 ? updatedAts.reduce((a, b) => (a > b ? a : b)) : null;
   const leastRecentEdit =
@@ -1484,15 +1708,12 @@ export async function getDashboard(slug: string): Promise<Record<string, unknown
   };
 }
 
-export async function getTrash(slug: string): Promise<Record<string, unknown>[] | null> {
+export async function getTrash(slug: string): Promise<ChapterRow[] | null> {
   const db = getDb();
   const project = await ProjectRepo.findBySlug(db, slug);
   if (!project) return null;
-
   return ChapterRepo.listDeletedByProject(db, project.id);
 }
-
-// --- Error types ---
 
 export class ProjectTitleExistsError extends Error {
   constructor() {
@@ -1502,456 +1723,23 @@ export class ProjectTitleExistsError extends Error {
 }
 ```
 
-**Step 4: Create route**
+#### Step 6: Create chapters service
 
-```typescript
-// packages/server/src/projects/projects.routes.ts
-import { Router } from "express";
-import { CreateProjectSchema, UpdateProjectSchema, ReorderChaptersSchema } from "@smudge/shared";
-import { asyncHandler } from "../app";
-import * as ProjectService from "./projects.service";
-import { velocityHandler } from "../velocity/velocity.routes";
-
-export function projectsRouter(): Router {
-  const router = Router();
-
-  router.post(
-    "/",
-    asyncHandler(async (req, res) => {
-      const parsed = CreateProjectSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({
-          error: {
-            code: "VALIDATION_ERROR",
-            message: parsed.error.issues[0]?.message ?? "Invalid input",
-          },
-        });
-        return;
-      }
-
-      try {
-        const project = await ProjectService.createProject(parsed.data.title, parsed.data.mode);
-        res.status(201).json(project);
-      } catch (err) {
-        if (err instanceof ProjectService.ProjectTitleExistsError) {
-          res.status(400).json({
-            error: {
-              code: "PROJECT_TITLE_EXISTS",
-              message: "A project with that title already exists",
-            },
-          });
-          return;
-        }
-        throw err;
-      }
-    }),
-  );
-
-  router.get(
-    "/",
-    asyncHandler(async (_req, res) => {
-      const projects = await ProjectService.listProjects();
-      res.json(projects);
-    }),
-  );
-
-  router.patch(
-    "/:slug",
-    asyncHandler(async (req, res) => {
-      const parsed = UpdateProjectSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({
-          error: {
-            code: "VALIDATION_ERROR",
-            message: parsed.error.issues[0]?.message ?? "Invalid input",
-          },
-        });
-        return;
-      }
-
-      try {
-        const project = await ProjectService.updateProject(req.params.slug, parsed.data);
-        if (!project) {
-          res.status(404).json({
-            error: { code: "NOT_FOUND", message: "Project not found." },
-          });
-          return;
-        }
-        res.json(project);
-      } catch (err) {
-        if (err instanceof ProjectService.ProjectTitleExistsError) {
-          res.status(400).json({
-            error: {
-              code: "PROJECT_TITLE_EXISTS",
-              message: "A project with that title already exists",
-            },
-          });
-          return;
-        }
-        throw err;
-      }
-    }),
-  );
-
-  router.get("/:slug/velocity", velocityHandler);
-
-  router.get(
-    "/:slug",
-    asyncHandler(async (req, res) => {
-      const project = await ProjectService.getProject(req.params.slug);
-      if (!project) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Project not found." },
-        });
-        return;
-      }
-      res.json(project);
-    }),
-  );
-
-  router.post(
-    "/:slug/chapters",
-    asyncHandler(async (req, res) => {
-      const chapter = await ProjectService.createChapter(req.params.slug);
-      if (!chapter) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Project not found." },
-        });
-        return;
-      }
-      res.status(201).json(chapter);
-    }),
-  );
-
-  router.put(
-    "/:slug/chapters/order",
-    asyncHandler(async (req, res) => {
-      const parsed = ReorderChaptersSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({
-          error: {
-            code: "VALIDATION_ERROR",
-            message: parsed.error.issues[0]?.message ?? "chapter_ids must be an array of UUIDs.",
-          },
-        });
-        return;
-      }
-
-      const result = await ProjectService.reorderChapters(req.params.slug, parsed.data.chapter_ids);
-      if (!result) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Project not found." },
-        });
-        return;
-      }
-      if (result.error) {
-        res.status(400).json({ error: result.error });
-        return;
-      }
-      res.json({ message: "Chapter order updated." });
-    }),
-  );
-
-  router.get(
-    "/:slug/dashboard",
-    asyncHandler(async (req, res) => {
-      const dashboard = await ProjectService.getDashboard(req.params.slug);
-      if (!dashboard) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Project not found." },
-        });
-        return;
-      }
-      res.json(dashboard);
-    }),
-  );
-
-  router.get(
-    "/:slug/trash",
-    asyncHandler(async (req, res) => {
-      const trashed = await ProjectService.getTrash(req.params.slug);
-      if (!trashed) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Project not found." },
-        });
-        return;
-      }
-      res.json(trashed);
-    }),
-  );
-
-  router.delete(
-    "/:slug",
-    asyncHandler(async (req, res) => {
-      const deleted = await ProjectService.deleteProject(req.params.slug);
-      if (!deleted) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Project not found." },
-        });
-        return;
-      }
-      res.json({ message: "Project moved to trash." });
-    }),
-  );
-
-  return router;
-}
-```
-
-**Step 5: Update `app.ts`**
-
-```typescript
-// Change import from:
-import { projectsRouter } from "./routes/projects";
-// to:
-import { projectsRouter } from "./projects/projects.routes";
-
-// Change:
-app.use("/api/projects", projectsRouter(db));
-// to:
-app.use("/api/projects", projectsRouter());
-```
-
-**Step 6: Run existing tests**
-
-Run: `npm test -w packages/server`
-Expected: ALL existing tests pass
-
-Note: This task depends on Task 6 (chapters repository) being created first, because the projects service imports `ChapterRepo`. **You must create the chapters repository (Task 6, Steps 1-2) before this task can compile.** Alternatively, implement Tasks 5 and 6 together. The plan presents them separately for clarity, but the implementer should create both repository files before attempting to compile either service.
-
-**Step 7: Commit**
-
-```bash
-git add packages/server/src/projects/ packages/server/src/app.ts
-git commit -m "refactor: extract projects domain (types, repository, service, routes)"
-```
-
----
-
-## Task 6: Chapters Domain
-
-**Files:**
-- Create: `packages/server/src/chapters/chapters.types.ts`
-- Create: `packages/server/src/chapters/chapters.repository.ts`
-- Create: `packages/server/src/chapters/chapters.service.ts`
-- Create: `packages/server/src/chapters/chapters.routes.ts`
-- Test: Multiple existing tests must still pass
-
-**Step 1: Create internal types**
-
-```typescript
-// packages/server/src/chapters/chapters.types.ts
-export interface ChapterRow {
-  id: string;
-  project_id: string;
-  title: string;
-  content: Record<string, unknown> | null;
-  sort_order: number;
-  word_count: number;
-  target_word_count: number | null;
-  status: string;
-  created_at: string;
-  updated_at: string;
-  deleted_at: string | null;
-}
-
-export interface CreateChapterRow {
-  id: string;
-  project_id: string;
-  title: string;
-  content: string | null;
-  sort_order: number;
-  word_count: number;
-  created_at: string;
-  updated_at: string;
-}
-```
-
-**Step 2: Create repository**
-
-The chapters repository absorbs `parseChapterContent`, `queryChapter`, `queryChapters`, and related helpers.
-
-```typescript
-// packages/server/src/chapters/chapters.repository.ts
-import type { Knex } from "knex";
-import type { ChapterRow, CreateChapterRow } from "./chapters.types";
-
-// --- Internal: JSON parsing ---
-
-function parseContent(chapter: Record<string, unknown>): Record<string, unknown> {
-  if (typeof chapter.content === "string") {
-    try {
-      return { ...chapter, content: JSON.parse(chapter.content) };
-    } catch (err) {
-      console.error(
-        `[parseChapterContent] corrupt JSON in chapter ${chapter.id ?? "unknown"} (${err instanceof Error ? err.name : "UnknownError"})`,
-      );
-      return { ...chapter, content: null, content_corrupt: true };
-    }
-  }
-  return { ...chapter, content: chapter.content ?? null };
-}
-
-// --- Public API ---
-
-export async function findById(
-  trx: Knex.Transaction | Knex,
-  id: string,
-): Promise<Record<string, unknown> | null> {
-  const row = await trx("chapters").where({ id }).whereNull("deleted_at").first();
-  return row ? parseContent(row) : null;
-}
-
-export async function findByIdIncludingDeleted(
-  trx: Knex.Transaction | Knex,
-  id: string,
-): Promise<Record<string, unknown> | null> {
-  const row = await trx("chapters").where({ id }).whereNotNull("deleted_at").first();
-  return row ? row : null;
-}
-
-export async function findByIdRaw(
-  trx: Knex.Transaction | Knex,
-  id: string,
-): Promise<Record<string, unknown> | null> {
-  return trx("chapters").where({ id }).whereNull("deleted_at").first() ?? null;
-}
-
-export async function listByProject(
-  trx: Knex.Transaction | Knex,
-  projectId: string,
-): Promise<Record<string, unknown>[]> {
-  const rows = await trx("chapters")
-    .where({ project_id: projectId })
-    .whereNull("deleted_at")
-    .orderBy("sort_order", "asc")
-    .select("*");
-  return rows.map((row: Record<string, unknown>) => parseContent(row));
-}
-
-export async function listMetadataByProject(
-  trx: Knex.Transaction | Knex,
-  projectId: string,
-): Promise<Record<string, unknown>[]> {
-  return trx("chapters")
-    .where({ project_id: projectId })
-    .whereNull("deleted_at")
-    .orderBy("sort_order", "asc")
-    .select("id", "title", "status", "word_count", "target_word_count", "updated_at", "sort_order");
-}
-
-export async function listDeletedByProject(
-  trx: Knex.Transaction | Knex,
-  projectId: string,
-): Promise<Record<string, unknown>[]> {
-  const trashed = await trx("chapters")
-    .where({ project_id: projectId })
-    .whereNotNull("deleted_at")
-    .orderBy("deleted_at", "desc")
-    .select(
-      "id", "project_id", "title", "status", "word_count",
-      "sort_order", "deleted_at", "created_at", "updated_at",
-    );
-  return trashed.map((ch: Record<string, unknown>) => ({ ...ch, content: null }));
-}
-
-export async function listIdsByProject(
-  trx: Knex.Transaction | Knex,
-  projectId: string,
-): Promise<string[]> {
-  const existing = await trx("chapters")
-    .where({ project_id: projectId })
-    .whereNull("deleted_at")
-    .select("id");
-  return existing.map((c: { id: string }) => c.id);
-}
-
-export async function insert(
-  trx: Knex.Transaction,
-  data: CreateChapterRow,
-): Promise<void> {
-  await trx("chapters").insert(data);
-}
-
-export async function getMaxSortOrder(
-  trx: Knex.Transaction | Knex,
-  projectId: string,
-): Promise<number | null> {
-  const result = (await trx("chapters")
-    .where({ project_id: projectId })
-    .whereNull("deleted_at")
-    .max("sort_order as max")
-    .first()) as { max: number | null };
-  return result?.max ?? null;
-}
-
-export async function updateContent(
-  trx: Knex.Transaction,
-  id: string,
-  updates: Record<string, unknown>,
-): Promise<void> {
-  await trx("chapters").where({ id }).update(updates);
-}
-
-export async function updateSortOrders(
-  trx: Knex.Transaction,
-  orders: Array<{ id: string; sortOrder: number }>,
-): Promise<void> {
-  for (const { id, sortOrder } of orders) {
-    await trx("chapters").where({ id }).update({ sort_order: sortOrder });
-  }
-}
-
-export async function softDelete(
-  trx: Knex.Transaction,
-  id: string,
-  now: string,
-): Promise<void> {
-  await trx("chapters").where({ id }).update({ deleted_at: now });
-}
-
-export async function softDeleteByProject(
-  trx: Knex.Transaction,
-  projectId: string,
-  now: string,
-): Promise<void> {
-  await trx("chapters")
-    .where({ project_id: projectId })
-    .whereNull("deleted_at")
-    .update({ deleted_at: now });
-}
-
-export async function restore(
-  trx: Knex.Transaction,
-  id: string,
-): Promise<void> {
-  await trx("chapters")
-    .where({ id })
-    .update({ deleted_at: null, updated_at: new Date().toISOString() });
-}
-
-export async function validateStatus(
-  trx: Knex.Transaction | Knex,
-  status: string,
-): Promise<boolean> {
-  const row = await trx("chapter_statuses").where({ status }).first();
-  return !!row;
-}
-```
-
-**Step 3: Create service**
+All data access through repos — no raw table queries (alignment fix #1).
 
 ```typescript
 // packages/server/src/chapters/chapters.service.ts
+import type { Chapter } from "@smudge/shared";
 import { countWords, generateSlug } from "@smudge/shared";
 import { getDb } from "../db/connection";
 import * as ChapterRepo from "./chapters.repository";
 import * as ProjectRepo from "../projects/projects.repository";
 import * as ChapterStatusRepo from "../chapter-statuses/chapter-statuses.repository";
 import * as VelocityService from "../velocity/velocity.service";
+import type { ChapterRow } from "./chapters.types";
 
-// Injectable velocity service for testing failure paths
-let velocityServiceImpl = VelocityService;
+// Injectable velocity service for testing failure paths (design §Velocity failure path exception)
+let velocityServiceImpl: typeof VelocityService = VelocityService;
 
 export function setVelocityService(impl: typeof VelocityService): void {
   velocityServiceImpl = impl;
@@ -1961,21 +1749,37 @@ export function resetVelocityService(): void {
   velocityServiceImpl = VelocityService;
 }
 
-export async function getChapter(id: string): Promise<Record<string, unknown> | null> {
-  const db = getDb();
-  const chapter = await ChapterRepo.findById(db, id);
-  if (!chapter) return null;
-  const statusLabel = await ChapterStatusRepo.getStatusLabel(db, chapter.status as string);
-  return { ...chapter, status_label: statusLabel };
+function toChapter(row: ChapterRow): Chapter {
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    title: row.title,
+    content: row.content,
+    sort_order: row.sort_order,
+    word_count: row.word_count,
+    target_word_count: row.target_word_count,
+    status: row.status,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    deleted_at: row.deleted_at,
+  };
 }
 
-export function isCorruptChapter(chapter: Record<string, unknown>): boolean {
+export function isCorruptChapter(chapter: ChapterRow): boolean {
   return chapter.content_corrupt === true;
 }
 
-export function stripCorruptFlag(chapter: Record<string, unknown>): Record<string, unknown> {
+export function stripCorruptFlag(chapter: ChapterRow): Omit<ChapterRow, "content_corrupt"> {
   const { content_corrupt: _, ...rest } = chapter;
   return rest;
+}
+
+export async function getChapter(id: string): Promise<(Chapter & { status_label: string; content_corrupt?: boolean }) | null> {
+  const db = getDb();
+  const chapter = await ChapterRepo.findById(db, id);
+  if (!chapter) return null;
+  const statusLabel = await ChapterStatusRepo.getStatusLabel(db, chapter.status);
+  return { ...toChapter(chapter), content_corrupt: chapter.content_corrupt, status_label: statusLabel };
 }
 
 export async function updateChapter(
@@ -1986,10 +1790,10 @@ export async function updateChapter(
     status?: string;
     target_word_count?: number | null;
   },
-): Promise<{ chapter: Record<string, unknown> | null; error?: { code: string; message: string } }> {
+): Promise<{ chapter: (Chapter & { status_label: string }) | null; error?: { code: string; message: string } }> {
   const db = getDb();
 
-  const chapter = await db("chapters").where({ id }).whereNull("deleted_at").first();
+  const chapter = await ChapterRepo.findByIdRaw(db, id);
   if (!chapter) return { chapter: null };
 
   const updates: Record<string, unknown> = {
@@ -2017,10 +1821,8 @@ export async function updateChapter(
   }
 
   await db.transaction(async (trx) => {
-    await ChapterRepo.updateContent(trx, id, updates);
-    await trx("projects")
-      .where({ id: chapter.project_id })
-      .update({ updated_at: new Date().toISOString() });
+    await ChapterRepo.update(trx, id, updates);
+    await ProjectRepo.updateTimestamp(trx, chapter.project_id);
   });
 
   // Velocity side effects (best-effort)
@@ -2040,19 +1842,19 @@ export async function updateChapter(
     };
   }
 
-  const statusLabel = await ChapterStatusRepo.getStatusLabel(db, updated.status as string);
-  return { chapter: { ...updated, status_label: statusLabel } };
+  const statusLabel = await ChapterStatusRepo.getStatusLabel(db, updated.status);
+  return { chapter: { ...toChapter(updated), status_label: statusLabel } };
 }
 
 export async function deleteChapter(id: string): Promise<boolean> {
   const db = getDb();
-  const chapter = await db("chapters").where({ id }).whereNull("deleted_at").first();
+  const chapter = await ChapterRepo.findByIdRaw(db, id);
   if (!chapter) return false;
 
   const now = new Date().toISOString();
   await db.transaction(async (trx) => {
     await ChapterRepo.softDelete(trx, id, now);
-    await trx("projects").where({ id: chapter.project_id }).update({ updated_at: now });
+    await ProjectRepo.updateTimestamp(trx, chapter.project_id);
   });
 
   await velocityServiceImpl.updateDailySnapshot(chapter.project_id);
@@ -2061,9 +1863,9 @@ export async function deleteChapter(id: string): Promise<boolean> {
 
 export async function restoreChapter(
   id: string,
-): Promise<{ chapter: Record<string, unknown> | null; error?: { code: string; message: string }; status?: number }> {
+): Promise<{ chapter: (Chapter & { status_label: string; project_slug?: string }) | null; error?: { code: string; message: string }; status?: number }> {
   const db = getDb();
-  const chapter = await db("chapters").where({ id }).whereNotNull("deleted_at").first();
+  const chapter = await ChapterRepo.findDeletedById(db, id);
   if (!chapter) {
     return { chapter: null, error: { code: "NOT_FOUND", message: "Deleted chapter not found." }, status: 404 };
   }
@@ -2082,17 +1884,13 @@ export async function restoreChapter(
       await ChapterRepo.restore(trx, id);
       if (parentProject.deleted_at) {
         const freshSlug = await ProjectRepo.resolveUniqueSlug(
-          trx,
-          generateSlug(parentProject.title),
-          parentProject.id,
+          trx, generateSlug(parentProject.title), parentProject.id,
         );
-        await trx("projects")
-          .where({ id: chapter.project_id })
-          .update({
-            deleted_at: null,
-            updated_at: new Date().toISOString(),
-            slug: freshSlug,
-          });
+        await ProjectRepo.update(trx, chapter.project_id, {
+          deleted_at: null,
+          updated_at: new Date().toISOString(),
+          slug: freshSlug,
+        });
       }
     });
   } catch (err: unknown) {
@@ -2112,10 +1910,10 @@ export async function restoreChapter(
   if (!restored) return { chapter: null };
 
   const updatedProject = await ProjectRepo.findById(db, chapter.project_id);
-  const statusLabel = await ChapterStatusRepo.getStatusLabel(db, restored.status as string);
+  const statusLabel = await ChapterStatusRepo.getStatusLabel(db, restored.status);
   return {
     chapter: {
-      ...restored,
+      ...toChapter(restored),
       status_label: statusLabel,
       project_slug: updatedProject?.slug,
     },
@@ -2123,7 +1921,110 @@ export async function restoreChapter(
 }
 ```
 
-**Step 4: Create route**
+#### Step 7: Create projects route
+
+```typescript
+// packages/server/src/projects/projects.routes.ts
+import { Router } from "express";
+import { CreateProjectSchema, UpdateProjectSchema, ReorderChaptersSchema } from "@smudge/shared";
+import { asyncHandler } from "../app";
+import * as ProjectService from "./projects.service";
+import { velocityHandler } from "../velocity/velocity.routes";
+
+export function projectsRouter(): Router {
+  const router = Router();
+
+  router.post("/", asyncHandler(async (req, res) => {
+    const parsed = CreateProjectSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0]?.message ?? "Invalid input" } });
+      return;
+    }
+    try {
+      const project = await ProjectService.createProject(parsed.data.title, parsed.data.mode);
+      res.status(201).json(project);
+    } catch (err) {
+      if (err instanceof ProjectService.ProjectTitleExistsError) {
+        res.status(400).json({ error: { code: "PROJECT_TITLE_EXISTS", message: "A project with that title already exists" } });
+        return;
+      }
+      throw err;
+    }
+  }));
+
+  router.get("/", asyncHandler(async (_req, res) => {
+    const projects = await ProjectService.listProjects();
+    res.json(projects);
+  }));
+
+  router.patch("/:slug", asyncHandler(async (req, res) => {
+    const parsed = UpdateProjectSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0]?.message ?? "Invalid input" } });
+      return;
+    }
+    try {
+      const project = await ProjectService.updateProject(req.params.slug, parsed.data);
+      if (!project) { res.status(404).json({ error: { code: "NOT_FOUND", message: "Project not found." } }); return; }
+      res.json(project);
+    } catch (err) {
+      if (err instanceof ProjectService.ProjectTitleExistsError) {
+        res.status(400).json({ error: { code: "PROJECT_TITLE_EXISTS", message: "A project with that title already exists" } });
+        return;
+      }
+      throw err;
+    }
+  }));
+
+  router.get("/:slug/velocity", velocityHandler);
+
+  router.get("/:slug", asyncHandler(async (req, res) => {
+    const project = await ProjectService.getProject(req.params.slug);
+    if (!project) { res.status(404).json({ error: { code: "NOT_FOUND", message: "Project not found." } }); return; }
+    res.json(project);
+  }));
+
+  router.post("/:slug/chapters", asyncHandler(async (req, res) => {
+    const chapter = await ProjectService.createChapter(req.params.slug);
+    if (!chapter) { res.status(404).json({ error: { code: "NOT_FOUND", message: "Project not found." } }); return; }
+    res.status(201).json(chapter);
+  }));
+
+  router.put("/:slug/chapters/order", asyncHandler(async (req, res) => {
+    const parsed = ReorderChaptersSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0]?.message ?? "chapter_ids must be an array of UUIDs." } });
+      return;
+    }
+    const result = await ProjectService.reorderChapters(req.params.slug, parsed.data.chapter_ids);
+    if (!result) { res.status(404).json({ error: { code: "NOT_FOUND", message: "Project not found." } }); return; }
+    if (result.error) { res.status(400).json({ error: result.error }); return; }
+    res.json({ message: "Chapter order updated." });
+  }));
+
+  router.get("/:slug/dashboard", asyncHandler(async (req, res) => {
+    const dashboard = await ProjectService.getDashboard(req.params.slug);
+    if (!dashboard) { res.status(404).json({ error: { code: "NOT_FOUND", message: "Project not found." } }); return; }
+    res.json(dashboard);
+  }));
+
+  router.get("/:slug/trash", asyncHandler(async (req, res) => {
+    const trashed = await ProjectService.getTrash(req.params.slug);
+    if (!trashed) { res.status(404).json({ error: { code: "NOT_FOUND", message: "Project not found." } }); return; }
+    res.json(trashed);
+  }));
+
+  router.delete("/:slug", asyncHandler(async (req, res) => {
+    const deleted = await ProjectService.deleteProject(req.params.slug);
+    if (!deleted) { res.status(404).json({ error: { code: "NOT_FOUND", message: "Project not found." } }); return; }
+    res.json({ message: "Project moved to trash." });
+  }));
+
+  return router;
+}
+```
+
+#### Step 8: Create chapters route
 
 ```typescript
 // packages/server/src/chapters/chapters.routes.ts
@@ -2135,93 +2036,50 @@ import * as ChapterService from "./chapters.service";
 export function chaptersRouter(): Router {
   const router = Router();
 
-  router.get(
-    "/:id",
-    asyncHandler(async (req, res) => {
-      const chapter = await ChapterService.getChapter(req.params.id);
-      if (!chapter) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Chapter not found." },
-        });
-        return;
-      }
-      if (ChapterService.isCorruptChapter(chapter)) {
-        res.status(500).json({
-          error: { code: "CORRUPT_CONTENT", message: "Chapter content is corrupted and cannot be loaded." },
-        });
-        return;
-      }
-      res.json(chapter);
-    }),
-  );
+  router.get("/:id", asyncHandler(async (req, res) => {
+    const chapter = await ChapterService.getChapter(req.params.id);
+    if (!chapter) { res.status(404).json({ error: { code: "NOT_FOUND", message: "Chapter not found." } }); return; }
+    if (chapter.content_corrupt) {
+      res.status(500).json({ error: { code: "CORRUPT_CONTENT", message: "Chapter content is corrupted and cannot be loaded." } });
+      return;
+    }
+    res.json(chapter);
+  }));
 
-  router.patch(
-    "/:id",
-    asyncHandler(async (req, res) => {
-      const parsed = UpdateChapterSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({
-          error: {
-            code: "VALIDATION_ERROR",
-            message: parsed.error.issues[0]?.message ?? "Invalid input",
-          },
-        });
-        return;
-      }
+  router.patch("/:id", asyncHandler(async (req, res) => {
+    const parsed = UpdateChapterSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0]?.message ?? "Invalid input" } });
+      return;
+    }
+    const result = await ChapterService.updateChapter(req.params.id, parsed.data);
+    if (result.error) {
+      const status = result.error.code === "CORRUPT_CONTENT" ? 500 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    if (!result.chapter) { res.status(404).json({ error: { code: "NOT_FOUND", message: "Chapter not found." } }); return; }
+    res.json(result.chapter);
+  }));
 
-      const result = await ChapterService.updateChapter(req.params.id, parsed.data);
-      if (result.error) {
-        const status = result.error.code === "CORRUPT_CONTENT" ? 500 : 400;
-        res.status(status).json({ error: result.error });
-        return;
-      }
-      if (!result.chapter) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Chapter not found." },
-        });
-        return;
-      }
-      res.json(result.chapter);
-    }),
-  );
+  router.delete("/:id", asyncHandler(async (req, res) => {
+    const deleted = await ChapterService.deleteChapter(req.params.id);
+    if (!deleted) { res.status(404).json({ error: { code: "NOT_FOUND", message: "Chapter not found." } }); return; }
+    res.json({ message: "Chapter moved to trash." });
+  }));
 
-  router.delete(
-    "/:id",
-    asyncHandler(async (req, res) => {
-      const deleted = await ChapterService.deleteChapter(req.params.id);
-      if (!deleted) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Chapter not found." },
-        });
-        return;
-      }
-      res.json({ message: "Chapter moved to trash." });
-    }),
-  );
-
-  router.post(
-    "/:id/restore",
-    asyncHandler(async (req, res) => {
-      const result = await ChapterService.restoreChapter(req.params.id);
-      if (result.error) {
-        res.status(result.status ?? 500).json({ error: result.error });
-        return;
-      }
-      if (!result.chapter) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Chapter not found." },
-        });
-        return;
-      }
-      res.json(result.chapter);
-    }),
-  );
+  router.post("/:id/restore", asyncHandler(async (req, res) => {
+    const result = await ChapterService.restoreChapter(req.params.id);
+    if (result.error) { res.status(result.status ?? 500).json({ error: result.error }); return; }
+    if (!result.chapter) { res.status(404).json({ error: { code: "NOT_FOUND", message: "Chapter not found." } }); return; }
+    res.json(result.chapter);
+  }));
 
   return router;
 }
 ```
 
-**Step 5: Update `app.ts` — final version**
+#### Step 9: Update `app.ts` — final version
 
 ```typescript
 // packages/server/src/app.ts
@@ -2289,18 +2147,11 @@ export function createApp(): express.Express {
 }
 ```
 
-**Step 6: Update `index.ts`**
+#### Step 10: Update `index.ts`
 
-Remove the `db` parameter from `createApp`:
+Change `createApp(db)` to `createApp()`.
 
-```typescript
-// In index.ts, change:
-const app = createApp(db);
-// to:
-const app = createApp();
-```
-
-**Step 7: Update `test-helpers.ts`**
+#### Step 11: Update `test-helpers.ts` — final version
 
 ```typescript
 // packages/server/src/__tests__/test-helpers.ts
@@ -2339,67 +2190,57 @@ export function setupTestDb() {
   });
 
   return {
-    get db() {
-      return testDb;
-    },
-    get app() {
-      return testServer;
-    },
+    get db() { return testDb; },
+    get app() { return testServer; },
   };
 }
 ```
 
-**Step 8: Update existing test imports**
+#### Step 12: Update existing test imports
 
-Several test files import from `../routes/...`. Update these imports:
+- `resolve-slug.test.ts` — import `resolveUniqueSlug` from `../projects/projects.repository`
+- `parseChapterContent.test.ts` — import `parseChapterContent` from `../chapters/chapters.repository`
+- `velocityHelpers.test.ts` — import `calculateProjection`, `safeTimezone` from `../velocity/velocity.service`
 
-- `packages/server/src/__tests__/resolve-slug.test.ts` — change import from `../routes/resolve-slug` to `../projects/projects.repository` and update the function name to `resolveUniqueSlug`
-- `packages/server/src/__tests__/parseChapterContent.test.ts` — these test the parsing function which is now internal to the chapters repository. Either: (a) export `parseContent` from the repository for testing, or (b) test through the repository's public API. Recommended: export a `parseChapterContent` function from the chapters repository for backward compatibility with existing tests.
-- `packages/server/src/__tests__/velocityHelpers.test.ts` — change imports to use `../velocity/velocity.service` for `calculateProjection` and `safeTimezone`. The `insertSaveEvent` and `upsertDailySnapshot` error-handling tests should be updated to test through `VelocityService.recordSave` and `VelocityService.updateDailySnapshot`.
-
-**Step 9: Delete old route files**
-
-Once all tests pass with the new domain structure, delete the old files:
+#### Step 13: Delete old route files
 
 ```bash
-rm packages/server/src/routes/projects.ts
-rm packages/server/src/routes/chapters.ts
-rm packages/server/src/routes/chapter-statuses.ts
-rm packages/server/src/routes/settings.ts
-rm packages/server/src/routes/velocity.ts
-rm packages/server/src/routes/chapterQueries.ts
-rm packages/server/src/routes/parseChapterContent.ts
-rm packages/server/src/routes/resolve-slug.ts
-rm packages/server/src/routes/status-labels.ts
-rm packages/server/src/routes/velocityHelpers.ts
-rmdir packages/server/src/routes
+rm -r packages/server/src/routes
 ```
 
-**Step 10: Run full test suite**
+#### Step 14: Run full test suite
 
 Run: `npm test -w packages/server`
-Expected: ALL existing tests pass
+Expected: ALL existing tests pass (185+ tests)
 
-Run: `make all`
-Expected: Full CI pass (lint, format, typecheck, coverage, e2e)
+### REFACTOR
+- Grep for any remaining `trx("projects")` or `trx("chapters")` or `db("projects")` or `db("chapters")` in service files — there should be zero (alignment fix #1)
+- Grep for `Record<string, unknown>` returns in repository files — chapter repo should return `ChapterRow` (alignment fix #2)
+- Grep for `getDb()` in route files — there should be zero (alignment fix #3)
+- Grep for dynamic `import(` in service files — there should be zero (alignment fix #4)
 
-**Step 11: Commit**
-
+**Commit:**
 ```bash
 git add -A
-git commit -m "refactor: extract chapters domain and complete layered architecture
+git commit -m "refactor: extract projects and chapters domains, complete layered architecture
 
 All five domains (chapter-statuses, settings, velocity, projects, chapters)
 now follow the types/repository/service/routes pattern. Old routes/ directory
-removed. app.ts no longer passes db to routers — services use the connection
-singleton directly."
+removed. No service code touches tables directly — all via repositories.
+app.ts no longer passes db to routers."
 ```
 
 ---
 
-## Task 7: Unit Tests — Repositories
+## Task 6: Unit Tests — Repositories
 
-Add unit tests for each repository. These test against a real SQLite database (project philosophy: no mocks).
+**Requirement:** Design §Testing — new repository tests against real SQLite
+
+### RED
+- Write tests for each repository function
+- Expected failure: none (repos already work) — these tests verify the extraction is correct
+
+### GREEN
 
 **Files:**
 - Create: `packages/server/src/__tests__/chapter-statuses.repository.test.ts`
@@ -2408,417 +2249,22 @@ Add unit tests for each repository. These test against a real SQLite database (p
 - Create: `packages/server/src/__tests__/chapters.repository.test.ts`
 - Create: `packages/server/src/__tests__/velocity.repository.test.ts`
 
-**Step 1: Write chapter-statuses repository tests**
+Write tests covering: list, find, insert, update, soft-delete, restore for each repo. Use `setupTestDb()` for real SQLite. See the design doc for the full list of repository functions per domain.
 
-```typescript
-// packages/server/src/__tests__/chapter-statuses.repository.test.ts
-import { describe, it, expect } from "vitest";
-import { setupTestDb } from "./test-helpers";
-import * as ChapterStatusRepo from "../chapter-statuses/chapter-statuses.repository";
-
-const t = setupTestDb();
-
-describe("ChapterStatusRepo", () => {
-  it("list() returns all statuses in sort order", async () => {
-    const statuses = await ChapterStatusRepo.list(t.db);
-    expect(statuses).toHaveLength(5);
-    expect(statuses[0].status).toBe("outline");
-    expect(statuses[4].status).toBe("final");
-  });
-
-  it("findByStatus() returns a status row", async () => {
-    const row = await ChapterStatusRepo.findByStatus(t.db, "revised");
-    expect(row).toBeDefined();
-    expect(row!.label).toBe("Revised");
-  });
-
-  it("findByStatus() returns undefined for unknown status", async () => {
-    const row = await ChapterStatusRepo.findByStatus(t.db, "nonexistent");
-    expect(row).toBeUndefined();
-  });
-
-  it("getStatusLabel() returns the label for a known status", async () => {
-    const label = await ChapterStatusRepo.getStatusLabel(t.db, "rough_draft");
-    expect(label).toBe("Rough Draft");
-  });
-
-  it("getStatusLabel() returns the raw status for unknown status", async () => {
-    const label = await ChapterStatusRepo.getStatusLabel(t.db, "unknown");
-    expect(label).toBe("unknown");
-  });
-
-  it("getStatusLabelMap() returns a complete map", async () => {
-    const map = await ChapterStatusRepo.getStatusLabelMap(t.db);
-    expect(Object.keys(map)).toHaveLength(5);
-    expect(map.outline).toBe("Outline");
-    expect(map.final).toBe("Final");
-  });
-});
-```
-
-**Step 2: Write settings repository tests**
-
-```typescript
-// packages/server/src/__tests__/settings.repository.test.ts
-import { describe, it, expect } from "vitest";
-import { setupTestDb } from "./test-helpers";
-import * as SettingsRepo from "../settings/settings.repository";
-
-const t = setupTestDb();
-
-describe("SettingsRepo", () => {
-  it("listAll() returns empty array when no settings exist", async () => {
-    const settings = await SettingsRepo.listAll(t.db);
-    expect(settings).toEqual([]);
-  });
-
-  it("upsert() inserts a new setting", async () => {
-    await t.db.transaction(async (trx) => {
-      await SettingsRepo.upsert(trx, "timezone", "Europe/Malta");
-    });
-    const row = await SettingsRepo.findByKey(t.db, "timezone");
-    expect(row).toBeDefined();
-    expect(row!.value).toBe("Europe/Malta");
-  });
-
-  it("upsert() updates an existing setting", async () => {
-    await t.db.transaction(async (trx) => {
-      await SettingsRepo.upsert(trx, "timezone", "UTC");
-    });
-    await t.db.transaction(async (trx) => {
-      await SettingsRepo.upsert(trx, "timezone", "America/New_York");
-    });
-    const row = await SettingsRepo.findByKey(t.db, "timezone");
-    expect(row!.value).toBe("America/New_York");
-  });
-
-  it("listAll() returns all settings", async () => {
-    await t.db.transaction(async (trx) => {
-      await SettingsRepo.upsert(trx, "timezone", "UTC");
-    });
-    const settings = await SettingsRepo.listAll(t.db);
-    expect(settings).toHaveLength(1);
-    expect(settings[0].key).toBe("timezone");
-  });
-});
-```
-
-**Step 3: Write projects repository tests**
-
-```typescript
-// packages/server/src/__tests__/projects.repository.test.ts
-import { describe, it, expect } from "vitest";
-import { v4 as uuid } from "uuid";
-import { setupTestDb } from "./test-helpers";
-import * as ProjectRepo from "../projects/projects.repository";
-
-const t = setupTestDb();
-
-function makeProject(overrides: Partial<Record<string, unknown>> = {}) {
-  const now = new Date().toISOString();
-  return {
-    id: uuid(),
-    title: `Project ${Math.random().toString(36).slice(2, 8)}`,
-    slug: `project-${Math.random().toString(36).slice(2, 8)}`,
-    mode: "fiction",
-    created_at: now,
-    updated_at: now,
-    ...overrides,
-  };
-}
-
-describe("ProjectRepo", () => {
-  it("insert() creates and returns a project", async () => {
-    const data = makeProject();
-    const row = await t.db.transaction(async (trx) => {
-      return ProjectRepo.insert(trx, data);
-    });
-    expect(row.id).toBe(data.id);
-    expect(row.title).toBe(data.title);
-  });
-
-  it("findBySlug() returns a project", async () => {
-    const data = makeProject();
-    await t.db.transaction(async (trx) => {
-      await ProjectRepo.insert(trx, data);
-    });
-    const found = await ProjectRepo.findBySlug(t.db, data.slug);
-    expect(found).toBeDefined();
-    expect(found!.id).toBe(data.id);
-  });
-
-  it("findBySlug() excludes soft-deleted projects", async () => {
-    const data = makeProject();
-    await t.db.transaction(async (trx) => {
-      await ProjectRepo.insert(trx, data);
-      await ProjectRepo.softDelete(trx, data.id, new Date().toISOString());
-    });
-    const found = await ProjectRepo.findBySlug(t.db, data.slug);
-    expect(found).toBeUndefined();
-  });
-
-  it("findByTitle() finds by title", async () => {
-    const data = makeProject({ title: "Unique Title" });
-    await t.db.transaction(async (trx) => {
-      await ProjectRepo.insert(trx, data);
-    });
-    const found = await ProjectRepo.findByTitle(t.db, "Unique Title");
-    expect(found).toBeDefined();
-  });
-
-  it("findByTitle() excludes specified project", async () => {
-    const data = makeProject({ title: "Unique Title 2" });
-    await t.db.transaction(async (trx) => {
-      await ProjectRepo.insert(trx, data);
-    });
-    const found = await ProjectRepo.findByTitle(t.db, "Unique Title 2", data.id);
-    expect(found).toBeUndefined();
-  });
-
-  it("resolveUniqueSlug() returns base slug when available", async () => {
-    const slug = await ProjectRepo.resolveUniqueSlug(t.db, "fresh-slug");
-    expect(slug).toBe("fresh-slug");
-  });
-
-  it("resolveUniqueSlug() appends suffix on collision", async () => {
-    const data = makeProject({ slug: "taken" });
-    await t.db.transaction(async (trx) => {
-      await ProjectRepo.insert(trx, data);
-    });
-    const slug = await ProjectRepo.resolveUniqueSlug(t.db, "taken");
-    expect(slug).toBe("taken-2");
-  });
-
-  it("listAll() returns projects with total word counts", async () => {
-    const data = makeProject();
-    await t.db.transaction(async (trx) => {
-      await ProjectRepo.insert(trx, data);
-    });
-    const list = await ProjectRepo.listAll(t.db);
-    expect(list.length).toBeGreaterThanOrEqual(1);
-    expect(list[0].total_word_count).toBeDefined();
-  });
-});
-```
-
-**Step 4: Write chapters repository tests**
-
-```typescript
-// packages/server/src/__tests__/chapters.repository.test.ts
-import { describe, it, expect } from "vitest";
-import { v4 as uuid } from "uuid";
-import { setupTestDb } from "./test-helpers";
-import * as ChapterRepo from "../chapters/chapters.repository";
-
-const t = setupTestDb();
-
-async function createProject() {
-  const id = uuid();
-  const now = new Date().toISOString();
-  await t.db("projects").insert({
-    id, title: `Project ${id.slice(0, 6)}`, slug: `project-${id.slice(0, 6)}`,
-    mode: "fiction", created_at: now, updated_at: now,
-  });
-  return id;
-}
-
-describe("ChapterRepo", () => {
-  it("insert() + findById() round-trips a chapter", async () => {
-    const projectId = await createProject();
-    const id = uuid();
-    const now = new Date().toISOString();
-    await t.db.transaction(async (trx) => {
-      await ChapterRepo.insert(trx, {
-        id, project_id: projectId, title: "Chapter 1",
-        content: JSON.stringify({ type: "doc", content: [] }),
-        sort_order: 0, word_count: 0, created_at: now, updated_at: now,
-      });
-    });
-    const found = await ChapterRepo.findById(t.db, id);
-    expect(found).toBeDefined();
-    expect(found!.title).toBe("Chapter 1");
-    expect(found!.content).toEqual({ type: "doc", content: [] });
-  });
-
-  it("findById() parses JSON content strings", async () => {
-    const projectId = await createProject();
-    const id = uuid();
-    const now = new Date().toISOString();
-    await t.db("chapters").insert({
-      id, project_id: projectId, title: "Ch",
-      content: '{"type":"doc","content":[]}',
-      sort_order: 0, word_count: 0, created_at: now, updated_at: now,
-    });
-    const ch = await ChapterRepo.findById(t.db, id);
-    expect(ch!.content).toEqual({ type: "doc", content: [] });
-  });
-
-  it("findById() flags corrupt JSON", async () => {
-    const projectId = await createProject();
-    const id = uuid();
-    const now = new Date().toISOString();
-    await t.db("chapters").insert({
-      id, project_id: projectId, title: "Ch",
-      content: "not-valid-json",
-      sort_order: 0, word_count: 0, created_at: now, updated_at: now,
-    });
-    const ch = await ChapterRepo.findById(t.db, id);
-    expect(ch!.content).toBeNull();
-    expect(ch!.content_corrupt).toBe(true);
-  });
-
-  it("listByProject() returns chapters in sort order", async () => {
-    const projectId = await createProject();
-    const now = new Date().toISOString();
-    await t.db.transaction(async (trx) => {
-      await ChapterRepo.insert(trx, {
-        id: uuid(), project_id: projectId, title: "B",
-        content: null, sort_order: 1, word_count: 0, created_at: now, updated_at: now,
-      });
-      await ChapterRepo.insert(trx, {
-        id: uuid(), project_id: projectId, title: "A",
-        content: null, sort_order: 0, word_count: 0, created_at: now, updated_at: now,
-      });
-    });
-    const chapters = await ChapterRepo.listByProject(t.db, projectId);
-    expect(chapters[0].title).toBe("A");
-    expect(chapters[1].title).toBe("B");
-  });
-
-  it("softDelete() + findById() excludes deleted chapters", async () => {
-    const projectId = await createProject();
-    const id = uuid();
-    const now = new Date().toISOString();
-    await t.db.transaction(async (trx) => {
-      await ChapterRepo.insert(trx, {
-        id, project_id: projectId, title: "Ch",
-        content: null, sort_order: 0, word_count: 0, created_at: now, updated_at: now,
-      });
-      await ChapterRepo.softDelete(trx, id, now);
-    });
-    const found = await ChapterRepo.findById(t.db, id);
-    expect(found).toBeNull();
-  });
-
-  it("listDeletedByProject() returns trashed chapters", async () => {
-    const projectId = await createProject();
-    const id = uuid();
-    const now = new Date().toISOString();
-    await t.db.transaction(async (trx) => {
-      await ChapterRepo.insert(trx, {
-        id, project_id: projectId, title: "Ch",
-        content: null, sort_order: 0, word_count: 0, created_at: now, updated_at: now,
-      });
-      await ChapterRepo.softDelete(trx, id, now);
-    });
-    const trashed = await ChapterRepo.listDeletedByProject(t.db, projectId);
-    expect(trashed).toHaveLength(1);
-    expect(trashed[0].content).toBeNull();
-  });
-
-  it("getMaxSortOrder() returns highest sort_order", async () => {
-    const projectId = await createProject();
-    const now = new Date().toISOString();
-    await t.db.transaction(async (trx) => {
-      await ChapterRepo.insert(trx, {
-        id: uuid(), project_id: projectId, title: "A",
-        content: null, sort_order: 0, word_count: 0, created_at: now, updated_at: now,
-      });
-      await ChapterRepo.insert(trx, {
-        id: uuid(), project_id: projectId, title: "B",
-        content: null, sort_order: 5, word_count: 0, created_at: now, updated_at: now,
-      });
-    });
-    const max = await ChapterRepo.getMaxSortOrder(t.db, projectId);
-    expect(max).toBe(5);
-  });
-});
-```
-
-**Step 5: Write velocity repository tests**
-
-```typescript
-// packages/server/src/__tests__/velocity.repository.test.ts
-import { describe, it, expect } from "vitest";
-import { v4 as uuid } from "uuid";
-import { setupTestDb } from "./test-helpers";
-import * as VelocityRepo from "../velocity/velocity.repository";
-
-const t = setupTestDb();
-
-async function createProjectWithChapter() {
-  const projectId = uuid();
-  const chapterId = uuid();
-  const now = new Date().toISOString();
-  await t.db("projects").insert({
-    id: projectId, title: `P-${projectId.slice(0, 6)}`, slug: `p-${projectId.slice(0, 6)}`,
-    mode: "fiction", created_at: now, updated_at: now,
-  });
-  await t.db("chapters").insert({
-    id: chapterId, project_id: projectId, title: "Ch 1",
-    content: null, sort_order: 0, word_count: 100, created_at: now, updated_at: now,
-  });
-  return { projectId, chapterId };
-}
-
-describe("VelocityRepo", () => {
-  it("insertSaveEvent() creates a save event", async () => {
-    const { projectId, chapterId } = await createProjectWithChapter();
-    await VelocityRepo.insertSaveEvent(t.db, chapterId, projectId, 100, "2026-04-05");
-    const events = await t.db("save_events").where({ project_id: projectId });
-    expect(events).toHaveLength(1);
-    expect(events[0].word_count).toBe(100);
-  });
-
-  it("upsertDailySnapshot() creates a new snapshot", async () => {
-    const { projectId } = await createProjectWithChapter();
-    await VelocityRepo.upsertDailySnapshot(t.db, projectId, "2026-04-05", 500);
-    const snapshots = await t.db("daily_snapshots").where({ project_id: projectId });
-    expect(snapshots).toHaveLength(1);
-    expect(snapshots[0].total_word_count).toBe(500);
-  });
-
-  it("upsertDailySnapshot() updates existing snapshot on same day", async () => {
-    const { projectId } = await createProjectWithChapter();
-    await VelocityRepo.upsertDailySnapshot(t.db, projectId, "2026-04-05", 500);
-    await VelocityRepo.upsertDailySnapshot(t.db, projectId, "2026-04-05", 600);
-    const snapshots = await t.db("daily_snapshots").where({ project_id: projectId });
-    expect(snapshots).toHaveLength(1);
-    expect(snapshots[0].total_word_count).toBe(600);
-  });
-
-  it("getProjectTotalWordCount() sums non-deleted chapters", async () => {
-    const { projectId } = await createProjectWithChapter();
-    const total = await VelocityRepo.getProjectTotalWordCount(t.db, projectId);
-    expect(total).toBe(100);
-  });
-
-  it("getRecentSaveEvents() filters by timestamp", async () => {
-    const { projectId, chapterId } = await createProjectWithChapter();
-    await VelocityRepo.insertSaveEvent(t.db, chapterId, projectId, 100, "2026-04-05");
-    const events = await VelocityRepo.getRecentSaveEvents(
-      t.db, projectId, "2026-04-04T00:00:00.000Z",
-    );
-    expect(events.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("getWritingDates() returns dates with save events", async () => {
-    const { projectId, chapterId } = await createProjectWithChapter();
-    await VelocityRepo.insertSaveEvent(t.db, chapterId, projectId, 100, "2026-04-05");
-    await VelocityRepo.upsertDailySnapshot(t.db, projectId, "2026-04-05", 100);
-    const dates = await VelocityRepo.getWritingDates(t.db, projectId, 400);
-    expect(dates).toContain("2026-04-05");
-  });
-});
-```
-
-**Step 6: Run all tests**
+Key tests per repo:
+- **chapter-statuses:** `list()` returns 5 statuses, `findByStatus()` finds/misses, `getStatusLabelMap()` complete
+- **settings:** `listAll()` empty, `upsert()` insert + update, `findByKey()` found/missing
+- **projects:** `insert()` + `findById()` round-trip, `findBySlug()` excludes deleted, `findByTitle()` with/without exclude, `resolveUniqueSlug()` base/collision, `listAll()` with word counts, `updateTimestamp()`
+- **chapters:** `insert()` + `findById()` round-trip, JSON parsing, corrupt detection, `listByProject()` sort order, `softDelete()` + `findById()` exclusion, `listDeletedByProject()`, `getMaxSortOrder()`, `sumWordCountByProject()`, `getChapterNamesMap()`
+- **velocity:** `insertSaveEvent()`, `upsertDailySnapshot()` create/update, `getRecentSaveEvents()` filtering, `getWritingDates()`
 
 Run: `npm test -w packages/server`
-Expected: All existing + new repository tests pass
+Expected: All tests pass
 
-**Step 7: Commit**
+### REFACTOR
+- Check for duplicate test setup patterns — extract shared helpers if needed
 
+**Commit:**
 ```bash
 git add packages/server/src/__tests__/*repository*
 git commit -m "test: add unit tests for all repository modules"
@@ -2826,179 +2272,33 @@ git commit -m "test: add unit tests for all repository modules"
 
 ---
 
-## Task 8: Unit Tests — Services
+## Task 7: Unit Tests — Services
 
-Add unit tests for service-layer logic. These test business logic, orchestration, and mapping.
+**Requirement:** Design §Testing, §Velocity failure path exception
+
+### RED
+- Write tests for service-layer business logic, mapping, and the velocity injection path
+- The velocity injection test should verify: chapter save succeeds even when `recordSave` throws
+
+### GREEN
 
 **Files:**
 - Create: `packages/server/src/__tests__/chapters.service.test.ts`
 - Create: `packages/server/src/__tests__/projects.service.test.ts`
 - Create: `packages/server/src/__tests__/settings.service.test.ts`
 
-**Step 1: Write chapters service test (including velocity injection)**
-
-```typescript
-// packages/server/src/__tests__/chapters.service.test.ts
-import { describe, it, expect, afterEach } from "vitest";
-import request from "supertest";
-import { setupTestDb } from "./test-helpers";
-import * as ChapterService from "../chapters/chapters.service";
-
-const t = setupTestDb();
-
-afterEach(() => {
-  ChapterService.resetVelocityService();
-});
-
-async function createProjectWithChapter() {
-  const res = await request(t.app)
-    .post("/api/projects")
-    .send({ title: `P-${Math.random().toString(36).slice(2, 8)}`, mode: "fiction" });
-  const chapters = await t.db("chapters").where({ project_id: res.body.id }).select("id");
-  return { projectId: res.body.id, chapterId: chapters[0].id };
-}
-
-describe("ChapterService", () => {
-  it("updateChapter() succeeds even when velocity service throws", async () => {
-    const { chapterId } = await createProjectWithChapter();
-
-    // Inject a throwing velocity service
-    ChapterService.setVelocityService({
-      recordSave: async () => { throw new Error("velocity exploded"); },
-      updateDailySnapshot: async () => { throw new Error("velocity exploded"); },
-    } as typeof import("../velocity/velocity.service"));
-
-    const result = await ChapterService.updateChapter(chapterId, {
-      content: {
-        type: "doc",
-        content: [{ type: "paragraph", content: [{ type: "text", text: "hello" }] }],
-      },
-    });
-
-    expect(result.chapter).toBeDefined();
-    expect(result.error).toBeUndefined();
-  });
-
-  it("deleteChapter() succeeds even when velocity service throws", async () => {
-    const { chapterId } = await createProjectWithChapter();
-
-    ChapterService.setVelocityService({
-      recordSave: async () => { throw new Error("velocity exploded"); },
-      updateDailySnapshot: async () => { throw new Error("velocity exploded"); },
-    } as typeof import("../velocity/velocity.service"));
-
-    const deleted = await ChapterService.deleteChapter(chapterId);
-    expect(deleted).toBe(true);
-  });
-
-  it("isCorruptChapter() detects corrupt flag", () => {
-    expect(ChapterService.isCorruptChapter({ content_corrupt: true })).toBe(true);
-    expect(ChapterService.isCorruptChapter({ content: null })).toBe(false);
-  });
-
-  it("stripCorruptFlag() removes the internal flag", () => {
-    const result = ChapterService.stripCorruptFlag({ id: "1", content_corrupt: true });
-    expect(result).toEqual({ id: "1" });
-  });
-});
-```
-
-**Step 2: Write projects service test**
-
-```typescript
-// packages/server/src/__tests__/projects.service.test.ts
-import { describe, it, expect } from "vitest";
-import { setupTestDb } from "./test-helpers";
-import * as ProjectService from "../projects/projects.service";
-
-const t = setupTestDb();
-
-describe("ProjectService", () => {
-  it("createProject() throws ProjectTitleExistsError on duplicate title", async () => {
-    await ProjectService.createProject("Duplicate Test", "fiction");
-    await expect(
-      ProjectService.createProject("Duplicate Test", "fiction"),
-    ).rejects.toThrow(ProjectService.ProjectTitleExistsError);
-  });
-
-  it("createProject() auto-creates a first chapter", async () => {
-    const project = await ProjectService.createProject("New Project", "fiction");
-    const chapters = await t.db("chapters").where({ project_id: project.id });
-    expect(chapters).toHaveLength(1);
-  });
-
-  it("getProject() returns null for nonexistent slug", async () => {
-    const result = await ProjectService.getProject("no-such-slug");
-    expect(result).toBeNull();
-  });
-
-  it("getProject() includes chapters with status labels", async () => {
-    const created = await ProjectService.createProject("With Chapters", "fiction");
-    const project = await ProjectService.getProject(created.slug);
-    expect(project).toBeDefined();
-    expect(project!.chapters.length).toBeGreaterThanOrEqual(1);
-    expect(project!.chapters[0].status_label).toBeDefined();
-  });
-
-  it("deleteProject() returns false for nonexistent slug", async () => {
-    const result = await ProjectService.deleteProject("no-such-slug");
-    expect(result).toBe(false);
-  });
-
-  it("deleteProject() soft-deletes project and chapters", async () => {
-    const project = await ProjectService.createProject("To Delete", "fiction");
-    const result = await ProjectService.deleteProject(project.slug);
-    expect(result).toBe(true);
-    const found = await t.db("projects").where({ id: project.id }).first();
-    expect(found.deleted_at).not.toBeNull();
-  });
-});
-```
-
-**Step 3: Write settings service test**
-
-```typescript
-// packages/server/src/__tests__/settings.service.test.ts
-import { describe, it, expect } from "vitest";
-import { setupTestDb } from "./test-helpers";
-import * as SettingsService from "../settings/settings.service";
-
-const t = setupTestDb();
-
-describe("SettingsService", () => {
-  it("getAll() returns empty object when no settings", async () => {
-    const result = await SettingsService.getAll();
-    expect(result).toEqual({});
-  });
-
-  it("update() saves valid settings", async () => {
-    const result = await SettingsService.update([{ key: "timezone", value: "UTC" }]);
-    expect(result).toBeNull();
-    const all = await SettingsService.getAll();
-    expect(all.timezone).toBe("UTC");
-  });
-
-  it("update() rejects unknown settings", async () => {
-    const result = await SettingsService.update([{ key: "bogus", value: "whatever" }]);
-    expect(result).toBeDefined();
-    expect(result!.errors.bogus).toContain("Unknown setting");
-  });
-
-  it("update() rejects invalid timezone", async () => {
-    const result = await SettingsService.update([{ key: "timezone", value: "Not/A/Zone" }]);
-    expect(result).toBeDefined();
-    expect(result!.errors.timezone).toContain("Invalid value");
-  });
-});
-```
-
-**Step 4: Run all tests**
+Key tests:
+- **chapters.service:** `updateChapter()` succeeds when velocity throws, `deleteChapter()` succeeds when velocity throws, `isCorruptChapter()` detection, `stripCorruptFlag()` removal
+- **projects.service:** `createProject()` throws `ProjectTitleExistsError` on duplicate, auto-creates first chapter, `getProject()` null for missing slug, includes status labels, `deleteProject()` soft-deletes both
+- **settings.service:** `getAll()` empty, `update()` saves valid, rejects unknown, rejects invalid timezone
 
 Run: `npm test -w packages/server`
 Expected: All tests pass
 
-**Step 5: Commit**
+### REFACTOR
+- Ensure `resetVelocityService()` is called in `afterEach` for chapters service tests
 
+**Commit:**
 ```bash
 git add packages/server/src/__tests__/*service*
 git commit -m "test: add unit tests for service modules including velocity injection"
@@ -3006,25 +2306,44 @@ git commit -m "test: add unit tests for service modules including velocity injec
 
 ---
 
-## Task 9: Final Verification
+## Task 8: Final Verification
 
-**Step 1: Run full CI**
+**Requirement:** All existing behavior preserved, coverage thresholds met
+
+### RED
+Run: `make all`
+Note any failures — lint, format, typecheck, coverage, e2e
+
+### GREEN
+Fix all failures. Common issues:
+- Coverage drops below thresholds (95/85/90/95) — add tests for uncovered new code
+- TypeScript errors from type mismatches between old test expectations and new typed returns
+- Lint errors from unused imports in migrated test files
+- Format issues from new files
+
+### REFACTOR
+- Remove any dead code flagged by TypeScript or lint
+- Verify no `packages/server/src/routes/` directory remains
 
 Run: `make all`
 Expected: Full pass — lint, format, typecheck, coverage, e2e
 
-**Step 2: Fix any coverage threshold issues**
-
-If coverage drops below thresholds (95% statements, 85% branches, 90% functions, 95% lines), add tests to cover the gaps. The new service and repository files must be covered.
-
-**Step 3: Run e2e tests specifically**
-
-Run: `make e2e`
-Expected: All Playwright tests pass
-
-**Step 4: Final commit (if any fixes needed)**
-
+**Commit:**
 ```bash
 git add -A
 git commit -m "fix: address coverage gaps and CI issues from layered architecture refactor"
 ```
+
+---
+
+## Alignment Review Log
+
+Reviewed 2026-04-05 against design doc `2026-04-05-data-model-separation-design.md`.
+
+| # | Issue | Severity | Resolution |
+|---|-------|----------|-----------|
+| 1 | Services bypassed repos with raw `trx("table")` calls | Critical | Added `ProjectRepo.updateTimestamp()`, `ChapterRepo.sumWordCountByProject()`, `ChapterRepo.listIdTitleStatusByProject()`, `ChapterRepo.getChapterNamesMap()`, `ChapterRepo.findByIdRaw()`, `ChapterRepo.findDeletedById()`. All service code uses repos exclusively. |
+| 2 | Chapters repo returned `Record<string, unknown>` not `ChapterRow` | Important | Repo now returns typed `ChapterRow` with `content_corrupt?: boolean`. Service maps to shared `Chapter` type. |
+| 3 | Velocity route accessed `getDb()` directly | Important | Added `VelocityService.getVelocityBySlug()`. Route handler calls service only — no db access. |
+| 4 | Dynamic imports in velocity service | Minor | Replaced with static imports for `ChapterStatusRepo`, `ChapterRepo`, `ProjectRepo`. |
+| 5 | Circular dependency between Tasks 5 and 6 | Minor | Merged into single Task 5: both repos created first, then both services, then both routes. |
