@@ -1,12 +1,19 @@
-.PHONY: all test cover e2e lint format typecheck dev build clean loc help
+.PHONY: all test cover e2e lint format format-check typecheck dev build clean loc help
 
-all: lint format typecheck cover e2e ## Full CI pass: lint, format, typecheck, test+coverage, e2e
+all: lint format-check typecheck cover e2e ## Full CI pass: lint, format-check, typecheck, test+coverage, e2e
 
 test: ## Run full test suite (fast, no coverage)
 	npx vitest run
 
 cover: ## Run tests with coverage enforcement
-	npx vitest run --coverage
+	@npx vitest run --coverage || { \
+		echo ""; \
+		echo "════════════════════════════════════════════════════════════════"; \
+		echo "FAILED: Coverage thresholds not met (statements≥95% branches≥85%"; \
+		echo "functions≥90% lines≥95%). See 'ERROR: Coverage for...' above."; \
+		echo "════════════════════════════════════════════════════════════════"; \
+		exit 1; \
+	}
 
 e2e: ## Run Playwright e2e tests (starts dev servers automatically)
 	npx playwright test
@@ -16,6 +23,10 @@ lint: ## Lint with autofix
 
 format: ## Format code
 	npm run format
+
+format-check: ## Format code, then fail if anything changed
+	npm run format
+	@git diff --quiet -- 'packages/**/*.ts' 'packages/**/*.tsx' 'packages/**/*.json' 'packages/**/*.css' || { echo "Error: formatting changed files — commit before running make all"; exit 1; }
 
 typecheck: ## Type-check all packages
 	npm run typecheck

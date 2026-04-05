@@ -1,22 +1,31 @@
+import http from "http";
 import { beforeAll, afterAll, beforeEach } from "vitest";
 import knex, { type Knex } from "knex";
 import { createTestKnexConfig } from "../db/knexfile";
 import { createApp } from "../app";
 
 let testDb: Knex;
+let testServer: http.Server;
 
 export function setupTestDb() {
   beforeAll(async () => {
     testDb = knex(createTestKnexConfig());
     await testDb.raw("PRAGMA foreign_keys = ON");
     await testDb.migrate.latest();
+    const app = createApp(testDb);
+    testServer = app.listen(0);
+    await new Promise<void>((resolve) => testServer.on("listening", resolve));
   });
 
   afterAll(async () => {
+    await new Promise<void>((resolve) => testServer.close(() => resolve()));
     await testDb.destroy();
   });
 
   beforeEach(async () => {
+    await testDb("save_events").del();
+    await testDb("daily_snapshots").del();
+    await testDb("settings").del();
     await testDb("chapters").del();
     await testDb("projects").del();
   });
@@ -26,7 +35,7 @@ export function setupTestDb() {
       return testDb;
     },
     get app() {
-      return createApp(testDb);
+      return testServer;
     },
   };
 }

@@ -70,6 +70,20 @@ describe("parseChapterContent", () => {
 });
 
 describe("parseChapterContent integration — corrupt DB content", () => {
+  it("logs UnknownError when the thrown value is not an Error instance", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const parseSpy = vi.spyOn(JSON, "parse").mockImplementationOnce(() => {
+      throw "plain string error";
+    });
+    const chapter = { id: "abc", title: "Test", content: '{"valid":"json"}' };
+    const result = parseChapterContent(chapter) as Record<string, unknown>;
+    expect(result.content).toBeNull();
+    expect(result.content_corrupt).toBe(true);
+    expect(errorSpy.mock.calls[0]![0]).toContain("UnknownError");
+    parseSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
   it("logs error with chapter id when DB has corrupt JSON", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const chapter = {

@@ -1,3 +1,10 @@
+# NOW!!!
+
+- isolate all SQL into a data layer so that the main code *never* knows
+  how it's getting or setting data. We'll be doing this because later we'll
+  be considering a radically different way of handling this. Maybe brainstorm
+  about a git-like system for handling much of this?
+
 # Bugs
 
 - When changing chapter status and I'm in the dashboard, the chapter status
@@ -7,6 +14,7 @@
 
 # Features
 
+- Need an "outline" mode that pre-populate chapters titles and outlines.
 - Validate the toolbar and what we really need there. It's too barebones right
   now. How to handle different fonts cleanly?
 - CI currently runs E2E tests against Chromium only, and `playwright.config.ts`

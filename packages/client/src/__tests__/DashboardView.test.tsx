@@ -9,6 +9,18 @@ vi.mock("../api/client", () => ({
   api: {
     projects: {
       dashboard: vi.fn(),
+      velocity: vi.fn().mockResolvedValue({
+        daily_snapshots: [],
+        sessions: [],
+        streak: { current: 0, best: 0 },
+        projection: {
+          target_word_count: null,
+          target_deadline: null,
+          projected_date: null,
+          daily_average_30d: 0,
+        },
+        completion: { threshold_status: "final", total_chapters: 0, completed_chapters: 0 },
+      }),
     },
   },
 }));
@@ -33,6 +45,7 @@ const dashboardData = {
       status: "outline",
       status_label: "Outline",
       word_count: 500,
+      target_word_count: null,
       updated_at: "2026-03-28T10:00:00Z",
       sort_order: 0,
     },
@@ -42,6 +55,7 @@ const dashboardData = {
       status: "rough_draft",
       status_label: "Rough Draft",
       word_count: 1200,
+      target_word_count: null,
       updated_at: "2026-03-29T10:00:00Z",
       sort_order: 1,
     },
@@ -78,6 +92,10 @@ const emptyDashboardData = {
   },
 };
 
+async function switchToChaptersTab() {
+  await userEvent.click(screen.getByRole("tab", { name: /Chapters/i }));
+}
+
 describe("DashboardView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -94,6 +112,8 @@ describe("DashboardView", () => {
         refreshKey={0}
       />,
     );
+
+    await switchToChaptersTab();
 
     await waitFor(() => {
       expect(screen.getByText("1,700 words")).toBeInTheDocument();
@@ -115,6 +135,8 @@ describe("DashboardView", () => {
         refreshKey={0}
       />,
     );
+
+    await switchToChaptersTab();
 
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
@@ -138,6 +160,8 @@ describe("DashboardView", () => {
       />,
     );
 
+    await switchToChaptersTab();
+
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
     });
@@ -158,6 +182,8 @@ describe("DashboardView", () => {
       />,
     );
 
+    await switchToChaptersTab();
+
     await waitFor(() => {
       expect(screen.getByText(/Outline: 1/)).toBeInTheDocument();
     });
@@ -176,6 +202,8 @@ describe("DashboardView", () => {
         refreshKey={0}
       />,
     );
+
+    await switchToChaptersTab();
 
     await waitFor(() => {
       expect(screen.getByText("No chapters yet")).toBeInTheDocument();
@@ -196,6 +224,8 @@ describe("DashboardView", () => {
         refreshKey={0}
       />,
     );
+
+    await switchToChaptersTab();
 
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
@@ -227,6 +257,8 @@ describe("DashboardView", () => {
       />,
     );
 
+    await switchToChaptersTab();
+
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
     });
@@ -243,7 +275,7 @@ describe("DashboardView", () => {
     expect(rows[2]).toHaveTextContent("Chapter One");
   });
 
-  it("shows loading state before data arrives", () => {
+  it("shows loading state before data arrives", async () => {
     // Never resolve the promise — component stays in loading state
     vi.mocked(api.projects.dashboard).mockReturnValue(new Promise(() => {}));
 
@@ -255,6 +287,8 @@ describe("DashboardView", () => {
         refreshKey={0}
       />,
     );
+
+    await switchToChaptersTab();
 
     expect(screen.getByText("Loading...")).toBeInTheDocument();
   });
@@ -271,6 +305,8 @@ describe("DashboardView", () => {
         refreshKey={0}
       />,
     );
+
+    await switchToChaptersTab();
 
     await waitFor(() => {
       expect(screen.getByText("Network failure")).toBeInTheDocument();
@@ -291,6 +327,8 @@ describe("DashboardView", () => {
       />,
     );
 
+    await switchToChaptersTab();
+
     await waitFor(() => {
       expect(screen.getByText("Failed to load dashboard")).toBeInTheDocument();
     });
@@ -308,6 +346,8 @@ describe("DashboardView", () => {
         refreshKey={0}
       />,
     );
+
+    await switchToChaptersTab();
 
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
@@ -341,6 +381,8 @@ describe("DashboardView", () => {
       />,
     );
 
+    await switchToChaptersTab();
+
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
     });
@@ -364,6 +406,8 @@ describe("DashboardView", () => {
         refreshKey={0}
       />,
     );
+
+    await switchToChaptersTab();
 
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
@@ -396,6 +440,8 @@ describe("DashboardView", () => {
       />,
     );
 
+    await switchToChaptersTab();
+
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
     });
@@ -404,6 +450,54 @@ describe("DashboardView", () => {
     // "outline" becomes "Outline", "rough_draft" becomes "Rough Draft"
     expect(screen.getByText(/Outline: 1/)).toBeInTheDocument();
     expect(screen.getByText(/Rough Draft: 1/)).toBeInTheDocument();
+  });
+
+  it("defaults to velocity tab and shows VelocityView", async () => {
+    vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
+
+    render(
+      <DashboardView
+        slug="test-project"
+        statuses={statuses}
+        onNavigateToChapter={vi.fn()}
+        refreshKey={0}
+      />,
+    );
+
+    // Velocity tab should be selected by default
+    const velocityTab = screen.getByRole("tab", { name: /Velocity/i });
+    expect(velocityTab).toHaveAttribute("aria-selected", "true");
+
+    const chaptersTab = screen.getByRole("tab", { name: /Chapters/i });
+    expect(chaptersTab).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("switches between velocity and chapters tabs", async () => {
+    vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
+
+    render(
+      <DashboardView
+        slug="test-project"
+        statuses={statuses}
+        onNavigateToChapter={vi.fn()}
+        refreshKey={0}
+      />,
+    );
+
+    // Start on velocity tab
+    expect(screen.getByRole("tab", { name: /Velocity/i })).toHaveAttribute("aria-selected", "true");
+
+    // Switch to chapters tab
+    await userEvent.click(screen.getByRole("tab", { name: /Chapters/i }));
+    expect(screen.getByRole("tab", { name: /Chapters/i })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /Velocity/i })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+
+    // Switch back to velocity tab
+    await userEvent.click(screen.getByRole("tab", { name: /Velocity/i }));
+    expect(screen.getByRole("tab", { name: /Velocity/i })).toHaveAttribute("aria-selected", "true");
   });
 
   it("sorts by status using workflow order", async () => {
@@ -417,6 +511,7 @@ describe("DashboardView", () => {
           status: "revised",
           status_label: "Revised",
           word_count: 500,
+          target_word_count: null,
           updated_at: "2026-03-28T10:00:00Z",
           sort_order: 0,
         },
@@ -426,6 +521,7 @@ describe("DashboardView", () => {
           status: "outline",
           status_label: "Outline",
           word_count: 1200,
+          target_word_count: null,
           updated_at: "2026-03-29T10:00:00Z",
           sort_order: 1,
         },
@@ -441,6 +537,8 @@ describe("DashboardView", () => {
         refreshKey={0}
       />,
     );
+
+    await switchToChaptersTab();
 
     await waitFor(() => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();

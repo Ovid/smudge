@@ -161,6 +161,84 @@ describe("api.chapters", () => {
   });
 });
 
+describe("api.projects (additional methods)", () => {
+  it("velocity(slug) fetches GET /api/projects/:slug/velocity", async () => {
+    const velocityData = {
+      daily_snapshots: [],
+      sessions: [],
+      streak: { current: 3, best: 7 },
+      projection: {
+        target_word_count: 80000,
+        target_deadline: "2026-12-31",
+        projected_date: "2026-10-15",
+        daily_average_30d: 500,
+      },
+      completion: { threshold_status: "final", total_chapters: 10, completed_chapters: 3 },
+      today: "2026-04-03",
+    };
+    mockFetch.mockResolvedValue(jsonResponse(velocityData));
+
+    const result = await api.projects.velocity("p1");
+    expect(result).toEqual(velocityData);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1/velocity", {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  it("dashboard(slug) fetches GET /api/projects/:slug/dashboard", async () => {
+    const dashboardData = {
+      chapters: [],
+      status_summary: {},
+      totals: { word_count: 0, chapter_count: 0, most_recent_edit: null, least_recent_edit: null },
+    };
+    mockFetch.mockResolvedValue(jsonResponse(dashboardData));
+
+    const result = await api.projects.dashboard("p1");
+    expect(result).toEqual(dashboardData);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1/dashboard", {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+});
+
+describe("api.chapterStatuses", () => {
+  it("list() fetches GET /api/chapter-statuses", async () => {
+    const statuses = [{ status: "outline", sort_order: 0, label: "Outline" }];
+    mockFetch.mockResolvedValue(jsonResponse(statuses));
+
+    const result = await api.chapterStatuses.list();
+    expect(result).toEqual(statuses);
+    expect(mockFetch).toHaveBeenCalledWith("/api/chapter-statuses", {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+});
+
+describe("api.settings", () => {
+  it("get() fetches GET /api/settings", async () => {
+    const settings = { timezone: "America/New_York" };
+    mockFetch.mockResolvedValue(jsonResponse(settings));
+
+    const result = await api.settings.get();
+    expect(result).toEqual(settings);
+    expect(mockFetch).toHaveBeenCalledWith("/api/settings", {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  it("update(settings) sends PATCH /api/settings", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ message: "ok" }));
+
+    const result = await api.settings.update([{ key: "timezone", value: "UTC" }]);
+    expect(result).toEqual({ message: "ok" });
+    expect(mockFetch).toHaveBeenCalledWith("/api/settings", {
+      headers: { "Content-Type": "application/json" },
+      method: "PATCH",
+      body: JSON.stringify({ settings: [{ key: "timezone", value: "UTC" }] }),
+    });
+  });
+});
+
 describe("error handling", () => {
   it("throws with server error message when response is not ok", async () => {
     mockFetch.mockResolvedValue(
@@ -174,5 +252,26 @@ describe("error handling", () => {
     mockFetch.mockResolvedValue(jsonResponse({ error: {} }, 500));
 
     await expect(api.projects.list()).rejects.toThrow("Request failed: 500");
+  });
+
+  it("throws with fallback message when error body is not JSON", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: () => Promise.reject(new Error("not JSON")),
+    });
+
+    await expect(api.projects.list()).rejects.toThrow("Request failed: 502");
+  });
+
+  it("handles 204 No Content response", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 204,
+      json: () => Promise.reject(new Error("no body")),
+    });
+
+    const result = await api.projects.delete("p1");
+    expect(result).toBeUndefined();
   });
 });

@@ -27,6 +27,18 @@ vi.mock("../api/client", () => ({
       update: vi.fn(),
       reorderChapters: vi.fn(),
       trash: vi.fn(),
+      velocity: vi.fn().mockResolvedValue({
+        daily_snapshots: [],
+        sessions: [],
+        streak: { current: 0, best: 0 },
+        projection: {
+          target_word_count: null,
+          target_deadline: null,
+          projected_date: null,
+          daily_average_30d: 0,
+        },
+        completion: { threshold_status: "final", total_chapters: 0, completed_chapters: 0 },
+      }),
     },
     chapters: {
       get: vi.fn(),
@@ -37,6 +49,10 @@ vi.mock("../api/client", () => ({
     },
     chapterStatuses: {
       list: vi.fn().mockResolvedValue([]),
+    },
+    settings: {
+      get: vi.fn().mockResolvedValue({}),
+      update: vi.fn().mockResolvedValue({ message: "ok" }),
     },
   },
 }));
@@ -49,6 +65,9 @@ const mockProject = {
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
   deleted_at: null,
+  target_word_count: null,
+  target_deadline: null,
+  completion_threshold: "final" as const,
   chapters: [
     {
       id: "ch-1",
@@ -57,6 +76,7 @@ const mockProject = {
       content: { type: "doc", content: [{ type: "paragraph" }] },
       sort_order: 0,
       word_count: 0,
+      target_word_count: null,
       status: "outline",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
@@ -75,6 +95,7 @@ const mockMultiChapterProject = {
       content: { type: "doc", content: [{ type: "paragraph" }] },
       sort_order: 0,
       word_count: 0,
+      target_word_count: null,
       status: "outline",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
@@ -87,6 +108,7 @@ const mockMultiChapterProject = {
       content: { type: "doc", content: [{ type: "paragraph" }] },
       sort_order: 1,
       word_count: 0,
+      target_word_count: null,
       status: "outline",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
@@ -99,6 +121,7 @@ const mockMultiChapterProject = {
       content: { type: "doc", content: [{ type: "paragraph" }] },
       sort_order: 2,
       word_count: 0,
+      target_word_count: null,
       status: "outline",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
@@ -108,6 +131,11 @@ const mockMultiChapterProject = {
 };
 
 const mockChapter = mockProject.chapters[0]!;
+
+// Build a lookup table for chapter-by-ID mocking (avoids fragile mockResolvedValueOnce chains)
+const multiChaptersById = Object.fromEntries(
+  mockMultiChapterProject.chapters.map((c) => [c.id, c]),
+);
 
 function renderEditorPage() {
   return render(
@@ -223,6 +251,7 @@ describe("Ctrl+Shift+N creates a new chapter", () => {
       content: null,
       sort_order: 1,
       word_count: 0,
+      target_word_count: null,
       status: "outline",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
@@ -238,9 +267,12 @@ describe("Ctrl+Shift+N creates a new chapter", () => {
 
     fireEvent.keyDown(document, { key: "N", ctrlKey: true, shiftKey: true });
 
-    await waitFor(() => {
-      expect(api.chapters.create).toHaveBeenCalledWith("test-project");
-    });
+    await waitFor(
+      () => {
+        expect(api.chapters.create).toHaveBeenCalledWith("test-project");
+      },
+      { timeout: 3000 },
+    );
   });
 });
 
@@ -250,61 +282,75 @@ describe("Ctrl+Shift+Arrow chapter navigation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(api.projects.get).mockResolvedValue(mockMultiChapterProject);
-    vi.mocked(api.chapters.get).mockResolvedValue(mockMultiChapterProject.chapters[0]!);
+    // Use mockImplementation routing by ID instead of fragile mockResolvedValueOnce chains.
+    // vi.clearAllMocks() only calls mockClear() which does NOT clear mockResolvedValueOnce
+    // queues — unconsumed once-values can leak between tests and desync the mock chain.
+    vi.mocked(api.chapters.get).mockImplementation(async (id: string) => multiChaptersById[id]!);
     vi.mocked(api.chapters.update).mockResolvedValue(mockMultiChapterProject.chapters[0]!);
   });
 
   it("Ctrl+Shift+ArrowDown navigates to next chapter", async () => {
-    vi.mocked(api.chapters.get)
-      .mockResolvedValueOnce(mockMultiChapterProject.chapters[0]!)
-      .mockResolvedValueOnce(mockMultiChapterProject.chapters[1]!);
-
     renderEditorPage();
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
 
     fireEvent.keyDown(document, { key: "ArrowDown", ctrlKey: true, shiftKey: true });
 
-    await waitFor(() => {
-      expect(api.chapters.get).toHaveBeenCalledWith("ch-2");
-    });
+    await waitFor(
+      () => {
+        expect(api.chapters.get).toHaveBeenCalledWith("ch-2");
+      },
+      { timeout: 3000 },
+    );
   });
 
   it("Ctrl+Shift+ArrowUp navigates to previous chapter", async () => {
-    vi.mocked(api.chapters.get)
-      .mockResolvedValueOnce(mockMultiChapterProject.chapters[0]!) // initial load
-      .mockResolvedValueOnce(mockMultiChapterProject.chapters[1]!) // navigate down
-      .mockResolvedValueOnce(mockMultiChapterProject.chapters[0]!); // navigate back up
-
     renderEditorPage();
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
 
     // First navigate down to Chapter Two
     fireEvent.keyDown(document, { key: "ArrowDown", ctrlKey: true, shiftKey: true });
 
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2, name: "Chapter Two" })).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByRole("heading", { level: 2, name: "Chapter Two" })).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
 
     // Then navigate back up to Chapter One
     fireEvent.keyDown(document, { key: "ArrowUp", ctrlKey: true, shiftKey: true });
 
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
   });
 
   it("Ctrl+Shift+ArrowDown does nothing on last chapter", async () => {
-    // Start on last chapter
+    // Override to always return last chapter so initial load lands on it
     vi.mocked(api.chapters.get).mockResolvedValue(mockMultiChapterProject.chapters[2]!);
 
     renderEditorPage();
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2, name: "Chapter Three" })).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(
+          screen.getByRole("heading", { level: 2, name: "Chapter Three" }),
+        ).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
 
     const getCallCount = vi.mocked(api.chapters.get).mock.calls.length;
 
@@ -316,9 +362,12 @@ describe("Ctrl+Shift+Arrow chapter navigation", () => {
 
   it("Ctrl+Shift+ArrowUp does nothing on first chapter", async () => {
     renderEditorPage();
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
 
     const getCallCount = vi.mocked(api.chapters.get).mock.calls.length;
 

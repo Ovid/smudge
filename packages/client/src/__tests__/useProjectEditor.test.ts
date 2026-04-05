@@ -18,6 +18,18 @@ vi.mock("../api/client", () => ({
       update: vi.fn(),
       reorderChapters: vi.fn(),
       trash: vi.fn(),
+      velocity: vi.fn().mockResolvedValue({
+        daily_snapshots: [],
+        sessions: [],
+        streak: { current: 0, best: 0 },
+        projection: {
+          target_word_count: null,
+          target_deadline: null,
+          projected_date: null,
+          daily_average_30d: 0,
+        },
+        completion: { threshold_status: "final", total_chapters: 0, completed_chapters: 0 },
+      }),
     },
     chapters: {
       get: vi.fn(),
@@ -25,6 +37,10 @@ vi.mock("../api/client", () => ({
       update: vi.fn(),
       delete: vi.fn(),
       restore: vi.fn(),
+    },
+    settings: {
+      get: vi.fn().mockResolvedValue({}),
+      update: vi.fn().mockResolvedValue({ message: "ok" }),
     },
   },
 }));
@@ -45,6 +61,7 @@ const mockChapter1 = {
   content: { type: "doc", content: [{ type: "paragraph" }] },
   sort_order: 0,
   word_count: 0,
+  target_word_count: null,
   status: "outline" as const,
   created_at: "2026-01-01",
   updated_at: "2026-01-01",
@@ -58,6 +75,7 @@ const mockChapter2 = {
   content: { type: "doc", content: [{ type: "paragraph" }] },
   sort_order: 1,
   word_count: 5,
+  target_word_count: null,
   status: "outline" as const,
   created_at: "2026-01-01",
   updated_at: "2026-01-01",
@@ -72,6 +90,9 @@ const mockProject = {
   created_at: "2026-01-01",
   updated_at: "2026-01-01",
   deleted_at: null,
+  target_word_count: null,
+  target_deadline: null,
+  completion_threshold: "final" as const,
   chapters: [mockChapter1, mockChapter2],
 };
 
@@ -99,6 +120,7 @@ describe("useProjectEditor", () => {
       content: null,
       sort_order: 2,
       word_count: 0,
+      target_word_count: null,
       status: "outline" as const,
       created_at: "2026-01-01",
       updated_at: "2026-01-01",

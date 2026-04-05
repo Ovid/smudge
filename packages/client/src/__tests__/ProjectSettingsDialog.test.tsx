@@ -1,0 +1,251 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, waitFor, cleanup, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { ProjectSettingsDialog } from "../components/ProjectSettingsDialog";
+import { api } from "../api/client";
+
+vi.mock("../api/client");
+
+const defaultProject = {
+  id: "1",
+  slug: "test",
+  title: "Test",
+  mode: "fiction" as const,
+  target_word_count: null as number | null,
+  target_deadline: null as string | null,
+  completion_threshold: "final" as const,
+  created_at: "",
+  updated_at: "",
+};
+
+describe("ProjectSettingsDialog", () => {
+  const onClose = vi.fn();
+  const onUpdate = vi.fn();
+
+  beforeEach(() => {
+    vi.mocked(api.projects.update).mockResolvedValue(defaultProject as never);
+    onClose.mockClear();
+    onUpdate.mockClear();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("renders word count target input", () => {
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+    expect(screen.getByLabelText(/word count target/i)).toBeInTheDocument();
+  });
+
+  it("renders deadline input", () => {
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+    expect(screen.getByLabelText(/deadline/i)).toBeInTheDocument();
+  });
+
+  it("renders completion threshold dropdown", () => {
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+    expect(screen.getByLabelText(/chapter counts as complete/i)).toBeInTheDocument();
+  });
+
+  it("saves changes on input blur", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+    const input = screen.getByLabelText(/word count target/i);
+    await user.clear(input);
+    await user.type(input, "80000");
+    // Blur to a non-Clear element so the relatedTarget check doesn't skip save
+    fireEvent.blur(input, { relatedTarget: screen.getByLabelText(/chapter counts as complete/i) });
+
+    await waitFor(() => {
+      expect(api.projects.update).toHaveBeenCalled();
+    });
+  });
+
+  it("clears word count target when Clear button is clicked", async () => {
+    const user = userEvent.setup();
+    const projectWithTarget = { ...defaultProject, target_word_count: 80000 };
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={projectWithTarget as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    // There are multiple Clear buttons (word count + deadline); get the first one
+    const clearButtons = screen.getAllByRole("button", { name: /clear/i });
+    expect(clearButtons[0]).toBeDefined();
+    await user.click(clearButtons[0] as HTMLElement);
+
+    await waitFor(() => {
+      expect(api.projects.update).toHaveBeenCalledWith("test", { target_word_count: null });
+    });
+    expect(onUpdate).toHaveBeenCalled();
+  });
+
+  it("saves deadline when date input changes", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    const deadlineInput = screen.getByLabelText(/deadline/i);
+    await user.clear(deadlineInput);
+    await user.type(deadlineInput, "2026-12-31");
+
+    await waitFor(() => {
+      expect(api.projects.update).toHaveBeenCalledWith("test", { target_deadline: "2026-12-31" });
+    });
+    expect(onUpdate).toHaveBeenCalled();
+  });
+
+  it("clears deadline when Clear button is clicked", async () => {
+    const user = userEvent.setup();
+    const projectWithDeadline = { ...defaultProject, target_deadline: "2026-12-31" };
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={projectWithDeadline as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    // Second Clear button is for deadline
+    const clearButtons = screen.getAllByRole("button", { name: /clear/i });
+    expect(clearButtons[1]).toBeDefined();
+    await user.click(clearButtons[1] as HTMLElement);
+
+    await waitFor(() => {
+      expect(api.projects.update).toHaveBeenCalledWith("test", { target_deadline: null });
+    });
+    expect(onUpdate).toHaveBeenCalled();
+  });
+
+  it("saves completion threshold when dropdown changes", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    const thresholdSelect = screen.getByLabelText(/chapter counts as complete/i);
+    await user.selectOptions(thresholdSelect, "revised");
+
+    await waitFor(() => {
+      expect(api.projects.update).toHaveBeenCalledWith("test", { completion_threshold: "revised" });
+    });
+    expect(onUpdate).toHaveBeenCalled();
+  });
+
+  it("rejects negative word count without saving", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+    const input = screen.getByLabelText(/word count target/i);
+    await user.clear(input);
+    await user.type(input, "-5");
+    // Clear mock before the blur that should be rejected
+    vi.mocked(api.projects.update).mockClear();
+    vi.mocked(api.projects.update).mockResolvedValue(defaultProject as never);
+    await user.tab();
+
+    // Negative value should be rejected — no update call
+    expect(api.projects.update).not.toHaveBeenCalled();
+  });
+
+  it("logs error when save fails", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(api.projects.update).mockRejectedValue(new Error("save failed"));
+    const user = userEvent.setup();
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+    const input = screen.getByLabelText(/word count target/i);
+    await user.clear(input);
+    await user.type(input, "50000");
+    // Blur to a non-Clear element so the relatedTarget check doesn't skip save
+    fireEvent.blur(input, { relatedTarget: screen.getByLabelText(/chapter counts as complete/i) });
+
+    await waitFor(() => {
+      expect(spy).toHaveBeenCalledWith("Failed to save project setting:", expect.any(Error));
+    });
+    spy.mockRestore();
+  });
+
+  it("returns null when open is false", () => {
+    const { container } = render(
+      <ProjectSettingsDialog
+        open={false}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+    expect(container.innerHTML).toBe("");
+  });
+
+  it("calls onClose when close button is clicked", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(onClose).toHaveBeenCalled();
+  });
+});

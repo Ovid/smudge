@@ -20,6 +20,9 @@ const mockProject: ProjectWithChapters = {
   created_at: "2026-01-01",
   updated_at: "2026-01-01",
   deleted_at: null,
+  target_word_count: null,
+  target_deadline: null,
+  completion_threshold: "final" as const,
   chapters: [
     {
       id: "ch1",
@@ -28,6 +31,7 @@ const mockProject: ProjectWithChapters = {
       content: null,
       sort_order: 0,
       word_count: 100,
+      target_word_count: null,
       status: "outline",
       created_at: "2026-01-01",
       updated_at: "2026-01-01",
@@ -40,6 +44,7 @@ const mockProject: ProjectWithChapters = {
       content: null,
       sort_order: 1,
       word_count: 200,
+      target_word_count: null,
       status: "revised",
       created_at: "2026-01-01",
       updated_at: "2026-01-01",
@@ -58,6 +63,7 @@ function renderSidebar(overrides = {}) {
     onReorderChapters: vi.fn(),
     onRenameChapter: vi.fn(),
     onOpenTrash: vi.fn(),
+    onOpenSettings: vi.fn(),
     statuses: mockStatuses,
     onStatusChange: vi.fn(),
     width: 260,

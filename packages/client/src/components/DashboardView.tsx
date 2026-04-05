@@ -3,6 +3,8 @@ import type { ChapterStatusRow } from "@smudge/shared";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
 import { STATUS_COLORS } from "../statusColors";
+import { VelocityView } from "./VelocityView";
+import { ChapterTargetPopover } from "./ChapterTargetPopover";
 
 type DashboardData = Awaited<ReturnType<typeof api.projects.dashboard>>;
 
@@ -21,12 +23,14 @@ export function DashboardView({
   onNavigateToChapter,
   refreshKey,
 }: DashboardViewProps) {
+  const [activeTab, setActiveTab] = useState<"velocity" | "chapters">("velocity");
   const [dataWithSlug, setDataWithSlug] = useState<{ slug: string; data: DashboardData } | null>(
     null,
   );
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("sort_order");
   const [sortAsc, setSortAsc] = useState(true);
+  const [localRefreshKey, setLocalRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,7 +51,7 @@ export function DashboardView({
     return () => {
       cancelled = true;
     };
-  }, [slug, refreshKey]);
+  }, [slug, refreshKey, localRefreshKey]);
 
   const handleSort = useCallback(
     (key: SortKey) => {
@@ -64,18 +68,78 @@ export function DashboardView({
   // Treat data from a different slug as stale (show loading)
   const data = dataWithSlug?.slug === slug ? dataWithSlug.data : null;
 
+  // Tab navigation is always rendered, content depends on active tab
+  const tabBar = (
+    <div
+      className="flex items-center gap-4 mb-8"
+      role="tablist"
+      aria-label={STRINGS.dashboard.heading}
+    >
+      <button
+        role="tab"
+        id="tab-velocity"
+        aria-selected={activeTab === "velocity"}
+        aria-controls="tabpanel-velocity"
+        onClick={() => setActiveTab("velocity")}
+        className={`text-sm font-medium rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
+          activeTab === "velocity"
+            ? "bg-accent/10 text-accent"
+            : "text-text-muted hover:text-text-secondary"
+        }`}
+      >
+        {STRINGS.velocity.tabLabel}
+      </button>
+      <button
+        role="tab"
+        id="tab-chapters"
+        aria-selected={activeTab === "chapters"}
+        aria-controls="tabpanel-chapters"
+        onClick={() => setActiveTab("chapters")}
+        className={`text-sm font-medium rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
+          activeTab === "chapters"
+            ? "bg-accent/10 text-accent"
+            : "text-text-muted hover:text-text-secondary"
+        }`}
+      >
+        {STRINGS.velocity.chaptersTabLabel}
+      </button>
+    </div>
+  );
+
+  if (activeTab === "velocity") {
+    return (
+      <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
+        {tabBar}
+        <div role="tabpanel" id="tabpanel-velocity" aria-labelledby="tab-velocity">
+          <VelocityView slug={slug} refreshKey={refreshKey} />
+        </div>
+      </div>
+    );
+  }
+
+  // Chapters tab — existing dashboard content
   if (error) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <p className="text-status-error">{error}</p>
+      <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
+        {tabBar}
+        <div role="tabpanel" id="tabpanel-chapters" aria-labelledby="tab-chapters">
+          <div className="flex items-center justify-center py-16">
+            <p className="text-status-error">{error}</p>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (!data) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <p className="text-text-muted">{STRINGS.nav.loading}</p>
+      <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
+        {tabBar}
+        <div role="tabpanel" id="tabpanel-chapters" aria-labelledby="tab-chapters">
+          <div className="flex items-center justify-center py-16">
+            <p className="text-text-muted">{STRINGS.nav.loading}</p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -131,156 +195,165 @@ export function DashboardView({
 
   return (
     <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
-      <h2 className="text-lg font-semibold text-text-primary mb-8">{STRINGS.dashboard.heading}</h2>
-
-      {chapters.length === 0 ? (
-        <div data-testid="dashboard-empty">
-          <p className="text-text-muted mb-2">{STRINGS.dashboard.emptyState}</p>
-          <p className="text-text-muted">{STRINGS.dashboard.totalWordCount(0)}</p>
-          <p className="text-text-muted">{STRINGS.dashboard.totalChapters(0)}</p>
-        </div>
-      ) : (
-        <>
-          {/* Health summary */}
-          <section aria-label={STRINGS.dashboard.healthSectionLabel} className="mb-10 space-y-1.5">
-            <p className="text-2xl font-semibold text-text-primary">
-              {STRINGS.dashboard.totalWordCount(totals.word_count)}
-            </p>
-            <p className="text-text-secondary text-sm">
-              {STRINGS.dashboard.totalChapters(totals.chapter_count)}
-            </p>
-            {mostRecentChapter && (
-              <p className="text-text-muted text-sm">
-                {STRINGS.dashboard.mostRecentEdit(
-                  mostRecentChapter.updated_at,
-                  mostRecentChapter.title,
-                )}
+      {tabBar}
+      <div role="tabpanel" id="tabpanel-chapters" aria-labelledby="tab-chapters">
+        {chapters.length === 0 ? (
+          <div data-testid="dashboard-empty">
+            <p className="text-text-muted mb-2">{STRINGS.dashboard.emptyState}</p>
+            <p className="text-text-muted">{STRINGS.dashboard.totalWordCount(0)}</p>
+            <p className="text-text-muted">{STRINGS.dashboard.totalChapters(0)}</p>
+          </div>
+        ) : (
+          <>
+            {/* Health summary */}
+            <section
+              aria-label={STRINGS.dashboard.healthSectionLabel}
+              className="mb-10 space-y-1.5"
+            >
+              <p className="text-2xl font-semibold text-text-primary">
+                {STRINGS.dashboard.totalWordCount(totals.word_count)}
               </p>
-            )}
-            {leastRecentChapter && (
-              <p className="text-text-muted text-sm">
-                {STRINGS.dashboard.leastRecentEdit(
-                  leastRecentChapter.updated_at,
-                  leastRecentChapter.title,
-                )}
+              <p className="text-text-secondary text-sm">
+                {STRINGS.dashboard.totalChapters(totals.chapter_count)}
               </p>
-            )}
-          </section>
-
-          {/* Status summary bar */}
-          {totalStatusCount > 0 && (
-            <section aria-label={STRINGS.dashboard.statusSummaryLabel} className="mb-10">
-              <div
-                className="flex h-3 rounded-full overflow-hidden mb-3"
-                role="img"
-                aria-label={STRINGS.dashboard.statusDistributionLabel}
-              >
-                {effectiveStatuses.map((s) => {
-                  const count = status_summary[s.status] ?? 0;
-                  if (count === 0) return null;
-                  const pct = (count / totalStatusCount) * 100;
-                  return (
-                    <div
-                      key={s.status}
-                      style={{
-                        width: `${pct}%`,
-                        backgroundColor: STATUS_COLORS[s.status] ?? "#999",
-                      }}
-                      title={`${s.label}: ${count}`}
-                    />
-                  );
-                })}
-              </div>
-              <div className="flex flex-wrap gap-5 text-xs text-text-muted">
-                {effectiveStatuses.map((s) => (
-                  <span key={s.status} className="flex items-center gap-1.5">
-                    <span
-                      className="inline-block w-2.5 h-2.5 rounded-full"
-                      style={{ backgroundColor: STATUS_COLORS[s.status] ?? "#999" }}
-                    />
-                    {s.label}: {status_summary[s.status] ?? 0}
-                  </span>
-                ))}
-              </div>
+              {mostRecentChapter && (
+                <p className="text-text-muted text-sm">
+                  {STRINGS.dashboard.mostRecentEdit(
+                    mostRecentChapter.updated_at,
+                    mostRecentChapter.title,
+                  )}
+                </p>
+              )}
+              {leastRecentChapter && (
+                <p className="text-text-muted text-sm">
+                  {STRINGS.dashboard.leastRecentEdit(
+                    leastRecentChapter.updated_at,
+                    leastRecentChapter.title,
+                  )}
+                </p>
+              )}
             </section>
-          )}
 
-          {/* Chapter table */}
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left">
-                {(
-                  [
-                    ["sort_order", STRINGS.dashboard.columnOrder, "py-2.5 pr-4 w-10"],
-                    ["title", STRINGS.dashboard.columnTitle, "py-2.5 pr-4"],
-                    ["status", STRINGS.dashboard.columnStatus, "py-2.5 pr-4"],
-                    ["word_count", STRINGS.dashboard.columnWordCount, "py-2.5 pr-4"],
-                    ["updated_at", STRINGS.dashboard.columnLastEdited, "py-2.5"],
-                  ] as const
-                ).map(([key, label, className]) => (
-                  <th
-                    key={key}
-                    className={className}
-                    aria-sort={sortKey === key ? (sortAsc ? "ascending" : "descending") : "none"}
-                  >
-                    <button
-                      onClick={() => handleSort(key)}
-                      className="font-medium text-text-muted hover:text-text-primary text-xs uppercase tracking-wide"
-                    >
-                      {label}
-                      {sortKey === key
-                        ? sortAsc
-                          ? STRINGS.dashboard.sortAscending
-                          : STRINGS.dashboard.sortDescending
-                        : ""}
-                    </button>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sortedChapters.map((chapter) => (
-                <tr
-                  key={chapter.id}
-                  className="border-b border-border/50 hover:bg-bg-hover/40 transition-colors duration-150"
+            {/* Status summary bar */}
+            {totalStatusCount > 0 && (
+              <section aria-label={STRINGS.dashboard.statusSummaryLabel} className="mb-10">
+                <div
+                  className="flex h-3 rounded-full overflow-hidden mb-3"
+                  role="img"
+                  aria-label={STRINGS.dashboard.statusDistributionLabel}
                 >
-                  <td className="py-3 pr-4 text-text-muted text-center text-xs">
-                    {chapter.sort_order + 1}
-                  </td>
-                  <td className="py-3 pr-4">
-                    <button
-                      onClick={() => onNavigateToChapter(chapter.id)}
-                      className="text-accent font-serif hover:underline focus:outline-none focus:ring-2 focus:ring-focus-ring rounded font-medium"
-                    >
-                      {chapter.title}
-                    </button>
-                  </td>
-                  <td className="py-3 pr-4">
-                    <span className="flex items-center gap-2">
-                      <span
-                        className="inline-block w-2 h-2 rounded-full"
-                        style={{ backgroundColor: STATUS_COLORS[chapter.status] ?? "#999" }}
-                        aria-hidden="true"
+                  {effectiveStatuses.map((s) => {
+                    const count = status_summary[s.status] ?? 0;
+                    if (count === 0) return null;
+                    const pct = (count / totalStatusCount) * 100;
+                    return (
+                      <div
+                        key={s.status}
+                        style={{
+                          width: `${pct}%`,
+                          backgroundColor: STATUS_COLORS[s.status] ?? "#999",
+                        }}
+                        title={`${s.label}: ${count}`}
                       />
-                      <span className="text-text-secondary text-xs">{chapter.status_label}</span>
+                    );
+                  })}
+                </div>
+                <div className="flex flex-wrap gap-5 text-xs text-text-muted">
+                  {effectiveStatuses.map((s) => (
+                    <span key={s.status} className="flex items-center gap-1.5">
+                      <span
+                        className="inline-block w-2.5 h-2.5 rounded-full"
+                        style={{ backgroundColor: STATUS_COLORS[s.status] ?? "#999" }}
+                      />
+                      {s.label}: {status_summary[s.status] ?? 0}
                     </span>
-                  </td>
-                  <td className="py-3 pr-4 text-text-secondary">
-                    {chapter.word_count.toLocaleString()}
-                  </td>
-                  <td className="py-3 text-text-muted text-xs">
-                    {new Date(chapter.updated_at).toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </td>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Chapter table */}
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left">
+                  {(
+                    [
+                      ["sort_order", STRINGS.dashboard.columnOrder, "py-2.5 pr-4 w-10"],
+                      ["title", STRINGS.dashboard.columnTitle, "py-2.5 pr-4"],
+                      ["status", STRINGS.dashboard.columnStatus, "py-2.5 pr-4"],
+                      ["word_count", STRINGS.dashboard.columnWordCount, "py-2.5 pr-4"],
+                      ["updated_at", STRINGS.dashboard.columnLastEdited, "py-2.5"],
+                    ] as const
+                  ).map(([key, label, className]) => (
+                    <th
+                      key={key}
+                      className={className}
+                      aria-sort={sortKey === key ? (sortAsc ? "ascending" : "descending") : "none"}
+                    >
+                      <button
+                        onClick={() => handleSort(key)}
+                        className="font-medium text-text-muted hover:text-text-primary text-xs uppercase tracking-wide"
+                      >
+                        {label}
+                        {sortKey === key
+                          ? sortAsc
+                            ? STRINGS.dashboard.sortAscending
+                            : STRINGS.dashboard.sortDescending
+                          : ""}
+                      </button>
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
-      )}
+              </thead>
+              <tbody>
+                {sortedChapters.map((chapter) => (
+                  <tr
+                    key={chapter.id}
+                    className="border-b border-border/50 hover:bg-bg-hover/40 transition-colors duration-150"
+                  >
+                    <td className="py-3 pr-4 text-text-muted text-center text-xs">
+                      {chapter.sort_order + 1}
+                    </td>
+                    <td className="py-3 pr-4">
+                      <button
+                        onClick={() => onNavigateToChapter(chapter.id)}
+                        className="text-accent font-serif hover:underline focus:outline-none focus:ring-2 focus:ring-focus-ring rounded font-medium"
+                      >
+                        {chapter.title}
+                      </button>
+                    </td>
+                    <td className="py-3 pr-4">
+                      <span className="flex items-center gap-2">
+                        <span
+                          className="inline-block w-2 h-2 rounded-full"
+                          style={{ backgroundColor: STATUS_COLORS[chapter.status] ?? "#999" }}
+                          aria-hidden="true"
+                        />
+                        <span className="text-text-secondary text-xs">{chapter.status_label}</span>
+                      </span>
+                    </td>
+                    <td className="py-3 pr-4 text-text-secondary">
+                      <ChapterTargetPopover
+                        chapterId={chapter.id}
+                        currentWordCount={chapter.word_count}
+                        targetWordCount={chapter.target_word_count ?? null}
+                        onUpdate={() => setLocalRefreshKey((k) => k + 1)}
+                      />
+                    </td>
+                    <td className="py-3 text-text-muted text-xs">
+                      {new Date(chapter.updated_at).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+      </div>
     </div>
   );
 }

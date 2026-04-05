@@ -6,7 +6,11 @@ import type {
   ChapterStatusRow,
   CreateProjectInput,
   ApiError,
+  CompletionThresholdValue,
+  VelocityResponse,
 } from "@smudge/shared";
+
+export type { VelocityResponse };
 
 const BASE = "/api";
 
@@ -53,11 +57,21 @@ export const api = {
         body: JSON.stringify(input),
       }),
 
-    update: (slug: string, data: { title?: string }) =>
+    update: (
+      slug: string,
+      data: {
+        title?: string;
+        target_word_count?: number | null;
+        target_deadline?: string | null;
+        completion_threshold?: CompletionThresholdValue;
+      },
+    ) =>
       apiFetch<Project>(`/projects/${slug}`, {
         method: "PATCH",
         body: JSON.stringify(data),
       }),
+
+    velocity: (slug: string) => apiFetch<VelocityResponse>(`/projects/${slug}/velocity`),
 
     delete: (slug: string) =>
       apiFetch<{ message: string }>(`/projects/${slug}`, { method: "DELETE" }),
@@ -78,6 +92,7 @@ export const api = {
           status: string;
           status_label: string;
           word_count: number;
+          target_word_count: number | null;
           updated_at: string;
           sort_order: number;
         }>;
@@ -99,7 +114,12 @@ export const api = {
 
     update: (
       id: string,
-      data: { title?: string; content?: Record<string, unknown>; status?: string },
+      data: {
+        title?: string;
+        content?: Record<string, unknown>;
+        status?: string;
+        target_word_count?: number | null;
+      },
     ) =>
       apiFetch<Chapter>(`/chapters/${id}`, {
         method: "PATCH",
@@ -114,5 +134,15 @@ export const api = {
 
   chapterStatuses: {
     list: () => apiFetch<ChapterStatusRow[]>("/chapter-statuses"),
+  },
+
+  settings: {
+    get: () => apiFetch<Record<string, string>>("/settings"),
+
+    update: (settings: Array<{ key: string; value: string }>) =>
+      apiFetch<{ message: string }>("/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ settings }),
+      }),
   },
 };

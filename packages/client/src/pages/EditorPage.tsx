@@ -9,9 +9,11 @@ import { TrashView } from "../components/TrashView";
 import { PreviewMode } from "../components/PreviewMode";
 import { DashboardView } from "../components/DashboardView";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { SettingsDialog } from "../components/SettingsDialog";
+import { ProjectSettingsDialog } from "../components/ProjectSettingsDialog";
 import { STRINGS } from "../strings";
 import { useProjectEditor } from "../hooks/useProjectEditor";
-import { api } from "../api/client";
+import { api, type VelocityResponse } from "../api/client";
 import { Logo } from "../components/Logo";
 
 const SIDEBAR_DEFAULT_WIDTH = 260;
@@ -93,6 +95,9 @@ export function EditorPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
   const [wordCountAnnouncement, setWordCountAnnouncement] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
+  const [lastSession, setLastSession] = useState<VelocityResponse["sessions"][0] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,6 +124,47 @@ export function EditorPage() {
       if (timerId !== null) clearTimeout(timerId);
     };
   }, []);
+
+  // Fetch last session for status bar (on load, then throttled after saves)
+  const hasFetchedInitial = useRef(false);
+  const lastVelocityFetch = useRef(0);
+  const VELOCITY_THROTTLE_MS = 60_000;
+
+  // Reset velocity state when navigating between projects
+  useEffect(() => {
+    hasFetchedInitial.current = false;
+    lastVelocityFetch.current = 0;
+    setLastSession(null);
+  }, [slug]);
+  useEffect(() => {
+    if (!slug) return;
+    const isInitialLoad = !hasFetchedInitial.current;
+    if (!isInitialLoad) {
+      if (saveStatus !== "saved") return;
+      const now = Date.now();
+      if (now - lastVelocityFetch.current < VELOCITY_THROTTLE_MS) return;
+    }
+    hasFetchedInitial.current = true;
+    let cancelled = false;
+    api.projects
+      .velocity(slug)
+      .then((data) => {
+        if (cancelled) return;
+        lastVelocityFetch.current = Date.now();
+        if (data.sessions.length > 0) {
+          const last = data.sessions[data.sessions.length - 1];
+          if (last) setLastSession(last);
+        } else {
+          setLastSession(null);
+        }
+      })
+      .catch(() => {
+        // Best-effort
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, saveStatus]);
 
   useEffect(() => {
     const dialog = shortcutDialogRef.current;
@@ -202,6 +248,31 @@ export function EditorPage() {
     }
   }
 
+  // Use refs so the keydown handler always reads current state without
+  // needing to be re-registered on every state change. This eliminates a
+  // stale-closure race where the handler fires between a render and the
+  // effect that would re-register it with updated values.
+  const shortcutHelpOpenRef = useRef(shortcutHelpOpen);
+  shortcutHelpOpenRef.current = shortcutHelpOpen;
+  const deleteTargetRef = useRef(deleteTarget);
+  deleteTargetRef.current = deleteTarget;
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
+  const activeChapterRef = useRef(activeChapter);
+  activeChapterRef.current = activeChapter;
+  const projectRef = useRef(project);
+  projectRef.current = project;
+  const chapterWordCountRef = useRef(chapterWordCount);
+  chapterWordCountRef.current = chapterWordCount;
+  const settingsOpenRef = useRef(settingsOpen);
+  settingsOpenRef.current = settingsOpen;
+  const projectSettingsOpenRef = useRef(projectSettingsOpen);
+  projectSettingsOpenRef.current = projectSettingsOpen;
+  const handleCreateChapterRef = useRef(handleCreateChapter);
+  handleCreateChapterRef.current = handleCreateChapter;
+  const handleSelectChapterWithFlushRef = useRef(handleSelectChapterWithFlush);
+  handleSelectChapterWithFlushRef.current = handleSelectChapterWithFlush;
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       const ctrl = e.ctrlKey || e.metaKey;
@@ -212,18 +283,24 @@ export function EditorPage() {
         return;
       }
 
-      if (shortcutHelpOpen && e.key === "Escape") {
+      if (shortcutHelpOpenRef.current && e.key === "Escape") {
         e.preventDefault();
         setShortcutHelpOpen(false);
         return;
       }
 
       // Don't process shortcuts when a dialog is open (focus trap)
-      if (shortcutHelpOpen || deleteTarget) return;
+      if (
+        shortcutHelpOpenRef.current ||
+        deleteTargetRef.current ||
+        settingsOpenRef.current ||
+        projectSettingsOpenRef.current
+      )
+        return;
 
       if (ctrl && e.shiftKey && e.key === "N") {
         e.preventDefault();
-        handleCreateChapter();
+        handleCreateChapterRef.current();
         return;
       }
 
@@ -238,14 +315,14 @@ export function EditorPage() {
         // Clear first so re-pressing announces again even if the count hasn't changed
         setWordCountAnnouncement("");
         requestAnimationFrame(() => {
-          setWordCountAnnouncement(STRINGS.project.wordCount(chapterWordCount));
+          setWordCountAnnouncement(STRINGS.project.wordCount(chapterWordCountRef.current));
         });
         return;
       }
 
       if (ctrl && e.shiftKey && e.key === "P") {
         e.preventDefault();
-        editorRef.current?.flushSave().then(() => {
+        (editorRef.current?.flushSave() ?? Promise.resolve()).then(() => {
           setTrashOpen(false);
           setViewMode((prev) => (prev === "preview" ? "editor" : "preview"));
         });
@@ -253,16 +330,18 @@ export function EditorPage() {
       }
 
       if (ctrl && e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
-        if (viewMode !== "editor" || !activeChapter || !project) return;
+        const currentProject = projectRef.current;
+        const currentChapter = activeChapterRef.current;
+        if (viewModeRef.current !== "editor" || !currentChapter || !currentProject) return;
         e.preventDefault();
-        const chapters = project.chapters;
-        const currentIndex = chapters.findIndex((c) => c.id === activeChapter.id);
+        const chapters = currentProject.chapters;
+        const currentIndex = chapters.findIndex((c) => c.id === currentChapter.id);
         if (currentIndex === -1) return;
         const nextIndex = e.key === "ArrowUp" ? currentIndex - 1 : currentIndex + 1;
         if (nextIndex < 0 || nextIndex >= chapters.length) return;
         const nextChapter = chapters[nextIndex];
         if (!nextChapter) return;
-        handleSelectChapterWithFlush(nextChapter.id);
+        handleSelectChapterWithFlushRef.current(nextChapter.id);
         setNavAnnouncement(STRINGS.sidebar.navigatedToChapter(nextChapter.title));
         setTimeout(() => setNavAnnouncement(""), 1000);
         return;
@@ -271,16 +350,7 @@ export function EditorPage() {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [
-    handleCreateChapter,
-    shortcutHelpOpen,
-    deleteTarget,
-    viewMode,
-    activeChapter,
-    project,
-    handleSelectChapterWithFlush,
-    chapterWordCount,
-  ]);
+  }, []);
 
   function startEditingTitle() {
     if (!activeChapter) return;
@@ -403,6 +473,7 @@ export function EditorPage() {
               onReorderChapters={handleReorderChapters}
               onRenameChapter={handleRenameChapter}
               onOpenTrash={openTrash}
+              onOpenSettings={() => setSettingsOpen(true)}
               statuses={statuses}
               onStatusChange={handleStatusChangeWithError}
               width={sidebarWidth}
@@ -528,6 +599,15 @@ export function EditorPage() {
             {STRINGS.nav.dashboard}
           </button>
         </nav>
+        {viewMode === "dashboard" && (
+          <button
+            onClick={() => setProjectSettingsOpen(true)}
+            aria-label={STRINGS.projectSettings.heading}
+            className="text-sm text-text-muted hover:text-text-secondary rounded-md p-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring"
+          >
+            &#x2699;
+          </button>
+        )}
       </header>
 
       <div className="flex flex-1 overflow-hidden">
@@ -541,6 +621,7 @@ export function EditorPage() {
             onReorderChapters={handleReorderChapters}
             onRenameChapter={handleRenameChapter}
             onOpenTrash={openTrash}
+            onOpenSettings={() => setSettingsOpen(true)}
             statuses={statuses}
             onStatusChange={handleStatusChangeWithError}
             width={sidebarWidth}
@@ -648,6 +729,13 @@ export function EditorPage() {
                 </span>
               )}
             </div>
+            {lastSession && (
+              <span className="text-text-muted">
+                {STRINGS.velocity.lastSession}: {lastSession.duration_minutes} min,{" "}
+                {lastSession.net_words >= 0 ? "+" : ""}
+                {lastSession.net_words.toLocaleString()} words
+              </span>
+            )}
             <div role="status" aria-live="polite">
               {saveStatus === "unsaved" && (
                 <span className="text-text-muted">{STRINGS.editor.unsaved}</span>
@@ -656,7 +744,7 @@ export function EditorPage() {
                 <span className="text-text-muted">{STRINGS.editor.saving}</span>
               )}
               {saveStatus === "saved" && (
-                <span className="text-status-success/70">{STRINGS.editor.saved}</span>
+                <span className="text-status-success">{STRINGS.editor.saved}</span>
               )}
               {saveStatus === "error" && (
                 <span className="text-status-error">
@@ -689,6 +777,25 @@ export function EditorPage() {
       <div aria-live="polite" className="sr-only" data-testid="word-count-announcement">
         {wordCountAnnouncement}
       </div>
+
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
+      <ProjectSettingsDialog
+        key={`${project.slug}-${project.target_word_count}-${project.target_deadline}-${project.completion_threshold}`}
+        open={projectSettingsOpen}
+        project={project}
+        onClose={() => setProjectSettingsOpen(false)}
+        onUpdate={() => {
+          setDashboardRefreshKey((k) => k + 1);
+          // Re-fetch project to update local state with new settings
+          if (slug) {
+            api.projects
+              .get(slug)
+              .then((data) => setProject(data))
+              .catch(() => {});
+          }
+        }}
+      />
 
       <dialog
         ref={shortcutDialogRef}

@@ -28,6 +28,18 @@ vi.mock("../api/client", () => ({
       reorderChapters: vi.fn(),
       trash: vi.fn(),
       dashboard: vi.fn(),
+      velocity: vi.fn().mockResolvedValue({
+        daily_snapshots: [],
+        sessions: [],
+        streak: { current: 0, best: 0 },
+        projection: {
+          target_word_count: null,
+          target_deadline: null,
+          projected_date: null,
+          daily_average_30d: 0,
+        },
+        completion: { threshold_status: "final", total_chapters: 0, completed_chapters: 0 },
+      }),
     },
     chapters: {
       get: vi.fn(),
@@ -65,6 +77,9 @@ const mockProject = {
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
   deleted_at: null,
+  target_word_count: null,
+  target_deadline: null,
+  completion_threshold: "final" as const,
   chapters: [
     {
       id: "ch-1",
@@ -73,6 +88,7 @@ const mockProject = {
       content: { type: "doc", content: [{ type: "paragraph" }] },
       sort_order: 0,
       word_count: 10,
+      target_word_count: null,
       status: "outline",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
@@ -88,6 +104,7 @@ const mockProject = {
       },
       sort_order: 1,
       word_count: 1,
+      target_word_count: null,
       status: "outline",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
@@ -266,6 +283,7 @@ describe("EditorPage trash view", () => {
       content: null,
       sort_order: 0,
       word_count: 0,
+      target_word_count: null,
       status: "outline" as const,
       created_at: "2026-01-01",
       updated_at: "2026-01-01",
@@ -294,6 +312,7 @@ describe("EditorPage trash view", () => {
       content: null,
       sort_order: 2,
       word_count: 0,
+      target_word_count: null,
       status: "outline" as const,
       created_at: "2026-01-01",
       updated_at: "2026-01-01",
@@ -504,6 +523,7 @@ describe("EditorPage restore with slug change", () => {
       content: null,
       sort_order: 2,
       word_count: 0,
+      target_word_count: null,
       status: "outline" as const,
       created_at: "2026-01-01",
       updated_at: "2026-01-01",
@@ -544,6 +564,7 @@ describe("EditorPage restore with slug change", () => {
       content: null,
       sort_order: 2,
       word_count: 0,
+      target_word_count: null,
       status: "outline" as const,
       created_at: "2026-01-01",
       updated_at: "2026-01-01",
@@ -697,6 +718,9 @@ describe("EditorPage title editing guards", () => {
       slug: "new-title",
       title: "New Title",
       mode: mockProject.mode,
+      target_word_count: mockProject.target_word_count,
+      target_deadline: mockProject.target_deadline,
+      completion_threshold: mockProject.completion_threshold,
       created_at: mockProject.created_at,
       updated_at: mockProject.updated_at,
       deleted_at: mockProject.deleted_at,
@@ -889,6 +913,7 @@ describe("EditorPage view mode toggles", () => {
     vi.mocked(api.projects.dashboard).mockResolvedValue({
       chapters: mockProject.chapters.map((c) => ({
         ...c,
+        target_word_count: null,
         status_label: "Outline",
         status_color: "#ccc",
       })),
@@ -928,9 +953,9 @@ describe("EditorPage view mode toggles", () => {
     // Click Dashboard tab
     await userEvent.click(screen.getByText("Dashboard"));
 
-    // Dashboard view should render
+    // Dashboard view should render with sub-tabs (Velocity is default)
     await waitFor(() => {
-      expect(screen.getByText("Manuscript Dashboard")).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: /Velocity/i })).toBeInTheDocument();
     });
   });
 
@@ -944,8 +969,8 @@ describe("EditorPage view mode toggles", () => {
     await userEvent.click(screen.getByText("Dashboard"));
 
     await waitFor(() => {
-      // The DashboardView component should be rendered within a main element
-      expect(screen.getByText("Manuscript Dashboard")).toBeInTheDocument();
+      // The DashboardView component should render sub-tabs
+      expect(screen.getByRole("tab", { name: /Velocity/i })).toBeInTheDocument();
     });
 
     // The Dashboard tab should show as current

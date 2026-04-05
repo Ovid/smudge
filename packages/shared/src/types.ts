@@ -1,13 +1,17 @@
 import type { z } from "zod";
-import type { CreateProjectSchema, ProjectMode } from "./schemas";
+import type { CompletionThreshold, CreateProjectSchema, ProjectMode } from "./schemas";
 
 export type ProjectMode = z.infer<typeof ProjectMode>;
+export type CompletionThresholdValue = z.infer<typeof CompletionThreshold>;
 
 export interface Project {
   id: string;
   slug: string;
   title: string;
   mode: ProjectMode;
+  target_word_count: number | null;
+  target_deadline: string | null;
+  completion_threshold: z.infer<typeof CompletionThreshold>;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -20,6 +24,7 @@ export interface Chapter {
   content: Record<string, unknown> | null;
   sort_order: number;
   word_count: number;
+  target_word_count: number | null;
   status: string;
   status_label?: string;
   created_at: string;
@@ -53,4 +58,30 @@ export interface ApiError {
     code: string;
     message: string;
   };
+}
+
+export interface VelocityResponse {
+  daily_snapshots: Array<{ date: string; total_word_count: number }>;
+  sessions: Array<{
+    start: string;
+    end: string;
+    duration_minutes: number;
+    chapters_touched: string[];
+    net_words: number;
+  }>;
+  streak: { current: number; best: number };
+  projection: {
+    target_word_count: number | null;
+    target_deadline: string | null;
+    projected_date: string | null;
+    daily_average_30d: number;
+  };
+  completion: {
+    threshold_status: CompletionThresholdValue | null;
+    total_chapters: number;
+    completed_chapters: number;
+  };
+  today: string;
+  current_total: number;
+  chapter_names: Record<string, string>;
 }

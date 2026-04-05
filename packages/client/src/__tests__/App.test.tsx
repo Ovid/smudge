@@ -26,6 +26,18 @@ vi.mock("../api/client", () => ({
       update: vi.fn(),
       reorderChapters: vi.fn(),
       trash: vi.fn(),
+      velocity: vi.fn().mockResolvedValue({
+        daily_snapshots: [],
+        sessions: [],
+        streak: { current: 0, best: 0 },
+        projection: {
+          target_word_count: null,
+          target_deadline: null,
+          projected_date: null,
+          daily_average_30d: 0,
+        },
+        completion: { threshold_status: "final", total_chapters: 0, completed_chapters: 0 },
+      }),
     },
     chapters: {
       get: vi.fn(),
@@ -36,6 +48,10 @@ vi.mock("../api/client", () => ({
     },
     chapterStatuses: {
       list: vi.fn().mockResolvedValue([]),
+    },
+    settings: {
+      get: vi.fn().mockResolvedValue({}),
+      update: vi.fn().mockResolvedValue({ message: "ok" }),
     },
   },
 }));
@@ -77,6 +93,9 @@ describe("App", () => {
       created_at: "",
       updated_at: "",
       deleted_at: null,
+      target_word_count: null,
+      target_deadline: null,
+      completion_threshold: "final" as const,
       chapters: [
         {
           id: "ch-1",
@@ -85,6 +104,7 @@ describe("App", () => {
           content: { type: "doc", content: [{ type: "paragraph" }] },
           sort_order: 0,
           word_count: 0,
+          target_word_count: null,
           status: "outline",
           created_at: "",
           updated_at: "",

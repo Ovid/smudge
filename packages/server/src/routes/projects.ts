@@ -12,6 +12,8 @@ import { asyncHandler } from "../app";
 import { queryChapter, queryChapters, stripCorruptFlag } from "./chapterQueries";
 import { resolveUniqueSlug } from "./resolve-slug";
 import { getStatusLabelMap } from "./status-labels";
+import { velocityHandler } from "./velocity";
+import { getTodayDate, upsertDailySnapshot } from "./velocityHelpers";
 
 export function projectsRouter(db: Knex): Router {
   const router = Router();
@@ -100,6 +102,7 @@ export function projectsRouter(db: Knex): Router {
         .whereNull("projects.deleted_at")
         .groupBy("projects.id")
         .orderBy("projects.updated_at", "desc")
+        .orderBy("projects.rowid", "desc")
         .select(
           "projects.id",
           "projects.title",
@@ -144,29 +147,51 @@ export function projectsRouter(db: Knex): Router {
         return;
       }
 
-      const { title } = parsed.data;
+      // Title-specific: uniqueness check + slug regeneration
+      if (parsed.data.title !== undefined) {
+        const existingTitle = await db("projects")
+          .where({ title: parsed.data.title })
+          .whereNull("deleted_at")
+          .whereNot({ id: project.id })
+          .first();
+        if (existingTitle) {
+          res.status(400).json({
+            error: {
+              code: "PROJECT_TITLE_EXISTS",
+              message: "A project with that title already exists",
+            },
+          });
+          return;
+        }
+      }
 
-      const existingTitle = await db("projects")
-        .where({ title })
-        .whereNull("deleted_at")
-        .whereNot({ id: project.id })
-        .first();
-      if (existingTitle) {
-        res.status(400).json({
-          error: {
-            code: "PROJECT_TITLE_EXISTS",
-            message: "A project with that title already exists",
-          },
-        });
-        return;
+      // Build updates
+      const updates: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+      };
+
+      if (parsed.data.target_word_count !== undefined) {
+        updates.target_word_count = parsed.data.target_word_count;
+      }
+      if (parsed.data.target_deadline !== undefined) {
+        updates.target_deadline = parsed.data.target_deadline;
+      }
+      if (parsed.data.completion_threshold !== undefined) {
+        updates.completion_threshold = parsed.data.completion_threshold;
       }
 
       try {
         await db.transaction(async (trx) => {
-          const newSlug = await resolveUniqueSlug(trx, generateSlug(title), project.id);
-          await trx("projects")
-            .where({ id: project.id })
-            .update({ title, slug: newSlug, updated_at: new Date().toISOString() });
+          if (parsed.data.title !== undefined) {
+            const newSlug = await resolveUniqueSlug(
+              trx,
+              generateSlug(parsed.data.title),
+              project.id,
+            );
+            updates.title = parsed.data.title;
+            updates.slug = newSlug;
+          }
+          await trx("projects").where({ id: project.id }).update(updates);
         });
       } catch (err: unknown) {
         if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
@@ -185,6 +210,8 @@ export function projectsRouter(db: Knex): Router {
       res.json(updated);
     }),
   );
+
+  router.get("/:slug/velocity", velocityHandler(db));
 
   router.get(
     "/:slug",
@@ -357,7 +384,15 @@ export function projectsRouter(db: Knex): Router {
         .where({ project_id: project.id })
         .whereNull("deleted_at")
         .orderBy("sort_order", "asc")
-        .select("id", "title", "status", "word_count", "updated_at", "sort_order");
+        .select(
+          "id",
+          "title",
+          "status",
+          "word_count",
+          "target_word_count",
+          "updated_at",
+          "sort_order",
+        );
 
       const allStatuses = await db("chapter_statuses")
         .orderBy("sort_order", "asc")
@@ -474,6 +509,10 @@ export function projectsRouter(db: Knex): Router {
 
         await trx("projects").where({ id: project.id }).update({ deleted_at: now });
       });
+
+      // Update daily snapshot to reflect the new word count (0 after all chapters deleted)
+      const today = await getTodayDate(db);
+      await upsertDailySnapshot(db, project.id, today);
 
       res.json({ message: "Project moved to trash." });
     }),

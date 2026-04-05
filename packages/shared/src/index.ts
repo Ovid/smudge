@@ -3,9 +3,12 @@ export {
   CreateProjectSchema,
   UpdateProjectSchema,
   UpdateChapterSchema,
+  UpdateSettingsSchema,
   ReorderChaptersSchema,
   ProjectMode,
   ChapterStatus,
+  CompletionThreshold,
+  calculateWordsToday,
 } from "./schemas";
 export { countWords } from "./wordcount";
 export { generateSlug } from "./slugify";
@@ -19,4 +22,6 @@ export type {
   ProjectWithChapters,
   ChapterStatusRow,
   ApiError,
+  CompletionThresholdValue,
+  VelocityResponse,
 } from "./types";

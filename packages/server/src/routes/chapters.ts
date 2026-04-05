@@ -5,6 +5,7 @@ import { asyncHandler } from "../app";
 import { queryChapter, sendCorruptContentError } from "./chapterQueries";
 import { resolveUniqueSlug } from "./resolve-slug";
 import { getStatusLabel } from "./status-labels";
+import { getTodayDate, insertSaveEvent, upsertDailySnapshot } from "./velocityHelpers";
 
 export function chaptersRouter(db: Knex): Router {
   const router = Router();
@@ -69,6 +70,10 @@ export function chaptersRouter(db: Knex): Router {
         updates.word_count = countWords(parsed.data.content as Record<string, unknown>);
       }
 
+      if (parsed.data.target_word_count !== undefined) {
+        updates.target_word_count = parsed.data.target_word_count;
+      }
+
       if (parsed.data.status !== undefined) {
         // Intentional: Zod enum validates the status format, but this DB check
         // guards against drift between the enum and the chapter_statuses table
@@ -94,6 +99,23 @@ export function chaptersRouter(db: Knex): Router {
           .where({ id: chapter.project_id })
           .update({ updated_at: new Date().toISOString() });
       });
+
+      // Fire velocity side-effects (best-effort, after the main save transaction succeeds).
+      // Helpers handle their own errors internally — no outer catch needed.
+      // Run in parallel to minimize latency on the save path.
+      if (parsed.data.content !== undefined) {
+        const today = await getTodayDate(db);
+        await Promise.all([
+          insertSaveEvent(
+            db,
+            chapter.id as string,
+            chapter.project_id,
+            updates.word_count as number,
+            today,
+          ),
+          upsertDailySnapshot(db, chapter.project_id, today),
+        ]);
+      }
 
       const updated = await queryChapter(
         db("chapters").where({ id: req.params.id }).whereNull("deleted_at"),
@@ -135,6 +157,10 @@ export function chaptersRouter(db: Knex): Router {
         await trx("chapters").where({ id: req.params.id }).update({ deleted_at: now });
         await trx("projects").where({ id: chapter.project_id }).update({ updated_at: now });
       });
+
+      // Update daily snapshot so deleted chapter's words are excluded
+      const todayForDelete = await getTodayDate(db);
+      await upsertDailySnapshot(db, chapter.project_id, todayForDelete);
 
       res.json({ message: "Chapter moved to trash." });
     }),
@@ -200,6 +226,10 @@ export function chaptersRouter(db: Knex): Router {
         }
         throw err;
       }
+
+      // Update daily snapshot so restored chapter's words are included
+      const todayForRestore = await getTodayDate(db);
+      await upsertDailySnapshot(db, chapter.project_id, todayForRestore);
 
       const restored = await queryChapter(
         db("chapters").where({ id: req.params.id }).whereNull("deleted_at"),
