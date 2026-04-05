@@ -3,6 +3,7 @@ import { beforeAll, afterAll, beforeEach } from "vitest";
 import knex, { type Knex } from "knex";
 import { createTestKnexConfig } from "../db/knexfile";
 import { createApp } from "../app";
+import { setDb } from "../db/connection";
 
 let testDb: Knex;
 let testServer: http.Server;
@@ -12,6 +13,7 @@ export function setupTestDb() {
     testDb = knex(createTestKnexConfig());
     await testDb.raw("PRAGMA foreign_keys = ON");
     await testDb.migrate.latest();
+    setDb(testDb);
     const app = createApp(testDb);
     testServer = app.listen(0);
     await new Promise<void>((resolve) => testServer.on("listening", resolve));
