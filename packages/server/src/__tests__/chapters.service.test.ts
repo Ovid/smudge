@@ -172,7 +172,7 @@ describe("chapters.service", () => {
       expect(result).toBeDefined();
       expect(result).not.toBeNull();
       expect(result).not.toBe("corrupt");
-      expect((result as Record<string, unknown>).status_label).toBeDefined();
+      expect(typeof result === "object" && result !== null && "status_label" in result && result.status_label).toBeTruthy();
     });
   });
 });

@@ -12,7 +12,24 @@ import * as ChapterRepo from "../chapters/chapters.repository";
 import * as ChapterStatusRepo from "../chapter-statuses/chapter-statuses.repository";
 import * as VelocityService from "../velocity/velocity.service";
 import type { ProjectRow, ProjectListRow } from "./projects.types";
-import type { ChapterRow } from "../chapters/chapters.types";
+import type { ChapterRow, ChapterWithLabel, ChapterMetadataRow, DeletedChapterRow } from "../chapters/chapters.types";
+
+// --- Dashboard types ---
+
+interface ChapterMetadataWithLabel extends ChapterMetadataRow {
+  status_label: string;
+}
+
+export interface DashboardResponse {
+  chapters: ChapterMetadataWithLabel[];
+  status_summary: Record<string, number>;
+  totals: {
+    word_count: number;
+    chapter_count: number;
+    most_recent_edit: string | null;
+    least_recent_edit: string | null;
+  };
+}
 
 // --- Injectable velocity service for testing ---
 
@@ -110,7 +127,7 @@ export async function listProjects(): Promise<ProjectListRow[]> {
 
 export async function getProject(
   slug: string,
-): Promise<{ project: ProjectRow; chapters: Record<string, unknown>[] } | null> {
+): Promise<{ project: ProjectRow; chapters: ChapterWithLabel[] } | null> {
   const db = getDb();
   const project = await ProjectRepo.findBySlug(db, slug);
   if (!project) return null;
@@ -215,7 +232,7 @@ export async function deleteProject(slug: string): Promise<boolean> {
 
 export async function createChapter(
   slug: string,
-): Promise<Record<string, unknown> | null | "project_not_found"> {
+): Promise<ChapterWithLabel | null | "project_not_found"> {
   const db = getDb();
   const project = await ProjectRepo.findBySlug(db, slug);
   if (!project) return "project_not_found";
@@ -284,7 +301,7 @@ export async function reorderChapters(
   return { success: true };
 }
 
-export async function getDashboard(slug: string): Promise<Record<string, unknown> | null> {
+export async function getDashboard(slug: string): Promise<DashboardResponse | null> {
   const db = getDb();
   const project = await ProjectRepo.findBySlug(db, slug);
   if (!project) return null;
@@ -296,7 +313,7 @@ export async function getDashboard(slug: string): Promise<Record<string, unknown
 
   const chaptersWithLabels = chapters.map((ch) => ({
     ...ch,
-    status_label: statusLabelMap[ch.status as string] ?? (ch.status as string),
+    status_label: statusLabelMap[ch.status] ?? ch.status,
   }));
 
   const statusSummary: Record<string, number> = {};
@@ -304,14 +321,13 @@ export async function getDashboard(slug: string): Promise<Record<string, unknown
     statusSummary[s.status] = 0;
   }
   for (const ch of chapters) {
-    const status = ch.status as string;
-    if (status in statusSummary) {
-      statusSummary[status] = (statusSummary[status] ?? 0) + 1;
+    if (ch.status in statusSummary) {
+      statusSummary[ch.status] = (statusSummary[ch.status] ?? 0) + 1;
     }
   }
 
-  const totalWordCount = chapters.reduce((sum, ch) => sum + (ch.word_count as number), 0);
-  const updatedAts = chapters.map((ch) => ch.updated_at as string);
+  const totalWordCount = chapters.reduce((sum, ch) => sum + ch.word_count, 0);
+  const updatedAts = chapters.map((ch) => ch.updated_at);
   const mostRecentEdit =
     updatedAts.length > 0 ? updatedAts.reduce((a, b) => (a > b ? a : b)) : null;
   const leastRecentEdit =
@@ -329,7 +345,7 @@ export async function getDashboard(slug: string): Promise<Record<string, unknown
   };
 }
 
-export async function getTrash(slug: string): Promise<Record<string, unknown>[] | null> {
+export async function getTrash(slug: string): Promise<DeletedChapterRow[] | null> {
   const db = getDb();
   const project = await ProjectRepo.findBySlug(db, slug);
   if (!project) return null;

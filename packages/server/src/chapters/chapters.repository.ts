@@ -1,5 +1,11 @@
 import type { Knex } from "knex";
-import type { ChapterRow, CreateChapterRow } from "./chapters.types";
+import type {
+  ChapterRow,
+  ChapterRawRow,
+  ChapterMetadataRow,
+  DeletedChapterRow,
+  CreateChapterRow,
+} from "./chapters.types";
 
 // --- Content parsing ---
 
@@ -51,17 +57,17 @@ export async function findById(
 export async function findDeletedById(
   trx: Knex.Transaction | Knex,
   id: string,
-): Promise<Record<string, unknown> | null> {
+): Promise<ChapterRawRow | null> {
   const row = await trx("chapters").where({ id }).whereNotNull("deleted_at").first();
-  return row ?? null;
+  return (row as ChapterRawRow) ?? null;
 }
 
 export async function findByIdRaw(
   trx: Knex.Transaction | Knex,
   id: string,
-): Promise<Record<string, unknown> | null> {
+): Promise<ChapterRawRow | null> {
   const row = await trx("chapters").where({ id }).whereNull("deleted_at").first();
-  return row ?? null;
+  return (row as ChapterRawRow) ?? null;
 }
 
 export async function listByProject(
@@ -79,18 +85,18 @@ export async function listByProject(
 export async function listMetadataByProject(
   trx: Knex.Transaction | Knex,
   projectId: string,
-): Promise<Record<string, unknown>[]> {
+): Promise<ChapterMetadataRow[]> {
   return trx("chapters")
     .where({ project_id: projectId })
     .whereNull("deleted_at")
     .orderBy("sort_order", "asc")
-    .select("id", "title", "status", "word_count", "target_word_count", "updated_at", "sort_order");
+    .select("id", "title", "status", "word_count", "target_word_count", "updated_at", "sort_order") as Promise<ChapterMetadataRow[]>;
 }
 
 export async function listDeletedByProject(
   trx: Knex.Transaction | Knex,
   projectId: string,
-): Promise<Record<string, unknown>[]> {
+): Promise<DeletedChapterRow[]> {
   const rows = await trx("chapters")
     .where({ project_id: projectId })
     .whereNotNull("deleted_at")
@@ -106,7 +112,7 @@ export async function listDeletedByProject(
       "created_at",
       "updated_at",
     );
-  return rows.map((ch: Record<string, unknown>) => ({ ...ch, content: null }));
+  return rows.map((ch: Record<string, unknown>) => ({ ...ch, content: null }) as DeletedChapterRow);
 }
 
 export async function listIdsByProject(

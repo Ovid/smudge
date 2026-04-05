@@ -4,6 +4,7 @@ import * as ChapterRepo from "./chapters.repository";
 import * as ProjectRepo from "../projects/projects.repository";
 import * as ChapterStatusRepo from "../chapter-statuses/chapter-statuses.repository";
 import * as VelocityService from "../velocity/velocity.service";
+import type { ChapterRow, ChapterWithLabel, RestoredChapterResponse } from "./chapters.types";
 
 // --- Injectable velocity service for testing ---
 
@@ -39,22 +40,23 @@ export function stripCorruptFlag(chapter: Record<string, unknown>): Record<strin
 
 // --- Service functions ---
 
-export async function getChapter(id: string): Promise<Record<string, unknown> | null | "corrupt"> {
+export async function getChapter(id: string): Promise<ChapterWithLabel | null | "corrupt"> {
   const db = getDb();
   const chapter = await ChapterRepo.findById(db, id);
   if (!chapter) return null;
 
   if (isCorruptChapter(chapter)) return "corrupt";
 
+  const { content_corrupt: _, ...rest } = chapter;
   const status_label = await ChapterStatusRepo.getStatusLabel(db, chapter.status);
-  return { ...(chapter as unknown as Record<string, unknown>), status_label };
+  return { ...rest, status_label };
 }
 
 export async function updateChapter(
   id: string,
   body: unknown,
 ): Promise<
-  { chapter: Record<string, unknown> } | { validationError: string } | { corrupt: true } | null
+  { chapter: ChapterWithLabel } | { validationError: string } | { corrupt: true } | null
 > {
   const parsed = UpdateChapterSchema.safeParse(body);
   if (!parsed.success) {
@@ -92,7 +94,7 @@ export async function updateChapter(
 
   await db.transaction(async (trx) => {
     await ChapterRepo.update(trx, id, updates);
-    await ProjectRepo.updateTimestamp(trx, chapter.project_id as string);
+    await ProjectRepo.updateTimestamp(trx, chapter.project_id);
   });
 
   // Fire velocity side-effects (best-effort — must not break the save)
@@ -100,8 +102,8 @@ export async function updateChapter(
     try {
       const svc = getVelocityService();
       await svc.recordSave(
-        chapter.project_id as string,
-        chapter.id as string,
+        chapter.project_id,
+        chapter.id,
         updates.word_count as number,
       );
     } catch {
@@ -120,10 +122,11 @@ export async function updateChapter(
     return { corrupt: true };
   }
 
+  const { content_corrupt: _, ...rest } = updated;
   const updatedStatusLabel = await ChapterStatusRepo.getStatusLabel(db, updated.status);
   return {
     chapter: {
-      ...(updated as unknown as Record<string, unknown>),
+      ...rest,
       status_label: updatedStatusLabel,
     },
   };
@@ -137,11 +140,11 @@ export async function deleteChapter(id: string): Promise<boolean> {
   const now = new Date().toISOString();
   await db.transaction(async (trx) => {
     await ChapterRepo.softDelete(trx, id, now);
-    await ProjectRepo.updateTimestamp(trx, chapter.project_id as string);
+    await ProjectRepo.updateTimestamp(trx, chapter.project_id);
   });
 
   try {
-    await getVelocityService().updateDailySnapshot(chapter.project_id as string);
+    await getVelocityService().updateDailySnapshot(chapter.project_id);
   } catch {
     // Velocity tracking is best-effort; delete must still succeed
   }
@@ -150,14 +153,14 @@ export async function deleteChapter(id: string): Promise<boolean> {
 
 export async function restoreChapter(
   id: string,
-): Promise<Record<string, unknown> | null | "purged" | "conflict"> {
+): Promise<RestoredChapterResponse | null | "purged" | "conflict"> {
   const db = getDb();
   const chapter = await ChapterRepo.findDeletedById(db, id);
   if (!chapter) return null;
 
   const parentProject = await ProjectRepo.findByIdIncludingDeleted(
     db,
-    chapter.project_id as string,
+    chapter.project_id,
   );
   if (!parentProject) return "purged";
 
@@ -176,7 +179,7 @@ export async function restoreChapter(
           updated_at: new Date().toISOString(),
           slug: freshSlug,
         };
-        await ProjectRepo.update(trx, chapter.project_id as string, projectUpdate);
+        await ProjectRepo.update(trx, chapter.project_id, projectUpdate);
       }
     });
   } catch (err: unknown) {
@@ -187,7 +190,7 @@ export async function restoreChapter(
   }
 
   try {
-    await getVelocityService().updateDailySnapshot(chapter.project_id as string);
+    await getVelocityService().updateDailySnapshot(chapter.project_id);
   } catch {
     // Velocity tracking is best-effort; restore must still succeed
   }
@@ -195,11 +198,12 @@ export async function restoreChapter(
   const restored = await ChapterRepo.findById(db, id);
   if (!restored) return null;
 
-  const updatedProject = await ProjectRepo.findById(db, chapter.project_id as string);
+  const { content_corrupt: _, ...rest } = restored;
+  const updatedProject = await ProjectRepo.findById(db, chapter.project_id);
   const restoredStatusLabel = await ChapterStatusRepo.getStatusLabel(db, restored.status);
 
   return {
-    ...(restored as unknown as Record<string, unknown>),
+    ...rest,
     status_label: restoredStatusLabel,
     project_slug: updatedProject?.slug,
   };
