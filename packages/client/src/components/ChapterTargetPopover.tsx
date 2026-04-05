@@ -56,6 +56,8 @@ export function ChapterTargetPopover({
     const parsed = parseInt(draft, 10);
     if (!isNaN(parsed) && parsed > 0) {
       handleSave(parsed);
+    } else {
+      setDraft(targetWordCount?.toString() ?? "");
     }
   };
 

@@ -66,12 +66,18 @@ export function ProjectSettingsDialog({
     } catch (err) {
       console.error("Failed to save project setting:", err);
       setSaveError(STRINGS.projectSettings.saveError);
-      // Revert local state to match the last-known persisted values
-      setWordCountTarget(
-        project.target_word_count != null ? String(project.target_word_count) : "",
-      );
-      setDeadline(project.target_deadline ?? "");
-      setThreshold(project.completion_threshold ?? "final");
+      // Revert only the specific field that failed
+      if ("target_word_count" in data) {
+        setWordCountTarget(
+          project.target_word_count != null ? String(project.target_word_count) : "",
+        );
+      }
+      if ("target_deadline" in data) {
+        setDeadline(project.target_deadline ?? "");
+      }
+      if ("completion_threshold" in data) {
+        setThreshold(project.completion_threshold ?? "final");
+      }
     }
   }
 
@@ -80,7 +86,12 @@ export function ProjectSettingsDialog({
     const related = e.relatedTarget as HTMLElement | null;
     if (related?.dataset.clearWordCount) return;
     const parsed = wordCountTarget.trim() === "" ? null : parseInt(wordCountTarget, 10);
-    if (parsed !== null && (Number.isNaN(parsed) || parsed <= 0)) return;
+    if (parsed !== null && (Number.isNaN(parsed) || parsed <= 0)) {
+      setWordCountTarget(
+        project.target_word_count != null ? String(project.target_word_count) : "",
+      );
+      return;
+    }
     saveField({ target_word_count: parsed });
   }
 
