@@ -23,4 +23,5 @@ export type {
   ChapterStatusRow,
   ApiError,
   CompletionThresholdValue,
+  VelocityResponse,
 } from "./types";

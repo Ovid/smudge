@@ -1,4 +1,5 @@
 import type { Knex } from "knex";
+import type { VelocityResponse } from "@smudge/shared";
 import { asyncHandler } from "../app";
 import { getTodayDate } from "./velocityHelpers";
 
@@ -394,7 +395,7 @@ export function velocityHandler(db: Knex) {
       chapterNames[ch.id] = ch.title;
     }
 
-    res.json({
+    const body: VelocityResponse = {
       daily_snapshots: dailySnapshots,
       sessions,
       streak,
@@ -403,6 +404,7 @@ export function velocityHandler(db: Knex) {
       today,
       current_total: currentTotal,
       chapter_names: chapterNames,
-    });
+    };
+    res.json(body);
   });
 }

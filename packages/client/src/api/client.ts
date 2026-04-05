@@ -7,33 +7,10 @@ import type {
   CreateProjectInput,
   ApiError,
   CompletionThresholdValue,
+  VelocityResponse,
 } from "@smudge/shared";
 
-export interface VelocityResponse {
-  daily_snapshots: Array<{ date: string; total_word_count: number }>;
-  sessions: Array<{
-    start: string;
-    end: string;
-    duration_minutes: number;
-    chapters_touched: string[];
-    net_words: number;
-  }>;
-  streak: { current: number; best: number };
-  projection: {
-    target_word_count: number | null;
-    target_deadline: string | null;
-    projected_date: string | null;
-    daily_average_30d: number;
-  };
-  completion: {
-    threshold_status: CompletionThresholdValue | null;
-    total_chapters: number;
-    completed_chapters: number;
-  };
-  today: string;
-  current_total: number;
-  chapter_names: Record<string, string>;
-}
+export type { VelocityResponse };
 
 const BASE = "/api";
 
