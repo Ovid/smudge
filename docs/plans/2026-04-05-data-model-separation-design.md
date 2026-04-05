@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-05
 **Branch:** ovid/data-model
-**Status:** Approved
+**Status:** Approved (post-pushback review)
 
 ---
 
@@ -22,6 +22,7 @@ Separate the server into three layers with domain-based file grouping:
 
 - Routes call services. Never repositories.
 - Services call repositories. Services may call other services for cross-domain coordination.
+- Services may import another domain's repository directly when cross-domain data access is needed (e.g., project creation needs `ChapterRepo.insert`, dashboard needs `ChapterRepo.listByProject`).
 - Repositories are called only by services.
 - **Documented exceptions:** Migrations and infrastructure jobs (purge, image cleanup, health checks) may access the data layer directly.
 
@@ -32,7 +33,7 @@ packages/server/src/
   projects/
     projects.routes.ts
     projects.service.ts
-    projects.repository.ts
+    projects.repository.ts     # Owns resolveUniqueSlug (used by chapters service too)
     projects.types.ts
   chapters/
     chapters.routes.ts
@@ -41,7 +42,7 @@ packages/server/src/
     chapters.types.ts
   velocity/
     velocity.routes.ts
-    velocity.service.ts
+    velocity.service.ts        # Injectable for testing failure paths
     velocity.repository.ts
     velocity.types.ts
   settings/
@@ -55,7 +56,7 @@ packages/server/src/
     chapter-statuses.repository.ts
     chapter-statuses.types.ts
   db/
-    connection.ts
+    connection.ts              # Singleton with setDb() for test injection
     knexfile.ts
     purge.ts
     migrations/
@@ -66,6 +67,18 @@ packages/server/src/
 Existing helper files (`parseChapterContent.ts`, `resolve-slug.ts`, `chapterQueries.ts`, `velocityHelpers.ts`, `status-labels.ts`) are absorbed into their respective domain's service or repository.
 
 Future phases add new domain folders following the same pattern (e.g., `snapshots/`, `outtakes/`, `characters/`, `scenes/`).
+
+## Database Connection Management
+
+Services import `db` directly from the `db/connection.ts` singleton module. Routes do not pass `db` — they just call service functions. `app.ts` mounts routers without passing `db`.
+
+The `connection.ts` module exports:
+
+- `db` — the current Knex instance (used by services for `db.transaction()`)
+- `initDb(config)` — initializes the singleton (called at server startup)
+- `setDb(instance)` — replaces the singleton (called by test setup to inject in-memory databases)
+
+This preserves the existing `createApp(testDb)` test pattern while letting services import the connection directly.
 
 ## Type Flow
 
@@ -130,9 +143,11 @@ Services own transaction boundaries. The transaction handle is passed to reposit
 
 ```typescript
 // projects/projects.service.ts
+import { db } from '../db/connection';
+
 async function createProject(data: CreateProjectInput) {
   return db.transaction(async (trx) => {
-    const slug = await resolveUniqueSlug(trx, data.title);
+    const slug = await ProjectRepo.resolveUniqueSlug(trx, generateSlug(data.title));
     const projectRow = await ProjectRepo.insert(trx, { ... });
     const chapterRow = await ChapterRepo.insert(trx, { ... });
     return toProjectWithChapters(projectRow, [chapterRow]);
@@ -145,14 +160,28 @@ Repository functions always accept a `Knex.Transaction` as their first parameter
 ```typescript
 // projects/projects.repository.ts
 async function insert(trx: Knex.Transaction, data: CreateProjectRow): Promise<ProjectRow> {
-  const [row] = await trx('projects').insert(data).returning('*');
-  return row;
+  await trx('projects').insert(data);
+  return trx('projects').where({ id: data.id }).first();
 }
 ```
+
+**Note on `.returning()`:** better-sqlite3 does not support `.returning('*')`. All repository insert/update functions that need to return the modified row must do a separate select query after the write. This is encapsulated within the repository — callers always get back the expected type.
+
+### Transaction Type Coupling
+
+Repository function signatures use `Knex.Transaction` as their first parameter. This means services have a type-level dependency on Knex, even though they never call Knex methods on the handle — they just pass it through. This is a pragmatic trade-off, documented here as a known coupling point. When Knex is replaced, repository signatures and service import statements will need updating, but service logic will not change.
 
 ### Cross-Domain Coordination
 
 When a service needs another domain's repository (e.g., project creation needing `ChapterRepo.insert`), it imports that repository directly. Services may also call other services when the other domain's business logic is needed.
+
+**Slug resolution:** `resolveUniqueSlug` lives in the projects repository since it's a query concern ("is this slug taken?"). It's used by:
+- Projects service — on create and title update
+- Chapters service — on restore (when the parent project's slug may conflict)
+
+### Dashboard Aggregation
+
+`GET /api/projects/:slug/dashboard` stays in the projects domain. The projects service imports `ChapterRepo.listByProject` and `ChapterStatusRepo.list` to get the data, then does JavaScript-level aggregation. This matches the URL structure and the mental model (dashboard is a project-level view).
 
 ### Velocity Side Effects
 
@@ -166,11 +195,13 @@ async function updateContent(id: string, content: TipTapDoc) {
     const row = await ChapterRepo.updateContent(trx, id, content, wordCount);
     return toChapter(row);
   });
-  await VelocityService.recordSave(result.projectId, id, result.wordCount)
+  await velocityService.recordSave(result.projectId, id, result.wordCount)
     .catch(err => logger.error('velocity tracking failed', err));
   return result;
 }
 ```
+
+**Velocity service injection:** The velocity service is injectable (passed as a parameter or set via a module-level setter) so that tests can provide a throwing implementation to verify that save-failure resilience works. This is a narrow, documented exception to the "no mocks, real database" testing philosophy — it tests the error-handling path that's impractical to trigger with a real database.
 
 ## Repository Boundaries
 
@@ -186,6 +217,7 @@ Repositories are the only code that knows about Knex, SQL, table names, or colum
 - `whereNull('deleted_at')` filtering (baked into every query)
 - JSON string parsing (content stored as text, parsed in repository)
 - Sort order logic, COALESCE expressions, aggregations
+- Insert-then-select pattern (better-sqlite3 `.returning()` limitation)
 
 **Soft-delete rule:** Every "find" and "list" function filters `deleted_at IS NULL` by default. `listDeleted` is the explicit inverse for the trash view.
 
@@ -214,14 +246,17 @@ All at once in a single branch. The refactor is pure restructuring — no behavi
 3. Extract services from existing route handler business logic.
 4. Rewrite routes as thin HTTP handlers that call services.
 5. Absorb helper files into their respective domains.
-6. Add unit tests for all services and repositories.
-7. Verify existing integration tests (Supertest) and e2e tests (Playwright) pass without modification.
+6. Refactor `db/connection.ts` to support `setDb()` for test injection.
+7. Update `app.ts` to mount routers without passing `db`.
+8. Add unit tests for all services and repositories.
+9. Verify existing integration tests (Supertest) and e2e tests (Playwright) pass without modification.
 
 ### Testing
 
 - **Existing integration tests** (Supertest) are the safety net — they validate behavior end-to-end and must pass unchanged.
 - **New repository unit tests** — test each repository function against a real SQLite database (consistent with project testing philosophy: no mocks).
 - **New service unit tests** — test business logic, orchestration, and mapping. Services are tested with real repositories and a real database (same philosophy).
+- **Velocity failure path exception** — the velocity service is injectable so tests can verify that save operations succeed even when velocity tracking fails. This is the one case where a test double is used instead of the real implementation.
 - **Existing e2e tests** (Playwright) must pass unchanged.
 
 ## Future Phases
@@ -238,3 +273,17 @@ As the roadmap adds entities, each gets its own domain folder:
 | 6a (Research) | `sources/` |
 | 6b (Arguments) | `argument-nodes/` |
 | 7 (Polish) | `journal/` |
+
+## Pushback Review Log
+
+Reviewed 2026-04-05. Seven issues found, all resolved:
+
+| # | Issue | Severity | Resolution |
+|---|-------|----------|-----------|
+| 1 | `.returning('*')` unsupported by better-sqlite3 | Critical | Insert + select internally in repository |
+| 2 | `resolveUniqueSlug` domain ownership ambiguous | Serious | Lives in projects repository, imported by chapters service |
+| 3 | Dashboard endpoint crosses domain boundaries | Moderate | Stays in projects service, imports chapter/status repos |
+| 4 | `Knex.Transaction` type leaks into services | Moderate | Accepted as pragmatic trade-off, documented |
+| 5 | Testing velocity failure path needs injection | Moderate | Injectable velocity service for that specific case |
+| 6 | How `db` reaches services unspecified | Minor | Services import singleton from `db/connection.ts` |
+| 7 | Test DB injection breaks with singleton | Minor | `setDb()` function in `connection.ts` for test setup |
