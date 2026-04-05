@@ -149,7 +149,7 @@ export async function restoreChapter(
   const chapter = await ChapterRepo.findDeletedById(db, id);
   if (!chapter) return null;
 
-  const parentProject = await ProjectRepo.findById(db, chapter.project_id as string);
+  const parentProject = await ProjectRepo.findByIdIncludingDeleted(db, chapter.project_id as string);
   if (!parentProject) return "purged";
 
   try {

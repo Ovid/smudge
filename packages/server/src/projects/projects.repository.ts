@@ -13,6 +13,13 @@ export async function findById(
   trx: Knex.Transaction | Knex,
   id: string,
 ): Promise<ProjectRow | undefined> {
+  return trx("projects").where({ id }).whereNull("deleted_at").first();
+}
+
+export async function findByIdIncludingDeleted(
+  trx: Knex.Transaction | Knex,
+  id: string,
+): Promise<ProjectRow | undefined> {
   return trx("projects").where({ id }).first();
 }
 
