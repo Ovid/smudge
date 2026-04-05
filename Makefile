@@ -6,7 +6,14 @@ test: ## Run full test suite (fast, no coverage)
 	npx vitest run
 
 cover: ## Run tests with coverage enforcement
-	npx vitest run --coverage
+	@npx vitest run --coverage || { \
+		echo ""; \
+		echo "════════════════════════════════════════════════════════════════"; \
+		echo "FAILED: Coverage thresholds not met (statements≥95% branches≥85%"; \
+		echo "functions≥90% lines≥95%). See 'ERROR: Coverage for...' above."; \
+		echo "════════════════════════════════════════════════════════════════"; \
+		exit 1; \
+	}
 
 e2e: ## Run Playwright e2e tests (starts dev servers automatically)
 	npx playwright test
