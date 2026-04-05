@@ -158,7 +158,7 @@ export async function updateProject(
         updates.title = parsed.data.title;
         updates.slug = newSlug;
       }
-      await trx("projects").where({ id: project.id }).update(updates);
+      await ProjectRepo.update(trx, project.id, updates);
     });
   } catch (err: unknown) {
     if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {

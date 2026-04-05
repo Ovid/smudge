@@ -167,7 +167,7 @@ export async function restoreChapter(
           updated_at: new Date().toISOString(),
           slug: freshSlug,
         };
-        await trx("projects").where({ id: chapter.project_id }).update(projectUpdate);
+        await ProjectRepo.update(trx, chapter.project_id as string, projectUpdate);
       }
     });
   } catch (err: unknown) {
