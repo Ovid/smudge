@@ -3,7 +3,7 @@ import { beforeAll, afterAll, beforeEach } from "vitest";
 import knex, { type Knex } from "knex";
 import { createTestKnexConfig } from "../db/knexfile";
 import { createApp } from "../app";
-import { setDb } from "../db/connection";
+import { setDb, closeDb } from "../db/connection";
 
 let testDb: Knex;
 let testServer: http.Server;
@@ -21,7 +21,7 @@ export function setupTestDb() {
 
   afterAll(async () => {
     await new Promise<void>((resolve) => testServer.close(() => resolve()));
-    await testDb.destroy();
+    await closeDb();
   });
 
   beforeEach(async () => {
