@@ -1,6 +1,6 @@
 import knex from "knex";
 import { describe, it, expect, afterEach } from "vitest";
-import { initDb, getDb, closeDb, setDb } from "../db/connection";
+import { initDb, getDb, closeDb } from "../db/connection";
 import { createTestKnexConfig } from "../db/knexfile";
 
 describe("db/connection", () => {

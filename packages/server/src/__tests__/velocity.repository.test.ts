@@ -147,7 +147,11 @@ describe("velocity repository", () => {
         save_date: "2026-04-05",
       });
 
-      const events = await VelocityRepo.getRecentSaveEvents(t.db, projectId, "2026-04-03T00:00:00.000Z");
+      const events = await VelocityRepo.getRecentSaveEvents(
+        t.db,
+        projectId,
+        "2026-04-03T00:00:00.000Z",
+      );
       expect(events).toHaveLength(1);
       expect(events[0].word_count).toBe(100);
       expect(events[0].chapter_id).toBe(chapterId);
@@ -155,7 +159,11 @@ describe("velocity repository", () => {
 
     it("returns empty array when no events match", async () => {
       const projectId = await createProject();
-      const events = await VelocityRepo.getRecentSaveEvents(t.db, projectId, "2026-04-05T00:00:00.000Z");
+      const events = await VelocityRepo.getRecentSaveEvents(
+        t.db,
+        projectId,
+        "2026-04-05T00:00:00.000Z",
+      );
       expect(events).toEqual([]);
     });
 
@@ -180,7 +188,11 @@ describe("velocity repository", () => {
         save_date: "2026-04-05",
       });
 
-      const events = await VelocityRepo.getRecentSaveEvents(t.db, projectId, "2026-04-05T00:00:00.000Z");
+      const events = await VelocityRepo.getRecentSaveEvents(
+        t.db,
+        projectId,
+        "2026-04-05T00:00:00.000Z",
+      );
       expect(events).toHaveLength(2);
       expect(events[0].word_count).toBe(100);
       expect(events[1].word_count).toBe(200);

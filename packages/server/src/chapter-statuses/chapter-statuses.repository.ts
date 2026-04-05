@@ -1,9 +1,7 @@
 import type { Knex } from "knex";
 import type { ChapterStatusRow } from "./chapter-statuses.types";
 
-export async function list(
-  trx: Knex.Transaction | Knex,
-): Promise<ChapterStatusRow[]> {
+export async function list(trx: Knex.Transaction | Knex): Promise<ChapterStatusRow[]> {
   return trx("chapter_statuses")
     .orderBy("sort_order", "asc")
     .select("status", "sort_order", "label");
@@ -27,9 +25,7 @@ export async function getStatusLabel(
 export async function getStatusLabelMap(
   trx: Knex.Transaction | Knex,
 ): Promise<Record<string, string>> {
-  const rows = await trx("chapter_statuses")
-    .orderBy("sort_order", "asc")
-    .select("status", "label");
+  const rows = await trx("chapter_statuses").orderBy("sort_order", "asc").select("status", "label");
   return Object.fromEntries(
     rows.map((r: { status: string; label: string }) => [r.status, r.label]),
   );

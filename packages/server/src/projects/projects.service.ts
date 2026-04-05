@@ -113,9 +113,7 @@ export async function updateProject(
   slug: string,
   body: unknown,
 ): Promise<
-  | { project: ProjectRow; validationError?: undefined }
-  | { validationError: string }
-  | null
+  { project: ProjectRow; validationError?: undefined } | { validationError: string } | null
 > {
   const parsed = UpdateProjectSchema.safeParse(body);
   if (!parsed.success) {
@@ -229,12 +227,7 @@ export async function createChapter(
 export async function reorderChapters(
   slug: string,
   body: unknown,
-): Promise<
-  | { success: true }
-  | { validationError: string }
-  | { mismatch: true }
-  | null
-> {
+): Promise<{ success: true } | { validationError: string } | { mismatch: true } | null> {
   const db = getDb();
   const project = await ProjectRepo.findBySlug(db, slug);
   if (!project) return null;
@@ -242,8 +235,7 @@ export async function reorderChapters(
   const parsed = ReorderChaptersSchema.safeParse(body);
   if (!parsed.success) {
     return {
-      validationError:
-        parsed.error.issues[0]?.message ?? "chapter_ids must be an array of UUIDs.",
+      validationError: parsed.error.issues[0]?.message ?? "chapter_ids must be an array of UUIDs.",
     };
   }
   const { chapter_ids } = parsed.data;
@@ -293,10 +285,7 @@ export async function getDashboard(slug: string): Promise<Record<string, unknown
     }
   }
 
-  const totalWordCount = chapters.reduce(
-    (sum, ch) => sum + (ch.word_count as number),
-    0,
-  );
+  const totalWordCount = chapters.reduce((sum, ch) => sum + (ch.word_count as number), 0);
   const updatedAts = chapters.map((ch) => ch.updated_at as string);
   const mostRecentEdit =
     updatedAts.length > 0 ? updatedAts.reduce((a, b) => (a > b ? a : b)) : null;

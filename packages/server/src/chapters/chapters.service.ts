@@ -39,9 +39,7 @@ export function stripCorruptFlag(chapter: Record<string, unknown>): Record<strin
 
 // --- Service functions ---
 
-export async function getChapter(
-  id: string,
-): Promise<Record<string, unknown> | null | "corrupt"> {
+export async function getChapter(id: string): Promise<Record<string, unknown> | null | "corrupt"> {
   const db = getDb();
   const chapter = await ChapterRepo.findById(db, id);
   if (!chapter) return null;
@@ -56,10 +54,7 @@ export async function updateChapter(
   id: string,
   body: unknown,
 ): Promise<
-  | { chapter: Record<string, unknown> }
-  | { validationError: string }
-  | { corrupt: true }
-  | null
+  { chapter: Record<string, unknown> } | { validationError: string } | { corrupt: true } | null
 > {
   const parsed = UpdateChapterSchema.safeParse(body);
   if (!parsed.success) {
@@ -127,7 +122,10 @@ export async function updateChapter(
 
   const updatedStatusLabel = await ChapterStatusRepo.getStatusLabel(db, updated.status);
   return {
-    chapter: { ...(updated as unknown as Record<string, unknown>), status_label: updatedStatusLabel },
+    chapter: {
+      ...(updated as unknown as Record<string, unknown>),
+      status_label: updatedStatusLabel,
+    },
   };
 }
 
@@ -157,7 +155,10 @@ export async function restoreChapter(
   const chapter = await ChapterRepo.findDeletedById(db, id);
   if (!chapter) return null;
 
-  const parentProject = await ProjectRepo.findByIdIncludingDeleted(db, chapter.project_id as string);
+  const parentProject = await ProjectRepo.findByIdIncludingDeleted(
+    db,
+    chapter.project_id as string,
+  );
   if (!parentProject) return "purged";
 
   try {

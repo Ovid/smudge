@@ -1,9 +1,7 @@
 import type { Knex } from "knex";
 import type { SettingRow } from "./settings.types";
 
-export async function listAll(
-  trx: Knex.Transaction | Knex,
-): Promise<SettingRow[]> {
+export async function listAll(trx: Knex.Transaction | Knex): Promise<SettingRow[]> {
   return trx("settings").select("key", "value");
 }
 

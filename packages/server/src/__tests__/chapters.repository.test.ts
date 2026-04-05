@@ -5,7 +5,10 @@ import * as ChapterRepo from "../chapters/chapters.repository";
 
 const t = setupTestDb();
 
-const DOC_JSON = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }] };
+const DOC_JSON = {
+  type: "doc",
+  content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }],
+};
 
 async function createProject(id?: string) {
   const projectId = id ?? uuid();
@@ -157,7 +160,11 @@ describe("chapters repository", () => {
       const projectId = await createProject();
       await createChapter(projectId, { title: "Ch 2", sort_order: 2 });
       await createChapter(projectId, { title: "Ch 1", sort_order: 1 });
-      await createChapter(projectId, { title: "Deleted", sort_order: 3, deleted_at: new Date().toISOString() });
+      await createChapter(projectId, {
+        title: "Deleted",
+        sort_order: 3,
+        deleted_at: new Date().toISOString(),
+      });
 
       const chapters = await ChapterRepo.listByProject(t.db, projectId);
       expect(chapters).toHaveLength(2);
@@ -262,7 +269,11 @@ describe("chapters repository", () => {
     it("excludes deleted chapters from sum", async () => {
       const projectId = await createProject();
       await createChapter(projectId, { word_count: 100, sort_order: 0 });
-      await createChapter(projectId, { word_count: 999, sort_order: 1, deleted_at: new Date().toISOString() });
+      await createChapter(projectId, {
+        word_count: 999,
+        sort_order: 1,
+        deleted_at: new Date().toISOString(),
+      });
 
       const total = await ChapterRepo.sumWordCountByProject(t.db, projectId);
       expect(total).toBe(100);

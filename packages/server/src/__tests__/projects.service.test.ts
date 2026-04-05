@@ -25,9 +25,9 @@ describe("projects.service", () => {
 
     it("throws ProjectTitleExistsError on duplicate title", async () => {
       await createProject({ title: "Duplicate Title", mode: "fiction" });
-      await expect(
-        createProject({ title: "Duplicate Title", mode: "fiction" }),
-      ).rejects.toThrow(ProjectTitleExistsError);
+      await expect(createProject({ title: "Duplicate Title", mode: "fiction" })).rejects.toThrow(
+        ProjectTitleExistsError,
+      );
     });
 
     it("returns validationError for invalid body", async () => {

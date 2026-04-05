@@ -5,7 +5,9 @@ import * as ProjectRepo from "../projects/projects.repository";
 
 const t = setupTestDb();
 
-function makeProject(overrides: Partial<{ id: string; title: string; slug: string; mode: string }> = {}) {
+function makeProject(
+  overrides: Partial<{ id: string; title: string; slug: string; mode: string }> = {},
+) {
   const now = new Date().toISOString();
   return {
     id: overrides.id ?? uuid(),

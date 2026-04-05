@@ -137,7 +137,7 @@ describe("chapters.service", () => {
 
   describe("restoreChapter()", () => {
     it("succeeds even when velocity updateDailySnapshot throws", async () => {
-      const { projectId, chapterId } = await createProjectAndChapter();
+      const { chapterId } = await createProjectAndChapter();
 
       // Soft-delete the chapter so we can restore it
       const now = new Date().toISOString();

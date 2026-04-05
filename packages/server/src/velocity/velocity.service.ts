@@ -287,7 +287,10 @@ export async function getVelocityBySlug(slug: string): Promise<VelocityResponse 
   let preWindowBaselines: Record<string, number> = {};
   try {
     preWindowBaselines = await VelocityRepo.getPreWindowBaselines(
-      db, projectId, chapterIdsInWindow, thirtyDaysAgoStr,
+      db,
+      projectId,
+      chapterIdsInWindow,
+      thirtyDaysAgoStr,
     );
   } catch (err) {
     console.error("Failed to fetch pre-window baselines for session net_words:", err);

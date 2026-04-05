@@ -42,9 +42,7 @@ export async function findByTitle(
   return query.first();
 }
 
-export async function listAll(
-  trx: Knex.Transaction | Knex,
-): Promise<ProjectListRow[]> {
+export async function listAll(trx: Knex.Transaction | Knex): Promise<ProjectListRow[]> {
   const result = await trx("projects")
     .leftJoin("chapters", function () {
       this.on("projects.id", "=", "chapters.project_id").andOnNull("chapters.deleted_at");
@@ -77,10 +75,7 @@ export async function update(
   return trx("projects").where({ id }).first() as Promise<ProjectRow>;
 }
 
-export async function updateTimestamp(
-  trx: Knex.Transaction | Knex,
-  id: string,
-): Promise<void> {
+export async function updateTimestamp(trx: Knex.Transaction | Knex, id: string): Promise<void> {
   await trx("projects").where({ id }).update({ updated_at: new Date().toISOString() });
 }
 

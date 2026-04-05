@@ -33,7 +33,9 @@ export async function queryChapters(
   builder: import("knex").Knex.QueryBuilder,
 ): Promise<Record<string, unknown>[]> {
   const rows = await builder;
-  return rows.map((row: Record<string, unknown>) => parseContent(row) as unknown as Record<string, unknown>);
+  return rows.map(
+    (row: Record<string, unknown>) => parseContent(row) as unknown as Record<string, unknown>,
+  );
 }
 
 // --- Queries ---
@@ -82,15 +84,7 @@ export async function listMetadataByProject(
     .where({ project_id: projectId })
     .whereNull("deleted_at")
     .orderBy("sort_order", "asc")
-    .select(
-      "id",
-      "title",
-      "status",
-      "word_count",
-      "target_word_count",
-      "updated_at",
-      "sort_order",
-    );
+    .select("id", "title", "status", "word_count", "target_word_count", "updated_at", "sort_order");
 }
 
 export async function listDeletedByProject(
@@ -140,9 +134,7 @@ export async function getChapterNamesMap(
   trx: Knex.Transaction | Knex,
   projectId: string,
 ): Promise<Record<string, string>> {
-  const rows = await trx("chapters")
-    .where({ project_id: projectId })
-    .select("id", "title");
+  const rows = await trx("chapters").where({ project_id: projectId }).select("id", "title");
   const map: Record<string, string> = {};
   for (const row of rows) {
     map[row.id] = row.title;
@@ -163,10 +155,7 @@ export async function sumWordCountByProject(
 
 // --- Mutations ---
 
-export async function insert(
-  trx: Knex.Transaction | Knex,
-  data: CreateChapterRow,
-): Promise<void> {
+export async function insert(trx: Knex.Transaction | Knex, data: CreateChapterRow): Promise<void> {
   await trx("chapters").insert(data);
 }
 
@@ -218,10 +207,7 @@ export async function softDeleteByProject(
     .update({ deleted_at: now });
 }
 
-export async function restore(
-  trx: Knex.Transaction | Knex,
-  id: string,
-): Promise<void> {
+export async function restore(trx: Knex.Transaction | Knex, id: string): Promise<void> {
   await trx("chapters")
     .where({ id })
     .update({ deleted_at: null, updated_at: new Date().toISOString() });
