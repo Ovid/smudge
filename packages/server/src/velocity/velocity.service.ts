@@ -218,32 +218,40 @@ export async function recordSave(
   chapterId: string,
   wordCount: number,
 ): Promise<void> {
-  const db = getDb();
-  const today = await getTodayDate();
   try {
-    await VelocityRepo.insertSaveEvent(db, chapterId, projectId, wordCount, today);
+    const db = getDb();
+    const today = await getTodayDate();
+    try {
+      await VelocityRepo.insertSaveEvent(db, chapterId, projectId, wordCount, today);
+    } catch (err) {
+      console.error(
+        `Failed to insert save event for chapter=${chapterId} project=${projectId}:`,
+        err,
+      );
+    }
+    try {
+      const totalWordCount = await ChapterRepo.sumWordCountByProject(db, projectId);
+      await VelocityRepo.upsertDailySnapshot(db, projectId, today, totalWordCount);
+    } catch (err) {
+      console.error(`Failed to upsert daily snapshot for project=${projectId}:`, err);
+    }
   } catch (err) {
-    console.error(
-      `Failed to insert save event for chapter=${chapterId} project=${projectId}:`,
-      err,
-    );
-  }
-  try {
-    const totalWordCount = await ChapterRepo.sumWordCountByProject(db, projectId);
-    await VelocityRepo.upsertDailySnapshot(db, projectId, today, totalWordCount);
-  } catch (err) {
-    console.error(`Failed to upsert daily snapshot for project=${projectId}:`, err);
+    console.error(`Velocity recordSave failed for project=${projectId}:`, err);
   }
 }
 
 export async function updateDailySnapshot(projectId: string): Promise<void> {
-  const db = getDb();
-  const today = await getTodayDate();
   try {
-    const totalWordCount = await ChapterRepo.sumWordCountByProject(db, projectId);
-    await VelocityRepo.upsertDailySnapshot(db, projectId, today, totalWordCount);
+    const db = getDb();
+    const today = await getTodayDate();
+    try {
+      const totalWordCount = await ChapterRepo.sumWordCountByProject(db, projectId);
+      await VelocityRepo.upsertDailySnapshot(db, projectId, today, totalWordCount);
+    } catch (err) {
+      console.error(`Failed to upsert daily snapshot for project=${projectId}:`, err);
+    }
   } catch (err) {
-    console.error(`Failed to upsert daily snapshot for project=${projectId}:`, err);
+    console.error(`Velocity updateDailySnapshot failed for project=${projectId}:`, err);
   }
 }
 
