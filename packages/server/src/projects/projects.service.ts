@@ -119,7 +119,7 @@ export async function getProject(
   const statusLabelMap = await ChapterStatusRepo.getStatusLabelMap(db);
 
   const chaptersWithLabels = chapters.map((ch) => {
-    const { content_corrupt: _, ...rest } = ch as ChapterRow & { content_corrupt?: boolean };
+    const { content_corrupt: _, ...rest } = ch;
     return {
       ...rest,
       status_label: statusLabelMap[ch.status] ?? ch.status,
@@ -241,9 +241,10 @@ export async function createChapter(
   const chapter = await ChapterRepo.findById(db, chapterId);
   if (!chapter) return null;
 
+  const { content_corrupt: _, ...rest } = chapter;
   const statusLabelMap = await ChapterStatusRepo.getStatusLabelMap(db);
   return {
-    ...chapter,
+    ...rest,
     status_label: statusLabelMap[chapter.status] ?? chapter.status,
   };
 }

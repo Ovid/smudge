@@ -56,7 +56,7 @@ describe("chapters.service", () => {
     });
 
     it("returns false when content_corrupt is absent", () => {
-      expect(isCorruptChapter({ id: "abc" })).toBe(false);
+      expect(isCorruptChapter({})).toBe(false);
     });
 
     it("returns false when content_corrupt is false", () => {

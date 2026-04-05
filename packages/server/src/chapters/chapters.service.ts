@@ -28,7 +28,7 @@ function getVelocityService(): VelocityServiceInterface {
 
 // --- Helpers ---
 
-export function isCorruptChapter(chapter: Record<string, unknown>): boolean {
+export function isCorruptChapter(chapter: { content_corrupt?: boolean }): boolean {
   return chapter.content_corrupt === true;
 }
 
@@ -44,7 +44,7 @@ export async function getChapter(id: string): Promise<Record<string, unknown> | 
   const chapter = await ChapterRepo.findById(db, id);
   if (!chapter) return null;
 
-  if (isCorruptChapter(chapter as unknown as Record<string, unknown>)) return "corrupt";
+  if (isCorruptChapter(chapter)) return "corrupt";
 
   const status_label = await ChapterStatusRepo.getStatusLabel(db, chapter.status);
   return { ...(chapter as unknown as Record<string, unknown>), status_label };
@@ -115,7 +115,7 @@ export async function updateChapter(
   // Only check corruption when content was part of the update
   if (
     parsed.data.content !== undefined &&
-    isCorruptChapter(updated as unknown as Record<string, unknown>)
+    isCorruptChapter(updated)
   ) {
     return { corrupt: true };
   }
