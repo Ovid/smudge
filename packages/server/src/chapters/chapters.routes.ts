@@ -103,6 +103,15 @@ export function chaptersRouter(): Router {
         });
         return;
       }
+      if (result === "read_failure") {
+        res.status(500).json({
+          error: {
+            code: "RESTORE_READ_FAILURE",
+            message: "Chapter was restored but could not be re-read.",
+          },
+        });
+        return;
+      }
       res.json(result);
     }),
   );

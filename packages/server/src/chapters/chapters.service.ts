@@ -153,7 +153,7 @@ export async function deleteChapter(id: string): Promise<boolean> {
 
 export async function restoreChapter(
   id: string,
-): Promise<RestoredChapterResponse | null | "purged" | "conflict"> {
+): Promise<RestoredChapterResponse | null | "purged" | "conflict" | "read_failure"> {
   const db = getDb();
   const chapter = await ChapterRepo.findDeletedById(db, id);
   if (!chapter) return null;
@@ -196,7 +196,7 @@ export async function restoreChapter(
   }
 
   const restored = await ChapterRepo.findById(db, id);
-  if (!restored) return null;
+  if (!restored) return "read_failure";
 
   const { content_corrupt: _, ...rest } = restored;
   const updatedProject = await ProjectRepo.findById(db, chapter.project_id);
