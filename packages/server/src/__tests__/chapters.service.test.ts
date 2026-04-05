@@ -6,6 +6,7 @@ import {
   resetVelocityService,
   updateChapter,
   deleteChapter,
+  restoreChapter,
   getChapter,
   isCorruptChapter,
   stripCorruptFlag,
@@ -131,6 +132,31 @@ describe("chapters.service", () => {
     it("returns false for a non-existent chapter", async () => {
       const result = await deleteChapter(uuid());
       expect(result).toBe(false);
+    });
+  });
+
+  describe("restoreChapter()", () => {
+    it("succeeds even when velocity updateDailySnapshot throws", async () => {
+      const { projectId, chapterId } = await createProjectAndChapter();
+
+      // Soft-delete the chapter so we can restore it
+      const now = new Date().toISOString();
+      await t.db("chapters").where({ id: chapterId }).update({ deleted_at: now });
+
+      setVelocityService({
+        recordSave: async () => {
+          throw new Error("velocity broken");
+        },
+        updateDailySnapshot: async () => {
+          throw new Error("velocity broken");
+        },
+      });
+
+      const result = await restoreChapter(chapterId);
+      expect(result).toBeDefined();
+      expect(result).not.toBeNull();
+      expect(result).not.toBe("purged");
+      expect(result).not.toBe("conflict");
     });
   });
 
