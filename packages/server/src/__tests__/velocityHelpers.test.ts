@@ -1,25 +1,20 @@
-import { describe, it, expect, vi } from "vitest";
-import { insertSaveEvent, upsertDailySnapshot } from "../routes/velocityHelpers";
-import { calculateProjection } from "../routes/velocity";
+import { describe, it, expect } from "vitest";
+import { insertSaveEvent, upsertDailySnapshot } from "../velocity/velocity.repository";
+import { calculateProjection } from "../velocity/velocity.service";
 
 describe("insertSaveEvent error handling", () => {
-  it("logs error and does not throw when insert fails", async () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("throws when insert fails (error handling moved to service layer)", async () => {
     const fakeDb = (() => {
       throw new Error("DB write failed");
     }) as unknown as import("knex").Knex;
-    await expect(insertSaveEvent(fakeDb, "ch1", "p1", 100, "2026-04-03")).resolves.toBeUndefined();
-    expect(spy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to insert save event"),
-      expect.any(Error),
+    await expect(insertSaveEvent(fakeDb, "ch1", "p1", 100, "2026-04-03")).rejects.toThrow(
+      "DB write failed",
     );
-    spy.mockRestore();
   });
 });
 
 describe("upsertDailySnapshot error handling", () => {
-  it("logs error and does not throw when upsert fails", async () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("throws when upsert fails (error handling moved to service layer)", async () => {
     const fakeDb = Object.assign(
       () => ({ where: () => ({ first: () => Promise.resolve(null) }) }),
       {
@@ -28,12 +23,9 @@ describe("upsertDailySnapshot error handling", () => {
         },
       },
     ) as unknown as import("knex").Knex;
-    await expect(upsertDailySnapshot(fakeDb, "p1", "2026-04-03")).resolves.toBeUndefined();
-    expect(spy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to upsert daily snapshot"),
-      expect.any(Error),
+    await expect(upsertDailySnapshot(fakeDb, "p1", "2026-04-03", 0)).rejects.toThrow(
+      "DB write failed",
     );
-    spy.mockRestore();
   });
 });
 

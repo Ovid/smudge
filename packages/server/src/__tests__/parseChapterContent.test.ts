@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import request from "supertest";
-import { parseChapterContent } from "../routes/parseChapterContent";
-import { queryChapter, queryChapters } from "../routes/chapterQueries";
+import { parseChapterContent, queryChapter, queryChapters } from "../chapters/chapters.repository";
 import { setupTestDb } from "./test-helpers";
 
 describe("parseChapterContent", () => {

@@ -27,7 +27,7 @@ async function main() {
     );
   }
 
-  const app = createApp(db);
+  const app = createApp();
 
   const server = app.listen(PORT, () => {
     console.log(`Smudge server running on http://localhost:${PORT}`);

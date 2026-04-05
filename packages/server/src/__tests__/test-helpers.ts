@@ -14,7 +14,7 @@ export function setupTestDb() {
     await testDb.raw("PRAGMA foreign_keys = ON");
     await testDb.migrate.latest();
     setDb(testDb);
-    const app = createApp(testDb);
+    const app = createApp();
     testServer = app.listen(0);
     await new Promise<void>((resolve) => testServer.on("listening", resolve));
   });

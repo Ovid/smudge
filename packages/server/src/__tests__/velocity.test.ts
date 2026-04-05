@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
 import { v4 as uuid } from "uuid";
-import { safeTimezone } from "../routes/velocityHelpers";
+import { safeTimezone } from "../velocity/velocity.service";
 
 describe("safeTimezone", () => {
   it("returns the timezone unchanged when valid", () => {

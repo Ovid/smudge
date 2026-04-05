@@ -1,9 +1,8 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
-import type { Knex } from "knex";
 import helmet from "helmet";
-import { projectsRouter } from "./routes/projects";
-import { chaptersRouter } from "./routes/chapters";
+import { projectsRouter } from "./projects/projects.routes";
+import { chaptersRouter } from "./chapters/chapters.routes";
 import { chapterStatusesRouter } from "./chapter-statuses/chapter-statuses.routes";
 import { settingsRouter } from "./settings/settings.routes";
 
@@ -15,7 +14,7 @@ export function asyncHandler(
   };
 }
 
-export function createApp(db: Knex): express.Express {
+export function createApp(): express.Express {
   const app = express();
 
   app.use(
@@ -35,8 +34,8 @@ export function createApp(db: Knex): express.Express {
   );
   app.use(express.json({ limit: "5mb" }));
 
-  app.use("/api/projects", projectsRouter(db));
-  app.use("/api/chapters", chaptersRouter(db));
+  app.use("/api/projects", projectsRouter());
+  app.use("/api/chapters", chaptersRouter());
   app.use("/api/chapter-statuses", chapterStatusesRouter());
   app.use("/api/settings", settingsRouter());
 
@@ -44,13 +43,11 @@ export function createApp(db: Knex): express.Express {
     res.json({ status: "ok" });
   });
 
-  // Global error handler — consistent JSON envelope for unhandled errors
   app.use(
     (
       err: Error & { status?: number; statusCode?: number },
       _req: express.Request,
       res: express.Response,
-
       _next: express.NextFunction,
     ) => {
       console.error(err);

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { setupTestDb } from "./test-helpers";
-import { resolveUniqueSlug } from "../routes/resolve-slug";
+import { resolveUniqueSlug } from "../projects/projects.repository";
 
 const t = setupTestDb();
 
