@@ -50,7 +50,11 @@ export async function insertSaveEvent(
   }
 }
 
-export async function upsertDailySnapshot(db: Knex, projectId: string, today: string): Promise<void> {
+export async function upsertDailySnapshot(
+  db: Knex,
+  projectId: string,
+  today: string,
+): Promise<void> {
   try {
     const result = await db("chapters")
       .where({ project_id: projectId })
