@@ -185,14 +185,8 @@ export function calculateProjection(
 
 // --- Timezone helper ---
 
-export function safeTimezone(tz: string): string {
-  try {
-    Intl.DateTimeFormat("en-CA", { timeZone: tz });
-    return tz;
-  } catch {
-    return "UTC";
-  }
-}
+import { safeTimezone } from "../timezone";
+export { safeTimezone };
 
 export async function getTodayDate(): Promise<string> {
   const db = getDb();

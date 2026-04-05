@@ -1,15 +1,9 @@
 import { getDb } from "../db/connection";
 import * as SettingsRepo from "./settings.repository";
+import { isValidTimezone } from "../timezone";
 
 const SETTING_VALIDATORS: Record<string, (value: string) => boolean> = {
-  timezone: (value) => {
-    try {
-      Intl.DateTimeFormat("en-CA", { timeZone: value });
-      return true;
-    } catch {
-      return false;
-    }
-  },
+  timezone: isValidTimezone,
 };
 
 export async function getAll(): Promise<Record<string, string>> {
