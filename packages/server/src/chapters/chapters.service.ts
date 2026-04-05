@@ -4,7 +4,7 @@ import * as ChapterRepo from "./chapters.repository";
 import * as ProjectRepo from "../projects/projects.repository";
 import * as ChapterStatusRepo from "../chapter-statuses/chapter-statuses.repository";
 import * as VelocityService from "../velocity/velocity.service";
-import type { ChapterRow, ChapterWithLabel, RestoredChapterResponse } from "./chapters.types";
+import type { ChapterWithLabel, RestoredChapterResponse } from "./chapters.types";
 
 // --- Injectable velocity service for testing ---
 
@@ -55,9 +55,7 @@ export async function getChapter(id: string): Promise<ChapterWithLabel | null | 
 export async function updateChapter(
   id: string,
   body: unknown,
-): Promise<
-  { chapter: ChapterWithLabel } | { validationError: string } | { corrupt: true } | null
-> {
+): Promise<{ chapter: ChapterWithLabel } | { validationError: string } | { corrupt: true } | null> {
   const parsed = UpdateChapterSchema.safeParse(body);
   if (!parsed.success) {
     return { validationError: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -101,11 +99,7 @@ export async function updateChapter(
   if (parsed.data.content !== undefined) {
     try {
       const svc = getVelocityService();
-      await svc.recordSave(
-        chapter.project_id,
-        chapter.id,
-        updates.word_count as number,
-      );
+      await svc.recordSave(chapter.project_id, chapter.id, updates.word_count as number);
     } catch {
       // Velocity tracking is best-effort; save must still succeed
     }
@@ -115,10 +109,7 @@ export async function updateChapter(
   if (!updated) return null;
 
   // Only check corruption when content was part of the update
-  if (
-    parsed.data.content !== undefined &&
-    isCorruptChapter(updated)
-  ) {
+  if (parsed.data.content !== undefined && isCorruptChapter(updated)) {
     return { corrupt: true };
   }
 
@@ -158,10 +149,7 @@ export async function restoreChapter(
   const chapter = await ChapterRepo.findDeletedById(db, id);
   if (!chapter) return null;
 
-  const parentProject = await ProjectRepo.findByIdIncludingDeleted(
-    db,
-    chapter.project_id,
-  );
+  const parentProject = await ProjectRepo.findByIdIncludingDeleted(db, chapter.project_id);
   if (!parentProject) return "purged";
 
   try {

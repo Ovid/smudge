@@ -12,7 +12,11 @@ import * as ChapterRepo from "../chapters/chapters.repository";
 import * as ChapterStatusRepo from "../chapter-statuses/chapter-statuses.repository";
 import * as VelocityService from "../velocity/velocity.service";
 import type { ProjectRow, ProjectListRow } from "./projects.types";
-import type { ChapterRow, ChapterWithLabel, ChapterMetadataRow, DeletedChapterRow } from "../chapters/chapters.types";
+import type {
+  ChapterWithLabel,
+  ChapterMetadataRow,
+  DeletedChapterRow,
+} from "../chapters/chapters.types";
 
 // --- Dashboard types ---
 

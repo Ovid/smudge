@@ -90,7 +90,15 @@ export async function listMetadataByProject(
     .where({ project_id: projectId })
     .whereNull("deleted_at")
     .orderBy("sort_order", "asc")
-    .select("id", "title", "status", "word_count", "target_word_count", "updated_at", "sort_order") as Promise<ChapterMetadataRow[]>;
+    .select(
+      "id",
+      "title",
+      "status",
+      "word_count",
+      "target_word_count",
+      "updated_at",
+      "sort_order",
+    ) as Promise<ChapterMetadataRow[]>;
 }
 
 export async function listDeletedByProject(
