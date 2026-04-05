@@ -172,6 +172,86 @@ describe("VelocityView", () => {
     spy.mockRestore();
   });
 
+  it("renders session from yesterday with correct label", async () => {
+    vi.mocked(api.projects.velocity).mockResolvedValue({
+      ...mockVelocity,
+      sessions: [
+        {
+          start: "2026-03-31T10:00:00Z",
+          end: "2026-03-31T11:30:00Z",
+          duration_minutes: 90,
+          chapters_touched: ["ch1"],
+          net_words: -200,
+        },
+      ],
+    });
+    render(<VelocityView slug="test" />);
+    await waitFor(() => {
+      expect(screen.getByText(/yesterday/i)).toBeInTheDocument();
+      // Negative net_words should not have a "+" prefix
+      expect(screen.getByText(/-200/)).toBeInTheDocument();
+    });
+  });
+
+  it("renders session from earlier date with short date label", async () => {
+    vi.mocked(api.projects.velocity).mockResolvedValue({
+      ...mockVelocity,
+      sessions: [
+        {
+          start: "2026-03-20T09:00:00Z",
+          end: "2026-03-20T10:00:00Z",
+          duration_minutes: 60,
+          chapters_touched: ["ch1"],
+          net_words: 500,
+        },
+      ],
+    });
+    render(<VelocityView slug="test" />);
+    await waitFor(() => {
+      // Should show short date like "Mar 20" instead of "Today" or "Yesterday"
+      expect(screen.getByText(/Mar 20/)).toBeInTheDocument();
+    });
+  });
+
+  it("renders session with duration 0 as 'less than 1 min'", async () => {
+    vi.mocked(api.projects.velocity).mockResolvedValue({
+      ...mockVelocity,
+      sessions: [
+        {
+          start: "2026-04-01T14:00:00Z",
+          end: "2026-04-01T14:00:30Z",
+          duration_minutes: 0,
+          chapters_touched: ["ch1"],
+          net_words: 10,
+        },
+      ],
+    });
+    render(<VelocityView slug="test" />);
+    await waitFor(() => {
+      expect(screen.getByText(/< 1 min/)).toBeInTheDocument();
+    });
+  });
+
+  it("renders unknown chapter name for unrecognized chapter ID", async () => {
+    vi.mocked(api.projects.velocity).mockResolvedValue({
+      ...mockVelocity,
+      sessions: [
+        {
+          start: "2026-04-01T14:00:00Z",
+          end: "2026-04-01T15:00:00Z",
+          duration_minutes: 60,
+          chapters_touched: ["unknown-id"],
+          net_words: 100,
+        },
+      ],
+      chapter_names: {},
+    });
+    render(<VelocityView slug="test" />);
+    await waitFor(() => {
+      expect(screen.getByText(/Untitled/)).toBeInTheDocument();
+    });
+  });
+
   it("shows loading state initially", () => {
     vi.mocked(api.projects.velocity).mockReturnValue(new Promise(() => {})); // never resolves
     render(<VelocityView slug="test" />);
