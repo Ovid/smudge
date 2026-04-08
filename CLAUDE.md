@@ -24,10 +24,19 @@ Smudge is a web-based writing application for long-form fiction and non-fiction,
 ```
 packages/
   shared/       # Types, Zod schemas, countWords() — imported by both server and client
-  server/       # Express API, routes/, db/, migrations/
+  server/       # Express API, domain modules, db/, migrations/
+    src/
+      projects/           # routes, service, repository, types
+      chapters/           # routes, service, repository, types
+      velocity/           # routes, service, repository, types, injectable
+      settings/           # routes, service, repository, types
+      chapter-statuses/   # routes, service, repository, types
+      db/                 # connection singleton, migrations/
   client/       # React SPA, components/, hooks/, pages/, api/, strings.ts
 e2e/            # Playwright tests
 ```
+
+**Architecture:** Routes → Services → Repositories. Routes handle HTTP; services handle business logic and transactions; repositories encapsulate all SQL/Knex.
 
 ## Build & Run Commands (Target)
 
@@ -103,7 +112,14 @@ This is a first-class design constraint, not optional:
 
 ## Data Model
 
-Two tables: **Project** (id, title, mode, created_at, updated_at, deleted_at) and **Chapter** (id, project_id, title, content as TipTap JSON, sort_order, word_count, created_at, updated_at, deleted_at). Both use UUID primary keys.
+Six tables, all using UUID primary keys (except `settings` and `chapter_statuses`):
+
+- **projects** — id, title, slug, mode, target_word_count, target_deadline, completion_threshold, created_at, updated_at, deleted_at
+- **chapters** — id, project_id (FK), title, content (TipTap JSON), sort_order, word_count, target_word_count, status, created_at, updated_at, deleted_at
+- **chapter_statuses** — status (PK), sort_order, label. Seed data; defines the chapter workflow statuses.
+- **settings** — key (PK), value. Key-value store for app settings (e.g., timezone).
+- **save_events** — id, chapter_id (FK, nullable for purged chapters), project_id (FK), word_count, saved_at, save_date. Records each auto-save for velocity tracking.
+- **daily_snapshots** — id, project_id (FK), date, total_word_count, created_at. One row per project per day; upserted on each save.
 
 ## Testing Philosophy
 
