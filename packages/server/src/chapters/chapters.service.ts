@@ -179,7 +179,7 @@ export async function restoreChapter(
       }
     });
   } catch (err: unknown) {
-    if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
+    if ((err as Record<string, unknown>).code === "SQLITE_CONSTRAINT_UNIQUE") {
       // Slug collision when restoring the parent project — a different
       // active project now occupies the slug. Report as a conflict so the
       // route can return an appropriate error to the client.
