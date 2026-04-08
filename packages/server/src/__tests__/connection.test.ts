@@ -64,6 +64,7 @@ describe("db/connection", () => {
     const customDb = knex(createTestKnexConfig());
     await setDb(customDb);
     expect(getDb()).toBe(customDb);
-    await customDb.destroy();
+    // Let afterEach/closeDb() own destruction — setDb stored this
+    // in the module singleton, so destroying here would double-destroy.
   });
 });
