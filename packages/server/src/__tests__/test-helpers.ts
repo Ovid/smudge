@@ -11,9 +11,8 @@ let testServer: http.Server;
 export function setupTestDb() {
   beforeAll(async () => {
     testDb = knex(createTestKnexConfig());
-    await testDb.raw("PRAGMA foreign_keys = ON");
     await testDb.migrate.latest();
-    setDb(testDb);
+    await setDb(testDb);
     const app = createApp();
     testServer = app.listen(0);
     await new Promise<void>((resolve) => testServer.on("listening", resolve));

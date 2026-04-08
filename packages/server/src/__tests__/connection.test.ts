@@ -62,7 +62,7 @@ describe("db/connection", () => {
     const { closeDb, setDb, getDb } = await import("../db/connection");
     await closeDb();
     const customDb = knex(createTestKnexConfig());
-    setDb(customDb);
+    await setDb(customDb);
     expect(getDb()).toBe(customDb);
     await customDb.destroy();
   });

@@ -10,8 +10,9 @@ export function getDb(): Knex {
   return db;
 }
 
-export function setDb(instance: Knex): void {
+export async function setDb(instance: Knex): Promise<void> {
   db = instance;
+  await db.raw("PRAGMA foreign_keys = ON");
 }
 
 export async function initDb(config?: Knex.Config): Promise<Knex> {
