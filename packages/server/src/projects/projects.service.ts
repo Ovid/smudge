@@ -68,7 +68,7 @@ export async function createProject(
   const chapterId = uuid();
   const now = new Date().toISOString();
 
-  await db.transaction(async (trx) => {
+  const project = await db.transaction(async (trx) => {
     const existing = await ProjectRepo.findByTitle(trx, title);
     if (existing) {
       throw new ProjectTitleExistsError();
@@ -76,7 +76,7 @@ export async function createProject(
 
     const slug = await ProjectRepo.resolveUniqueSlug(trx, generateSlug(title));
 
-    await ProjectRepo.insert(trx, {
+    const inserted = await ProjectRepo.insert(trx, {
       id: projectId,
       title,
       slug,
@@ -95,12 +95,10 @@ export async function createProject(
       created_at: now,
       updated_at: now,
     });
+
+    return inserted;
   });
 
-  const project = await ProjectRepo.findById(db, projectId);
-  if (!project) {
-    throw new Error(`Project ${projectId} not found after insert`);
-  }
   return { project };
 }
 
