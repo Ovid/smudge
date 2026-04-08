@@ -58,6 +58,15 @@ export interface RestoredChapterResponse extends ChapterWithLabel {
   project_slug: string | undefined;
 }
 
+export interface UpdateChapterData {
+  title?: string;
+  content?: string;
+  word_count?: number;
+  target_word_count?: number | null;
+  status?: string;
+  updated_at: string;
+}
+
 export interface CreateChapterRow {
   id: string;
   project_id: string;

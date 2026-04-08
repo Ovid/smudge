@@ -5,6 +5,7 @@ import type {
   ChapterMetadataRow,
   DeletedChapterRow,
   CreateChapterRow,
+  UpdateChapterData,
 } from "./chapters.types";
 
 // --- Content parsing ---
@@ -188,7 +189,7 @@ export async function getMaxSortOrder(
 export async function update(
   trx: Knex.Transaction | Knex,
   id: string,
-  updates: Record<string, unknown>,
+  updates: UpdateChapterData,
 ): Promise<number> {
   return trx("chapters").where({ id }).whereNull("deleted_at").update(updates);
 }

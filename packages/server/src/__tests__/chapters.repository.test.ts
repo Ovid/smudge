@@ -314,7 +314,10 @@ describe("chapters repository", () => {
       const projectId = await createProject();
       const chapterId = await createChapter(projectId, { title: "Original" });
 
-      const affected = await ChapterRepo.update(t.db, chapterId, { title: "Updated" });
+      const affected = await ChapterRepo.update(t.db, chapterId, {
+        title: "Updated",
+        updated_at: new Date().toISOString(),
+      });
       expect(affected).toBe(1);
 
       const found = await ChapterRepo.findById(t.db, chapterId);
@@ -328,7 +331,10 @@ describe("chapters repository", () => {
         deleted_at: new Date().toISOString(),
       });
 
-      const affected = await ChapterRepo.update(t.db, chapterId, { title: "Should Not Apply" });
+      const affected = await ChapterRepo.update(t.db, chapterId, {
+        title: "Should Not Apply",
+        updated_at: new Date().toISOString(),
+      });
       expect(affected).toBe(0);
 
       // Verify the row is unchanged

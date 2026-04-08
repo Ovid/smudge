@@ -1,5 +1,5 @@
 import type { Knex } from "knex";
-import type { ProjectRow, CreateProjectRow, ProjectListRow } from "./projects.types";
+import type { ProjectRow, CreateProjectRow, ProjectListRow, UpdateProjectData } from "./projects.types";
 
 export async function insert(
   trx: Knex.Transaction | Knex,
@@ -79,7 +79,7 @@ export async function listAll(trx: Knex.Transaction | Knex): Promise<ProjectList
 export async function update(
   trx: Knex.Transaction | Knex,
   id: string,
-  data: Record<string, unknown>,
+  data: UpdateProjectData,
 ): Promise<ProjectRow> {
   await trx("projects").where({ id }).update(data);
   const row = await trx("projects").where({ id }).first();

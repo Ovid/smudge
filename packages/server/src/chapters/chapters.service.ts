@@ -8,7 +8,12 @@ import {
   setVelocityService,
   resetVelocityService,
 } from "../velocity/velocity.injectable";
-import type { ChapterRow, ChapterWithLabel, RestoredChapterResponse } from "./chapters.types";
+import type {
+  ChapterRow,
+  ChapterWithLabel,
+  RestoredChapterResponse,
+  UpdateChapterData,
+} from "./chapters.types";
 
 export { setVelocityService, resetVelocityService };
 
@@ -56,7 +61,7 @@ export async function updateChapter(
   const chapter = await ChapterRepo.findByIdRaw(db, id);
   if (!chapter) return null;
 
-  const updates: Record<string, unknown> = {
+  const updates: UpdateChapterData = {
     updated_at: new Date().toISOString(),
   };
 
@@ -158,12 +163,11 @@ export async function restoreChapter(
           generateSlug(parentProject.title),
           parentProject.id,
         );
-        const projectUpdate: Record<string, unknown> = {
+        await ProjectRepo.update(trx, chapter.project_id, {
           deleted_at: null,
           updated_at: now,
           slug: freshSlug,
-        };
-        await ProjectRepo.update(trx, chapter.project_id, projectUpdate);
+        });
       }
     });
   } catch (err: unknown) {

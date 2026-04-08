@@ -194,6 +194,7 @@ describe("projects repository", () => {
       const updated = await ProjectRepo.update(t.db, data.id, {
         title: "Updated Title",
         slug: "updated-title",
+        updated_at: new Date().toISOString(),
       });
       expect(updated.title).toBe("Updated Title");
       expect(updated.slug).toBe("updated-title");

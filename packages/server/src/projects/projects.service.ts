@@ -16,7 +16,7 @@ import {
   setVelocityService,
   resetVelocityService,
 } from "../velocity/velocity.injectable";
-import type { ProjectRow, ProjectListRow } from "./projects.types";
+import type { ProjectRow, ProjectListRow, UpdateProjectData } from "./projects.types";
 import type {
   ChapterWithLabel,
   ChapterMetadataRow,
@@ -145,7 +145,7 @@ export async function updateProject(
   const project = await ProjectRepo.findBySlug(db, slug);
   if (!project) return null;
 
-  const updates: Record<string, unknown> = {
+  const updates: UpdateProjectData = {
     updated_at: new Date().toISOString(),
   };
 
