@@ -90,8 +90,8 @@ main().catch((err: unknown) => {
     typeof (err as Record<string, unknown>).code === "string" &&
     (err as Record<string, unknown>).code?.toString().startsWith("SQLITE_IOERR")
   ) {
-    console.error("Database file is corrupt or has stale WAL files.");
-    console.error("Run 'make clean' to reset, or manually delete packages/server/data/smudge.db*");
+    console.error("SQLite I/O error — possible causes: corrupt database, stale WAL files, disk full, or permission issues.");
+    console.error("Check disk space and file permissions first. If the problem persists, run 'make clean' to reset the database.");
   } else {
     console.error("Failed to start server:", err);
   }
