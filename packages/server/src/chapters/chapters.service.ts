@@ -162,6 +162,7 @@ export async function restoreChapter(
     await db.transaction(async (trx) => {
       const maxSort = await ChapterRepo.getMaxSortOrder(trx, chapter.project_id);
       await ChapterRepo.restore(trx, id, maxSort + 1);
+      await ProjectRepo.updateTimestamp(trx, chapter.project_id);
 
       if (parentProject.deleted_at) {
         const freshSlug = await ProjectRepo.resolveUniqueSlug(
