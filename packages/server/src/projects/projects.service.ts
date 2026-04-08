@@ -223,7 +223,7 @@ export async function deleteProject(slug: string): Promise<boolean> {
 
 export async function createChapter(
   slug: string,
-): Promise<ChapterWithLabel | null | "project_not_found"> {
+): Promise<ChapterWithLabel | "project_not_found" | "read_after_create_failure"> {
   const db = getDb();
   const project = await ProjectRepo.findBySlug(db, slug);
   if (!project) return "project_not_found";
@@ -247,7 +247,7 @@ export async function createChapter(
   });
 
   const chapter = await ChapterRepo.findById(db, chapterId);
-  if (!chapter) return null;
+  if (!chapter) return "read_after_create_failure";
 
   const clean = stripCorruptFlag(chapter);
   const statusLabelMap = await ChapterStatusRepo.getStatusLabelMap(db);

@@ -100,9 +100,12 @@ export function projectsRouter(): Router {
         });
         return;
       }
-      if (!result) {
+      if (result === "read_after_create_failure") {
         res.status(500).json({
-          error: { code: "INTERNAL_ERROR", message: "Failed to retrieve created chapter." },
+          error: {
+            code: "READ_AFTER_CREATE_FAILURE",
+            message: "Chapter was created but could not be retrieved. Do not retry.",
+          },
         });
         return;
       }
