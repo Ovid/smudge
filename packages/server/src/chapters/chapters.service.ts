@@ -140,12 +140,14 @@ export async function restoreChapter(
   const chapter = await ChapterRepo.findDeletedById(db, id);
   if (!chapter) return null;
 
-  const parentProject = await ProjectRepo.findByIdIncludingDeleted(db, chapter.project_id);
-  if (!parentProject) return "purged";
-
   try {
     const now = new Date().toISOString();
     await db.transaction(async (trx) => {
+      const parentProject = await ProjectRepo.findByIdIncludingDeleted(trx, chapter.project_id);
+      if (!parentProject) {
+        throw new Error("PARENT_PURGED");
+      }
+
       const maxSort = await ChapterRepo.getMaxSortOrder(trx, chapter.project_id);
       await ChapterRepo.restore(trx, id, maxSort + 1, now);
       await ProjectRepo.updateTimestamp(trx, chapter.project_id);
@@ -165,6 +167,9 @@ export async function restoreChapter(
       }
     });
   } catch (err: unknown) {
+    if (err instanceof Error && err.message === "PARENT_PURGED") {
+      return "purged";
+    }
     if ((err as Record<string, unknown>).code === "SQLITE_CONSTRAINT_UNIQUE") {
       // Slug collision when restoring the parent project — a different
       // active project now occupies the slug. Report as a conflict so the
