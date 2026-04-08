@@ -221,8 +221,12 @@ export async function softDeleteByProject(
     .update({ deleted_at: now });
 }
 
-export async function restore(trx: Knex.Transaction | Knex, id: string): Promise<void> {
+export async function restore(
+  trx: Knex.Transaction | Knex,
+  id: string,
+  sortOrder: number,
+): Promise<void> {
   await trx("chapters")
     .where({ id })
-    .update({ deleted_at: null, updated_at: new Date().toISOString() });
+    .update({ deleted_at: null, sort_order: sortOrder, updated_at: new Date().toISOString() });
 }
