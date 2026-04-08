@@ -64,45 +64,38 @@ export async function createProject(
   const { title, mode } = parsed.data;
   const db = getDb();
 
-  const existing = await ProjectRepo.findByTitle(db, title);
-  if (existing) {
-    throw new ProjectTitleExistsError();
-  }
-
   const projectId = uuid();
   const chapterId = uuid();
   const now = new Date().toISOString();
 
-  try {
-    await db.transaction(async (trx) => {
-      const slug = await ProjectRepo.resolveUniqueSlug(trx, generateSlug(title));
+  await db.transaction(async (trx) => {
+    const existing = await ProjectRepo.findByTitle(trx, title);
+    if (existing) {
+      throw new ProjectTitleExistsError();
+    }
 
-      await ProjectRepo.insert(trx, {
-        id: projectId,
-        title,
-        slug,
-        mode,
-        created_at: now,
-        updated_at: now,
-      });
+    const slug = await ProjectRepo.resolveUniqueSlug(trx, generateSlug(title));
 
-      await ChapterRepo.insert(trx, {
-        id: chapterId,
-        project_id: projectId,
-        title: UNTITLED_CHAPTER,
-        content: null,
-        sort_order: 0,
-        word_count: 0,
-        created_at: now,
-        updated_at: now,
-      });
+    await ProjectRepo.insert(trx, {
+      id: projectId,
+      title,
+      slug,
+      mode,
+      created_at: now,
+      updated_at: now,
     });
-  } catch (err: unknown) {
-    // The only DB-level UNIQUE constraint is on slug (idx_projects_slug_active).
-    // Title uniqueness is enforced at the application level above.
-    // A slug collision here means resolveUniqueSlug failed — rethrow as-is.
-    throw err;
-  }
+
+    await ChapterRepo.insert(trx, {
+      id: chapterId,
+      project_id: projectId,
+      title: UNTITLED_CHAPTER,
+      content: null,
+      sort_order: 0,
+      word_count: 0,
+      created_at: now,
+      updated_at: now,
+    });
+  });
 
   const project = await ProjectRepo.findById(db, projectId);
   if (!project) {
@@ -152,13 +145,6 @@ export async function updateProject(
   const project = await ProjectRepo.findBySlug(db, slug);
   if (!project) return null;
 
-  if (parsed.data.title !== undefined) {
-    const existingTitle = await ProjectRepo.findByTitle(db, parsed.data.title, project.id);
-    if (existingTitle) {
-      throw new ProjectTitleExistsError();
-    }
-  }
-
   const updates: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   };
@@ -173,25 +159,22 @@ export async function updateProject(
     updates.completion_threshold = parsed.data.completion_threshold;
   }
 
-  try {
-    await db.transaction(async (trx) => {
-      if (parsed.data.title !== undefined) {
-        const newSlug = await ProjectRepo.resolveUniqueSlug(
-          trx,
-          generateSlug(parsed.data.title),
-          project.id,
-        );
-        updates.title = parsed.data.title;
-        updates.slug = newSlug;
+  await db.transaction(async (trx) => {
+    if (parsed.data.title !== undefined) {
+      const existingTitle = await ProjectRepo.findByTitle(trx, parsed.data.title, project.id);
+      if (existingTitle) {
+        throw new ProjectTitleExistsError();
       }
-      await ProjectRepo.update(trx, project.id, updates);
-    });
-  } catch (err: unknown) {
-    // The only DB-level UNIQUE constraint is on slug (idx_projects_slug_active).
-    // Title uniqueness is enforced at the application level above.
-    // A slug collision here means resolveUniqueSlug failed — rethrow as-is.
-    throw err;
-  }
+      const newSlug = await ProjectRepo.resolveUniqueSlug(
+        trx,
+        generateSlug(parsed.data.title),
+        project.id,
+      );
+      updates.title = parsed.data.title;
+      updates.slug = newSlug;
+    }
+    await ProjectRepo.update(trx, project.id, updates);
+  });
 
   const updated = await ProjectRepo.findById(db, project.id);
   if (!updated) {
