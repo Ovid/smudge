@@ -352,7 +352,7 @@ export async function getDashboard(slug: string): Promise<DashboardResponse | nu
 
 export async function getTrash(slug: string): Promise<DeletedChapterRow[] | null> {
   const db = getDb();
-  const project = await ProjectRepo.findBySlug(db, slug);
+  const project = await ProjectRepo.findBySlugIncludingDeleted(db, slug);
   if (!project) return null;
 
   return ChapterRepo.listDeletedByProject(db, project.id);

@@ -30,6 +30,13 @@ export async function findBySlug(
   return (await trx("projects").where({ slug }).whereNull("deleted_at").first()) ?? null;
 }
 
+export async function findBySlugIncludingDeleted(
+  trx: Knex.Transaction | Knex,
+  slug: string,
+): Promise<ProjectRow | null> {
+  return (await trx("projects").where({ slug }).first()) ?? null;
+}
+
 export async function findByTitle(
   trx: Knex.Transaction | Knex,
   title: string,
