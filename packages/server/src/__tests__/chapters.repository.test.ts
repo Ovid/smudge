@@ -317,7 +317,7 @@ describe("chapters repository", () => {
       // Verify deleted
       expect(await ChapterRepo.findById(t.db, chapterId)).toBeNull();
 
-      await ChapterRepo.restore(t.db, chapterId);
+      await ChapterRepo.restore(t.db, chapterId, 0);
 
       const found = await ChapterRepo.findById(t.db, chapterId);
       expect(found).not.toBeNull();

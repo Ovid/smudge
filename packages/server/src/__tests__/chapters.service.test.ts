@@ -11,6 +11,7 @@ import {
   isCorruptChapter,
   stripCorruptFlag,
 } from "../chapters/chapters.service";
+import type { ChapterRow } from "../chapters/chapters.types";
 
 const t = setupTestDb();
 
@@ -66,13 +67,13 @@ describe("chapters.service", () => {
 
   describe("stripCorruptFlag()", () => {
     it("removes content_corrupt from the object", () => {
-      const result = stripCorruptFlag({ id: "abc", content_corrupt: true, title: "hi" });
+      const result = stripCorruptFlag({ id: "abc", content_corrupt: true, title: "hi" } as ChapterRow);
       expect(result).toEqual({ id: "abc", title: "hi" });
       expect("content_corrupt" in result).toBe(false);
     });
 
     it("returns the same data when no content_corrupt key exists", () => {
-      const result = stripCorruptFlag({ id: "abc", title: "hi" });
+      const result = stripCorruptFlag({ id: "abc", title: "hi" } as ChapterRow);
       expect(result).toEqual({ id: "abc", title: "hi" });
     });
   });
