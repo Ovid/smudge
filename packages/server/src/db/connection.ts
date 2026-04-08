@@ -11,6 +11,9 @@ export function getDb(): Knex {
 }
 
 export async function setDb(instance: Knex): Promise<void> {
+  if (db && db !== instance) {
+    await db.destroy();
+  }
   db = instance;
   // Raw SQL: PRAGMAs are SQLite-specific session settings with no Knex equivalent
   await db.raw("PRAGMA foreign_keys = ON");
