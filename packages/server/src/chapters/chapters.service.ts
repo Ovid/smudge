@@ -144,9 +144,10 @@ export async function restoreChapter(
   if (!parentProject) return "purged";
 
   try {
+    const now = new Date().toISOString();
     await db.transaction(async (trx) => {
       const maxSort = await ChapterRepo.getMaxSortOrder(trx, chapter.project_id);
-      await ChapterRepo.restore(trx, id, maxSort + 1);
+      await ChapterRepo.restore(trx, id, maxSort + 1, now);
       await ProjectRepo.updateTimestamp(trx, chapter.project_id);
 
       if (parentProject.deleted_at) {
@@ -157,7 +158,7 @@ export async function restoreChapter(
         );
         const projectUpdate: Record<string, unknown> = {
           deleted_at: null,
-          updated_at: new Date().toISOString(),
+          updated_at: now,
           slug: freshSlug,
         };
         await ProjectRepo.update(trx, chapter.project_id, projectUpdate);
