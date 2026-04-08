@@ -17,6 +17,7 @@ export async function upsert(
   key: string,
   value: string,
 ): Promise<void> {
+  // Raw SQL: Knex's .onConflict().merge() is unreliable with SQLite; native upsert is atomic
   await trx.raw(
     `INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
     [key, value],

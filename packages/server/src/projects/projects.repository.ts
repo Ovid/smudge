@@ -64,6 +64,7 @@ export async function listAll(trx: Knex.Transaction | Knex): Promise<ProjectList
       "projects.slug",
       "projects.mode",
       "projects.updated_at",
+      // Raw SQL: Knex has no COALESCE wrapper; needed to default NULL SUM to 0
       trx.raw("COALESCE(SUM(chapters.word_count), 0) as total_word_count"),
     );
 

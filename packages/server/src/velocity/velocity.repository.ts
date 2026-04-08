@@ -25,6 +25,7 @@ export async function upsertDailySnapshot(
   today: string,
   totalWordCount: number,
 ): Promise<void> {
+  // Raw SQL: Knex's .onConflict().merge() is unreliable with SQLite; native upsert is atomic
   await db.raw(
     `INSERT INTO daily_snapshots (id, project_id, date, total_word_count, created_at)
      VALUES (?, ?, ?, ?, ?)
