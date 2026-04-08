@@ -199,7 +199,7 @@ export async function updateSortOrders(
   orders: Array<{ id: string; sort_order: number }>,
 ): Promise<void> {
   for (const { id, sort_order } of orders) {
-    await trx("chapters").where({ id }).update({ sort_order });
+    await trx("chapters").where({ id }).whereNull("deleted_at").update({ sort_order });
   }
 }
 
