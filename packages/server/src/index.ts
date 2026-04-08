@@ -94,7 +94,7 @@ main().catch((err: unknown) => {
       "SQLite I/O error — possible causes: corrupt database, stale WAL files, disk full, or permission issues.",
     );
     console.error(
-      "Check disk space and file permissions first. If the problem persists, run 'make clean' to reset the database.",
+      "Check disk space and file permissions first. If the database is corrupt, back it up before taking any destructive action.",
     );
   } else {
     console.error("Failed to start server:", err);
