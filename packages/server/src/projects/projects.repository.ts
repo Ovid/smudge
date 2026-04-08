@@ -1,5 +1,10 @@
 import type { Knex } from "knex";
-import type { ProjectRow, CreateProjectRow, ProjectListRow, UpdateProjectData } from "./projects.types";
+import type {
+  ProjectRow,
+  CreateProjectRow,
+  ProjectListRow,
+  UpdateProjectData,
+} from "./projects.types";
 
 export async function insert(
   trx: Knex.Transaction | Knex,
