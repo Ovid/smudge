@@ -67,7 +67,11 @@ describe("chapters.service", () => {
 
   describe("stripCorruptFlag()", () => {
     it("removes content_corrupt from the object", () => {
-      const result = stripCorruptFlag({ id: "abc", content_corrupt: true, title: "hi" } as ChapterRow);
+      const result = stripCorruptFlag({
+        id: "abc",
+        content_corrupt: true,
+        title: "hi",
+      } as ChapterRow);
       expect(result).toEqual({ id: "abc", title: "hi" });
       expect("content_corrupt" in result).toBe(false);
     });

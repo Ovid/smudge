@@ -20,7 +20,10 @@ export function settingsRouter(): Router {
       const parsed = UpdateSettingsSchema.safeParse(req.body);
       if (!parsed.success) {
         res.status(400).json({
-          error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0]?.message ?? "Invalid input" },
+          error: {
+            code: "VALIDATION_ERROR",
+            message: parsed.error.issues[0]?.message ?? "Invalid input",
+          },
         });
         return;
       }
