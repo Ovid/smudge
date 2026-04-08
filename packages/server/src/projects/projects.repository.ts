@@ -6,7 +6,9 @@ export async function insert(
   data: CreateProjectRow,
 ): Promise<ProjectRow> {
   await trx("projects").insert(data);
-  return trx("projects").where({ id: data.id }).first() as Promise<ProjectRow>;
+  const row = await trx("projects").where({ id: data.id }).first();
+  if (!row) throw new Error(`Project ${data.id} not found after insert`);
+  return row as ProjectRow;
 }
 
 export async function findById(
@@ -80,7 +82,9 @@ export async function update(
   data: Record<string, unknown>,
 ): Promise<ProjectRow> {
   await trx("projects").where({ id }).update(data);
-  return trx("projects").where({ id }).first() as Promise<ProjectRow>;
+  const row = await trx("projects").where({ id }).first();
+  if (!row) throw new Error(`Project ${id} not found after update`);
+  return row as ProjectRow;
 }
 
 export async function updateTimestamp(trx: Knex.Transaction | Knex, id: string): Promise<void> {
