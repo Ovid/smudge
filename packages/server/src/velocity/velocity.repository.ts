@@ -73,10 +73,12 @@ export async function getPreWindowBaselines(
     .where("se1.saved_at", "<", beforeTimestamp)
     .whereNotExists(
       db("save_events as se2")
-        .whereColumn("se2.chapter_id", "se1.chapter_id")
+        // Raw SQL: column-to-column refs in correlated subquery; Knex .whereColumn() exists
+        // at runtime but its TypeScript types don't expose it on subquery builders
+        .where("se2.chapter_id", db.raw("se1.chapter_id"))
         .where("se2.project_id", projectId)
         .where("se2.saved_at", "<", beforeTimestamp)
-        .whereColumn("se2.saved_at", ">", "se1.saved_at"),
+        .where("se2.saved_at", ">", db.raw("se1.saved_at")),
     )
     .select("se1.chapter_id", "se1.word_count");
 
@@ -96,7 +98,9 @@ export async function getWritingDates(
     .whereExists(
       db("save_events")
         .where("save_events.project_id", projectId)
-        .whereColumn("save_events.save_date", "daily_snapshots.date")
+        // Raw SQL: column-to-column ref in correlated subquery; Knex .whereColumn()
+        // exists at runtime but its TypeScript types don't expose it on subquery builders
+        .whereRaw("save_events.save_date = daily_snapshots.date")
         // EXISTS only checks row existence; selecting literal 1 avoids reading actual columns
         .select(db.raw("1")),
     )
