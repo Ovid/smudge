@@ -86,10 +86,14 @@ export async function updateChapter(
     updates.status = parsed.data.status;
   }
 
-  await db.transaction(async (trx) => {
-    await ChapterRepo.update(trx, id, updates);
+  const rowsUpdated = await db.transaction(async (trx) => {
+    const count = await ChapterRepo.update(trx, id, updates);
+    if (count === 0) return 0;
     await ProjectRepo.updateTimestamp(trx, chapter.project_id);
+    return count;
   });
+
+  if (rowsUpdated === 0) return null;
 
   // Fire velocity side-effects (best-effort — must not break the save)
   if (parsed.data.content !== undefined) {
