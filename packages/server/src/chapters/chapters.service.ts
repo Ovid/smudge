@@ -4,7 +4,7 @@ import * as ChapterRepo from "./chapters.repository";
 import * as ProjectRepo from "../projects/projects.repository";
 import * as ChapterStatusRepo from "../chapter-statuses/chapter-statuses.repository";
 import * as VelocityService from "../velocity/velocity.service";
-import type { ChapterWithLabel, RestoredChapterResponse } from "./chapters.types";
+import type { ChapterRow, ChapterWithLabel, RestoredChapterResponse } from "./chapters.types";
 
 // --- Injectable velocity service for testing ---
 
@@ -33,7 +33,7 @@ export function isCorruptChapter(chapter: { content_corrupt?: boolean }): boolea
   return chapter.content_corrupt === true;
 }
 
-export function stripCorruptFlag(chapter: Record<string, unknown>): Record<string, unknown> {
+export function stripCorruptFlag(chapter: ChapterRow): Omit<ChapterRow, "content_corrupt"> {
   const { content_corrupt: _, ...rest } = chapter;
   return rest;
 }
@@ -47,9 +47,9 @@ export async function getChapter(id: string): Promise<ChapterWithLabel | null | 
 
   if (isCorruptChapter(chapter)) return "corrupt";
 
-  const { content_corrupt: _, ...rest } = chapter;
+  const clean = stripCorruptFlag(chapter);
   const status_label = await ChapterStatusRepo.getStatusLabel(db, chapter.status);
-  return { ...rest, status_label };
+  return { ...clean, status_label };
 }
 
 export async function updateChapter(
@@ -113,11 +113,11 @@ export async function updateChapter(
     return { corrupt: true };
   }
 
-  const { content_corrupt: _, ...rest } = updated;
+  const clean = stripCorruptFlag(updated);
   const updatedStatusLabel = await ChapterStatusRepo.getStatusLabel(db, updated.status);
   return {
     chapter: {
-      ...rest,
+      ...clean,
       status_label: updatedStatusLabel,
     },
   };
@@ -186,12 +186,12 @@ export async function restoreChapter(
   const restored = await ChapterRepo.findById(db, id);
   if (!restored) return "read_failure";
 
-  const { content_corrupt: _, ...rest } = restored;
+  const clean = stripCorruptFlag(restored);
   const updatedProject = await ProjectRepo.findById(db, chapter.project_id);
   const restoredStatusLabel = await ChapterStatusRepo.getStatusLabel(db, restored.status);
 
   return {
-    ...rest,
+    ...clean,
     status_label: restoredStatusLabel,
     project_slug: updatedProject?.slug,
   };

@@ -9,6 +9,7 @@ import {
 import { getDb } from "../db/connection";
 import * as ProjectRepo from "./projects.repository";
 import * as ChapterRepo from "../chapters/chapters.repository";
+import { stripCorruptFlag } from "../chapters/chapters.service";
 import * as ChapterStatusRepo from "../chapter-statuses/chapter-statuses.repository";
 import * as VelocityService from "../velocity/velocity.service";
 import type { ProjectRow, ProjectListRow } from "./projects.types";
@@ -140,9 +141,9 @@ export async function getProject(
   const statusLabelMap = await ChapterStatusRepo.getStatusLabelMap(db);
 
   const chaptersWithLabels = chapters.map((ch) => {
-    const { content_corrupt: _, ...rest } = ch;
+    const clean = stripCorruptFlag(ch);
     return {
-      ...rest,
+      ...clean,
       status_label: statusLabelMap[ch.status] ?? ch.status,
     };
   });
@@ -262,10 +263,10 @@ export async function createChapter(
   const chapter = await ChapterRepo.findById(db, chapterId);
   if (!chapter) return null;
 
-  const { content_corrupt: _, ...rest } = chapter;
+  const clean = stripCorruptFlag(chapter);
   const statusLabelMap = await ChapterStatusRepo.getStatusLabelMap(db);
   return {
-    ...rest,
+    ...clean,
     status_label: statusLabelMap[chapter.status] ?? chapter.status,
   };
 }
