@@ -163,7 +163,7 @@ export async function restoreChapter(
           generateSlug(parentProject.title),
           parentProject.id,
         );
-        await ProjectRepo.update(trx, chapter.project_id, {
+        await ProjectRepo.updateIncludingDeleted(trx, chapter.project_id, {
           deleted_at: null,
           updated_at: now,
           slug: freshSlug,

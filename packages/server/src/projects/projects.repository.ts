@@ -86,6 +86,17 @@ export async function update(
   id: string,
   data: UpdateProjectData,
 ): Promise<ProjectRow> {
+  await trx("projects").where({ id }).whereNull("deleted_at").update(data);
+  const row = await trx("projects").where({ id }).whereNull("deleted_at").first();
+  if (!row) throw new Error(`Project ${id} not found after update`);
+  return row as ProjectRow;
+}
+
+export async function updateIncludingDeleted(
+  trx: Knex.Transaction | Knex,
+  id: string,
+  data: UpdateProjectData,
+): Promise<ProjectRow> {
   await trx("projects").where({ id }).update(data);
   const row = await trx("projects").where({ id }).first();
   if (!row) throw new Error(`Project ${id} not found after update`);
