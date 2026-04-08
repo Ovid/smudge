@@ -353,19 +353,16 @@ export async function getVelocityBySlug(slug: string): Promise<VelocityResponse 
   let completedChapters = 0;
   const completionThreshold = project.completion_threshold;
 
-  if (completionThreshold) {
-    const thresholdRow = await ChapterStatusRepo.findByStatus(db, completionThreshold);
-    const thresholdSortOrder = thresholdRow?.sort_order ?? 999;
-    const allStatuses = await ChapterStatusRepo.list(db);
-    const statusSortMap: Record<string, number> = {};
-    for (const s of allStatuses) {
-      statusSortMap[s.status] = s.sort_order;
-    }
-    for (const ch of chapters) {
-      const chSortOrder = statusSortMap[ch.status] ?? 0;
-      if (chSortOrder >= thresholdSortOrder) {
-        completedChapters++;
-      }
+  const allStatuses = await ChapterStatusRepo.list(db);
+  const statusSortMap: Record<string, number> = {};
+  for (const s of allStatuses) {
+    statusSortMap[s.status] = s.sort_order;
+  }
+  const thresholdSortOrder = statusSortMap[completionThreshold] ?? 999;
+  for (const ch of chapters) {
+    const chSortOrder = statusSortMap[ch.status] ?? 0;
+    if (chSortOrder >= thresholdSortOrder) {
+      completedChapters++;
     }
   }
 
