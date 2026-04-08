@@ -105,7 +105,7 @@ export function calculateStreaks(
 ): { current: number; best: number } {
   if (dates.length === 0) return { current: 0, best: 0 };
 
-  const sorted = [...dates].sort((a, b) => (a > b ? -1 : 1));
+  const sorted = [...dates].sort((a, b) => b.localeCompare(a));
 
   function prevDay(dateStr: string): string {
     const d = new Date(dateStr + "T00:00:00Z");
@@ -350,7 +350,7 @@ export async function getVelocityBySlug(slug: string): Promise<VelocityResponse 
   // Completion stats (via repositories)
   const chapters = await ChapterRepo.listIdTitleStatusByProject(db, projectId);
   let completedChapters = 0;
-  const completionThreshold = project.completion_threshold ?? null;
+  const completionThreshold = project.completion_threshold;
 
   if (completionThreshold) {
     const thresholdRow = await ChapterStatusRepo.findByStatus(db, completionThreshold);

@@ -55,9 +55,16 @@ function setupGracefulShutdown(server: Server): void {
     shuttingDown = true;
     console.log("Shutting down gracefully…");
 
+    const forceExit = setTimeout(() => {
+      console.error("Shutdown timed out after 10s, forcing exit.");
+      process.exit(1);
+    }, 10_000);
+    forceExit.unref();
+
     server.close(() => {
       closeDb()
         .then(() => {
+          clearTimeout(forceExit);
           console.log("Database connection closed.");
           process.exit(0);
         })

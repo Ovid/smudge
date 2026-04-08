@@ -7,7 +7,7 @@ export interface ProjectRow {
   mode: string;
   target_word_count: number | null;
   target_deadline: string | null;
-  completion_threshold: CompletionThresholdValue | null;
+  completion_threshold: CompletionThresholdValue;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
