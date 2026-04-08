@@ -8,13 +8,14 @@ export async function insertSaveEvent(
   projectId: string,
   wordCount: number,
   today: string,
+  now: string,
 ): Promise<void> {
   await db("save_events").insert({
     id: uuid(),
     chapter_id: chapterId,
     project_id: projectId,
     word_count: wordCount,
-    saved_at: new Date().toISOString(),
+    saved_at: now,
     save_date: today,
   });
 }

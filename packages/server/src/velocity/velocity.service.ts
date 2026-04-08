@@ -214,9 +214,10 @@ export async function recordSave(
 ): Promise<void> {
   try {
     const db = getDb();
+    const now = new Date().toISOString();
     const today = await getTodayDate();
     try {
-      await VelocityRepo.insertSaveEvent(db, chapterId, projectId, wordCount, today);
+      await VelocityRepo.insertSaveEvent(db, chapterId, projectId, wordCount, today, now);
     } catch (err) {
       console.error(
         `Failed to insert save event for chapter=${chapterId} project=${projectId}:`,

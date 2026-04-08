@@ -41,7 +41,7 @@ describe("velocity repository", () => {
       const projectId = await createProject();
       const chapterId = await createChapter(projectId);
 
-      await VelocityRepo.insertSaveEvent(t.db, chapterId, projectId, 100, "2026-04-05");
+      await VelocityRepo.insertSaveEvent(t.db, chapterId, projectId, 100, "2026-04-05", "2026-04-05T12:00:00.000Z");
 
       const rows = await t.db("save_events").where({ project_id: projectId });
       expect(rows).toHaveLength(1);
@@ -54,8 +54,8 @@ describe("velocity repository", () => {
       const projectId = await createProject();
       const chapterId = await createChapter(projectId);
 
-      await VelocityRepo.insertSaveEvent(t.db, chapterId, projectId, 50, "2026-04-05");
-      await VelocityRepo.insertSaveEvent(t.db, chapterId, projectId, 75, "2026-04-05");
+      await VelocityRepo.insertSaveEvent(t.db, chapterId, projectId, 50, "2026-04-05", "2026-04-05T12:00:00.000Z");
+      await VelocityRepo.insertSaveEvent(t.db, chapterId, projectId, 75, "2026-04-05", "2026-04-05T12:01:00.000Z");
 
       const rows = await t.db("save_events").where({ project_id: projectId });
       expect(rows).toHaveLength(2);

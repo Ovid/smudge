@@ -8,5 +8,7 @@ export function isValidTimezone(tz: string): boolean {
 }
 
 export function safeTimezone(tz: string): string {
-  return isValidTimezone(tz) ? tz : "UTC";
+  if (isValidTimezone(tz)) return tz;
+  console.warn(`Invalid timezone "${tz}", falling back to UTC`);
+  return "UTC";
 }
