@@ -17,10 +17,8 @@ export async function upsert(
   key: string,
   value: string,
 ): Promise<void> {
-  const existing = await trx("settings").where({ key }).first();
-  if (existing) {
-    await trx("settings").where({ key }).update({ value });
-  } else {
-    await trx("settings").insert({ key, value });
-  }
+  await trx.raw(
+    `INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [key, value],
+  );
 }
