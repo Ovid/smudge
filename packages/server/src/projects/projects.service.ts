@@ -195,11 +195,11 @@ export async function deleteProject(slug: string): Promise<boolean> {
     await ProjectRepo.softDelete(trx, project.id, now);
   });
 
-  try {
-    await getVelocityService().updateDailySnapshot(project.id);
-  } catch {
-    // Velocity tracking is best-effort; delete must still succeed
-  }
+  // Intentionally skip updateDailySnapshot here: all chapters are now
+  // soft-deleted, so sumWordCountByProject would return 0 and record a
+  // false 0-word snapshot that corrupts velocity history if the project
+  // is later restored. The snapshot will be corrected on restore or on
+  // the next save in any active project.
 
   return true;
 }
