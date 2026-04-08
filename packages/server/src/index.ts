@@ -4,6 +4,10 @@ import { purgeOldTrash } from "./db/purge";
 import type { Server } from "node:http";
 
 const PORT = parseInt(process.env.SMUDGE_PORT ?? "3456", 10);
+if (Number.isNaN(PORT) || PORT < 1 || PORT > 65535) {
+  console.error(`Invalid SMUDGE_PORT: "${process.env.SMUDGE_PORT}". Must be a number 1-65535.`);
+  process.exit(1);
+}
 const DB_PATH = process.env.DB_PATH;
 
 async function main() {
