@@ -112,11 +112,9 @@ export async function createProject(
       });
     });
   } catch (err: unknown) {
-    if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
-      // The only DB-level UNIQUE constraint is on slug (idx_projects_slug_active).
-      // Title uniqueness is enforced at the application level above.
-      // A slug collision here means resolveUniqueSlug failed — rethrow as-is.
-    }
+    // The only DB-level UNIQUE constraint is on slug (idx_projects_slug_active).
+    // Title uniqueness is enforced at the application level above.
+    // A slug collision here means resolveUniqueSlug failed — rethrow as-is.
     throw err;
   }
 
@@ -203,11 +201,9 @@ export async function updateProject(
       await ProjectRepo.update(trx, project.id, updates);
     });
   } catch (err: unknown) {
-    if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
-      // The only DB-level UNIQUE constraint is on slug (idx_projects_slug_active).
-      // Title uniqueness is enforced at the application level above.
-      // A slug collision here means resolveUniqueSlug failed — rethrow as-is.
-    }
+    // The only DB-level UNIQUE constraint is on slug (idx_projects_slug_active).
+    // Title uniqueness is enforced at the application level above.
+    // A slug collision here means resolveUniqueSlug failed — rethrow as-is.
     throw err;
   }
 
