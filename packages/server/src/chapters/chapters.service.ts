@@ -179,6 +179,9 @@ export async function restoreChapter(
     });
   } catch (err: unknown) {
     if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
+      // Slug collision when restoring the parent project — a different
+      // active project now occupies the slug. Report as a conflict so the
+      // route can return an appropriate error to the client.
       return "conflict";
     }
     throw err;
