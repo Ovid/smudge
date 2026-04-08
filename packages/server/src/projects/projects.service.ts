@@ -12,7 +12,6 @@ import * as ChapterRepo from "../chapters/chapters.repository";
 import { stripCorruptFlag } from "../chapters/chapters.service";
 import * as ChapterStatusRepo from "../chapter-statuses/chapter-statuses.repository";
 import {
-  getVelocityService,
   setVelocityService,
   resetVelocityService,
 } from "../velocity/velocity.injectable";
