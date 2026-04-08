@@ -72,10 +72,10 @@ export async function getPreWindowBaselines(
     .where("se1.saved_at", "<", beforeTimestamp)
     .whereNotExists(
       db("save_events as se2")
-        .where("se2.chapter_id", db.raw("se1.chapter_id"))
+        .whereColumn("se2.chapter_id", "se1.chapter_id")
         .where("se2.project_id", projectId)
         .where("se2.saved_at", "<", beforeTimestamp)
-        .where("se2.saved_at", ">", db.raw("se1.saved_at")),
+        .whereColumn("se2.saved_at", ">", "se1.saved_at"),
     )
     .select("se1.chapter_id", "se1.word_count");
 
@@ -95,7 +95,8 @@ export async function getWritingDates(
     .whereExists(
       db("save_events")
         .where("save_events.project_id", projectId)
-        .whereRaw(`save_events.save_date = daily_snapshots.date`)
+        .whereColumn("save_events.save_date", "daily_snapshots.date")
+        // EXISTS only checks row existence; selecting literal 1 avoids reading actual columns
         .select(db.raw("1")),
     )
     .orderBy("date", "desc")
