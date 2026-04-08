@@ -28,7 +28,7 @@ export interface UpdateProjectData {
   mode?: string;
   target_word_count?: number | null;
   target_deadline?: string | null;
-  completion_threshold?: string | null;
+  completion_threshold?: CompletionThresholdValue;
   updated_at: string;
   deleted_at?: string | null;
 }
