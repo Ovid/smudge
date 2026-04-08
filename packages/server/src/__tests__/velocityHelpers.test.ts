@@ -7,9 +7,9 @@ describe("insertSaveEvent error handling", () => {
     const fakeDb = (() => {
       throw new Error("DB write failed");
     }) as unknown as import("knex").Knex;
-    await expect(insertSaveEvent(fakeDb, "ch1", "p1", 100, "2026-04-03", new Date().toISOString())).rejects.toThrow(
-      "DB write failed",
-    );
+    await expect(
+      insertSaveEvent(fakeDb, "ch1", "p1", 100, "2026-04-03", new Date().toISOString()),
+    ).rejects.toThrow("DB write failed");
   });
 });
 
