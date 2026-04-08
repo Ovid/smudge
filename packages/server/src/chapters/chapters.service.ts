@@ -55,7 +55,13 @@ export async function getChapter(id: string): Promise<ChapterWithLabel | null | 
 export async function updateChapter(
   id: string,
   body: unknown,
-): Promise<{ chapter: ChapterWithLabel } | { validationError: string } | { corrupt: true } | null> {
+): Promise<
+  | { chapter: ChapterWithLabel }
+  | { validationError: string }
+  | { corrupt: true }
+  | null
+  | "read_after_update_failure"
+> {
   const parsed = UpdateChapterSchema.safeParse(body);
   if (!parsed.success) {
     return { validationError: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -106,7 +112,7 @@ export async function updateChapter(
   }
 
   const updated = await ChapterRepo.findById(db, id);
-  if (!updated) return null;
+  if (!updated) return "read_after_update_failure";
 
   // Only check corruption when content was part of the update
   if (parsed.data.content !== undefined && isCorruptChapter(updated)) {

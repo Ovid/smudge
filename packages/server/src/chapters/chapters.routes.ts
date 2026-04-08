@@ -40,6 +40,15 @@ export function chaptersRouter(): Router {
         });
         return;
       }
+      if (result === "read_after_update_failure") {
+        res.status(500).json({
+          error: {
+            code: "UPDATE_READ_FAILURE",
+            message: "Chapter was updated but could not be re-read.",
+          },
+        });
+        return;
+      }
       if ("validationError" in result) {
         res.status(400).json({
           error: { code: "VALIDATION_ERROR", message: result.validationError },
