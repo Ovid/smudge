@@ -145,7 +145,7 @@ export async function listIdTitleStatusByProject(
     .select("id", "title", "status");
 }
 
-export async function getChapterNamesMap(
+export async function getChapterNamesMapIncludingDeleted(
   trx: Knex.Transaction | Knex,
   projectId: string,
 ): Promise<Record<string, string>> {

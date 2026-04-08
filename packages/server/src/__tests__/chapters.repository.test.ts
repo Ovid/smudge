@@ -286,7 +286,7 @@ describe("chapters repository", () => {
     });
   });
 
-  describe("getChapterNamesMap()", () => {
+  describe("getChapterNamesMapIncludingDeleted()", () => {
     it("includes both active and deleted chapters", async () => {
       const projectId = await createProject();
       const activeId = await createChapter(projectId, { title: "Active", sort_order: 0 });
@@ -296,7 +296,7 @@ describe("chapters repository", () => {
         deleted_at: new Date().toISOString(),
       });
 
-      const map = await ChapterRepo.getChapterNamesMap(t.db, projectId);
+      const map = await ChapterRepo.getChapterNamesMapIncludingDeleted(t.db, projectId);
       expect(map[activeId]).toBe("Active");
       expect(map[deletedId]).toBe("Deleted");
       expect(Object.keys(map)).toHaveLength(2);
@@ -304,7 +304,7 @@ describe("chapters repository", () => {
 
     it("returns empty object when no chapters", async () => {
       const projectId = await createProject();
-      const map = await ChapterRepo.getChapterNamesMap(t.db, projectId);
+      const map = await ChapterRepo.getChapterNamesMapIncludingDeleted(t.db, projectId);
       expect(map).toEqual({});
     });
   });

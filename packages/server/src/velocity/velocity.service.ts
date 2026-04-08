@@ -376,7 +376,7 @@ export async function getVelocityBySlug(slug: string): Promise<VelocityResponse 
   };
 
   // Chapter names (including deleted — via repository)
-  const chapterNames = await ChapterRepo.getChapterNamesMap(db, projectId);
+  const chapterNames = await ChapterRepo.getChapterNamesMapIncludingDeleted(db, projectId);
 
   return {
     daily_snapshots: dailySnapshots,
