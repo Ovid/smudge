@@ -3,29 +3,14 @@ import { getDb } from "../db/connection";
 import * as ChapterRepo from "./chapters.repository";
 import * as ProjectRepo from "../projects/projects.repository";
 import * as ChapterStatusRepo from "../chapter-statuses/chapter-statuses.repository";
-import * as VelocityService from "../velocity/velocity.service";
+import {
+  getVelocityService,
+  setVelocityService,
+  resetVelocityService,
+} from "../velocity/velocity.injectable";
 import type { ChapterRow, ChapterWithLabel, RestoredChapterResponse } from "./chapters.types";
 
-// --- Injectable velocity service for testing ---
-
-interface VelocityServiceInterface {
-  recordSave(projectId: string, chapterId: string, wordCount: number): Promise<void>;
-  updateDailySnapshot(projectId: string): Promise<void>;
-}
-
-let velocityServiceOverride: VelocityServiceInterface | null = null;
-
-export function setVelocityService(svc: VelocityServiceInterface): void {
-  velocityServiceOverride = svc;
-}
-
-export function resetVelocityService(): void {
-  velocityServiceOverride = null;
-}
-
-function getVelocityService(): VelocityServiceInterface {
-  return velocityServiceOverride ?? VelocityService;
-}
+export { setVelocityService, resetVelocityService };
 
 // --- Helpers ---
 

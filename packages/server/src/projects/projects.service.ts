@@ -11,13 +11,19 @@ import * as ProjectRepo from "./projects.repository";
 import * as ChapterRepo from "../chapters/chapters.repository";
 import { stripCorruptFlag } from "../chapters/chapters.service";
 import * as ChapterStatusRepo from "../chapter-statuses/chapter-statuses.repository";
-import * as VelocityService from "../velocity/velocity.service";
+import {
+  getVelocityService,
+  setVelocityService,
+  resetVelocityService,
+} from "../velocity/velocity.injectable";
 import type { ProjectRow, ProjectListRow } from "./projects.types";
 import type {
   ChapterWithLabel,
   ChapterMetadataRow,
   DeletedChapterRow,
 } from "../chapters/chapters.types";
+
+export { setVelocityService, resetVelocityService };
 
 // --- Dashboard types ---
 
@@ -34,26 +40,6 @@ export interface DashboardResponse {
     most_recent_edit: string | null;
     least_recent_edit: string | null;
   };
-}
-
-// --- Injectable velocity service for testing ---
-
-interface VelocityServiceInterface {
-  updateDailySnapshot(projectId: string): Promise<void>;
-}
-
-let velocityServiceOverride: VelocityServiceInterface | null = null;
-
-export function setVelocityService(svc: VelocityServiceInterface): void {
-  velocityServiceOverride = svc;
-}
-
-export function resetVelocityService(): void {
-  velocityServiceOverride = null;
-}
-
-function getVelocityService(): VelocityServiceInterface {
-  return velocityServiceOverride ?? VelocityService;
 }
 
 // --- Errors ---
