@@ -189,8 +189,8 @@ export async function update(
   trx: Knex.Transaction | Knex,
   id: string,
   updates: Record<string, unknown>,
-): Promise<void> {
-  await trx("chapters").where({ id }).update(updates);
+): Promise<number> {
+  return trx("chapters").where({ id }).whereNull("deleted_at").update(updates);
 }
 
 export async function updateSortOrders(

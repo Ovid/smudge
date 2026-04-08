@@ -309,6 +309,34 @@ describe("chapters repository", () => {
     });
   });
 
+  describe("update()", () => {
+    it("updates an active chapter", async () => {
+      const projectId = await createProject();
+      const chapterId = await createChapter(projectId, { title: "Original" });
+
+      const affected = await ChapterRepo.update(t.db, chapterId, { title: "Updated" });
+      expect(affected).toBe(1);
+
+      const found = await ChapterRepo.findById(t.db, chapterId);
+      expect(found!.title).toBe("Updated");
+    });
+
+    it("does not update a soft-deleted chapter", async () => {
+      const projectId = await createProject();
+      const chapterId = await createChapter(projectId, {
+        title: "Original",
+        deleted_at: new Date().toISOString(),
+      });
+
+      const affected = await ChapterRepo.update(t.db, chapterId, { title: "Should Not Apply" });
+      expect(affected).toBe(0);
+
+      // Verify the row is unchanged
+      const row = await t.db("chapters").where({ id: chapterId }).first();
+      expect(row.title).toBe("Original");
+    });
+  });
+
   describe("restore()", () => {
     it("clears deleted_at on a soft-deleted chapter", async () => {
       const projectId = await createProject();
