@@ -172,7 +172,7 @@ describe("Keyboard shortcut help dialog", () => {
       expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
     });
 
-    fireEvent.keyDown(document, { key: "/", ctrlKey: true });
+    fireEvent.keyDown(document, { key: "/", code: "Slash", ctrlKey: true });
 
     await waitFor(() => {
       expect(screen.getByRole("dialog", { name: /keyboard shortcuts/i })).toBeInTheDocument();
@@ -185,7 +185,7 @@ describe("Keyboard shortcut help dialog", () => {
       expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
     });
 
-    fireEvent.keyDown(document, { key: "/", ctrlKey: true });
+    fireEvent.keyDown(document, { key: "/", code: "Slash", ctrlKey: true });
 
     await waitFor(() => {
       expect(screen.getByRole("dialog", { name: /keyboard shortcuts/i })).toBeInTheDocument();
@@ -204,7 +204,7 @@ describe("Keyboard shortcut help dialog", () => {
       expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
     });
 
-    fireEvent.keyDown(document, { key: "/", ctrlKey: true });
+    fireEvent.keyDown(document, { key: "/", code: "Slash", ctrlKey: true });
 
     await waitFor(() => {
       expect(screen.getByText(/toggle preview/i)).toBeInTheDocument();
@@ -221,7 +221,7 @@ describe("Keyboard shortcut help dialog", () => {
       expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
     });
 
-    fireEvent.keyDown(document, { key: "/", ctrlKey: true });
+    fireEvent.keyDown(document, { key: "/", code: "Slash", ctrlKey: true });
 
     await waitFor(() => {
       expect(screen.getByRole("dialog", { name: /keyboard shortcuts/i })).toBeInTheDocument();
@@ -265,7 +265,7 @@ describe("Ctrl+Shift+N creates a new chapter", () => {
       expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
     });
 
-    fireEvent.keyDown(document, { key: "N", ctrlKey: true, shiftKey: true });
+    fireEvent.keyDown(document, { key: "N", code: "KeyN", ctrlKey: true, shiftKey: true });
 
     await waitFor(
       () => {

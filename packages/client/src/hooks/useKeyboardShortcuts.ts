@@ -60,7 +60,7 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
     function handleKeyDown(e: KeyboardEvent) {
       const ctrl = e.ctrlKey || e.metaKey;
 
-      if (ctrl && e.key === "/") {
+      if (ctrl && e.code === "Slash") {
         const tag = (document.activeElement as HTMLElement)?.tagName;
         if (tag === "INPUT" || tag === "TEXTAREA") return;
         e.preventDefault();
@@ -83,19 +83,19 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
       )
         return;
 
-      if (ctrl && e.shiftKey && e.key === "N") {
+      if (ctrl && e.shiftKey && e.code === "KeyN") {
         e.preventDefault();
         handleCreateChapterRef.current();
         return;
       }
 
-      if (ctrl && e.shiftKey && e.key === "\\") {
+      if (ctrl && e.shiftKey && e.code === "Backslash") {
         e.preventDefault();
         toggleSidebarRef.current();
         return;
       }
 
-      if (ctrl && e.shiftKey && e.key === "W") {
+      if (ctrl && e.shiftKey && e.code === "KeyW") {
         e.preventDefault();
         // Clear first so re-pressing announces again even if the count hasn't changed
         deps.setWordCountAnnouncement("");
@@ -105,7 +105,7 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
         return;
       }
 
-      if (ctrl && e.shiftKey && e.key === "P") {
+      if (ctrl && e.shiftKey && e.code === "KeyP") {
         e.preventDefault();
         const target = viewModeRef.current === "preview" ? "editor" : "preview";
         switchToViewRef.current(target).catch(() => {});

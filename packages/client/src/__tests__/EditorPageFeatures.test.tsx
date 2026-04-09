@@ -176,13 +176,13 @@ describe("EditorPage sidebar features", () => {
     });
 
     // Hide sidebar
-    fireEvent.keyDown(document, { key: "\\", ctrlKey: true, shiftKey: true });
+    fireEvent.keyDown(document, { key: "\\", code: "Backslash", ctrlKey: true, shiftKey: true });
     await waitFor(() => {
       expect(screen.queryByRole("complementary", { name: "Chapters" })).toBeNull();
     });
 
     // Show sidebar again
-    fireEvent.keyDown(document, { key: "\\", ctrlKey: true, shiftKey: true });
+    fireEvent.keyDown(document, { key: "\\", code: "Backslash", ctrlKey: true, shiftKey: true });
     await waitFor(() => {
       expect(screen.getByRole("complementary", { name: "Chapters" })).toBeInTheDocument();
     });
@@ -784,7 +784,7 @@ describe("EditorPage preview mode", () => {
 
     // Open preview — wrap in act to flush the flushSave().then(setViewMode) microtask
     await act(async () => {
-      fireEvent.keyDown(document, { key: "P", ctrlKey: true, shiftKey: true });
+      fireEvent.keyDown(document, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
       await Promise.resolve();
     });
 
@@ -795,7 +795,7 @@ describe("EditorPage preview mode", () => {
 
     // Close preview (back to editor)
     await act(async () => {
-      fireEvent.keyDown(document, { key: "P", ctrlKey: true, shiftKey: true });
+      fireEvent.keyDown(document, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
       await Promise.resolve();
     });
 
