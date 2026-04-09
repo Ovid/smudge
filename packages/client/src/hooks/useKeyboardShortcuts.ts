@@ -64,6 +64,8 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
       const ctrl = e.ctrlKey || e.metaKey;
 
       if (ctrl && e.key === "/") {
+        const tag = (document.activeElement as HTMLElement)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA") return;
         e.preventDefault();
         deps.setShortcutHelpOpen((prev) => !prev);
         return;
