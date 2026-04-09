@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { Chapter } from "@smudge/shared";
 
 export function useChapterTitleEditing(
@@ -15,6 +15,13 @@ export function useChapterTitleEditing(
   const titleInputRef = useRef<HTMLInputElement>(null);
   const escapePressedRef = useRef(false);
   const isSavingTitleRef = useRef(false);
+
+  // Cancel editing if the active chapter changes (e.g., via keyboard navigation)
+  // to prevent saving the draft to the wrong chapter.
+  useEffect(() => {
+    setEditingTitle(false);
+    setTitleError(null);
+  }, [activeChapter?.id]);
 
   function startEditingTitle() {
     if (!activeChapter) return;

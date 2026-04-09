@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { ProjectWithChapters } from "@smudge/shared";
 
 export function useProjectTitleEditing(
@@ -13,6 +13,11 @@ export function useProjectTitleEditing(
   const projectTitleInputRef = useRef<HTMLInputElement>(null);
   const projectEscapePressedRef = useRef(false);
   const isSavingProjectTitleRef = useRef(false);
+
+  // Cancel editing if the project changes to prevent saving the draft to the wrong project.
+  useEffect(() => {
+    setEditingProjectTitle(false);
+  }, [project?.id]);
 
   function startEditingProjectTitle() {
     if (!project) return;

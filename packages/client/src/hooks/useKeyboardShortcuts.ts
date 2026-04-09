@@ -108,10 +108,12 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
 
       if (ctrl && e.shiftKey && e.key === "P") {
         e.preventDefault();
-        (deps.editorRef.current?.flushSave() ?? Promise.resolve()).then(() => {
-          deps.setTrashOpen(false);
-          deps.setViewMode((prev) => (prev === "preview" ? "editor" : "preview"));
-        });
+        (deps.editorRef.current?.flushSave() ?? Promise.resolve())
+          .then(() => {
+            deps.setTrashOpen(false);
+            deps.setViewMode((prev) => (prev === "preview" ? "editor" : "preview"));
+          })
+          .catch(() => {});
         return;
       }
 
@@ -127,7 +129,7 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
         if (nextIndex < 0 || nextIndex >= chapters.length) return;
         const nextChapter = chapters[nextIndex];
         if (!nextChapter) return;
-        handleSelectChapterWithFlushRef.current(nextChapter.id);
+        void handleSelectChapterWithFlushRef.current(nextChapter.id).catch(() => {});
         deps.setNavAnnouncement(STRINGS.sidebar.navigatedToChapter(nextChapter.title));
         if (navAnnouncementTimer !== null) clearTimeout(navAnnouncementTimer);
         navAnnouncementTimer = setTimeout(() => deps.setNavAnnouncement(""), 1000);

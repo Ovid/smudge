@@ -171,10 +171,17 @@ export function EditorPage() {
   }, [slug, saveStatus]);
 
   const handleStatusChangeWithError = useCallback(
-    async (chapterId: string, status: string) => {
-      await handleStatusChange(chapterId, status, setActionError);
+    (chapterId: string, status: string) => {
+      handleStatusChange(chapterId, status, setActionError);
     },
     [handleStatusChange, setActionError],
+  );
+
+  const handleRenameChapterWithError = useCallback(
+    (chapterId: string, title: string) => {
+      handleRenameChapter(chapterId, title, setActionError);
+    },
+    [handleRenameChapter, setActionError],
   );
 
   const handleSelectChapterWithFlush = useCallback(
@@ -261,7 +268,7 @@ export function EditorPage() {
               onAddChapter={handleCreateChapter}
               onDeleteChapter={setDeleteTarget}
               onReorderChapters={handleReorderChapters}
-              onRenameChapter={handleRenameChapter}
+              onRenameChapter={handleRenameChapterWithError}
               onOpenTrash={openTrash}
               onOpenSettings={() => setSettingsOpen(true)}
               statuses={statuses}
@@ -406,7 +413,7 @@ export function EditorPage() {
             onAddChapter={handleCreateChapter}
             onDeleteChapter={setDeleteTarget}
             onReorderChapters={handleReorderChapters}
-            onRenameChapter={handleRenameChapter}
+            onRenameChapter={handleRenameChapterWithError}
             onOpenTrash={openTrash}
             onOpenSettings={() => setSettingsOpen(true)}
             statuses={statuses}
@@ -483,9 +490,9 @@ export function EditorPage() {
                     aria-label={STRINGS.a11y.chapterTitleInput}
                   />
                   {titleError && (
-                    <span role="alert" className="text-xs text-status-error mt-1">
+                    <p role="alert" className="text-xs text-status-error mt-1">
                       {titleError}
-                    </span>
+                    </p>
                   )}
                 </div>
               ) : (
@@ -583,7 +590,10 @@ export function EditorPage() {
             api.projects
               .get(slug)
               .then((data) => setProject(data))
-              .catch(() => {});
+              .catch((err) => {
+                const msg = err instanceof Error ? err.message : STRINGS.error.loadProjectFailed;
+                setActionError(msg);
+              });
           }
         }}
       />
