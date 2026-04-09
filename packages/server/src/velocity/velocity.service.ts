@@ -323,12 +323,19 @@ export async function getVelocityBySlug(slug: string): Promise<VelocityResponse 
         ? firstSnapshot.date
         : newest.date;
     const msPerDay = 86_400_000;
+    // When a baseline snapshot exists before the 30-day window, measure
+    // from that baseline to the newest snapshot.  When no baseline exists
+    // (all data is within the last 30 days), measure from the first
+    // snapshot to *today* so that idle days count against the average —
+    // otherwise a project with 2 days of data would divide by 2 instead
+    // of the actual elapsed time, inflating the projected completion date.
+    const upperDate = baselineSnapshot ? newest.date : today;
     const daysCovered = Math.min(
       30,
       Math.max(
         1,
         Math.round(
-          (new Date(newest.date + "T00:00:00Z").getTime() -
+          (new Date(upperDate + "T00:00:00Z").getTime() -
             new Date(baselineDate + "T00:00:00Z").getTime()) /
             msPerDay,
         ),
