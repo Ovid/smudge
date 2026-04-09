@@ -16,7 +16,7 @@ None found.
 
 ## Important Issues
 
-### [I1] Chapter title edit state not reset when active chapter changes
+### [I1] Chapter title edit state not reset when active chapter changes -- FIXED
 - **File:** `packages/client/src/hooks/useChapterTitleEditing.ts:12-52`
 - **Bug:** The hook maintains `editingTitle`, `titleDraft`, and `isSavingTitleRef` state, but has no `useEffect` that resets these when `activeChapter` changes. If a user is editing Chapter A's title and switches to Chapter B (e.g., via Ctrl+Shift+Arrow), the `editingTitle` flag stays true, `titleDraft` still contains Chapter A's title, and `saveTitle()` will call `handleRenameChapter(activeChapter.id, ...)` with Chapter B's ID but Chapter A's draft text -- renaming the wrong chapter.
 - **Impact:** User renames the wrong chapter, causing data corruption and confusion. The keyboard shortcut for chapter navigation (Ctrl+Shift+Arrow) can trigger this during normal use.
@@ -30,7 +30,7 @@ None found.
 - **Confidence:** High
 - **Found by:** Logic & Correctness
 
-### [I2] Project title edit state not reset when project changes
+### [I2] Project title edit state not reset when project changes -- FIXED
 - **File:** `packages/client/src/hooks/useProjectTitleEditing.ts:11-49`
 - **Bug:** Same pattern as I1. No `useEffect` resets `editingProjectTitle`/`projectTitleDraft` when the `project` prop changes. If the project object changes while a title edit is in progress, `saveProjectTitle()` would use the new project's context with the old draft text.
 - **Impact:** Project rename could apply to the wrong project. Lower likelihood than I1 since project changes during editing are rarer, but the code pattern is identical.
@@ -45,7 +45,7 @@ None found.
 
 ## Suggestions
 
-### [S1] Async callback passed where sync callback expected
+### [S1] Async callback passed where sync callback expected -- FIXED
 - **File:** `packages/client/src/pages/EditorPage.tsx:173-178`
 - **Bug:** `handleStatusChangeWithError` is `async` and returns `Promise<void>`, but is passed to Sidebar's `onStatusChange` which expects `(chapterId: string, status: string) => void`. The Promise is silently discarded. No practical impact since `handleStatusChange` has self-contained error handling with optimistic update/revert.
 - **Suggested fix:** Remove `async`/`await` from the wrapper since the operation is fire-and-forget by design:
@@ -60,21 +60,21 @@ None found.
 - **Confidence:** Medium
 - **Found by:** Contract & Integration
 
-### [S2] Keyboard handler async return values unhandled
+### [S2] Keyboard handler async return values unhandled -- NOT FIXED (handleCreateChapter typed as void, internal try/catch sufficient)
 - **File:** `packages/client/src/hooks/useKeyboardShortcuts.ts:89,130`
 - **Bug:** `handleCreateChapterRef.current()` and `handleSelectChapterWithFlushRef.current()` return Promises that are not awaited or caught. Mitigated by internal try/catch in both functions, but an unexpected error outside those blocks would produce an unhandled rejection.
 - **Suggested fix:** Add `.catch()` handlers or void the return values explicitly.
 - **Confidence:** Medium
 - **Found by:** Error Handling
 
-### [S3] No .catch() on flushSave in preview toggle
+### [S3] No .catch() on flushSave in preview toggle -- FIXED
 - **File:** `packages/client/src/hooks/useKeyboardShortcuts.ts:111`
 - **Bug:** `flushSave()` rejection would be unhandled. The `.then()` callback (which switches view mode) wouldn't execute on rejection, but no `.catch()` exists to handle or log the error.
 - **Suggested fix:** Add `.catch(() => { /* log or no-op */ })` to the promise chain.
 - **Confidence:** Medium
 - **Found by:** Error Handling
 
-### [S4] Silent failure on project re-fetch after settings update
+### [S4] Silent failure on project re-fetch after settings update -- FIXED
 - **File:** `packages/client/src/pages/EditorPage.tsx:583-586`
 - **Bug:** `.catch(() => {})` silently swallows errors when re-fetching the project after a settings update. Local project state may be stale until next page load. The settings themselves were already saved successfully; only the local state refresh fails.
 - **Suggested fix:** Surface the error via `setActionError` so the user knows to refresh.
