@@ -55,7 +55,7 @@ export interface ChapterWithLabel extends Omit<ChapterRow, "content_corrupt"> {
 }
 
 export interface RestoredChapterResponse extends ChapterWithLabel {
-  project_slug: string | undefined;
+  project_slug: string;
 }
 
 export interface UpdateChapterData {
