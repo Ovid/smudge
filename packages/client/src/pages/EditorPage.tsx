@@ -172,6 +172,7 @@ export function EditorPage() {
 
   const handleStatusChangeWithError = useCallback(
     (chapterId: string, status: string) => {
+      setActionError(null);
       handleStatusChange(chapterId, status, setActionError);
     },
     [handleStatusChange, setActionError],
@@ -179,6 +180,7 @@ export function EditorPage() {
 
   const handleRenameChapterWithError = useCallback(
     (chapterId: string, title: string) => {
+      setActionError(null);
       handleRenameChapter(chapterId, title, setActionError);
     },
     [handleRenameChapter, setActionError],
