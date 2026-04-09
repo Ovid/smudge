@@ -112,7 +112,7 @@ export async function softDelete(
   id: string,
   now: string,
 ): Promise<void> {
-  await trx("projects").where({ id }).update({ deleted_at: now });
+  await trx("projects").where({ id }).whereNull("deleted_at").update({ deleted_at: now });
 }
 
 export async function resolveUniqueSlug(
