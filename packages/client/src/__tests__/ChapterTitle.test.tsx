@@ -172,8 +172,13 @@ describe("Chapter title editing", () => {
     return screen.getByRole("heading", { level: 2, name: "My Chapter" });
   }
 
-  function getTitleInput(): HTMLInputElement {
-    return document.querySelector("input[aria-label='Chapter title']") as HTMLInputElement;
+  async function findTitleInput(): Promise<HTMLInputElement> {
+    let input: HTMLInputElement | null = null;
+    await waitFor(() => {
+      input = document.querySelector("input[aria-label='Chapter title']");
+      expect(input).not.toBeNull();
+    });
+    return input!;
   }
 
   it("displays the chapter title as an h2", async () => {
@@ -187,7 +192,7 @@ describe("Chapter title editing", () => {
     renderEditorPage();
     const title = await findChapterTitle();
     fireEvent.doubleClick(title);
-    const input = getTitleInput();
+    const input = await findTitleInput();
     expect(input).not.toBeNull();
     expect(input).toHaveValue("My Chapter");
   });
@@ -196,7 +201,7 @@ describe("Chapter title editing", () => {
     renderEditorPage();
     const title = await findChapterTitle();
     fireEvent.doubleClick(title);
-    const input = getTitleInput();
+    const input = await findTitleInput();
 
     await userEvent.clear(input);
     await userEvent.type(input, "Renamed Chapter{Enter}");
@@ -212,7 +217,7 @@ describe("Chapter title editing", () => {
     renderEditorPage();
     const title = await findChapterTitle();
     fireEvent.doubleClick(title);
-    const input = getTitleInput();
+    const input = await findTitleInput();
 
     await userEvent.clear(input);
     await userEvent.type(input, "Something else{Escape}");
@@ -226,7 +231,7 @@ describe("Chapter title editing", () => {
     renderEditorPage();
     const title = await findChapterTitle();
     fireEvent.doubleClick(title);
-    const input = getTitleInput();
+    const input = await findTitleInput();
 
     await userEvent.clear(input);
     await userEvent.type(input, "   {Enter}");
@@ -234,6 +239,15 @@ describe("Chapter title editing", () => {
     expect(api.chapters.update).not.toHaveBeenCalled();
   });
 });
+
+async function findProjectTitleInput(): Promise<HTMLInputElement> {
+  let input: HTMLInputElement | null = null;
+  await waitFor(() => {
+    input = document.querySelector("input[aria-label='Project title']");
+    expect(input).not.toBeNull();
+  });
+  return input!;
+}
 
 describe("Project title editing", () => {
   afterEach(() => cleanup());
@@ -266,7 +280,7 @@ describe("Project title editing", () => {
     const projectTitle = screen.getByRole("heading", { level: 1 });
     fireEvent.doubleClick(projectTitle);
 
-    const input = document.querySelector("input[aria-label='Project title']") as HTMLInputElement;
+    const input = await findProjectTitleInput();
     expect(input).not.toBeNull();
     expect(input).toHaveValue("Test Project");
   });
@@ -281,7 +295,7 @@ describe("Project title editing", () => {
     const projectTitle = screen.getByRole("heading", { level: 1 });
     fireEvent.doubleClick(projectTitle);
 
-    const input = document.querySelector("input[aria-label='Project title']") as HTMLInputElement;
+    const input = await findProjectTitleInput();
     await userEvent.clear(input);
     await userEvent.type(input, "Something else{Escape}");
 
@@ -301,7 +315,7 @@ describe("Project title editing", () => {
     const projectTitle = screen.getByRole("heading", { level: 1 });
     fireEvent.doubleClick(projectTitle);
 
-    const input = document.querySelector("input[aria-label='Project title']") as HTMLInputElement;
+    const input = await findProjectTitleInput();
     await userEvent.clear(input);
     await userEvent.type(input, "   {Enter}");
 
@@ -318,7 +332,7 @@ describe("Project title editing", () => {
     const projectTitle = screen.getByRole("heading", { level: 1 });
     fireEvent.doubleClick(projectTitle);
 
-    const input = document.querySelector("input[aria-label='Project title']") as HTMLInputElement;
+    const input = await findProjectTitleInput();
     await userEvent.clear(input);
     await userEvent.type(input, "Renamed Project{Enter}");
 
