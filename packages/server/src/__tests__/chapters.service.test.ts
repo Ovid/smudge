@@ -43,7 +43,7 @@ async function createProjectAndChapter() {
     content: JSON.stringify(DOC_JSON),
     sort_order: 0,
     word_count: 1,
-    status: "draft",
+    status: "outline",
     created_at: now,
     updated_at: now,
   });
@@ -177,12 +177,7 @@ describe("chapters.service", () => {
       expect(result).toBeDefined();
       expect(result).not.toBeNull();
       expect(result).not.toBe("corrupt");
-      expect(
-        typeof result === "object" &&
-          result !== null &&
-          "status_label" in result &&
-          result.status_label,
-      ).toBeTruthy();
+      expect(result).toMatchObject({ status_label: "Outline" });
     });
   });
 });

@@ -45,7 +45,7 @@ async function createChapter(
     content: overrides.content ?? JSON.stringify(DOC_JSON),
     sort_order: overrides.sort_order ?? 0,
     word_count: overrides.word_count ?? 1,
-    status: overrides.status ?? "draft",
+    status: overrides.status ?? "outline",
     created_at: now,
     updated_at: now,
     deleted_at: overrides.deleted_at ?? null,
