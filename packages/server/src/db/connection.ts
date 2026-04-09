@@ -20,6 +20,9 @@ export async function setDb(instance: Knex): Promise<void> {
 }
 
 export async function initDb(config?: Knex.Config): Promise<Knex> {
+  if (db) {
+    await db.destroy();
+  }
   db = knex(config ?? createKnexConfig());
   // Raw SQL: PRAGMAs are SQLite-specific session settings with no Knex equivalent
   await db.raw("PRAGMA journal_mode = WAL");
