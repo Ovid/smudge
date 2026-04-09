@@ -3,7 +3,11 @@ import type { Chapter } from "@smudge/shared";
 
 export function useChapterTitleEditing(
   activeChapter: Chapter | null,
-  handleRenameChapter: (id: string, title: string, onError?: (message: string) => void) => Promise<void>,
+  handleRenameChapter: (
+    id: string,
+    title: string,
+    onError?: (message: string) => void,
+  ) => Promise<void>,
 ) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
