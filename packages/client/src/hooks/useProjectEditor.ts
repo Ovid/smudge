@@ -17,21 +17,14 @@ export function useProjectEditor(slug: string | undefined) {
   const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
   const [cacheWarning, setCacheWarning] = useState(false);
   const activeChapterRef = useRef<Chapter | null>(null);
+  activeChapterRef.current = activeChapter;
   const projectSlugRef = useRef(slug);
+  if (project?.slug !== undefined) {
+    projectSlugRef.current = project.slug;
+  }
   const selectChapterSeqRef = useRef(0);
   const saveSeqRef = useRef(0);
   const statusChangeSeqRef = useRef(0);
-
-  // Keep ref in sync for use in loadProject's closure
-  useEffect(() => {
-    activeChapterRef.current = activeChapter;
-  }, [activeChapter]);
-
-  useEffect(() => {
-    if (project?.slug !== undefined) {
-      projectSlugRef.current = project.slug;
-    }
-  }, [project?.slug]);
 
   useEffect(() => {
     let cancelled = false;
@@ -169,9 +162,7 @@ export function useProjectEditor(slug: string | undefined) {
   }, []);
 
   const projectRef = useRef(project);
-  useEffect(() => {
-    projectRef.current = project;
-  }, [project]);
+  projectRef.current = project;
 
   const handleDeleteChapter = useCallback(async (chapter: Chapter): Promise<boolean> => {
     ++saveSeqRef.current; // cancel any in-flight save retries for the deleted chapter
