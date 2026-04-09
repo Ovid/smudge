@@ -67,7 +67,13 @@ export function EditorPage() {
     startEditingProjectTitle,
     saveProjectTitle,
     cancelEditingProjectTitle,
-  } = useProjectTitleEditing(project, slug, handleUpdateProjectTitle, setProjectTitleError, navigate);
+  } = useProjectTitleEditing(
+    project,
+    slug,
+    handleUpdateProjectTitle,
+    setProjectTitleError,
+    navigate,
+  );
 
   const {
     trashOpen,
@@ -574,10 +580,7 @@ export function EditorPage() {
         }}
       />
 
-      <ShortcutHelpDialog
-        open={shortcutHelpOpen}
-        onClose={() => setShortcutHelpOpen(false)}
-      />
+      <ShortcutHelpDialog open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
     </div>
   );
 }

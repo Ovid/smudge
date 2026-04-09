@@ -97,9 +97,7 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
         // Clear first so re-pressing announces again even if the count hasn't changed
         deps.setWordCountAnnouncement("");
         requestAnimationFrame(() => {
-          deps.setWordCountAnnouncement(
-            STRINGS.project.wordCount(chapterWordCountRef.current),
-          );
+          deps.setWordCountAnnouncement(STRINGS.project.wordCount(chapterWordCountRef.current));
         });
         return;
       }
