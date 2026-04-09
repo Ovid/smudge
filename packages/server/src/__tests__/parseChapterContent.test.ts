@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import request from "supertest";
-import { parseChapterContent } from "../routes/parseChapterContent";
-import { queryChapter, queryChapters } from "../routes/chapterQueries";
+import { parseChapterContent, queryChapter, queryChapters } from "../chapters/chapters.repository";
 import { setupTestDb } from "./test-helpers";
 
 describe("parseChapterContent", () => {
@@ -11,7 +10,7 @@ describe("parseChapterContent", () => {
       title: "Test",
       content: JSON.stringify({ type: "doc", content: [] }),
     };
-    const result = parseChapterContent(chapter) as Record<string, unknown>;
+    const result = parseChapterContent(chapter) as unknown as Record<string, unknown>;
     expect(result.content).toEqual({ type: "doc", content: [] });
     expect(result.content_corrupt).toBeUndefined();
     expect(result.id).toBe("abc");
@@ -25,7 +24,7 @@ describe("parseChapterContent", () => {
       title: "Test",
       content: "{invalid json!!!",
     };
-    const result = parseChapterContent(chapter) as Record<string, unknown>;
+    const result = parseChapterContent(chapter) as unknown as Record<string, unknown>;
     expect(result.content).toBeNull();
     expect(result.content_corrupt).toBe(true);
     expect(result.id).toBe("abc");
@@ -62,7 +61,7 @@ describe("parseChapterContent", () => {
       sort_order: 3,
       status: "outline",
     };
-    const result = parseChapterContent(chapter) as Record<string, unknown>;
+    const result = parseChapterContent(chapter) as unknown as Record<string, unknown>;
     expect(result.word_count).toBe(42);
     expect(result.sort_order).toBe(3);
     expect(result.status).toBe("outline");
@@ -76,7 +75,7 @@ describe("parseChapterContent integration — corrupt DB content", () => {
       throw "plain string error";
     });
     const chapter = { id: "abc", title: "Test", content: '{"valid":"json"}' };
-    const result = parseChapterContent(chapter) as Record<string, unknown>;
+    const result = parseChapterContent(chapter) as unknown as Record<string, unknown>;
     expect(result.content).toBeNull();
     expect(result.content_corrupt).toBe(true);
     expect(errorSpy.mock.calls[0]![0]).toContain("UnknownError");
@@ -92,7 +91,7 @@ describe("parseChapterContent integration — corrupt DB content", () => {
       content: "not valid json {{{",
       word_count: 0,
     };
-    const result = parseChapterContent(chapter) as Record<string, unknown>;
+    const result = parseChapterContent(chapter) as unknown as Record<string, unknown>;
     expect(result.content).toBeNull();
     expect(result.content_corrupt).toBe(true);
     expect(result.title).toBe("Corrupt Chapter");

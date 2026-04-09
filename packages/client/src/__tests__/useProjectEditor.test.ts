@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { UNTITLED_CHAPTER } from "@smudge/shared";
 
+import { api, ApiRequestError } from "../api/client";
+import { useProjectEditor } from "../hooks/useProjectEditor";
+
 vi.mock("../api/client", () => ({
   ApiRequestError: class ApiRequestError extends Error {
     constructor(
@@ -50,9 +53,6 @@ vi.mock("../hooks/useContentCache", () => ({
   setCachedContent: vi.fn().mockReturnValue(true),
   clearCachedContent: vi.fn(),
 }));
-
-import { api, ApiRequestError } from "../api/client";
-import { useProjectEditor } from "../hooks/useProjectEditor";
 
 const mockChapter1 = {
   id: "ch1",

@@ -10,8 +10,21 @@ export function getDb(): Knex {
   return db;
 }
 
+export async function setDb(instance: Knex): Promise<void> {
+  if (db && db !== instance) {
+    await db.destroy();
+  }
+  db = instance;
+  // Raw SQL: PRAGMAs are SQLite-specific session settings with no Knex equivalent
+  await db.raw("PRAGMA foreign_keys = ON");
+}
+
 export async function initDb(config?: Knex.Config): Promise<Knex> {
+  if (db) {
+    await db.destroy();
+  }
   db = knex(config ?? createKnexConfig());
+  // Raw SQL: PRAGMAs are SQLite-specific session settings with no Knex equivalent
   await db.raw("PRAGMA journal_mode = WAL");
   await db.raw("PRAGMA foreign_keys = ON");
   await db.migrate.latest();

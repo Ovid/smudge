@@ -1,9 +1,17 @@
 # NOW!!!
 
-- isolate all SQL into a data layer so that the main code *never* knows
-  how it's getting or setting data. We'll be doing this because later we'll
-  be considering a radically different way of handling this. Maybe brainstorm
-  about a git-like system for handling much of this?
+- Absolutely separate files from the database. If we have to reset the
+  database for some horrible reason, we don't want their data killed! It
+  should work more like a regular application: double click on a .smg file to
+  open and add (if it's not already added). Or have a file menu to open, too
+  (along with "recently opened behavior"). But then, how we do handle if it's
+  an older version of the file than what we have metadata for? We need some
+  kind of custom format. Checksums? If it's older, offer to create a new
+  version?
+- The file format must be decoupled from our code so that future database
+  changes or wipes don't actually destroy their current version, though
+  history might be an issue.
+- If they run `make clean`, how can we restore? This seems very bad.
 
 # Bugs
 
