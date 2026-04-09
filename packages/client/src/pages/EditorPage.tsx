@@ -186,14 +186,21 @@ export function EditorPage() {
     [handleRenameChapter, setActionError],
   );
 
-  const handleSelectChapterWithFlush = useCallback(
-    async (chapterId: string) => {
+  const switchToView = useCallback(
+    async (mode: ViewMode) => {
       await editorRef.current?.flushSave();
       setTrashOpen(false);
-      setViewMode("editor");
+      setViewMode(mode);
+    },
+    [setTrashOpen],
+  );
+
+  const handleSelectChapterWithFlush = useCallback(
+    async (chapterId: string) => {
+      await switchToView("editor");
       await handleSelectChapter(chapterId);
     },
-    [handleSelectChapter, setTrashOpen],
+    [handleSelectChapter, switchToView],
   );
 
   useKeyboardShortcuts({
@@ -205,15 +212,13 @@ export function EditorPage() {
     activeChapter,
     project,
     chapterWordCount,
-    editorRef,
     setShortcutHelpOpen,
     toggleSidebar,
     handleCreateChapter,
     handleSelectChapterWithFlush,
     setWordCountAnnouncement,
     setNavAnnouncement,
-    setTrashOpen,
-    setViewMode,
+    switchToView,
   });
 
   if (error) {
@@ -350,10 +355,7 @@ export function EditorPage() {
           aria-label={STRINGS.a11y.viewModesNav}
         >
           <button
-            onClick={() => {
-              setTrashOpen(false);
-              setViewMode("editor");
-            }}
+            onClick={() => switchToView("editor")}
             aria-current={viewMode === "editor" ? "page" : undefined}
             className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
               viewMode === "editor"
@@ -364,11 +366,7 @@ export function EditorPage() {
             {STRINGS.nav.editor}
           </button>
           <button
-            onClick={async () => {
-              await editorRef.current?.flushSave();
-              setTrashOpen(false);
-              setViewMode("preview");
-            }}
+            onClick={() => switchToView("preview")}
             aria-current={viewMode === "preview" ? "page" : undefined}
             className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
               viewMode === "preview"
@@ -380,9 +378,7 @@ export function EditorPage() {
           </button>
           <button
             onClick={async () => {
-              await editorRef.current?.flushSave();
-              setTrashOpen(false);
-              setViewMode("dashboard");
+              await switchToView("dashboard");
               setDashboardRefreshKey((k) => k + 1);
             }}
             aria-current={viewMode === "dashboard" ? "page" : undefined}

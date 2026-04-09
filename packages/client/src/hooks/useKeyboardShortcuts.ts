@@ -1,8 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { Chapter, ProjectWithChapters } from "@smudge/shared";
 import { STRINGS } from "../strings";
-import type { EditorHandle } from "../components/Editor";
-
 export type ViewMode = "editor" | "preview" | "dashboard";
 
 interface KeyboardShortcutDeps {
@@ -16,8 +14,6 @@ interface KeyboardShortcutDeps {
   activeChapter: Chapter | null;
   project: ProjectWithChapters | null;
   chapterWordCount: number;
-  // Refs
-  editorRef: React.RefObject<EditorHandle | null>;
   // Actions
   setShortcutHelpOpen: React.Dispatch<React.SetStateAction<boolean>>;
   toggleSidebar: () => void;
@@ -25,8 +21,7 @@ interface KeyboardShortcutDeps {
   handleSelectChapterWithFlush: (id: string) => Promise<void>;
   setWordCountAnnouncement: React.Dispatch<React.SetStateAction<string>>;
   setNavAnnouncement: React.Dispatch<React.SetStateAction<string>>;
-  setTrashOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  setViewMode: React.Dispatch<React.SetStateAction<ViewMode>>;
+  switchToView: (mode: ViewMode) => Promise<void>;
 }
 
 export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
@@ -56,6 +51,8 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
   toggleSidebarRef.current = deps.toggleSidebar;
   const handleSelectChapterWithFlushRef = useRef(deps.handleSelectChapterWithFlush);
   handleSelectChapterWithFlushRef.current = deps.handleSelectChapterWithFlush;
+  const switchToViewRef = useRef(deps.switchToView);
+  switchToViewRef.current = deps.switchToView;
 
   useEffect(() => {
     let navAnnouncementTimer: ReturnType<typeof setTimeout> | null = null;
@@ -110,12 +107,8 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
 
       if (ctrl && e.shiftKey && e.key === "P") {
         e.preventDefault();
-        (deps.editorRef.current?.flushSave() ?? Promise.resolve())
-          .then(() => {
-            deps.setTrashOpen(false);
-            deps.setViewMode((prev) => (prev === "preview" ? "editor" : "preview"));
-          })
-          .catch(() => {});
+        const target = viewModeRef.current === "preview" ? "editor" : "preview";
+        switchToViewRef.current(target).catch(() => {});
         return;
       }
 
