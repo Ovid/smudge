@@ -7,7 +7,7 @@ export function useTrashManager(
   project: ProjectWithChapters | null,
   slug: string | undefined,
   setProject: (updater: (prev: ProjectWithChapters | null) => ProjectWithChapters | null) => void,
-  handleDeleteChapter: (chapter: Chapter) => Promise<void>,
+  handleDeleteChapter: (chapter: Chapter) => Promise<boolean>,
   navigate: (path: string, options?: { replace: boolean }) => void,
 ) {
   const [trashOpen, setTrashOpen] = useState(false);
@@ -55,7 +55,8 @@ export function useTrashManager(
 
   const confirmDeleteChapter = useCallback(async () => {
     if (!deleteTarget) return;
-    await handleDeleteChapter(deleteTarget);
+    const success = await handleDeleteChapter(deleteTarget);
+    if (!success) return;
     setDeleteTarget(null);
     if (trashOpen && project) {
       try {

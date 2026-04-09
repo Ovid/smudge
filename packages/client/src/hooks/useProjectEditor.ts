@@ -173,7 +173,7 @@ export function useProjectEditor(slug: string | undefined) {
     projectRef.current = project;
   }, [project]);
 
-  const handleDeleteChapter = useCallback(async (chapter: Chapter) => {
+  const handleDeleteChapter = useCallback(async (chapter: Chapter): Promise<boolean> => {
     ++saveSeqRef.current; // cancel any in-flight save retries for the deleted chapter
     try {
       await api.chapters.delete(chapter.id);
@@ -203,8 +203,10 @@ export function useProjectEditor(slug: string | undefined) {
           setChapterWordCount(0);
         }
       }
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : STRINGS.error.deleteChapterFailed);
+      return false;
     }
   }, []);
 
