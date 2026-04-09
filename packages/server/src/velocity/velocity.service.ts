@@ -5,6 +5,7 @@ import * as SettingsRepo from "../settings/settings.repository";
 import * as ChapterStatusRepo from "../chapter-statuses/chapter-statuses.repository";
 import * as ChapterRepo from "../chapters/chapters.repository";
 import * as ProjectRepo from "../projects/projects.repository";
+import { safeTimezone } from "../timezone";
 
 // --- Pure business logic (exported for unit testing) ---
 
@@ -185,7 +186,6 @@ export function calculateProjection(
 
 // --- Timezone helper ---
 
-import { safeTimezone } from "../timezone";
 export { safeTimezone };
 
 export async function getTodayDate(): Promise<string> {
