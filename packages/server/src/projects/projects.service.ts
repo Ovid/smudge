@@ -11,15 +11,12 @@ import * as ProjectRepo from "./projects.repository";
 import * as ChapterRepo from "../chapters/chapters.repository";
 import { stripCorruptFlag } from "../chapters/chapters.service";
 import * as ChapterStatusRepo from "../chapter-statuses/chapter-statuses.repository";
-import { setVelocityService, resetVelocityService } from "../velocity/velocity.injectable";
 import type { ProjectRow, ProjectListRow, UpdateProjectData } from "./projects.types";
 import type {
   ChapterWithLabel,
   ChapterMetadataRow,
   DeletedChapterRow,
 } from "../chapters/chapters.types";
-
-export { setVelocityService, resetVelocityService };
 
 // --- Dashboard types ---
 
