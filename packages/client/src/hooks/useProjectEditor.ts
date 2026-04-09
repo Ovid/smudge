@@ -322,26 +322,33 @@ export function useProjectEditor(slug: string | undefined) {
     [],
   );
 
-  const handleRenameChapter = useCallback(async (chapterId: string, title: string) => {
-    try {
-      await api.chapters.update(chapterId, { title });
-      if (activeChapterRef.current?.id === chapterId) {
-        // Only update the title — don't overwrite content with stale server data.
-        // The editor holds the current truth (same principle as handleSave).
-        // Guard with ID check to prevent applying title to wrong chapter on rapid switch.
-        setActiveChapter((prev) => (prev?.id === chapterId ? { ...prev, title } : prev));
+  const handleRenameChapter = useCallback(
+    async (chapterId: string, title: string, onError?: (message: string) => void) => {
+      try {
+        await api.chapters.update(chapterId, { title });
+        if (activeChapterRef.current?.id === chapterId) {
+          // Only update the title — don't overwrite content with stale server data.
+          // The editor holds the current truth (same principle as handleSave).
+          // Guard with ID check to prevent applying title to wrong chapter on rapid switch.
+          setActiveChapter((prev) => (prev?.id === chapterId ? { ...prev, title } : prev));
+        }
+        setProject((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            chapters: prev.chapters.map((c) => (c.id === chapterId ? { ...c, title } : c)),
+          };
+        });
+      } catch (err) {
+        // Don't call setError — that triggers the full-page error overlay.
+        // Rename failures are non-fatal; surface via the optional callback
+        // so callers can display inline (same pattern as handleStatusChange).
+        const message = err instanceof Error ? err.message : STRINGS.error.renameChapterFailed;
+        onError?.(message);
       }
-      setProject((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          chapters: prev.chapters.map((c) => (c.id === chapterId ? { ...c, title } : c)),
-        };
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : STRINGS.error.renameChapterFailed);
-    }
-  }, []);
+    },
+    [],
+  );
 
   return {
     project,

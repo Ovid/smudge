@@ -53,6 +53,7 @@ export function EditorPage() {
     editingTitle,
     titleDraft,
     setTitleDraft,
+    titleError,
     titleInputRef,
     startEditingTitle,
     saveTitle,
@@ -468,18 +469,25 @@ export function EditorPage() {
               aria-label={STRINGS.a11y.mainContent}
             >
               {editingTitle ? (
-                <input
-                  ref={titleInputRef}
-                  value={titleDraft}
-                  onChange={(e) => setTitleDraft(e.target.value)}
-                  onBlur={saveTitle}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") saveTitle();
-                    if (e.key === "Escape") cancelEditingTitle();
-                  }}
-                  className="mx-auto block max-w-[720px] mb-6 text-3xl font-serif font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none w-full tracking-tight"
-                  aria-label={STRINGS.a11y.chapterTitleInput}
-                />
+                <div className="mx-auto max-w-[720px] mb-6">
+                  <input
+                    ref={titleInputRef}
+                    value={titleDraft}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                    onBlur={saveTitle}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveTitle();
+                      if (e.key === "Escape") cancelEditingTitle();
+                    }}
+                    className="block text-3xl font-serif font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none w-full tracking-tight"
+                    aria-label={STRINGS.a11y.chapterTitleInput}
+                  />
+                  {titleError && (
+                    <span role="alert" className="text-xs text-status-error mt-1">
+                      {titleError}
+                    </span>
+                  )}
+                </div>
               ) : (
                 <h2
                   className="mx-auto max-w-[720px] mb-6 text-3xl font-serif font-semibold text-text-primary cursor-pointer hover:text-text-secondary tracking-tight"

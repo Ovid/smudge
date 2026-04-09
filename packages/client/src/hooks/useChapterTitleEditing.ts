@@ -3,10 +3,11 @@ import type { Chapter } from "@smudge/shared";
 
 export function useChapterTitleEditing(
   activeChapter: Chapter | null,
-  handleRenameChapter: (id: string, title: string) => Promise<void>,
+  handleRenameChapter: (id: string, title: string, onError?: (message: string) => void) => Promise<void>,
 ) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
+  const [titleError, setTitleError] = useState<string | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const escapePressedRef = useRef(false);
   const isSavingTitleRef = useRef(false);
@@ -14,6 +15,7 @@ export function useChapterTitleEditing(
   function startEditingTitle() {
     if (!activeChapter) return;
     escapePressedRef.current = false;
+    setTitleError(null);
     setTitleDraft(activeChapter.title);
     setEditingTitle(true);
     setTimeout(() => titleInputRef.current?.select(), 0);
@@ -33,7 +35,12 @@ export function useChapterTitleEditing(
     try {
       const trimmed = titleDraft.trim();
       if (trimmed !== activeChapter.title) {
-        await handleRenameChapter(activeChapter.id, trimmed);
+        let failed = false;
+        await handleRenameChapter(activeChapter.id, trimmed, (message) => {
+          setTitleError(message);
+          failed = true;
+        });
+        if (failed) return; // keep edit mode open so user can retry
       }
       setEditingTitle(false);
     } finally {
@@ -50,6 +57,7 @@ export function useChapterTitleEditing(
     editingTitle,
     titleDraft,
     setTitleDraft,
+    titleError,
     titleInputRef,
     startEditingTitle,
     saveTitle,
