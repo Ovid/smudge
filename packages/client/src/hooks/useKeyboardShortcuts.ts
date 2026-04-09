@@ -52,10 +52,14 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
   projectSettingsOpenRef.current = deps.projectSettingsOpen;
   const handleCreateChapterRef = useRef(deps.handleCreateChapter);
   handleCreateChapterRef.current = deps.handleCreateChapter;
+  const toggleSidebarRef = useRef(deps.toggleSidebar);
+  toggleSidebarRef.current = deps.toggleSidebar;
   const handleSelectChapterWithFlushRef = useRef(deps.handleSelectChapterWithFlush);
   handleSelectChapterWithFlushRef.current = deps.handleSelectChapterWithFlush;
 
   useEffect(() => {
+    let navAnnouncementTimer: ReturnType<typeof setTimeout> | null = null;
+
     function handleKeyDown(e: KeyboardEvent) {
       const ctrl = e.ctrlKey || e.metaKey;
 
@@ -88,7 +92,7 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
 
       if (ctrl && e.shiftKey && e.key === "\\") {
         e.preventDefault();
-        deps.toggleSidebar();
+        toggleSidebarRef.current();
         return;
       }
 
@@ -125,13 +129,17 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
         if (!nextChapter) return;
         handleSelectChapterWithFlushRef.current(nextChapter.id);
         deps.setNavAnnouncement(STRINGS.sidebar.navigatedToChapter(nextChapter.title));
-        setTimeout(() => deps.setNavAnnouncement(""), 1000);
+        if (navAnnouncementTimer !== null) clearTimeout(navAnnouncementTimer);
+        navAnnouncementTimer = setTimeout(() => deps.setNavAnnouncement(""), 1000);
         return;
       }
     }
 
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      if (navAnnouncementTimer !== null) clearTimeout(navAnnouncementTimer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }
