@@ -587,7 +587,19 @@ export function EditorPage() {
           if (slug) {
             api.projects
               .get(slug)
-              .then((data) => setProject(data))
+              .then((data) =>
+                setProject((prev) => {
+                  if (!prev) return data;
+                  return {
+                    ...prev,
+                    title: data.title,
+                    slug: data.slug,
+                    target_word_count: data.target_word_count,
+                    target_deadline: data.target_deadline,
+                    completion_threshold: data.completion_threshold,
+                  };
+                }),
+              )
               .catch((err) => {
                 const msg = err instanceof Error ? err.message : STRINGS.error.loadProjectFailed;
                 setActionError(msg);
