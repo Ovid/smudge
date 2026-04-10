@@ -18,7 +18,10 @@ export function useChapterTitleEditing(
 
   // Cancel editing if the active chapter changes (e.g., via keyboard navigation)
   // to prevent saving the draft to the wrong chapter.
+  // Set escapePressedRef so the blur handler (fired when the input unmounts)
+  // does not attempt to save the stale draft to the new chapter.
   useEffect(() => {
+    escapePressedRef.current = true;
     setEditingTitle(false);
     setTitleError(null);
   }, [activeChapter?.id]);
@@ -53,6 +56,8 @@ export function useChapterTitleEditing(
         });
         if (failed) return; // keep edit mode open so user can retry
       }
+      // Prevent the blur handler (fired when input unmounts) from re-entering saveTitle.
+      escapePressedRef.current = true;
       setEditingTitle(false);
     } finally {
       isSavingTitleRef.current = false;

@@ -15,7 +15,10 @@ export function useProjectTitleEditing(
   const isSavingProjectTitleRef = useRef(false);
 
   // Cancel editing if the project changes to prevent saving the draft to the wrong project.
+  // Set escapePressedRef so the blur handler (fired when the input unmounts)
+  // does not attempt to save the stale draft to the new project.
   useEffect(() => {
+    projectEscapePressedRef.current = true;
     setEditingProjectTitle(false);
   }, [project?.id]);
 
@@ -48,6 +51,8 @@ export function useProjectTitleEditing(
           navigate(`/projects/${newSlug}`, { replace: true });
         }
       }
+      // Prevent the blur handler (fired when input unmounts) from re-entering saveProjectTitle.
+      projectEscapePressedRef.current = true;
       setEditingProjectTitle(false);
     } finally {
       isSavingProjectTitleRef.current = false;
