@@ -57,65 +57,62 @@ export function useProjectEditor(slug: string | undefined) {
     };
   }, [slug]);
 
-  const handleSave = useCallback(
-    async (content: Record<string, unknown>): Promise<boolean> => {
-      const current = activeChapterRef.current;
-      if (!current) return false;
-      const savingChapterId = current.id;
-      const seq = ++saveSeqRef.current;
-      const BACKOFF_MS = [2000, 4000, 8000];
-      const MAX_RETRIES = 3;
+  const handleSave = useCallback(async (content: Record<string, unknown>): Promise<boolean> => {
+    const current = activeChapterRef.current;
+    if (!current) return false;
+    const savingChapterId = current.id;
+    const seq = ++saveSeqRef.current;
+    const BACKOFF_MS = [2000, 4000, 8000];
+    const MAX_RETRIES = 3;
 
-      setSaveStatus("saving");
-      setSaveErrorMessage(null);
-      let lastError: unknown;
-      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        if (seq !== saveSeqRef.current) return false; // chapter changed, abort retries
-        try {
-          const updated = await api.chapters.update(savingChapterId, { content });
-          if (seq !== saveSeqRef.current) return false; // chapter changed during request
-          // Keep activeChapter in sync so that re-mounting the editor
-          // (e.g. after toggling Preview → Editor) uses the latest content.
-          if (activeChapterRef.current?.id === savingChapterId) {
-            setActiveChapter((prev) =>
-              prev ? { ...prev, content, word_count: updated.word_count } : prev,
-            );
-          }
-          setProject((prev) => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              chapters: prev.chapters.map((c) =>
-                c.id === savingChapterId ? { ...c, word_count: updated.word_count, content } : c,
-              ),
-            };
-          });
-          clearCachedContent(savingChapterId);
-          setCacheWarning(false);
-          if (activeChapterRef.current?.id === savingChapterId) {
-            setSaveStatus("saved");
-          }
-          return true;
-        } catch (err) {
-          lastError = err;
-          if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
-            break;
-          }
-          if (attempt < MAX_RETRIES) {
-            await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
-          }
+    setSaveStatus("saving");
+    setSaveErrorMessage(null);
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (seq !== saveSeqRef.current) return false; // chapter changed, abort retries
+      try {
+        const updated = await api.chapters.update(savingChapterId, { content });
+        if (seq !== saveSeqRef.current) return false; // chapter changed during request
+        // Keep activeChapter in sync so that re-mounting the editor
+        // (e.g. after toggling Preview → Editor) uses the latest content.
+        if (activeChapterRef.current?.id === savingChapterId) {
+          setActiveChapter((prev) =>
+            prev ? { ...prev, content, word_count: updated.word_count } : prev,
+          );
+        }
+        setProject((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            chapters: prev.chapters.map((c) =>
+              c.id === savingChapterId ? { ...c, word_count: updated.word_count, content } : c,
+            ),
+          };
+        });
+        clearCachedContent(savingChapterId);
+        setCacheWarning(false);
+        if (activeChapterRef.current?.id === savingChapterId) {
+          setSaveStatus("saved");
+        }
+        return true;
+      } catch (err) {
+        lastError = err;
+        if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
+          break;
+        }
+        if (attempt < MAX_RETRIES) {
+          await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
         }
       }
-      if (activeChapterRef.current?.id === savingChapterId) {
-        setSaveStatus("error");
-        setSaveErrorMessage(
-          lastError instanceof ApiRequestError ? lastError.message : STRINGS.editor.saveFailed,
-        );
-      }
-      return false;
-    },
-    [],
-  );
+    }
+    if (activeChapterRef.current?.id === savingChapterId) {
+      setSaveStatus("error");
+      setSaveErrorMessage(
+        lastError instanceof ApiRequestError ? lastError.message : STRINGS.editor.saveFailed,
+      );
+    }
+    return false;
+  }, []);
 
   const handleContentChange = useCallback((content: Record<string, unknown>) => {
     setChapterWordCount(countWords(content));

@@ -480,7 +480,10 @@ export function Sidebar({
           const startX = e.clientX;
           const startWidth = width;
           function onMouseMove(ev: MouseEvent) {
-            const newWidth = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, startWidth + ev.clientX - startX));
+            const newWidth = Math.min(
+              SIDEBAR_MAX_WIDTH,
+              Math.max(SIDEBAR_MIN_WIDTH, startWidth + ev.clientX - startX),
+            );
             onResize(newWidth);
           }
           function onMouseUp() {
