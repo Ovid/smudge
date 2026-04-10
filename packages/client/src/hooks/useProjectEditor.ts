@@ -59,8 +59,9 @@ export function useProjectEditor(slug: string | undefined) {
 
   const handleSave = useCallback(
     async (content: Record<string, unknown>): Promise<boolean> => {
-      if (!activeChapter) return false;
-      const savingChapterId = activeChapter.id;
+      const current = activeChapterRef.current;
+      if (!current) return false;
+      const savingChapterId = current.id;
       const seq = ++saveSeqRef.current;
       const BACKOFF_MS = [2000, 4000, 8000];
       const MAX_RETRIES = 3;
@@ -113,7 +114,7 @@ export function useProjectEditor(slug: string | undefined) {
       }
       return false;
     },
-    [activeChapter],
+    [],
   );
 
   const handleContentChange = useCallback((content: Record<string, unknown>) => {
