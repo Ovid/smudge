@@ -55,7 +55,14 @@ export function useTrashManager(
 
   const confirmDeleteChapter = useCallback(async () => {
     if (!deleteTarget) return;
-    const success = await handleDeleteChapter(deleteTarget);
+    let success: boolean;
+    try {
+      success = await handleDeleteChapter(deleteTarget);
+    } catch {
+      // Unexpected throw — dismiss dialog so the user isn't stuck.
+      setDeleteTarget(null);
+      return;
+    }
     if (!success) return;
     setDeleteTarget(null);
     if (trashOpen && project) {
