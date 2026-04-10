@@ -355,7 +355,7 @@ export function EditorPage() {
           aria-label={STRINGS.a11y.viewModesNav}
         >
           <button
-            onClick={() => switchToView("editor")}
+            onClick={() => void switchToView("editor").catch(() => {})}
             aria-current={viewMode === "editor" ? "page" : undefined}
             className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
               viewMode === "editor"
@@ -366,7 +366,7 @@ export function EditorPage() {
             {STRINGS.nav.editor}
           </button>
           <button
-            onClick={() => switchToView("preview")}
+            onClick={() => void switchToView("preview").catch(() => {})}
             aria-current={viewMode === "preview" ? "page" : undefined}
             className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
               viewMode === "preview"
@@ -450,10 +450,7 @@ export function EditorPage() {
             <main className="flex-1 overflow-y-auto" aria-label={STRINGS.a11y.mainContent}>
               <PreviewMode
                 chapters={project.chapters}
-                onNavigateToChapter={(chapterId) => {
-                  setViewMode("editor");
-                  handleSelectChapterWithFlush(chapterId);
-                }}
+                onNavigateToChapter={handleSelectChapterWithFlush}
               />
             </main>
           ) : viewMode === "dashboard" ? (
@@ -462,10 +459,7 @@ export function EditorPage() {
                 slug={project.slug}
                 statuses={statuses}
                 refreshKey={dashboardRefreshKey}
-                onNavigateToChapter={(chapterId) => {
-                  setViewMode("editor");
-                  handleSelectChapterWithFlush(chapterId);
-                }}
+                onNavigateToChapter={handleSelectChapterWithFlush}
               />
             </main>
           ) : (

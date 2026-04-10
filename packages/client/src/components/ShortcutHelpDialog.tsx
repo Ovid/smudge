@@ -36,43 +36,43 @@ export function ShortcutHelpDialog({ open, onClose }: ShortcutHelpDialogProps) {
         <div className="flex justify-between items-center">
           <dt className="text-text-secondary">{STRINGS.shortcuts.togglePreview}</dt>
           <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-            Ctrl+Shift+P
+            {STRINGS.shortcuts.keyTogglePreview}
           </dd>
         </div>
         <div className="flex justify-between items-center">
           <dt className="text-text-secondary">{STRINGS.shortcuts.newChapter}</dt>
           <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-            Ctrl+Shift+N
+            {STRINGS.shortcuts.keyNewChapter}
           </dd>
         </div>
         <div className="flex justify-between items-center">
           <dt className="text-text-secondary">{STRINGS.shortcuts.toggleSidebar}</dt>
           <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-            Ctrl+Shift+\
+            {STRINGS.shortcuts.keyToggleSidebar}
           </dd>
         </div>
         <div className="flex justify-between items-center">
           <dt className="text-text-secondary">{STRINGS.shortcuts.prevChapter}</dt>
           <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-            Ctrl+Shift+&#x2191;
+            {STRINGS.shortcuts.keyPrevChapter}
           </dd>
         </div>
         <div className="flex justify-between items-center">
           <dt className="text-text-secondary">{STRINGS.shortcuts.nextChapter}</dt>
           <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-            Ctrl+Shift+&#x2193;
+            {STRINGS.shortcuts.keyNextChapter}
           </dd>
         </div>
         <div className="flex justify-between items-center">
           <dt className="text-text-secondary">{STRINGS.shortcuts.announceWordCount}</dt>
           <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-            Ctrl+Shift+W
+            {STRINGS.shortcuts.keyAnnounceWordCount}
           </dd>
         </div>
         <div className="flex justify-between items-center">
           <dt className="text-text-secondary">{STRINGS.shortcuts.showShortcuts}</dt>
           <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-            Ctrl+/
+            {STRINGS.shortcuts.keyShowShortcuts}
           </dd>
         </div>
       </dl>

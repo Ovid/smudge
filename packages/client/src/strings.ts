@@ -71,6 +71,13 @@ export const STRINGS = {
     prevChapter: "Previous chapter",
     nextChapter: "Next chapter",
     announceWordCount: "Announce word count",
+    keyTogglePreview: "Ctrl+Shift+P",
+    keyNewChapter: "Ctrl+Shift+N",
+    keyToggleSidebar: "Ctrl+Shift+\\",
+    keyPrevChapter: "Ctrl+Shift+\u2191",
+    keyNextChapter: "Ctrl+Shift+\u2193",
+    keyAnnounceWordCount: "Ctrl+Shift+W",
+    keyShowShortcuts: "Ctrl+/",
   },
   sidebar: {
     addChapter: "Add Chapter",
