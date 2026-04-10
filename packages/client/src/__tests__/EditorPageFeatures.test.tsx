@@ -322,6 +322,7 @@ describe("EditorPage trash view", () => {
     vi.mocked(api.chapters.restore).mockResolvedValue({
       ...trashedChapter,
       deleted_at: null,
+      project_slug: "test-project",
     });
 
     renderEditorPage();
