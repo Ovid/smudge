@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import type { Chapter, ChapterStatusRow } from "@smudge/shared";
+import type { ChapterStatusRow } from "@smudge/shared";
 import { Editor, type EditorHandle } from "../components/Editor";
 import { EditorToolbar } from "../components/EditorToolbar";
 import type { Editor as TipTapEditor } from "@tiptap/react";
@@ -11,30 +11,16 @@ import { DashboardView } from "../components/DashboardView";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { SettingsDialog } from "../components/SettingsDialog";
 import { ProjectSettingsDialog } from "../components/ProjectSettingsDialog";
+import { ShortcutHelpDialog } from "../components/ShortcutHelpDialog";
 import { STRINGS } from "../strings";
 import { useProjectEditor } from "../hooks/useProjectEditor";
+import { useSidebarState } from "../hooks/useSidebarState";
+import { useChapterTitleEditing } from "../hooks/useChapterTitleEditing";
+import { useProjectTitleEditing } from "../hooks/useProjectTitleEditing";
+import { useTrashManager } from "../hooks/useTrashManager";
+import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcuts";
 import { api, type VelocityResponse } from "../api/client";
 import { Logo } from "../components/Logo";
-
-const SIDEBAR_DEFAULT_WIDTH = 260;
-const SIDEBAR_MIN_WIDTH = 180;
-const SIDEBAR_MAX_WIDTH = 480;
-const SIDEBAR_WIDTH_KEY = "smudge:sidebar-width";
-
-function getSavedSidebarWidth(): number {
-  try {
-    const stored = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-    if (stored !== null) {
-      const parsed = Number(stored);
-      if (!Number.isNaN(parsed) && parsed >= SIDEBAR_MIN_WIDTH && parsed <= SIDEBAR_MAX_WIDTH) {
-        return parsed;
-      }
-    }
-  } catch {
-    // localStorage unavailable
-  }
-  return SIDEBAR_DEFAULT_WIDTH;
-}
 
 export function EditorPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -61,44 +47,62 @@ export function EditorPage() {
     handleStatusChange,
   } = useProjectEditor(slug);
 
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState("");
-  const titleInputRef = useRef<HTMLInputElement>(null);
-  const escapePressedRef = useRef(false);
+  const { sidebarWidth, sidebarOpen, handleSidebarResize, toggleSidebar } = useSidebarState();
+
+  const {
+    editingTitle,
+    titleDraft,
+    setTitleDraft,
+    titleError,
+    titleInputRef,
+    startEditingTitle,
+    saveTitle,
+    cancelEditingTitle,
+  } = useChapterTitleEditing(activeChapter, handleRenameChapter);
+
+  const {
+    editingProjectTitle,
+    projectTitleDraft,
+    setProjectTitleDraft,
+    projectTitleInputRef,
+    startEditingProjectTitle,
+    saveProjectTitle,
+    cancelEditingProjectTitle,
+  } = useProjectTitleEditing(
+    project,
+    slug,
+    handleUpdateProjectTitle,
+    setProjectTitleError,
+    navigate,
+  );
+
+  const {
+    trashOpen,
+    setTrashOpen,
+    trashedChapters,
+    deleteTarget,
+    setDeleteTarget,
+    actionError,
+    setActionError,
+    openTrash,
+    handleRestore,
+    confirmDeleteChapter,
+  } = useTrashManager(project, slug, setProject, handleDeleteChapter, navigate);
+
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
-  const shortcutDialogRef = useRef<HTMLDialogElement>(null);
-  const [editingProjectTitle, setEditingProjectTitle] = useState(false);
-  const [projectTitleDraft, setProjectTitleDraft] = useState("");
-  const projectTitleInputRef = useRef<HTMLInputElement>(null);
-  const projectEscapePressedRef = useRef(false);
-  const isSavingTitleRef = useRef(false);
-  const isSavingProjectTitleRef = useRef(false);
-
-  const [sidebarWidth, setSidebarWidth] = useState(getSavedSidebarWidth);
-  const handleSidebarResize = useCallback((newWidth: number) => {
-    setSidebarWidth(newWidth);
-    try {
-      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(newWidth));
-    } catch {
-      // localStorage unavailable
-    }
-  }, []);
-
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [deleteTarget, setDeleteTarget] = useState<Chapter | null>(null);
-  const [trashOpen, setTrashOpen] = useState(false);
-  const [trashedChapters, setTrashedChapters] = useState<Chapter[]>([]);
-  type ViewMode = "editor" | "preview" | "dashboard";
   const [viewMode, setViewMode] = useState<ViewMode>("editor");
   const [statuses, setStatuses] = useState<ChapterStatusRow[]>([]);
   const [navAnnouncement, setNavAnnouncement] = useState("");
-  const [actionError, setActionError] = useState<string | null>(null);
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
   const [wordCountAnnouncement, setWordCountAnnouncement] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [lastSession, setLastSession] = useState<VelocityResponse["sessions"][0] | null>(null);
 
+  const editorRef = useRef<EditorHandle | null>(null);
+  const [toolbarEditor, setToolbarEditor] = useState<TipTapEditor | null>(null);
+
+  // Fetch chapter statuses with retry
   useEffect(() => {
     let cancelled = false;
     let attempts = 0;
@@ -166,256 +170,56 @@ export function EditorPage() {
     };
   }, [slug, saveStatus]);
 
-  useEffect(() => {
-    const dialog = shortcutDialogRef.current;
-    if (!dialog) return;
-    if (shortcutHelpOpen) {
-      if (!dialog.open) dialog.showModal();
-    } else {
-      if (dialog.open) dialog.close();
-    }
-  }, [shortcutHelpOpen]);
-
-  const editorRef = useRef<EditorHandle | null>(null);
-  const [toolbarEditor, setToolbarEditor] = useState<TipTapEditor | null>(null);
-
   const handleStatusChangeWithError = useCallback(
-    async (chapterId: string, status: string) => {
-      await handleStatusChange(chapterId, status, setActionError);
+    (chapterId: string, status: string) => {
+      setActionError(null);
+      handleStatusChange(chapterId, status, setActionError);
     },
-    [handleStatusChange],
+    [handleStatusChange, setActionError],
+  );
+
+  const handleRenameChapterWithError = useCallback(
+    (chapterId: string, title: string) => {
+      setActionError(null);
+      handleRenameChapter(chapterId, title, setActionError);
+    },
+    [handleRenameChapter, setActionError],
+  );
+
+  const switchToView = useCallback(
+    async (mode: ViewMode) => {
+      await editorRef.current?.flushSave();
+      setTrashOpen(false);
+      setViewMode(mode);
+    },
+    [setTrashOpen],
   );
 
   const handleSelectChapterWithFlush = useCallback(
     async (chapterId: string) => {
-      await editorRef.current?.flushSave();
-      setTrashOpen(false);
-      setViewMode("editor");
+      await switchToView("editor");
       await handleSelectChapter(chapterId);
     },
-    [handleSelectChapter],
+    [handleSelectChapter, switchToView],
   );
 
-  async function openTrash() {
-    if (!project) return;
-    try {
-      const trashed = await api.projects.trash(project.slug);
-      setTrashedChapters(trashed);
-      setTrashOpen(true);
-    } catch (err) {
-      console.error("Failed to load trash:", err);
-      setActionError(err instanceof Error ? err.message : STRINGS.error.loadTrashFailed);
-    }
-  }
-
-  async function handleRestore(chapterId: string) {
-    try {
-      const restored = await api.chapters.restore(chapterId);
-      setTrashedChapters((prev) => prev.filter((c) => c.id !== chapterId));
-      setProject((prev) => {
-        if (!prev) return prev;
-        const updatedProject = {
-          ...prev,
-          chapters: [...prev.chapters, restored].sort((a, b) => a.sort_order - b.sort_order),
-        };
-        // If the restore also restored the parent project with a new slug, update it
-        if (restored.project_slug && restored.project_slug !== prev.slug) {
-          updatedProject.slug = restored.project_slug;
-        }
-        return updatedProject;
-      });
-      // If the slug changed (project was also restored), update the URL
-      if (restored.project_slug && restored.project_slug !== slug) {
-        navigate(`/projects/${restored.project_slug}`, { replace: true });
-      }
-    } catch (err) {
-      console.error("Failed to restore chapter:", err);
-      setActionError(err instanceof Error ? err.message : STRINGS.error.restoreChapterFailed);
-    }
-  }
-
-  async function confirmDeleteChapter() {
-    if (!deleteTarget) return;
-    await handleDeleteChapter(deleteTarget);
-    setDeleteTarget(null);
-    if (trashOpen && project) {
-      try {
-        const trashed = await api.projects.trash(project.slug);
-        setTrashedChapters(trashed);
-      } catch {
-        // Trash refresh failed — stale list is acceptable
-      }
-    }
-  }
-
-  // Use refs so the keydown handler always reads current state without
-  // needing to be re-registered on every state change. This eliminates a
-  // stale-closure race where the handler fires between a render and the
-  // effect that would re-register it with updated values.
-  const shortcutHelpOpenRef = useRef(shortcutHelpOpen);
-  shortcutHelpOpenRef.current = shortcutHelpOpen;
-  const deleteTargetRef = useRef(deleteTarget);
-  deleteTargetRef.current = deleteTarget;
-  const viewModeRef = useRef(viewMode);
-  viewModeRef.current = viewMode;
-  const activeChapterRef = useRef(activeChapter);
-  activeChapterRef.current = activeChapter;
-  const projectRef = useRef(project);
-  projectRef.current = project;
-  const chapterWordCountRef = useRef(chapterWordCount);
-  chapterWordCountRef.current = chapterWordCount;
-  const settingsOpenRef = useRef(settingsOpen);
-  settingsOpenRef.current = settingsOpen;
-  const projectSettingsOpenRef = useRef(projectSettingsOpen);
-  projectSettingsOpenRef.current = projectSettingsOpen;
-  const handleCreateChapterRef = useRef(handleCreateChapter);
-  handleCreateChapterRef.current = handleCreateChapter;
-  const handleSelectChapterWithFlushRef = useRef(handleSelectChapterWithFlush);
-  handleSelectChapterWithFlushRef.current = handleSelectChapterWithFlush;
-
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      const ctrl = e.ctrlKey || e.metaKey;
-
-      if (ctrl && e.key === "/") {
-        e.preventDefault();
-        setShortcutHelpOpen((prev) => !prev);
-        return;
-      }
-
-      if (shortcutHelpOpenRef.current && e.key === "Escape") {
-        e.preventDefault();
-        setShortcutHelpOpen(false);
-        return;
-      }
-
-      // Don't process shortcuts when a dialog is open (focus trap)
-      if (
-        shortcutHelpOpenRef.current ||
-        deleteTargetRef.current ||
-        settingsOpenRef.current ||
-        projectSettingsOpenRef.current
-      )
-        return;
-
-      if (ctrl && e.shiftKey && e.key === "N") {
-        e.preventDefault();
-        handleCreateChapterRef.current();
-        return;
-      }
-
-      if (ctrl && e.shiftKey && e.key === "\\") {
-        e.preventDefault();
-        setSidebarOpen((prev) => !prev);
-        return;
-      }
-
-      if (ctrl && e.shiftKey && e.key === "W") {
-        e.preventDefault();
-        // Clear first so re-pressing announces again even if the count hasn't changed
-        setWordCountAnnouncement("");
-        requestAnimationFrame(() => {
-          setWordCountAnnouncement(STRINGS.project.wordCount(chapterWordCountRef.current));
-        });
-        return;
-      }
-
-      if (ctrl && e.shiftKey && e.key === "P") {
-        e.preventDefault();
-        (editorRef.current?.flushSave() ?? Promise.resolve()).then(() => {
-          setTrashOpen(false);
-          setViewMode((prev) => (prev === "preview" ? "editor" : "preview"));
-        });
-        return;
-      }
-
-      if (ctrl && e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
-        const currentProject = projectRef.current;
-        const currentChapter = activeChapterRef.current;
-        if (viewModeRef.current !== "editor" || !currentChapter || !currentProject) return;
-        e.preventDefault();
-        const chapters = currentProject.chapters;
-        const currentIndex = chapters.findIndex((c) => c.id === currentChapter.id);
-        if (currentIndex === -1) return;
-        const nextIndex = e.key === "ArrowUp" ? currentIndex - 1 : currentIndex + 1;
-        if (nextIndex < 0 || nextIndex >= chapters.length) return;
-        const nextChapter = chapters[nextIndex];
-        if (!nextChapter) return;
-        handleSelectChapterWithFlushRef.current(nextChapter.id);
-        setNavAnnouncement(STRINGS.sidebar.navigatedToChapter(nextChapter.title));
-        setTimeout(() => setNavAnnouncement(""), 1000);
-        return;
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
-
-  function startEditingTitle() {
-    if (!activeChapter) return;
-    escapePressedRef.current = false;
-    setTitleDraft(activeChapter.title);
-    setEditingTitle(true);
-    setTimeout(() => titleInputRef.current?.select(), 0);
-  }
-
-  async function saveTitle() {
-    if (isSavingTitleRef.current) return;
-    if (escapePressedRef.current) {
-      setEditingTitle(false);
-      return;
-    }
-    if (!activeChapter || !titleDraft.trim()) {
-      setEditingTitle(false);
-      return;
-    }
-    isSavingTitleRef.current = true;
-    try {
-      const trimmed = titleDraft.trim();
-      if (trimmed !== activeChapter.title) {
-        await handleRenameChapter(activeChapter.id, trimmed);
-      }
-      setEditingTitle(false);
-    } finally {
-      isSavingTitleRef.current = false;
-    }
-  }
-
-  function startEditingProjectTitle() {
-    if (!project) return;
-    projectEscapePressedRef.current = false;
-    setProjectTitleError(null);
-    setProjectTitleDraft(project.title);
-    setEditingProjectTitle(true);
-    setTimeout(() => projectTitleInputRef.current?.select(), 0);
-  }
-
-  async function saveProjectTitle() {
-    if (isSavingProjectTitleRef.current) return;
-    if (projectEscapePressedRef.current) {
-      setEditingProjectTitle(false);
-      return;
-    }
-    if (!project || !projectTitleDraft.trim()) {
-      setEditingProjectTitle(false);
-      return;
-    }
-    isSavingProjectTitleRef.current = true;
-    try {
-      const trimmed = projectTitleDraft.trim();
-      if (trimmed !== project.title) {
-        const newSlug = await handleUpdateProjectTitle(trimmed);
-        if (newSlug === undefined) return; // keep edit mode open on failure
-        if (newSlug !== slug) {
-          navigate(`/projects/${newSlug}`, { replace: true });
-        }
-      }
-      setEditingProjectTitle(false);
-    } finally {
-      isSavingProjectTitleRef.current = false;
-    }
-  }
+  useKeyboardShortcuts({
+    shortcutHelpOpen,
+    deleteTarget,
+    settingsOpen,
+    projectSettingsOpen,
+    viewMode,
+    activeChapter,
+    project,
+    chapterWordCount,
+    setShortcutHelpOpen,
+    toggleSidebar,
+    handleCreateChapter,
+    handleSelectChapterWithFlush,
+    setWordCountAnnouncement,
+    setNavAnnouncement,
+    switchToView,
+  });
 
   if (error) {
     return (
@@ -471,7 +275,7 @@ export function EditorPage() {
               onAddChapter={handleCreateChapter}
               onDeleteChapter={setDeleteTarget}
               onReorderChapters={handleReorderChapters}
-              onRenameChapter={handleRenameChapter}
+              onRenameChapter={handleRenameChapterWithError}
               onOpenTrash={openTrash}
               onOpenSettings={() => setSettingsOpen(true)}
               statuses={statuses}
@@ -524,10 +328,7 @@ export function EditorPage() {
                 onBlur={saveProjectTitle}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") saveProjectTitle();
-                  if (e.key === "Escape") {
-                    projectEscapePressedRef.current = true;
-                    setEditingProjectTitle(false);
-                  }
+                  if (e.key === "Escape") cancelEditingProjectTitle();
                 }}
                 className="text-sm font-serif font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none"
                 aria-label={STRINGS.a11y.projectTitleInput}
@@ -554,10 +355,7 @@ export function EditorPage() {
           aria-label={STRINGS.a11y.viewModesNav}
         >
           <button
-            onClick={() => {
-              setTrashOpen(false);
-              setViewMode("editor");
-            }}
+            onClick={() => void switchToView("editor").catch(() => {})}
             aria-current={viewMode === "editor" ? "page" : undefined}
             className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
               viewMode === "editor"
@@ -568,11 +366,7 @@ export function EditorPage() {
             {STRINGS.nav.editor}
           </button>
           <button
-            onClick={async () => {
-              await editorRef.current?.flushSave();
-              setTrashOpen(false);
-              setViewMode("preview");
-            }}
+            onClick={() => void switchToView("preview").catch(() => {})}
             aria-current={viewMode === "preview" ? "page" : undefined}
             className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
               viewMode === "preview"
@@ -584,9 +378,7 @@ export function EditorPage() {
           </button>
           <button
             onClick={async () => {
-              await editorRef.current?.flushSave();
-              setTrashOpen(false);
-              setViewMode("dashboard");
+              await switchToView("dashboard");
               setDashboardRefreshKey((k) => k + 1);
             }}
             aria-current={viewMode === "dashboard" ? "page" : undefined}
@@ -619,7 +411,7 @@ export function EditorPage() {
             onAddChapter={handleCreateChapter}
             onDeleteChapter={setDeleteTarget}
             onReorderChapters={handleReorderChapters}
-            onRenameChapter={handleRenameChapter}
+            onRenameChapter={handleRenameChapterWithError}
             onOpenTrash={openTrash}
             onOpenSettings={() => setSettingsOpen(true)}
             statuses={statuses}
@@ -658,10 +450,7 @@ export function EditorPage() {
             <main className="flex-1 overflow-y-auto" aria-label={STRINGS.a11y.mainContent}>
               <PreviewMode
                 chapters={project.chapters}
-                onNavigateToChapter={(chapterId) => {
-                  setViewMode("editor");
-                  handleSelectChapterWithFlush(chapterId);
-                }}
+                onNavigateToChapter={handleSelectChapterWithFlush}
               />
             </main>
           ) : viewMode === "dashboard" ? (
@@ -670,10 +459,7 @@ export function EditorPage() {
                 slug={project.slug}
                 statuses={statuses}
                 refreshKey={dashboardRefreshKey}
-                onNavigateToChapter={(chapterId) => {
-                  setViewMode("editor");
-                  handleSelectChapterWithFlush(chapterId);
-                }}
+                onNavigateToChapter={handleSelectChapterWithFlush}
               />
             </main>
           ) : (
@@ -682,21 +468,25 @@ export function EditorPage() {
               aria-label={STRINGS.a11y.mainContent}
             >
               {editingTitle ? (
-                <input
-                  ref={titleInputRef}
-                  value={titleDraft}
-                  onChange={(e) => setTitleDraft(e.target.value)}
-                  onBlur={saveTitle}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") saveTitle();
-                    if (e.key === "Escape") {
-                      escapePressedRef.current = true;
-                      setEditingTitle(false);
-                    }
-                  }}
-                  className="mx-auto block max-w-[720px] mb-6 text-3xl font-serif font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none w-full tracking-tight"
-                  aria-label={STRINGS.a11y.chapterTitleInput}
-                />
+                <div className="mx-auto max-w-[720px] mb-6">
+                  <input
+                    ref={titleInputRef}
+                    value={titleDraft}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                    onBlur={saveTitle}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveTitle();
+                      if (e.key === "Escape") cancelEditingTitle();
+                    }}
+                    className="block text-3xl font-serif font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none w-full tracking-tight"
+                    aria-label={STRINGS.a11y.chapterTitleInput}
+                  />
+                  {titleError && (
+                    <p role="alert" className="text-xs text-status-error mt-1">
+                      {titleError}
+                    </p>
+                  )}
+                </div>
               ) : (
                 <h2
                   className="mx-auto max-w-[720px] mb-6 text-3xl font-serif font-semibold text-text-primary cursor-pointer hover:text-text-secondary tracking-tight"
@@ -791,69 +581,28 @@ export function EditorPage() {
           if (slug) {
             api.projects
               .get(slug)
-              .then((data) => setProject(data))
-              .catch(() => {});
+              .then((data) =>
+                setProject((prev) => {
+                  if (!prev) return data;
+                  return {
+                    ...prev,
+                    title: data.title,
+                    slug: data.slug,
+                    target_word_count: data.target_word_count,
+                    target_deadline: data.target_deadline,
+                    completion_threshold: data.completion_threshold,
+                  };
+                }),
+              )
+              .catch((err) => {
+                const msg = err instanceof Error ? err.message : STRINGS.error.loadProjectFailed;
+                setActionError(msg);
+              });
           }
         }}
       />
 
-      <dialog
-        ref={shortcutDialogRef}
-        aria-label={STRINGS.shortcuts.dialogTitle}
-        className="z-50 rounded-xl bg-bg-primary p-8 shadow-xl max-w-sm w-full border border-border/60 backdrop:bg-black/30"
-        onClick={(e) => {
-          if (e.target === e.currentTarget) setShortcutHelpOpen(false);
-        }}
-        onClose={() => setShortcutHelpOpen(false)}
-      >
-        <h3 className="text-lg font-semibold text-text-primary mb-5">
-          {STRINGS.shortcuts.dialogTitle}
-        </h3>
-        <dl className="flex flex-col gap-2.5 text-sm">
-          <div className="flex justify-between items-center">
-            <dt className="text-text-secondary">{STRINGS.shortcuts.togglePreview}</dt>
-            <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-              Ctrl+Shift+P
-            </dd>
-          </div>
-          <div className="flex justify-between items-center">
-            <dt className="text-text-secondary">{STRINGS.shortcuts.newChapter}</dt>
-            <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-              Ctrl+Shift+N
-            </dd>
-          </div>
-          <div className="flex justify-between items-center">
-            <dt className="text-text-secondary">{STRINGS.shortcuts.toggleSidebar}</dt>
-            <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-              Ctrl+Shift+\
-            </dd>
-          </div>
-          <div className="flex justify-between items-center">
-            <dt className="text-text-secondary">{STRINGS.shortcuts.prevChapter}</dt>
-            <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-              Ctrl+Shift+↑
-            </dd>
-          </div>
-          <div className="flex justify-between items-center">
-            <dt className="text-text-secondary">{STRINGS.shortcuts.nextChapter}</dt>
-            <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-              Ctrl+Shift+↓
-            </dd>
-          </div>
-          <div className="flex justify-between items-center">
-            <dt className="text-text-secondary">{STRINGS.shortcuts.announceWordCount}</dt>
-            <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-              Ctrl+Shift+W
-            </dd>
-          </div>
-          <div className="flex justify-between items-center">
-            <dt className="text-text-secondary">{STRINGS.shortcuts.showShortcuts}</dt>
-            <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
-              Ctrl+/
-            </dd>
-          </div>
-        </dl>
-      </dialog>
+      <ShortcutHelpDialog open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
     </div>
   );
 }

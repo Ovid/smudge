@@ -480,17 +480,19 @@ describe("useProjectEditor", () => {
     expect(result.current.projectTitleError).toBe("update boom");
   });
 
-  it("sets error when handleRenameChapter fails", async () => {
+  it("calls onError callback when handleRenameChapter fails (does not set full-page error)", async () => {
     vi.mocked(api.chapters.update).mockRejectedValue(new Error("rename boom"));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
+    const onError = vi.fn();
     await act(async () => {
-      await result.current.handleRenameChapter("ch1", "New Name");
+      await result.current.handleRenameChapter("ch1", "New Name", onError);
     });
 
-    expect(result.current.error).toBe("rename boom");
+    expect(onError).toHaveBeenCalledWith("rename boom");
+    expect(result.current.error).toBeNull();
   });
 
   it("handleStatusChange updates chapter status optimistically", async () => {

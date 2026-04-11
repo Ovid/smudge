@@ -8,9 +8,13 @@
   an older version of the file than what we have metadata for? We need some
   kind of custom format. Checksums? If it's older, offer to create a new
   version?
+- Looks like lots of our files don't have great documentation (or any).
 - The file format must be decoupled from our code so that future database
   changes or wipes don't actually destroy their current version, though
   history might be an issue.
+- Editing: we need much richer editing tools, like you'd expect to see in
+  Word. Have a simple subset, but use setting to enable more. Also, move
+  "settings" under "trash" to top bar.
 - If they run `make clean`, how can we restore? This seems very bad.
 
 # Bugs

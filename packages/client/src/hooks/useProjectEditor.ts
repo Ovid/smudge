@@ -17,21 +17,14 @@ export function useProjectEditor(slug: string | undefined) {
   const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
   const [cacheWarning, setCacheWarning] = useState(false);
   const activeChapterRef = useRef<Chapter | null>(null);
+  activeChapterRef.current = activeChapter;
   const projectSlugRef = useRef(slug);
+  if (project?.slug !== undefined) {
+    projectSlugRef.current = project.slug;
+  }
   const selectChapterSeqRef = useRef(0);
   const saveSeqRef = useRef(0);
   const statusChangeSeqRef = useRef(0);
-
-  // Keep ref in sync for use in loadProject's closure
-  useEffect(() => {
-    activeChapterRef.current = activeChapter;
-  }, [activeChapter]);
-
-  useEffect(() => {
-    if (project?.slug !== undefined) {
-      projectSlugRef.current = project.slug;
-    }
-  }, [project?.slug]);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,64 +57,62 @@ export function useProjectEditor(slug: string | undefined) {
     };
   }, [slug]);
 
-  const handleSave = useCallback(
-    async (content: Record<string, unknown>): Promise<boolean> => {
-      if (!activeChapter) return false;
-      const savingChapterId = activeChapter.id;
-      const seq = ++saveSeqRef.current;
-      const BACKOFF_MS = [2000, 4000, 8000];
-      const MAX_RETRIES = 3;
+  const handleSave = useCallback(async (content: Record<string, unknown>): Promise<boolean> => {
+    const current = activeChapterRef.current;
+    if (!current) return false;
+    const savingChapterId = current.id;
+    const seq = ++saveSeqRef.current;
+    const BACKOFF_MS = [2000, 4000, 8000];
+    const MAX_RETRIES = 3;
 
-      setSaveStatus("saving");
-      setSaveErrorMessage(null);
-      let lastError: unknown;
-      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        if (seq !== saveSeqRef.current) return false; // chapter changed, abort retries
-        try {
-          const updated = await api.chapters.update(savingChapterId, { content });
-          if (seq !== saveSeqRef.current) return false; // chapter changed during request
-          // Keep activeChapter in sync so that re-mounting the editor
-          // (e.g. after toggling Preview → Editor) uses the latest content.
-          if (activeChapterRef.current?.id === savingChapterId) {
-            setActiveChapter((prev) =>
-              prev ? { ...prev, content, word_count: updated.word_count } : prev,
-            );
-          }
-          setProject((prev) => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              chapters: prev.chapters.map((c) =>
-                c.id === savingChapterId ? { ...c, word_count: updated.word_count, content } : c,
-              ),
-            };
-          });
-          clearCachedContent(savingChapterId);
-          setCacheWarning(false);
-          if (activeChapterRef.current?.id === savingChapterId) {
-            setSaveStatus("saved");
-          }
-          return true;
-        } catch (err) {
-          lastError = err;
-          if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
-            break;
-          }
-          if (attempt < MAX_RETRIES) {
-            await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
-          }
+    setSaveStatus("saving");
+    setSaveErrorMessage(null);
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (seq !== saveSeqRef.current) return false; // chapter changed, abort retries
+      try {
+        const updated = await api.chapters.update(savingChapterId, { content });
+        if (seq !== saveSeqRef.current) return false; // chapter changed during request
+        // Keep activeChapter in sync so that re-mounting the editor
+        // (e.g. after toggling Preview → Editor) uses the latest content.
+        if (activeChapterRef.current?.id === savingChapterId) {
+          setActiveChapter((prev) =>
+            prev ? { ...prev, content, word_count: updated.word_count } : prev,
+          );
+        }
+        setProject((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            chapters: prev.chapters.map((c) =>
+              c.id === savingChapterId ? { ...c, word_count: updated.word_count, content } : c,
+            ),
+          };
+        });
+        clearCachedContent(savingChapterId);
+        setCacheWarning(false);
+        if (activeChapterRef.current?.id === savingChapterId) {
+          setSaveStatus("saved");
+        }
+        return true;
+      } catch (err) {
+        lastError = err;
+        if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
+          break;
+        }
+        if (attempt < MAX_RETRIES) {
+          await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
         }
       }
-      if (activeChapterRef.current?.id === savingChapterId) {
-        setSaveStatus("error");
-        setSaveErrorMessage(
-          lastError instanceof ApiRequestError ? lastError.message : STRINGS.editor.saveFailed,
-        );
-      }
-      return false;
-    },
-    [activeChapter],
-  );
+    }
+    if (activeChapterRef.current?.id === savingChapterId) {
+      setSaveStatus("error");
+      setSaveErrorMessage(
+        lastError instanceof ApiRequestError ? lastError.message : STRINGS.editor.saveFailed,
+      );
+    }
+    return false;
+  }, []);
 
   const handleContentChange = useCallback((content: Record<string, unknown>) => {
     setChapterWordCount(countWords(content));
@@ -169,11 +160,9 @@ export function useProjectEditor(slug: string | undefined) {
   }, []);
 
   const projectRef = useRef(project);
-  useEffect(() => {
-    projectRef.current = project;
-  }, [project]);
+  projectRef.current = project;
 
-  const handleDeleteChapter = useCallback(async (chapter: Chapter) => {
+  const handleDeleteChapter = useCallback(async (chapter: Chapter): Promise<boolean> => {
     ++saveSeqRef.current; // cancel any in-flight save retries for the deleted chapter
     try {
       await api.chapters.delete(chapter.id);
@@ -203,8 +192,10 @@ export function useProjectEditor(slug: string | undefined) {
           setChapterWordCount(0);
         }
       }
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : STRINGS.error.deleteChapterFailed);
+      return false;
     }
   }, []);
 
@@ -322,26 +313,33 @@ export function useProjectEditor(slug: string | undefined) {
     [],
   );
 
-  const handleRenameChapter = useCallback(async (chapterId: string, title: string) => {
-    try {
-      await api.chapters.update(chapterId, { title });
-      if (activeChapterRef.current?.id === chapterId) {
-        // Only update the title — don't overwrite content with stale server data.
-        // The editor holds the current truth (same principle as handleSave).
-        // Guard with ID check to prevent applying title to wrong chapter on rapid switch.
-        setActiveChapter((prev) => (prev?.id === chapterId ? { ...prev, title } : prev));
+  const handleRenameChapter = useCallback(
+    async (chapterId: string, title: string, onError?: (message: string) => void) => {
+      try {
+        await api.chapters.update(chapterId, { title });
+        if (activeChapterRef.current?.id === chapterId) {
+          // Only update the title — don't overwrite content with stale server data.
+          // The editor holds the current truth (same principle as handleSave).
+          // Guard with ID check to prevent applying title to wrong chapter on rapid switch.
+          setActiveChapter((prev) => (prev?.id === chapterId ? { ...prev, title } : prev));
+        }
+        setProject((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            chapters: prev.chapters.map((c) => (c.id === chapterId ? { ...c, title } : c)),
+          };
+        });
+      } catch (err) {
+        // Don't call setError — that triggers the full-page error overlay.
+        // Rename failures are non-fatal; surface via the optional callback
+        // so callers can display inline (same pattern as handleStatusChange).
+        const message = err instanceof Error ? err.message : STRINGS.error.renameChapterFailed;
+        onError?.(message);
       }
-      setProject((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          chapters: prev.chapters.map((c) => (c.id === chapterId ? { ...c, title } : c)),
-        };
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : STRINGS.error.renameChapterFailed);
-    }
-  }, []);
+    },
+    [],
+  );
 
   return {
     project,

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH } from "../hooks/useSidebarState";
 import {
   DndContext,
   closestCenter,
@@ -470,8 +471,8 @@ export function Sidebar({
         aria-orientation="vertical"
         aria-label={STRINGS.sidebar.resizeHandle}
         aria-valuenow={width}
-        aria-valuemin={180}
-        aria-valuemax={480}
+        aria-valuemin={SIDEBAR_MIN_WIDTH}
+        aria-valuemax={SIDEBAR_MAX_WIDTH}
         tabIndex={0}
         className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/20 focus:bg-accent/20 focus:outline-none transition-colors duration-200"
         onMouseDown={(e) => {
@@ -479,7 +480,10 @@ export function Sidebar({
           const startX = e.clientX;
           const startWidth = width;
           function onMouseMove(ev: MouseEvent) {
-            const newWidth = Math.min(480, Math.max(180, startWidth + ev.clientX - startX));
+            const newWidth = Math.min(
+              SIDEBAR_MAX_WIDTH,
+              Math.max(SIDEBAR_MIN_WIDTH, startWidth + ev.clientX - startX),
+            );
             onResize(newWidth);
           }
           function onMouseUp() {
@@ -497,11 +501,11 @@ export function Sidebar({
         onKeyDown={(e) => {
           if (e.key === "ArrowRight") {
             e.preventDefault();
-            onResize(Math.min(480, width + 10));
+            onResize(Math.min(SIDEBAR_MAX_WIDTH, width + 10));
           }
           if (e.key === "ArrowLeft") {
             e.preventDefault();
-            onResize(Math.max(180, width - 10));
+            onResize(Math.max(SIDEBAR_MIN_WIDTH, width - 10));
           }
         }}
       />
