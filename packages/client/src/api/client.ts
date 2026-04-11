@@ -137,7 +137,7 @@ export const api = {
   },
 
   settings: {
-    get: () => apiFetch<Record<string, string>>("/settings"),
+    get: () => apiFetch<{ timezone?: string }>("/settings"),
 
     update: (settings: Array<{ key: string; value: string }>) =>
       apiFetch<{ message: string }>("/settings", {

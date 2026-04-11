@@ -155,6 +155,7 @@ export function ProjectSettingsDialog({
     setSaveError(null);
     try {
       await api.settings.update([{ key: "timezone", value }]);
+      onUpdate();
     } catch (err) {
       console.error("Failed to save timezone:", err);
       setSaveError(STRINGS.projectSettings.saveError);
