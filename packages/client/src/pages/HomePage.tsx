@@ -92,38 +92,55 @@ export function HomePage() {
             <p className="text-text-muted text-base">{STRINGS.project.emptyState}</p>
           </div>
         ) : (
-          <ul className="flex flex-col gap-3">
+          <ul className="flex flex-col gap-2">
             {projects.map((project) => (
-              <li key={project.id} className="flex items-center gap-2 group">
+              <li key={project.id} className="group relative">
                 <button
                   onClick={() => navigate(`/projects/${project.slug}`)}
-                  className="flex-1 rounded-lg border border-border/70 bg-bg-input p-5 text-left hover:bg-bg-hover hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200"
+                  className="w-full rounded-lg border border-border/50 bg-bg-input px-5 py-3.5 text-left hover:bg-bg-hover hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200"
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="text-lg font-serif font-medium text-text-primary tracking-tight">
+                  <div className="flex items-baseline justify-between gap-4">
+                    <span className="text-lg font-serif font-medium text-text-primary tracking-tight leading-snug">
                       {project.title}
                     </span>
-                    <span className="text-xs tracking-wide uppercase text-text-muted font-medium">
+                    <span className="text-[10px] tracking-widest uppercase text-text-muted/70 font-medium shrink-0">
                       {project.mode === "fiction"
                         ? STRINGS.project.fiction
                         : STRINGS.project.nonfiction}
                     </span>
                   </div>
-                  <div className="mt-2 text-sm text-text-secondary flex items-center gap-4">
-                    <span className="font-medium">
-                      {STRINGS.project.wordCount(project.total_word_count)}
+                  <div className="mt-1 text-xs text-text-muted flex items-center justify-between">
+                    <span className="flex items-center gap-3">
+                      <span>{STRINGS.project.wordCount(project.total_word_count)}</span>
+                      <span className="text-border-strong" aria-hidden="true">
+                        &middot;
+                      </span>
+                      <span>{STRINGS.project.lastEdited(project.updated_at)}</span>
                     </span>
-                    <span className="text-text-muted">
-                      {STRINGS.project.lastEdited(project.updated_at)}
-                    </span>
+                    <span
+                      className="opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                      aria-hidden="true"
+                    />
                   </div>
                 </button>
                 <button
                   onClick={() => setDeleteTarget(project)}
-                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 rounded-lg p-2.5 text-text-muted hover:text-status-error hover:bg-status-error/8 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200"
+                  className="absolute right-4 bottom-3 opacity-0 group-hover:opacity-100 focus:opacity-100 rounded-md p-1.5 text-text-muted/50 hover:text-status-error hover:bg-status-error/8 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200"
                   aria-label={STRINGS.delete.buttonLabel}
                 >
-                  {STRINGS.delete.buttonLabel}
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                  </svg>
                 </button>
               </li>
             ))}
