@@ -9,8 +9,6 @@ export const CreateProjectSchema = z.object({
   mode: ProjectMode,
 });
 
-export const CompletionThreshold = z.enum(["outline", "rough_draft", "revised", "edited", "final"]);
-
 export const UpdateProjectSchema = z
   .object({
     title: z.string().trim().min(1, "Title is required").max(500, "Title is too long"),
@@ -29,7 +27,6 @@ export const UpdateProjectSchema = z
         );
       }, "Must be a valid date")
       .nullable(),
-    completion_threshold: CompletionThreshold,
   })
   .partial()
   .refine((data) => Object.keys(data).length > 0, {
@@ -52,7 +49,6 @@ export const UpdateChapterSchema = z
     title: z.string().trim().min(1).max(500, "Title is too long"),
     content: TipTapDocSchema,
     status: ChapterStatus,
-    target_word_count: z.number().int().positive().nullable(),
   })
   .partial()
   .refine((data) => Object.keys(data).length > 0, {
@@ -70,21 +66,3 @@ export const UpdateSettingsSchema = z.object({
     .min(1, "At least one setting must be provided"),
 });
 
-export function calculateWordsToday(
-  currentTotal: number,
-  snapshots: Array<{ date: string; total_word_count: number }>,
-  today: string,
-): number {
-  const priorDaySnapshots = snapshots
-    .filter((s) => s.date < today)
-    .sort((a, b) => b.date.localeCompare(a.date));
-
-  const lastPrior = priorDaySnapshots[0];
-  if (!lastPrior) {
-    // No prior-day snapshot: first day of tracking.
-    // Design: show current total so writers see progress on day one.
-    return currentTotal;
-  }
-
-  return currentTotal - lastPrior.total_word_count;
-}
