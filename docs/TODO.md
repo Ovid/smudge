@@ -8,6 +8,19 @@
   an older version of the file than what we have metadata for? We need some
   kind of custom format. Checksums? If it's older, offer to create a new
   version?
+
+    I'm creating a new text editor, with the long-term plan to ship it as an
+    Electron application. However, I think I've very poorly designed the autosave
+    feature.
+
+    We want to be able to have files with .smg extensions that we can double-click
+    to open the app (though not now). Instead, we want regular file menu, with
+    "open recent" and standard handling. However, a future feature means we should
+    be able to handle lots of files in a single project.  For example, I might be
+    writing a book and have lots of pdfs/word documents included that are part of
+    my research (such as studies). This means that a single .smg file seems odd.
+    Help me braintstorm how to think about this.
+
 - Rethink word counts.
 
     Recent sessions
