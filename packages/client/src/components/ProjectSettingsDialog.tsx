@@ -52,6 +52,17 @@ export function ProjectSettingsDialog({
 
   useEffect(() => {
     if (open) {
+      setWordCountTarget(
+        project.target_word_count != null ? String(project.target_word_count) : "",
+      );
+      setDeadline(project.target_deadline ?? "");
+      setThreshold(project.completion_threshold ?? "final");
+      setSaveError(null);
+    }
+  }, [open, project.target_word_count, project.target_deadline, project.completion_threshold]);
+
+  useEffect(() => {
+    if (open) {
       let cancelled = false;
       userChangedTimezoneRef.current = false;
       api.settings
