@@ -14,10 +14,12 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
 
-// Coverage instrumentation slows renders enough to exceed the default 1000ms waitFor timeout.
-// Tests using userEvent.type also need { timeout: 15000 } on their it() calls because
-// per-character re-renders of EditorPage can exceed the default 5000ms vitest testTimeout.
-configure({ asyncUtilTimeout: 5000 });
+// CI runners (especially Node 20 on Ubuntu) can be slow enough that full EditorPage
+// re-renders exceed the default 1000ms waitFor timeout. 10s covers observed CI variance
+// (failures seen at ~5060ms). Tests using userEvent.type also need { timeout: 15000 }
+// on their it() calls because per-character re-renders can exceed the default 5s vitest
+// testTimeout.
+configure({ asyncUtilTimeout: 10_000 });
 
 vi.mock("../hooks/useContentCache", () => ({
   getCachedContent: vi.fn().mockReturnValue(null),
