@@ -49,6 +49,7 @@ export function ProjectSettingsDialog({
   const [timezone, setTimezone] = useState<string>("UTC");
   const [saveError, setSaveError] = useState<string | null>(null);
   const userChangedTimezoneRef = useRef(false);
+  const latestTimezoneRequestRef = useRef<string | null>(null);
 
   // Re-sync project fields from props when the dialog opens.
   // Uses state (not a ref) to track previous open value — this is the
@@ -156,15 +157,18 @@ export function ProjectSettingsDialog({
   async function handleTimezoneChange(value: string) {
     const previous = timezone;
     userChangedTimezoneRef.current = true;
+    latestTimezoneRequestRef.current = value;
     setTimezone(value);
     setSaveError(null);
     try {
       await api.settings.update([{ key: "timezone", value }]);
-      onUpdate();
     } catch (err) {
       console.error("Failed to save timezone:", err);
-      setSaveError(STRINGS.projectSettings.saveError);
-      setTimezone(previous);
+      // Only revert if no newer timezone save has started since this one.
+      if (latestTimezoneRequestRef.current === value) {
+        setSaveError(STRINGS.projectSettings.saveError);
+        setTimezone(previous);
+      }
     }
   }
 
