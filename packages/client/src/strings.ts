@@ -203,6 +203,7 @@ export const STRINGS = {
   },
   projectSettings: {
     heading: "Project Settings",
+    openLabel: "Open project settings",
     wordCountTarget: "Word count target",
     deadline: "Deadline",
     completionThreshold: "A chapter counts as complete at",

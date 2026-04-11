@@ -147,12 +147,12 @@ export function EditorPage() {
       if (now - lastVelocityFetch.current < VELOCITY_THROTTLE_MS) return;
     }
     hasFetchedInitial.current = true;
+    lastVelocityFetch.current = Date.now();
     let cancelled = false;
     api.projects
       .velocity(slug)
       .then((data) => {
         if (cancelled) return;
-        lastVelocityFetch.current = Date.now();
         if (data.sessions.length > 0) {
           const last = data.sessions[data.sessions.length - 1];
           if (last) setLastSession(last);
@@ -161,7 +161,8 @@ export function EditorPage() {
         }
       })
       .catch(() => {
-        // Best-effort — don't set throttle timestamp so next save retries
+        // Reset throttle timestamp so the next save retries promptly
+        if (!cancelled) lastVelocityFetch.current = 0;
       });
     return () => {
       cancelled = true;
@@ -210,14 +211,7 @@ export function EditorPage() {
         .then((data) =>
           setProject((prev) => {
             if (!prev) return data;
-            return {
-              ...prev,
-              title: data.title,
-              slug: data.slug,
-              target_word_count: data.target_word_count,
-              target_deadline: data.target_deadline,
-              completion_threshold: data.completion_threshold,
-            };
+            return { ...data, chapters: prev.chapters };
           }),
         )
         .catch(() => {
@@ -284,12 +278,12 @@ export function EditorPage() {
           <span className="text-border mx-4" aria-hidden="true">
             /
           </span>
-          <span className="text-sm font-serif font-semibold text-text-primary flex-1">
+          <h1 className="text-sm font-serif font-semibold text-text-primary flex-1">
             {project.title}
-          </span>
+          </h1>
           <button
             onClick={() => setProjectSettingsOpen(true)}
-            aria-label={STRINGS.projectSettings.heading}
+            aria-label={STRINGS.projectSettings.openLabel}
             className="text-sm text-text-muted hover:text-text-secondary rounded-md p-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring"
           >
             &#x2699;
@@ -478,7 +472,7 @@ export function EditorPage() {
           </nav>
           <button
             onClick={() => setProjectSettingsOpen(true)}
-            aria-label={STRINGS.projectSettings.heading}
+            aria-label={STRINGS.projectSettings.openLabel}
             className="text-sm text-text-muted hover:text-text-secondary rounded-md p-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring"
           >
             &#x2699;

@@ -270,7 +270,7 @@ export function ProjectSettingsDialog({
             />
             <button
               type="button"
-              data-clear-word-count
+              data-clear-word-count="true"
               onClick={() => {
                 setWordCountTarget("");
                 saveField({ target_word_count: null });

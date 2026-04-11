@@ -137,6 +137,8 @@ export const api = {
   },
 
   settings: {
+    // Server returns Record<string, string>; narrowed here to the fields the client uses.
+    // Update this type when new settings are added.
     get: () => apiFetch<{ timezone?: string }>("/settings"),
 
     update: (settings: Array<{ key: string; value: string }>, signal?: AbortSignal) =>
