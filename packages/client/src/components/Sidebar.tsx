@@ -187,7 +187,6 @@ interface SidebarProps {
   onReorderChapters: (orderedIds: string[]) => void;
   onRenameChapter: (chapterId: string, title: string) => void;
   onOpenTrash: () => void;
-  onOpenSettings: () => void;
   statuses: ChapterStatusRow[];
   onStatusChange: (chapterId: string, status: string) => void;
   width: number;
@@ -314,7 +313,6 @@ export function Sidebar({
   onReorderChapters,
   onRenameChapter,
   onOpenTrash,
-  onOpenSettings,
   statuses,
   onStatusChange,
   width,
@@ -453,12 +451,6 @@ export function Sidebar({
           className="w-full text-xs text-text-muted hover:text-text-secondary focus:outline-none focus:ring-2 focus:ring-focus-ring rounded-md py-1.5"
         >
           {STRINGS.sidebar.trash}
-        </button>
-        <button
-          onClick={onOpenSettings}
-          className="w-full text-xs text-text-muted hover:text-text-secondary focus:outline-none focus:ring-2 focus:ring-focus-ring rounded-md py-1.5"
-        >
-          {STRINGS.settings.heading}
         </button>
       </div>
 

@@ -50,7 +50,7 @@ export function VelocityView({ slug, refreshKey }: VelocityViewProps) {
       .catch((err) => {
         if (!cancelled) {
           console.error(err);
-          setError(err instanceof Error ? err.message : STRINGS.error.loadVelocityFailed);
+          setError(STRINGS.error.loadVelocityFailed);
         }
       });
     return () => {

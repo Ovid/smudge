@@ -7,7 +7,7 @@ export function useTrashManager(
   project: ProjectWithChapters | null,
   slug: string | undefined,
   setProject: (updater: (prev: ProjectWithChapters | null) => ProjectWithChapters | null) => void,
-  handleDeleteChapter: (chapter: Chapter) => Promise<boolean>,
+  handleDeleteChapter: (chapter: Chapter, onError?: (message: string) => void) => Promise<boolean>,
   navigate: (path: string, options?: { replace: boolean }) => void,
 ) {
   const [trashOpen, setTrashOpen] = useState(false);
@@ -23,7 +23,7 @@ export function useTrashManager(
       setTrashOpen(true);
     } catch (err) {
       console.error("Failed to load trash:", err);
-      setActionError(err instanceof Error ? err.message : STRINGS.error.loadTrashFailed);
+      setActionError(STRINGS.error.loadTrashFailed);
     }
   }, [project]);
 
@@ -50,7 +50,7 @@ export function useTrashManager(
         }
       } catch (err) {
         console.error("Failed to restore chapter:", err);
-        setActionError(err instanceof Error ? err.message : STRINGS.error.restoreChapterFailed);
+        setActionError(STRINGS.error.restoreChapterFailed);
       }
     },
     [slug, setProject, navigate],
@@ -58,16 +58,19 @@ export function useTrashManager(
 
   const confirmDeleteChapter = useCallback(async () => {
     if (!deleteTarget) return;
+    setActionError(null);
     let success: boolean;
     try {
-      success = await handleDeleteChapter(deleteTarget);
+      success = await handleDeleteChapter(deleteTarget, (message) => {
+        setActionError(message);
+      });
     } catch {
       // Unexpected throw — dismiss dialog so the user isn't stuck.
       setDeleteTarget(null);
       return;
     }
-    if (!success) return;
     setDeleteTarget(null);
+    if (!success) return;
     if (trashOpen && project) {
       try {
         const trashed = await api.projects.trash(project.slug);

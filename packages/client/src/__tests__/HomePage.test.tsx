@@ -242,7 +242,7 @@ describe("HomePage", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
-      expect(screen.getByText("Network error")).toBeInTheDocument();
+      expect(screen.getByText("Failed to load projects")).toBeInTheDocument();
     });
   });
 
@@ -275,7 +275,7 @@ describe("HomePage", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
-      expect(screen.getByText("Create failed")).toBeInTheDocument();
+      expect(screen.getByText("Failed to create project")).toBeInTheDocument();
     });
   });
 
@@ -302,7 +302,7 @@ describe("HomePage", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
-      expect(screen.getByText("Delete failed")).toBeInTheDocument();
+      expect(screen.getByText("Failed to delete project")).toBeInTheDocument();
     });
   });
 

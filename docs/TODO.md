@@ -8,6 +8,28 @@
   an older version of the file than what we have metadata for? We need some
   kind of custom format. Checksums? If it's older, offer to create a new
   version?
+
+    I'm creating a new text editor, with the long-term plan to ship it as an
+    Electron application. However, I think I've very poorly designed the autosave
+    feature.
+
+    We want to be able to have files with .smg extensions that we can double-click
+    to open the app (though not now). Instead, we want regular file menu, with
+    "open recent" and standard handling. However, a future feature means we should
+    be able to handle lots of files in a single project.  For example, I might be
+    writing a book and have lots of pdfs/word documents included that are part of
+    my research (such as studies). This means that a single .smg file seems odd.
+    Help me braintstorm how to think about this.
+
+- Rethink word counts.
+
+    Recent sessions
+    Today, 11:26 – 11:26 · < 1 min · +1,770 net words · Preface, A Pattern Older
+    Than England, The Sheep Are Eating Your Job
+
+  For the above, all I did was look at the chapters. I didn't change anything.
+
+
 - Looks like lots of our files don't have great documentation (or any).
 - The file format must be decoupled from our code so that future database
   changes or wipes don't actually destroy their current version, though
@@ -23,6 +45,22 @@
   isn't changed there.
 - I can't style the chapter titles.
 - Better styling on main page. Simple is good? Need sorting, filtering.
+- ProjectSettingsDialog `saveField` has no concurrency guard — rapid changes
+  to the same field (e.g. deadline) can cause out-of-order writes that corrupt
+  the confirmed-values ref, leading to incorrect reverts on subsequent failures.
+- Server global error handler (`app.ts`) returns `err.message` verbatim for
+  status < 500. Acceptable for single-user, but would leak implementation
+  details if the app becomes multi-user.
+
+# Tech Debt
+
+- EditorPage empty-chapters view and main editor view duplicate ~80-100 lines
+  of JSX (header, sidebar, error banner, trash, dialogs, live regions). Extract
+  shared chrome into a layout wrapper to reduce divergence risk.
+- `useChapterTitleEditing` and `useProjectTitleEditing` `saveTitle`/
+  `saveProjectTitle` capture state from closures rather than refs. The stale
+  comparison could be wrong if the title was updated from another source.
+  Mitigated by single-user context but worth cleaning up.
 
 # Features
 

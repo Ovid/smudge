@@ -44,9 +44,9 @@ export function useProjectEditor(slug: string | undefined) {
           setActiveChapter(effectiveChapter);
           setChapterWordCount(countWords(effectiveChapter.content));
         }
-      } catch (err) {
+      } catch {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : STRINGS.error.loadProjectFailed);
+        setError(STRINGS.error.loadProjectFailed);
       }
     }
 
@@ -67,7 +67,6 @@ export function useProjectEditor(slug: string | undefined) {
 
     setSaveStatus("saving");
     setSaveErrorMessage(null);
-    let lastError: unknown;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (seq !== saveSeqRef.current) return false; // chapter changed, abort retries
       try {
@@ -96,7 +95,6 @@ export function useProjectEditor(slug: string | undefined) {
         }
         return true;
       } catch (err) {
-        lastError = err;
         if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
           break;
         }
@@ -107,9 +105,7 @@ export function useProjectEditor(slug: string | undefined) {
     }
     if (activeChapterRef.current?.id === savingChapterId) {
       setSaveStatus("error");
-      setSaveErrorMessage(
-        lastError instanceof ApiRequestError ? lastError.message : STRINGS.editor.saveFailed,
-      );
+      setSaveErrorMessage(STRINGS.editor.saveFailed);
     }
     return false;
   }, []);
@@ -135,8 +131,8 @@ export function useProjectEditor(slug: string | undefined) {
       setActiveChapter(newChapter);
       setChapterWordCount(0);
       setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : STRINGS.error.createChapterFailed);
+    } catch {
+      setError(STRINGS.error.createChapterFailed);
     }
   }, []);
 
@@ -153,51 +149,54 @@ export function useProjectEditor(slug: string | undefined) {
       const effectiveChapter = cached ? { ...chapter, content: cached } : chapter;
       setActiveChapter(effectiveChapter);
       setChapterWordCount(countWords(effectiveChapter.content));
-    } catch (err) {
+    } catch {
       if (seq !== selectChapterSeqRef.current) return;
-      setError(err instanceof Error ? err.message : STRINGS.error.loadChapterFailed);
+      setError(STRINGS.error.loadChapterFailed);
     }
   }, []);
 
   const projectRef = useRef(project);
   projectRef.current = project;
 
-  const handleDeleteChapter = useCallback(async (chapter: Chapter): Promise<boolean> => {
-    ++saveSeqRef.current; // cancel any in-flight save retries for the deleted chapter
-    try {
-      await api.chapters.delete(chapter.id);
-      clearCachedContent(chapter.id);
-      // Compute remaining from the ref (current state), not the stale closure
-      const remaining = projectRef.current?.chapters.filter((c) => c.id !== chapter.id) ?? [];
-      setProject((prev) => {
-        if (!prev) return prev;
-        return { ...prev, chapters: prev.chapters.filter((c) => c.id !== chapter.id) };
-      });
+  const handleDeleteChapter = useCallback(
+    async (chapter: Chapter, onError?: (message: string) => void): Promise<boolean> => {
+      ++saveSeqRef.current; // cancel any in-flight save retries for the deleted chapter
+      try {
+        await api.chapters.delete(chapter.id);
+        clearCachedContent(chapter.id);
+        // Compute remaining from the ref (current state), not the stale closure
+        const remaining = projectRef.current?.chapters.filter((c) => c.id !== chapter.id) ?? [];
+        setProject((prev) => {
+          if (!prev) return prev;
+          return { ...prev, chapters: prev.chapters.filter((c) => c.id !== chapter.id) };
+        });
 
-      // If deleting the active chapter, switch to the first remaining
-      if (activeChapterRef.current?.id === chapter.id) {
-        const first = remaining[0];
-        if (first) {
-          try {
-            const ch = await api.chapters.get(first.id);
-            setActiveChapter(ch);
-            setChapterWordCount(countWords(ch.content));
-          } catch {
-            // Secondary fetch failed — fall through to empty state
+        // If deleting the active chapter, switch to the first remaining
+        if (activeChapterRef.current?.id === chapter.id) {
+          const first = remaining[0];
+          if (first) {
+            try {
+              const ch = await api.chapters.get(first.id);
+              setActiveChapter(ch);
+              setChapterWordCount(countWords(ch.content));
+            } catch {
+              // Secondary fetch failed — fall through to empty state
+              setActiveChapter(null);
+              setChapterWordCount(0);
+            }
+          } else {
             setActiveChapter(null);
             setChapterWordCount(0);
           }
-        } else {
-          setActiveChapter(null);
-          setChapterWordCount(0);
         }
+        return true;
+      } catch {
+        onError?.(STRINGS.error.deleteChapterFailed);
+        return false;
       }
-      return true;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : STRINGS.error.deleteChapterFailed);
-      return false;
-    }
-  }, []);
+    },
+    [],
+  );
 
   const handleReorderChapters = useCallback(async (orderedIds: string[]) => {
     const slug = projectSlugRef.current;
@@ -214,8 +213,8 @@ export function useProjectEditor(slug: string | undefined) {
           .filter(Boolean) as Chapter[];
         return { ...prev, chapters: reordered };
       });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : STRINGS.error.reorderFailed);
+    } catch {
+      setError(STRINGS.error.reorderFailed);
     }
   }, []);
 
@@ -229,11 +228,10 @@ export function useProjectEditor(slug: string | undefined) {
         projectSlugRef.current = updated.slug;
         setProject((prev) => (prev ? { ...prev, title: updated.title, slug: updated.slug } : prev));
         return updated.slug;
-      } catch (err) {
+      } catch {
         // Don't call setError — that triggers the full-page error overlay.
         // Returning undefined keeps the title edit mode open so the user can retry.
-        const message = err instanceof Error ? err.message : STRINGS.error.updateTitleFailed;
-        setProjectTitleError(message);
+        setProjectTitleError(STRINGS.error.updateTitleFailed);
         return undefined;
       }
     },
@@ -259,7 +257,7 @@ export function useProjectEditor(slug: string | undefined) {
       setActiveChapter((prev) => (prev?.id === chapterId ? { ...prev, status } : prev));
       try {
         await api.chapters.update(chapterId, { status });
-      } catch (err) {
+      } catch {
         if (seq !== statusChangeSeqRef.current) return; // newer call owns state
         // Revert by reloading from server, falling back to local revert
         let reverted = false;
@@ -306,8 +304,7 @@ export function useProjectEditor(slug: string | undefined) {
         // Status change failures are non-fatal — the revert already restored consistent state.
         // Call the optional onError callback for the caller to display (e.g., as a dismissible banner),
         // rather than setError which triggers the full-page error overlay.
-        const message = err instanceof Error ? err.message : STRINGS.error.statusChangeFailed;
-        onError?.(message);
+        onError?.(STRINGS.error.statusChangeFailed);
       }
     },
     [],
@@ -330,12 +327,11 @@ export function useProjectEditor(slug: string | undefined) {
             chapters: prev.chapters.map((c) => (c.id === chapterId ? { ...c, title } : c)),
           };
         });
-      } catch (err) {
+      } catch {
         // Don't call setError — that triggers the full-page error overlay.
         // Rename failures are non-fatal; surface via the optional callback
         // so callers can display inline (same pattern as handleStatusChange).
-        const message = err instanceof Error ? err.message : STRINGS.error.renameChapterFailed;
-        onError?.(message);
+        onError?.(STRINGS.error.renameChapterFailed);
       }
     },
     [],

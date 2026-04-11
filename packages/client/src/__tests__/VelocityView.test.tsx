@@ -157,7 +157,7 @@ describe("VelocityView", () => {
     vi.mocked(api.projects.velocity).mockRejectedValue(new Error("Network failure"));
     render(<VelocityView slug="test" />);
     await waitFor(() => {
-      expect(screen.getByText("Network failure")).toBeInTheDocument();
+      expect(screen.getByText("Failed to load velocity data")).toBeInTheDocument();
     });
     spy.mockRestore();
   });

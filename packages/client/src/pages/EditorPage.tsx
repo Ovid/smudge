@@ -9,7 +9,6 @@ import { TrashView } from "../components/TrashView";
 import { PreviewMode } from "../components/PreviewMode";
 import { DashboardView } from "../components/DashboardView";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { SettingsDialog } from "../components/SettingsDialog";
 import { ProjectSettingsDialog } from "../components/ProjectSettingsDialog";
 import { ShortcutHelpDialog } from "../components/ShortcutHelpDialog";
 import { STRINGS } from "../strings";
@@ -95,7 +94,6 @@ export function EditorPage() {
   const [navAnnouncement, setNavAnnouncement] = useState("");
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
   const [wordCountAnnouncement, setWordCountAnnouncement] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [lastSession, setLastSession] = useState<VelocityResponse["sessions"][0] | null>(null);
 
@@ -149,12 +147,12 @@ export function EditorPage() {
       if (now - lastVelocityFetch.current < VELOCITY_THROTTLE_MS) return;
     }
     hasFetchedInitial.current = true;
+    lastVelocityFetch.current = Date.now();
     let cancelled = false;
     api.projects
       .velocity(slug)
       .then((data) => {
         if (cancelled) return;
-        lastVelocityFetch.current = Date.now();
         if (data.sessions.length > 0) {
           const last = data.sessions[data.sessions.length - 1];
           if (last) setLastSession(last);
@@ -163,7 +161,8 @@ export function EditorPage() {
         }
       })
       .catch(() => {
-        // Best-effort
+        // Reset throttle timestamp so the next save retries promptly
+        if (!cancelled) lastVelocityFetch.current = 0;
       });
     return () => {
       cancelled = true;
@@ -203,10 +202,26 @@ export function EditorPage() {
     [handleSelectChapter, switchToView],
   );
 
+  const handleProjectSettingsUpdate = useCallback(() => {
+    setDashboardRefreshKey((k) => k + 1);
+    if (slug) {
+      api.projects
+        .get(slug)
+        .then((data) =>
+          setProject((prev) => {
+            if (!prev) return data;
+            return { ...data, chapters: prev.chapters };
+          }),
+        )
+        .catch(() => {
+          setActionError(STRINGS.error.loadProjectFailed);
+        });
+    }
+  }, [slug, setProject, setActionError]);
+
   useKeyboardShortcuts({
     shortcutHelpOpen,
     deleteTarget,
-    settingsOpen,
     projectSettingsOpen,
     viewMode,
     activeChapter,
@@ -262,9 +277,16 @@ export function EditorPage() {
           <span className="text-border mx-4" aria-hidden="true">
             /
           </span>
-          <span className="text-sm font-serif font-semibold text-text-primary">
+          <h1 className="text-sm font-serif font-semibold text-text-primary flex-1">
             {project.title}
-          </span>
+          </h1>
+          <button
+            onClick={() => setProjectSettingsOpen(true)}
+            aria-label={STRINGS.projectSettings.openLabel}
+            className="text-sm text-text-muted hover:text-text-secondary rounded-md p-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring"
+          >
+            &#x2699;
+          </button>
         </header>
         <div className="flex flex-1 overflow-hidden">
           {sidebarOpen && (
@@ -277,23 +299,77 @@ export function EditorPage() {
               onReorderChapters={handleReorderChapters}
               onRenameChapter={handleRenameChapterWithError}
               onOpenTrash={openTrash}
-              onOpenSettings={() => setSettingsOpen(true)}
               statuses={statuses}
               onStatusChange={handleStatusChangeWithError}
               width={sidebarWidth}
               onResize={handleSidebarResize}
             />
           )}
-          <div className="flex-1 flex flex-col items-center justify-center page-enter">
-            <p className="text-text-muted mb-6 text-base">{STRINGS.project.emptyChapters}</p>
-            <button
-              onClick={handleCreateChapter}
-              className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring focus:ring-offset-2 focus:ring-offset-bg-primary shadow-sm"
-            >
-              {STRINGS.sidebar.addChapter}
-            </button>
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {actionError && (
+              <div
+                role="alert"
+                className="px-6 py-2 bg-status-error/8 text-status-error text-sm flex items-center justify-between border-b border-status-error/15"
+              >
+                <span>{actionError}</span>
+                <button
+                  onClick={() => setActionError(null)}
+                  className="text-status-error hover:text-text-primary text-xs ml-4 focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
+                  aria-label={STRINGS.a11y.dismissError}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+            {trashOpen ? (
+              <main className="flex-1 overflow-y-auto" aria-label={STRINGS.a11y.mainContent}>
+                <TrashView
+                  chapters={trashedChapters}
+                  onRestore={handleRestore}
+                  onBack={() => setTrashOpen(false)}
+                />
+              </main>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center page-enter">
+                <p className="text-text-muted mb-6 text-base">{STRINGS.project.emptyChapters}</p>
+                <button
+                  onClick={handleCreateChapter}
+                  className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring focus:ring-offset-2 focus:ring-offset-bg-primary shadow-sm"
+                >
+                  {STRINGS.sidebar.addChapter}
+                </button>
+              </div>
+            )}
           </div>
         </div>
+
+        {deleteTarget && (
+          <ConfirmDialog
+            title={STRINGS.delete.confirmTitle(deleteTarget.title)}
+            body={STRINGS.delete.confirmBody}
+            confirmLabel={STRINGS.delete.confirmButton}
+            cancelLabel={STRINGS.delete.cancelButton}
+            onConfirm={confirmDeleteChapter}
+            onCancel={() => setDeleteTarget(null)}
+          />
+        )}
+
+        <div aria-live="polite" className="sr-only" data-testid="nav-announcement">
+          {navAnnouncement}
+        </div>
+        <div aria-live="polite" className="sr-only" data-testid="word-count-announcement">
+          {wordCountAnnouncement}
+        </div>
+
+        <ProjectSettingsDialog
+          key={project.slug}
+          open={projectSettingsOpen}
+          project={project}
+          onClose={() => setProjectSettingsOpen(false)}
+          onUpdate={handleProjectSettingsUpdate}
+        />
+
+        <ShortcutHelpDialog open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
       </div>
     );
   }
@@ -350,56 +426,57 @@ export function EditorPage() {
           )}
         </div>
         {viewMode === "editor" && toolbarEditor && <EditorToolbar editor={toolbarEditor} />}
-        <nav
-          className="flex gap-0.5 bg-bg-sidebar/60 rounded-lg p-0.5"
-          aria-label={STRINGS.a11y.viewModesNav}
-        >
-          <button
-            onClick={() => void switchToView("editor").catch(() => {})}
-            aria-current={viewMode === "editor" ? "page" : undefined}
-            className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
-              viewMode === "editor"
-                ? "bg-bg-primary text-text-primary font-medium shadow-sm"
-                : "text-text-muted hover:text-text-secondary"
-            }`}
+        <div className="flex items-center gap-2">
+          <nav
+            className="flex gap-0.5 bg-bg-sidebar/60 rounded-lg p-0.5"
+            aria-label={STRINGS.a11y.viewModesNav}
           >
-            {STRINGS.nav.editor}
-          </button>
-          <button
-            onClick={() => void switchToView("preview").catch(() => {})}
-            aria-current={viewMode === "preview" ? "page" : undefined}
-            className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
-              viewMode === "preview"
-                ? "bg-bg-primary text-text-primary font-medium shadow-sm"
-                : "text-text-muted hover:text-text-secondary"
-            }`}
-          >
-            {STRINGS.nav.preview}
-          </button>
-          <button
-            onClick={async () => {
-              await switchToView("dashboard");
-              setDashboardRefreshKey((k) => k + 1);
-            }}
-            aria-current={viewMode === "dashboard" ? "page" : undefined}
-            className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
-              viewMode === "dashboard"
-                ? "bg-bg-primary text-text-primary font-medium shadow-sm"
-                : "text-text-muted hover:text-text-secondary"
-            }`}
-          >
-            {STRINGS.nav.dashboard}
-          </button>
-        </nav>
-        {viewMode === "dashboard" && (
+            <button
+              onClick={() => void switchToView("editor").catch(() => {})}
+              aria-current={viewMode === "editor" ? "page" : undefined}
+              className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
+                viewMode === "editor"
+                  ? "bg-bg-primary text-text-primary font-medium shadow-sm"
+                  : "text-text-muted hover:text-text-secondary"
+              }`}
+            >
+              {STRINGS.nav.editor}
+            </button>
+            <button
+              onClick={() => void switchToView("preview").catch(() => {})}
+              aria-current={viewMode === "preview" ? "page" : undefined}
+              className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
+                viewMode === "preview"
+                  ? "bg-bg-primary text-text-primary font-medium shadow-sm"
+                  : "text-text-muted hover:text-text-secondary"
+              }`}
+            >
+              {STRINGS.nav.preview}
+            </button>
+            <button
+              onClick={() =>
+                void switchToView("dashboard")
+                  .then(() => setDashboardRefreshKey((k) => k + 1))
+                  .catch(() => {})
+              }
+              aria-current={viewMode === "dashboard" ? "page" : undefined}
+              className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
+                viewMode === "dashboard"
+                  ? "bg-bg-primary text-text-primary font-medium shadow-sm"
+                  : "text-text-muted hover:text-text-secondary"
+              }`}
+            >
+              {STRINGS.nav.dashboard}
+            </button>
+          </nav>
           <button
             onClick={() => setProjectSettingsOpen(true)}
-            aria-label={STRINGS.projectSettings.heading}
+            aria-label={STRINGS.projectSettings.openLabel}
             className="text-sm text-text-muted hover:text-text-secondary rounded-md p-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring"
           >
             &#x2699;
           </button>
-        )}
+        </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
@@ -413,7 +490,6 @@ export function EditorPage() {
             onReorderChapters={handleReorderChapters}
             onRenameChapter={handleRenameChapterWithError}
             onOpenTrash={openTrash}
-            onOpenSettings={() => setSettingsOpen(true)}
             statuses={statuses}
             onStatusChange={handleStatusChangeWithError}
             width={sidebarWidth}
@@ -568,38 +644,12 @@ export function EditorPage() {
         {wordCountAnnouncement}
       </div>
 
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-
       <ProjectSettingsDialog
-        key={`${project.slug}-${project.target_word_count}-${project.target_deadline}-${project.completion_threshold}`}
+        key={project.slug}
         open={projectSettingsOpen}
         project={project}
         onClose={() => setProjectSettingsOpen(false)}
-        onUpdate={() => {
-          setDashboardRefreshKey((k) => k + 1);
-          // Re-fetch project to update local state with new settings
-          if (slug) {
-            api.projects
-              .get(slug)
-              .then((data) =>
-                setProject((prev) => {
-                  if (!prev) return data;
-                  return {
-                    ...prev,
-                    title: data.title,
-                    slug: data.slug,
-                    target_word_count: data.target_word_count,
-                    target_deadline: data.target_deadline,
-                    completion_threshold: data.completion_threshold,
-                  };
-                }),
-              )
-              .catch((err) => {
-                const msg = err instanceof Error ? err.message : STRINGS.error.loadProjectFailed;
-                setActionError(msg);
-              });
-          }
-        }}
+        onUpdate={handleProjectSettingsUpdate}
       />
 
       <ShortcutHelpDialog open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />

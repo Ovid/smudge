@@ -309,7 +309,7 @@ describe("DashboardView", () => {
     await switchToChaptersTab();
 
     await waitFor(() => {
-      expect(screen.getByText("Network failure")).toBeInTheDocument();
+      expect(screen.getByText("Failed to load dashboard")).toBeInTheDocument();
     });
     errorSpy.mockRestore();
   });
