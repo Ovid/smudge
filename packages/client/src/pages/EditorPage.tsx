@@ -147,12 +147,12 @@ export function EditorPage() {
       if (now - lastVelocityFetch.current < VELOCITY_THROTTLE_MS) return;
     }
     hasFetchedInitial.current = true;
-    lastVelocityFetch.current = Date.now();
     let cancelled = false;
     api.projects
       .velocity(slug)
       .then((data) => {
         if (cancelled) return;
+        lastVelocityFetch.current = Date.now();
         if (data.sessions.length > 0) {
           const last = data.sessions[data.sessions.length - 1];
           if (last) setLastSession(last);
@@ -161,7 +161,7 @@ export function EditorPage() {
         }
       })
       .catch(() => {
-        // Best-effort
+        // Best-effort — don't set throttle timestamp so next save retries
       });
     return () => {
       cancelled = true;
@@ -328,16 +328,44 @@ export function EditorPage() {
                 </button>
               </div>
             )}
-            <div className="flex-1 flex flex-col items-center justify-center page-enter">
-              <p className="text-text-muted mb-6 text-base">{STRINGS.project.emptyChapters}</p>
-              <button
-                onClick={handleCreateChapter}
-                className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring focus:ring-offset-2 focus:ring-offset-bg-primary shadow-sm"
-              >
-                {STRINGS.sidebar.addChapter}
-              </button>
-            </div>
+            {trashOpen ? (
+              <main className="flex-1 overflow-y-auto" aria-label={STRINGS.a11y.mainContent}>
+                <TrashView
+                  chapters={trashedChapters}
+                  onRestore={handleRestore}
+                  onBack={() => setTrashOpen(false)}
+                />
+              </main>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center page-enter">
+                <p className="text-text-muted mb-6 text-base">{STRINGS.project.emptyChapters}</p>
+                <button
+                  onClick={handleCreateChapter}
+                  className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring focus:ring-offset-2 focus:ring-offset-bg-primary shadow-sm"
+                >
+                  {STRINGS.sidebar.addChapter}
+                </button>
+              </div>
+            )}
           </div>
+        </div>
+
+        {deleteTarget && (
+          <ConfirmDialog
+            title={STRINGS.delete.confirmTitle(deleteTarget.title)}
+            body={STRINGS.delete.confirmBody}
+            confirmLabel={STRINGS.delete.confirmButton}
+            cancelLabel={STRINGS.delete.cancelButton}
+            onConfirm={confirmDeleteChapter}
+            onCancel={() => setDeleteTarget(null)}
+          />
+        )}
+
+        <div aria-live="polite" className="sr-only" data-testid="nav-announcement">
+          {navAnnouncement}
+        </div>
+        <div aria-live="polite" className="sr-only" data-testid="word-count-announcement">
+          {wordCountAnnouncement}
         </div>
 
         <ProjectSettingsDialog

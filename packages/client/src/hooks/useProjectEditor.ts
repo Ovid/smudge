@@ -107,9 +107,7 @@ export function useProjectEditor(slug: string | undefined) {
     }
     if (activeChapterRef.current?.id === savingChapterId) {
       setSaveStatus("error");
-      setSaveErrorMessage(
-        lastError instanceof ApiRequestError ? lastError.message : STRINGS.editor.saveFailed,
-      );
+      setSaveErrorMessage(STRINGS.editor.saveFailed);
     }
     return false;
   }, []);

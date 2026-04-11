@@ -47,9 +47,19 @@ export function ProjectSettingsDialog({
   const [deadline, setDeadline] = useState(project.target_deadline ?? "");
   const [threshold, setThreshold] = useState(project.completion_threshold ?? "final");
   const [timezone, setTimezone] = useState<string>("UTC");
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [fieldSaveError, setFieldSaveError] = useState<string | null>(null);
+  const [timezoneSaveError, setTimezoneSaveError] = useState<string | null>(null);
   const userChangedTimezoneRef = useRef(false);
-  const latestTimezoneRequestRef = useRef<string | null>(null);
+  const timezoneAbortRef = useRef<AbortController | null>(null);
+  const confirmedTimezoneRef = useRef<string>("UTC");
+
+  // Track last confirmed values so reverts go to the right place after
+  // successful save + failed second save (I5 fix).
+  const confirmedFieldsRef = useRef({
+    wordCountTarget: project.target_word_count != null ? String(project.target_word_count) : "",
+    deadline: project.target_deadline ?? "",
+    threshold: project.completion_threshold ?? ("final" as string),
+  });
 
   // Re-sync project fields from props when the dialog opens.
   // Uses state (not a ref) to track previous open value — this is the
@@ -63,7 +73,15 @@ export function ProjectSettingsDialog({
       );
       setDeadline(project.target_deadline ?? "");
       setThreshold(project.completion_threshold ?? "final");
-      setSaveError(null);
+      setFieldSaveError(null);
+      setTimezoneSaveError(null);
+      // Also re-sync the confirmed-values baseline
+      confirmedFieldsRef.current = {
+        wordCountTarget:
+          project.target_word_count != null ? String(project.target_word_count) : "",
+        deadline: project.target_deadline ?? "",
+        threshold: project.completion_threshold ?? ("final" as string),
+      };
     }
   }
 
@@ -74,11 +92,17 @@ export function ProjectSettingsDialog({
       api.settings
         .get()
         .then((settings) => {
-          if (!cancelled && !userChangedTimezoneRef.current)
-            setTimezone(settings.timezone || "UTC");
+          if (!cancelled && !userChangedTimezoneRef.current) {
+            const tz = settings.timezone || "UTC";
+            setTimezone(tz);
+            confirmedTimezoneRef.current = tz;
+          }
         })
         .catch(() => {
-          if (!cancelled && !userChangedTimezoneRef.current) setTimezone("UTC");
+          if (!cancelled && !userChangedTimezoneRef.current) {
+            setTimezone("UTC");
+            confirmedTimezoneRef.current = "UTC";
+          }
         });
       return () => {
         cancelled = true;
@@ -108,24 +132,33 @@ export function ProjectSettingsDialog({
   }, [open]);
 
   async function saveField(data: Parameters<typeof api.projects.update>[1]) {
-    setSaveError(null);
+    setFieldSaveError(null);
     try {
       await api.projects.update(project.slug, data);
+      // Update confirmed values on success before triggering parent refresh
+      if ("target_word_count" in data) {
+        confirmedFieldsRef.current.wordCountTarget =
+          data.target_word_count != null ? String(data.target_word_count) : "";
+      }
+      if ("target_deadline" in data) {
+        confirmedFieldsRef.current.deadline = data.target_deadline ?? "";
+      }
+      if ("completion_threshold" in data) {
+        confirmedFieldsRef.current.threshold = data.completion_threshold ?? "final";
+      }
       onUpdate();
     } catch (err) {
       console.error("Failed to save project setting:", err);
-      setSaveError(STRINGS.projectSettings.saveError);
-      // Revert only the specific field that failed
+      setFieldSaveError(STRINGS.projectSettings.saveError);
+      // Revert to last confirmed value, not stale props
       if ("target_word_count" in data) {
-        setWordCountTarget(
-          project.target_word_count != null ? String(project.target_word_count) : "",
-        );
+        setWordCountTarget(confirmedFieldsRef.current.wordCountTarget);
       }
       if ("target_deadline" in data) {
-        setDeadline(project.target_deadline ?? "");
+        setDeadline(confirmedFieldsRef.current.deadline);
       }
       if ("completion_threshold" in data) {
-        setThreshold(project.completion_threshold ?? "final");
+        setThreshold(confirmedFieldsRef.current.threshold);
       }
     }
   }
@@ -136,9 +169,7 @@ export function ProjectSettingsDialog({
     if (related?.dataset.clearWordCount) return;
     const parsed = wordCountTarget.trim() === "" ? null : parseInt(wordCountTarget, 10);
     if (parsed !== null && (Number.isNaN(parsed) || parsed <= 0)) {
-      setWordCountTarget(
-        project.target_word_count != null ? String(project.target_word_count) : "",
-      );
+      setWordCountTarget(confirmedFieldsRef.current.wordCountTarget);
       return;
     }
     saveField({ target_word_count: parsed });
@@ -155,20 +186,25 @@ export function ProjectSettingsDialog({
   }
 
   async function handleTimezoneChange(value: string) {
-    const previous = timezone;
+    // Cancel any in-flight timezone save to prevent out-of-order writes
+    timezoneAbortRef.current?.abort();
+    const controller = new AbortController();
+    timezoneAbortRef.current = controller;
+
     userChangedTimezoneRef.current = true;
-    latestTimezoneRequestRef.current = value;
     setTimezone(value);
-    setSaveError(null);
+    setTimezoneSaveError(null);
     try {
       await api.settings.update([{ key: "timezone", value }]);
-    } catch (err) {
-      console.error("Failed to save timezone:", err);
-      // Only revert if no newer timezone save has started since this one.
-      if (latestTimezoneRequestRef.current === value) {
-        setSaveError(STRINGS.projectSettings.saveError);
-        setTimezone(previous);
+      if (!controller.signal.aborted) {
+        confirmedTimezoneRef.current = value;
+        onUpdate();
       }
+    } catch (err) {
+      if (controller.signal.aborted) return; // superseded by a newer request
+      console.error("Failed to save timezone:", err);
+      setTimezoneSaveError(STRINGS.projectSettings.saveError);
+      setTimezone(confirmedTimezoneRef.current);
     }
   }
 
@@ -203,9 +239,9 @@ export function ProjectSettingsDialog({
         </button>
       </div>
 
-      {saveError && (
+      {(fieldSaveError || timezoneSaveError) && (
         <p className="mb-4 text-sm text-status-error" role="alert">
-          {saveError}
+          {fieldSaveError || timezoneSaveError}
         </p>
       )}
 

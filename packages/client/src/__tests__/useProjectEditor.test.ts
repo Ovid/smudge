@@ -682,7 +682,7 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.saveStatus).toBe("error");
-    expect(result.current.saveErrorMessage).toBe("Invalid status: xyz");
+    expect(result.current.saveErrorMessage).toBe("Unable to save \u2014 check connection");
   });
 
   it("handleSave clears saveErrorMessage on next save attempt", async () => {
@@ -696,7 +696,7 @@ describe("useProjectEditor", () => {
     await act(async () => {
       await result.current.handleSave({ type: "doc", content: [] });
     });
-    expect(result.current.saveErrorMessage).toBe("Bad Request");
+    expect(result.current.saveErrorMessage).toBe("Unable to save \u2014 check connection");
 
     await act(async () => {
       await result.current.handleSave({ type: "doc", content: [] });
