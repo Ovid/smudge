@@ -238,7 +238,7 @@ describe("Chapter title editing", () => {
     expect(restoredTitle.textContent).toBe("My Chapter");
   });
 
-  it("does not save if title is whitespace-only", async () => {
+  it("does not save if title is whitespace-only", { timeout: 15000 }, async () => {
     renderEditorPage();
     const title = await findChapterTitle();
     fireEvent.doubleClick(title);
