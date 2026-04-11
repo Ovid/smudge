@@ -148,7 +148,16 @@ export function ProjectSettingsDialog({
     <dialog
       ref={dialogRef}
       onClose={onClose}
-      className="rounded-xl bg-bg-primary p-6 shadow-lg backdrop:bg-black/50 max-w-md w-full"
+      className="w-full max-w-sm rounded-none rounded-l-xl bg-bg-primary p-6 shadow-xl backdrop:bg-black/50 overflow-y-auto"
+      style={{
+        position: "fixed",
+        right: "0",
+        top: "0",
+        left: "auto",
+        margin: "0",
+        height: "100vh",
+        maxHeight: "100vh",
+      }}
     >
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold text-text-primary font-sans">
