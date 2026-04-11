@@ -15,15 +15,22 @@ export function useChapterTitleEditing(
   const titleInputRef = useRef<HTMLInputElement>(null);
   const escapePressedRef = useRef(false);
   const isSavingTitleRef = useRef(false);
+  const prevChapterIdRef = useRef<string | undefined>(activeChapter?.id);
 
   // Cancel editing if the active chapter changes (e.g., via keyboard navigation)
   // to prevent saving the draft to the wrong chapter.
   // Set escapePressedRef so the blur handler (fired when the input unmounts)
   // does not attempt to save the stale draft to the new chapter.
+  // Skip the initial load (undefined → first ID) — there is nothing to cancel
+  // and the effect can race with a double-click that enters edit mode before
+  // the effect flushes.
   useEffect(() => {
-    escapePressedRef.current = true;
-    setEditingTitle(false);
-    setTitleError(null);
+    if (prevChapterIdRef.current !== undefined && prevChapterIdRef.current !== activeChapter?.id) {
+      escapePressedRef.current = true;
+      setEditingTitle(false);
+      setTitleError(null);
+    }
+    prevChapterIdRef.current = activeChapter?.id;
   }, [activeChapter?.id]);
 
   function startEditingTitle() {
