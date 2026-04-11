@@ -15,6 +15,8 @@ import { api } from "../api/client";
 import { STRINGS } from "../strings";
 
 // Coverage instrumentation slows renders enough to exceed the default 1000ms waitFor timeout.
+// Tests using userEvent.type also need { timeout: 15000 } on their it() calls because
+// per-character re-renders of EditorPage can exceed the default 5000ms vitest testTimeout.
 configure({ asyncUtilTimeout: 5000 });
 
 vi.mock("../hooks/useContentCache", () => ({
@@ -208,7 +210,7 @@ describe("Chapter title editing", () => {
     expect(input).toHaveValue("My Chapter");
   });
 
-  it("saves title on Enter", async () => {
+  it("saves title on Enter", { timeout: 15000 }, async () => {
     renderEditorPage();
     const title = await findChapterTitle();
     fireEvent.doubleClick(title);
@@ -224,7 +226,7 @@ describe("Chapter title editing", () => {
     });
   });
 
-  it("cancels editing on Escape without saving", async () => {
+  it("cancels editing on Escape without saving", { timeout: 15000 }, async () => {
     renderEditorPage();
     const title = await findChapterTitle();
     fireEvent.doubleClick(title);
@@ -296,7 +298,7 @@ describe("Project title editing", () => {
     expect(input).toHaveValue("Test Project");
   });
 
-  it("cancels project title editing on Escape without saving", async () => {
+  it("cancels project title editing on Escape without saving", { timeout: 15000 }, async () => {
     renderEditorPage();
 
     await waitFor(() => {
@@ -316,7 +318,7 @@ describe("Project title editing", () => {
     });
   });
 
-  it("does not save project title if whitespace-only", async () => {
+  it("does not save project title if whitespace-only", { timeout: 15000 }, async () => {
     renderEditorPage();
 
     await waitFor(() => {
@@ -333,7 +335,7 @@ describe("Project title editing", () => {
     expect(api.projects.update).not.toHaveBeenCalled();
   });
 
-  it("saves project title on Enter", async () => {
+  it("saves project title on Enter", { timeout: 15000 }, async () => {
     renderEditorPage();
 
     await waitFor(() => {
