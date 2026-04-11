@@ -13,13 +13,18 @@ export function useProjectTitleEditing(
   const projectTitleInputRef = useRef<HTMLInputElement>(null);
   const projectEscapePressedRef = useRef(false);
   const isSavingProjectTitleRef = useRef(false);
+  const prevProjectIdRef = useRef<string | undefined>(project?.id);
 
-  // Cancel editing if the project changes to prevent saving the draft to the wrong project.
-  // Set escapePressedRef so the blur handler (fired when the input unmounts)
-  // does not attempt to save the stale draft to the new project.
+  // Cancel editing if the user navigates to a different project, to prevent
+  // saving the draft to the wrong project.  Skip the initial load (undefined →
+  // first ID) — there is nothing to cancel and the effect can race with a
+  // double-click that enters edit mode before the effect flushes.
   useEffect(() => {
-    projectEscapePressedRef.current = true;
-    setEditingProjectTitle(false);
+    if (prevProjectIdRef.current !== undefined && prevProjectIdRef.current !== project?.id) {
+      projectEscapePressedRef.current = true;
+      setEditingProjectTitle(false);
+    }
+    prevProjectIdRef.current = project?.id;
   }, [project?.id]);
 
   function startEditingProjectTitle() {
