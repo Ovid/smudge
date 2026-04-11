@@ -67,7 +67,6 @@ export function useProjectEditor(slug: string | undefined) {
 
     setSaveStatus("saving");
     setSaveErrorMessage(null);
-    let lastError: unknown;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (seq !== saveSeqRef.current) return false; // chapter changed, abort retries
       try {
@@ -96,7 +95,6 @@ export function useProjectEditor(slug: string | undefined) {
         }
         return true;
       } catch (err) {
-        lastError = err;
         if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
           break;
         }
