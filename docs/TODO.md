@@ -45,6 +45,22 @@
   isn't changed there.
 - I can't style the chapter titles.
 - Better styling on main page. Simple is good? Need sorting, filtering.
+- ProjectSettingsDialog `saveField` has no concurrency guard — rapid changes
+  to the same field (e.g. deadline) can cause out-of-order writes that corrupt
+  the confirmed-values ref, leading to incorrect reverts on subsequent failures.
+- Server global error handler (`app.ts`) returns `err.message` verbatim for
+  status < 500. Acceptable for single-user, but would leak implementation
+  details if the app becomes multi-user.
+
+# Tech Debt
+
+- EditorPage empty-chapters view and main editor view duplicate ~80-100 lines
+  of JSX (header, sidebar, error banner, trash, dialogs, live regions). Extract
+  shared chrome into a layout wrapper to reduce divergence risk.
+- `useChapterTitleEditing` and `useProjectTitleEditing` `saveTitle`/
+  `saveProjectTitle` capture state from closures rather than refs. The stale
+  comparison could be wrong if the title was updated from another source.
+  Mitigated by single-user context but worth cleaning up.
 
 # Features
 
