@@ -44,7 +44,7 @@ export function useProjectEditor(slug: string | undefined) {
           setActiveChapter(effectiveChapter);
           setChapterWordCount(countWords(effectiveChapter.content));
         }
-      } catch (err) {
+      } catch {
         if (cancelled) return;
         setError(STRINGS.error.loadProjectFailed);
       }
@@ -135,7 +135,7 @@ export function useProjectEditor(slug: string | undefined) {
       setActiveChapter(newChapter);
       setChapterWordCount(0);
       setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
-    } catch (err) {
+    } catch {
       setError(STRINGS.error.createChapterFailed);
     }
   }, []);
@@ -153,7 +153,7 @@ export function useProjectEditor(slug: string | undefined) {
       const effectiveChapter = cached ? { ...chapter, content: cached } : chapter;
       setActiveChapter(effectiveChapter);
       setChapterWordCount(countWords(effectiveChapter.content));
-    } catch (err) {
+    } catch {
       if (seq !== selectChapterSeqRef.current) return;
       setError(STRINGS.error.loadChapterFailed);
     }
@@ -193,7 +193,7 @@ export function useProjectEditor(slug: string | undefined) {
         }
       }
       return true;
-    } catch (err) {
+    } catch {
       setError(STRINGS.error.deleteChapterFailed);
       return false;
     }
@@ -214,7 +214,7 @@ export function useProjectEditor(slug: string | undefined) {
           .filter(Boolean) as Chapter[];
         return { ...prev, chapters: reordered };
       });
-    } catch (err) {
+    } catch {
       setError(STRINGS.error.reorderFailed);
     }
   }, []);
@@ -229,7 +229,7 @@ export function useProjectEditor(slug: string | undefined) {
         projectSlugRef.current = updated.slug;
         setProject((prev) => (prev ? { ...prev, title: updated.title, slug: updated.slug } : prev));
         return updated.slug;
-      } catch (err) {
+      } catch {
         // Don't call setError — that triggers the full-page error overlay.
         // Returning undefined keeps the title edit mode open so the user can retry.
         setProjectTitleError(STRINGS.error.updateTitleFailed);
@@ -258,7 +258,7 @@ export function useProjectEditor(slug: string | undefined) {
       setActiveChapter((prev) => (prev?.id === chapterId ? { ...prev, status } : prev));
       try {
         await api.chapters.update(chapterId, { status });
-      } catch (err) {
+      } catch {
         if (seq !== statusChangeSeqRef.current) return; // newer call owns state
         // Revert by reloading from server, falling back to local revert
         let reverted = false;
@@ -328,7 +328,7 @@ export function useProjectEditor(slug: string | undefined) {
             chapters: prev.chapters.map((c) => (c.id === chapterId ? { ...c, title } : c)),
           };
         });
-      } catch (err) {
+      } catch {
         // Don't call setError — that triggers the full-page error overlay.
         // Rename failures are non-fatal; surface via the optional callback
         // so callers can display inline (same pattern as handleStatusChange).

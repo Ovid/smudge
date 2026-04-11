@@ -21,7 +21,7 @@ export function HomePage() {
       try {
         const data = await api.projects.list();
         if (!cancelled) setProjects(data);
-      } catch (err) {
+      } catch {
         if (!cancelled) {
           setError(STRINGS.error.loadFailed);
         }
@@ -41,7 +41,7 @@ export function HomePage() {
       const project = await api.projects.create({ title, mode });
       setDialogOpen(false);
       navigate(`/projects/${project.slug}`);
-    } catch (err) {
+    } catch {
       setError(STRINGS.error.createFailed);
     }
   }
@@ -53,7 +53,7 @@ export function HomePage() {
       await api.projects.delete(deleteTarget.slug);
       setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
       setDeleteTarget(null);
-    } catch (err) {
+    } catch {
       setError(STRINGS.error.deleteFailed);
       setDeleteTarget(null);
     }
