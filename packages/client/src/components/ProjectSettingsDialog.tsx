@@ -107,6 +107,10 @@ export function ProjectSettingsDialog({
         cancelled = true;
       };
     }
+    // Intentionally only re-run when `open` changes — project props are read
+    // as initial values when the dialog opens; re-running on every prop change
+    // would reset fields the user is actively editing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   useEffect(() => {
