@@ -147,12 +147,12 @@ export function EditorPage() {
       if (now - lastVelocityFetch.current < VELOCITY_THROTTLE_MS) return;
     }
     hasFetchedInitial.current = true;
+    lastVelocityFetch.current = Date.now();
     let cancelled = false;
     api.projects
       .velocity(slug)
       .then((data) => {
         if (cancelled) return;
-        lastVelocityFetch.current = Date.now();
         if (data.sessions.length > 0) {
           const last = data.sessions[data.sessions.length - 1];
           if (last) setLastSession(last);
