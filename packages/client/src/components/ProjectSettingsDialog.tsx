@@ -82,8 +82,7 @@ export function ProjectSettingsDialog({
     if (open) {
       // Re-sync confirmed-values baseline from props when dialog opens
       confirmedFieldsRef.current = {
-        wordCountTarget:
-          project.target_word_count != null ? String(project.target_word_count) : "",
+        wordCountTarget: project.target_word_count != null ? String(project.target_word_count) : "",
         deadline: project.target_deadline ?? "",
         threshold: project.completion_threshold ?? ("final" as string),
       };
