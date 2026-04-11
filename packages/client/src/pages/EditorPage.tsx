@@ -347,6 +347,8 @@ export function EditorPage() {
           onClose={() => setProjectSettingsOpen(false)}
           onUpdate={handleProjectSettingsUpdate}
         />
+
+        <ShortcutHelpDialog open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
       </div>
     );
   }
