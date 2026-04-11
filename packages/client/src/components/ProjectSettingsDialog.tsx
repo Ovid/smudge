@@ -198,7 +198,7 @@ export function ProjectSettingsDialog({
     setTimezone(value);
     setTimezoneSaveError(null);
     try {
-      await api.settings.update([{ key: "timezone", value }]);
+      await api.settings.update([{ key: "timezone", value }], controller.signal);
       if (!controller.signal.aborted) {
         confirmedTimezoneRef.current = value;
         onUpdate();

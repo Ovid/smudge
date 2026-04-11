@@ -139,10 +139,11 @@ export const api = {
   settings: {
     get: () => apiFetch<{ timezone?: string }>("/settings"),
 
-    update: (settings: Array<{ key: string; value: string }>) =>
+    update: (settings: Array<{ key: string; value: string }>, signal?: AbortSignal) =>
       apiFetch<{ message: string }>("/settings", {
         method: "PATCH",
         body: JSON.stringify({ settings }),
+        signal,
       }),
   },
 };

@@ -285,9 +285,10 @@ describe("ProjectSettingsDialog", () => {
     await user.selectOptions(screen.getByLabelText(/timezone/i), "Europe/London");
 
     await waitFor(() => {
-      expect(api.settings.update).toHaveBeenCalledWith([
-        { key: "timezone", value: "Europe/London" },
-      ]);
+      expect(api.settings.update).toHaveBeenCalledWith(
+        [{ key: "timezone", value: "Europe/London" }],
+        expect.any(AbortSignal),
+      );
     });
   });
 
