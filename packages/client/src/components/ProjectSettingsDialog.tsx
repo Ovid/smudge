@@ -50,7 +50,12 @@ export function ProjectSettingsDialog({
   const [saveError, setSaveError] = useState<string | null>(null);
   const userChangedTimezoneRef = useRef(false);
 
-  useEffect(() => {
+  // Re-sync project fields from props when the dialog opens.
+  // Uses state (not a ref) to track previous open value — this is the
+  // React-approved "adjusting state during render" pattern.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
     if (open) {
       setWordCountTarget(
         project.target_word_count != null ? String(project.target_word_count) : "",
@@ -59,7 +64,7 @@ export function ProjectSettingsDialog({
       setThreshold(project.completion_threshold ?? "final");
       setSaveError(null);
     }
-  }, [open, project.target_word_count, project.target_deadline, project.completion_threshold]);
+  }
 
   useEffect(() => {
     if (open) {
