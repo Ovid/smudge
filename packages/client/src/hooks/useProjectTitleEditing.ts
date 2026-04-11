@@ -22,6 +22,7 @@ export function useProjectTitleEditing(
   useEffect(() => {
     if (prevProjectIdRef.current !== undefined && prevProjectIdRef.current !== project?.id) {
       projectEscapePressedRef.current = true;
+      isSavingProjectTitleRef.current = false;
       setEditingProjectTitle(false);
     }
     prevProjectIdRef.current = project?.id;
