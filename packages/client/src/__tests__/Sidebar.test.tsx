@@ -63,7 +63,6 @@ function renderSidebar(overrides = {}) {
     onReorderChapters: vi.fn(),
     onRenameChapter: vi.fn(),
     onOpenTrash: vi.fn(),
-    onOpenSettings: vi.fn(),
     statuses: mockStatuses,
     onStatusChange: vi.fn(),
     width: 260,

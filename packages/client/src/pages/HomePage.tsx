@@ -117,16 +117,12 @@ export function HomePage() {
                       </span>
                       <span>{STRINGS.project.lastEdited(project.updated_at)}</span>
                     </span>
-                    <span
-                      className="opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                      aria-hidden="true"
-                    />
                   </div>
                 </button>
                 <button
                   onClick={() => setDeleteTarget(project)}
                   className="absolute right-4 bottom-3 opacity-0 group-hover:opacity-100 focus:opacity-100 rounded-md p-1.5 text-text-muted/50 hover:text-status-error hover:bg-status-error/8 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200"
-                  aria-label={STRINGS.delete.buttonLabel}
+                  aria-label={STRINGS.delete.deleteProjectAriaLabel(project.title)}
                 >
                   <svg
                     width="14"
