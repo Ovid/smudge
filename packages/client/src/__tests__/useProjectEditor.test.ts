@@ -417,17 +417,19 @@ describe("useProjectEditor", () => {
     expect(result.current.error).toBe(STRINGS.error.loadChapterFailed);
   });
 
-  it("sets error when handleDeleteChapter fails", async () => {
+  it("calls onError callback when handleDeleteChapter fails (does not set full-page error)", async () => {
     vi.mocked(api.chapters.delete).mockRejectedValue(new Error("delete boom"));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
 
+    const onError = vi.fn();
     await act(async () => {
-      await result.current.handleDeleteChapter(mockChapter2);
+      await result.current.handleDeleteChapter(mockChapter2, onError);
     });
 
-    expect(result.current.error).toBe(STRINGS.error.deleteChapterFailed);
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.deleteChapterFailed);
+    expect(result.current.error).toBeNull();
   });
 
   it("sets activeChapter to null when deleting the last chapter", async () => {

@@ -158,42 +158,45 @@ export function useProjectEditor(slug: string | undefined) {
   const projectRef = useRef(project);
   projectRef.current = project;
 
-  const handleDeleteChapter = useCallback(async (chapter: Chapter): Promise<boolean> => {
-    ++saveSeqRef.current; // cancel any in-flight save retries for the deleted chapter
-    try {
-      await api.chapters.delete(chapter.id);
-      clearCachedContent(chapter.id);
-      // Compute remaining from the ref (current state), not the stale closure
-      const remaining = projectRef.current?.chapters.filter((c) => c.id !== chapter.id) ?? [];
-      setProject((prev) => {
-        if (!prev) return prev;
-        return { ...prev, chapters: prev.chapters.filter((c) => c.id !== chapter.id) };
-      });
+  const handleDeleteChapter = useCallback(
+    async (chapter: Chapter, onError?: (message: string) => void): Promise<boolean> => {
+      ++saveSeqRef.current; // cancel any in-flight save retries for the deleted chapter
+      try {
+        await api.chapters.delete(chapter.id);
+        clearCachedContent(chapter.id);
+        // Compute remaining from the ref (current state), not the stale closure
+        const remaining = projectRef.current?.chapters.filter((c) => c.id !== chapter.id) ?? [];
+        setProject((prev) => {
+          if (!prev) return prev;
+          return { ...prev, chapters: prev.chapters.filter((c) => c.id !== chapter.id) };
+        });
 
-      // If deleting the active chapter, switch to the first remaining
-      if (activeChapterRef.current?.id === chapter.id) {
-        const first = remaining[0];
-        if (first) {
-          try {
-            const ch = await api.chapters.get(first.id);
-            setActiveChapter(ch);
-            setChapterWordCount(countWords(ch.content));
-          } catch {
-            // Secondary fetch failed — fall through to empty state
+        // If deleting the active chapter, switch to the first remaining
+        if (activeChapterRef.current?.id === chapter.id) {
+          const first = remaining[0];
+          if (first) {
+            try {
+              const ch = await api.chapters.get(first.id);
+              setActiveChapter(ch);
+              setChapterWordCount(countWords(ch.content));
+            } catch {
+              // Secondary fetch failed — fall through to empty state
+              setActiveChapter(null);
+              setChapterWordCount(0);
+            }
+          } else {
             setActiveChapter(null);
             setChapterWordCount(0);
           }
-        } else {
-          setActiveChapter(null);
-          setChapterWordCount(0);
         }
+        return true;
+      } catch {
+        onError?.(STRINGS.error.deleteChapterFailed);
+        return false;
       }
-      return true;
-    } catch {
-      setError(STRINGS.error.deleteChapterFailed);
-      return false;
-    }
-  }, []);
+    },
+    [],
+  );
 
   const handleReorderChapters = useCallback(async (orderedIds: string[]) => {
     const slug = projectSlugRef.current;
