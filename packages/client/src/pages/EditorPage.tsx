@@ -201,6 +201,31 @@ export function EditorPage() {
     [handleSelectChapter, switchToView],
   );
 
+  const handleProjectSettingsUpdate = useCallback(() => {
+    setDashboardRefreshKey((k) => k + 1);
+    if (slug) {
+      api.projects
+        .get(slug)
+        .then((data) =>
+          setProject((prev) => {
+            if (!prev) return data;
+            return {
+              ...prev,
+              title: data.title,
+              slug: data.slug,
+              target_word_count: data.target_word_count,
+              target_deadline: data.target_deadline,
+              completion_threshold: data.completion_threshold,
+            };
+          }),
+        )
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : STRINGS.error.loadProjectFailed;
+          setActionError(msg);
+        });
+    }
+  }, [slug, setProject, setActionError]);
+
   useKeyboardShortcuts({
     shortcutHelpOpen,
     deleteTarget,
@@ -287,14 +312,31 @@ export function EditorPage() {
               onResize={handleSidebarResize}
             />
           )}
-          <div className="flex-1 flex flex-col items-center justify-center page-enter">
-            <p className="text-text-muted mb-6 text-base">{STRINGS.project.emptyChapters}</p>
-            <button
-              onClick={handleCreateChapter}
-              className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring focus:ring-offset-2 focus:ring-offset-bg-primary shadow-sm"
-            >
-              {STRINGS.sidebar.addChapter}
-            </button>
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {actionError && (
+              <div
+                role="alert"
+                className="px-6 py-2 bg-status-error/8 text-status-error text-sm flex items-center justify-between border-b border-status-error/15"
+              >
+                <span>{actionError}</span>
+                <button
+                  onClick={() => setActionError(null)}
+                  className="text-status-error hover:text-text-primary text-xs ml-4 focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
+                  aria-label={STRINGS.a11y.dismissError}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+            <div className="flex-1 flex flex-col items-center justify-center page-enter">
+              <p className="text-text-muted mb-6 text-base">{STRINGS.project.emptyChapters}</p>
+              <button
+                onClick={handleCreateChapter}
+                className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring focus:ring-offset-2 focus:ring-offset-bg-primary shadow-sm"
+              >
+                {STRINGS.sidebar.addChapter}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -303,29 +345,7 @@ export function EditorPage() {
           open={projectSettingsOpen}
           project={project}
           onClose={() => setProjectSettingsOpen(false)}
-          onUpdate={() => {
-            if (slug) {
-              api.projects
-                .get(slug)
-                .then((data) =>
-                  setProject((prev) => {
-                    if (!prev) return data;
-                    return {
-                      ...prev,
-                      title: data.title,
-                      slug: data.slug,
-                      target_word_count: data.target_word_count,
-                      target_deadline: data.target_deadline,
-                      completion_threshold: data.completion_threshold,
-                    };
-                  }),
-                )
-                .catch((err) => {
-                  const msg = err instanceof Error ? err.message : STRINGS.error.loadProjectFailed;
-                  setActionError(msg);
-                });
-            }
-          }}
+          onUpdate={handleProjectSettingsUpdate}
         />
       </div>
     );
@@ -411,10 +431,11 @@ export function EditorPage() {
               {STRINGS.nav.preview}
             </button>
             <button
-              onClick={async () => {
-                await switchToView("dashboard");
-                setDashboardRefreshKey((k) => k + 1);
-              }}
+              onClick={() =>
+                void switchToView("dashboard")
+                  .then(() => setDashboardRefreshKey((k) => k + 1))
+                  .catch(() => {})
+              }
               aria-current={viewMode === "dashboard" ? "page" : undefined}
               className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
                 viewMode === "dashboard"
@@ -605,31 +626,7 @@ export function EditorPage() {
         open={projectSettingsOpen}
         project={project}
         onClose={() => setProjectSettingsOpen(false)}
-        onUpdate={() => {
-          setDashboardRefreshKey((k) => k + 1);
-          // Re-fetch project to update local state with new settings
-          if (slug) {
-            api.projects
-              .get(slug)
-              .then((data) =>
-                setProject((prev) => {
-                  if (!prev) return data;
-                  return {
-                    ...prev,
-                    title: data.title,
-                    slug: data.slug,
-                    target_word_count: data.target_word_count,
-                    target_deadline: data.target_deadline,
-                    completion_threshold: data.completion_threshold,
-                  };
-                }),
-              )
-              .catch((err) => {
-                const msg = err instanceof Error ? err.message : STRINGS.error.loadProjectFailed;
-                setActionError(msg);
-              });
-          }
-        }}
+        onUpdate={handleProjectSettingsUpdate}
       />
 
       <ShortcutHelpDialog open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
