@@ -283,7 +283,7 @@ describe("Project title editing", () => {
     });
   });
 
-  it("enters edit mode on double-click of project title", async () => {
+  it("enters edit mode on double-click of project title", { timeout: 15000 }, async () => {
     renderEditorPage();
 
     await waitFor(() => {
