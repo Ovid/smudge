@@ -9,7 +9,6 @@ import { TrashView } from "../components/TrashView";
 import { PreviewMode } from "../components/PreviewMode";
 import { DashboardView } from "../components/DashboardView";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { SettingsDialog } from "../components/SettingsDialog";
 import { ProjectSettingsDialog } from "../components/ProjectSettingsDialog";
 import { ShortcutHelpDialog } from "../components/ShortcutHelpDialog";
 import { STRINGS } from "../strings";
@@ -95,7 +94,6 @@ export function EditorPage() {
   const [navAnnouncement, setNavAnnouncement] = useState("");
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
   const [wordCountAnnouncement, setWordCountAnnouncement] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [lastSession, setLastSession] = useState<VelocityResponse["sessions"][0] | null>(null);
 
@@ -206,7 +204,6 @@ export function EditorPage() {
   useKeyboardShortcuts({
     shortcutHelpOpen,
     deleteTarget,
-    settingsOpen,
     projectSettingsOpen,
     viewMode,
     activeChapter,
@@ -277,7 +274,6 @@ export function EditorPage() {
               onReorderChapters={handleReorderChapters}
               onRenameChapter={handleRenameChapterWithError}
               onOpenTrash={openTrash}
-              onOpenSettings={() => setSettingsOpen(true)}
               statuses={statuses}
               onStatusChange={handleStatusChangeWithError}
               width={sidebarWidth}
@@ -350,48 +346,48 @@ export function EditorPage() {
           )}
         </div>
         {viewMode === "editor" && toolbarEditor && <EditorToolbar editor={toolbarEditor} />}
-        <nav
-          className="flex gap-0.5 bg-bg-sidebar/60 rounded-lg p-0.5"
-          aria-label={STRINGS.a11y.viewModesNav}
-        >
-          <button
-            onClick={() => void switchToView("editor").catch(() => {})}
-            aria-current={viewMode === "editor" ? "page" : undefined}
-            className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
-              viewMode === "editor"
-                ? "bg-bg-primary text-text-primary font-medium shadow-sm"
-                : "text-text-muted hover:text-text-secondary"
-            }`}
+        <div className="flex items-center gap-2">
+          <nav
+            className="flex gap-0.5 bg-bg-sidebar/60 rounded-lg p-0.5"
+            aria-label={STRINGS.a11y.viewModesNav}
           >
-            {STRINGS.nav.editor}
-          </button>
-          <button
-            onClick={() => void switchToView("preview").catch(() => {})}
-            aria-current={viewMode === "preview" ? "page" : undefined}
-            className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
-              viewMode === "preview"
-                ? "bg-bg-primary text-text-primary font-medium shadow-sm"
-                : "text-text-muted hover:text-text-secondary"
-            }`}
-          >
-            {STRINGS.nav.preview}
-          </button>
-          <button
-            onClick={async () => {
-              await switchToView("dashboard");
-              setDashboardRefreshKey((k) => k + 1);
-            }}
-            aria-current={viewMode === "dashboard" ? "page" : undefined}
-            className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
-              viewMode === "dashboard"
-                ? "bg-bg-primary text-text-primary font-medium shadow-sm"
-                : "text-text-muted hover:text-text-secondary"
-            }`}
-          >
-            {STRINGS.nav.dashboard}
-          </button>
-        </nav>
-        {viewMode === "dashboard" && (
+            <button
+              onClick={() => void switchToView("editor").catch(() => {})}
+              aria-current={viewMode === "editor" ? "page" : undefined}
+              className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
+                viewMode === "editor"
+                  ? "bg-bg-primary text-text-primary font-medium shadow-sm"
+                  : "text-text-muted hover:text-text-secondary"
+              }`}
+            >
+              {STRINGS.nav.editor}
+            </button>
+            <button
+              onClick={() => void switchToView("preview").catch(() => {})}
+              aria-current={viewMode === "preview" ? "page" : undefined}
+              className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
+                viewMode === "preview"
+                  ? "bg-bg-primary text-text-primary font-medium shadow-sm"
+                  : "text-text-muted hover:text-text-secondary"
+              }`}
+            >
+              {STRINGS.nav.preview}
+            </button>
+            <button
+              onClick={async () => {
+                await switchToView("dashboard");
+                setDashboardRefreshKey((k) => k + 1);
+              }}
+              aria-current={viewMode === "dashboard" ? "page" : undefined}
+              className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
+                viewMode === "dashboard"
+                  ? "bg-bg-primary text-text-primary font-medium shadow-sm"
+                  : "text-text-muted hover:text-text-secondary"
+              }`}
+            >
+              {STRINGS.nav.dashboard}
+            </button>
+          </nav>
           <button
             onClick={() => setProjectSettingsOpen(true)}
             aria-label={STRINGS.projectSettings.heading}
@@ -399,7 +395,7 @@ export function EditorPage() {
           >
             &#x2699;
           </button>
-        )}
+        </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
@@ -413,7 +409,6 @@ export function EditorPage() {
             onReorderChapters={handleReorderChapters}
             onRenameChapter={handleRenameChapterWithError}
             onOpenTrash={openTrash}
-            onOpenSettings={() => setSettingsOpen(true)}
             statuses={statuses}
             onStatusChange={handleStatusChangeWithError}
             width={sidebarWidth}
@@ -567,8 +562,6 @@ export function EditorPage() {
       <div aria-live="polite" className="sr-only" data-testid="word-count-announcement">
         {wordCountAnnouncement}
       </div>
-
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <ProjectSettingsDialog
         key={`${project.slug}-${project.target_word_count}-${project.target_deadline}-${project.completion_threshold}`}

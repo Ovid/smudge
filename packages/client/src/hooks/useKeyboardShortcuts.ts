@@ -7,7 +7,6 @@ interface KeyboardShortcutDeps {
   // Dialog states (for blocking shortcuts)
   shortcutHelpOpen: boolean;
   deleteTarget: Chapter | null;
-  settingsOpen: boolean;
   projectSettingsOpen: boolean;
   // Current state
   viewMode: ViewMode;
@@ -41,8 +40,6 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
   projectRef.current = deps.project;
   const chapterWordCountRef = useRef(deps.chapterWordCount);
   chapterWordCountRef.current = deps.chapterWordCount;
-  const settingsOpenRef = useRef(deps.settingsOpen);
-  settingsOpenRef.current = deps.settingsOpen;
   const projectSettingsOpenRef = useRef(deps.projectSettingsOpen);
   projectSettingsOpenRef.current = deps.projectSettingsOpen;
   const handleCreateChapterRef = useRef(deps.handleCreateChapter);
@@ -78,7 +75,6 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
       if (
         shortcutHelpOpenRef.current ||
         deleteTargetRef.current ||
-        settingsOpenRef.current ||
         projectSettingsOpenRef.current
       )
         return;

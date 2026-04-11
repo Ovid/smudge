@@ -24,6 +24,8 @@ describe("ProjectSettingsDialog", () => {
 
   beforeEach(() => {
     vi.mocked(api.projects.update).mockResolvedValue(defaultProject as never);
+    vi.mocked(api.settings.get).mockResolvedValue({ timezone: "UTC" });
+    vi.mocked(api.settings.update).mockResolvedValue({ message: "ok" });
     onClose.mockClear();
     onUpdate.mockClear();
   });
