@@ -417,31 +417,13 @@ describe("POST /api/chapters/:id/restore", () => {
   });
 });
 
-describe("PATCH /api/chapters/:id — target_word_count", () => {
-  it("sets target_word_count", async () => {
+describe("PATCH /api/chapters/:id — target_word_count removed", () => {
+  it("ignores target_word_count (column removed)", async () => {
     const { chapterId } = await createProjectWithChapter(t.app);
     const res = await request(t.app)
       .patch(`/api/chapters/${chapterId}`)
-      .send({ target_word_count: 5000 });
+      .send({ title: "Updated Title" });
     expect(res.status).toBe(200);
-    expect(res.body.target_word_count).toBe(5000);
-  });
-
-  it("clears target_word_count with null", async () => {
-    const { chapterId } = await createProjectWithChapter(t.app);
-    await request(t.app).patch(`/api/chapters/${chapterId}`).send({ target_word_count: 5000 });
-    const res = await request(t.app)
-      .patch(`/api/chapters/${chapterId}`)
-      .send({ target_word_count: null });
-    expect(res.status).toBe(200);
-    expect(res.body.target_word_count).toBeNull();
-  });
-
-  it("rejects zero target_word_count", async () => {
-    const { chapterId } = await createProjectWithChapter(t.app);
-    const res = await request(t.app)
-      .patch(`/api/chapters/${chapterId}`)
-      .send({ target_word_count: 0 });
-    expect(res.status).toBe(400);
+    expect(res.body).not.toHaveProperty("target_word_count");
   });
 });
