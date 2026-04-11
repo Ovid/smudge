@@ -29,8 +29,8 @@ export const STRINGS = {
   },
   delete: {
     buttonLabel: "Delete",
-    deleteChapterAriaLabel: (title: string) => `Delete ${title}`,
-    deleteProjectAriaLabel: (title: string) => `Delete ${title}`,
+    deleteChapterAriaLabel: (title: string) => `Delete chapter ${title}`,
+    deleteProjectAriaLabel: (title: string) => `Delete project ${title}`,
     confirmTitle: (name: string) => `Move \u201c${name}\u201d to trash?`,
     confirmBody: `You can restore it within ${TRASH_RETENTION_DAYS} days.`,
     confirmButton: "Confirm",
