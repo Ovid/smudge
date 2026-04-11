@@ -36,6 +36,7 @@ export function HomePage() {
   }, []);
 
   async function handleCreate(title: string, mode: ProjectMode) {
+    setError(null);
     try {
       const project = await api.projects.create({ title, mode });
       setDialogOpen(false);
@@ -47,6 +48,7 @@ export function HomePage() {
 
   async function handleDelete() {
     if (!deleteTarget) return;
+    setError(null);
     try {
       await api.projects.delete(deleteTarget.slug);
       setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));

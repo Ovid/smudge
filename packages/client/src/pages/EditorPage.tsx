@@ -203,6 +203,7 @@ export function EditorPage() {
 
   const handleProjectSettingsUpdate = useCallback(() => {
     setDashboardRefreshKey((k) => k + 1);
+    setActionError(null);
     if (slug) {
       api.projects
         .get(slug)
