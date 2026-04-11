@@ -219,9 +219,8 @@ export function EditorPage() {
             };
           }),
         )
-        .catch((err) => {
-          const msg = err instanceof Error ? err.message : STRINGS.error.loadProjectFailed;
-          setActionError(msg);
+        .catch(() => {
+          setActionError(STRINGS.error.loadProjectFailed);
         });
     }
   }, [slug, setProject, setActionError]);
