@@ -96,7 +96,6 @@ export async function listMetadataByProject(
       "title",
       "status",
       "word_count",
-      "target_word_count",
       "updated_at",
       "sort_order",
     ) as Promise<ChapterMetadataRow[]>;

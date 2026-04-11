@@ -146,10 +146,6 @@ export async function updateProject(
   if (parsed.data.target_deadline !== undefined) {
     updates.target_deadline = parsed.data.target_deadline;
   }
-  if (parsed.data.completion_threshold !== undefined) {
-    updates.completion_threshold = parsed.data.completion_threshold;
-  }
-
   await db.transaction(async (trx) => {
     if (parsed.data.title !== undefined) {
       const existingTitle = await ProjectRepo.findByTitle(trx, parsed.data.title, project.id);

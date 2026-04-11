@@ -6,7 +6,6 @@ export interface ChapterRow {
   content_corrupt?: boolean;
   sort_order: number;
   word_count: number;
-  target_word_count: number | null;
   status: string;
   created_at: string;
   updated_at: string;
@@ -20,7 +19,6 @@ export interface ChapterRawRow {
   content: string | null;
   sort_order: number;
   word_count: number;
-  target_word_count: number | null;
   status: string;
   created_at: string;
   updated_at: string;
@@ -32,7 +30,6 @@ export interface ChapterMetadataRow {
   title: string;
   status: string;
   word_count: number;
-  target_word_count: number | null;
   updated_at: string;
   sort_order: number;
 }
@@ -62,7 +59,6 @@ export interface UpdateChapterData {
   title?: string;
   content?: string;
   word_count?: number;
-  target_word_count?: number | null;
   status?: string;
   updated_at: string;
 }
