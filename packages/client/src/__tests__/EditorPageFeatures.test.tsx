@@ -139,7 +139,7 @@ describe("EditorPage error handling", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Project not found.")).toBeInTheDocument();
+      expect(screen.getByText("Failed to load project")).toBeInTheDocument();
     });
 
     expect(screen.getByRole("link", { name: "Back to Projects" })).toBeInTheDocument();
@@ -846,7 +846,7 @@ describe("EditorPage error view on project load failure", () => {
     renderEditorPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Server error")).toBeInTheDocument();
+      expect(screen.getByText("Failed to load project")).toBeInTheDocument();
     });
 
     const backLink = screen.getByRole("link", { name: "Back to Projects" });
@@ -897,7 +897,7 @@ describe("EditorPage handleStatusChangeWithError", () => {
     await waitFor(() => {
       // The actionError banner should appear
       expect(screen.getByRole("alert")).toBeInTheDocument();
-      expect(screen.getByText("status boom")).toBeInTheDocument();
+      expect(screen.getByText("Failed to update chapter status")).toBeInTheDocument();
     });
 
     consoleSpy.mockRestore();

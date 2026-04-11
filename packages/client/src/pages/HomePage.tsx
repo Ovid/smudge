@@ -23,7 +23,7 @@ export function HomePage() {
         if (!cancelled) setProjects(data);
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : STRINGS.error.loadFailed);
+          setError(STRINGS.error.loadFailed);
         }
       }
     }
@@ -42,7 +42,7 @@ export function HomePage() {
       setDialogOpen(false);
       navigate(`/projects/${project.slug}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : STRINGS.error.createFailed);
+      setError(STRINGS.error.createFailed);
     }
   }
 
@@ -54,7 +54,7 @@ export function HomePage() {
       setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
       setDeleteTarget(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : STRINGS.error.deleteFailed);
+      setError(STRINGS.error.deleteFailed);
       setDeleteTarget(null);
     }
   }

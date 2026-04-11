@@ -46,7 +46,7 @@ export function useProjectEditor(slug: string | undefined) {
         }
       } catch (err) {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : STRINGS.error.loadProjectFailed);
+        setError(STRINGS.error.loadProjectFailed);
       }
     }
 
@@ -136,7 +136,7 @@ export function useProjectEditor(slug: string | undefined) {
       setChapterWordCount(0);
       setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
     } catch (err) {
-      setError(err instanceof Error ? err.message : STRINGS.error.createChapterFailed);
+      setError(STRINGS.error.createChapterFailed);
     }
   }, []);
 
@@ -155,7 +155,7 @@ export function useProjectEditor(slug: string | undefined) {
       setChapterWordCount(countWords(effectiveChapter.content));
     } catch (err) {
       if (seq !== selectChapterSeqRef.current) return;
-      setError(err instanceof Error ? err.message : STRINGS.error.loadChapterFailed);
+      setError(STRINGS.error.loadChapterFailed);
     }
   }, []);
 
@@ -194,7 +194,7 @@ export function useProjectEditor(slug: string | undefined) {
       }
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : STRINGS.error.deleteChapterFailed);
+      setError(STRINGS.error.deleteChapterFailed);
       return false;
     }
   }, []);
@@ -215,7 +215,7 @@ export function useProjectEditor(slug: string | undefined) {
         return { ...prev, chapters: reordered };
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : STRINGS.error.reorderFailed);
+      setError(STRINGS.error.reorderFailed);
     }
   }, []);
 
@@ -232,8 +232,7 @@ export function useProjectEditor(slug: string | undefined) {
       } catch (err) {
         // Don't call setError — that triggers the full-page error overlay.
         // Returning undefined keeps the title edit mode open so the user can retry.
-        const message = err instanceof Error ? err.message : STRINGS.error.updateTitleFailed;
-        setProjectTitleError(message);
+        setProjectTitleError(STRINGS.error.updateTitleFailed);
         return undefined;
       }
     },
@@ -306,8 +305,7 @@ export function useProjectEditor(slug: string | undefined) {
         // Status change failures are non-fatal — the revert already restored consistent state.
         // Call the optional onError callback for the caller to display (e.g., as a dismissible banner),
         // rather than setError which triggers the full-page error overlay.
-        const message = err instanceof Error ? err.message : STRINGS.error.statusChangeFailed;
-        onError?.(message);
+        onError?.(STRINGS.error.statusChangeFailed);
       }
     },
     [],
@@ -334,8 +332,7 @@ export function useProjectEditor(slug: string | undefined) {
         // Don't call setError — that triggers the full-page error overlay.
         // Rename failures are non-fatal; surface via the optional callback
         // so callers can display inline (same pattern as handleStatusChange).
-        const message = err instanceof Error ? err.message : STRINGS.error.renameChapterFailed;
-        onError?.(message);
+        onError?.(STRINGS.error.renameChapterFailed);
       }
     },
     [],

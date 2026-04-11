@@ -45,7 +45,7 @@ export function DashboardView({
       .catch((err) => {
         if (!cancelled) {
           console.error(err);
-          setError(err instanceof Error ? err.message : STRINGS.error.loadDashboardFailed);
+          setError(STRINGS.error.loadDashboardFailed);
         }
       });
     return () => {

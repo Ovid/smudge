@@ -4,6 +4,7 @@ import { UNTITLED_CHAPTER } from "@smudge/shared";
 
 import { api, ApiRequestError } from "../api/client";
 import { useProjectEditor } from "../hooks/useProjectEditor";
+import { STRINGS } from "../strings";
 
 vi.mock("../api/client", () => ({
   ApiRequestError: class ApiRequestError extends Error {
@@ -368,7 +369,7 @@ describe("useProjectEditor", () => {
     const { result } = renderHook(() => useProjectEditor("nonexistent-id"));
 
     await waitFor(() => {
-      expect(result.current.error).toBe("Project not found.");
+      expect(result.current.error).toBe(STRINGS.error.loadProjectFailed);
     });
 
     expect(result.current.project).toBeNull();
@@ -398,7 +399,7 @@ describe("useProjectEditor", () => {
       await result.current.handleCreateChapter();
     });
 
-    expect(result.current.error).toBe("create boom");
+    expect(result.current.error).toBe(STRINGS.error.createChapterFailed);
   });
 
   it("sets error when handleSelectChapter fails", async () => {
@@ -413,7 +414,7 @@ describe("useProjectEditor", () => {
       await result.current.handleSelectChapter("ch2");
     });
 
-    expect(result.current.error).toBe("select boom");
+    expect(result.current.error).toBe(STRINGS.error.loadChapterFailed);
   });
 
   it("sets error when handleDeleteChapter fails", async () => {
@@ -426,7 +427,7 @@ describe("useProjectEditor", () => {
       await result.current.handleDeleteChapter(mockChapter2);
     });
 
-    expect(result.current.error).toBe("delete boom");
+    expect(result.current.error).toBe(STRINGS.error.deleteChapterFailed);
   });
 
   it("sets activeChapter to null when deleting the last chapter", async () => {
@@ -459,7 +460,7 @@ describe("useProjectEditor", () => {
       await result.current.handleReorderChapters(["ch2", "ch1"]);
     });
 
-    expect(result.current.error).toBe("reorder boom");
+    expect(result.current.error).toBe(STRINGS.error.reorderFailed);
   });
 
   it("returns undefined when handleUpdateProjectTitle fails", async () => {
@@ -477,7 +478,7 @@ describe("useProjectEditor", () => {
     // Should NOT set page-level error (keeps title edit mode open instead)
     expect(result.current.error).toBeNull();
     // Should set inline project title error
-    expect(result.current.projectTitleError).toBe("update boom");
+    expect(result.current.projectTitleError).toBe(STRINGS.error.updateTitleFailed);
   });
 
   it("calls onError callback when handleRenameChapter fails (does not set full-page error)", async () => {
@@ -491,7 +492,7 @@ describe("useProjectEditor", () => {
       await result.current.handleRenameChapter("ch1", "New Name", onError);
     });
 
-    expect(onError).toHaveBeenCalledWith("rename boom");
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.renameChapterFailed);
     expect(result.current.error).toBeNull();
   });
 
@@ -528,7 +529,7 @@ describe("useProjectEditor", () => {
     });
 
     // Should call onError callback instead of returning the error
-    expect(onError).toHaveBeenCalledWith("status boom");
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.statusChangeFailed);
     // After revert, project should be reloaded from server
     expect(result.current.project?.chapters[0]!.status).toBe("outline");
   });
@@ -552,7 +553,7 @@ describe("useProjectEditor", () => {
       await result.current.handleStatusChange("ch1", "revised", onError);
     });
 
-    expect(onError).toHaveBeenCalledWith("status boom");
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.statusChangeFailed);
     // Local fallback should fire since ch1 was not in the reloaded data
     expect(result.current.project?.chapters[0]!.status).toBe("outline");
   });
@@ -790,7 +791,7 @@ describe("useProjectEditor", () => {
     });
 
     // Should call onError callback instead of returning the error
-    expect(onError).toHaveBeenCalledWith("status update failed");
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.statusChangeFailed);
     // After both API update and reload fail, local revert should restore previous status
     expect(result.current.project?.chapters[0]!.status).toBe("outline");
     expect(result.current.activeChapter?.status).toBe("outline");

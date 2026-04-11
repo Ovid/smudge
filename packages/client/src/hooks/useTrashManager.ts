@@ -23,7 +23,7 @@ export function useTrashManager(
       setTrashOpen(true);
     } catch (err) {
       console.error("Failed to load trash:", err);
-      setActionError(err instanceof Error ? err.message : STRINGS.error.loadTrashFailed);
+      setActionError(STRINGS.error.loadTrashFailed);
     }
   }, [project]);
 
@@ -50,7 +50,7 @@ export function useTrashManager(
         }
       } catch (err) {
         console.error("Failed to restore chapter:", err);
-        setActionError(err instanceof Error ? err.message : STRINGS.error.restoreChapterFailed);
+        setActionError(STRINGS.error.restoreChapterFailed);
       }
     },
     [slug, setProject, navigate],
