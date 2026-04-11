@@ -250,4 +250,87 @@ describe("ProjectSettingsDialog", () => {
     await user.click(screen.getByRole("button", { name: "Close" }));
     expect(onClose).toHaveBeenCalled();
   });
+
+  it("renders timezone dropdown with fetched value", async () => {
+    vi.mocked(api.settings.get).mockResolvedValue({ timezone: "America/New_York" });
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/timezone/i)).toHaveValue("America/New_York");
+    });
+  });
+
+  it("calls api.settings.update when timezone changes", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/timezone/i)).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByLabelText(/timezone/i), "Europe/London");
+
+    await waitFor(() => {
+      expect(api.settings.update).toHaveBeenCalledWith([
+        { key: "timezone", value: "Europe/London" },
+      ]);
+    });
+  });
+
+  it("reverts timezone on save failure", async () => {
+    vi.mocked(api.settings.get).mockResolvedValue({ timezone: "UTC" });
+    vi.mocked(api.settings.update).mockRejectedValue(new Error("save failed"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const user = userEvent.setup();
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/timezone/i)).toHaveValue("UTC");
+    });
+
+    await user.selectOptions(screen.getByLabelText(/timezone/i), "Europe/London");
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/timezone/i)).toHaveValue("UTC");
+    });
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    spy.mockRestore();
+  });
+
+  it("falls back to UTC when settings fetch fails", async () => {
+    vi.mocked(api.settings.get).mockRejectedValue(new Error("fetch failed"));
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/timezone/i)).toHaveValue("UTC");
+    });
+  });
 });

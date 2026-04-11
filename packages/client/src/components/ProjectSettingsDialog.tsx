@@ -5,7 +5,10 @@ import { STRINGS } from "../strings";
 
 const TIMEZONES = (() => {
   try {
-    return Intl.supportedValuesOf("timeZone");
+    const tzs = Intl.supportedValuesOf("timeZone");
+    // "UTC" is valid for Intl.DateTimeFormat but may not appear in supportedValuesOf
+    if (!tzs.includes("UTC")) tzs.unshift("UTC");
+    return tzs;
   } catch {
     return ["UTC"];
   }
