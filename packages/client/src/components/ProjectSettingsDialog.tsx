@@ -3,6 +3,14 @@ import type { CompletionThresholdValue } from "@smudge/shared";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
 
+const TIMEZONES = (() => {
+  try {
+    return Intl.supportedValuesOf("timeZone");
+  } catch {
+    return ["UTC"];
+  }
+})();
+
 interface ProjectSettingsDialogProps {
   open: boolean;
   project: {
@@ -37,17 +45,20 @@ export function ProjectSettingsDialog({
   const [threshold, setThreshold] = useState(project.completion_threshold ?? "final");
   const [timezone, setTimezone] = useState<string>("UTC");
   const [saveError, setSaveError] = useState<string | null>(null);
+  const userChangedTimezoneRef = useRef(false);
 
   useEffect(() => {
     if (open) {
       let cancelled = false;
+      userChangedTimezoneRef.current = false;
       api.settings
         .get()
         .then((settings) => {
-          if (!cancelled) setTimezone(settings.timezone || "UTC");
+          if (!cancelled && !userChangedTimezoneRef.current)
+            setTimezone(settings.timezone || "UTC");
         })
         .catch(() => {
-          if (!cancelled) setTimezone("UTC");
+          if (!cancelled && !userChangedTimezoneRef.current) setTimezone("UTC");
         });
       return () => {
         cancelled = true;
@@ -124,6 +135,8 @@ export function ProjectSettingsDialog({
   }
 
   async function handleTimezoneChange(value: string) {
+    const previous = timezone;
+    userChangedTimezoneRef.current = true;
     setTimezone(value);
     setSaveError(null);
     try {
@@ -131,16 +144,9 @@ export function ProjectSettingsDialog({
     } catch (err) {
       console.error("Failed to save timezone:", err);
       setSaveError(STRINGS.projectSettings.saveError);
+      setTimezone(previous);
     }
   }
-
-  const timezones = (() => {
-    try {
-      return Intl.supportedValuesOf("timeZone");
-    } catch {
-      return ["UTC"];
-    }
-  })();
 
   if (!open) return null;
 
@@ -275,7 +281,7 @@ export function ProjectSettingsDialog({
             onChange={(e) => handleTimezoneChange(e.target.value)}
             className="w-full rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring"
           >
-            {timezones.map((tz) => (
+            {TIMEZONES.map((tz) => (
               <option key={tz} value={tz}>
                 {tz}
               </option>

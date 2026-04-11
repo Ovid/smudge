@@ -259,9 +259,16 @@ export function EditorPage() {
           <span className="text-border mx-4" aria-hidden="true">
             /
           </span>
-          <span className="text-sm font-serif font-semibold text-text-primary">
+          <span className="text-sm font-serif font-semibold text-text-primary flex-1">
             {project.title}
           </span>
+          <button
+            onClick={() => setProjectSettingsOpen(true)}
+            aria-label={STRINGS.projectSettings.heading}
+            className="text-sm text-text-muted hover:text-text-secondary rounded-md p-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring"
+          >
+            &#x2699;
+          </button>
         </header>
         <div className="flex flex-1 overflow-hidden">
           {sidebarOpen && (
@@ -290,6 +297,36 @@ export function EditorPage() {
             </button>
           </div>
         </div>
+
+        <ProjectSettingsDialog
+          key={project.slug}
+          open={projectSettingsOpen}
+          project={project}
+          onClose={() => setProjectSettingsOpen(false)}
+          onUpdate={() => {
+            if (slug) {
+              api.projects
+                .get(slug)
+                .then((data) =>
+                  setProject((prev) => {
+                    if (!prev) return data;
+                    return {
+                      ...prev,
+                      title: data.title,
+                      slug: data.slug,
+                      target_word_count: data.target_word_count,
+                      target_deadline: data.target_deadline,
+                      completion_threshold: data.completion_threshold,
+                    };
+                  }),
+                )
+                .catch((err) => {
+                  const msg = err instanceof Error ? err.message : STRINGS.error.loadProjectFailed;
+                  setActionError(msg);
+                });
+            }
+          }}
+        />
       </div>
     );
   }
@@ -564,7 +601,7 @@ export function EditorPage() {
       </div>
 
       <ProjectSettingsDialog
-        key={`${project.slug}-${project.target_word_count}-${project.target_deadline}-${project.completion_threshold}`}
+        key={project.slug}
         open={projectSettingsOpen}
         project={project}
         onClose={() => setProjectSettingsOpen(false)}
