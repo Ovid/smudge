@@ -51,4 +51,31 @@ describe("migration 010: simplify progress model", () => {
     expect(colNames).toContain("key");
     expect(colNames).toContain("value");
   });
+
+  it("down() is idempotent — running twice does not error", async () => {
+    // Import the migration's down() function directly
+    const migration = await import("../db/migrations/010_simplify_progress_model.js");
+
+    // First: rollback via Knex (runs down() once, restores columns + table)
+    await db.migrate.down();
+
+    // Verify rollback restored the columns and table
+    const projectCols = await db.raw("PRAGMA table_info(projects)");
+    expect(projectCols.map((c: { name: string }) => c.name)).toContain("completion_threshold");
+
+    const chapterCols = await db.raw("PRAGMA table_info(chapters)");
+    expect(chapterCols.map((c: { name: string }) => c.name)).toContain("target_word_count");
+
+    const tables = await db.raw(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='save_events'",
+    );
+    expect(tables).toHaveLength(1);
+
+    // Call down() directly again — simulates partial failure recovery
+    // This should NOT throw even though columns and table already exist
+    await migration.down(db);
+
+    // Re-apply so other tests still pass if run order changes
+    await db.migrate.latest();
+  });
 });
