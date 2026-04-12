@@ -4,9 +4,14 @@ import { STRINGS } from "../strings";
 interface ProgressStripProps {
   data: VelocityResponse | null;
   loading: boolean;
+  error?: boolean;
 }
 
-export function ProgressStrip({ data, loading }: ProgressStripProps) {
+export function ProgressStrip({ data, loading, error }: ProgressStripProps) {
+  if (error && !data) {
+    return null;
+  }
+
   if (loading && !data) {
     return (
       <section aria-label={STRINGS.velocity.progressLabel} className="mb-8">

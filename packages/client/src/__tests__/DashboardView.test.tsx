@@ -432,6 +432,29 @@ describe("DashboardView", () => {
     expect(screen.getByText("Loading...")).toBeInTheDocument();
   });
 
+  it("shows velocity error state when velocity fetch fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
+    vi.mocked(api.projects.velocity).mockRejectedValue(new Error("Network failure"));
+
+    render(
+      <DashboardView
+        slug="test-project"
+        statuses={statuses}
+        onNavigateToChapter={vi.fn()}
+        refreshKey={0}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Chapter One")).toBeInTheDocument();
+    });
+
+    // Should NOT show the "Start writing" empty state for a fetch error
+    expect(screen.queryByText(/start writing/i)).not.toBeInTheDocument();
+    errorSpy.mockRestore();
+  });
+
   it("falls back to status_summary keys when statuses prop is empty", async () => {
     vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
 

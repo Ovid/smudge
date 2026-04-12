@@ -32,6 +32,7 @@ export function DashboardView({
     slug: string;
     data: VelocityResponse | null;
   } | null>(null);
+  const [velocityError, setVelocityError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,6 +57,7 @@ export function DashboardView({
 
   useEffect(() => {
     let cancelled = false;
+    setVelocityError(false);
     api.projects
       .velocity(slug)
       .then((result) => {
@@ -66,7 +68,7 @@ export function DashboardView({
       .catch((err) => {
         if (!cancelled) {
           console.error(err);
-          setVelocityWithSlug({ slug, data: null });
+          setVelocityError(true);
         }
       });
     return () => {
@@ -94,7 +96,7 @@ export function DashboardView({
   if (error) {
     return (
       <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
-        <ProgressStrip data={velocityData} loading={velocityLoading} />
+        <ProgressStrip data={velocityData} loading={velocityLoading} error={velocityError} />
         <div className="flex items-center justify-center py-16">
           <p className="text-status-error">{error}</p>
         </div>
@@ -105,7 +107,7 @@ export function DashboardView({
   if (!data) {
     return (
       <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
-        <ProgressStrip data={velocityData} loading={velocityLoading} />
+        <ProgressStrip data={velocityData} loading={velocityLoading} error={velocityError} />
         <div className="flex items-center justify-center py-16">
           <p className="text-text-muted">{STRINGS.nav.loading}</p>
         </div>
@@ -164,7 +166,7 @@ export function DashboardView({
 
   return (
     <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
-      <ProgressStrip data={velocityData} loading={velocityLoading} />
+      <ProgressStrip data={velocityData} loading={velocityLoading} error={velocityError} />
       <div>
         {chapters.length === 0 ? (
           <div data-testid="dashboard-empty">
