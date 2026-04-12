@@ -1,12 +1,21 @@
 /** @param {import('knex').Knex} knex */
 export async function up(knex) {
   await knex.schema.dropTableIfExists("save_events");
-  await knex.schema.alterTable("projects", (table) => {
-    table.dropColumn("completion_threshold");
-  });
-  await knex.schema.alterTable("chapters", (table) => {
-    table.dropColumn("target_word_count");
-  });
+
+  // SQLite DROP COLUMN internally rebuilds the table (CREATE → copy → DROP old → rename).
+  // The DROP step fails if other tables have FK references to this table and foreign_keys
+  // is ON.  Temporarily disable FK enforcement for the column drops.
+  await knex.raw("PRAGMA foreign_keys = OFF");
+  try {
+    await knex.schema.alterTable("projects", (table) => {
+      table.dropColumn("completion_threshold");
+    });
+    await knex.schema.alterTable("chapters", (table) => {
+      table.dropColumn("target_word_count");
+    });
+  } finally {
+    await knex.raw("PRAGMA foreign_keys = ON");
+  }
 }
 
 /** @param {import('knex').Knex} knex */
