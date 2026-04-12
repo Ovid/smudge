@@ -43,7 +43,10 @@ export function ProgressStrip({ data, loading }: ProgressStripProps) {
     segments.push(STRINGS.velocity.requiredPace(data.required_pace));
   }
 
-  const recentPace = data.daily_average_30d ?? data.daily_average_7d;
+  const recentPace =
+    data.daily_average_30d !== null && data.daily_average_30d > 0
+      ? data.daily_average_30d
+      : data.daily_average_7d;
   if (recentPace !== null && recentPace > 0) {
     segments.push(STRINGS.velocity.dailyAverage(recentPace));
   }

@@ -136,8 +136,9 @@ export async function getVelocityBySlug(slug: string): Promise<VelocityResponse 
     requiredPace = Math.ceil(remainingWords / daysUntilDeadline);
   }
 
-  // Use 30d average, fall back to 7d
-  const bestAvg = dailyAverage30d ?? dailyAverage7d;
+  // Use 30d average if positive, fall back to 7d
+  const bestAvg =
+    dailyAverage30d !== null && dailyAverage30d > 0 ? dailyAverage30d : dailyAverage7d;
   let projectedCompletionDate: string | null = null;
   if (remainingWords !== null && remainingWords > 0 && bestAvg !== null && bestAvg > 0) {
     const daysRemaining = Math.ceil(remainingWords / bestAvg);
