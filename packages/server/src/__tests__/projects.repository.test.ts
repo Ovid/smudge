@@ -204,8 +204,7 @@ describe("projects repository", () => {
   describe("updateTimestamp()", () => {
     it("touches updated_at", async () => {
       const data = makeProject({ slug: "ts-test" });
-      const inserted = await ProjectRepo.insert(t.db, data);
-      const originalUpdatedAt = inserted.updated_at;
+      await ProjectRepo.insert(t.db, data);
 
       const newTimestamp = new Date(Date.now() + 10_000).toISOString();
       await ProjectRepo.updateTimestamp(t.db, data.id, newTimestamp);
