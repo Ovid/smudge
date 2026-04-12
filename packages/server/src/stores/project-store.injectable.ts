@@ -18,5 +18,8 @@ export function resetProjectStore(): void {
 }
 
 export function initProjectStore(): void {
+  if (store !== null) {
+    throw new Error("ProjectStore already initialized — call resetProjectStore() first");
+  }
   store = new SqliteProjectStore(getDb());
 }

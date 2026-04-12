@@ -33,4 +33,9 @@ describe("project-store.injectable", () => {
     setProjectStore(mockStore);
     expect(getProjectStore()).toBe(mockStore);
   });
+
+  it("initProjectStore throws when already initialized", () => {
+    initProjectStore();
+    expect(() => initProjectStore()).toThrow("ProjectStore already initialized");
+  });
 });
