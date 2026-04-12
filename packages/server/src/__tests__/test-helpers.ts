@@ -4,6 +4,8 @@ import knex, { type Knex } from "knex";
 import { createTestKnexConfig } from "../db/knexfile";
 import { createApp } from "../app";
 import { setDb, closeDb } from "../db/connection";
+import { setProjectStore } from "../stores/project-store.injectable";
+import { SqliteProjectStore } from "../stores/sqlite-project-store";
 
 let testDb: Knex;
 let testServer: http.Server;
@@ -13,6 +15,7 @@ export function setupTestDb() {
     testDb = knex(createTestKnexConfig());
     await testDb.migrate.latest();
     await setDb(testDb);
+    setProjectStore(new SqliteProjectStore(testDb));
     const app = createApp();
     testServer = app.listen(0);
     await new Promise<void>((resolve) => testServer.on("listening", resolve));
