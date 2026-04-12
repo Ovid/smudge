@@ -6,11 +6,8 @@ import {
   generateSlug,
   UNTITLED_CHAPTER,
 } from "@smudge/shared";
-import { getDb } from "../db/connection";
-import * as ProjectRepo from "./projects.repository";
-import * as ChapterRepo from "../chapters/chapters.repository";
+import { getProjectStore } from "../stores/project-store.injectable";
 import { stripCorruptFlag } from "../chapters/chapters.service";
-import * as ChapterStatusRepo from "../chapter-statuses/chapter-statuses.repository";
 import type { ProjectRow, ProjectListRow, UpdateProjectData } from "./projects.types";
 import type {
   ChapterWithLabel,
@@ -55,21 +52,21 @@ export async function createProject(
   }
 
   const { title, mode } = parsed.data;
-  const db = getDb();
+  const store = getProjectStore();
 
   const projectId = uuid();
   const chapterId = uuid();
   const now = new Date().toISOString();
 
-  const project = await db.transaction(async (trx) => {
-    const existing = await ProjectRepo.findByTitle(trx, title);
+  const project = await store.transaction(async (txStore) => {
+    const existing = await txStore.findProjectByTitle(title);
     if (existing) {
       throw new ProjectTitleExistsError();
     }
 
-    const slug = await ProjectRepo.resolveUniqueSlug(trx, generateSlug(title));
+    const slug = await txStore.resolveUniqueSlug(generateSlug(title));
 
-    const inserted = await ProjectRepo.insert(trx, {
+    const inserted = await txStore.insertProject({
       id: projectId,
       title,
       slug,
@@ -78,7 +75,7 @@ export async function createProject(
       updated_at: now,
     });
 
-    await ChapterRepo.insert(trx, {
+    await txStore.insertChapter({
       id: chapterId,
       project_id: projectId,
       title: UNTITLED_CHAPTER,
@@ -96,19 +93,19 @@ export async function createProject(
 }
 
 export async function listProjects(): Promise<ProjectListRow[]> {
-  const db = getDb();
-  return ProjectRepo.listAll(db);
+  const store = getProjectStore();
+  return store.listProjects();
 }
 
 export async function getProject(
   slug: string,
 ): Promise<{ project: ProjectRow; chapters: ChapterWithLabel[] } | null> {
-  const db = getDb();
-  const project = await ProjectRepo.findBySlug(db, slug);
+  const store = getProjectStore();
+  const project = await store.findProjectBySlug(slug);
   if (!project) return null;
 
-  const chapters = await ChapterRepo.listByProject(db, project.id);
-  const statusLabelMap = await ChapterStatusRepo.getStatusLabelMap(db);
+  const chapters = await store.listChaptersByProject(project.id);
+  const statusLabelMap = await store.getStatusLabelMap();
 
   const chaptersWithLabels = chapters.map((ch) => {
     const clean = stripCorruptFlag(ch);
@@ -132,8 +129,8 @@ export async function updateProject(
     return { validationError: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
-  const db = getDb();
-  const project = await ProjectRepo.findBySlug(db, slug);
+  const store = getProjectStore();
+  const project = await store.findProjectBySlug(slug);
   if (!project) return null;
 
   const updates: UpdateProjectData = {
@@ -146,24 +143,23 @@ export async function updateProject(
   if (parsed.data.target_deadline !== undefined) {
     updates.target_deadline = parsed.data.target_deadline;
   }
-  await db.transaction(async (trx) => {
+  await store.transaction(async (txStore) => {
     if (parsed.data.title !== undefined) {
-      const existingTitle = await ProjectRepo.findByTitle(trx, parsed.data.title, project.id);
+      const existingTitle = await txStore.findProjectByTitle(parsed.data.title, project.id);
       if (existingTitle) {
         throw new ProjectTitleExistsError();
       }
-      const newSlug = await ProjectRepo.resolveUniqueSlug(
-        trx,
+      const newSlug = await txStore.resolveUniqueSlug(
         generateSlug(parsed.data.title),
         project.id,
       );
       updates.title = parsed.data.title;
       updates.slug = newSlug;
     }
-    await ProjectRepo.update(trx, project.id, updates);
+    await txStore.updateProject(project.id, updates);
   });
 
-  const updated = await ProjectRepo.findById(db, project.id);
+  const updated = await store.findProjectById(project.id);
   if (!updated) {
     throw new Error(`Project ${project.id} not found after update`);
   }
@@ -171,15 +167,15 @@ export async function updateProject(
 }
 
 export async function deleteProject(slug: string): Promise<boolean> {
-  const db = getDb();
-  const project = await ProjectRepo.findBySlug(db, slug);
+  const store = getProjectStore();
+  const project = await store.findProjectBySlug(slug);
   if (!project) return false;
 
   const now = new Date().toISOString();
 
-  await db.transaction(async (trx) => {
-    await ChapterRepo.softDeleteByProject(trx, project.id, now);
-    await ProjectRepo.softDelete(trx, project.id, now);
+  await store.transaction(async (txStore) => {
+    await txStore.softDeleteChaptersByProject(project.id, now);
+    await txStore.softDeleteProject(project.id, now);
   });
 
   // Intentionally skip updateDailySnapshot here: all chapters are now
@@ -194,16 +190,16 @@ export async function deleteProject(slug: string): Promise<boolean> {
 export async function createChapter(
   slug: string,
 ): Promise<ChapterWithLabel | "project_not_found" | "read_after_create_failure"> {
-  const db = getDb();
-  const project = await ProjectRepo.findBySlug(db, slug);
+  const store = getProjectStore();
+  const project = await store.findProjectBySlug(slug);
   if (!project) return "project_not_found";
 
   const chapterId = uuid();
   const now = new Date().toISOString();
 
-  await db.transaction(async (trx) => {
-    const maxOrder = await ChapterRepo.getMaxSortOrder(trx, project.id);
-    await ChapterRepo.insert(trx, {
+  await store.transaction(async (txStore) => {
+    const maxOrder = await txStore.getMaxChapterSortOrder(project.id);
+    await txStore.insertChapter({
       id: chapterId,
       project_id: project.id,
       title: UNTITLED_CHAPTER,
@@ -213,14 +209,14 @@ export async function createChapter(
       created_at: now,
       updated_at: now,
     });
-    await ProjectRepo.updateTimestamp(trx, project.id);
+    await txStore.updateProjectTimestamp(project.id);
   });
 
-  const chapter = await ChapterRepo.findById(db, chapterId);
+  const chapter = await store.findChapterById(chapterId);
   if (!chapter) return "read_after_create_failure";
 
   const clean = stripCorruptFlag(chapter);
-  const statusLabelMap = await ChapterStatusRepo.getStatusLabelMap(db);
+  const statusLabelMap = await store.getStatusLabelMap();
   return {
     ...clean,
     status_label: statusLabelMap[chapter.status] ?? chapter.status,
@@ -231,8 +227,8 @@ export async function reorderChapters(
   slug: string,
   body: unknown,
 ): Promise<{ success: true } | { validationError: string } | { mismatch: true } | null> {
-  const db = getDb();
-  const project = await ProjectRepo.findBySlug(db, slug);
+  const store = getProjectStore();
+  const project = await store.findProjectBySlug(slug);
   if (!project) return null;
 
   const parsed = ReorderChaptersSchema.safeParse(body);
@@ -243,8 +239,8 @@ export async function reorderChapters(
   }
   const { chapter_ids } = parsed.data;
 
-  return db.transaction(async (trx) => {
-    const existingIds = (await ChapterRepo.listIdsByProject(trx, project.id)).sort();
+  return store.transaction(async (txStore) => {
+    const existingIds = (await txStore.listChapterIdsByProject(project.id)).sort();
     const providedIds = [...chapter_ids].sort();
 
     if (
@@ -255,21 +251,21 @@ export async function reorderChapters(
     }
 
     const orders = chapter_ids.map((id, i) => ({ id, sort_order: i }));
-    await ChapterRepo.updateSortOrders(trx, orders);
-    await ProjectRepo.updateTimestamp(trx, project.id);
+    await txStore.updateChapterSortOrders(orders);
+    await txStore.updateProjectTimestamp(project.id);
 
     return { success: true } as const;
   });
 }
 
 export async function getDashboard(slug: string): Promise<DashboardResponse | null> {
-  const db = getDb();
-  const project = await ProjectRepo.findBySlug(db, slug);
+  const store = getProjectStore();
+  const project = await store.findProjectBySlug(slug);
   if (!project) return null;
 
-  const chapters = await ChapterRepo.listMetadataByProject(db, project.id);
+  const chapters = await store.listChapterMetadataByProject(project.id);
 
-  const allStatuses = await ChapterStatusRepo.list(db);
+  const allStatuses = await store.listStatuses();
   const statusLabelMap: Record<string, string> = Object.fromEntries(
     allStatuses.map((s) => [s.status, s.label]),
   );
@@ -309,9 +305,9 @@ export async function getDashboard(slug: string): Promise<DashboardResponse | nu
 }
 
 export async function getTrash(slug: string): Promise<DeletedChapterRow[] | null> {
-  const db = getDb();
-  const project = await ProjectRepo.findBySlugIncludingDeleted(db, slug);
+  const store = getProjectStore();
+  const project = await store.findProjectBySlugIncludingDeleted(slug);
   if (!project) return null;
 
-  return ChapterRepo.listDeletedByProject(db, project.id);
+  return store.listDeletedChaptersByProject(project.id);
 }
