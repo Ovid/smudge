@@ -1,10 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
-import type { ChapterStatusRow } from "@smudge/shared";
+import type { ChapterStatusRow, VelocityResponse } from "@smudge/shared";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
 import { STATUS_COLORS } from "../statusColors";
-import { VelocityView } from "./VelocityView";
-import { ChapterTargetPopover } from "./ChapterTargetPopover";
+import { ProgressStrip } from "./ProgressStrip";
 
 type DashboardData = Awaited<ReturnType<typeof api.projects.dashboard>>;
 
@@ -23,14 +22,14 @@ export function DashboardView({
   onNavigateToChapter,
   refreshKey,
 }: DashboardViewProps) {
-  const [activeTab, setActiveTab] = useState<"velocity" | "chapters">("velocity");
   const [dataWithSlug, setDataWithSlug] = useState<{ slug: string; data: DashboardData } | null>(
     null,
   );
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("sort_order");
   const [sortAsc, setSortAsc] = useState(true);
-  const [localRefreshKey, setLocalRefreshKey] = useState(0);
+  const [velocityData, setVelocityData] = useState<VelocityResponse | null>(null);
+  const [velocityLoading, setVelocityLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,7 +50,32 @@ export function DashboardView({
     return () => {
       cancelled = true;
     };
-  }, [slug, refreshKey, localRefreshKey]);
+  }, [slug, refreshKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setVelocityLoading(true);
+    api.projects
+      .velocity(slug)
+      .then((result) => {
+        if (!cancelled) {
+          setVelocityData(result);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error(err);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setVelocityLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, refreshKey]);
 
   const handleSort = useCallback(
     (key: SortKey) => {
@@ -68,64 +92,12 @@ export function DashboardView({
   // Treat data from a different slug as stale (show loading)
   const data = dataWithSlug?.slug === slug ? dataWithSlug.data : null;
 
-  // Tab navigation is always rendered, content depends on active tab
-  const tabBar = (
-    <div
-      className="flex items-center gap-4 mb-8"
-      role="tablist"
-      aria-label={STRINGS.dashboard.heading}
-    >
-      <button
-        role="tab"
-        id="tab-velocity"
-        aria-selected={activeTab === "velocity"}
-        aria-controls="tabpanel-velocity"
-        onClick={() => setActiveTab("velocity")}
-        className={`text-sm font-medium rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
-          activeTab === "velocity"
-            ? "bg-accent/10 text-accent"
-            : "text-text-muted hover:text-text-secondary"
-        }`}
-      >
-        {STRINGS.velocity.tabLabel}
-      </button>
-      <button
-        role="tab"
-        id="tab-chapters"
-        aria-selected={activeTab === "chapters"}
-        aria-controls="tabpanel-chapters"
-        onClick={() => setActiveTab("chapters")}
-        className={`text-sm font-medium rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring ${
-          activeTab === "chapters"
-            ? "bg-accent/10 text-accent"
-            : "text-text-muted hover:text-text-secondary"
-        }`}
-      >
-        {STRINGS.velocity.chaptersTabLabel}
-      </button>
-    </div>
-  );
-
-  if (activeTab === "velocity") {
-    return (
-      <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
-        {tabBar}
-        <div role="tabpanel" id="tabpanel-velocity" aria-labelledby="tab-velocity">
-          <VelocityView slug={slug} refreshKey={refreshKey} />
-        </div>
-      </div>
-    );
-  }
-
-  // Chapters tab — existing dashboard content
   if (error) {
     return (
       <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
-        {tabBar}
-        <div role="tabpanel" id="tabpanel-chapters" aria-labelledby="tab-chapters">
-          <div className="flex items-center justify-center py-16">
-            <p className="text-status-error">{error}</p>
-          </div>
+        <ProgressStrip data={velocityData} loading={velocityLoading} />
+        <div className="flex items-center justify-center py-16">
+          <p className="text-status-error">{error}</p>
         </div>
       </div>
     );
@@ -134,11 +106,9 @@ export function DashboardView({
   if (!data) {
     return (
       <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
-        {tabBar}
-        <div role="tabpanel" id="tabpanel-chapters" aria-labelledby="tab-chapters">
-          <div className="flex items-center justify-center py-16">
-            <p className="text-text-muted">{STRINGS.nav.loading}</p>
-          </div>
+        <ProgressStrip data={velocityData} loading={velocityLoading} />
+        <div className="flex items-center justify-center py-16">
+          <p className="text-text-muted">{STRINGS.nav.loading}</p>
         </div>
       </div>
     );
@@ -195,8 +165,8 @@ export function DashboardView({
 
   return (
     <div className="mx-auto max-w-[720px] px-8 py-10 page-enter">
-      {tabBar}
-      <div role="tabpanel" id="tabpanel-chapters" aria-labelledby="tab-chapters">
+      <ProgressStrip data={velocityData} loading={velocityLoading} />
+      <div>
         {chapters.length === 0 ? (
           <div data-testid="dashboard-empty">
             <p className="text-text-muted mb-2">{STRINGS.dashboard.emptyState}</p>
@@ -333,12 +303,7 @@ export function DashboardView({
                       </span>
                     </td>
                     <td className="py-3 pr-4 text-text-secondary">
-                      <ChapterTargetPopover
-                        chapterId={chapter.id}
-                        currentWordCount={chapter.word_count}
-                        targetWordCount={chapter.target_word_count ?? null}
-                        onUpdate={() => setLocalRefreshKey((k) => k + 1)}
-                      />
+                      {chapter.word_count.toLocaleString()}
                     </td>
                     <td className="py-3 text-text-muted text-xs">
                       {new Date(chapter.updated_at).toLocaleDateString(undefined, {
