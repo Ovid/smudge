@@ -168,6 +168,11 @@ export const STRINGS = {
     wordsOfTarget: (current: number, target: number) =>
       `${current.toLocaleString()} / ${target.toLocaleString()} words`,
     wordsTotal: (count: number) => `${count.toLocaleString()} words`,
+    wordsToday: (count: number) => `${count.toLocaleString()} words today`,
+    projectedDate: (date: string) => {
+      const d = new Date(date + "T00:00:00Z");
+      return `Projected: ${d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}`;
+    },
   },
   settings: {
     heading: "Settings",

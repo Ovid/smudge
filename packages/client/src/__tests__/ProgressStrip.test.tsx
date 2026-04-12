@@ -120,6 +120,52 @@ describe("ProgressStrip", () => {
     expect(screen.queryByText(/days left/)).not.toBeInTheDocument();
   });
 
+  it("shows words today when non-zero", () => {
+    render(
+      <ProgressStrip
+        data={makeVelocity({ current_total: 12500, words_today: 350 })}
+        loading={false}
+      />,
+    );
+    expect(screen.getByText(/350 words today/)).toBeInTheDocument();
+  });
+
+  it("does not show words today when zero", () => {
+    render(
+      <ProgressStrip
+        data={makeVelocity({ current_total: 12500, words_today: 0 })}
+        loading={false}
+      />,
+    );
+    expect(screen.queryByText(/words today/)).not.toBeInTheDocument();
+  });
+
+  it("shows projected completion date when available", () => {
+    render(
+      <ProgressStrip
+        data={makeVelocity({
+          current_total: 40000,
+          target_word_count: 80000,
+          remaining_words: 40000,
+          daily_average_30d: 650,
+          projected_completion_date: "2026-06-15",
+        })}
+        loading={false}
+      />,
+    );
+    expect(screen.getByText(/Projected: Jun 15, 2026/)).toBeInTheDocument();
+  });
+
+  it("does not show projected date when null", () => {
+    render(
+      <ProgressStrip
+        data={makeVelocity({ current_total: 12500 })}
+        loading={false}
+      />,
+    );
+    expect(screen.queryByText(/Projected:/)).not.toBeInTheDocument();
+  });
+
   it("has accessible progress bar with text label", () => {
     render(
       <ProgressStrip

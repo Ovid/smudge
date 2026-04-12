@@ -60,6 +60,14 @@ export function ProgressStrip({ data, loading, error }: ProgressStripProps) {
     segments.push(STRINGS.velocity.dailyAverage(recentPace));
   }
 
+  if (data.words_today > 0) {
+    segments.push(STRINGS.velocity.wordsToday(data.words_today));
+  }
+
+  if (data.projected_completion_date) {
+    segments.push(STRINGS.velocity.projectedDate(data.projected_completion_date));
+  }
+
   return (
     <section aria-label={STRINGS.velocity.progressLabel} className="mb-8">
       {hasTarget && (
