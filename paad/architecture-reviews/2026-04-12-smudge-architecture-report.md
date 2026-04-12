@@ -154,6 +154,10 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** EditorPage (607 lines) orchestrates 7 hooks, manages 9 local state variables, and renders 3 view modes inline. While most business logic is extracted into hooks, the component itself is the central coordinator for nearly every user interaction. The JSX has near-duplicate layout blocks for empty-chapter and active-chapter states.
 - **Evidence:** `packages/client/src/pages/EditorPage.tsx:25-89` (hook destructuring), lines 91-99 (state declarations), 607 total lines.
 - **Found by:** Structure & Boundaries
+- **Status:** Fixed
+- **Status reason:** Extracted ActionErrorBanner, ViewModeNav, EditorFooter components; merged duplicate empty/active layouts into one (607→450 lines)
+- **Status date:** 2026-04-12 23:37 UTC
+- **Status commit:** 070beba
 
 ### [F-05] Dual data access paths (getDb vs getProjectStore)
 - **Category:** 13 (Inconsistent boundaries)
