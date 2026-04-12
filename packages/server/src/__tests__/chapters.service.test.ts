@@ -105,7 +105,8 @@ describe("chapters.service", () => {
         expect(result).not.toBeNull();
         expect(result).toHaveProperty("chapter");
         expect(spy).toHaveBeenCalledWith(
-          "Velocity recordSave failed (best-effort):",
+          expect.stringContaining("Velocity recordSave failed (best-effort)"),
+          expect.objectContaining({ project_id: expect.any(String) }),
           expect.any(Error),
         );
       } finally {
@@ -144,7 +145,8 @@ describe("chapters.service", () => {
         const result = await deleteChapter(chapterId);
         expect(result).toBe(true);
         expect(spy).toHaveBeenCalledWith(
-          "Velocity updateDailySnapshot failed (best-effort):",
+          expect.stringContaining("Velocity updateDailySnapshot failed (best-effort)"),
+          expect.objectContaining({ project_id: expect.any(String) }),
           expect.any(Error),
         );
       } finally {
@@ -184,7 +186,8 @@ describe("chapters.service", () => {
         expect(result).not.toBe("chapter_purged");
         expect(result).not.toBe("conflict");
         expect(spy).toHaveBeenCalledWith(
-          "Velocity updateDailySnapshot failed (best-effort):",
+          expect.stringContaining("Velocity updateDailySnapshot failed (best-effort)"),
+          expect.objectContaining({ project_id: expect.any(String) }),
           expect.any(Error),
         );
       } finally {
