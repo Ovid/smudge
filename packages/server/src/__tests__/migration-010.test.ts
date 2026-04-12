@@ -54,7 +54,11 @@ describe("migration 010: simplify progress model", () => {
 
   it("down() is idempotent — running twice does not error", async () => {
     // Import the migration's down() function directly
-    const migration = await import("../db/migrations/010_simplify_progress_model.js");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const migration = await import(
+      // @ts-expect-error — JS migration has no type declarations
+      "../db/migrations/010_simplify_progress_model.js"
+    );
 
     // First: rollback via Knex (runs down() once, restores columns + table)
     await db.migrate.down();
