@@ -14,8 +14,12 @@
 
 ### Task 1: ProjectStore Interface
 
+**Requirement:** Design decisions 1, 3, 5, 6, 7, 8 — define the core interface covering projects, chapters, and chapter-statuses with correct naming, null returns, and transaction signature.
+
 **Files:**
 - Create: `packages/server/src/stores/project-store.types.ts`
+
+> No RED/GREEN/REFACTOR — this is a type-only file with no runtime behavior. Compilation is the verification.
 
 **Step 1: Create the ProjectStore interface file**
 
@@ -101,9 +105,13 @@ git commit -m "feat: add ProjectStore interface definition"
 
 ### Task 2: AssetStore and SnapshotStore Interfaces (types only)
 
+**Requirement:** Design decision 2 — interfaces only, no implementations until Phase 4a/4b.
+
 **Files:**
 - Create: `packages/server/src/stores/asset-store.types.ts`
 - Create: `packages/server/src/stores/snapshot-store.types.ts`
+
+> No RED/GREEN/REFACTOR — type-only files with no runtime behavior. Compilation is the verification.
 
 **Step 1: Create AssetStore types**
 
@@ -200,13 +208,19 @@ git commit -m "feat: add AssetStore and SnapshotStore interface definitions (typ
 
 ### Task 3: SqliteProjectStore Implementation
 
+**Requirement:** Design decision 1 — thin delegation layer; every method delegates 1:1 to existing repositories. Transaction support per design decision 7.
+
 **Files:**
 - Create: `packages/server/src/stores/sqlite-project-store.ts`
 - Test: `packages/server/src/__tests__/sqlite-project-store.test.ts`
 
-**Step 1: Write a failing test for SqliteProjectStore**
+#### RED — Write failing tests
 
-Create `packages/server/src/__tests__/sqlite-project-store.test.ts`. This test proves the store delegates correctly by running a round-trip through insert → find for both projects and chapters.
+Create `packages/server/src/__tests__/sqlite-project-store.test.ts`. Tests prove the store delegates correctly: round-trip insert→find for projects, chapters, and statuses; transaction commit/rollback; raw trx escape hatch.
+
+Expected failure: `Cannot find module '../stores/sqlite-project-store'`
+
+If tests pass unexpectedly: the module somehow already exists — check for stale files.
 
 ```typescript
 import { describe, it, expect } from "vitest";
@@ -416,6 +430,20 @@ describe("SqliteProjectStore", () => {
       expect(statuses[0]).toHaveProperty("label");
     });
 
+    it("findStatusByStatus returns a status row for known status", async () => {
+      const store = createStore();
+      const status = await store.findStatusByStatus("outline");
+      expect(status).toBeDefined();
+      expect(status!.status).toBe("outline");
+      expect(status!.label).toBe("Outline");
+    });
+
+    it("findStatusByStatus returns undefined for unknown status", async () => {
+      const store = createStore();
+      const status = await store.findStatusByStatus("nonexistent");
+      expect(status).toBeUndefined();
+    });
+
     it("getStatusLabelMap returns a complete map", async () => {
       const store = createStore();
       const map = await store.getStatusLabelMap();
@@ -495,14 +523,14 @@ describe("SqliteProjectStore", () => {
 });
 ```
 
-**Step 2: Run the test to verify it fails**
+**Run tests to verify they fail:**
 
 Run: `npm test -w packages/server -- --run sqlite-project-store`
 Expected: FAIL — `Cannot find module '../stores/sqlite-project-store'`
 
-**Step 3: Write the SqliteProjectStore implementation**
+#### GREEN — Write minimal implementation
 
-Create `packages/server/src/stores/sqlite-project-store.ts`:
+Create `packages/server/src/stores/sqlite-project-store.ts`. Each method is a one-liner delegating to the corresponding repository function. Keep it simple — no anticipatory abstractions.
 
 ```typescript
 import type { Knex } from "knex";
@@ -640,17 +668,24 @@ export class SqliteProjectStore implements ProjectStore {
 }
 ```
 
-**Step 4: Run the tests**
+**Run tests to verify they pass:**
 
 Run: `npm test -w packages/server -- --run sqlite-project-store`
 Expected: All tests PASS.
 
-**Step 5: Run TypeScript check**
+**Run TypeScript check:**
 
 Run: `npx tsc --noEmit -p packages/server/tsconfig.json`
 Expected: No errors.
 
-**Step 6: Commit**
+#### REFACTOR
+
+Look for:
+- Any method where the delegation pattern differs from the others (inconsistent style)
+- Missing return type annotations that TypeScript doesn't infer correctly
+- Import organization — ensure consistent ordering
+
+**Commit:**
 
 ```bash
 git add packages/server/src/stores/sqlite-project-store.ts packages/server/src/__tests__/sqlite-project-store.test.ts
@@ -661,12 +696,14 @@ git commit -m "feat: add SqliteProjectStore implementation with tests"
 
 ### Task 4: Injectable and Barrel Export
 
+**Requirement:** Design decision 4 — module-level singleton matching existing getDb() and velocity.injectable.ts patterns.
+
 **Files:**
 - Create: `packages/server/src/stores/project-store.injectable.ts`
 - Create: `packages/server/src/stores/index.ts`
 - Test: `packages/server/src/__tests__/project-store-injectable.test.ts`
 
-**Step 1: Write a failing test for the injectable**
+#### RED — Write failing tests
 
 Create `packages/server/src/__tests__/project-store-injectable.test.ts`:
 
@@ -707,12 +744,12 @@ describe("project-store.injectable", () => {
 });
 ```
 
-**Step 2: Run test to verify it fails**
+**Run tests to verify they fail:**
 
 Run: `npm test -w packages/server -- --run project-store-injectable`
 Expected: FAIL — cannot find module.
 
-**Step 3: Create the injectable**
+#### GREEN — Write minimal implementation
 
 Create `packages/server/src/stores/project-store.injectable.ts`:
 
@@ -737,7 +774,7 @@ export function initProjectStore(): void {
 }
 ```
 
-**Step 4: Create the barrel export**
+**Create the barrel export:**
 
 Create `packages/server/src/stores/index.ts`:
 
@@ -749,12 +786,18 @@ export { SqliteProjectStore } from "./sqlite-project-store";
 export { getProjectStore, setProjectStore, initProjectStore } from "./project-store.injectable";
 ```
 
-**Step 5: Run the tests**
+**Run tests to verify they pass:**
 
 Run: `npm test -w packages/server -- --run project-store-injectable`
 Expected: All tests PASS.
 
-**Step 6: Commit**
+#### REFACTOR
+
+Look for:
+- Error message wording consistency with the velocity injectable
+- Whether the barrel export re-exports all necessary types for consumers
+
+**Commit:**
 
 ```bash
 git add packages/server/src/stores/project-store.injectable.ts packages/server/src/stores/index.ts packages/server/src/__tests__/project-store-injectable.test.ts
@@ -765,8 +808,12 @@ git commit -m "feat: add ProjectStore injectable and barrel export"
 
 ### Task 5: Wire initProjectStore into Server Bootstrap
 
+**Requirement:** Design doc "Startup Wiring" section — initProjectStore() called immediately after initDb().
+
 **Files:**
 - Modify: `packages/server/src/index.ts`
+
+> No RED/GREEN — wiring-only change verified by existing test suite passing. No new behavior to test.
 
 **Step 1: Add initProjectStore to server startup**
 
@@ -800,8 +847,12 @@ git commit -m "feat: wire initProjectStore into server bootstrap"
 
 ### Task 6: Wire initProjectStore into Test Helpers
 
+**Requirement:** Design doc "Test migration" section — integration tests use setProjectStore(new SqliteProjectStore(testDb)).
+
 **Files:**
 - Modify: `packages/server/src/__tests__/test-helpers.ts`
+
+> No RED/GREEN — wiring-only change verified by existing test suite passing. No new behavior to test.
 
 **Step 1: Update test-helpers to initialize the store**
 
@@ -834,17 +885,21 @@ git commit -m "feat: wire ProjectStore into integration test helpers"
 
 ### Task 7: Migrate chapter-statuses.service to ProjectStore
 
+**Requirement:** Design doc "Service Migration Strategy" — migrate simplest service first.
+
 **Files:**
 - Modify: `packages/server/src/chapter-statuses/chapter-statuses.service.ts`
 
 This is the simplest service — one function, no transactions, read-only.
 
-**Step 1: Verify existing tests pass**
+#### RED — Verify existing tests pass (baseline)
 
 Run: `npm test -w packages/server -- --run chapter-statuses`
-Expected: All pass (baseline).
+Expected: All pass. This is our safety net — the existing tests must still pass after the refactor.
 
-**Step 2: Migrate the service**
+If any fail: fix them before proceeding. Do not refactor against a broken baseline.
+
+#### GREEN — Migrate the service
 
 Replace the contents of `packages/server/src/chapter-statuses/chapter-statuses.service.ts`:
 
@@ -883,17 +938,23 @@ export async function listStatuses(): Promise<SharedChapterStatusRow[]> {
 }
 ```
 
-**Step 3: Run tests to verify migration is correct**
+**Run tests to verify migration is correct:**
 
 Run: `npm test -w packages/server -- --run chapter-statuses`
 Expected: All tests pass — behavior is identical.
 
-**Step 4: Run the full server test suite**
+**Run the full server test suite:**
 
 Run: `npm test -w packages/server -- --run`
 Expected: All pass — no regressions.
 
-**Step 5: Commit**
+#### REFACTOR
+
+Look for:
+- Unused imports left behind (getDb, ChapterStatusRepo)
+- Whether the `toChapterStatus` helper could be simplified now that it receives rows from the store
+
+**Commit:**
 
 ```bash
 git add packages/server/src/chapter-statuses/chapter-statuses.service.ts
@@ -904,17 +965,23 @@ git commit -m "refactor: migrate chapter-statuses.service to ProjectStore"
 
 ### Task 8: Migrate chapters.service to ProjectStore
 
+**Requirement:** Design doc "Service Migration Strategy" — migrate chapters.service (moderate complexity, transactions, velocity side-effects).
+
 **Files:**
 - Modify: `packages/server/src/chapters/chapters.service.ts`
 
-This is moderately complex — multiple functions, transactions, cross-repo calls (ProjectRepo + ChapterRepo + ChapterStatusRepo), and velocity side-effects via the raw `trx` escape hatch.
+This is moderately complex — multiple functions, transactions, cross-repo calls (ProjectRepo + ChapterRepo + ChapterStatusRepo), and velocity side-effects outside the store.
 
-**Step 1: Verify existing tests pass**
+#### RED — Verify existing tests pass (baseline)
 
 Run: `npm test -w packages/server -- --run chapters`
-Expected: All pass (baseline).
+Expected: All pass. Safety net for the refactor.
 
-**Step 2: Update imports**
+If any fail: fix them before proceeding.
+
+#### GREEN — Migrate the service
+
+**Update imports:**
 
 Replace the repository imports with the store import. Keep the velocity injectable import — velocity stays outside the store.
 
@@ -943,7 +1010,7 @@ import {
 } from "../velocity/velocity.injectable";
 ```
 
-**Step 3: Migrate each service function**
+**Migrate each service function:**
 
 Apply this pattern to every function: replace `const db = getDb()` with `const store = getProjectStore()`, replace `SomeRepo.method(db, ...)` with `store.storeMethod(...)`, and replace `db.transaction(async (trx) => { ... })` with `store.transaction(async (txStore) => { ... })`.
 
@@ -1133,17 +1200,25 @@ export async function restoreChapter(
 }
 ```
 
-**Step 4: Run chapter tests**
+**Run chapter tests:**
 
 Run: `npm test -w packages/server -- --run chapters`
 Expected: All pass.
 
-**Step 5: Run full server test suite**
+**Run full server test suite:**
 
 Run: `npm test -w packages/server -- --run`
 Expected: All pass — no regressions.
 
-**Step 6: Commit**
+#### REFACTOR
+
+Look for:
+- Unused imports left behind (getDb, ChapterRepo, ProjectRepo, ChapterStatusRepo)
+- The `generateSlug` import — only used in restoreChapter; verify it's still needed
+- Whether any type imports can be simplified now that the store re-exports types
+- Consistency of `store` variable naming across all functions
+
+**Commit:**
 
 ```bash
 git add packages/server/src/chapters/chapters.service.ts
@@ -1154,17 +1229,23 @@ git commit -m "refactor: migrate chapters.service to ProjectStore"
 
 ### Task 9: Migrate projects.service to ProjectStore
 
+**Requirement:** Design doc "Service Migration Strategy" — migrate projects.service last (most complex, multi-repo transactions, slug resolution).
+
 **Files:**
 - Modify: `packages/server/src/projects/projects.service.ts`
 
 This is the most complex service — transactions that cross project + chapter repos, slug resolution, title uniqueness checks.
 
-**Step 1: Verify existing tests pass**
+#### RED — Verify existing tests pass (baseline)
 
 Run: `npm test -w packages/server -- --run projects`
-Expected: All pass (baseline).
+Expected: All pass. Safety net for the refactor.
 
-**Step 2: Update imports**
+If any fail: fix them before proceeding.
+
+#### GREEN — Migrate the service
+
+**Update imports:**
 
 **Before:**
 ```typescript
@@ -1209,7 +1290,7 @@ import type {
 } from "../chapters/chapters.types";
 ```
 
-**Step 3: Migrate each service function**
+**Migrate each service function:**
 
 **createProject:**
 
@@ -1510,17 +1591,26 @@ export async function getTrash(slug: string): Promise<DeletedChapterRow[] | null
 }
 ```
 
-**Step 4: Run project tests**
+**Run project tests:**
 
 Run: `npm test -w packages/server -- --run projects`
 Expected: All pass.
 
-**Step 5: Run full server test suite**
+**Run full server test suite:**
 
 Run: `npm test -w packages/server -- --run`
 Expected: All pass — no regressions.
 
-**Step 6: Commit**
+#### REFACTOR
+
+Look for:
+- Unused imports left behind (getDb, ProjectRepo, ChapterRepo, ChapterStatusRepo)
+- Whether `stripCorruptFlag` import from chapters.service is still the right import path
+- The `deleteProject` comment about skipping updateDailySnapshot — verify it still makes sense through the store
+- Whether `DashboardResponse` type and `ChapterMetadataWithLabel` interface can be moved to a shared types file
+- Consistency of `store` / `txStore` naming across all functions
+
+**Commit:**
 
 ```bash
 git add packages/server/src/projects/projects.service.ts
@@ -1530,6 +1620,8 @@ git commit -m "refactor: migrate projects.service to ProjectStore"
 ---
 
 ### Task 10: Final Verification
+
+**Requirement:** All design non-goals — verify no schema, API, or user-facing changes. Full CI pass.
 
 **Step 1: Run lint**
 
