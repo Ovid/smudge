@@ -54,7 +54,7 @@ describe("migration 010: simplify progress model", () => {
 
   it("down() is idempotent — running twice does not error", async () => {
     // Import the migration's down() function directly
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+
     const migration = await import(
       // @ts-expect-error — JS migration has no type declarations
       "../db/migrations/010_simplify_progress_model.js"
