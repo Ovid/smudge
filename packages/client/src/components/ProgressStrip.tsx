@@ -29,7 +29,7 @@ export function ProgressStrip({ data, loading, error }: ProgressStripProps) {
   }
 
   const targetWc = data.target_word_count;
-  const hasTarget = targetWc !== null;
+  const hasTarget = targetWc !== null && targetWc > 0;
   const percentage = hasTarget ? Math.min(100, (data.current_total / targetWc) * 100) : 0;
 
   const segments: string[] = [];

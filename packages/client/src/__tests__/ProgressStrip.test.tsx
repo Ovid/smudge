@@ -60,6 +60,21 @@ describe("ProgressStrip", () => {
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
 
+  it("treats target_word_count of 0 as no target (no progress bar, no division by zero)", () => {
+    render(
+      <ProgressStrip
+        data={makeVelocity({
+          current_total: 5000,
+          target_word_count: 0,
+          remaining_words: 0,
+        })}
+        loading={false}
+      />,
+    );
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(screen.getByText(/5,000 words/)).toBeInTheDocument();
+  });
+
   it("shows days remaining when deadline is set", () => {
     render(
       <ProgressStrip
