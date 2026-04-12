@@ -176,12 +176,7 @@ describe("ProgressStrip", () => {
   });
 
   it("does not show projected date when null", () => {
-    render(
-      <ProgressStrip
-        data={makeVelocity({ current_total: 12500 })}
-        loading={false}
-      />,
-    );
+    render(<ProgressStrip data={makeVelocity({ current_total: 12500 })} loading={false} />);
     expect(screen.queryByText(/Projected:/)).not.toBeInTheDocument();
   });
 
