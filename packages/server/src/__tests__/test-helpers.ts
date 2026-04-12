@@ -4,8 +4,7 @@ import knex, { type Knex } from "knex";
 import { createTestKnexConfig } from "../db/knexfile";
 import { createApp } from "../app";
 import { setDb, closeDb } from "../db/connection";
-import { setProjectStore, resetProjectStore } from "../stores/project-store.injectable";
-import { SqliteProjectStore } from "../stores/sqlite-project-store";
+import { setProjectStore, resetProjectStore, SqliteProjectStore } from "../stores";
 
 let testDb: Knex;
 let testServer: http.Server;
