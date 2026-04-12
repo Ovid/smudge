@@ -93,8 +93,8 @@ export async function updateChapter(
     try {
       const svc = getVelocityService();
       await svc.recordSave(chapter.project_id);
-    } catch {
-      // Velocity tracking is best-effort; save must still succeed
+    } catch (err: unknown) {
+      console.error("Velocity recordSave failed (best-effort):", err);
     }
   }
 
@@ -129,8 +129,8 @@ export async function deleteChapter(id: string): Promise<boolean> {
 
   try {
     await getVelocityService().updateDailySnapshot(chapter.project_id);
-  } catch {
-    // Velocity tracking is best-effort; delete must still succeed
+  } catch (err: unknown) {
+    console.error("Velocity updateDailySnapshot failed (best-effort):", err);
   }
   return true;
 }
@@ -192,8 +192,8 @@ export async function restoreChapter(
 
   try {
     await getVelocityService().updateDailySnapshot(chapter.project_id);
-  } catch {
-    // Velocity tracking is best-effort; restore must still succeed
+  } catch (err: unknown) {
+    console.error("Velocity updateDailySnapshot failed (best-effort):", err);
   }
 
   const restored = await store.findChapterById(id);
