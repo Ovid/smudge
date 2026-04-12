@@ -74,10 +74,6 @@ export async function updateChapter(
     updates.word_count = countWords(parsed.data.content as Record<string, unknown>);
   }
 
-  if (parsed.data.target_word_count !== undefined) {
-    updates.target_word_count = parsed.data.target_word_count;
-  }
-
   if (parsed.data.status !== undefined) {
     const valid = !!(await ChapterStatusRepo.findByStatus(db, parsed.data.status));
     if (!valid) {
@@ -99,7 +95,7 @@ export async function updateChapter(
   if (parsed.data.content !== undefined) {
     try {
       const svc = getVelocityService();
-      await svc.recordSave(chapter.project_id, chapter.id, updates.word_count as number);
+      await svc.recordSave(chapter.project_id);
     } catch {
       // Velocity tracking is best-effort; save must still succeed
     }

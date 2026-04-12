@@ -19,7 +19,7 @@ async function deleteProject(request: APIRequestContext, slug: string) {
   await request.delete(`/api/projects/${slug}`);
 }
 
-test.describe("Velocity feature", () => {
+test.describe("Progress strip on dashboard", () => {
   let project: TestProject;
 
   test.beforeEach(async ({ request }) => {
@@ -30,27 +30,76 @@ test.describe("Velocity feature", () => {
     await deleteProject(request, project.slug);
   });
 
-  test("shows velocity tab on dashboard", async ({ page }) => {
+  test("shows progress strip with zero words before any writing", async ({ page }) => {
     await page.goto(`/projects/${project.slug}`);
-
-    // Write some content to trigger SaveEvent
-    await page.locator(".tiptap").click();
-    await page.keyboard.type("This is some test content for velocity tracking.");
-    await page.waitForTimeout(2000); // Wait for auto-save
 
     // Navigate to dashboard
     const dashboardTab = page.getByRole("button", { name: /dashboard/i });
     await dashboardTab.click();
 
-    // Verify velocity tab is default
-    await expect(page.getByRole("tab", { name: /velocity/i })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    // The progress strip should be visible showing 0 words (API returns data with zeros)
+    const progressSection = page.locator("section[aria-label='Writing progress']");
+    await expect(progressSection).toBeVisible();
+    await expect(progressSection).toContainText("0 words");
+  });
 
-    // Verify summary strip shows
-    await expect(page.getByText(/words today/i)).toBeVisible();
-    await expect(page.getByText(/current streak/i)).toBeVisible();
+  test("shows word count after writing content", async ({ page }) => {
+    await page.goto(`/projects/${project.slug}`);
+
+    // Write some content to trigger a save event
+    await page.locator(".tiptap").click();
+    await page.keyboard.type("This is some test content for progress tracking.");
+
+    // Wait for auto-save to complete
+    const statusRegion = page.locator("[role='status'][aria-live='polite']");
+    await expect(statusRegion).toContainText("Saved", { timeout: 10000 });
+
+    // Navigate to dashboard
+    const dashboardTab = page.getByRole("button", { name: /dashboard/i });
+    await dashboardTab.click();
+
+    // The progress strip should show a word count (no longer the empty state)
+    const progressSection = page.locator("section[aria-label='Writing progress']");
+    await expect(progressSection).toBeVisible();
+    await expect(progressSection).toContainText("words");
+  });
+
+  test("shows progress bar after setting a word count target", async ({ page }) => {
+    await page.goto(`/projects/${project.slug}`);
+
+    // Write some content first so there's a word count
+    await page.locator(".tiptap").click();
+    await page.keyboard.type("A few words to get started with the project.");
+    const statusRegion = page.locator("[role='status'][aria-live='polite']");
+    await expect(statusRegion).toContainText("Saved", { timeout: 10000 });
+
+    // Navigate to dashboard
+    const dashboardTab = page.getByRole("button", { name: /dashboard/i });
+    await dashboardTab.click();
+
+    // Open project settings and set a word count target
+    await page.getByRole("button", { name: /project settings/i }).click();
+    const wordCountInput = page.getByLabel(/word count target/i);
+    await expect(wordCountInput).toBeVisible();
+    await wordCountInput.fill("50000");
+
+    // Blur triggers the PATCH — wait for the API response before closing
+    const patchPromise = page.waitForResponse(
+      (resp) => resp.url().includes("/api/projects/") && resp.request().method() === "PATCH",
+    );
+    await wordCountInput.blur();
+    await patchPromise;
+
+    // Close the dialog
+    await page.getByRole("button", { name: /close/i }).click();
+
+    // The progress strip should now show a progressbar element
+    const progressBar = page.getByRole("progressbar");
+    await expect(progressBar).toBeVisible({ timeout: 5000 });
+
+    // The status text should reflect the target
+    const progressSection = page.locator("section[aria-label='Writing progress']");
+    await expect(progressSection).toContainText("50,000 words");
   });
 
   test("project settings dialog opens from gear icon", async ({ page }) => {
@@ -67,28 +116,36 @@ test.describe("Velocity feature", () => {
     await expect(page.getByLabel(/deadline/i)).toBeVisible();
   });
 
-  test("app settings shows timezone", async ({ page }) => {
+  test("app settings shows timezone in project settings dialog", async ({ page }) => {
     await page.goto(`/projects/${project.slug}`);
 
-    // Click settings button in sidebar (exact match to avoid matching "Project Settings")
-    await page.getByRole("button", { name: "Settings" }).click();
+    // Navigate to dashboard and open project settings
+    const dashboardTab = page.getByRole("button", { name: /dashboard/i });
+    await dashboardTab.click();
+    await page.getByRole("button", { name: /project settings/i }).click();
+
     await expect(page.getByLabel(/timezone/i)).toBeVisible();
   });
 
-  test("velocity tab passes aXe accessibility audit", async ({ page }) => {
+  test("dashboard passes aXe accessibility audit", async ({ page }) => {
     await page.goto(`/projects/${project.slug}`);
 
-    // Write some content
+    // Write some content so the dashboard has data to show
     await page.locator(".tiptap").click();
     await page.keyboard.type("Accessibility test content.");
-    await page.waitForTimeout(2000);
+    const statusRegion = page.locator("[role='status'][aria-live='polite']");
+    await expect(statusRegion).toContainText("Saved", { timeout: 10000 });
 
-    // Navigate to dashboard velocity tab
+    // Navigate to dashboard
     const dashboardTab = page.getByRole("button", { name: /dashboard/i });
     await dashboardTab.click();
 
-    // Wait for velocity content to load
-    await expect(page.getByText(/words today/i)).toBeVisible();
+    // Wait for the progress strip to load
+    const progressSection = page.locator("section[aria-label='Writing progress']");
+    await expect(progressSection).toBeVisible();
+
+    // Wait for the chapter table to render
+    await expect(page.locator("table")).toBeVisible();
 
     // Exclude color-contrast: Tailwind v4 uses oklab() color space which aXe
     // cannot parse, producing false-positive contrast failures. Actual contrast

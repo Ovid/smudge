@@ -18,31 +18,31 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 
 ### Phase Structure
 
-| Phase | Name | Summary |
-|-------|------|---------|
-| 1 | Writer's Dashboard | Chapter status labels, project overview, chapter navigation shortcuts |
-| 2 | Goals & Velocity | Word targets, deadlines, daily tracking, session stats, burndown |
-| 2.5a | Simplify Progress Model | Reduce velocity to project-level targets + daily totals, demote save_events |
-| 2.5b | Storage Architecture | ProjectStore/AssetStore/SnapshotStore abstractions, clean seams for future |
-| 3a | Export Foundation | Export pipeline, HTML, Markdown, plain text, config dialog, download |
-| 3b | Document Export | PDF, Word (.docx), EPUB |
-| 4a | Reference Panel & Images | Collapsible side panel infrastructure, image upload/storage |
-| 4b | Snapshots & Find-and-Replace | Manual/auto snapshots, project-wide search and replace |
-| 4c | Notes, Tags & Outtakes | Inline notes, paragraph tags, scratchpad for cut text |
-| 5a | Fiction: Characters | Character sheets with structured fields and freeform notes |
-| 5b | Fiction: Scene Cards | Scene cards / outline mode with drag-and-drop |
-| 5c | Fiction: World-Building | World-building bible, "who's in the room" tracker |
-| 5d | Fiction: Visualizations | Relationship map, timeline view |
-| 6a | Non-Fiction: Research & Citations | Research library, citation management, fact-check flags, research side panel |
-| 6b | Non-Fiction: Argument Structure | Argument tree visualization |
-| 7a | Writing Environment | Dark mode, distraction-free mode |
-| 7b | Self-Editing Tools | Style linting, text-to-speech |
-| 7c | Writing Journal | Per-project dated writing journal |
-| 7d | Split View | Side-by-side editor panes |
-| 7e | Import | Markdown, Word, plain text import |
-| 7f | i18n | Full UI translation with react-i18next |
-| 8a | Project Package Format | Per-project .smudge/ folder with own SQLite DB and assets |
-| 8b | Bundle Export (.smg) | Portable single-file format for sharing and backup |
+| Phase | Name | Summary | Status |
+|-------|------|---------|--------|
+| 1 | Writer's Dashboard | Chapter status labels, project overview, chapter navigation shortcuts | Done |
+| 2 | Goals & Velocity | Word targets, deadlines, daily tracking, session stats, burndown | Done |
+| 2.5a | Simplify Progress Model | Reduce velocity to project-level targets + daily totals, demote save_events | Done |
+| 2.5b | Storage Architecture | ProjectStore/AssetStore/SnapshotStore abstractions, clean seams for future | Planned |
+| 3a | Export Foundation | Export pipeline, HTML, Markdown, plain text, config dialog, download | Planned |
+| 3b | Document Export | PDF, Word (.docx), EPUB | Planned |
+| 4a | Reference Panel & Images | Collapsible side panel infrastructure, image upload/storage | Planned |
+| 4b | Snapshots & Find-and-Replace | Manual/auto snapshots, project-wide search and replace | Planned |
+| 4c | Notes, Tags & Outtakes | Inline notes, paragraph tags, scratchpad for cut text | Planned |
+| 5a | Fiction: Characters | Character sheets with structured fields and freeform notes | Planned |
+| 5b | Fiction: Scene Cards | Scene cards / outline mode with drag-and-drop | Planned |
+| 5c | Fiction: World-Building | World-building bible, "who's in the room" tracker | Planned |
+| 5d | Fiction: Visualizations | Relationship map, timeline view | Planned |
+| 6a | Non-Fiction: Research & Citations | Research library, citation management, fact-check flags, research side panel | Planned |
+| 6b | Non-Fiction: Argument Structure | Argument tree visualization | Planned |
+| 7a | Writing Environment | Dark mode, distraction-free mode | Planned |
+| 7b | Self-Editing Tools | Style linting, text-to-speech | Planned |
+| 7c | Writing Journal | Per-project dated writing journal | Planned |
+| 7d | Split View | Side-by-side editor panes | Planned |
+| 7e | Import | Markdown, Word, plain text import | Planned |
+| 7f | i18n | Full UI translation with react-i18next | Planned |
+| 8a | Project Package Format | Per-project .smudge/ folder with own SQLite DB and assets | Planned |
+| 8b | Bundle Export (.smg) | Portable single-file format for sharing and backup | Planned |
 
 ---
 
@@ -212,6 +212,7 @@ No WritingSession table — sessions are derived from save timestamps on demand.
 ---
 
 ## Phase 2.5a: Simplify Progress Model
+<!-- plan: 2026-04-11-simplify-progress-model-design.md -->
 
 ### Goal
 

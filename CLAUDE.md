@@ -112,13 +112,12 @@ This is a first-class design constraint, not optional:
 
 ## Data Model
 
-Six tables, all using UUID primary keys (except `settings` and `chapter_statuses`):
+Five tables, all using UUID primary keys (except `settings` and `chapter_statuses`):
 
-- **projects** — id, title, slug, mode, target_word_count, target_deadline, completion_threshold, created_at, updated_at, deleted_at
-- **chapters** — id, project_id (FK), title, content (TipTap JSON), sort_order, word_count, target_word_count, status, created_at, updated_at, deleted_at
+- **projects** — id, title, slug, mode, target_word_count, target_deadline, created_at, updated_at, deleted_at
+- **chapters** — id, project_id (FK), title, content (TipTap JSON), sort_order, word_count, status, created_at, updated_at, deleted_at
 - **chapter_statuses** — status (PK), sort_order, label. Seed data; defines the chapter workflow statuses.
 - **settings** — key (PK), value. Key-value store for app settings (e.g., timezone).
-- **save_events** — id, chapter_id (FK, nullable for purged chapters), project_id (FK), word_count, saved_at, save_date. Records each auto-save for velocity tracking.
 - **daily_snapshots** — id, project_id (FK), date, total_word_count, created_at. One row per project per day; upserted on each save.
 
 ## Testing Philosophy

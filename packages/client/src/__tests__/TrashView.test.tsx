@@ -16,7 +16,6 @@ const trashedChapters: Chapter[] = [
     content: null,
     sort_order: 0,
     word_count: 50,
-    target_word_count: null,
     status: "outline",
     created_at: "2026-01-01",
     updated_at: "2026-01-01",
