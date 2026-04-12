@@ -139,7 +139,6 @@ export async function listIdTitleStatusByProject(
     .select("id", "title", "status");
 }
 
-
 export async function sumWordCountByProject(
   trx: Knex.Transaction | Knex,
   projectId: string,
