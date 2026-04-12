@@ -143,6 +143,10 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** The `transaction` method signature includes `trx: Knex.Transaction` as a second callback parameter, documented as an "escape hatch" for velocity/settings repos. Any code using `trx` is coupled to Knex, defeating the purpose of the `ProjectStore` interface. An alternative `ProjectStore` implementation must provide a Knex-compatible transaction object.
 - **Evidence:** `packages/server/src/stores/project-store.types.ts:70` (`trx: Knex.Transaction` in signature), `velocity.service.ts:46-48` (uses raw `trx`).
 - **Found by:** Coupling & Dependencies
+- **Status:** Fixed
+- **Status reason:** Added upsertDailySnapshot to ProjectStore interface; velocity service now uses txStore instead of raw trx; removed trx parameter from transaction callback signature
+- **Status date:** 2026-04-12 23:32 UTC
+- **Status commit:** a337965
 
 ### [F-04] EditorPage component complexity
 - **Category:** 2 (God object)
