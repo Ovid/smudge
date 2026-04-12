@@ -31,8 +31,8 @@ export function DashboardView({
   const [velocityWithSlug, setVelocityWithSlug] = useState<{
     slug: string;
     data: VelocityResponse | null;
+    error?: boolean;
   } | null>(null);
-  const [velocityError, setVelocityError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,7 +57,6 @@ export function DashboardView({
 
   useEffect(() => {
     let cancelled = false;
-    setVelocityError(false);
     api.projects
       .velocity(slug)
       .then((result) => {
@@ -68,7 +67,7 @@ export function DashboardView({
       .catch((err) => {
         if (!cancelled) {
           console.error(err);
-          setVelocityError(true);
+          setVelocityWithSlug({ slug, data: null, error: true });
         }
       });
     return () => {
@@ -92,6 +91,7 @@ export function DashboardView({
   const data = dataWithSlug?.slug === slug ? dataWithSlug.data : null;
   const velocityData = velocityWithSlug?.slug === slug ? velocityWithSlug.data : null;
   const velocityLoading = velocityWithSlug?.slug !== slug;
+  const velocityError = velocityWithSlug?.slug === slug && velocityWithSlug?.error === true;
 
   if (error) {
     return (
