@@ -18,6 +18,7 @@ import type { ChapterStatusRow } from "../chapter-statuses/chapter-statuses.type
 import * as projectsRepo from "../projects/projects.repository";
 import * as chaptersRepo from "../chapters/chapters.repository";
 import * as statusesRepo from "../chapter-statuses/chapter-statuses.repository";
+import * as velocityRepo from "../velocity/velocity.repository";
 
 export class SqliteProjectStore implements ProjectStore {
   constructor(private db: Knex.Transaction | Knex) {}
@@ -152,17 +153,23 @@ export class SqliteProjectStore implements ProjectStore {
     return statusesRepo.getStatusLabelMap(this.db);
   }
 
+  // --- Velocity ---
+
+  upsertDailySnapshot(projectId: string, date: string, totalWordCount: number): Promise<void> {
+    return velocityRepo.upsertDailySnapshot(this.db, projectId, date, totalWordCount);
+  }
+
   // --- Transactions ---
 
   async transaction<T>(
-    fn: (txStore: ProjectStore, trx: Knex.Transaction) => Promise<T>,
+    fn: (txStore: ProjectStore) => Promise<T>,
   ): Promise<T> {
     if (this.db.isTransaction) {
       throw new Error("Nested transactions are not supported");
     }
     return (this.db as Knex).transaction(async (trx) => {
       const txStore = new SqliteProjectStore(trx);
-      return fn(txStore, trx);
+      return fn(txStore);
     });
   }
 }

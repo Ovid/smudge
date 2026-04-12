@@ -231,14 +231,14 @@ describe("chapters.service", () => {
       // Spy on transaction to intercept the txStore's restoreChapter
       const origTransaction = store.transaction.bind(store);
       vi.spyOn(store, "transaction").mockImplementation(async (fn) => {
-        return origTransaction(async (txStore, trx) => {
+        return origTransaction(async (txStore) => {
           const origRestore = txStore.restoreChapter.bind(txStore);
           vi.spyOn(txStore, "restoreChapter").mockImplementation(async () => {
             // Simulate: chapter was purged between lookup and restore
             return 0;
           });
           try {
-            return await fn(txStore, trx);
+            return await fn(txStore);
           } finally {
             txStore.restoreChapter = origRestore;
           }

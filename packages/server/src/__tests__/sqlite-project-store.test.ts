@@ -441,14 +441,16 @@ describe("SqliteProjectStore", () => {
       expect(found).toBeNull();
     });
 
-    it("provides raw trx as second argument", async () => {
+    it("provides a transaction-scoped store", async () => {
       const store = createStore();
+      const data = makeProject();
 
-      await store.transaction(async (_txStore, trx) => {
-        expect(trx).toBeDefined();
-        // Can use trx directly for raw queries
-        const result = await trx.raw("SELECT 1 as val");
-        expect(result[0].val).toBe(1);
+      await store.transaction(async (txStore) => {
+        await txStore.insertProject(data);
+        // txStore sees the insert within the transaction
+        const found = await txStore.findProjectById(data.id);
+        expect(found).not.toBeNull();
+        expect(found!.id).toBe(data.id);
       });
     });
 

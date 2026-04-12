@@ -1,9 +1,8 @@
 import type { VelocityResponse } from "@smudge/shared";
-// This module uses both getDb() (for velocity-specific repos: VelocityRepo,
-// SettingsRepo) and getProjectStore() (for manuscript data: projects, chapters).
-// The split is intentional: velocity/settings repos are app-level concerns
-// outside the ProjectStore boundary. Both resolve to the same underlying
-// Knex instance in production and tests.
+// This module uses getDb() for velocity-specific read queries (VelocityRepo,
+// SettingsRepo) and getProjectStore() for manuscript data and transactional
+// writes. Both resolve to the same underlying Knex instance in production
+// and tests.
 import { getDb } from "../db/connection";
 import * as VelocityRepo from "./velocity.repository";
 import * as SettingsRepo from "../settings/settings.repository";
@@ -46,9 +45,9 @@ export async function getTodayDate(): Promise<string> {
 export async function updateDailySnapshot(projectId: string): Promise<void> {
   const store = getProjectStore();
   const today = await getTodayDate();
-  await store.transaction(async (txStore, trx) => {
+  await store.transaction(async (txStore) => {
     const totalWordCount = await txStore.sumChapterWordCountByProject(projectId);
-    await VelocityRepo.upsertDailySnapshot(trx, projectId, today, totalWordCount);
+    await txStore.upsertDailySnapshot(projectId, today, totalWordCount);
   });
 }
 

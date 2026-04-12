@@ -1,4 +1,3 @@
-import type { Knex } from "knex";
 import type {
   ProjectRow,
   CreateProjectRow,
@@ -53,16 +52,17 @@ export interface ProjectStore {
   getStatusLabel(status: string): Promise<string>;
   getStatusLabelMap(): Promise<Record<string, string>>;
 
+  // --- Velocity ---
+  upsertDailySnapshot(projectId: string, date: string, totalWordCount: number): Promise<void>;
+
   // --- Transactions ---
 
   /**
    * Run a function within a database transaction.
    *
-   * The callback receives a transaction-scoped store and the raw Knex
-   * transaction. The `trx` parameter is an escape hatch for repositories
-   * not covered by this store (e.g., velocity, settings). It is
-   * Knex-specific — alternative ProjectStore implementations must provide
-   * a compatible object or migrate those repositories into the store.
+   * The callback receives a transaction-scoped store that shares the
+   * underlying transaction. All store operations within the callback
+   * are atomic.
    */
-  transaction<T>(fn: (txStore: ProjectStore, trx: Knex.Transaction) => Promise<T>): Promise<T>;
+  transaction<T>(fn: (txStore: ProjectStore) => Promise<T>): Promise<T>;
 }
