@@ -12,6 +12,9 @@ import { safeTimezone } from "../timezone";
 
 const MS_PER_DAY = 86_400_000;
 
+/** en-US locale gives numeric month/day/year parts via formatToParts */
+const DATE_PARTS_LOCALE = "en-US";
+
 // --- Timezone helper ---
 
 export function formatDateFromParts(parts: Intl.DateTimeFormatPart[], tz: string): string {
@@ -29,7 +32,7 @@ export async function getTodayDate(): Promise<string> {
   const row = await SettingsRepo.findByKey(db, "timezone");
   const tz = safeTimezone(row?.value || "UTC");
   const now = new Date();
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const parts = new Intl.DateTimeFormat(DATE_PARTS_LOCALE, {
     timeZone: tz,
     year: "numeric",
     month: "2-digit",
