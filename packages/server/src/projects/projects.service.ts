@@ -122,7 +122,10 @@ export async function updateProject(
   slug: string,
   body: unknown,
 ): Promise<
-  { project: ProjectRow; validationError?: undefined } | { validationError: string } | null
+  | { project: ProjectRow; validationError?: undefined }
+  | { validationError: string }
+  | null
+  | "read_after_update_failure"
 > {
   const parsed = UpdateProjectSchema.safeParse(body);
   if (!parsed.success) {
@@ -157,9 +160,7 @@ export async function updateProject(
   });
 
   const updated = await store.findProjectById(project.id);
-  if (!updated) {
-    throw new Error(`Project ${project.id} not found after update`);
-  }
+  if (!updated) return "read_after_update_failure";
   return { project: updated };
 }
 

@@ -195,9 +195,7 @@ export async function restoreChapter(
 
   const clean = stripCorruptFlag(restored);
   const updatedProject = await store.findProjectById(chapter.project_id);
-  if (!updatedProject) {
-    throw new Error(`Project ${chapter.project_id} not found after restore`);
-  }
+  if (!updatedProject) return "read_failure";
   const restoredStatusLabel = await store.getStatusLabel(restored.status);
 
   return {
