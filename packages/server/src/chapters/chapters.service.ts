@@ -14,6 +14,22 @@ import type {
 
 export { setVelocityService, resetVelocityService };
 
+// --- Transaction control-flow errors ---
+
+export class ParentPurgedError extends Error {
+  constructor() {
+    super("The parent project has been permanently deleted");
+    this.name = "ParentPurgedError";
+  }
+}
+
+export class ChapterPurgedError extends Error {
+  constructor() {
+    super("This chapter has been permanently deleted");
+    this.name = "ChapterPurgedError";
+  }
+}
+
 // --- Helpers ---
 
 export function isCorruptChapter(chapter: { content_corrupt?: boolean }): boolean {
@@ -157,13 +173,21 @@ export async function restoreChapter(
     await store.transaction(async (txStore) => {
       const parentProject = await txStore.findProjectByIdIncludingDeleted(chapter.project_id);
       if (!parentProject) {
-        throw new Error("PARENT_PURGED");
+        throw new ParentPurgedError();
       }
 
       const maxSort = await txStore.getMaxChapterSortOrder(chapter.project_id);
       const restoredCount = await txStore.restoreChapter(id, maxSort + 1, now);
       if (restoredCount === 0) {
-        throw new Error("CHAPTER_PURGED");
+        // restoredCount === 0 means the UPDATE matched no rows. This can happen when:
+        // 1. The chapter was hard-deleted (purged) between lookup and restore
+        // 2. Another request already restored it (deleted_at is now NULL)
+        // Distinguish by checking if the chapter exists as active.
+        const alreadyActive = await txStore.findChapterById(id);
+        if (alreadyActive) {
+          return; // Already restored by another request — no action needed
+        }
+        throw new ChapterPurgedError();
       }
 
       if (parentProject.deleted_at) {
@@ -181,10 +205,10 @@ export async function restoreChapter(
       }
     });
   } catch (err: unknown) {
-    if (err instanceof Error && err.message === "PARENT_PURGED") {
+    if (err instanceof ParentPurgedError) {
       return "parent_purged";
     }
-    if (err instanceof Error && err.message === "CHAPTER_PURGED") {
+    if (err instanceof ChapterPurgedError) {
       return "chapter_purged";
     }
     if (

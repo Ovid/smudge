@@ -249,6 +249,43 @@ describe("chapters.service", () => {
       }
     });
 
+    it("returns restored chapter when another request already restored it (double-restore)", async () => {
+      const { chapterId } = await createProjectAndChapter();
+
+      // Soft-delete the chapter so findDeletedChapterById will find it
+      const now = new Date().toISOString();
+      await t.db("chapters").where({ id: chapterId }).update({ deleted_at: now });
+
+      // Simulate: between findDeletedChapterById (outside tx) and restoreChapter (inside tx),
+      // another request restored the chapter. We do this by restoring it before our call,
+      // but making findDeletedChapterById still find it via a spy.
+      await t.db("chapters").where({ id: chapterId }).update({ deleted_at: null });
+
+      // Spy on the store so findDeletedChapterById returns the chapter as if still deleted,
+      // but the actual restore UPDATE inside the transaction finds 0 rows (deleted_at is NULL).
+      const { getProjectStore } = await import("../stores/project-store.injectable");
+      const store = getProjectStore();
+      const origFindDeleted = store.findDeletedChapterById.bind(store);
+      vi.spyOn(store, "findDeletedChapterById").mockImplementation(async (id) => {
+        // Return the chapter as if it were still deleted (simulating the race window)
+        const row = await t.db("chapters").where({ id }).first();
+        return row ?? null;
+      });
+
+      try {
+        const result = await restoreChapter(chapterId);
+        // Should NOT return "chapter_purged" — the chapter exists and is active
+        expect(result).not.toBe("chapter_purged");
+        expect(result).not.toBeNull();
+        expect(result).not.toBe("read_failure");
+        // Should return the chapter data (successful restore response)
+        expect(typeof result).toBe("object");
+        expect((result as { id: string }).id).toBe(chapterId);
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
     it("returns 'parent_purged' when parent project has been hard-deleted", async () => {
       const { chapterId, projectId } = await createProjectAndChapter();
 
