@@ -137,7 +137,9 @@ export async function deleteChapter(id: string): Promise<boolean> {
 
 export async function restoreChapter(
   id: string,
-): Promise<RestoredChapterResponse | null | "purged" | "conflict" | "read_failure"> {
+): Promise<
+  RestoredChapterResponse | null | "parent_purged" | "chapter_purged" | "conflict" | "read_failure"
+> {
   const store = getProjectStore();
   const chapter = await store.findDeletedChapterById(id);
   if (!chapter) return null;
@@ -172,10 +174,10 @@ export async function restoreChapter(
     });
   } catch (err: unknown) {
     if (err instanceof Error && err.message === "PARENT_PURGED") {
-      return "purged";
+      return "parent_purged";
     }
     if (err instanceof Error && err.message === "CHAPTER_PURGED") {
-      return "purged";
+      return "chapter_purged";
     }
     if (
       err instanceof Error &&

@@ -180,7 +180,8 @@ describe("chapters.service", () => {
         const result = await restoreChapter(chapterId);
         expect(result).toBeDefined();
         expect(result).not.toBeNull();
-        expect(result).not.toBe("purged");
+        expect(result).not.toBe("parent_purged");
+        expect(result).not.toBe("chapter_purged");
         expect(result).not.toBe("conflict");
         expect(spy).toHaveBeenCalledWith(
           "Velocity updateDailySnapshot failed (best-effort):",
@@ -189,6 +190,76 @@ describe("chapters.service", () => {
       } finally {
         spy.mockRestore();
       }
+    });
+
+    it("returns 'chapter_purged' when chapter is purged mid-transaction", async () => {
+      const { chapterId } = await createProjectAndChapter();
+
+      // Soft-delete so findDeletedChapterById will find it
+      const now = new Date().toISOString();
+      await t.db("chapters").where({ id: chapterId }).update({ deleted_at: now });
+
+      // Hard-delete so the restore UPDATE inside the transaction finds 0 rows
+      await t.db("chapters").where({ id: chapterId }).del();
+
+      // Re-insert as soft-deleted so findDeletedChapterById succeeds (outside tx),
+      // but then hard-delete before the service calls restore inside the tx.
+      // Since SQLite is synchronous and single-threaded, we simulate the race
+      // by spying on the store's restoreChapter to return 0.
+      const { getProjectStore } = await import("../stores/project-store.injectable");
+      const store = getProjectStore();
+
+      // Re-insert for findDeletedChapterById to find
+      await t.db("chapters").insert({
+        id: chapterId,
+        project_id: (await t.db("projects").first()).id,
+        title: "Purged Chapter",
+        sort_order: 0,
+        word_count: 0,
+        created_at: now,
+        updated_at: now,
+        deleted_at: now,
+      });
+
+      // Spy on transaction to intercept the txStore's restoreChapter
+      const origTransaction = store.transaction.bind(store);
+      vi.spyOn(store, "transaction").mockImplementation(async (fn) => {
+        return origTransaction(async (txStore, trx) => {
+          const origRestore = txStore.restoreChapter.bind(txStore);
+          vi.spyOn(txStore, "restoreChapter").mockImplementation(async () => {
+            // Simulate: chapter was purged between lookup and restore
+            return 0;
+          });
+          try {
+            return await fn(txStore, trx);
+          } finally {
+            txStore.restoreChapter = origRestore;
+          }
+        });
+      });
+
+      try {
+        const result = await restoreChapter(chapterId);
+        expect(result).toBe("chapter_purged");
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    it("returns 'parent_purged' when parent project has been hard-deleted", async () => {
+      const { chapterId, projectId } = await createProjectAndChapter();
+
+      // Soft-delete the chapter
+      const now = new Date().toISOString();
+      await t.db("chapters").where({ id: chapterId }).update({ deleted_at: now });
+
+      // Hard-delete the project (simulating a purge)
+      await t.db.raw("PRAGMA foreign_keys = OFF");
+      await t.db("projects").where({ id: projectId }).del();
+      await t.db.raw("PRAGMA foreign_keys = ON");
+
+      const result = await restoreChapter(chapterId);
+      expect(result).toBe("parent_purged");
     });
 
     it("resolves slug conflict by generating a new slug when restoring a deleted project", async () => {
@@ -216,7 +287,8 @@ describe("chapters.service", () => {
       const result = await restoreChapter(chapterId);
       expect(result).not.toBeNull();
       expect(result).not.toBe("conflict");
-      expect(result).not.toBe("purged");
+      expect(result).not.toBe("parent_purged");
+      expect(result).not.toBe("chapter_purged");
       expect(typeof result).toBe("object");
       // Restored project gets a different slug
       expect((result as { project_slug: string }).project_slug).toBe(`${slug}-2`);
