@@ -58,7 +58,6 @@ or other strong-copyleft licenses are present.
 | @tiptap/starter-kit | MIT | |
 | dompurify | MPL-2.0 OR Apache-2.0 | We elect **Apache-2.0**. See [DOMPurify](#dompurify) |
 | react | MIT | |
-| recharts | MIT | Charting library for velocity charts |
 | react-dom | MIT | |
 | react-router-dom | MIT | |
 
