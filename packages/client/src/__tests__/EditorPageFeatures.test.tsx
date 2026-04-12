@@ -29,16 +29,17 @@ vi.mock("../api/client", () => ({
       trash: vi.fn(),
       dashboard: vi.fn(),
       velocity: vi.fn().mockResolvedValue({
-        daily_snapshots: [],
-        sessions: [],
-        streak: { current: 0, best: 0 },
-        projection: {
-          target_word_count: null,
-          target_deadline: null,
-          projected_date: null,
-          daily_average_30d: 0,
-        },
-        completion: { threshold_status: "final", total_chapters: 0, completed_chapters: 0 },
+        words_today: 0,
+        daily_average_7d: null,
+        daily_average_30d: null,
+        current_total: 0,
+        target_word_count: null,
+        remaining_words: null,
+        target_deadline: null,
+        days_until_deadline: null,
+        required_pace: null,
+        projected_completion_date: null,
+        today: "2026-04-12",
       }),
     },
     chapters: {
@@ -949,9 +950,9 @@ describe("EditorPage view mode toggles", () => {
     // Click Dashboard tab
     await userEvent.click(screen.getByText("Dashboard"));
 
-    // Dashboard view should render with sub-tabs (Velocity is default)
+    // Dashboard view should render with ProgressStrip (single view, no tabs)
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: /Velocity/i })).toBeInTheDocument();
+      expect(screen.getByRole("region", { name: /writing progress/i })).toBeInTheDocument();
     });
   });
 
@@ -965,8 +966,8 @@ describe("EditorPage view mode toggles", () => {
     await userEvent.click(screen.getByText("Dashboard"));
 
     await waitFor(() => {
-      // The DashboardView component should render sub-tabs
-      expect(screen.getByRole("tab", { name: /Velocity/i })).toBeInTheDocument();
+      // The DashboardView component should render ProgressStrip
+      expect(screen.getByRole("region", { name: /writing progress/i })).toBeInTheDocument();
     });
 
     // The Dashboard tab should show as current
