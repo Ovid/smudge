@@ -9,6 +9,12 @@ export function getProjectStore(): ProjectStore {
   return store;
 }
 
+/**
+ * Replace the store singleton. Intended for test injection only —
+ * production code should use initProjectStore(). Unlike initProjectStore,
+ * this does not guard against overwriting an existing store; call
+ * resetProjectStore() first if you need that safety.
+ */
 export function setProjectStore(s: ProjectStore): void {
   store = s;
 }
