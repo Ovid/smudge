@@ -25,7 +25,11 @@ export async function up(knex) {
       });
     }
   } finally {
-    await knex.raw("PRAGMA foreign_keys = ON");
+    try {
+      await knex.raw("PRAGMA foreign_keys = ON");
+    } catch (pragmaErr) {
+      console.error("Failed to re-enable foreign_keys after migration:", pragmaErr);
+    }
   }
 }
 
