@@ -82,10 +82,13 @@ test.describe("Progress strip on dashboard", () => {
     const wordCountInput = page.getByLabel(/word count target/i);
     await expect(wordCountInput).toBeVisible();
     await wordCountInput.fill("50000");
-    await wordCountInput.blur();
 
-    // Wait for the save to propagate — small delay for API round-trip
-    await page.waitForTimeout(500);
+    // Blur triggers the PATCH — wait for the API response before closing
+    const patchPromise = page.waitForResponse(
+      (resp) => resp.url().includes("/api/projects/") && resp.request().method() === "PATCH",
+    );
+    await wordCountInput.blur();
+    await patchPromise;
 
     // Close the dialog
     await page.getByRole("button", { name: /close/i }).click();
