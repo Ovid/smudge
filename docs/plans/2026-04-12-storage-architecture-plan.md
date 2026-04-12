@@ -76,7 +76,7 @@ export interface ProjectStore {
   updateChapterSortOrders(orders: Array<{ id: string; sort_order: number }>): Promise<void>;
   softDeleteChapter(id: string, now: string): Promise<void>;
   softDeleteChaptersByProject(projectId: string, now: string): Promise<void>;
-  restoreChapter(id: string, sortOrder: number, now: string): Promise<void>;
+  restoreChapter(id: string, sortOrder: number, now: string): Promise<number>;
 
   // --- Chapter statuses ---
   listStatuses(): Promise<ChapterStatusRow[]>;
@@ -1151,7 +1151,10 @@ export async function restoreChapter(
       }
 
       const maxSort = await txStore.getMaxChapterSortOrder(chapter.project_id);
-      await txStore.restoreChapter(id, maxSort + 1, now);
+      const restoredCount = await txStore.restoreChapter(id, maxSort + 1, now);
+      if (restoredCount === 0) {
+        throw new Error("CHAPTER_PURGED");
+      }
       await txStore.updateProjectTimestamp(chapter.project_id);
 
       if (parentProject.deleted_at) {
