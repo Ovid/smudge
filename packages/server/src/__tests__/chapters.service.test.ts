@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { v4 as uuid } from "uuid";
 import { setupTestDb } from "./test-helpers";
 import {
@@ -85,6 +85,7 @@ describe("chapters.service", () => {
   describe("updateChapter()", () => {
     it("succeeds even when velocity recordSave throws", async () => {
       const { chapterId } = await createProjectAndChapter();
+      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
 
       setVelocityService({
         recordSave: async () => {
@@ -102,6 +103,11 @@ describe("chapters.service", () => {
       expect(result).toBeDefined();
       expect(result).not.toBeNull();
       expect(result).toHaveProperty("chapter");
+      expect(spy).toHaveBeenCalledWith(
+        "Velocity recordSave failed (best-effort):",
+        expect.any(Error),
+      );
+      spy.mockRestore();
     });
 
     it("returns null for a non-existent chapter", async () => {
@@ -120,6 +126,7 @@ describe("chapters.service", () => {
   describe("deleteChapter()", () => {
     it("succeeds even when velocity updateDailySnapshot throws", async () => {
       const { chapterId } = await createProjectAndChapter();
+      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
 
       setVelocityService({
         recordSave: async () => {
@@ -132,6 +139,11 @@ describe("chapters.service", () => {
 
       const result = await deleteChapter(chapterId);
       expect(result).toBe(true);
+      expect(spy).toHaveBeenCalledWith(
+        "Velocity updateDailySnapshot failed (best-effort):",
+        expect.any(Error),
+      );
+      spy.mockRestore();
     });
 
     it("returns false for a non-existent chapter", async () => {
@@ -143,6 +155,7 @@ describe("chapters.service", () => {
   describe("restoreChapter()", () => {
     it("succeeds even when velocity updateDailySnapshot throws", async () => {
       const { chapterId } = await createProjectAndChapter();
+      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
 
       // Soft-delete the chapter so we can restore it
       const now = new Date().toISOString();
@@ -162,6 +175,11 @@ describe("chapters.service", () => {
       expect(result).not.toBeNull();
       expect(result).not.toBe("purged");
       expect(result).not.toBe("conflict");
+      expect(spy).toHaveBeenCalledWith(
+        "Velocity updateDailySnapshot failed (best-effort):",
+        expect.any(Error),
+      );
+      spy.mockRestore();
     });
 
     it("resolves slug conflict by generating a new slug when restoring a deleted project", async () => {
