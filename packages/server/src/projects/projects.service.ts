@@ -260,10 +260,10 @@ export async function getDashboard(slug: string): Promise<DashboardResponse | nu
 
   const chapters = await store.listChapterMetadataByProject(project.id);
 
-  const allStatuses = await store.listStatuses();
-  const statusLabelMap: Record<string, string> = Object.fromEntries(
-    allStatuses.map((s) => [s.status, s.label]),
-  );
+  const [allStatuses, statusLabelMap] = await Promise.all([
+    store.listStatuses(),
+    store.getStatusLabelMap(),
+  ]);
 
   const chaptersWithLabels = chapters.map((ch) => ({
     ...ch,
