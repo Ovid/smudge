@@ -164,17 +164,17 @@ describe("api.chapters", () => {
 describe("api.projects (additional methods)", () => {
   it("velocity(slug) fetches GET /api/projects/:slug/velocity", async () => {
     const velocityData = {
-      daily_snapshots: [],
-      sessions: [],
-      streak: { current: 3, best: 7 },
-      projection: {
-        target_word_count: 80000,
-        target_deadline: "2026-12-31",
-        projected_date: "2026-10-15",
-        daily_average_30d: 500,
-      },
-      completion: { threshold_status: "final", total_chapters: 10, completed_chapters: 3 },
-      today: "2026-04-03",
+      words_today: 0,
+      daily_average_7d: null,
+      daily_average_30d: null,
+      current_total: 0,
+      target_word_count: null,
+      remaining_words: null,
+      target_deadline: null,
+      days_until_deadline: null,
+      required_pace: null,
+      projected_completion_date: null,
+      today: "2026-04-12",
     };
     mockFetch.mockResolvedValue(jsonResponse(velocityData));
 
