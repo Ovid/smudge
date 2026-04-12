@@ -56,7 +56,7 @@ export function ProgressStrip({ data, loading }: ProgressStripProps) {
       {hasTarget && (
         <div
           role="progressbar"
-          aria-valuenow={data.current_total}
+          aria-valuenow={Math.min(data.current_total, targetWc)}
           aria-valuemin={0}
           aria-valuemax={targetWc}
           aria-label={STRINGS.velocity.wordsOfTarget(data.current_total, targetWc)}

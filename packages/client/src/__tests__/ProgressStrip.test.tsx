@@ -113,6 +113,23 @@ describe("ProgressStrip", () => {
     expect(progressBar).toHaveAttribute("aria-valuemax", "80000");
   });
 
+  it("clamps aria-valuenow when current_total exceeds target", () => {
+    render(
+      <ProgressStrip
+        data={makeVelocity({
+          current_total: 95000,
+          target_word_count: 80000,
+          remaining_words: 0,
+        })}
+        loading={false}
+      />,
+    );
+    const progressBar = screen.getByRole("progressbar");
+    // aria-valuenow must not exceed aria-valuemax per ARIA spec
+    expect(progressBar).toHaveAttribute("aria-valuenow", "80000");
+    expect(progressBar).toHaveAttribute("aria-valuemax", "80000");
+  });
+
   it("respects prefers-reduced-motion on progress bar", () => {
     render(
       <ProgressStrip
