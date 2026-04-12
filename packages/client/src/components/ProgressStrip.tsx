@@ -9,7 +9,11 @@ interface ProgressStripProps {
 
 export function ProgressStrip({ data, loading, error }: ProgressStripProps) {
   if (error && !data) {
-    return null;
+    return (
+      <section aria-label={STRINGS.velocity.progressLabel} className="mb-8">
+        <p className="text-text-muted text-sm font-sans">{STRINGS.velocity.emptyState}</p>
+      </section>
+    );
   }
 
   if (loading && !data) {

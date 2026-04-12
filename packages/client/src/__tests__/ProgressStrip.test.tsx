@@ -33,6 +33,13 @@ describe("ProgressStrip", () => {
     expect(screen.queryByText(/start writing/i)).not.toBeInTheDocument();
   });
 
+  it("shows empty state on error (keeps section in DOM for screen readers)", () => {
+    render(<ProgressStrip data={null} loading={false} error={true} />);
+    const section = screen.getByRole("region", { name: /writing progress/i });
+    expect(section).toBeInTheDocument();
+    expect(screen.getByText(/start writing/i)).toBeInTheDocument();
+  });
+
   it("shows word count when no target set", () => {
     render(<ProgressStrip data={makeVelocity({ current_total: 12500 })} loading={false} />);
     expect(screen.getByText(/12,500 words/)).toBeInTheDocument();
