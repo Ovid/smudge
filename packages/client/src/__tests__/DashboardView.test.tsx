@@ -450,8 +450,8 @@ describe("DashboardView", () => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
     });
 
-    // Error state shows the empty-state text (keeps section in DOM for a11y)
-    expect(screen.getByText(/start writing/i)).toBeInTheDocument();
+    // Error state shows a distinct error message (not the empty-state copy)
+    expect(screen.getByText(/unable to load/i)).toBeInTheDocument();
     errorSpy.mockRestore();
   });
 
