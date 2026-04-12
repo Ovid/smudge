@@ -129,16 +129,6 @@ export async function listIdsByProject(
   return rows.map((r: { id: string }) => r.id);
 }
 
-export async function listIdTitleStatusByProject(
-  trx: Knex.Transaction | Knex,
-  projectId: string,
-): Promise<Array<{ id: string; title: string; status: string }>> {
-  return trx("chapters")
-    .where({ project_id: projectId })
-    .whereNull("deleted_at")
-    .select("id", "title", "status");
-}
-
 export async function sumWordCountByProject(
   trx: Knex.Transaction | Knex,
   projectId: string,

@@ -106,12 +106,6 @@ export class SqliteProjectStore implements ProjectStore {
     return chaptersRepo.listIdsByProject(this.db, projectId);
   }
 
-  listChapterIdTitleStatusByProject(
-    projectId: string,
-  ): Promise<Array<{ id: string; title: string; status: string }>> {
-    return chaptersRepo.listIdTitleStatusByProject(this.db, projectId);
-  }
-
   sumChapterWordCountByProject(projectId: string): Promise<number> {
     return chaptersRepo.sumWordCountByProject(this.db, projectId);
   }

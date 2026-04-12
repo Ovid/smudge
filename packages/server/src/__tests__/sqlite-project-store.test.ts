@@ -331,19 +331,6 @@ describe("SqliteProjectStore", () => {
       expect(ids).toContain(ch.id);
     });
 
-    it("listChapterIdTitleStatusByProject delegates correctly", async () => {
-      const store = createStore();
-      const proj = makeProject();
-      await store.insertProject(proj);
-      const ch = makeChapter(proj.id);
-      await store.insertChapter(ch);
-
-      const items = await store.listChapterIdTitleStatusByProject(proj.id);
-      expect(items).toHaveLength(1);
-      expect(items[0]!.id).toBe(ch.id);
-      expect(items[0]!.title).toBe(ch.title);
-    });
-
     it("softDeleteChaptersByProject delegates correctly", async () => {
       const store = createStore();
       const proj = makeProject();

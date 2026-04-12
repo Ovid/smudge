@@ -39,9 +39,6 @@ export interface ProjectStore {
   listChapterMetadataByProject(projectId: string): Promise<ChapterMetadataRow[]>;
   listDeletedChaptersByProject(projectId: string): Promise<DeletedChapterRow[]>;
   listChapterIdsByProject(projectId: string): Promise<string[]>;
-  listChapterIdTitleStatusByProject(
-    projectId: string,
-  ): Promise<Array<{ id: string; title: string; status: string }>>;
   sumChapterWordCountByProject(projectId: string): Promise<number>;
   getMaxChapterSortOrder(projectId: string): Promise<number>;
   updateChapter(id: string, updates: UpdateChapterData): Promise<number>;
