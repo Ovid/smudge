@@ -458,5 +458,17 @@ describe("SqliteProjectStore", () => {
         expect(result[0].val).toBe(1);
       });
     });
+
+    it("throws when calling transaction() on a transaction-scoped store", async () => {
+      const store = createStore();
+
+      await store.transaction(async (txStore) => {
+        await expect(
+          txStore.transaction(async () => {
+            // Should never reach here
+          }),
+        ).rejects.toThrow("Nested transactions are not supported");
+      });
+    });
   });
 });

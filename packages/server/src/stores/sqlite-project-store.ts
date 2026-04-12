@@ -163,6 +163,9 @@ export class SqliteProjectStore implements ProjectStore {
   async transaction<T>(
     fn: (txStore: ProjectStore, trx: Knex.Transaction) => Promise<T>,
   ): Promise<T> {
+    if (this.db.isTransaction) {
+      throw new Error("Nested transactions are not supported");
+    }
     return (this.db as Knex).transaction(async (trx) => {
       const txStore = new SqliteProjectStore(trx);
       return fn(txStore, trx);
