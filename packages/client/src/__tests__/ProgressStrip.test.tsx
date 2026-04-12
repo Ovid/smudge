@@ -41,7 +41,11 @@ describe("ProgressStrip", () => {
   it("shows progress bar when target is set", () => {
     render(
       <ProgressStrip
-        data={makeVelocity({ current_total: 40000, target_word_count: 80000, remaining_words: 40000 })}
+        data={makeVelocity({
+          current_total: 40000,
+          target_word_count: 80000,
+          remaining_words: 40000,
+        })}
         loading={false}
       />,
     );
@@ -95,7 +99,11 @@ describe("ProgressStrip", () => {
   it("has accessible progress bar with text label", () => {
     render(
       <ProgressStrip
-        data={makeVelocity({ current_total: 40000, target_word_count: 80000, remaining_words: 40000 })}
+        data={makeVelocity({
+          current_total: 40000,
+          target_word_count: 80000,
+          remaining_words: 40000,
+        })}
         loading={false}
       />,
     );
@@ -108,7 +116,11 @@ describe("ProgressStrip", () => {
   it("respects prefers-reduced-motion on progress bar", () => {
     render(
       <ProgressStrip
-        data={makeVelocity({ current_total: 40000, target_word_count: 80000, remaining_words: 40000 })}
+        data={makeVelocity({
+          current_total: 40000,
+          target_word_count: 80000,
+          remaining_words: 40000,
+        })}
         loading={false}
       />,
     );

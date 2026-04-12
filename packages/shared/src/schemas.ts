@@ -65,4 +65,3 @@ export const UpdateSettingsSchema = z.object({
     )
     .min(1, "At least one setting must be provided"),
 });
-

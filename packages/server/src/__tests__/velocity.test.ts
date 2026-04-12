@@ -36,10 +36,7 @@ async function createProjectWithChapter(overrides?: {
     .post("/api/projects")
     .send({ title: `Velocity Test ${uuid().slice(0, 8)}`, mode: "fiction" });
   const project = res.body;
-  const chapters = await t
-    .db("chapters")
-    .where({ project_id: project.id })
-    .select("id");
+  const chapters = await t.db("chapters").where({ project_id: project.id }).select("id");
 
   if (overrides) {
     await request(t.app).patch(`/api/projects/${project.slug}`).send(overrides);
@@ -48,11 +45,7 @@ async function createProjectWithChapter(overrides?: {
   return { projectId: project.id, chapterId: chapters[0].id, slug: project.slug };
 }
 
-async function insertSnapshot(
-  projectId: string,
-  date: string,
-  totalWordCount: number,
-) {
+async function insertSnapshot(projectId: string, date: string, totalWordCount: number) {
   await t.db("daily_snapshots").insert({
     id: uuid(),
     project_id: projectId,
@@ -200,9 +193,7 @@ describe("GET /api/projects/:slug/velocity", () => {
     // 2000 / 100 = 20 days from today
     const expectedDate = new Date(todayDate() + "T00:00:00Z");
     expectedDate.setUTCDate(expectedDate.getUTCDate() + 20);
-    expect(res.body.projected_completion_date).toBe(
-      expectedDate.toISOString().slice(0, 10),
-    );
+    expect(res.body.projected_completion_date).toBe(expectedDate.toISOString().slice(0, 10));
   });
 
   // --- Projection fallback to 7d ---
@@ -222,9 +213,7 @@ describe("GET /api/projects/:slug/velocity", () => {
     // remaining = 5000 - 1700 = 3300 => 3300/100 = 33 days
     const expectedDate = new Date(todayDate() + "T00:00:00Z");
     expectedDate.setUTCDate(expectedDate.getUTCDate() + 33);
-    expect(res.body.projected_completion_date).toBe(
-      expectedDate.toISOString().slice(0, 10),
-    );
+    expect(res.body.projected_completion_date).toBe(expectedDate.toISOString().slice(0, 10));
   });
 
   // --- Projection null cases ---

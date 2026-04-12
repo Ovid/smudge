@@ -49,10 +49,7 @@ describe("velocity repository", () => {
       await VelocityRepo.upsertDailySnapshot(t.db, projectId, "2026-04-05", 500);
       await VelocityRepo.upsertDailySnapshot(t.db, projectId, "2026-04-06", 600);
 
-      const rows = await t
-        .db("daily_snapshots")
-        .where({ project_id: projectId })
-        .orderBy("date");
+      const rows = await t.db("daily_snapshots").where({ project_id: projectId }).orderBy("date");
       expect(rows).toHaveLength(2);
       expect(rows[0].total_word_count).toBe(500);
       expect(rows[1].total_word_count).toBe(600);
@@ -66,11 +63,7 @@ describe("velocity repository", () => {
       await VelocityRepo.upsertDailySnapshot(t.db, projectId, "2026-04-01", 100);
       await VelocityRepo.upsertDailySnapshot(t.db, projectId, "2026-04-05", 300);
 
-      const result = await VelocityRepo.getBaselineSnapshot(
-        t.db,
-        projectId,
-        "2026-04-05",
-      );
+      const result = await VelocityRepo.getBaselineSnapshot(t.db, projectId, "2026-04-05");
       expect(result).toBeDefined();
       expect(result!.date).toBe("2026-04-05");
       expect(result!.total_word_count).toBe(300);
@@ -83,11 +76,7 @@ describe("velocity repository", () => {
       await VelocityRepo.upsertDailySnapshot(t.db, projectId, "2026-04-03", 200);
 
       // Target date is 2026-04-05, nearest earlier is 2026-04-03
-      const result = await VelocityRepo.getBaselineSnapshot(
-        t.db,
-        projectId,
-        "2026-04-05",
-      );
+      const result = await VelocityRepo.getBaselineSnapshot(t.db, projectId, "2026-04-05");
       expect(result).toBeDefined();
       expect(result!.date).toBe("2026-04-03");
       expect(result!.total_word_count).toBe(200);
@@ -98,22 +87,14 @@ describe("velocity repository", () => {
 
       await VelocityRepo.upsertDailySnapshot(t.db, projectId, "2026-04-10", 500);
 
-      const result = await VelocityRepo.getBaselineSnapshot(
-        t.db,
-        projectId,
-        "2026-04-05",
-      );
+      const result = await VelocityRepo.getBaselineSnapshot(t.db, projectId, "2026-04-05");
       expect(result).toBeUndefined();
     });
 
     it("returns undefined when no snapshots exist", async () => {
       const projectId = await createProject();
 
-      const result = await VelocityRepo.getBaselineSnapshot(
-        t.db,
-        projectId,
-        "2026-04-05",
-      );
+      const result = await VelocityRepo.getBaselineSnapshot(t.db, projectId, "2026-04-05");
       expect(result).toBeUndefined();
     });
   });
@@ -126,11 +107,7 @@ describe("velocity repository", () => {
       await VelocityRepo.upsertDailySnapshot(t.db, projectId, "2026-04-04", 200);
       await VelocityRepo.upsertDailySnapshot(t.db, projectId, "2026-04-05", 300);
 
-      const result = await VelocityRepo.getLastPriorDaySnapshot(
-        t.db,
-        projectId,
-        "2026-04-05",
-      );
+      const result = await VelocityRepo.getLastPriorDaySnapshot(t.db, projectId, "2026-04-05");
       expect(result).toBeDefined();
       expect(result!.date).toBe("2026-04-04");
       expect(result!.total_word_count).toBe(200);
@@ -141,22 +118,14 @@ describe("velocity repository", () => {
 
       await VelocityRepo.upsertDailySnapshot(t.db, projectId, "2026-04-05", 500);
 
-      const result = await VelocityRepo.getLastPriorDaySnapshot(
-        t.db,
-        projectId,
-        "2026-04-05",
-      );
+      const result = await VelocityRepo.getLastPriorDaySnapshot(t.db, projectId, "2026-04-05");
       expect(result).toBeUndefined();
     });
 
     it("returns undefined when no prior snapshots exist", async () => {
       const projectId = await createProject();
 
-      const result = await VelocityRepo.getLastPriorDaySnapshot(
-        t.db,
-        projectId,
-        "2026-04-05",
-      );
+      const result = await VelocityRepo.getLastPriorDaySnapshot(t.db, projectId, "2026-04-05");
       expect(result).toBeUndefined();
     });
   });

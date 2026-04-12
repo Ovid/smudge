@@ -23,15 +23,14 @@ export function ProgressStrip({ data, loading }: ProgressStripProps) {
     );
   }
 
-  const hasTarget = data.target_word_count !== null;
-  const percentage = hasTarget
-    ? Math.min(100, (data.current_total / data.target_word_count!) * 100)
-    : 0;
+  const targetWc = data.target_word_count;
+  const hasTarget = targetWc !== null;
+  const percentage = hasTarget ? Math.min(100, (data.current_total / targetWc) * 100) : 0;
 
   const segments: string[] = [];
 
   if (hasTarget) {
-    segments.push(STRINGS.velocity.wordsOfTarget(data.current_total, data.target_word_count!));
+    segments.push(STRINGS.velocity.wordsOfTarget(data.current_total, targetWc));
   } else {
     segments.push(STRINGS.velocity.wordsTotal(data.current_total));
   }
@@ -56,8 +55,8 @@ export function ProgressStrip({ data, loading }: ProgressStripProps) {
           role="progressbar"
           aria-valuenow={data.current_total}
           aria-valuemin={0}
-          aria-valuemax={data.target_word_count!}
-          aria-label={STRINGS.velocity.wordsOfTarget(data.current_total, data.target_word_count!)}
+          aria-valuemax={targetWc}
+          aria-label={STRINGS.velocity.wordsOfTarget(data.current_total, targetWc)}
           className="h-3 rounded-full overflow-hidden bg-bg-secondary mb-3"
         >
           <div
@@ -69,9 +68,7 @@ export function ProgressStrip({ data, loading }: ProgressStripProps) {
           />
         </div>
       )}
-      <p className="text-sm text-text-secondary font-sans">
-        {segments.join(". ")}.
-      </p>
+      <p className="text-sm text-text-secondary font-sans">{segments.join(". ")}.</p>
     </section>
   );
 }

@@ -115,7 +115,8 @@ export async function getVelocityBySlug(slug: string): Promise<VelocityResponse 
   // Projection
   const targetWordCount = project.target_word_count ?? null;
   const targetDeadline = project.target_deadline ?? null;
-  const remainingWords = targetWordCount !== null ? Math.max(0, targetWordCount - currentTotal) : null;
+  const remainingWords =
+    targetWordCount !== null ? Math.max(0, targetWordCount - currentTotal) : null;
 
   let daysUntilDeadline: number | null = null;
   if (targetDeadline) {

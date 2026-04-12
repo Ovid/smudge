@@ -140,7 +140,6 @@ describe("UpdateProjectSchema — target fields", () => {
   it("rejects target_deadline as invalid date", () => {
     expect(UpdateProjectSchema.safeParse({ target_deadline: "not-a-date" }).success).toBe(false);
   });
-
 });
 
 describe("UpdateSettingsSchema", () => {
@@ -158,4 +157,3 @@ describe("UpdateSettingsSchema", () => {
     expect(result.success).toBe(false);
   });
 });
-

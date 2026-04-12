@@ -212,6 +212,7 @@ No WritingSession table — sessions are derived from save timestamps on demand.
 ---
 
 ## Phase 2.5a: Simplify Progress Model
+<!-- plan: 2026-04-11-simplify-progress-model-design.md -->
 
 ### Goal
 

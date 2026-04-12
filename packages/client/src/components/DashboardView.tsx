@@ -54,7 +54,6 @@ export function DashboardView({
 
   useEffect(() => {
     let cancelled = false;
-    setVelocityLoading(true);
     api.projects
       .velocity(slug)
       .then((result) => {
