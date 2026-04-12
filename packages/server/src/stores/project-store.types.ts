@@ -26,7 +26,7 @@ export interface ProjectStore {
   listProjects(): Promise<ProjectListRow[]>;
   updateProject(id: string, data: UpdateProjectData): Promise<ProjectRow>;
   updateProjectIncludingDeleted(id: string, data: UpdateProjectData): Promise<ProjectRow>;
-  updateProjectTimestamp(id: string): Promise<void>;
+  updateProjectTimestamp(id: string, now: string): Promise<void>;
   softDeleteProject(id: string, now: string): Promise<void>;
   resolveUniqueSlug(baseSlug: string, excludeProjectId?: string): Promise<string>;
 

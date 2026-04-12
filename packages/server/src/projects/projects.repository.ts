@@ -103,8 +103,12 @@ export async function updateIncludingDeleted(
   return row as ProjectRow;
 }
 
-export async function updateTimestamp(trx: Knex.Transaction | Knex, id: string): Promise<void> {
-  await trx("projects").where({ id }).update({ updated_at: new Date().toISOString() });
+export async function updateTimestamp(
+  trx: Knex.Transaction | Knex,
+  id: string,
+  now: string,
+): Promise<void> {
+  await trx("projects").where({ id }).update({ updated_at: now });
 }
 
 export async function softDelete(

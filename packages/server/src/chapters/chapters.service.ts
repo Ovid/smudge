@@ -82,7 +82,7 @@ export async function updateChapter(
   const rowsUpdated = await store.transaction(async (txStore) => {
     const count = await txStore.updateChapter(id, updates);
     if (count === 0) return 0;
-    await txStore.updateProjectTimestamp(chapter.project_id);
+    await txStore.updateProjectTimestamp(chapter.project_id, updates.updated_at);
     return count;
   });
 
@@ -124,7 +124,7 @@ export async function deleteChapter(id: string): Promise<boolean> {
   const now = new Date().toISOString();
   await store.transaction(async (txStore) => {
     await txStore.softDeleteChapter(id, now);
-    await txStore.updateProjectTimestamp(chapter.project_id);
+    await txStore.updateProjectTimestamp(chapter.project_id, now);
   });
 
   try {
@@ -169,7 +169,7 @@ export async function restoreChapter(
           slug: freshSlug,
         });
       } else {
-        await txStore.updateProjectTimestamp(chapter.project_id);
+        await txStore.updateProjectTimestamp(chapter.project_id, now);
       }
     });
   } catch (err: unknown) {

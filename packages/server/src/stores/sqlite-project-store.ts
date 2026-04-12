@@ -60,8 +60,8 @@ export class SqliteProjectStore implements ProjectStore {
     return projectsRepo.updateIncludingDeleted(this.db, id, data);
   }
 
-  updateProjectTimestamp(id: string): Promise<void> {
-    return projectsRepo.updateTimestamp(this.db, id);
+  updateProjectTimestamp(id: string, now: string): Promise<void> {
+    return projectsRepo.updateTimestamp(this.db, id, now);
   }
 
   softDeleteProject(id: string, now: string): Promise<void> {

@@ -150,12 +150,10 @@ describe("SqliteProjectStore", () => {
       const data = makeProject();
       await store.insertProject(data);
 
-      const before = (await store.findProjectById(data.id))!.updated_at;
-      // Small delay to ensure timestamp differs
-      await new Promise((r) => setTimeout(r, 10));
-      await store.updateProjectTimestamp(data.id);
+      const newTimestamp = new Date(Date.now() + 10_000).toISOString();
+      await store.updateProjectTimestamp(data.id, newTimestamp);
       const after = (await store.findProjectById(data.id))!.updated_at;
-      expect(after).not.toBe(before);
+      expect(after).toBe(newTimestamp);
     });
   });
 

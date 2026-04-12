@@ -202,7 +202,7 @@ export async function createChapter(
       created_at: now,
       updated_at: now,
     });
-    await txStore.updateProjectTimestamp(project.id);
+    await txStore.updateProjectTimestamp(project.id, now);
   });
 
   const chapter = await store.findChapterById(chapterId);
@@ -245,7 +245,7 @@ export async function reorderChapters(
 
     const orders = chapter_ids.map((id, i) => ({ id, sort_order: i }));
     await txStore.updateChapterSortOrders(orders);
-    await txStore.updateProjectTimestamp(project.id);
+    await txStore.updateProjectTimestamp(project.id, new Date().toISOString());
 
     return { success: true } as const;
   });
