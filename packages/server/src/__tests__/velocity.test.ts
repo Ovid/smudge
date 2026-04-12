@@ -3,6 +3,7 @@ import request from "supertest";
 import { setupTestDb } from "./test-helpers";
 import { v4 as uuid } from "uuid";
 import { safeTimezone } from "../timezone";
+import { formatDateFromParts } from "../velocity/velocity.service";
 
 describe("safeTimezone", () => {
   it("returns the timezone unchanged when valid", () => {
@@ -11,6 +12,45 @@ describe("safeTimezone", () => {
 
   it("returns UTC for an invalid timezone string", () => {
     expect(safeTimezone("Not/AReal_Zone")).toBe("UTC");
+  });
+});
+
+describe("formatDateFromParts", () => {
+  it("formats valid Intl parts into YYYY-MM-DD", () => {
+    const parts: Intl.DateTimeFormatPart[] = [
+      { type: "month", value: "04" },
+      { type: "literal", value: "/" },
+      { type: "day", value: "12" },
+      { type: "literal", value: "/" },
+      { type: "year", value: "2026" },
+    ];
+    expect(formatDateFromParts(parts, "UTC")).toBe("2026-04-12");
+  });
+
+  it("throws when year part is missing", () => {
+    const parts: Intl.DateTimeFormatPart[] = [
+      { type: "month", value: "04" },
+      { type: "day", value: "12" },
+    ];
+    expect(() => formatDateFromParts(parts, "UTC")).toThrow(
+      'getTodayDate: missing date parts for timezone "UTC"',
+    );
+  });
+
+  it("throws when month part is missing", () => {
+    const parts: Intl.DateTimeFormatPart[] = [
+      { type: "year", value: "2026" },
+      { type: "day", value: "12" },
+    ];
+    expect(() => formatDateFromParts(parts, "UTC")).toThrow("missing date parts");
+  });
+
+  it("throws when day part is missing", () => {
+    const parts: Intl.DateTimeFormatPart[] = [
+      { type: "year", value: "2026" },
+      { type: "month", value: "04" },
+    ];
+    expect(() => formatDateFromParts(parts, "UTC")).toThrow("missing date parts");
   });
 });
 

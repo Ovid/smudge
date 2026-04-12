@@ -10,6 +10,16 @@ import { safeTimezone } from "../timezone";
 
 export { safeTimezone };
 
+export function formatDateFromParts(parts: Intl.DateTimeFormatPart[], tz: string): string {
+  const year = parts.find((p) => p.type === "year")?.value;
+  const month = parts.find((p) => p.type === "month")?.value;
+  const day = parts.find((p) => p.type === "day")?.value;
+  if (!year || !month || !day) {
+    throw new Error(`getTodayDate: missing date parts for timezone "${tz}"`);
+  }
+  return `${year}-${month}-${day}`;
+}
+
 export async function getTodayDate(): Promise<string> {
   const db = getDb();
   const row = await SettingsRepo.findByKey(db, "timezone");
@@ -21,10 +31,7 @@ export async function getTodayDate(): Promise<string> {
     month: "2-digit",
     day: "2-digit",
   }).formatToParts(now);
-  const year = parts.find((p) => p.type === "year")?.value ?? "1970";
-  const month = parts.find((p) => p.type === "month")?.value ?? "01";
-  const day = parts.find((p) => p.type === "day")?.value ?? "01";
-  return `${year}-${month}-${day}`;
+  return formatDateFromParts(parts, tz);
 }
 
 // --- Side-effect operations (called by chapters service) ---
