@@ -6,7 +6,6 @@ import type {
   ChapterStatusRow,
   CreateProjectInput,
   ApiError,
-  CompletionThresholdValue,
   VelocityResponse,
 } from "@smudge/shared";
 
@@ -63,7 +62,6 @@ export const api = {
         title?: string;
         target_word_count?: number | null;
         target_deadline?: string | null;
-        completion_threshold?: CompletionThresholdValue;
       },
     ) =>
       apiFetch<Project>(`/projects/${slug}`, {
@@ -92,7 +90,6 @@ export const api = {
           status: string;
           status_label: string;
           word_count: number;
-          target_word_count: number | null;
           updated_at: string;
           sort_order: number;
         }>;
@@ -118,7 +115,6 @@ export const api = {
         title?: string;
         content?: Record<string, unknown>;
         status?: string;
-        target_word_count?: number | null;
       },
     ) =>
       apiFetch<Chapter>(`/chapters/${id}`, {
