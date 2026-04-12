@@ -328,11 +328,28 @@ describe("chapters repository", () => {
       // Verify deleted
       expect(await ChapterRepo.findById(t.db, chapterId)).toBeNull();
 
-      await ChapterRepo.restore(t.db, chapterId, 0, new Date().toISOString());
+      const count = await ChapterRepo.restore(t.db, chapterId, 0, new Date().toISOString());
+      expect(count).toBe(1);
 
       const found = await ChapterRepo.findById(t.db, chapterId);
       expect(found).not.toBeNull();
       expect(found!.deleted_at).toBeNull();
+    });
+
+    it("returns 0 and does not modify an active (non-deleted) chapter", async () => {
+      const projectId = await createProject();
+      const chapterId = await createChapter(projectId, { sort_order: 5 });
+
+      const before = await ChapterRepo.findById(t.db, chapterId);
+      expect(before).not.toBeNull();
+      expect(before!.sort_order).toBe(5);
+
+      const count = await ChapterRepo.restore(t.db, chapterId, 99, new Date().toISOString());
+      expect(count).toBe(0);
+
+      // sort_order should be unchanged
+      const after = await ChapterRepo.findById(t.db, chapterId);
+      expect(after!.sort_order).toBe(5);
     });
   });
 });

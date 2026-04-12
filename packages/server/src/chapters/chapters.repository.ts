@@ -212,5 +212,6 @@ export async function restore(
 ): Promise<number> {
   return trx("chapters")
     .where({ id })
+    .whereNotNull("deleted_at")
     .update({ deleted_at: null, sort_order: sortOrder, updated_at: now });
 }
