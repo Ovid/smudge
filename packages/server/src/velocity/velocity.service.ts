@@ -33,8 +33,10 @@ export async function updateDailySnapshot(projectId: string): Promise<void> {
   try {
     const db = getDb();
     const today = await getTodayDate();
-    const totalWordCount = await ChapterRepo.sumWordCountByProject(db, projectId);
-    await VelocityRepo.upsertDailySnapshot(db, projectId, today, totalWordCount);
+    await db.transaction(async (trx) => {
+      const totalWordCount = await ChapterRepo.sumWordCountByProject(trx, projectId);
+      await VelocityRepo.upsertDailySnapshot(trx, projectId, today, totalWordCount);
+    });
   } catch (err) {
     console.error(`Velocity updateDailySnapshot failed for project=${projectId}:`, err);
   }
