@@ -95,11 +95,14 @@ describe("chapters repository", () => {
 
     it("handles corrupt JSON gracefully", () => {
       const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-      const row = { id: "abc", content: "not valid json {{{" };
-      const result = ChapterRepo.parseChapterContent(row);
-      expect(result.content).toBeNull();
-      expect(result.content_corrupt).toBe(true);
-      spy.mockRestore();
+      try {
+        const row = { id: "abc", content: "not valid json {{{" };
+        const result = ChapterRepo.parseChapterContent(row);
+        expect(result.content).toBeNull();
+        expect(result.content_corrupt).toBe(true);
+      } finally {
+        spy.mockRestore();
+      }
     });
 
     it("handles null content", () => {

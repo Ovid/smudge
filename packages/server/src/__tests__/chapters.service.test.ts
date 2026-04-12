@@ -87,27 +87,30 @@ describe("chapters.service", () => {
       const { chapterId } = await createProjectAndChapter();
       const spy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      setVelocityService({
-        recordSave: async () => {
-          throw new Error("velocity broken");
-        },
-        updateDailySnapshot: async () => {
-          throw new Error("velocity broken");
-        },
-      });
+      try {
+        setVelocityService({
+          recordSave: async () => {
+            throw new Error("velocity broken");
+          },
+          updateDailySnapshot: async () => {
+            throw new Error("velocity broken");
+          },
+        });
 
-      const result = await updateChapter(chapterId, {
-        content: DOC_JSON,
-      });
+        const result = await updateChapter(chapterId, {
+          content: DOC_JSON,
+        });
 
-      expect(result).toBeDefined();
-      expect(result).not.toBeNull();
-      expect(result).toHaveProperty("chapter");
-      expect(spy).toHaveBeenCalledWith(
-        "Velocity recordSave failed (best-effort):",
-        expect.any(Error),
-      );
-      spy.mockRestore();
+        expect(result).toBeDefined();
+        expect(result).not.toBeNull();
+        expect(result).toHaveProperty("chapter");
+        expect(spy).toHaveBeenCalledWith(
+          "Velocity recordSave failed (best-effort):",
+          expect.any(Error),
+        );
+      } finally {
+        spy.mockRestore();
+      }
     });
 
     it("returns null for a non-existent chapter", async () => {
@@ -128,22 +131,25 @@ describe("chapters.service", () => {
       const { chapterId } = await createProjectAndChapter();
       const spy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      setVelocityService({
-        recordSave: async () => {
-          throw new Error("velocity broken");
-        },
-        updateDailySnapshot: async () => {
-          throw new Error("velocity broken");
-        },
-      });
+      try {
+        setVelocityService({
+          recordSave: async () => {
+            throw new Error("velocity broken");
+          },
+          updateDailySnapshot: async () => {
+            throw new Error("velocity broken");
+          },
+        });
 
-      const result = await deleteChapter(chapterId);
-      expect(result).toBe(true);
-      expect(spy).toHaveBeenCalledWith(
-        "Velocity updateDailySnapshot failed (best-effort):",
-        expect.any(Error),
-      );
-      spy.mockRestore();
+        const result = await deleteChapter(chapterId);
+        expect(result).toBe(true);
+        expect(spy).toHaveBeenCalledWith(
+          "Velocity updateDailySnapshot failed (best-effort):",
+          expect.any(Error),
+        );
+      } finally {
+        spy.mockRestore();
+      }
     });
 
     it("returns false for a non-existent chapter", async () => {
@@ -157,29 +163,32 @@ describe("chapters.service", () => {
       const { chapterId } = await createProjectAndChapter();
       const spy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      // Soft-delete the chapter so we can restore it
-      const now = new Date().toISOString();
-      await t.db("chapters").where({ id: chapterId }).update({ deleted_at: now });
+      try {
+        // Soft-delete the chapter so we can restore it
+        const now = new Date().toISOString();
+        await t.db("chapters").where({ id: chapterId }).update({ deleted_at: now });
 
-      setVelocityService({
-        recordSave: async () => {
-          throw new Error("velocity broken");
-        },
-        updateDailySnapshot: async () => {
-          throw new Error("velocity broken");
-        },
-      });
+        setVelocityService({
+          recordSave: async () => {
+            throw new Error("velocity broken");
+          },
+          updateDailySnapshot: async () => {
+            throw new Error("velocity broken");
+          },
+        });
 
-      const result = await restoreChapter(chapterId);
-      expect(result).toBeDefined();
-      expect(result).not.toBeNull();
-      expect(result).not.toBe("purged");
-      expect(result).not.toBe("conflict");
-      expect(spy).toHaveBeenCalledWith(
-        "Velocity updateDailySnapshot failed (best-effort):",
-        expect.any(Error),
-      );
-      spy.mockRestore();
+        const result = await restoreChapter(chapterId);
+        expect(result).toBeDefined();
+        expect(result).not.toBeNull();
+        expect(result).not.toBe("purged");
+        expect(result).not.toBe("conflict");
+        expect(spy).toHaveBeenCalledWith(
+          "Velocity updateDailySnapshot failed (best-effort):",
+          expect.any(Error),
+        );
+      } finally {
+        spy.mockRestore();
+      }
     });
 
     it("resolves slug conflict by generating a new slug when restoring a deleted project", async () => {
