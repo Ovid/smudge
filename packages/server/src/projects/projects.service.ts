@@ -231,6 +231,7 @@ export async function reorderChapters(
     };
   }
   const { chapter_ids } = parsed.data;
+  const now = new Date().toISOString();
 
   return store.transaction(async (txStore) => {
     const existingIds = (await txStore.listChapterIdsByProject(project.id)).sort();
@@ -245,7 +246,7 @@ export async function reorderChapters(
 
     const orders = chapter_ids.map((id, i) => ({ id, sort_order: i }));
     await txStore.updateChapterSortOrders(orders);
-    await txStore.updateProjectTimestamp(project.id, new Date().toISOString());
+    await txStore.updateProjectTimestamp(project.id, now);
 
     return { success: true } as const;
   });
