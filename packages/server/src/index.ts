@@ -1,5 +1,5 @@
 import { initDb, closeDb } from "./db/connection";
-import { initProjectStore } from "./stores/project-store.injectable";
+import { initProjectStore, resetProjectStore } from "./stores/project-store.injectable";
 import { createApp } from "./app";
 import { purgeOldTrash } from "./db/purge";
 import type { Server } from "node:http";
@@ -69,6 +69,7 @@ function setupGracefulShutdown(server: Server): void {
     forceExit.unref();
 
     server.close(() => {
+      resetProjectStore();
       closeDb()
         .then(() => {
           clearTimeout(forceExit);
