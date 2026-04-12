@@ -21,7 +21,8 @@ export function HomePage() {
       try {
         const data = await api.projects.list();
         if (!cancelled) setProjects(data);
-      } catch {
+      } catch (err) {
+        console.warn("Failed to load projects:", err);
         if (!cancelled) {
           setError(STRINGS.error.loadFailed);
         }
@@ -41,7 +42,8 @@ export function HomePage() {
       const project = await api.projects.create({ title, mode });
       setDialogOpen(false);
       navigate(`/projects/${project.slug}`);
-    } catch {
+    } catch (err) {
+      console.warn("Failed to create project:", err);
       setError(STRINGS.error.createFailed);
     }
   }
@@ -53,7 +55,8 @@ export function HomePage() {
       await api.projects.delete(deleteTarget.slug);
       setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
       setDeleteTarget(null);
-    } catch {
+    } catch (err) {
+      console.warn("Failed to delete project:", err);
       setError(STRINGS.error.deleteFailed);
       setDeleteTarget(null);
     }
