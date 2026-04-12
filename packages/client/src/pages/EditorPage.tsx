@@ -18,7 +18,7 @@ import { useChapterTitleEditing } from "../hooks/useChapterTitleEditing";
 import { useProjectTitleEditing } from "../hooks/useProjectTitleEditing";
 import { useTrashManager } from "../hooks/useTrashManager";
 import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcuts";
-import { api, type VelocityResponse } from "../api/client";
+import { api } from "../api/client";
 import { Logo } from "../components/Logo";
 
 export function EditorPage() {
@@ -95,8 +95,6 @@ export function EditorPage() {
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
   const [wordCountAnnouncement, setWordCountAnnouncement] = useState("");
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
-  const [lastSession, setLastSession] = useState<VelocityResponse["sessions"][0] | null>(null);
-
   const editorRef = useRef<EditorHandle | null>(null);
   const [toolbarEditor, setToolbarEditor] = useState<TipTapEditor | null>(null);
 
@@ -126,48 +124,6 @@ export function EditorPage() {
       if (timerId !== null) clearTimeout(timerId);
     };
   }, []);
-
-  // Fetch last session for status bar (on load, then throttled after saves)
-  const hasFetchedInitial = useRef(false);
-  const lastVelocityFetch = useRef(0);
-  const VELOCITY_THROTTLE_MS = 60_000;
-
-  // Reset velocity state when navigating between projects
-  useEffect(() => {
-    hasFetchedInitial.current = false;
-    lastVelocityFetch.current = 0;
-    setLastSession(null);
-  }, [slug]);
-  useEffect(() => {
-    if (!slug) return;
-    const isInitialLoad = !hasFetchedInitial.current;
-    if (!isInitialLoad) {
-      if (saveStatus !== "saved") return;
-      const now = Date.now();
-      if (now - lastVelocityFetch.current < VELOCITY_THROTTLE_MS) return;
-    }
-    hasFetchedInitial.current = true;
-    lastVelocityFetch.current = Date.now();
-    let cancelled = false;
-    api.projects
-      .velocity(slug)
-      .then((data) => {
-        if (cancelled) return;
-        if (data.sessions.length > 0) {
-          const last = data.sessions[data.sessions.length - 1];
-          if (last) setLastSession(last);
-        } else {
-          setLastSession(null);
-        }
-      })
-      .catch(() => {
-        // Reset throttle timestamp so the next save retries promptly
-        if (!cancelled) lastVelocityFetch.current = 0;
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [slug, saveStatus]);
 
   const handleStatusChangeWithError = useCallback(
     (chapterId: string, status: string) => {
@@ -595,13 +551,6 @@ export function EditorPage() {
                 </span>
               )}
             </div>
-            {lastSession && (
-              <span className="text-text-muted">
-                {STRINGS.velocity.lastSession}: {lastSession.duration_minutes} min,{" "}
-                {lastSession.net_words >= 0 ? "+" : ""}
-                {lastSession.net_words.toLocaleString()} words
-              </span>
-            )}
             <div role="status" aria-live="polite">
               {saveStatus === "unsaved" && (
                 <span className="text-text-muted">{STRINGS.editor.unsaved}</span>
