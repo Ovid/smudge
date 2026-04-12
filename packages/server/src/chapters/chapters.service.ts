@@ -155,7 +155,6 @@ export async function restoreChapter(
       if (restoredCount === 0) {
         throw new Error("CHAPTER_PURGED");
       }
-      await txStore.updateProjectTimestamp(chapter.project_id);
 
       if (parentProject.deleted_at) {
         const freshSlug = await txStore.resolveUniqueSlug(
@@ -167,6 +166,8 @@ export async function restoreChapter(
           updated_at: now,
           slug: freshSlug,
         });
+      } else {
+        await txStore.updateProjectTimestamp(chapter.project_id);
       }
     });
   } catch (err: unknown) {
