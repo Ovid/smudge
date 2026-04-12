@@ -13,6 +13,10 @@ export function setProjectStore(s: ProjectStore): void {
   store = s;
 }
 
+export function resetProjectStore(): void {
+  store = null;
+}
+
 export function initProjectStore(): void {
   store = new SqliteProjectStore(getDb());
 }

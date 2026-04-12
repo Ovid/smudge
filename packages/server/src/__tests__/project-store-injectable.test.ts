@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   getProjectStore,
   setProjectStore,
+  resetProjectStore,
   initProjectStore,
 } from "../stores/project-store.injectable";
 import type { ProjectStore } from "../stores/project-store.types";
@@ -11,8 +12,7 @@ setupTestDb();
 
 describe("project-store.injectable", () => {
   beforeEach(() => {
-    // Reset to uninitialized state by setting to null via a mock
-    setProjectStore(null as unknown as ProjectStore);
+    resetProjectStore();
   });
 
   it("getProjectStore throws before initialization", () => {
