@@ -116,6 +116,19 @@ describe("GET /api/projects/:slug/velocity", () => {
     expect(res.body.words_today).toBe(200); // 600 - 400
   });
 
+  it("words_today clamps to 0 when current total is less than prior snapshot", async () => {
+    const { slug, projectId, chapterId } = await createProjectWithChapter();
+
+    // Yesterday's snapshot: 800 words
+    await insertSnapshot(projectId, daysAgoDate(1), 800);
+    // Writer deleted content — current total is now 500
+    await setChapterWordCount(chapterId, 500);
+
+    const res = await request(t.app).get(`/api/projects/${slug}/velocity`);
+    expect(res.body.words_today).toBe(0); // clamped, not -300
+    expect(res.body.current_total).toBe(500);
+  });
+
   // --- Rolling averages (7d) ---
 
   it("returns daily_average_7d from snapshot 7 days ago", async () => {

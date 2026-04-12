@@ -88,7 +88,9 @@ export async function getVelocityBySlug(slug: string): Promise<VelocityResponse 
 
   // Words today: current total minus last prior-day snapshot
   const lastPrior = await VelocityRepo.getLastPriorDaySnapshot(db, projectId, today);
-  const wordsToday = lastPrior ? currentTotal - lastPrior.total_word_count : currentTotal;
+  const wordsToday = lastPrior
+    ? Math.max(0, currentTotal - lastPrior.total_word_count)
+    : currentTotal;
 
   // Rolling averages: find baseline snapshot on or before N days ago
   const baseline7d = await VelocityRepo.getBaselineSnapshot(db, projectId, daysAgoDate(today, 7));
