@@ -27,8 +27,8 @@ export async function up(knex) {
   } finally {
     try {
       await knex.raw("PRAGMA foreign_keys = ON");
-    } catch (pragmaErr) {
-      console.error("Failed to re-enable foreign_keys after migration:", pragmaErr);
+    } catch {
+      // Swallowed so the original migration error (if any) propagates instead
     }
   }
 }
