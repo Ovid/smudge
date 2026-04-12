@@ -24,26 +24,8 @@ function parseContent(row: Record<string, unknown>): ChapterRow {
   return { ...row, content: (row.content as Record<string, unknown>) ?? null } as ChapterRow;
 }
 
-// Exported for backward compat with existing parseChapterContent tests
+// Exported for tests that need to verify content parsing behavior
 export { parseContent as parseChapterContent };
-
-// --- Backward-compat query helpers (used by existing tests) ---
-
-export async function queryChapter(
-  builder: import("knex").Knex.QueryBuilder,
-): Promise<Record<string, unknown> | null> {
-  const row = await builder.first();
-  return row ? (parseContent(row) as unknown as Record<string, unknown>) : null;
-}
-
-export async function queryChapters(
-  builder: import("knex").Knex.QueryBuilder,
-): Promise<Record<string, unknown>[]> {
-  const rows = await builder;
-  return rows.map(
-    (row: Record<string, unknown>) => parseContent(row) as unknown as Record<string, unknown>,
-  );
-}
 
 // --- Queries ---
 

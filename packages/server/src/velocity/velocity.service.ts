@@ -12,8 +12,6 @@ import { safeTimezone } from "../timezone";
 
 // --- Timezone helper ---
 
-export { safeTimezone };
-
 export function formatDateFromParts(parts: Intl.DateTimeFormatPart[], tz: string): string {
   const year = parts.find((p) => p.type === "year")?.value;
   const month = parts.find((p) => p.type === "month")?.value;

@@ -1,7 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import request from "supertest";
-import { parseChapterContent, queryChapter, queryChapters } from "../chapters/chapters.repository";
-import { setupTestDb } from "./test-helpers";
+import { parseChapterContent } from "../chapters/chapters.repository";
 
 describe("parseChapterContent", () => {
   it("parses valid JSON string content into an object", () => {
@@ -101,52 +99,3 @@ describe("parseChapterContent integration — corrupt DB content", () => {
   });
 });
 
-describe("queryChapter / queryChapters helpers", () => {
-  const t = setupTestDb();
-
-  it("queryChapter returns parsed content for a single chapter", async () => {
-    const res = await request(t.app)
-      .post("/api/projects")
-      .send({ title: "Query Helper Test", mode: "fiction" });
-    const slug = res.body.slug;
-    const getRes = await request(t.app).get(`/api/projects/${slug}`);
-    const chapterId = getRes.body.chapters[0].id;
-
-    const content = { type: "doc", content: [{ type: "paragraph" }] };
-    await request(t.app).patch(`/api/chapters/${chapterId}`).send({ content });
-
-    const chapter = await queryChapter(t.db("chapters").where({ id: chapterId }));
-    expect(chapter).not.toBeNull();
-    expect(chapter?.content).toEqual(content);
-    expect(typeof chapter?.content).toBe("object");
-  });
-
-  it("queryChapter returns null when no row matches", async () => {
-    const chapter = await queryChapter(t.db("chapters").where({ id: "nonexistent-id" }));
-    expect(chapter).toBeNull();
-  });
-
-  it("queryChapters returns array with parsed content", async () => {
-    const res = await request(t.app)
-      .post("/api/projects")
-      .send({ title: "Query Chapters Test", mode: "fiction" });
-    const slug = res.body.slug;
-    const getRes = await request(t.app).get(`/api/projects/${slug}`);
-    const projectId = getRes.body.id;
-
-    await request(t.app).post(`/api/projects/${slug}/chapters`);
-
-    const chapters = await queryChapters(
-      t.db("chapters").where({ project_id: projectId }).orderBy("sort_order"),
-    );
-    expect(chapters).toHaveLength(2);
-    for (const ch of chapters) {
-      expect(typeof ch.content).not.toBe("string");
-    }
-  });
-
-  it("queryChapters returns empty array when no rows match", async () => {
-    const chapters = await queryChapters(t.db("chapters").where({ project_id: "nonexistent" }));
-    expect(chapters).toEqual([]);
-  });
-});
