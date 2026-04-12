@@ -103,7 +103,6 @@ const mockProject = {
   deleted_at: null,
   target_word_count: null,
   target_deadline: null,
-  completion_threshold: "final" as const,
   chapters: [
     {
       id: "ch-1",
@@ -112,7 +111,6 @@ const mockProject = {
       content: { type: "doc", content: [{ type: "paragraph" }] },
       sort_order: 0,
       word_count: 0,
-      target_word_count: null,
       status: "outline",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
@@ -276,7 +274,6 @@ describe("Project title editing", () => {
       mode: mockProject.mode,
       target_word_count: mockProject.target_word_count,
       target_deadline: mockProject.target_deadline,
-      completion_threshold: mockProject.completion_threshold,
       created_at: mockProject.created_at,
       updated_at: mockProject.updated_at,
       deleted_at: mockProject.deleted_at,

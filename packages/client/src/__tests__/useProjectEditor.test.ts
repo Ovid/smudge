@@ -62,7 +62,6 @@ const mockChapter1 = {
   content: { type: "doc", content: [{ type: "paragraph" }] },
   sort_order: 0,
   word_count: 0,
-  target_word_count: null,
   status: "outline" as const,
   created_at: "2026-01-01",
   updated_at: "2026-01-01",
@@ -76,7 +75,6 @@ const mockChapter2 = {
   content: { type: "doc", content: [{ type: "paragraph" }] },
   sort_order: 1,
   word_count: 5,
-  target_word_count: null,
   status: "outline" as const,
   created_at: "2026-01-01",
   updated_at: "2026-01-01",
@@ -93,7 +91,6 @@ const mockProject = {
   deleted_at: null,
   target_word_count: null,
   target_deadline: null,
-  completion_threshold: "final" as const,
   chapters: [mockChapter1, mockChapter2],
 };
 
@@ -121,7 +118,6 @@ describe("useProjectEditor", () => {
       content: null,
       sort_order: 2,
       word_count: 0,
-      target_word_count: null,
       status: "outline" as const,
       created_at: "2026-01-01",
       updated_at: "2026-01-01",

@@ -95,7 +95,6 @@ describe("App", () => {
       deleted_at: null,
       target_word_count: null,
       target_deadline: null,
-      completion_threshold: "final" as const,
       chapters: [
         {
           id: "ch-1",
@@ -104,7 +103,6 @@ describe("App", () => {
           content: { type: "doc", content: [{ type: "paragraph" }] },
           sort_order: 0,
           word_count: 0,
-          target_word_count: null,
           status: "outline",
           created_at: "",
           updated_at: "",
