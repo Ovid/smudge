@@ -37,8 +37,15 @@ function createErrorTestApp() {
     ) => {
       console.error(err);
       const status = err.status ?? err.statusCode ?? 500;
-      const code = status < 500 ? "VALIDATION_ERROR" : "INTERNAL_ERROR";
-      const message = status < 500 ? err.message : "An unexpected error occurred.";
+      const code =
+        status >= 500
+          ? "INTERNAL_ERROR"
+          : status === 404
+            ? "NOT_FOUND"
+            : status === 409
+              ? "CONFLICT"
+              : "VALIDATION_ERROR";
+      const message = status >= 500 ? "An unexpected error occurred." : err.message;
       res.status(status).json({ error: { code, message } });
     },
   );
@@ -73,27 +80,24 @@ describe("Global error handler", () => {
     consoleSpy.mockRestore();
   });
 
-  it("returns 404 with VALIDATION_ERROR (current behavior — all 4xx map to VALIDATION_ERROR)", async () => {
+  it("returns 404 with NOT_FOUND error code", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const res = await request(createErrorTestApp()).get("/api/test-error-status/404");
 
     expect(res.status).toBe(404);
-    // Safety-net: captures current behavior where all 4xx map to VALIDATION_ERROR.
-    // F-12 fix will change 404 to a more appropriate code.
-    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    expect(res.body.error.code).toBe("NOT_FOUND");
 
     consoleSpy.mockRestore();
   });
 
-  it("returns 409 with VALIDATION_ERROR (current behavior — all 4xx map to VALIDATION_ERROR)", async () => {
+  it("returns 409 with CONFLICT error code", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const res = await request(createErrorTestApp()).get("/api/test-error-status/409");
 
     expect(res.status).toBe(409);
-    // Safety-net: captures current behavior where all 4xx map to VALIDATION_ERROR.
-    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    expect(res.body.error.code).toBe("CONFLICT");
 
     consoleSpy.mockRestore();
   });

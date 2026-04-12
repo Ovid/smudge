@@ -52,8 +52,15 @@ export function createApp(): express.Express {
     ) => {
       console.error(err);
       const status = err.status ?? err.statusCode ?? 500;
-      const code = status < 500 ? "VALIDATION_ERROR" : "INTERNAL_ERROR";
-      const message = status < 500 ? err.message : "An unexpected error occurred.";
+      const code =
+        status >= 500
+          ? "INTERNAL_ERROR"
+          : status === 404
+            ? "NOT_FOUND"
+            : status === 409
+              ? "CONFLICT"
+              : "VALIDATION_ERROR";
+      const message = status >= 500 ? "An unexpected error occurred." : err.message;
       res.status(status).json({ error: { code, message } });
     },
   );
