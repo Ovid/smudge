@@ -30,17 +30,17 @@ test.describe("Progress strip on dashboard", () => {
     await deleteProject(request, project.slug);
   });
 
-  test("shows empty-state progress strip before any writing", async ({ page }) => {
+  test("shows progress strip with zero words before any writing", async ({ page }) => {
     await page.goto(`/projects/${project.slug}`);
 
     // Navigate to dashboard
     const dashboardTab = page.getByRole("button", { name: /dashboard/i });
     await dashboardTab.click();
 
-    // The progress strip section should be visible with the empty-state message
+    // The progress strip should be visible showing 0 words (API returns data with zeros)
     const progressSection = page.locator("section[aria-label='Writing progress']");
     await expect(progressSection).toBeVisible();
-    await expect(progressSection).toContainText("Start writing to see your progress.");
+    await expect(progressSection).toContainText("0 words");
   });
 
   test("shows word count after writing content", async ({ page }) => {
