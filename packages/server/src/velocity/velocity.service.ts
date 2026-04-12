@@ -10,6 +10,8 @@ import * as SettingsRepo from "../settings/settings.repository";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { safeTimezone } from "../timezone";
 
+const MS_PER_DAY = 86_400_000;
+
 // --- Timezone helper ---
 
 export function formatDateFromParts(parts: Intl.DateTimeFormatPart[], tz: string): string {
@@ -68,7 +70,7 @@ function computeRollingAverage(
   today: string,
 ): number | null {
   if (!baseline) return null;
-  const msPerDay = 86_400_000;
+  const msPerDay = MS_PER_DAY;
   const actualDays = Math.max(
     1,
     Math.round(
@@ -114,7 +116,7 @@ export async function getVelocityBySlug(slug: string): Promise<VelocityResponse 
 
   let daysUntilDeadline: number | null = null;
   if (targetDeadline) {
-    const msPerDay = 86_400_000;
+    const msPerDay = MS_PER_DAY;
     daysUntilDeadline = Math.max(
       0,
       Math.round(
