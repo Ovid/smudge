@@ -177,8 +177,8 @@ export async function restoreChapter(
       return "purged";
     }
     if (
-      (err as Record<string, unknown>).code === "SQLITE_CONSTRAINT_UNIQUE" &&
       err instanceof Error &&
+      (err as Record<string, unknown>).code === "SQLITE_CONSTRAINT_UNIQUE" &&
       /slug/i.test(err.message)
     ) {
       // Slug collision when restoring the parent project — a different
