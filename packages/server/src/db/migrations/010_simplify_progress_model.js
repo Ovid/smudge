@@ -1,10 +1,13 @@
+// Knex wraps migrations in a transaction by default. SQLite cannot change
+// PRAGMA foreign_keys inside a transaction, and DROP COLUMN internally
+// rebuilds the table which fails when FKs are enforced. Opting out of the
+// transaction wrapper lets us toggle the pragma safely.
+export const config = { transaction: false };
+
 /** @param {import('knex').Knex} knex */
 export async function up(knex) {
   await knex.schema.dropTableIfExists("save_events");
 
-  // SQLite DROP COLUMN internally rebuilds the table (CREATE → copy → DROP old → rename).
-  // The DROP step fails if other tables have FK references to this table and foreign_keys
-  // is ON.  Temporarily disable FK enforcement for the column drops.
   await knex.raw("PRAGMA foreign_keys = OFF");
   try {
     await knex.schema.alterTable("projects", (table) => {
