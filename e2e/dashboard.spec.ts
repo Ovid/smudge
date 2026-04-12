@@ -73,10 +73,6 @@ test.describe("Dashboard and Status E2e Tests", () => {
     const dashboardTab = page.getByRole("button", { name: "Dashboard" });
     await dashboardTab.click();
 
-    // Click the Chapters sub-tab to see the chapter table
-    const chaptersTab = page.getByRole("tab", { name: /chapters/i });
-    await chaptersTab.click();
-
     // Verify the chapter table shows at least one chapter
     const table = page.locator("table");
     await expect(table).toBeVisible();
@@ -128,9 +124,7 @@ test.describe("Dashboard and Status E2e Tests", () => {
     const dashboardTab = page.getByRole("button", { name: "Dashboard" });
     await dashboardTab.click();
 
-    // Click the Chapters sub-tab to see the chapter table
-    const chaptersTab = page.getByRole("tab", { name: /chapters/i });
-    await chaptersTab.click();
+    // Wait for the chapter table to render
     await expect(page.locator("table")).toBeVisible();
 
     // Exclude color-contrast: Tailwind v4 uses oklab() color space which aXe
