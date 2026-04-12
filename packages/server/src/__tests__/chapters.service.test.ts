@@ -163,6 +163,37 @@ describe("chapters.service", () => {
       expect(result).not.toBe("purged");
       expect(result).not.toBe("conflict");
     });
+
+    it("resolves slug conflict by generating a new slug when restoring a deleted project", async () => {
+      const slug = `conflict-slug-${uuid().slice(0, 8)}`;
+      const { chapterId, projectId } = await createProjectAndChapter();
+
+      // Give the project a known slug, then soft-delete it and its chapter
+      const now = new Date().toISOString();
+      await t.db("projects").where({ id: projectId }).update({ slug, title: slug });
+      await t.db("chapters").where({ id: chapterId }).update({ deleted_at: now });
+      await t.db("projects").where({ id: projectId }).update({ deleted_at: now });
+
+      // Create a new active project that occupies the same slug
+      const newProjectId = uuid();
+      await t.db("projects").insert({
+        id: newProjectId,
+        title: `Occupier ${newProjectId.slice(0, 8)}`,
+        slug,
+        mode: "fiction",
+        created_at: now,
+        updated_at: now,
+      });
+
+      // Restore succeeds — resolveUniqueSlug generates a new slug
+      const result = await restoreChapter(chapterId);
+      expect(result).not.toBeNull();
+      expect(result).not.toBe("conflict");
+      expect(result).not.toBe("purged");
+      expect(typeof result).toBe("object");
+      // Restored project gets a different slug
+      expect((result as { project_slug: string }).project_slug).toBe(`${slug}-2`);
+    });
   });
 
   describe("getChapter()", () => {

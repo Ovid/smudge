@@ -170,10 +170,15 @@ export async function restoreChapter(
     if (err instanceof Error && err.message === "PARENT_PURGED") {
       return "purged";
     }
-    if ((err as Record<string, unknown>).code === "SQLITE_CONSTRAINT_UNIQUE") {
+    if (
+      (err as Record<string, unknown>).code === "SQLITE_CONSTRAINT_UNIQUE" &&
+      err instanceof Error &&
+      /slug/i.test(err.message)
+    ) {
       // Slug collision when restoring the parent project — a different
-      // active project now occupies the slug. Report as a conflict so the
-      // route can return an appropriate error to the client.
+      // active project now occupies the slug. Defensive: resolveUniqueSlug
+      // prevents this under SQLite's serialized writes, but guards against
+      // races on future storage backends.
       return "conflict";
     }
     throw err;
