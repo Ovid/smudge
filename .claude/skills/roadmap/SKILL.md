@@ -57,24 +57,38 @@ Follow the brainstorming skill's process completely. It will explore requirement
 
 ## 5. Record the Plan Filename
 
-After brainstorming produces a document in `docs/plans/`, update `docs/roadmap.md` to mark this phase as complete. Insert a plan comment on the line immediately after the `---` separator that precedes the phase heading:
+After brainstorming produces a document in `docs/plans/`, update `docs/roadmap.md` in **two places**:
+
+### 5a. Insert the plan comment
+
+Insert a plan comment on the line immediately after the `---` separator that precedes the phase heading:
 
 **Before:**
 ```markdown
 ---
 
-## Phase 3: Export
+## Phase 3a: Export Foundation
 ```
 
 **After:**
 ```markdown
 ---
 
-## Phase 3: Export
-<!-- plan: 2026-04-01-export-design.md -->
+## Phase 3a: Export Foundation
+<!-- plan: 2026-04-01-export-foundation-design.md -->
 ```
 
 The filename is whatever the brainstorming skill created (it follows the pattern `YYYY-MM-DD-<topic>-design.md`).
+
+### 5b. Update the Phase Structure table status
+
+In the **Phase Structure** table near the top of the roadmap, change the phase's Status from `Planned` to `Planned` (brainstorming alone doesn't mark a phase as Done). The valid statuses are:
+
+- **Planned** — not yet started
+- **In Progress** — implementation underway
+- **Done** — shipped and merged to main
+
+Only update the status if explicitly told to by the user (e.g., marking a phase Done after implementation). Otherwise leave it as-is.
 
 ## 6. Announce Completion
 
