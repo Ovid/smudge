@@ -189,6 +189,11 @@ export async function restoreChapter(
       // active project now occupies the slug. Defensive: resolveUniqueSlug
       // prevents this under SQLite's serialized writes, but guards against
       // races on future storage backends.
+      //
+      // Note: the /slug/i regex on err.message is fragile — it depends on
+      // SQLite's error message format ("UNIQUE constraint failed: projects.slug").
+      // Acceptable because slug is the only UNIQUE constraint on projects that
+      // can fire during restore. If new UNIQUE constraints are added, revisit.
       return "conflict";
     }
     throw err;
