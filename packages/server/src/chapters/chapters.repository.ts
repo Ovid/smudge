@@ -139,17 +139,6 @@ export async function listIdTitleStatusByProject(
     .select("id", "title", "status");
 }
 
-export async function getChapterNamesMapIncludingDeleted(
-  trx: Knex.Transaction | Knex,
-  projectId: string,
-): Promise<Record<string, string>> {
-  const rows = await trx("chapters").where({ project_id: projectId }).select("id", "title");
-  const map: Record<string, string> = {};
-  for (const row of rows) {
-    map[row.id] = row.title;
-  }
-  return map;
-}
 
 export async function sumWordCountByProject(
   trx: Knex.Transaction | Knex,

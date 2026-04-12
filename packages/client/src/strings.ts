@@ -53,7 +53,6 @@ export const STRINGS = {
     restoreChapterFailed: "Failed to restore chapter",
     loadDashboardFailed: "Failed to load dashboard",
     statusChangeFailed: "Failed to update chapter status",
-    loadVelocityFailed: "Failed to load velocity data",
   },
   editor: {
     placeholder: "Start writing\u2026",
@@ -162,17 +161,12 @@ export const STRINGS = {
   velocity: {
     progressLabel: "Writing progress",
     emptyState: "Start writing to see your progress.",
-    wordsToday: (count: number) => `${count.toLocaleString()} words today`,
     dailyAverage: (count: number) => `Recent pace: ${count.toLocaleString()}/day`,
     requiredPace: (count: number) => `Needed pace: ${count.toLocaleString()}/day`,
     daysRemaining: (count: number) => `${count} ${count === 1 ? "day" : "days"} left`,
     wordsOfTarget: (current: number, target: number) =>
       `${current.toLocaleString()} / ${target.toLocaleString()} words`,
     wordsTotal: (count: number) => `${count.toLocaleString()} words`,
-    projectedDate: (date: string) => {
-      const d = new Date(date + "T00:00:00Z");
-      return `Projected: ${d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
-    },
   },
   settings: {
     heading: "Settings",
