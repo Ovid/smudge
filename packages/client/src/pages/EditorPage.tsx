@@ -11,6 +11,9 @@ import { DashboardView } from "../components/DashboardView";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ProjectSettingsDialog } from "../components/ProjectSettingsDialog";
 import { ShortcutHelpDialog } from "../components/ShortcutHelpDialog";
+import { ActionErrorBanner } from "../components/ActionErrorBanner";
+import { ViewModeNav } from "../components/ViewModeNav";
+import { EditorFooter } from "../components/EditorFooter";
 import { STRINGS } from "../strings";
 import { useProjectEditor } from "../hooks/useProjectEditor";
 import { useSidebarState } from "../hooks/useSidebarState";
@@ -175,6 +178,10 @@ export function EditorPage() {
     }
   }, [slug, setProject, setActionError]);
 
+  const handleDashboardRefresh = useCallback(() => {
+    setDashboardRefreshKey((k) => k + 1);
+  }, []);
+
   useKeyboardShortcuts({
     shortcutHelpOpen,
     deleteTarget,
@@ -220,117 +227,12 @@ export function EditorPage() {
     );
   }
 
-  if (!activeChapter && project.chapters.length === 0) {
-    return (
-      <div className="flex flex-col h-screen bg-bg-primary">
-        <header className="border-b border-border/60 px-6 h-12 flex items-center shrink-0">
-          <button
-            onClick={() => navigate("/")}
-            className="focus:outline-none focus:ring-2 focus:ring-focus-ring rounded-md"
-          >
-            <Logo />
-          </button>
-          <span className="text-border mx-4" aria-hidden="true">
-            /
-          </span>
-          <h1 className="text-sm font-serif font-semibold text-text-primary flex-1">
-            {project.title}
-          </h1>
-          <button
-            onClick={() => setProjectSettingsOpen(true)}
-            aria-label={STRINGS.projectSettings.openLabel}
-            className="text-sm text-text-muted hover:text-text-secondary rounded-md p-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring"
-          >
-            &#x2699;
-          </button>
-        </header>
-        <div className="flex flex-1 overflow-hidden">
-          {sidebarOpen && (
-            <Sidebar
-              project={project}
-              activeChapterId={null}
-              onSelectChapter={handleSelectChapterWithFlush}
-              onAddChapter={handleCreateChapter}
-              onDeleteChapter={setDeleteTarget}
-              onReorderChapters={handleReorderChapters}
-              onRenameChapter={handleRenameChapterWithError}
-              onOpenTrash={openTrash}
-              statuses={statuses}
-              onStatusChange={handleStatusChangeWithError}
-              width={sidebarWidth}
-              onResize={handleSidebarResize}
-            />
-          )}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {actionError && (
-              <div
-                role="alert"
-                className="px-6 py-2 bg-status-error/8 text-status-error text-sm flex items-center justify-between border-b border-status-error/15"
-              >
-                <span>{actionError}</span>
-                <button
-                  onClick={() => setActionError(null)}
-                  className="text-status-error hover:text-text-primary text-xs ml-4 focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
-                  aria-label={STRINGS.a11y.dismissError}
-                >
-                  ✕
-                </button>
-              </div>
-            )}
-            {trashOpen ? (
-              <main className="flex-1 overflow-y-auto" aria-label={STRINGS.a11y.mainContent}>
-                <TrashView
-                  chapters={trashedChapters}
-                  onRestore={handleRestore}
-                  onBack={() => setTrashOpen(false)}
-                />
-              </main>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center page-enter">
-                <p className="text-text-muted mb-6 text-base">{STRINGS.project.emptyChapters}</p>
-                <button
-                  onClick={handleCreateChapter}
-                  className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring focus:ring-offset-2 focus:ring-offset-bg-primary shadow-sm"
-                >
-                  {STRINGS.sidebar.addChapter}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+  const hasChapters = project.chapters.length > 0;
+  const showActiveEditor = hasChapters && activeChapter;
 
-        {deleteTarget && (
-          <ConfirmDialog
-            title={STRINGS.delete.confirmTitle(deleteTarget.title)}
-            body={STRINGS.delete.confirmBody}
-            confirmLabel={STRINGS.delete.confirmButton}
-            cancelLabel={STRINGS.delete.cancelButton}
-            onConfirm={confirmDeleteChapter}
-            onCancel={() => setDeleteTarget(null)}
-          />
-        )}
-
-        <div aria-live="polite" className="sr-only" data-testid="nav-announcement">
-          {navAnnouncement}
-        </div>
-        <div aria-live="polite" className="sr-only" data-testid="word-count-announcement">
-          {wordCountAnnouncement}
-        </div>
-
-        <ProjectSettingsDialog
-          key={project.slug}
-          open={projectSettingsOpen}
-          project={project}
-          onClose={() => setProjectSettingsOpen(false)}
-          onUpdate={handleProjectSettingsUpdate}
-        />
-
-        <ShortcutHelpDialog open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
-      </div>
-    );
-  }
-
-  if (!activeChapter) {
+  if (!hasChapters && !activeChapter) {
+    // Empty project — waiting for first chapter, no view mode nav needed
+  } else if (!activeChapter) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-primary">
         <p className="text-text-muted">{STRINGS.nav.loading}</p>
@@ -381,50 +283,17 @@ export function EditorPage() {
             </h1>
           )}
         </div>
-        {viewMode === "editor" && toolbarEditor && <EditorToolbar editor={toolbarEditor} />}
+        {showActiveEditor && viewMode === "editor" && toolbarEditor && (
+          <EditorToolbar editor={toolbarEditor} />
+        )}
         <div className="flex items-center gap-2">
-          <nav
-            className="flex gap-0.5 bg-bg-sidebar/60 rounded-lg p-0.5"
-            aria-label={STRINGS.a11y.viewModesNav}
-          >
-            <button
-              onClick={() => void switchToView("editor").catch(() => {})}
-              aria-current={viewMode === "editor" ? "page" : undefined}
-              className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
-                viewMode === "editor"
-                  ? "bg-bg-primary text-text-primary font-medium shadow-sm"
-                  : "text-text-muted hover:text-text-secondary"
-              }`}
-            >
-              {STRINGS.nav.editor}
-            </button>
-            <button
-              onClick={() => void switchToView("preview").catch(() => {})}
-              aria-current={viewMode === "preview" ? "page" : undefined}
-              className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
-                viewMode === "preview"
-                  ? "bg-bg-primary text-text-primary font-medium shadow-sm"
-                  : "text-text-muted hover:text-text-secondary"
-              }`}
-            >
-              {STRINGS.nav.preview}
-            </button>
-            <button
-              onClick={() =>
-                void switchToView("dashboard")
-                  .then(() => setDashboardRefreshKey((k) => k + 1))
-                  .catch(() => {})
-              }
-              aria-current={viewMode === "dashboard" ? "page" : undefined}
-              className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
-                viewMode === "dashboard"
-                  ? "bg-bg-primary text-text-primary font-medium shadow-sm"
-                  : "text-text-muted hover:text-text-secondary"
-              }`}
-            >
-              {STRINGS.nav.dashboard}
-            </button>
-          </nav>
+          {showActiveEditor && (
+            <ViewModeNav
+              viewMode={viewMode}
+              onSwitchToView={switchToView}
+              onDashboardRefresh={handleDashboardRefresh}
+            />
+          )}
           <button
             onClick={() => setProjectSettingsOpen(true)}
             aria-label={STRINGS.projectSettings.openLabel}
@@ -439,7 +308,7 @@ export function EditorPage() {
         {sidebarOpen && (
           <Sidebar
             project={project}
-            activeChapterId={activeChapter.id}
+            activeChapterId={activeChapter?.id ?? null}
             onSelectChapter={handleSelectChapterWithFlush}
             onAddChapter={handleCreateChapter}
             onDeleteChapter={setDeleteTarget}
@@ -455,19 +324,7 @@ export function EditorPage() {
 
         <div className="flex-1 flex flex-col overflow-hidden">
           {actionError && (
-            <div
-              role="alert"
-              className="px-6 py-2 bg-status-error/8 text-status-error text-sm flex items-center justify-between border-b border-status-error/15"
-            >
-              <span>{actionError}</span>
-              <button
-                onClick={() => setActionError(null)}
-                className="text-status-error hover:text-text-primary text-xs ml-4 focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
-                aria-label={STRINGS.a11y.dismissError}
-              >
-                ✕
-              </button>
-            </div>
+            <ActionErrorBanner error={actionError} onDismiss={() => setActionError(null)} />
           )}
 
           {trashOpen ? (
@@ -478,6 +335,16 @@ export function EditorPage() {
                 onBack={() => setTrashOpen(false)}
               />
             </main>
+          ) : !showActiveEditor ? (
+            <div className="flex-1 flex flex-col items-center justify-center page-enter">
+              <p className="text-text-muted mb-6 text-base">{STRINGS.project.emptyChapters}</p>
+              <button
+                onClick={handleCreateChapter}
+                className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring focus:ring-offset-2 focus:ring-offset-bg-primary shadow-sm"
+              >
+                {STRINGS.sidebar.addChapter}
+              </button>
+            </div>
           ) : viewMode === "preview" ? (
             <main className="flex-1 overflow-y-auto" aria-label={STRINGS.a11y.mainContent}>
               <PreviewMode
@@ -523,14 +390,14 @@ export function EditorPage() {
                 <h2
                   className="mx-auto max-w-[720px] mb-6 text-3xl font-serif font-semibold text-text-primary cursor-pointer hover:text-text-secondary tracking-tight"
                   onDoubleClick={startEditingTitle}
-                  aria-label={activeChapter.title}
+                  aria-label={activeChapter!.title}
                 >
-                  {activeChapter.title}
+                  {activeChapter!.title}
                 </h2>
               )}
               <Editor
-                key={activeChapter.id}
-                content={activeChapter.content}
+                key={activeChapter!.id}
+                content={activeChapter!.content}
                 onSave={handleSave}
                 onContentChange={handleContentChange}
                 editorRef={editorRef}
@@ -539,39 +406,15 @@ export function EditorPage() {
             </main>
           )}
 
-          <footer className="border-t border-border/40 bg-bg-primary px-6 py-2 flex items-center justify-between text-xs text-text-muted">
-            <div className="flex items-center gap-4">
-              <span className="font-medium">{STRINGS.project.wordCount(chapterWordCount)}</span>
-              {project && (
-                <span className="text-text-secondary">
-                  {STRINGS.project.wordCount(
-                    project.chapters.reduce((sum, c) => sum + c.word_count, 0),
-                  )}{" "}
-                  {STRINGS.nav.totalSuffix}
-                </span>
-              )}
-            </div>
-            <div role="status" aria-live="polite">
-              {saveStatus === "unsaved" && (
-                <span className="text-text-muted">{STRINGS.editor.unsaved}</span>
-              )}
-              {saveStatus === "saving" && (
-                <span className="text-text-muted">{STRINGS.editor.saving}</span>
-              )}
-              {saveStatus === "saved" && (
-                <span className="text-status-success">{STRINGS.editor.saved}</span>
-              )}
-              {saveStatus === "error" && (
-                <span className="text-status-error">
-                  {saveErrorMessage ?? STRINGS.editor.saveFailed}
-                </span>
-              )}
-              {saveStatus === "idle" && ""}
-              {cacheWarning && saveStatus !== "error" && (
-                <span className="text-status-warning ml-2">{STRINGS.editor.cacheUnavailable}</span>
-              )}
-            </div>
-          </footer>
+          {showActiveEditor && (
+            <EditorFooter
+              chapterWordCount={chapterWordCount}
+              project={project}
+              saveStatus={saveStatus}
+              saveErrorMessage={saveErrorMessage}
+              cacheWarning={cacheWarning}
+            />
+          )}
         </div>
       </div>
 
