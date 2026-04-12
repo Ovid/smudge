@@ -29,25 +29,6 @@ export async function getTodayDate(): Promise<string> {
 
 // --- Side-effect operations (called by chapters service) ---
 
-export async function recordSave(
-  projectId: string,
-  _chapterId: string,
-  _wordCount: number,
-): Promise<void> {
-  try {
-    const db = getDb();
-    const today = await getTodayDate();
-    try {
-      const totalWordCount = await ChapterRepo.sumWordCountByProject(db, projectId);
-      await VelocityRepo.upsertDailySnapshot(db, projectId, today, totalWordCount);
-    } catch (err) {
-      console.error(`Failed to upsert daily snapshot for project=${projectId}:`, err);
-    }
-  } catch (err) {
-    console.error(`Velocity recordSave failed for project=${projectId}:`, err);
-  }
-}
-
 export async function updateDailySnapshot(projectId: string): Promise<void> {
   try {
     const db = getDb();
@@ -61,6 +42,14 @@ export async function updateDailySnapshot(projectId: string): Promise<void> {
   } catch (err) {
     console.error(`Velocity updateDailySnapshot failed for project=${projectId}:`, err);
   }
+}
+
+export async function recordSave(
+  projectId: string,
+  _chapterId: string,
+  _wordCount: number,
+): Promise<void> {
+  await updateDailySnapshot(projectId);
 }
 
 // --- Velocity query ---
