@@ -30,9 +30,8 @@ export function DashboardView({
   const [sortAsc, setSortAsc] = useState(true);
   const [velocityWithSlug, setVelocityWithSlug] = useState<{
     slug: string;
-    data: VelocityResponse;
+    data: VelocityResponse | null;
   } | null>(null);
-  const [velocityLoading, setVelocityLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,7 +56,6 @@ export function DashboardView({
 
   useEffect(() => {
     let cancelled = false;
-    setVelocityLoading(true);
     api.projects
       .velocity(slug)
       .then((result) => {
@@ -68,11 +66,7 @@ export function DashboardView({
       .catch((err) => {
         if (!cancelled) {
           console.error(err);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setVelocityLoading(false);
+          setVelocityWithSlug({ slug, data: null });
         }
       });
     return () => {
@@ -95,6 +89,7 @@ export function DashboardView({
   // Treat data from a different slug as stale (show loading)
   const data = dataWithSlug?.slug === slug ? dataWithSlug.data : null;
   const velocityData = velocityWithSlug?.slug === slug ? velocityWithSlug.data : null;
+  const velocityLoading = velocityWithSlug?.slug !== slug;
 
   if (error) {
     return (
