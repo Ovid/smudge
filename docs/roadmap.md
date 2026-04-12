@@ -283,6 +283,7 @@ Replace the burndown chart and session-based stats with a simple daily word coun
 ---
 
 ## Phase 2.5b: Storage Architecture
+<!-- plan: 2026-04-12-storage-architecture-design.md -->
 
 ### Goal
 
