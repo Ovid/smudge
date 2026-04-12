@@ -13,7 +13,6 @@ const defaultProject = {
   mode: "fiction" as const,
   target_word_count: null as number | null,
   target_deadline: null as string | null,
-  completion_threshold: "final" as const,
   created_at: "",
   updated_at: "",
 };
@@ -58,18 +57,6 @@ describe("ProjectSettingsDialog", () => {
     expect(screen.getByLabelText(/deadline/i)).toBeInTheDocument();
   });
 
-  it("renders completion threshold dropdown", () => {
-    render(
-      <ProjectSettingsDialog
-        open={true}
-        project={defaultProject as never}
-        onClose={onClose}
-        onUpdate={onUpdate}
-      />,
-    );
-    expect(screen.getByLabelText(/chapter counts as complete/i)).toBeInTheDocument();
-  });
-
   it("saves changes on input blur", async () => {
     const user = userEvent.setup();
     render(
@@ -84,7 +71,7 @@ describe("ProjectSettingsDialog", () => {
     await user.clear(input);
     await user.type(input, "80000");
     // Blur to a non-Clear element so the relatedTarget check doesn't skip save
-    fireEvent.blur(input, { relatedTarget: screen.getByLabelText(/chapter counts as complete/i) });
+    fireEvent.blur(input, { relatedTarget: screen.getByLabelText(/deadline/i) });
 
     await waitFor(() => {
       expect(api.projects.update).toHaveBeenCalled();
@@ -158,26 +145,6 @@ describe("ProjectSettingsDialog", () => {
     expect(onUpdate).toHaveBeenCalled();
   });
 
-  it("saves completion threshold when dropdown changes", async () => {
-    const user = userEvent.setup();
-    render(
-      <ProjectSettingsDialog
-        open={true}
-        project={defaultProject as never}
-        onClose={onClose}
-        onUpdate={onUpdate}
-      />,
-    );
-
-    const thresholdSelect = screen.getByLabelText(/chapter counts as complete/i);
-    await user.selectOptions(thresholdSelect, "revised");
-
-    await waitFor(() => {
-      expect(api.projects.update).toHaveBeenCalledWith("test", { completion_threshold: "revised" });
-    });
-    expect(onUpdate).toHaveBeenCalled();
-  });
-
   it("rejects negative word count without saving", async () => {
     const user = userEvent.setup();
     render(
@@ -216,7 +183,7 @@ describe("ProjectSettingsDialog", () => {
     await user.clear(input);
     await user.type(input, "50000");
     // Blur to a non-Clear element so the relatedTarget check doesn't skip save
-    fireEvent.blur(input, { relatedTarget: screen.getByLabelText(/chapter counts as complete/i) });
+    fireEvent.blur(input, { relatedTarget: screen.getByLabelText(/deadline/i) });
 
     await waitFor(() => {
       expect(spy).toHaveBeenCalledWith("Failed to save project setting:", expect.any(Error));

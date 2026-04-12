@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from "react";
-import type { CompletionThresholdValue } from "@smudge/shared";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
 
@@ -20,19 +19,10 @@ interface ProjectSettingsDialogProps {
     slug: string;
     target_word_count: number | null;
     target_deadline: string | null;
-    completion_threshold: CompletionThresholdValue;
   };
   onClose: () => void;
   onUpdate: () => void;
 }
-
-const THRESHOLD_OPTIONS = [
-  { value: "outline", label: STRINGS.projectSettings.thresholdOutline },
-  { value: "rough_draft", label: STRINGS.projectSettings.thresholdRoughDraft },
-  { value: "revised", label: STRINGS.projectSettings.thresholdRevised },
-  { value: "edited", label: STRINGS.projectSettings.thresholdEdited },
-  { value: "final", label: STRINGS.projectSettings.thresholdFinal },
-];
 
 export function ProjectSettingsDialog({
   open,
@@ -45,7 +35,6 @@ export function ProjectSettingsDialog({
     project.target_word_count != null ? String(project.target_word_count) : "",
   );
   const [deadline, setDeadline] = useState(project.target_deadline ?? "");
-  const [threshold, setThreshold] = useState(project.completion_threshold ?? "final");
   const [timezone, setTimezone] = useState<string>("UTC");
   const [fieldSaveError, setFieldSaveError] = useState<string | null>(null);
   const [timezoneSaveError, setTimezoneSaveError] = useState<string | null>(null);
@@ -58,7 +47,6 @@ export function ProjectSettingsDialog({
   const confirmedFieldsRef = useRef({
     wordCountTarget: project.target_word_count != null ? String(project.target_word_count) : "",
     deadline: project.target_deadline ?? "",
-    threshold: project.completion_threshold ?? ("final" as string),
   });
 
   // Re-sync project fields from props when the dialog opens.
@@ -72,7 +60,6 @@ export function ProjectSettingsDialog({
         project.target_word_count != null ? String(project.target_word_count) : "",
       );
       setDeadline(project.target_deadline ?? "");
-      setThreshold(project.completion_threshold ?? "final");
       setFieldSaveError(null);
       setTimezoneSaveError(null);
     }
@@ -84,7 +71,6 @@ export function ProjectSettingsDialog({
       confirmedFieldsRef.current = {
         wordCountTarget: project.target_word_count != null ? String(project.target_word_count) : "",
         deadline: project.target_deadline ?? "",
-        threshold: project.completion_threshold ?? ("final" as string),
       };
       let cancelled = false;
       userChangedTimezoneRef.current = false;
@@ -146,9 +132,6 @@ export function ProjectSettingsDialog({
       if ("target_deadline" in data) {
         confirmedFieldsRef.current.deadline = data.target_deadline ?? "";
       }
-      if ("completion_threshold" in data) {
-        confirmedFieldsRef.current.threshold = data.completion_threshold ?? "final";
-      }
       onUpdate();
     } catch (err) {
       console.error("Failed to save project setting:", err);
@@ -159,9 +142,6 @@ export function ProjectSettingsDialog({
       }
       if ("target_deadline" in data) {
         setDeadline(confirmedFieldsRef.current.deadline);
-      }
-      if ("completion_threshold" in data) {
-        setThreshold(confirmedFieldsRef.current.threshold);
       }
     }
   }
@@ -181,11 +161,6 @@ export function ProjectSettingsDialog({
   function handleDeadlineChange(value: string) {
     setDeadline(value);
     saveField({ target_deadline: value || null });
-  }
-
-  function handleThresholdChange(value: CompletionThresholdValue) {
-    setThreshold(value);
-    saveField({ completion_threshold: value });
   }
 
   async function handleTimezoneChange(value: string) {
@@ -308,27 +283,6 @@ export function ProjectSettingsDialog({
               {STRINGS.projectSettings.clear}
             </button>
           </div>
-        </div>
-
-        <div>
-          <label
-            className="block text-sm font-medium text-text-secondary mb-1 font-sans"
-            htmlFor="project-completion-threshold"
-          >
-            {STRINGS.projectSettings.completionThreshold}
-          </label>
-          <select
-            id="project-completion-threshold"
-            value={threshold}
-            onChange={(e) => handleThresholdChange(e.target.value as CompletionThresholdValue)}
-            className="w-full rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring"
-          >
-            {THRESHOLD_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
         </div>
 
         <div className="border-t border-border/40 pt-4">
