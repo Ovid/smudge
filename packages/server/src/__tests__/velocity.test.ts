@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
 import { v4 as uuid } from "uuid";
@@ -56,16 +56,31 @@ describe("formatDateFromParts", () => {
 
 const t = setupTestDb();
 
-/** Return a YYYY-MM-DD date string for N days ago (UTC) */
+/**
+ * Freeze time to noon UTC so date-dependent assertions are stable
+ * and never flake around midnight UTC boundaries.
+ */
+const FROZEN_NOW = new Date("2026-06-15T12:00:00Z");
+
+beforeAll(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(FROZEN_NOW);
+});
+
+afterAll(() => {
+  vi.useRealTimers();
+});
+
+/** Return a YYYY-MM-DD date string for N days ago (relative to FROZEN_NOW) */
 function daysAgoDate(n: number): string {
-  const d = new Date();
+  const d = new Date(FROZEN_NOW);
   d.setUTCDate(d.getUTCDate() - n);
   return d.toISOString().slice(0, 10);
 }
 
-/** Today's date as YYYY-MM-DD (UTC) */
+/** Today's date as YYYY-MM-DD */
 function todayDate(): string {
-  return daysAgoDate(0);
+  return "2026-06-15";
 }
 
 async function createProjectWithChapter(overrides?: {
