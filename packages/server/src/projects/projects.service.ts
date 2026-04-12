@@ -125,7 +125,6 @@ export async function updateProject(
   | { project: ProjectRow; validationError?: undefined }
   | { validationError: string }
   | null
-  | "read_after_update_failure"
 > {
   const parsed = UpdateProjectSchema.safeParse(body);
   if (!parsed.success) {
@@ -146,7 +145,7 @@ export async function updateProject(
   if (parsed.data.target_deadline !== undefined) {
     updates.target_deadline = parsed.data.target_deadline;
   }
-  await store.transaction(async (txStore) => {
+  const updated = await store.transaction(async (txStore) => {
     if (parsed.data.title !== undefined) {
       const existingTitle = await txStore.findProjectByTitle(parsed.data.title, project.id);
       if (existingTitle) {
@@ -156,11 +155,9 @@ export async function updateProject(
       updates.title = parsed.data.title;
       updates.slug = newSlug;
     }
-    await txStore.updateProject(project.id, updates);
+    return txStore.updateProject(project.id, updates);
   });
 
-  const updated = await store.findProjectById(project.id);
-  if (!updated) return "read_after_update_failure";
   return { project: updated };
 }
 
