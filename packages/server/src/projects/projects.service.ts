@@ -258,10 +258,7 @@ export async function getDashboard(slug: string): Promise<DashboardResponse | nu
 
   const chapters = await store.listChapterMetadataByProject(project.id);
 
-  const [allStatuses, statusLabelMap] = await Promise.all([
-    store.listStatuses(),
-    store.getStatusLabelMap(),
-  ]);
+  const statusLabelMap = await store.getStatusLabelMap();
 
   const chaptersWithLabels = chapters.map((ch) => ({
     ...ch,
@@ -269,8 +266,8 @@ export async function getDashboard(slug: string): Promise<DashboardResponse | nu
   }));
 
   const statusSummary: Record<string, number> = {};
-  for (const s of allStatuses) {
-    statusSummary[s.status] = 0;
+  for (const status of Object.keys(statusLabelMap)) {
+    statusSummary[status] = 0;
   }
   for (const ch of chapters) {
     if (ch.status in statusSummary) {
