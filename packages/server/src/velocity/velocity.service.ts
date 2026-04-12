@@ -49,6 +49,9 @@ export async function updateDailySnapshot(projectId: string): Promise<void> {
   }
 }
 
+// Semantic wrapper: called on chapter content save (vs updateDailySnapshot
+// which is called on delete/restore). Currently identical, but kept separate
+// so save-specific logic can be added without touching the delete/restore path.
 export async function recordSave(projectId: string): Promise<void> {
   await updateDailySnapshot(projectId);
 }
