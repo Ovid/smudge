@@ -44,11 +44,7 @@ export async function updateDailySnapshot(projectId: string): Promise<void> {
   }
 }
 
-export async function recordSave(
-  projectId: string,
-  _chapterId: string,
-  _wordCount: number,
-): Promise<void> {
+export async function recordSave(projectId: string): Promise<void> {
   await updateDailySnapshot(projectId);
 }
 

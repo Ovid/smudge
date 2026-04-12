@@ -95,7 +95,7 @@ export async function updateChapter(
   if (parsed.data.content !== undefined) {
     try {
       const svc = getVelocityService();
-      await svc.recordSave(chapter.project_id, chapter.id, updates.word_count as number);
+      await svc.recordSave(chapter.project_id);
     } catch {
       // Velocity tracking is best-effort; save must still succeed
     }
