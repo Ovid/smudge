@@ -1,4 +1,5 @@
 import { initDb, closeDb } from "./db/connection";
+import { initProjectStore } from "./stores/project-store.injectable";
 import { createApp } from "./app";
 import { purgeOldTrash } from "./db/purge";
 import type { Server } from "node:http";
@@ -24,6 +25,8 @@ async function main() {
         }
       : undefined,
   );
+
+  initProjectStore();
 
   const purged = await purgeOldTrash(db);
   if (purged.chapters > 0 || purged.projects > 0) {
