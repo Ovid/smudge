@@ -48,7 +48,7 @@ export interface ProjectStore {
   updateChapterSortOrders(orders: Array<{ id: string; sort_order: number }>): Promise<void>;
   softDeleteChapter(id: string, now: string): Promise<void>;
   softDeleteChaptersByProject(projectId: string, now: string): Promise<void>;
-  restoreChapter(id: string, sortOrder: number, now: string): Promise<void>;
+  restoreChapter(id: string, sortOrder: number, now: string): Promise<number>;
 
   // --- Chapter statuses ---
   listStatuses(): Promise<ChapterStatusRow[]>;

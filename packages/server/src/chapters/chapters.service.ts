@@ -151,7 +151,10 @@ export async function restoreChapter(
       }
 
       const maxSort = await txStore.getMaxChapterSortOrder(chapter.project_id);
-      await txStore.restoreChapter(id, maxSort + 1, now);
+      const restoredCount = await txStore.restoreChapter(id, maxSort + 1, now);
+      if (restoredCount === 0) {
+        throw new Error("CHAPTER_PURGED");
+      }
       await txStore.updateProjectTimestamp(chapter.project_id);
 
       if (parentProject.deleted_at) {
@@ -168,6 +171,9 @@ export async function restoreChapter(
     });
   } catch (err: unknown) {
     if (err instanceof Error && err.message === "PARENT_PURGED") {
+      return "purged";
+    }
+    if (err instanceof Error && err.message === "CHAPTER_PURGED") {
       return "purged";
     }
     if (

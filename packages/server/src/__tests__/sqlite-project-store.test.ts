@@ -238,7 +238,7 @@ describe("SqliteProjectStore", () => {
       expect(found!.id).toBe(ch.id);
     });
 
-    it("restoreChapter makes chapter visible again", async () => {
+    it("restoreChapter makes chapter visible again and returns 1", async () => {
       const store = createStore();
       const proj = makeProject();
       await store.insertProject(proj);
@@ -246,11 +246,19 @@ describe("SqliteProjectStore", () => {
       await store.insertChapter(ch);
 
       await store.softDeleteChapter(ch.id, new Date().toISOString());
-      await store.restoreChapter(ch.id, 5, new Date().toISOString());
+      const restored = await store.restoreChapter(ch.id, 5, new Date().toISOString());
+
+      expect(restored).toBe(1);
 
       const found = await store.findChapterById(ch.id);
       expect(found).not.toBeNull();
       expect(found!.sort_order).toBe(5);
+    });
+
+    it("restoreChapter returns 0 for non-existent chapter", async () => {
+      const store = createStore();
+      const restored = await store.restoreChapter(randomUUID(), 0, new Date().toISOString());
+      expect(restored).toBe(0);
     });
 
     it("updateChapter delegates correctly", async () => {

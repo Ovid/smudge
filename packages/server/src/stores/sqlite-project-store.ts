@@ -136,7 +136,7 @@ export class SqliteProjectStore implements ProjectStore {
     return chaptersRepo.softDeleteByProject(this.db, projectId, now);
   }
 
-  restoreChapter(id: string, sortOrder: number, now: string): Promise<void> {
+  restoreChapter(id: string, sortOrder: number, now: string): Promise<number> {
     return chaptersRepo.restore(this.db, id, sortOrder, now);
   }
 
