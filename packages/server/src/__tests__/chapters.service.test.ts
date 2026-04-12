@@ -265,7 +265,6 @@ describe("chapters.service", () => {
       // but the actual restore UPDATE inside the transaction finds 0 rows (deleted_at is NULL).
       const { getProjectStore } = await import("../stores/project-store.injectable");
       const store = getProjectStore();
-      const origFindDeleted = store.findDeletedChapterById.bind(store);
       vi.spyOn(store, "findDeletedChapterById").mockImplementation(async (id) => {
         // Return the chapter as if it were still deleted (simulating the race window)
         const row = await t.db("chapters").where({ id }).first();
