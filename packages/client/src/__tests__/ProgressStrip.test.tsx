@@ -104,6 +104,25 @@ describe("ProgressStrip", () => {
     expect(screen.getByText(/Recent pace: 650\/day/)).toBeInTheDocument();
   });
 
+  it("shows deadline reached when 0 days left with remaining work", () => {
+    render(
+      <ProgressStrip
+        data={makeVelocity({
+          current_total: 40000,
+          target_word_count: 80000,
+          remaining_words: 40000,
+          target_deadline: "2026-04-12",
+          days_until_deadline: 0,
+          required_pace: null,
+          daily_average_30d: 650,
+        })}
+        loading={false}
+      />,
+    );
+    expect(screen.getByText(/Deadline reached/)).toBeInTheDocument();
+    expect(screen.queryByText(/0 days left/)).not.toBeInTheDocument();
+  });
+
   it("shows daily average without deadline", () => {
     render(
       <ProgressStrip

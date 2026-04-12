@@ -45,7 +45,11 @@ export function ProgressStrip({ data, loading, error }: ProgressStripProps) {
   }
 
   if (data.days_until_deadline !== null) {
-    segments.push(STRINGS.velocity.daysRemaining(data.days_until_deadline));
+    if (data.days_until_deadline === 0 && data.remaining_words !== null && data.remaining_words > 0) {
+      segments.push(STRINGS.velocity.deadlineReached);
+    } else {
+      segments.push(STRINGS.velocity.daysRemaining(data.days_until_deadline));
+    }
   }
 
   if (data.required_pace !== null) {

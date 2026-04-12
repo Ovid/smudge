@@ -165,6 +165,7 @@ export const STRINGS = {
     dailyAverage: (count: number) => `Recent pace: ${count.toLocaleString()}/day`,
     requiredPace: (count: number) => `Needed pace: ${count.toLocaleString()}/day`,
     daysRemaining: (count: number) => `${count} ${count === 1 ? "day" : "days"} left`,
+    deadlineReached: "Deadline reached",
     wordsOfTarget: (current: number, target: number) =>
       `${current.toLocaleString()} / ${target.toLocaleString()} words`,
     wordsTotal: (count: number) => `${count.toLocaleString()} words`,
