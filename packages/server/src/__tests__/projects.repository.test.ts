@@ -204,15 +204,13 @@ describe("projects repository", () => {
   describe("updateTimestamp()", () => {
     it("touches updated_at", async () => {
       const data = makeProject({ slug: "ts-test" });
-      const inserted = await ProjectRepo.insert(t.db, data);
-      const originalUpdatedAt = inserted.updated_at;
+      await ProjectRepo.insert(t.db, data);
 
-      // Small delay to ensure different timestamp
-      await new Promise((r) => setTimeout(r, 10));
-      await ProjectRepo.updateTimestamp(t.db, data.id);
+      const newTimestamp = new Date(Date.now() + 10_000).toISOString();
+      await ProjectRepo.updateTimestamp(t.db, data.id, newTimestamp);
 
       const found = await ProjectRepo.findById(t.db, data.id);
-      expect(found!.updated_at).not.toBe(originalUpdatedAt);
+      expect(found!.updated_at).toBe(newTimestamp);
     });
   });
 

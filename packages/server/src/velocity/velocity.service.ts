@@ -1,9 +1,13 @@
 import type { VelocityResponse } from "@smudge/shared";
+// This module uses both getDb() (for velocity-specific repos: VelocityRepo,
+// SettingsRepo) and getProjectStore() (for manuscript data: projects, chapters).
+// The split is intentional: velocity/settings repos are app-level concerns
+// outside the ProjectStore boundary. Both resolve to the same underlying
+// Knex instance in production and tests.
 import { getDb } from "../db/connection";
 import * as VelocityRepo from "./velocity.repository";
 import * as SettingsRepo from "../settings/settings.repository";
-import * as ChapterRepo from "../chapters/chapters.repository";
-import * as ProjectRepo from "../projects/projects.repository";
+import { getProjectStore } from "../stores/project-store.injectable";
 import { safeTimezone } from "../timezone";
 
 // --- Timezone helper ---
@@ -37,16 +41,12 @@ export async function getTodayDate(): Promise<string> {
 // --- Side-effect operations (called by chapters service) ---
 
 export async function updateDailySnapshot(projectId: string): Promise<void> {
-  try {
-    const db = getDb();
-    const today = await getTodayDate();
-    await db.transaction(async (trx) => {
-      const totalWordCount = await ChapterRepo.sumWordCountByProject(trx, projectId);
-      await VelocityRepo.upsertDailySnapshot(trx, projectId, today, totalWordCount);
-    });
-  } catch (err) {
-    console.error(`Velocity updateDailySnapshot failed for project=${projectId}:`, err);
-  }
+  const store = getProjectStore();
+  const today = await getTodayDate();
+  await store.transaction(async (txStore, trx) => {
+    const totalWordCount = await txStore.sumChapterWordCountByProject(projectId);
+    await VelocityRepo.upsertDailySnapshot(trx, projectId, today, totalWordCount);
+  });
 }
 
 // Semantic wrapper: called on chapter content save (vs updateDailySnapshot
@@ -86,13 +86,14 @@ function computeRollingAverage(
 
 export async function getVelocityBySlug(slug: string): Promise<VelocityResponse | null> {
   const db = getDb();
+  const store = getProjectStore();
 
-  const project = await ProjectRepo.findBySlug(db, slug);
+  const project = await store.findProjectBySlug(slug);
   if (!project) return null;
 
   const projectId = project.id;
   const today = await getTodayDate();
-  const currentTotal = await ChapterRepo.sumWordCountByProject(db, projectId);
+  const currentTotal = await store.sumChapterWordCountByProject(projectId);
 
   // Words today: current total minus last prior-day snapshot
   const lastPrior = await VelocityRepo.getLastPriorDaySnapshot(db, projectId, today);

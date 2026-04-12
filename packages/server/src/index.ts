@@ -1,4 +1,5 @@
 import { initDb, closeDb } from "./db/connection";
+import { initProjectStore, resetProjectStore } from "./stores/project-store.injectable";
 import { createApp } from "./app";
 import { purgeOldTrash } from "./db/purge";
 import type { Server } from "node:http";
@@ -24,6 +25,8 @@ async function main() {
         }
       : undefined,
   );
+
+  initProjectStore();
 
   const purged = await purgeOldTrash(db);
   if (purged.chapters > 0 || purged.projects > 0) {
@@ -66,6 +69,7 @@ function setupGracefulShutdown(server: Server): void {
     forceExit.unref();
 
     server.close(() => {
+      resetProjectStore();
       closeDb()
         .then(() => {
           clearTimeout(forceExit);

@@ -11,7 +11,13 @@ describe("safeTimezone", () => {
   });
 
   it("returns UTC for an invalid timezone string", () => {
-    expect(safeTimezone("Not/AReal_Zone")).toBe("UTC");
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(safeTimezone("Not/AReal_Zone")).toBe("UTC");
+      expect(spy).toHaveBeenCalledWith('Invalid timezone "Not/AReal_Zone", falling back to UTC');
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

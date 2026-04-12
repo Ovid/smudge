@@ -1,6 +1,5 @@
 import type { ChapterStatusRow as SharedChapterStatusRow } from "@smudge/shared";
-import { getDb } from "../db/connection";
-import * as ChapterStatusRepo from "./chapter-statuses.repository";
+import { getProjectStore } from "../stores/project-store.injectable";
 import type { ChapterStatusRow } from "./chapter-statuses.types";
 
 function toChapterStatus(row: ChapterStatusRow): SharedChapterStatusRow {
@@ -12,7 +11,7 @@ function toChapterStatus(row: ChapterStatusRow): SharedChapterStatusRow {
 }
 
 export async function listStatuses(): Promise<SharedChapterStatusRow[]> {
-  const db = getDb();
-  const rows = await ChapterStatusRepo.list(db);
+  const store = getProjectStore();
+  const rows = await store.listStatuses();
   return rows.map(toChapterStatus);
 }

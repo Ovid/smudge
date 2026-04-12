@@ -70,6 +70,7 @@ export interface CreateChapterRow {
   content: string | null;
   sort_order: number;
   word_count: number;
+  status?: string;
   created_at: string;
   updated_at: string;
 }

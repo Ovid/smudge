@@ -1,8 +1,5 @@
 import { UpdateChapterSchema, countWords, generateSlug } from "@smudge/shared";
-import { getDb } from "../db/connection";
-import * as ChapterRepo from "./chapters.repository";
-import * as ProjectRepo from "../projects/projects.repository";
-import * as ChapterStatusRepo from "../chapter-statuses/chapter-statuses.repository";
+import { getProjectStore } from "../stores/project-store.injectable";
 import {
   getVelocityService,
   setVelocityService,
@@ -16,6 +13,22 @@ import type {
 } from "./chapters.types";
 
 export { setVelocityService, resetVelocityService };
+
+// --- Transaction control-flow errors ---
+
+export class ParentPurgedError extends Error {
+  constructor() {
+    super("The parent project has been permanently deleted");
+    this.name = "ParentPurgedError";
+  }
+}
+
+export class ChapterPurgedError extends Error {
+  constructor() {
+    super("This chapter has been permanently deleted");
+    this.name = "ChapterPurgedError";
+  }
+}
 
 // --- Helpers ---
 
@@ -31,14 +44,14 @@ export function stripCorruptFlag(chapter: ChapterRow): Omit<ChapterRow, "content
 // --- Service functions ---
 
 export async function getChapter(id: string): Promise<ChapterWithLabel | null | "corrupt"> {
-  const db = getDb();
-  const chapter = await ChapterRepo.findById(db, id);
+  const store = getProjectStore();
+  const chapter = await store.findChapterById(id);
   if (!chapter) return null;
 
   if (isCorruptChapter(chapter)) return "corrupt";
 
   const clean = stripCorruptFlag(chapter);
-  const status_label = await ChapterStatusRepo.getStatusLabel(db, chapter.status);
+  const status_label = await store.getStatusLabel(chapter.status);
   return { ...clean, status_label };
 }
 
@@ -57,8 +70,8 @@ export async function updateChapter(
     return { validationError: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
-  const db = getDb();
-  const chapter = await ChapterRepo.findByIdRaw(db, id);
+  const store = getProjectStore();
+  const chapter = await store.findChapterByIdRaw(id);
   if (!chapter) return null;
 
   const updates: UpdateChapterData = {
@@ -75,17 +88,17 @@ export async function updateChapter(
   }
 
   if (parsed.data.status !== undefined) {
-    const valid = !!(await ChapterStatusRepo.findByStatus(db, parsed.data.status));
+    const valid = !!(await store.findStatusByStatus(parsed.data.status));
     if (!valid) {
       return { validationError: `Invalid status: ${parsed.data.status}` };
     }
     updates.status = parsed.data.status;
   }
 
-  const rowsUpdated = await db.transaction(async (trx) => {
-    const count = await ChapterRepo.update(trx, id, updates);
+  const rowsUpdated = await store.transaction(async (txStore) => {
+    const count = await txStore.updateChapter(id, updates);
     if (count === 0) return 0;
-    await ProjectRepo.updateTimestamp(trx, chapter.project_id);
+    await txStore.updateProjectTimestamp(chapter.project_id, updates.updated_at);
     return count;
   });
 
@@ -96,12 +109,16 @@ export async function updateChapter(
     try {
       const svc = getVelocityService();
       await svc.recordSave(chapter.project_id);
-    } catch {
-      // Velocity tracking is best-effort; save must still succeed
+    } catch (err: unknown) {
+      console.error(
+        "Velocity recordSave failed (best-effort):",
+        { project_id: chapter.project_id, chapter_id: id },
+        err,
+      );
     }
   }
 
-  const updated = await ChapterRepo.findById(db, id);
+  const updated = await store.findChapterById(id);
   if (!updated) return "read_after_update_failure";
 
   // Only check corruption when content was part of the update
@@ -110,7 +127,7 @@ export async function updateChapter(
   }
 
   const clean = stripCorruptFlag(updated);
-  const updatedStatusLabel = await ChapterStatusRepo.getStatusLabel(db, updated.status);
+  const updatedStatusLabel = await store.getStatusLabel(updated.status);
   return {
     chapter: {
       ...clean,
@@ -120,64 +137,95 @@ export async function updateChapter(
 }
 
 export async function deleteChapter(id: string): Promise<boolean> {
-  const db = getDb();
-  const chapter = await ChapterRepo.findByIdRaw(db, id);
+  const store = getProjectStore();
+  const chapter = await store.findChapterByIdRaw(id);
   if (!chapter) return false;
 
   const now = new Date().toISOString();
-  await db.transaction(async (trx) => {
-    await ChapterRepo.softDelete(trx, id, now);
-    await ProjectRepo.updateTimestamp(trx, chapter.project_id);
+  await store.transaction(async (txStore) => {
+    await txStore.softDeleteChapter(id, now);
+    await txStore.updateProjectTimestamp(chapter.project_id, now);
   });
 
   try {
     await getVelocityService().updateDailySnapshot(chapter.project_id);
-  } catch {
-    // Velocity tracking is best-effort; delete must still succeed
+  } catch (err: unknown) {
+    console.error(
+      "Velocity updateDailySnapshot failed (best-effort):",
+      { project_id: chapter.project_id, chapter_id: id },
+      err,
+    );
   }
   return true;
 }
 
 export async function restoreChapter(
   id: string,
-): Promise<RestoredChapterResponse | null | "purged" | "conflict" | "read_failure"> {
-  const db = getDb();
-  const chapter = await ChapterRepo.findDeletedById(db, id);
+): Promise<
+  RestoredChapterResponse | null | "parent_purged" | "chapter_purged" | "conflict" | "read_failure"
+> {
+  const store = getProjectStore();
+  const chapter = await store.findDeletedChapterById(id);
   if (!chapter) return null;
 
   try {
     const now = new Date().toISOString();
-    await db.transaction(async (trx) => {
-      const parentProject = await ProjectRepo.findByIdIncludingDeleted(trx, chapter.project_id);
+    await store.transaction(async (txStore) => {
+      const parentProject = await txStore.findProjectByIdIncludingDeleted(chapter.project_id);
       if (!parentProject) {
-        throw new Error("PARENT_PURGED");
+        throw new ParentPurgedError();
       }
 
-      const maxSort = await ChapterRepo.getMaxSortOrder(trx, chapter.project_id);
-      await ChapterRepo.restore(trx, id, maxSort + 1, now);
-      await ProjectRepo.updateTimestamp(trx, chapter.project_id);
+      const maxSort = await txStore.getMaxChapterSortOrder(chapter.project_id);
+      const restoredCount = await txStore.restoreChapter(id, maxSort + 1, now);
+      if (restoredCount === 0) {
+        // restoredCount === 0 means the UPDATE matched no rows. This can happen when:
+        // 1. The chapter was hard-deleted (purged) between lookup and restore
+        // 2. Another request already restored it (deleted_at is now NULL)
+        // Distinguish by checking if the chapter exists as active.
+        const alreadyActive = await txStore.findChapterById(id);
+        if (alreadyActive) {
+          return; // Already restored by another request — no action needed
+        }
+        throw new ChapterPurgedError();
+      }
 
       if (parentProject.deleted_at) {
-        const freshSlug = await ProjectRepo.resolveUniqueSlug(
-          trx,
+        const freshSlug = await txStore.resolveUniqueSlug(
           generateSlug(parentProject.title),
           parentProject.id,
         );
-        await ProjectRepo.updateIncludingDeleted(trx, chapter.project_id, {
+        await txStore.updateProjectIncludingDeleted(chapter.project_id, {
           deleted_at: null,
           updated_at: now,
           slug: freshSlug,
         });
+      } else {
+        await txStore.updateProjectTimestamp(chapter.project_id, now);
       }
     });
   } catch (err: unknown) {
-    if (err instanceof Error && err.message === "PARENT_PURGED") {
-      return "purged";
+    if (err instanceof ParentPurgedError) {
+      return "parent_purged";
     }
-    if ((err as Record<string, unknown>).code === "SQLITE_CONSTRAINT_UNIQUE") {
+    if (err instanceof ChapterPurgedError) {
+      return "chapter_purged";
+    }
+    if (
+      err instanceof Error &&
+      "code" in err &&
+      (err as unknown as Record<string, unknown>).code === "SQLITE_CONSTRAINT_UNIQUE" &&
+      /slug/i.test(err.message)
+    ) {
       // Slug collision when restoring the parent project — a different
-      // active project now occupies the slug. Report as a conflict so the
-      // route can return an appropriate error to the client.
+      // active project now occupies the slug. Defensive: resolveUniqueSlug
+      // prevents this under SQLite's serialized writes, but guards against
+      // races on future storage backends.
+      //
+      // Note: the /slug/i regex on err.message is fragile — it depends on
+      // SQLite's error message format ("UNIQUE constraint failed: projects.slug").
+      // Acceptable because slug is the only UNIQUE constraint on projects that
+      // can fire during restore. If new UNIQUE constraints are added, revisit.
       return "conflict";
     }
     throw err;
@@ -185,19 +233,21 @@ export async function restoreChapter(
 
   try {
     await getVelocityService().updateDailySnapshot(chapter.project_id);
-  } catch {
-    // Velocity tracking is best-effort; restore must still succeed
+  } catch (err: unknown) {
+    console.error(
+      "Velocity updateDailySnapshot failed (best-effort):",
+      { project_id: chapter.project_id, chapter_id: id },
+      err,
+    );
   }
 
-  const restored = await ChapterRepo.findById(db, id);
+  const restored = await store.findChapterById(id);
   if (!restored) return "read_failure";
 
   const clean = stripCorruptFlag(restored);
-  const updatedProject = await ProjectRepo.findById(db, chapter.project_id);
-  if (!updatedProject) {
-    throw new Error(`Project ${chapter.project_id} not found after restore`);
-  }
-  const restoredStatusLabel = await ChapterStatusRepo.getStatusLabel(db, restored.status);
+  const updatedProject = await store.findProjectByIdIncludingDeleted(chapter.project_id);
+  if (!updatedProject) return "read_failure";
+  const restoredStatusLabel = await store.getStatusLabel(restored.status);
 
   return {
     ...clean,

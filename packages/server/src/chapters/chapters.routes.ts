@@ -94,11 +94,20 @@ export function chaptersRouter(): Router {
         });
         return;
       }
-      if (result === "purged") {
+      if (result === "parent_purged") {
         res.status(404).json({
           error: {
             code: "PROJECT_PURGED",
             message: "The parent project has been permanently deleted.",
+          },
+        });
+        return;
+      }
+      if (result === "chapter_purged") {
+        res.status(404).json({
+          error: {
+            code: "CHAPTER_PURGED",
+            message: "This chapter has been permanently deleted.",
           },
         });
         return;
