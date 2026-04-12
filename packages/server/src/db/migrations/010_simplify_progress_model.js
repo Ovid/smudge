@@ -10,12 +10,20 @@ export async function up(knex) {
 
   await knex.raw("PRAGMA foreign_keys = OFF");
   try {
-    await knex.schema.alterTable("projects", (table) => {
-      table.dropColumn("completion_threshold");
-    });
-    await knex.schema.alterTable("chapters", (table) => {
-      table.dropColumn("target_word_count");
-    });
+    // Check column existence before dropping so re-running after partial
+    // failure does not error on already-dropped columns.
+    const projectCols = await knex.raw("PRAGMA table_info(projects)");
+    if (projectCols.some((c) => c.name === "completion_threshold")) {
+      await knex.schema.alterTable("projects", (table) => {
+        table.dropColumn("completion_threshold");
+      });
+    }
+    const chapterCols = await knex.raw("PRAGMA table_info(chapters)");
+    if (chapterCols.some((c) => c.name === "target_word_count")) {
+      await knex.schema.alterTable("chapters", (table) => {
+        table.dropColumn("target_word_count");
+      });
+    }
   } finally {
     await knex.raw("PRAGMA foreign_keys = ON");
   }
