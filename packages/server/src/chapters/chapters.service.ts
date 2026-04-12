@@ -1,10 +1,6 @@
 import { UpdateChapterSchema, countWords, generateSlug } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
-import {
-  getVelocityService,
-  setVelocityService,
-  resetVelocityService,
-} from "../velocity/velocity.injectable";
+import { getVelocityService } from "../velocity/velocity.injectable";
 import {
   isCorruptChapter,
   stripCorruptFlag,
@@ -13,8 +9,6 @@ import {
   type RestoredChapterResponse,
   type UpdateChapterData,
 } from "./chapters.types";
-
-export { setVelocityService, resetVelocityService };
 
 // --- Transaction control-flow errors ---
 

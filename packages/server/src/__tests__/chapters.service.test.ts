@@ -4,14 +4,18 @@ import { setupTestDb } from "./test-helpers";
 import {
   setVelocityService,
   resetVelocityService,
+} from "../velocity/velocity.injectable";
+import {
   updateChapter,
   deleteChapter,
   restoreChapter,
   getChapter,
+} from "../chapters/chapters.service";
+import {
   isCorruptChapter,
   stripCorruptFlag,
-} from "../chapters/chapters.service";
-import type { ChapterRow } from "../chapters/chapters.types";
+  type ChapterRow,
+} from "../chapters/chapters.types";
 
 const t = setupTestDb();
 
