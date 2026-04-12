@@ -33,11 +33,13 @@ describe("ProgressStrip", () => {
     expect(screen.queryByText(/start writing/i)).not.toBeInTheDocument();
   });
 
-  it("shows empty state on error (keeps section in DOM for screen readers)", () => {
+  it("shows error message on error (distinct from empty state)", () => {
     render(<ProgressStrip data={null} loading={false} error={true} />);
     const section = screen.getByRole("region", { name: /writing progress/i });
     expect(section).toBeInTheDocument();
-    expect(screen.getByText(/start writing/i)).toBeInTheDocument();
+    // Must NOT show the empty-state copy — that would be misleading
+    expect(screen.queryByText(/start writing/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/unable to load/i)).toBeInTheDocument();
   });
 
   it("shows word count when no target set", () => {

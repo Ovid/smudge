@@ -161,6 +161,7 @@ export const STRINGS = {
   velocity: {
     progressLabel: "Writing progress",
     emptyState: "Start writing to see your progress.",
+    loadError: "Unable to load progress data.",
     dailyAverage: (count: number) => `Recent pace: ${count.toLocaleString()}/day`,
     requiredPace: (count: number) => `Needed pace: ${count.toLocaleString()}/day`,
     daysRemaining: (count: number) => `${count} ${count === 1 ? "day" : "days"} left`,

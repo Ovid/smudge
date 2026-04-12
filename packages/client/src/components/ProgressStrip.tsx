@@ -11,7 +11,7 @@ export function ProgressStrip({ data, loading, error }: ProgressStripProps) {
   if (error && !data) {
     return (
       <section aria-label={STRINGS.velocity.progressLabel} className="mb-8">
-        <p className="text-text-muted text-sm font-sans">{STRINGS.velocity.emptyState}</p>
+        <p className="text-text-muted text-sm font-sans">{STRINGS.velocity.loadError}</p>
       </section>
     );
   }
