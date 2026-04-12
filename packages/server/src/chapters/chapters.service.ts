@@ -5,11 +5,13 @@ import {
   setVelocityService,
   resetVelocityService,
 } from "../velocity/velocity.injectable";
-import type {
-  ChapterRow,
-  ChapterWithLabel,
-  RestoredChapterResponse,
-  UpdateChapterData,
+import {
+  isCorruptChapter,
+  stripCorruptFlag,
+  type ChapterRow,
+  type ChapterWithLabel,
+  type RestoredChapterResponse,
+  type UpdateChapterData,
 } from "./chapters.types";
 
 export { setVelocityService, resetVelocityService };
@@ -30,16 +32,7 @@ export class ChapterPurgedError extends Error {
   }
 }
 
-// --- Helpers ---
-
-export function isCorruptChapter(chapter: { content_corrupt?: boolean }): boolean {
-  return chapter.content_corrupt === true;
-}
-
-export function stripCorruptFlag(chapter: ChapterRow): Omit<ChapterRow, "content_corrupt"> {
-  const { content_corrupt: _, ...rest } = chapter;
-  return rest;
-}
+export { isCorruptChapter, stripCorruptFlag };
 
 // --- Service functions ---
 
