@@ -90,7 +90,13 @@ In the **Phase Structure** table near the top of the roadmap, change the phase's
 
 Only update the status if explicitly told to by the user (e.g., marking a phase Done after implementation). Otherwise leave it as-is.
 
-## 6. Announce Completion
+## 6. Pushback Review
+
+Invoke the `paad:pushback` skill against the design document just created in `docs/plans/`. If English is the new programming language, pushback is code review for the plan — catch contradictions, feasibility issues, scope problems, and ambiguity before any implementation begins.
+
+After pushback completes, discuss the findings with the user and update the design document to address any valid concerns before moving on.
+
+## 7. Announce Completion
 
 > **Roadmap updated.** Phase N: [Name] brainstormed → `docs/plans/[filename]`.
 > Next unplanned phase: Phase M: [Name] (or "all phases planned").
