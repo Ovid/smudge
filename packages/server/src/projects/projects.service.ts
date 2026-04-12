@@ -122,9 +122,7 @@ export async function updateProject(
   slug: string,
   body: unknown,
 ): Promise<
-  | { project: ProjectRow; validationError?: undefined }
-  | { validationError: string }
-  | null
+  { project: ProjectRow; validationError?: undefined } | { validationError: string } | null
 > {
   const parsed = UpdateProjectSchema.safeParse(body);
   if (!parsed.success) {
