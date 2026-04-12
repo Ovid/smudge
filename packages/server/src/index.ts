@@ -26,7 +26,7 @@ async function main() {
       : undefined,
   );
 
-  initProjectStore();
+  initProjectStore(db);
 
   const purged = await purgeOldTrash(db);
   if (purged.chapters > 0 || purged.projects > 0) {

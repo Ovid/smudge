@@ -8,7 +8,7 @@ import {
 import type { ProjectStore } from "../stores/project-store.types";
 import { setupTestDb } from "./test-helpers";
 
-setupTestDb();
+const t = setupTestDb();
 
 describe("project-store.injectable", () => {
   beforeEach(() => {
@@ -20,7 +20,7 @@ describe("project-store.injectable", () => {
   });
 
   it("initProjectStore makes getProjectStore return a store", () => {
-    initProjectStore();
+    initProjectStore(t.db);
     const store = getProjectStore();
     expect(store).toBeDefined();
     expect(typeof store.findProjectById).toBe("function");
@@ -35,7 +35,7 @@ describe("project-store.injectable", () => {
   });
 
   it("initProjectStore throws when already initialized", () => {
-    initProjectStore();
-    expect(() => initProjectStore()).toThrow("ProjectStore already initialized");
+    initProjectStore(t.db);
+    expect(() => initProjectStore(t.db)).toThrow("ProjectStore already initialized");
   });
 });
