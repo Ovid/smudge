@@ -36,16 +36,12 @@ export async function getTodayDate(): Promise<string> {
 // --- Side-effect operations (called by chapters service) ---
 
 export async function updateDailySnapshot(projectId: string): Promise<void> {
-  try {
-    const store = getProjectStore();
-    const today = await getTodayDate();
-    await store.transaction(async (txStore, trx) => {
-      const totalWordCount = await txStore.sumChapterWordCountByProject(projectId);
-      await VelocityRepo.upsertDailySnapshot(trx, projectId, today, totalWordCount);
-    });
-  } catch (err) {
-    console.error(`Velocity updateDailySnapshot failed for project=${projectId}:`, err);
-  }
+  const store = getProjectStore();
+  const today = await getTodayDate();
+  await store.transaction(async (txStore, trx) => {
+    const totalWordCount = await txStore.sumChapterWordCountByProject(projectId);
+    await VelocityRepo.upsertDailySnapshot(trx, projectId, today, totalWordCount);
+  });
 }
 
 // Semantic wrapper: called on chapter content save (vs updateDailySnapshot
