@@ -160,7 +160,9 @@ export class SqliteProjectStore implements ProjectStore {
 
   // --- Transactions ---
 
-  async transaction<T>(fn: (txStore: ProjectStore, trx: Knex.Transaction) => Promise<T>): Promise<T> {
+  async transaction<T>(
+    fn: (txStore: ProjectStore, trx: Knex.Transaction) => Promise<T>,
+  ): Promise<T> {
     return (this.db as Knex).transaction(async (trx) => {
       const txStore = new SqliteProjectStore(trx);
       return fn(txStore, trx);

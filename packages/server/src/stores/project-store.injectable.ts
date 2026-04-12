@@ -5,8 +5,7 @@ import { getDb } from "../db/connection";
 let store: ProjectStore | null = null;
 
 export function getProjectStore(): ProjectStore {
-  if (!store)
-    throw new Error("ProjectStore not initialized — call initProjectStore() first");
+  if (!store) throw new Error("ProjectStore not initialized — call initProjectStore() first");
   return store;
 }
 

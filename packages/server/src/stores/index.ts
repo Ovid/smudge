@@ -13,8 +13,4 @@ export type {
   SnapshotType,
 } from "./snapshot-store.types";
 export { SqliteProjectStore } from "./sqlite-project-store";
-export {
-  getProjectStore,
-  setProjectStore,
-  initProjectStore,
-} from "./project-store.injectable";
+export { getProjectStore, setProjectStore, initProjectStore } from "./project-store.injectable";

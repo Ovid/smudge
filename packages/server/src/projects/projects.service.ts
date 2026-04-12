@@ -149,10 +149,7 @@ export async function updateProject(
       if (existingTitle) {
         throw new ProjectTitleExistsError();
       }
-      const newSlug = await txStore.resolveUniqueSlug(
-        generateSlug(parsed.data.title),
-        project.id,
-      );
+      const newSlug = await txStore.resolveUniqueSlug(generateSlug(parsed.data.title), project.id);
       updates.title = parsed.data.title;
       updates.slug = newSlug;
     }
