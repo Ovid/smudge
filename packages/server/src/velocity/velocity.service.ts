@@ -1,4 +1,9 @@
 import type { VelocityResponse } from "@smudge/shared";
+// This module uses both getDb() (for velocity-specific repos: VelocityRepo,
+// SettingsRepo) and getProjectStore() (for manuscript data: projects, chapters).
+// The split is intentional: velocity/settings repos are app-level concerns
+// outside the ProjectStore boundary. Both resolve to the same underlying
+// Knex instance in production and tests.
 import { getDb } from "../db/connection";
 import * as VelocityRepo from "./velocity.repository";
 import * as SettingsRepo from "../settings/settings.repository";
