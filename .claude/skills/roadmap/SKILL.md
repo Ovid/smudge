@@ -9,10 +9,7 @@ Announce: **"Checking roadmap for next unplanned phase…"**
 
 ## 1. Read the Roadmap
 
-Read `docs/roadmap.md` in full. Each phase heading (## Phase N: …) may have a
-`<!-- plan: filename.md -->` comment on the line immediately after the `---`
-separator that follows that phase's section. This comment marks the phase as
-already brainstormed.
+Read `docs/roadmap.md` in full. Each phase heading (## Phase N: …) may have a `<!-- plan: filename.md -->` comment on the line immediately after the `---` separator that follows that phase's section. This comment marks the phase as already brainstormed.
 
 Example of a completed phase:
 
@@ -33,8 +30,7 @@ Example of an incomplete phase (no comment, or no `<!-- plan: … -->` line):
 
 ## 2. Identify the Next Unplanned Phase
 
-Scan phases in order (Phase 1, 2, 3, … 7). The first phase whose section does
-**not** have a `<!-- plan: … -->` comment is the target.
+Scan phases in order (Phase 1, 2, 3, … 7). The first phase whose section does **not** have a `<!-- plan: … -->` comment is the target.
 
 If **all** phases have plan comments, announce:
 > **All roadmap phases have been brainstormed.** Nothing to do.
@@ -43,9 +39,7 @@ If **all** phases have plan comments, announce:
 
 ## 3. Extract the Phase Context
 
-Collect the full text of the target phase section from the roadmap (everything
-between its `## Phase N` heading and the next `## Phase` heading or end of
-file). This is the spec input for brainstorming.
+Collect the full text of the target phase section from the roadmap (everything between its `## Phase N` heading and the next `## Phase` heading or end of file). This is the spec input for brainstorming.
 
 Also note:
 - Which earlier phases it depends on (listed under ### Dependencies).
@@ -53,21 +47,17 @@ Also note:
 
 ## 4. Brainstorm
 
-Invoke the `superpowers:brainstorming` skill. When the brainstorming skill asks
-what you're building, provide:
+Invoke the `superpowers:brainstorming` skill. When the brainstorming skill asks what you're building, provide:
 
 - The phase name and goal from the roadmap.
 - The full phase section text as context.
 - That the output should be a **design document** saved to `docs/plans/`.
 
-Follow the brainstorming skill's process completely. It will explore requirements,
-ask the user questions, and produce a design document.
+Follow the brainstorming skill's process completely. It will explore requirements, ask the user questions, and produce a design document. Also, think of the design from the standpoint of a writer. Is it truly useful for them? If you think it could be more useful, discuss this with the user.
 
 ## 5. Record the Plan Filename
 
-After brainstorming produces a document in `docs/plans/`, update `docs/roadmap.md`
-to mark this phase as complete. Insert a plan comment on the line immediately
-after the `---` separator that precedes the phase heading:
+After brainstorming produces a document in `docs/plans/`, update `docs/roadmap.md` to mark this phase as complete. Insert a plan comment on the line immediately after the `---` separator that precedes the phase heading:
 
 **Before:**
 ```markdown
@@ -84,10 +74,11 @@ after the `---` separator that precedes the phase heading:
 <!-- plan: 2026-04-01-export-design.md -->
 ```
 
-The filename is whatever the brainstorming skill created (it follows the pattern
-`YYYY-MM-DD-<topic>-design.md`).
+The filename is whatever the brainstorming skill created (it follows the pattern `YYYY-MM-DD-<topic>-design.md`).
 
 ## 6. Announce Completion
 
 > **Roadmap updated.** Phase N: [Name] brainstormed → `docs/plans/[filename]`.
 > Next unplanned phase: Phase M: [Name] (or "all phases planned").
+
+Offer to move to implementing the new design, or to review the updated roadmap.
