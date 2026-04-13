@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
+import { logger } from "../logger";
 
 const ctx = setupTestDb();
 
@@ -31,7 +32,7 @@ describe("GET /api/health", () => {
 
 describe("Global error handler via malformed JSON", () => {
   it("returns 400 for malformed JSON body", async () => {
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
     const res = await request(ctx.app)
       .post("/api/projects")
       .set("Content-Type", "application/json")
@@ -39,6 +40,6 @@ describe("Global error handler via malformed JSON", () => {
 
     // Express json() middleware produces a SyntaxError which hits the error handler
     expect(res.status).toBeGreaterThanOrEqual(400);
-    consoleSpy.mockRestore();
+    logSpy.mockRestore();
   });
 });

@@ -2,11 +2,12 @@ import { initDb, closeDb } from "./db/connection";
 import { initProjectStore, resetProjectStore } from "./stores/project-store.injectable";
 import { createApp } from "./app";
 import { purgeOldTrash } from "./db/purge";
+import { logger } from "./logger";
 import type { Server } from "node:http";
 
 const PORT = parseInt(process.env.SMUDGE_PORT ?? "3456", 10);
 if (Number.isNaN(PORT) || PORT < 1 || PORT > 65535) {
-  console.error(`Invalid SMUDGE_PORT: "${process.env.SMUDGE_PORT}". Must be a number 1-65535.`);
+  logger.error({ port: process.env.SMUDGE_PORT }, "Invalid SMUDGE_PORT: must be a number 1-65535");
   process.exit(1);
 }
 const DB_PATH = process.env.DB_PATH;
@@ -30,23 +31,23 @@ async function main() {
 
   const purged = await purgeOldTrash(db);
   if (purged.chapters > 0 || purged.projects > 0) {
-    console.log(
-      `Purged ${purged.chapters} chapter(s) and ${purged.projects} project(s) from trash.`,
+    logger.info(
+      { chapters: purged.chapters, projects: purged.projects },
+      "Purged old trash entries",
     );
   }
 
   const app = createApp();
 
   const server = app.listen(PORT, () => {
-    console.log(`Smudge server running on http://localhost:${PORT}`);
+    logger.info({ port: PORT }, "Smudge server running");
   });
 
   server.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "EADDRINUSE") {
-      console.error(`Port ${PORT} is already in use.`);
-      console.error(`Run: lsof -ti:${PORT} | xargs kill`);
+      logger.error({ port: PORT }, "Port is already in use");
     } else {
-      console.error("Server error:", err);
+      logger.error({ err }, "Server error");
     }
     process.exit(1);
   });
@@ -60,10 +61,10 @@ function setupGracefulShutdown(server: Server): void {
   const shutdown = () => {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.log("Shutting down gracefully…");
+    logger.info("Shutting down gracefully");
 
     const forceExit = setTimeout(() => {
-      console.error("Shutdown timed out after 10s, forcing exit.");
+      logger.error("Shutdown timed out after 10s, forcing exit");
       process.exit(1);
     }, 10_000);
     forceExit.unref();
@@ -73,11 +74,11 @@ function setupGracefulShutdown(server: Server): void {
       closeDb()
         .then(() => {
           clearTimeout(forceExit);
-          console.log("Database connection closed.");
+          logger.info("Database connection closed");
           process.exit(0);
         })
         .catch((err) => {
-          console.error("Error closing database:", err);
+          logger.error({ err }, "Error closing database");
           process.exit(1);
         });
     });
@@ -94,14 +95,12 @@ main().catch((err: unknown) => {
     typeof (err as Record<string, unknown>).code === "string" &&
     (err as Record<string, unknown>).code?.toString().startsWith("SQLITE_IOERR")
   ) {
-    console.error(
-      "SQLite I/O error — possible causes: corrupt database, stale WAL files, disk full, or permission issues.",
-    );
-    console.error(
-      "Check disk space and file permissions first. If the database is corrupt, back it up before taking any destructive action.",
+    logger.error(
+      { err },
+      "SQLite I/O error — possible causes: corrupt database, stale WAL files, disk full, or permission issues. Check disk space and file permissions first.",
     );
   } else {
-    console.error("Failed to start server:", err);
+    logger.error({ err }, "Failed to start server");
   }
   process.exit(1);
 });

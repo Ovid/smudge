@@ -1,3 +1,5 @@
+import { logger } from "./logger";
+
 /** en-CA locale produces YYYY-MM-DD format by default, useful for timezone validation */
 const VALIDATION_LOCALE = "en-CA";
 
@@ -12,6 +14,6 @@ export function isValidTimezone(tz: string): boolean {
 
 export function safeTimezone(tz: string): string {
   if (isValidTimezone(tz)) return tz;
-  console.warn(`Invalid timezone "${tz}", falling back to UTC`);
+  logger.warn({ timezone: tz }, "Invalid timezone, falling back to UTC");
   return "UTC";
 }

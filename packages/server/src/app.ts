@@ -1,6 +1,7 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import helmet from "helmet";
+import { logger } from "./logger";
 import { projectsRouter } from "./projects/projects.routes";
 import { chaptersRouter } from "./chapters/chapters.routes";
 import { chapterStatusesRouter } from "./chapter-statuses/chapter-statuses.routes";
@@ -50,7 +51,7 @@ export function createApp(): express.Express {
       res: express.Response,
       _next: express.NextFunction,
     ) => {
-      console.error(err);
+      logger.error({ err, status: err.status ?? err.statusCode ?? 500 }, "Unhandled request error");
       const status = err.status ?? err.statusCode ?? 500;
       const code =
         status >= 500

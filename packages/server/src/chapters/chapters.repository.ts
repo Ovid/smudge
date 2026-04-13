@@ -7,6 +7,7 @@ import type {
   CreateChapterRow,
   UpdateChapterData,
 } from "./chapters.types";
+import { logger } from "../logger";
 
 // --- Content parsing ---
 
@@ -15,8 +16,9 @@ function parseContent(row: Record<string, unknown>): ChapterRow {
     try {
       return { ...row, content: JSON.parse(row.content) } as ChapterRow;
     } catch (err) {
-      console.error(
-        `[parseChapterContent] corrupt JSON in chapter ${row.id ?? "unknown"} (${err instanceof Error ? err.name : "UnknownError"})`,
+      logger.error(
+        { err, chapter_id: row.id ?? "unknown" },
+        "Corrupt JSON in chapter content",
       );
       return { ...row, content: null, content_corrupt: true } as ChapterRow;
     }

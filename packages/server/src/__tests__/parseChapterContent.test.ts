@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { parseChapterContent } from "../chapters/chapters.repository";
+import { logger } from "../logger";
 
 describe("parseChapterContent", () => {
   it("parses valid JSON string content into an object", () => {
@@ -16,7 +17,7 @@ describe("parseChapterContent", () => {
   });
 
   it("returns null content with content_corrupt flag and logs error when JSON is corrupt", () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
     const chapter = {
       id: "abc",
       title: "Test",
@@ -27,7 +28,10 @@ describe("parseChapterContent", () => {
     expect(result.content_corrupt).toBe(true);
     expect(result.id).toBe("abc");
     expect(errorSpy).toHaveBeenCalledOnce();
-    expect(errorSpy.mock.calls[0]![0]).toContain("corrupt");
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ chapter_id: "abc" }),
+      "Corrupt JSON in chapter content",
+    );
     errorSpy.mockRestore();
   });
 
@@ -67,22 +71,8 @@ describe("parseChapterContent", () => {
 });
 
 describe("parseChapterContent integration — corrupt DB content", () => {
-  it("logs UnknownError when the thrown value is not an Error instance", () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const parseSpy = vi.spyOn(JSON, "parse").mockImplementationOnce(() => {
-      throw "plain string error";
-    });
-    const chapter = { id: "abc", title: "Test", content: '{"valid":"json"}' };
-    const result = parseChapterContent(chapter) as unknown as Record<string, unknown>;
-    expect(result.content).toBeNull();
-    expect(result.content_corrupt).toBe(true);
-    expect(errorSpy.mock.calls[0]![0]).toContain("UnknownError");
-    parseSpy.mockRestore();
-    errorSpy.mockRestore();
-  });
-
   it("logs error with chapter id when DB has corrupt JSON", () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
     const chapter = {
       id: "test-123",
       title: "Corrupt Chapter",
@@ -94,8 +84,21 @@ describe("parseChapterContent integration — corrupt DB content", () => {
     expect(result.content_corrupt).toBe(true);
     expect(result.title).toBe("Corrupt Chapter");
     // Must log the chapter id so the corrupt row can be found
-    expect(errorSpy.mock.calls[0]![0]).toContain("test-123");
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ chapter_id: "test-123" }),
+      "Corrupt JSON in chapter content",
+    );
+    errorSpy.mockRestore();
+  });
+
+  it("includes the error in the structured log when JSON.parse throws", () => {
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    const chapter = { id: "abc", title: "Test", content: "{invalid json!!!" };
+    parseChapterContent(chapter);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(SyntaxError) }),
+      "Corrupt JSON in chapter content",
+    );
     errorSpy.mockRestore();
   });
 });
-

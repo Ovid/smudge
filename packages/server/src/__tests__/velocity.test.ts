@@ -4,6 +4,7 @@ import { setupTestDb } from "./test-helpers";
 import { v4 as uuid } from "uuid";
 import { safeTimezone } from "../timezone";
 import { formatDateFromParts } from "../velocity/velocity.service";
+import { logger } from "../logger";
 
 describe("safeTimezone", () => {
   it("returns the timezone unchanged when valid", () => {
@@ -11,10 +12,13 @@ describe("safeTimezone", () => {
   });
 
   it("returns UTC for an invalid timezone string", () => {
-    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const spy = vi.spyOn(logger, "warn").mockImplementation(() => {});
     try {
       expect(safeTimezone("Not/AReal_Zone")).toBe("UTC");
-      expect(spy).toHaveBeenCalledWith('Invalid timezone "Not/AReal_Zone", falling back to UTC');
+      expect(spy).toHaveBeenCalledWith(
+        { timezone: "Not/AReal_Zone" },
+        "Invalid timezone, falling back to UTC",
+      );
     } finally {
       spy.mockRestore();
     }

@@ -38,6 +38,7 @@ or other strong-copyleft licenses are present.
 | express | MIT | |
 | helmet | MIT | |
 | knex | MIT | |
+| pino | MIT | Structured logging |
 | uuid | MIT | |
 
 ### packages/client
@@ -73,6 +74,7 @@ All dev dependencies are MIT or Apache-2.0, with one exception:
 | @playwright/test | Apache-2.0 | |
 | typescript | Apache-2.0 | |
 | eslint, prettier, vitest, vite, tailwindcss, jsdom, etc. | MIT | |
+| pino-pretty | MIT | Dev-only (structured log formatting) |
 | @testing-library/\*, @types/\*, @vitejs/\* | MIT | |
 
 ---

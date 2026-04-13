@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import request from "supertest";
 import express from "express";
+import { logger } from "../logger";
 
 /**
  * Creates an Express app with the exact same error handler as app.ts,
@@ -35,7 +36,7 @@ function createErrorTestApp() {
       res: express.Response,
       _next: express.NextFunction,
     ) => {
-      console.error(err);
+      logger.error({ err, status: err.status ?? err.statusCode ?? 500 }, "Unhandled request error");
       const status = err.status ?? err.statusCode ?? 500;
       const code =
         status >= 500
@@ -55,7 +56,7 @@ function createErrorTestApp() {
 
 describe("Global error handler", () => {
   it("returns 500 with INTERNAL_ERROR envelope for unhandled errors", async () => {
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
 
     const res = await request(createErrorTestApp()).get("/api/test-error");
 
@@ -64,11 +65,11 @@ describe("Global error handler", () => {
       error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." },
     });
 
-    consoleSpy.mockRestore();
+    logSpy.mockRestore();
   });
 
   it("returns 400 with VALIDATION_ERROR for bad request errors", async () => {
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
 
     const res = await request(createErrorTestApp()).get("/api/test-error-status/400");
 
@@ -77,37 +78,40 @@ describe("Global error handler", () => {
       error: { code: "VALIDATION_ERROR", message: "Error 400" },
     });
 
-    consoleSpy.mockRestore();
+    logSpy.mockRestore();
   });
 
   it("returns 404 with NOT_FOUND error code", async () => {
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
 
     const res = await request(createErrorTestApp()).get("/api/test-error-status/404");
 
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe("NOT_FOUND");
 
-    consoleSpy.mockRestore();
+    logSpy.mockRestore();
   });
 
   it("returns 409 with CONFLICT error code", async () => {
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
 
     const res = await request(createErrorTestApp()).get("/api/test-error-status/409");
 
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("CONFLICT");
 
-    consoleSpy.mockRestore();
+    logSpy.mockRestore();
   });
 
-  it("logs the error to console", async () => {
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("logs the error via structured logger", async () => {
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
 
     await request(createErrorTestApp()).get("/api/test-error");
 
-    expect(consoleSpy).toHaveBeenCalledWith(expect.any(Error));
-    consoleSpy.mockRestore();
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 500 }),
+      "Unhandled request error",
+    );
+    logSpy.mockRestore();
   });
 });
