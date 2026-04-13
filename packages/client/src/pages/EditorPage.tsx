@@ -114,7 +114,7 @@ export function EditorPage() {
         })
         .catch((err) => {
           if (cancelled) return;
-          console.error(err);
+          console.warn("Failed to load chapter statuses:", err);
           if (attempts < 2) {
             attempts++;
             timerId = setTimeout(fetchStatuses, 2000 * attempts);

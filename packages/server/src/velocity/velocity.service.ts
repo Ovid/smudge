@@ -72,13 +72,12 @@ function computeRollingAverage(
   today: string,
 ): number | null {
   if (!baseline) return null;
-  const msPerDay = MS_PER_DAY;
   const actualDays = Math.max(
     1,
     Math.round(
       (new Date(today + "T00:00:00Z").getTime() -
         new Date(baseline.date + "T00:00:00Z").getTime()) /
-        msPerDay,
+        MS_PER_DAY,
     ),
   );
   const diff = currentTotal - baseline.total_word_count;
@@ -118,13 +117,12 @@ export async function getVelocityBySlug(slug: string): Promise<VelocityResponse 
 
   let daysUntilDeadline: number | null = null;
   if (targetDeadline) {
-    const msPerDay = MS_PER_DAY;
     daysUntilDeadline = Math.max(
       0,
       Math.round(
         (new Date(targetDeadline + "T00:00:00Z").getTime() -
           new Date(today + "T00:00:00Z").getTime()) /
-          msPerDay,
+          MS_PER_DAY,
       ),
     );
   }

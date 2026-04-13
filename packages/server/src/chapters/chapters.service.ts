@@ -26,8 +26,6 @@ export class ChapterPurgedError extends Error {
   }
 }
 
-export { isCorruptChapter, stripCorruptFlag };
-
 // --- Service functions ---
 
 export async function getChapter(id: string): Promise<ChapterWithLabel | null | "corrupt"> {

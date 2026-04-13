@@ -6,7 +6,7 @@ function resolveLogLevel(): string {
   const raw = process.env.LOG_LEVEL;
   if (!raw) return "info";
   if ((VALID_LEVELS as readonly string[]).includes(raw)) return raw;
-  // eslint-disable-next-line no-console -- logger not yet available
+   
   console.warn(`Invalid LOG_LEVEL "${raw}", defaulting to "info"`);
   return "info";
 }

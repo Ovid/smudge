@@ -14,7 +14,7 @@ export function ViewModeNav({ viewMode, onSwitchToView, onDashboardRefresh }: Vi
       aria-label={STRINGS.a11y.viewModesNav}
     >
       <button
-        onClick={() => void onSwitchToView("editor").catch(() => {})}
+        onClick={() => void onSwitchToView("editor").catch((err) => console.warn("View switch flush failed:", err))}
         aria-current={viewMode === "editor" ? "page" : undefined}
         className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
           viewMode === "editor"
@@ -25,7 +25,7 @@ export function ViewModeNav({ viewMode, onSwitchToView, onDashboardRefresh }: Vi
         {STRINGS.nav.editor}
       </button>
       <button
-        onClick={() => void onSwitchToView("preview").catch(() => {})}
+        onClick={() => void onSwitchToView("preview").catch((err) => console.warn("View switch flush failed:", err))}
         aria-current={viewMode === "preview" ? "page" : undefined}
         className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
           viewMode === "preview"
@@ -39,7 +39,7 @@ export function ViewModeNav({ viewMode, onSwitchToView, onDashboardRefresh }: Vi
         onClick={() =>
           void onSwitchToView("dashboard")
             .then(() => onDashboardRefresh())
-            .catch(() => {})
+            .catch((err) => console.warn("View switch flush failed:", err))
         }
         aria-current={viewMode === "dashboard" ? "page" : undefined}
         className={`text-sm rounded-md px-3.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring transition-all duration-200 ${
