@@ -21,7 +21,7 @@ export function formatDateFromParts(parts: Intl.DateTimeFormatPart[], tz: string
   const month = parts.find((p) => p.type === "month")?.value;
   const day = parts.find((p) => p.type === "day")?.value;
   if (!year || !month || !day) {
-    throw new Error(`getTodayDate: missing date parts for timezone "${tz}"`);
+    throw new Error(`formatDateFromParts: missing date parts for timezone "${tz}"`);
   }
   return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 }

@@ -43,7 +43,7 @@ describe("formatDateFromParts", () => {
       { type: "day", value: "12" },
     ];
     expect(() => formatDateFromParts(parts, "UTC")).toThrow(
-      'getTodayDate: missing date parts for timezone "UTC"',
+      'formatDateFromParts: missing date parts for timezone "UTC"',
     );
   });
 
