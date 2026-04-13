@@ -45,8 +45,15 @@ function createErrorTestApp() {
             ? "NOT_FOUND"
             : status === 409
               ? "CONFLICT"
-              : "VALIDATION_ERROR";
-      const message = status >= 500 ? "An unexpected error occurred." : err.message;
+              : status === 413
+                ? "PAYLOAD_TOO_LARGE"
+                : "VALIDATION_ERROR";
+      const message =
+        status >= 500
+          ? "An unexpected error occurred."
+          : err instanceof SyntaxError
+            ? "Invalid JSON in request body."
+            : err.message;
       res.status(status).json({ error: { code, message } });
     },
   );
@@ -99,6 +106,38 @@ describe("Global error handler", () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("CONFLICT");
+
+    logSpy.mockRestore();
+  });
+
+  it("returns 413 with PAYLOAD_TOO_LARGE error code", async () => {
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
+    const res = await request(createErrorTestApp()).get("/api/test-error-status/413");
+
+    expect(res.status).toBe(413);
+    expect(res.body.error.code).toBe("PAYLOAD_TOO_LARGE");
+
+    logSpy.mockRestore();
+  });
+
+  it("sanitizes SyntaxError messages from body-parser to avoid leaking internals", async () => {
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
+    const app = createErrorTestApp();
+    // express.json() throws a SyntaxError with status 400 for malformed JSON
+    app.post("/api/test-body", (_req, res) => res.json({ ok: true }));
+
+    const res = await request(app)
+      .post("/api/test-body")
+      .set("Content-Type", "application/json")
+      .send("not valid json{{{");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    // Must NOT contain parser internals like "Unexpected token"
+    expect(res.body.error.message).not.toContain("Unexpected token");
+    expect(res.body.error.message).toBe("Invalid JSON in request body.");
 
     logSpy.mockRestore();
   });

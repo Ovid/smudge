@@ -60,8 +60,15 @@ export function createApp(): express.Express {
             ? "NOT_FOUND"
             : status === 409
               ? "CONFLICT"
-              : "VALIDATION_ERROR";
-      const message = status >= 500 ? "An unexpected error occurred." : err.message;
+              : status === 413
+                ? "PAYLOAD_TOO_LARGE"
+                : "VALIDATION_ERROR";
+      const message =
+        status >= 500
+          ? "An unexpected error occurred."
+          : err instanceof SyntaxError
+            ? "Invalid JSON in request body."
+            : err.message;
       res.status(status).json({ error: { code, message } });
     },
   );
