@@ -899,6 +899,39 @@ describe("EditorPage handleStatusChangeWithError", () => {
 
     consoleSpy.mockRestore();
   });
+
+  it("shows an error banner when chapter statuses fail to load after all retries", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapterStatuses.list).mockRejectedValue(new Error("statuses unavailable"));
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderEditorPage();
+
+      // Wait for the component to load the project
+      await waitFor(() => {
+        expect(screen.getByText(mockProject.title)).toBeInTheDocument();
+      });
+
+      // Advance past the retry delays: 2000ms + 4000ms
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4000);
+      });
+
+      // After all retries exhausted, the error banner should appear
+      await waitFor(() => {
+        expect(
+          screen.getByText("Failed to load chapter statuses — status changes unavailable"),
+        ).toBeInTheDocument();
+      });
+    } finally {
+      vi.useRealTimers();
+      warnSpy.mockRestore();
+    }
+  });
 });
 
 describe("EditorPage view mode toggles", () => {

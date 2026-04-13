@@ -118,6 +118,8 @@ export function EditorPage() {
           if (attempts < 2) {
             attempts++;
             timerId = setTimeout(fetchStatuses, 2000 * attempts);
+          } else {
+            setActionError(STRINGS.error.statusesFetchFailed);
           }
         });
     }
