@@ -126,6 +126,8 @@ export function useProjectEditor(slug: string | undefined) {
     const slug = projectSlugRef.current;
     if (!slug) return;
     ++saveSeqRef.current; // cancel any in-flight save retries for the old chapter
+    setSaveStatus("idle");
+    setSaveErrorMessage(null);
     setCacheWarning(false);
     try {
       const newChapter = await api.chapters.create(slug);

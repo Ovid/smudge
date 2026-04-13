@@ -704,6 +704,42 @@ describe("useProjectEditor", () => {
     expect(result.current.saveErrorMessage).toBeNull();
   });
 
+  it("handleCreateChapter resets saveStatus and saveErrorMessage from a previous failure", async () => {
+    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("Bad Request", 400));
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    // Trigger a save failure to set status to "error"
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+    expect(result.current.saveStatus).toBe("error");
+    expect(result.current.saveErrorMessage).not.toBeNull();
+
+    // Create a new chapter — save state should reset
+    const newChapter = {
+      id: "ch3",
+      project_id: "p1",
+      title: "Untitled",
+      content: null,
+      sort_order: 2,
+      word_count: 0,
+      status: "outline" as const,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+      deleted_at: null,
+    };
+    vi.mocked(api.chapters.create).mockResolvedValue(newChapter);
+
+    await act(async () => {
+      await result.current.handleCreateChapter();
+    });
+
+    expect(result.current.saveStatus).toBe("idle");
+    expect(result.current.saveErrorMessage).toBeNull();
+  });
+
   it("handleDeleteChapter falls through to empty state when secondary chapter fetch fails", async () => {
     vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
     vi.mocked(api.chapters.get)
