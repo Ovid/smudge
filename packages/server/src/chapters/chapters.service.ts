@@ -4,7 +4,6 @@ import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import {
   isCorruptChapter,
-  stripCorruptFlag,
   enrichChapterWithLabel,
   type ChapterWithLabel,
   type RestoredChapterResponse,
