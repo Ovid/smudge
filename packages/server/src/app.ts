@@ -1,6 +1,7 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import helmet from "helmet";
+import { logger } from "./logger";
 import { projectsRouter } from "./projects/projects.routes";
 import { chaptersRouter } from "./chapters/chapters.routes";
 import { chapterStatusesRouter } from "./chapter-statuses/chapter-statuses.routes";
@@ -43,20 +44,40 @@ export function createApp(): express.Express {
     res.json({ status: "ok" });
   });
 
-  app.use(
-    (
-      err: Error & { status?: number; statusCode?: number },
-      _req: express.Request,
-      res: express.Response,
-      _next: express.NextFunction,
-    ) => {
-      console.error(err);
-      const status = err.status ?? err.statusCode ?? 500;
-      const code = status < 500 ? "VALIDATION_ERROR" : "INTERNAL_ERROR";
-      const message = status < 500 ? err.message : "An unexpected error occurred.";
-      res.status(status).json({ error: { code, message } });
-    },
-  );
+  app.use(globalErrorHandler);
 
   return app;
+}
+
+export function globalErrorHandler(
+  err: Error & { status?: number; statusCode?: number },
+  _req: express.Request,
+  res: express.Response,
+  _next: express.NextFunction,
+): void {
+  logger.error({ err, status: err.status ?? err.statusCode ?? 500 }, "Unhandled request error");
+  const status = err.status ?? err.statusCode ?? 500;
+  const code =
+    status >= 500
+      ? "INTERNAL_ERROR"
+      : status === 404
+        ? "NOT_FOUND"
+        : status === 409
+          ? "CONFLICT"
+          : status === 413
+            ? "PAYLOAD_TOO_LARGE"
+            : "VALIDATION_ERROR";
+  const message =
+    status >= 500
+      ? "An unexpected error occurred."
+      : status === 400 && err instanceof SyntaxError
+        ? "Invalid JSON in request body."
+        : status === 404
+          ? "Not found."
+          : status === 409
+            ? "Conflict."
+            : status === 413
+              ? "Request body too large."
+              : "Bad request.";
+  res.status(status).json({ error: { code, message } });
 }

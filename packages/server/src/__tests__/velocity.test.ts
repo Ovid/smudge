@@ -4,6 +4,7 @@ import { setupTestDb } from "./test-helpers";
 import { v4 as uuid } from "uuid";
 import { safeTimezone } from "../timezone";
 import { formatDateFromParts } from "../velocity/velocity.service";
+import { logger } from "../logger";
 
 describe("safeTimezone", () => {
   it("returns the timezone unchanged when valid", () => {
@@ -11,10 +12,13 @@ describe("safeTimezone", () => {
   });
 
   it("returns UTC for an invalid timezone string", () => {
-    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const spy = vi.spyOn(logger, "warn").mockImplementation(() => {});
     try {
       expect(safeTimezone("Not/AReal_Zone")).toBe("UTC");
-      expect(spy).toHaveBeenCalledWith('Invalid timezone "Not/AReal_Zone", falling back to UTC');
+      expect(spy).toHaveBeenCalledWith(
+        { timezone: "Not/AReal_Zone" },
+        "Invalid timezone, falling back to UTC",
+      );
     } finally {
       spy.mockRestore();
     }
@@ -39,7 +43,7 @@ describe("formatDateFromParts", () => {
       { type: "day", value: "12" },
     ];
     expect(() => formatDateFromParts(parts, "UTC")).toThrow(
-      'getTodayDate: missing date parts for timezone "UTC"',
+      'formatDateFromParts: missing date parts for timezone "UTC"',
     );
   });
 
@@ -402,5 +406,58 @@ describe("GET /api/projects/:slug/velocity", () => {
   it("returns 404 for non-existent project", async () => {
     const res = await request(t.app).get("/api/projects/no-such-project/velocity");
     expect(res.status).toBe(404);
+  });
+});
+
+describe("updateDailySnapshot", () => {
+  it("upserts a daily_snapshots row with the current word count total", async () => {
+    const { updateDailySnapshot } = await import("../velocity/velocity.service");
+
+    const { projectId, chapterId } = await createProjectWithChapter();
+    await setChapterWordCount(chapterId, 750);
+
+    await updateDailySnapshot(projectId);
+
+    const rows = await t.db("daily_snapshots").where({ project_id: projectId });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].total_word_count).toBe(750);
+    expect(rows[0].date).toBe(todayDate());
+  });
+
+  it("updates existing snapshot on second call (upsert)", async () => {
+    const { updateDailySnapshot } = await import("../velocity/velocity.service");
+
+    const { projectId, chapterId } = await createProjectWithChapter();
+    await setChapterWordCount(chapterId, 500);
+    await updateDailySnapshot(projectId);
+
+    await setChapterWordCount(chapterId, 800);
+    await updateDailySnapshot(projectId);
+
+    const rows = await t.db("daily_snapshots").where({ project_id: projectId });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].total_word_count).toBe(800);
+  });
+
+  it("executes word count read and snapshot write in the same transaction", async () => {
+    const { updateDailySnapshot } = await import("../velocity/velocity.service");
+    const VelocityRepo = await import("../velocity/velocity.repository");
+
+    const { projectId, chapterId } = await createProjectWithChapter();
+    await setChapterWordCount(chapterId, 100);
+
+    // Spy on upsertDailySnapshot to verify it receives the correct word count
+    const spy = vi.spyOn(VelocityRepo, "upsertDailySnapshot");
+
+    await updateDailySnapshot(projectId);
+
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy).toHaveBeenCalledWith(
+      expect.anything(), // trx
+      projectId,
+      todayDate(),
+      100,
+    );
+    spy.mockRestore();
   });
 });

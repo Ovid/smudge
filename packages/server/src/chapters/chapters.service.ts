@@ -1,18 +1,14 @@
 import { UpdateChapterSchema, countWords, generateSlug } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
+import { getVelocityService } from "../velocity/velocity.injectable";
+import { logger } from "../logger";
 import {
-  getVelocityService,
-  setVelocityService,
-  resetVelocityService,
-} from "../velocity/velocity.injectable";
-import type {
-  ChapterRow,
-  ChapterWithLabel,
-  RestoredChapterResponse,
-  UpdateChapterData,
+  isCorruptChapter,
+  stripCorruptFlag,
+  type ChapterWithLabel,
+  type RestoredChapterResponse,
+  type UpdateChapterData,
 } from "./chapters.types";
-
-export { setVelocityService, resetVelocityService };
 
 // --- Transaction control-flow errors ---
 
@@ -28,17 +24,6 @@ export class ChapterPurgedError extends Error {
     super("This chapter has been permanently deleted");
     this.name = "ChapterPurgedError";
   }
-}
-
-// --- Helpers ---
-
-export function isCorruptChapter(chapter: { content_corrupt?: boolean }): boolean {
-  return chapter.content_corrupt === true;
-}
-
-export function stripCorruptFlag(chapter: ChapterRow): Omit<ChapterRow, "content_corrupt"> {
-  const { content_corrupt: _, ...rest } = chapter;
-  return rest;
 }
 
 // --- Service functions ---
@@ -110,10 +95,9 @@ export async function updateChapter(
       const svc = getVelocityService();
       await svc.recordSave(chapter.project_id);
     } catch (err: unknown) {
-      console.error(
-        "Velocity recordSave failed (best-effort):",
-        { project_id: chapter.project_id, chapter_id: id },
-        err,
+      logger.error(
+        { err, project_id: chapter.project_id, chapter_id: id },
+        "Velocity recordSave failed (best-effort)",
       );
     }
   }
@@ -150,10 +134,9 @@ export async function deleteChapter(id: string): Promise<boolean> {
   try {
     await getVelocityService().updateDailySnapshot(chapter.project_id);
   } catch (err: unknown) {
-    console.error(
-      "Velocity updateDailySnapshot failed (best-effort):",
-      { project_id: chapter.project_id, chapter_id: id },
-      err,
+    logger.error(
+      { err, project_id: chapter.project_id, chapter_id: id },
+      "Velocity updateDailySnapshot failed (best-effort)",
     );
   }
   return true;
@@ -234,10 +217,9 @@ export async function restoreChapter(
   try {
     await getVelocityService().updateDailySnapshot(chapter.project_id);
   } catch (err: unknown) {
-    console.error(
-      "Velocity updateDailySnapshot failed (best-effort):",
-      { project_id: chapter.project_id, chapter_id: id },
-      err,
+    logger.error(
+      { err, project_id: chapter.project_id, chapter_id: id },
+      "Velocity updateDailySnapshot failed (best-effort)",
     );
   }
 

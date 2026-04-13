@@ -46,7 +46,7 @@ export function DashboardView({
       })
       .catch((err) => {
         if (!cancelled) {
-          console.error(err);
+          console.warn("Failed to load dashboard:", err);
           setError(STRINGS.error.loadDashboardFailed);
         }
       });
@@ -66,7 +66,7 @@ export function DashboardView({
       })
       .catch((err) => {
         if (!cancelled) {
-          console.error(err);
+          console.warn("Failed to load velocity:", err);
           setVelocityWithSlug({ slug, data: null, error: true });
         }
       });

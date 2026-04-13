@@ -63,6 +63,17 @@ export interface UpdateChapterData {
   updated_at: string;
 }
 
+// --- Helpers ---
+
+export function isCorruptChapter(chapter: { content_corrupt?: boolean }): boolean {
+  return chapter.content_corrupt === true;
+}
+
+export function stripCorruptFlag(chapter: ChapterRow): Omit<ChapterRow, "content_corrupt"> {
+  const { content_corrupt: _, ...rest } = chapter;
+  return rest;
+}
+
 export interface CreateChapterRow {
   id: string;
   project_id: string;

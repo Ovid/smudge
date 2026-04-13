@@ -1,17 +1,14 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { v4 as uuid } from "uuid";
 import { setupTestDb } from "./test-helpers";
+import { setVelocityService, resetVelocityService } from "../velocity/velocity.injectable";
+import { logger } from "../logger";
 import {
-  setVelocityService,
-  resetVelocityService,
   updateChapter,
   deleteChapter,
   restoreChapter,
   getChapter,
-  isCorruptChapter,
-  stripCorruptFlag,
 } from "../chapters/chapters.service";
-import type { ChapterRow } from "../chapters/chapters.types";
 
 const t = setupTestDb();
 
@@ -51,41 +48,10 @@ async function createProjectAndChapter() {
 }
 
 describe("chapters.service", () => {
-  describe("isCorruptChapter()", () => {
-    it("returns true when content_corrupt is true", () => {
-      expect(isCorruptChapter({ content_corrupt: true })).toBe(true);
-    });
-
-    it("returns false when content_corrupt is absent", () => {
-      expect(isCorruptChapter({})).toBe(false);
-    });
-
-    it("returns false when content_corrupt is false", () => {
-      expect(isCorruptChapter({ content_corrupt: false })).toBe(false);
-    });
-  });
-
-  describe("stripCorruptFlag()", () => {
-    it("removes content_corrupt from the object", () => {
-      const result = stripCorruptFlag({
-        id: "abc",
-        content_corrupt: true,
-        title: "hi",
-      } as ChapterRow);
-      expect(result).toEqual({ id: "abc", title: "hi" });
-      expect("content_corrupt" in result).toBe(false);
-    });
-
-    it("returns the same data when no content_corrupt key exists", () => {
-      const result = stripCorruptFlag({ id: "abc", title: "hi" } as ChapterRow);
-      expect(result).toEqual({ id: "abc", title: "hi" });
-    });
-  });
-
   describe("updateChapter()", () => {
     it("succeeds even when velocity recordSave throws", async () => {
       const { chapterId } = await createProjectAndChapter();
-      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const spy = vi.spyOn(logger, "error").mockImplementation(() => {});
 
       try {
         setVelocityService({
@@ -105,9 +71,11 @@ describe("chapters.service", () => {
         expect(result).not.toBeNull();
         expect(result).toHaveProperty("chapter");
         expect(spy).toHaveBeenCalledWith(
-          expect.stringContaining("Velocity recordSave failed (best-effort)"),
-          expect.objectContaining({ project_id: expect.any(String) }),
-          expect.any(Error),
+          expect.objectContaining({
+            project_id: expect.any(String),
+            chapter_id: chapterId,
+          }),
+          "Velocity recordSave failed (best-effort)",
         );
       } finally {
         spy.mockRestore();
@@ -130,7 +98,7 @@ describe("chapters.service", () => {
   describe("deleteChapter()", () => {
     it("succeeds even when velocity updateDailySnapshot throws", async () => {
       const { chapterId } = await createProjectAndChapter();
-      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const spy = vi.spyOn(logger, "error").mockImplementation(() => {});
 
       try {
         setVelocityService({
@@ -145,9 +113,11 @@ describe("chapters.service", () => {
         const result = await deleteChapter(chapterId);
         expect(result).toBe(true);
         expect(spy).toHaveBeenCalledWith(
-          expect.stringContaining("Velocity updateDailySnapshot failed (best-effort)"),
-          expect.objectContaining({ project_id: expect.any(String) }),
-          expect.any(Error),
+          expect.objectContaining({
+            project_id: expect.any(String),
+            chapter_id: chapterId,
+          }),
+          "Velocity updateDailySnapshot failed (best-effort)",
         );
       } finally {
         spy.mockRestore();
@@ -163,7 +133,7 @@ describe("chapters.service", () => {
   describe("restoreChapter()", () => {
     it("succeeds even when velocity updateDailySnapshot throws", async () => {
       const { chapterId } = await createProjectAndChapter();
-      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const spy = vi.spyOn(logger, "error").mockImplementation(() => {});
 
       try {
         // Soft-delete the chapter so we can restore it
@@ -186,9 +156,11 @@ describe("chapters.service", () => {
         expect(result).not.toBe("chapter_purged");
         expect(result).not.toBe("conflict");
         expect(spy).toHaveBeenCalledWith(
-          expect.stringContaining("Velocity updateDailySnapshot failed (best-effort)"),
-          expect.objectContaining({ project_id: expect.any(String) }),
-          expect.any(Error),
+          expect.objectContaining({
+            project_id: expect.any(String),
+            chapter_id: chapterId,
+          }),
+          "Velocity updateDailySnapshot failed (best-effort)",
         );
       } finally {
         spy.mockRestore();
@@ -227,14 +199,14 @@ describe("chapters.service", () => {
       // Spy on transaction to intercept the txStore's restoreChapter
       const origTransaction = store.transaction.bind(store);
       vi.spyOn(store, "transaction").mockImplementation(async (fn) => {
-        return origTransaction(async (txStore, trx) => {
+        return origTransaction(async (txStore) => {
           const origRestore = txStore.restoreChapter.bind(txStore);
           vi.spyOn(txStore, "restoreChapter").mockImplementation(async () => {
             // Simulate: chapter was purged between lookup and restore
             return 0;
           });
           try {
-            return await fn(txStore, trx);
+            return await fn(txStore);
           } finally {
             txStore.restoreChapter = origRestore;
           }

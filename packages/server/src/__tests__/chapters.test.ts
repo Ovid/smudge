@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import request from "supertest";
 import { UNTITLED_CHAPTER } from "@smudge/shared";
 import { setupTestDb } from "./test-helpers";
+import { logger } from "../logger";
 
 const t = setupTestDb();
 
@@ -73,7 +74,7 @@ describe("GET /api/chapters/:id", () => {
   });
 
   it("returns 500 CORRUPT_CONTENT when chapter has corrupt JSON in DB", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
     const { chapterId } = await createProjectWithChapter(t.app);
 
     // Directly corrupt the content in the DB (bypassing the API validation)
@@ -239,7 +240,7 @@ describe("PATCH /api/chapters/:id", () => {
   });
 
   it("succeeds for title-only update even when chapter has corrupt content", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
     const { chapterId } = await createProjectWithChapter(t.app);
 
     // Directly corrupt the content in the DB
@@ -400,7 +401,7 @@ describe("POST /api/chapters/:id/restore", () => {
   });
 
   it("succeeds when restoring a chapter with corrupt JSON content", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
     const { chapterId } = await createProjectWithChapter(t.app);
 
     // Soft-delete the chapter

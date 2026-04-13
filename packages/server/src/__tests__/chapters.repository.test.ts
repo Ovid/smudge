@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { v4 as uuid } from "uuid";
 import { setupTestDb } from "./test-helpers";
 import * as ChapterRepo from "../chapters/chapters.repository";
+import { logger } from "../logger";
 
 const t = setupTestDb();
 
@@ -94,7 +95,7 @@ describe("chapters repository", () => {
     });
 
     it("handles corrupt JSON gracefully", () => {
-      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const spy = vi.spyOn(logger, "error").mockImplementation(() => {});
       try {
         const row = { id: "abc", content: "not valid json {{{" };
         const result = ChapterRepo.parseChapterContent(row);

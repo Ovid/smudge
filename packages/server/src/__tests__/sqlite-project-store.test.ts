@@ -331,19 +331,6 @@ describe("SqliteProjectStore", () => {
       expect(ids).toContain(ch.id);
     });
 
-    it("listChapterIdTitleStatusByProject delegates correctly", async () => {
-      const store = createStore();
-      const proj = makeProject();
-      await store.insertProject(proj);
-      const ch = makeChapter(proj.id);
-      await store.insertChapter(ch);
-
-      const items = await store.listChapterIdTitleStatusByProject(proj.id);
-      expect(items).toHaveLength(1);
-      expect(items[0]!.id).toBe(ch.id);
-      expect(items[0]!.title).toBe(ch.title);
-    });
-
     it("softDeleteChaptersByProject delegates correctly", async () => {
       const store = createStore();
       const proj = makeProject();
@@ -423,6 +410,41 @@ describe("SqliteProjectStore", () => {
     });
   });
 
+  // --- Velocity delegation ---
+
+  describe("velocity delegation", () => {
+    it("upsertDailySnapshot inserts a new row", async () => {
+      const store = createStore();
+      const proj = makeProject();
+      await store.insertProject(proj);
+      await store.insertChapter(makeChapter(proj.id, { word_count: 100 }));
+
+      await store.upsertDailySnapshot(proj.id, "2026-01-15", 100);
+
+      const row = await ctx
+        .db("daily_snapshots")
+        .where({ project_id: proj.id, date: "2026-01-15" })
+        .first();
+      expect(row).toBeDefined();
+      expect(row.total_word_count).toBe(100);
+    });
+
+    it("upsertDailySnapshot updates existing row on same date", async () => {
+      const store = createStore();
+      const proj = makeProject();
+      await store.insertProject(proj);
+
+      await store.upsertDailySnapshot(proj.id, "2026-01-15", 100);
+      await store.upsertDailySnapshot(proj.id, "2026-01-15", 250);
+
+      const rows = await ctx
+        .db("daily_snapshots")
+        .where({ project_id: proj.id, date: "2026-01-15" });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].total_word_count).toBe(250);
+    });
+  });
+
   // --- Transaction support ---
 
   describe("transaction support", () => {
@@ -454,14 +476,16 @@ describe("SqliteProjectStore", () => {
       expect(found).toBeNull();
     });
 
-    it("provides raw trx as second argument", async () => {
+    it("provides a transaction-scoped store", async () => {
       const store = createStore();
+      const data = makeProject();
 
-      await store.transaction(async (_txStore, trx) => {
-        expect(trx).toBeDefined();
-        // Can use trx directly for raw queries
-        const result = await trx.raw("SELECT 1 as val");
-        expect(result[0].val).toBe(1);
+      await store.transaction(async (txStore) => {
+        await txStore.insertProject(data);
+        // txStore sees the insert within the transaction
+        const found = await txStore.findProjectById(data.id);
+        expect(found).not.toBeNull();
+        expect(found!.id).toBe(data.id);
       });
     });
 

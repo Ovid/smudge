@@ -1,27 +1,29 @@
 import type { VelocityResponse } from "@smudge/shared";
-// This module uses both getDb() (for velocity-specific repos: VelocityRepo,
-// SettingsRepo) and getProjectStore() (for manuscript data: projects, chapters).
-// The split is intentional: velocity/settings repos are app-level concerns
-// outside the ProjectStore boundary. Both resolve to the same underlying
-// Knex instance in production and tests.
+// This module uses getDb() for velocity-specific read queries (VelocityRepo,
+// SettingsRepo) and getProjectStore() for manuscript data and transactional
+// writes. Both resolve to the same underlying Knex instance in production
+// and tests.
 import { getDb } from "../db/connection";
 import * as VelocityRepo from "./velocity.repository";
 import * as SettingsRepo from "../settings/settings.repository";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { safeTimezone } from "../timezone";
 
-// --- Timezone helper ---
+const MS_PER_DAY = 86_400_000;
 
-export { safeTimezone };
+/** en-US locale gives numeric month/day/year parts via formatToParts */
+const DATE_PARTS_LOCALE = "en-US";
+
+// --- Timezone helper ---
 
 export function formatDateFromParts(parts: Intl.DateTimeFormatPart[], tz: string): string {
   const year = parts.find((p) => p.type === "year")?.value;
   const month = parts.find((p) => p.type === "month")?.value;
   const day = parts.find((p) => p.type === "day")?.value;
   if (!year || !month || !day) {
-    throw new Error(`getTodayDate: missing date parts for timezone "${tz}"`);
+    throw new Error(`formatDateFromParts: missing date parts for timezone "${tz}"`);
   }
-  return `${year}-${month}-${day}`;
+  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 }
 
 export async function getTodayDate(): Promise<string> {
@@ -29,7 +31,7 @@ export async function getTodayDate(): Promise<string> {
   const row = await SettingsRepo.findByKey(db, "timezone");
   const tz = safeTimezone(row?.value || "UTC");
   const now = new Date();
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const parts = new Intl.DateTimeFormat(DATE_PARTS_LOCALE, {
     timeZone: tz,
     year: "numeric",
     month: "2-digit",
@@ -40,18 +42,32 @@ export async function getTodayDate(): Promise<string> {
 
 // --- Side-effect operations (called by chapters service) ---
 
+/**
+ * Snapshot today's word count total for velocity tracking.
+ *
+ * Opens its own transaction internally — must NOT be called from within
+ * a store.transaction() callback (SqliteProjectStore forbids nesting).
+ *
+ * getTodayDate() is called before the transaction because it reads the
+ * settings table via getDb() (root connection). Reading via the root
+ * connection while a write transaction is active on it would deadlock
+ * on better-sqlite3.
+ */
 export async function updateDailySnapshot(projectId: string): Promise<void> {
   const store = getProjectStore();
   const today = await getTodayDate();
-  await store.transaction(async (txStore, trx) => {
+  await store.transaction(async (txStore) => {
     const totalWordCount = await txStore.sumChapterWordCountByProject(projectId);
-    await VelocityRepo.upsertDailySnapshot(trx, projectId, today, totalWordCount);
+    await txStore.upsertDailySnapshot(projectId, today, totalWordCount);
   });
 }
 
-// Semantic wrapper: called on chapter content save (vs updateDailySnapshot
-// which is called on delete/restore). Currently identical, but kept separate
-// so save-specific logic can be added without touching the delete/restore path.
+/**
+ * Record a content save for velocity tracking.
+ *
+ * Opens its own transaction internally — must NOT be called from within
+ * a store.transaction() callback (SqliteProjectStore forbids nesting).
+ */
 export async function recordSave(projectId: string): Promise<void> {
   await updateDailySnapshot(projectId);
 }
@@ -70,13 +86,12 @@ function computeRollingAverage(
   today: string,
 ): number | null {
   if (!baseline) return null;
-  const msPerDay = 86_400_000;
   const actualDays = Math.max(
     1,
     Math.round(
       (new Date(today + "T00:00:00Z").getTime() -
         new Date(baseline.date + "T00:00:00Z").getTime()) /
-        msPerDay,
+        MS_PER_DAY,
     ),
   );
   const diff = currentTotal - baseline.total_word_count;
@@ -116,13 +131,12 @@ export async function getVelocityBySlug(slug: string): Promise<VelocityResponse 
 
   let daysUntilDeadline: number | null = null;
   if (targetDeadline) {
-    const msPerDay = 86_400_000;
     daysUntilDeadline = Math.max(
       0,
       Math.round(
         (new Date(targetDeadline + "T00:00:00Z").getTime() -
           new Date(today + "T00:00:00Z").getTime()) /
-          msPerDay,
+          MS_PER_DAY,
       ),
     );
   }

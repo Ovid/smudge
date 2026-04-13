@@ -1,75 +1,110 @@
 import { describe, it, expect, vi } from "vitest";
 import request from "supertest";
 import express from "express";
+import { logger } from "../logger";
+import { globalErrorHandler } from "../app";
+
+function createErrorTestApp() {
+  const app = express();
+  app.use(express.json());
+
+  // Route that triggers an error with a configurable status
+  app.get("/api/test-error-status/:status", (req, _res, next) => {
+    const status = parseInt(req.params.status, 10);
+    const err: Error & { status?: number } = new Error(`Error ${status}`);
+    err.status = status;
+    next(err);
+  });
+
+  // Route that triggers a plain error (no status)
+  app.get("/api/test-error", (_req, _res, next) => {
+    next(new Error("Something went wrong"));
+  });
+
+  // Route that triggers a SyntaxError with a configurable status
+  app.get("/api/test-syntax-error/:status", (req, _res, next) => {
+    const status = parseInt(req.params.status, 10);
+    const err: SyntaxError & { status?: number } = new SyntaxError("fake");
+    err.status = status;
+    next(err);
+  });
+
+  app.use(globalErrorHandler);
+
+  return app;
+}
 
 describe("Global error handler", () => {
-  function createAppWithErrorRoute() {
-    const app = express();
-    app.use(express.json());
-
-    // Route that triggers an error via next()
-    app.get("/api/test-error", (_req, _res, next) => {
-      next(new Error("Something went wrong"));
-    });
-
-    // Error handler (same as in app.ts)
-    app.use(
-      (
-        err: Error & { status?: number; statusCode?: number },
-        _req: express.Request,
-        res: express.Response,
-
-        _next: express.NextFunction,
-      ) => {
-        console.error(err);
-        const status = err.status ?? err.statusCode ?? 500;
-        const code = status < 500 ? "VALIDATION_ERROR" : "INTERNAL_ERROR";
-        const message = status < 500 ? err.message : "An unexpected error occurred.";
-        res.status(status).json({ error: { code, message } });
-      },
-    );
-
-    return app;
-  }
-
   it("returns 500 with INTERNAL_ERROR envelope for unhandled errors", async () => {
-    const app = createAppWithErrorRoute();
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
 
-    const res = await request(app).get("/api/test-error");
+    const res = await request(createErrorTestApp()).get("/api/test-error");
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({
       error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." },
     });
 
-    consoleSpy.mockRestore();
+    logSpy.mockRestore();
   });
 
-  it("returns error status from err.status when present", async () => {
-    const app = express();
-    app.use(express.json());
-    app.post("/api/test-body", (_req, res) => {
-      res.json({ ok: true });
-    });
-    app.use(
-      (
-        err: Error & { status?: number },
-        _req: express.Request,
-        res: express.Response,
+  it("returns 400 with VALIDATION_ERROR and generic message (does not leak err.message)", async () => {
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
 
-        _next: express.NextFunction,
-      ) => {
-        const status = err.status ?? 500;
-        const code = status === 400 ? "VALIDATION_ERROR" : "INTERNAL_ERROR";
-        const message = status === 400 ? err.message : "An unexpected error occurred.";
-        res.status(status).json({ error: { code, message } });
-      },
-    );
+    const res = await request(createErrorTestApp()).get("/api/test-error-status/400");
 
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    // Must not echo the raw err.message ("Error 400") to the client
+    expect(res.body.error.message).not.toBe("Error 400");
+    expect(res.body.error.message).toBe("Bad request.");
 
-    // Send malformed JSON — express.json() sets err.status = 400
+    logSpy.mockRestore();
+  });
+
+  it("returns 404 with NOT_FOUND and generic message", async () => {
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
+    const res = await request(createErrorTestApp()).get("/api/test-error-status/404");
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("NOT_FOUND");
+    expect(res.body.error.message).toBe("Not found.");
+
+    logSpy.mockRestore();
+  });
+
+  it("returns 409 with CONFLICT and generic message", async () => {
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
+    const res = await request(createErrorTestApp()).get("/api/test-error-status/409");
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("CONFLICT");
+    expect(res.body.error.message).toBe("Conflict.");
+
+    logSpy.mockRestore();
+  });
+
+  it("returns 413 with PAYLOAD_TOO_LARGE and generic message", async () => {
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
+    const res = await request(createErrorTestApp()).get("/api/test-error-status/413");
+
+    expect(res.status).toBe(413);
+    expect(res.body.error.code).toBe("PAYLOAD_TOO_LARGE");
+    expect(res.body.error.message).toBe("Request body too large.");
+
+    logSpy.mockRestore();
+  });
+
+  it("sanitizes SyntaxError messages from body-parser to avoid leaking internals", async () => {
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
+    const app = createErrorTestApp();
+    // express.json() throws a SyntaxError with status 400 for malformed JSON
+    app.post("/api/test-body", (_req, res) => res.json({ ok: true }));
+
     const res = await request(app)
       .post("/api/test-body")
       .set("Content-Type", "application/json")
@@ -77,17 +112,35 @@ describe("Global error handler", () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    // Must NOT contain parser internals like "Unexpected token"
+    expect(res.body.error.message).not.toContain("Unexpected token");
+    expect(res.body.error.message).toBe("Invalid JSON in request body.");
 
-    consoleSpy.mockRestore();
+    logSpy.mockRestore();
   });
 
-  it("logs the error to console", async () => {
-    const app = createAppWithErrorRoute();
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("does not return 'Invalid JSON' for a SyntaxError with non-400 status", async () => {
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
 
-    await request(app).get("/api/test-error");
+    const res = await request(createErrorTestApp()).get("/api/test-syntax-error/404");
 
-    expect(consoleSpy).toHaveBeenCalledWith(expect.any(Error));
-    consoleSpy.mockRestore();
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("NOT_FOUND");
+    // Should say "Not found." not "Invalid JSON in request body."
+    expect(res.body.error.message).toBe("Not found.");
+
+    logSpy.mockRestore();
+  });
+
+  it("logs the error via structured logger", async () => {
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
+    await request(createErrorTestApp()).get("/api/test-error");
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 500 }),
+      "Unhandled request error",
+    );
+    logSpy.mockRestore();
   });
 });

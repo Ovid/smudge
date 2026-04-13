@@ -1,6 +1,6 @@
+import type { Knex } from "knex";
 import type { ProjectStore } from "./project-store.types";
 import { SqliteProjectStore } from "./sqlite-project-store";
-import { getDb } from "../db/connection";
 
 let store: ProjectStore | null = null;
 
@@ -23,9 +23,9 @@ export function resetProjectStore(): void {
   store = null;
 }
 
-export function initProjectStore(): void {
+export function initProjectStore(db: Knex): void {
   if (store !== null) {
     throw new Error("ProjectStore already initialized — call resetProjectStore() first");
   }
-  store = new SqliteProjectStore(getDb());
+  store = new SqliteProjectStore(db);
 }

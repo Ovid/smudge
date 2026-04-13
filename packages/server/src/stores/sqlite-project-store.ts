@@ -18,9 +18,17 @@ import type { ChapterStatusRow } from "../chapter-statuses/chapter-statuses.type
 import * as projectsRepo from "../projects/projects.repository";
 import * as chaptersRepo from "../chapters/chapters.repository";
 import * as statusesRepo from "../chapter-statuses/chapter-statuses.repository";
+import * as velocityRepo from "../velocity/velocity.repository";
 
 export class SqliteProjectStore implements ProjectStore {
-  constructor(private db: Knex.Transaction | Knex) {}
+  private readonly isTransactionScoped: boolean;
+
+  constructor(
+    private db: Knex.Transaction | Knex,
+    isTransactionScoped = false,
+  ) {
+    this.isTransactionScoped = isTransactionScoped;
+  }
 
   // --- Projects ---
 
@@ -106,12 +114,6 @@ export class SqliteProjectStore implements ProjectStore {
     return chaptersRepo.listIdsByProject(this.db, projectId);
   }
 
-  listChapterIdTitleStatusByProject(
-    projectId: string,
-  ): Promise<Array<{ id: string; title: string; status: string }>> {
-    return chaptersRepo.listIdTitleStatusByProject(this.db, projectId);
-  }
-
   sumChapterWordCountByProject(projectId: string): Promise<number> {
     return chaptersRepo.sumWordCountByProject(this.db, projectId);
   }
@@ -158,17 +160,21 @@ export class SqliteProjectStore implements ProjectStore {
     return statusesRepo.getStatusLabelMap(this.db);
   }
 
+  // --- Velocity ---
+
+  upsertDailySnapshot(projectId: string, date: string, totalWordCount: number): Promise<void> {
+    return velocityRepo.upsertDailySnapshot(this.db, projectId, date, totalWordCount);
+  }
+
   // --- Transactions ---
 
-  async transaction<T>(
-    fn: (txStore: ProjectStore, trx: Knex.Transaction) => Promise<T>,
-  ): Promise<T> {
-    if (this.db.isTransaction) {
+  async transaction<T>(fn: (txStore: ProjectStore) => Promise<T>): Promise<T> {
+    if (this.isTransactionScoped) {
       throw new Error("Nested transactions are not supported");
     }
     return (this.db as Knex).transaction(async (trx) => {
-      const txStore = new SqliteProjectStore(trx);
-      return fn(txStore, trx);
+      const txStore = new SqliteProjectStore(trx, true);
+      return fn(txStore);
     });
   }
 }

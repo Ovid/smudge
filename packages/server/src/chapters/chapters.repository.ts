@@ -7,6 +7,7 @@ import type {
   CreateChapterRow,
   UpdateChapterData,
 } from "./chapters.types";
+import { logger } from "../logger";
 
 // --- Content parsing ---
 
@@ -15,8 +16,12 @@ function parseContent(row: Record<string, unknown>): ChapterRow {
     try {
       return { ...row, content: JSON.parse(row.content) } as ChapterRow;
     } catch (err) {
-      console.error(
-        `[parseChapterContent] corrupt JSON in chapter ${row.id ?? "unknown"} (${err instanceof Error ? err.name : "UnknownError"})`,
+      logger.error(
+        {
+          parseError: err instanceof Error ? err.name : "UnknownError",
+          chapter_id: row.id ?? "unknown",
+        },
+        "Corrupt JSON in chapter content",
       );
       return { ...row, content: null, content_corrupt: true } as ChapterRow;
     }
@@ -24,26 +29,8 @@ function parseContent(row: Record<string, unknown>): ChapterRow {
   return { ...row, content: (row.content as Record<string, unknown>) ?? null } as ChapterRow;
 }
 
-// Exported for backward compat with existing parseChapterContent tests
+// Exported for tests that need to verify content parsing behavior
 export { parseContent as parseChapterContent };
-
-// --- Backward-compat query helpers (used by existing tests) ---
-
-export async function queryChapter(
-  builder: import("knex").Knex.QueryBuilder,
-): Promise<Record<string, unknown> | null> {
-  const row = await builder.first();
-  return row ? (parseContent(row) as unknown as Record<string, unknown>) : null;
-}
-
-export async function queryChapters(
-  builder: import("knex").Knex.QueryBuilder,
-): Promise<Record<string, unknown>[]> {
-  const rows = await builder;
-  return rows.map(
-    (row: Record<string, unknown>) => parseContent(row) as unknown as Record<string, unknown>,
-  );
-}
 
 // --- Queries ---
 
@@ -127,16 +114,6 @@ export async function listIdsByProject(
     .whereNull("deleted_at")
     .select("id");
   return rows.map((r: { id: string }) => r.id);
-}
-
-export async function listIdTitleStatusByProject(
-  trx: Knex.Transaction | Knex,
-  projectId: string,
-): Promise<Array<{ id: string; title: string; status: string }>> {
-  return trx("chapters")
-    .where({ project_id: projectId })
-    .whereNull("deleted_at")
-    .select("id", "title", "status");
 }
 
 export async function sumWordCountByProject(
