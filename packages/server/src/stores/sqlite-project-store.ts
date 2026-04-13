@@ -23,7 +23,10 @@ import * as velocityRepo from "../velocity/velocity.repository";
 export class SqliteProjectStore implements ProjectStore {
   private readonly isTransactionScoped: boolean;
 
-  constructor(private db: Knex.Transaction | Knex, isTransactionScoped = false) {
+  constructor(
+    private db: Knex.Transaction | Knex,
+    isTransactionScoped = false,
+  ) {
     this.isTransactionScoped = isTransactionScoped;
   }
 

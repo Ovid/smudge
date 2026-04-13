@@ -6,7 +6,7 @@ function resolveLogLevel(): string {
   const raw = process.env.LOG_LEVEL;
   if (!raw) return "info";
   if ((VALID_LEVELS as readonly string[]).includes(raw)) return raw;
-   
+
   console.warn(`Invalid LOG_LEVEL "${raw}", defaulting to "info"`);
   return "info";
 }
