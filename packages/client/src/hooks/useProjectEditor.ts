@@ -64,7 +64,7 @@ export function useProjectEditor(slug: string | undefined) {
     const savingChapterId = current.id;
     const seq = ++saveSeqRef.current;
     const BACKOFF_MS = [2000, 4000, 8000];
-    const MAX_RETRIES = 3;
+    const MAX_RETRIES = BACKOFF_MS.length;
 
     setSaveStatus("saving");
     setSaveErrorMessage(null);
