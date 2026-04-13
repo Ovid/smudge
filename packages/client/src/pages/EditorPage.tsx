@@ -149,6 +149,9 @@ export function EditorPage() {
       await editorRef.current?.flushSave();
       setTrashOpen(false);
       setViewMode(mode);
+      if (mode === "dashboard") {
+        setDashboardRefreshKey((k) => k + 1);
+      }
     },
     [setTrashOpen],
   );
@@ -177,10 +180,6 @@ export function EditorPage() {
         });
     }
   }, [slug, setProject, setActionError]);
-
-  const handleDashboardRefresh = useCallback(() => {
-    setDashboardRefreshKey((k) => k + 1);
-  }, []);
 
   useKeyboardShortcuts({
     shortcutHelpOpen,
@@ -287,11 +286,7 @@ export function EditorPage() {
         )}
         <div className="flex items-center gap-2">
           {showActiveEditor && (
-            <ViewModeNav
-              viewMode={viewMode}
-              onSwitchToView={switchToView}
-              onDashboardRefresh={handleDashboardRefresh}
-            />
+            <ViewModeNav viewMode={viewMode} onSwitchToView={switchToView} />
           )}
           <button
             onClick={() => setProjectSettingsOpen(true)}
