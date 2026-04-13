@@ -91,14 +91,17 @@ describe("parseChapterContent integration — corrupt DB content", () => {
     errorSpy.mockRestore();
   });
 
-  it("includes the error in the structured log when JSON.parse throws", () => {
+  it("logs error name but not the full error (to avoid leaking content snippets)", () => {
     const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
     const chapter = { id: "abc", title: "Test", content: "{invalid json!!!" };
     parseChapterContent(chapter);
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ err: expect.any(SyntaxError) }),
+      expect.objectContaining({ parseError: "SyntaxError" }),
       "Corrupt JSON in chapter content",
     );
+    // Must NOT include the full err object (its message contains content snippets)
+    const loggedObj = errorSpy.mock.calls[0]![0] as Record<string, unknown>;
+    expect(loggedObj).not.toHaveProperty("err");
     errorSpy.mockRestore();
   });
 });
