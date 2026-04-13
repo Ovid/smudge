@@ -3,6 +3,10 @@ import { createKnexConfig } from "./knexfile";
 
 let db: Knex | undefined;
 
+/**
+ * @internal Used only by test helpers and init code.
+ * Services should use getProjectStore() for all data access.
+ */
 export function getDb(): Knex {
   if (!db) {
     throw new Error("Database not initialized. Call initDb() first.");
@@ -10,6 +14,10 @@ export function getDb(): Knex {
   return db;
 }
 
+/**
+ * @internal Test-only: inject a pre-configured Knex instance.
+ * Production code should use initDb() instead.
+ */
 export async function setDb(instance: Knex): Promise<void> {
   if (db && db !== instance) {
     await db.destroy();

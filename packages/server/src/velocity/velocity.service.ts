@@ -42,9 +42,8 @@ export async function getTodayDate(): Promise<string> {
  * a store.transaction() callback (SqliteProjectStore forbids nesting).
  *
  * getTodayDate() is called before the transaction because it reads the
- * settings table via getDb() (root connection). Reading via the root
- * connection while a write transaction is active on it would deadlock
- * on better-sqlite3.
+ * settings table via the root store. Reading via the root store while
+ * a write transaction is active would deadlock on better-sqlite3.
  */
 export async function updateDailySnapshot(projectId: string): Promise<void> {
   const store = getProjectStore();

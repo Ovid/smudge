@@ -1,5 +1,8 @@
 import { initDb, closeDb } from "./db/connection";
-import { initProjectStore, resetProjectStore } from "./stores/project-store.injectable";
+import {
+  initProjectStore,
+  resetProjectStore,
+} from "./stores/project-store.injectable";
 import { createApp } from "./app";
 import { purgeOldTrash } from "./db/purge";
 import { logger } from "./logger";
