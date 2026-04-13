@@ -7,7 +7,11 @@ import {
   UNTITLED_CHAPTER,
 } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
-import { stripCorruptFlag } from "../chapters/chapters.types";
+import {
+  stripCorruptFlag,
+  enrichChaptersWithLabels,
+  enrichChapterWithLabel,
+} from "../chapters/chapters.types";
 import type { ProjectRow, ProjectListRow, UpdateProjectData } from "./projects.types";
 import type {
   ChapterWithLabel,
@@ -105,17 +109,10 @@ export async function getProject(
   if (!project) return null;
 
   const chapters = await store.listChaptersByProject(project.id);
-  const statusLabelMap = await store.getStatusLabelMap();
+  const stripped = chapters.map((ch) => stripCorruptFlag(ch));
+  const chaptersWithLabels = await enrichChaptersWithLabels(store, stripped);
 
-  const chaptersWithLabels = chapters.map((ch) => {
-    const clean = stripCorruptFlag(ch);
-    return {
-      ...clean,
-      status_label: statusLabelMap[ch.status] ?? ch.status,
-    };
-  });
-
-  return { project, chapters: chaptersWithLabels };
+  return { project, chapters: chaptersWithLabels as ChapterWithLabel[] };
 }
 
 export async function updateProject(
@@ -208,12 +205,7 @@ export async function createChapter(
   const chapter = await store.findChapterById(chapterId);
   if (!chapter) return "read_after_create_failure";
 
-  const clean = stripCorruptFlag(chapter);
-  const statusLabelMap = await store.getStatusLabelMap();
-  return {
-    ...clean,
-    status_label: statusLabelMap[chapter.status] ?? chapter.status,
-  };
+  return enrichChapterWithLabel(store, chapter);
 }
 
 export async function reorderChapters(
@@ -258,14 +250,9 @@ export async function getDashboard(slug: string): Promise<DashboardResponse | nu
   if (!project) return null;
 
   const chapters = await store.listChapterMetadataByProject(project.id);
+  const chaptersWithLabels = await enrichChaptersWithLabels(store, chapters);
 
   const statusLabelMap = await store.getStatusLabelMap();
-
-  const chaptersWithLabels = chapters.map((ch) => ({
-    ...ch,
-    status_label: statusLabelMap[ch.status] ?? ch.status,
-  }));
-
   const statusSummary: Record<string, number> = {};
   for (const status of Object.keys(statusLabelMap)) {
     statusSummary[status] = 0;
