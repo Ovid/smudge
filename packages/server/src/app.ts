@@ -68,7 +68,13 @@ export function createApp(): express.Express {
           ? "An unexpected error occurred."
           : err instanceof SyntaxError
             ? "Invalid JSON in request body."
-            : err.message;
+            : status === 404
+              ? "Not found."
+              : status === 409
+                ? "Conflict."
+                : status === 413
+                  ? "Request body too large."
+                  : "Bad request.";
       res.status(status).json({ error: { code, message } });
     },
   );

@@ -53,7 +53,13 @@ function createErrorTestApp() {
           ? "An unexpected error occurred."
           : err instanceof SyntaxError
             ? "Invalid JSON in request body."
-            : err.message;
+            : status === 404
+              ? "Not found."
+              : status === 409
+                ? "Conflict."
+                : status === 413
+                  ? "Request body too large."
+                  : "Bad request.";
       res.status(status).json({ error: { code, message } });
     },
   );
@@ -75,48 +81,52 @@ describe("Global error handler", () => {
     logSpy.mockRestore();
   });
 
-  it("returns 400 with VALIDATION_ERROR for bad request errors", async () => {
+  it("returns 400 with VALIDATION_ERROR and generic message (does not leak err.message)", async () => {
     const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
 
     const res = await request(createErrorTestApp()).get("/api/test-error-status/400");
 
     expect(res.status).toBe(400);
-    expect(res.body).toEqual({
-      error: { code: "VALIDATION_ERROR", message: "Error 400" },
-    });
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    // Must not echo the raw err.message ("Error 400") to the client
+    expect(res.body.error.message).not.toBe("Error 400");
+    expect(res.body.error.message).toBe("Bad request.");
 
     logSpy.mockRestore();
   });
 
-  it("returns 404 with NOT_FOUND error code", async () => {
+  it("returns 404 with NOT_FOUND and generic message", async () => {
     const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
 
     const res = await request(createErrorTestApp()).get("/api/test-error-status/404");
 
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe("NOT_FOUND");
+    expect(res.body.error.message).toBe("Not found.");
 
     logSpy.mockRestore();
   });
 
-  it("returns 409 with CONFLICT error code", async () => {
+  it("returns 409 with CONFLICT and generic message", async () => {
     const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
 
     const res = await request(createErrorTestApp()).get("/api/test-error-status/409");
 
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("CONFLICT");
+    expect(res.body.error.message).toBe("Conflict.");
 
     logSpy.mockRestore();
   });
 
-  it("returns 413 with PAYLOAD_TOO_LARGE error code", async () => {
+  it("returns 413 with PAYLOAD_TOO_LARGE and generic message", async () => {
     const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
 
     const res = await request(createErrorTestApp()).get("/api/test-error-status/413");
 
     expect(res.status).toBe(413);
     expect(res.body.error.code).toBe("PAYLOAD_TOO_LARGE");
+    expect(res.body.error.message).toBe("Request body too large.");
 
     logSpy.mockRestore();
   });
