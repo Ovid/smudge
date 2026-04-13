@@ -5,7 +5,6 @@ import { logger } from "../logger";
 import {
   isCorruptChapter,
   stripCorruptFlag,
-  type ChapterRow,
   type ChapterWithLabel,
   type RestoredChapterResponse,
   type UpdateChapterData,

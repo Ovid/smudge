@@ -161,9 +161,7 @@ export class SqliteProjectStore implements ProjectStore {
 
   // --- Transactions ---
 
-  async transaction<T>(
-    fn: (txStore: ProjectStore) => Promise<T>,
-  ): Promise<T> {
+  async transaction<T>(fn: (txStore: ProjectStore) => Promise<T>): Promise<T> {
     if (this.db.isTransaction) {
       throw new Error("Nested transactions are not supported");
     }

@@ -21,9 +21,7 @@ export function EditorFooter({
       <div className="flex items-center gap-4">
         <span className="font-medium">{STRINGS.project.wordCount(chapterWordCount)}</span>
         <span className="text-text-secondary">
-          {STRINGS.project.wordCount(
-            project.chapters.reduce((sum, c) => sum + c.word_count, 0),
-          )}{" "}
+          {STRINGS.project.wordCount(project.chapters.reduce((sum, c) => sum + c.word_count, 0))}{" "}
           {STRINGS.nav.totalSuffix}
         </span>
       </div>
@@ -38,9 +36,7 @@ export function EditorFooter({
           <span className="text-status-success">{STRINGS.editor.saved}</span>
         )}
         {saveStatus === "error" && (
-          <span className="text-status-error">
-            {saveErrorMessage ?? STRINGS.editor.saveFailed}
-          </span>
+          <span className="text-status-error">{saveErrorMessage ?? STRINGS.editor.saveFailed}</span>
         )}
         {saveStatus === "idle" && ""}
         {cacheWarning && saveStatus !== "error" && (

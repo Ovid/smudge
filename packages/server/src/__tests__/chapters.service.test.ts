@@ -1,10 +1,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { v4 as uuid } from "uuid";
 import { setupTestDb } from "./test-helpers";
-import {
-  setVelocityService,
-  resetVelocityService,
-} from "../velocity/velocity.injectable";
+import { setVelocityService, resetVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import {
   updateChapter,
@@ -12,11 +9,7 @@ import {
   restoreChapter,
   getChapter,
 } from "../chapters/chapters.service";
-import {
-  isCorruptChapter,
-  stripCorruptFlag,
-  type ChapterRow,
-} from "../chapters/chapters.types";
+import { isCorruptChapter, stripCorruptFlag, type ChapterRow } from "../chapters/chapters.types";
 
 const t = setupTestDb();
 
