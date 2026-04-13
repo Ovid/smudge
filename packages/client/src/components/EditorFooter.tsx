@@ -1,10 +1,11 @@
 import type { ProjectWithChapters } from "@smudge/shared";
+import type { SaveStatus } from "../hooks/useProjectEditor";
 import { STRINGS } from "../strings";
 
 interface EditorFooterProps {
   chapterWordCount: number;
   project: ProjectWithChapters;
-  saveStatus: string;
+  saveStatus: SaveStatus;
   saveErrorMessage: string | null;
   cacheWarning: boolean;
 }
