@@ -2,15 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import request from "supertest";
 import express from "express";
 import { logger } from "../logger";
+import { globalErrorHandler } from "../app";
 
-/**
- * Creates an Express app with the exact same error handler as app.ts,
- * plus a test route that triggers errors with specific status codes.
- *
- * We replicate the handler here rather than importing from app.ts because
- * the handler is inline.  When the handler in app.ts is changed, update
- * this copy to match.
- */
 function createErrorTestApp() {
   const app = express();
   app.use(express.json());
@@ -28,41 +21,15 @@ function createErrorTestApp() {
     next(new Error("Something went wrong"));
   });
 
-  // Exact copy of the error handler from app.ts
-  app.use(
-    (
-      err: Error & { status?: number; statusCode?: number },
-      _req: express.Request,
-      res: express.Response,
-      _next: express.NextFunction,
-    ) => {
-      logger.error({ err, status: err.status ?? err.statusCode ?? 500 }, "Unhandled request error");
-      const status = err.status ?? err.statusCode ?? 500;
-      const code =
-        status >= 500
-          ? "INTERNAL_ERROR"
-          : status === 404
-            ? "NOT_FOUND"
-            : status === 409
-              ? "CONFLICT"
-              : status === 413
-                ? "PAYLOAD_TOO_LARGE"
-                : "VALIDATION_ERROR";
-      const message =
-        status >= 500
-          ? "An unexpected error occurred."
-          : err instanceof SyntaxError
-            ? "Invalid JSON in request body."
-            : status === 404
-              ? "Not found."
-              : status === 409
-                ? "Conflict."
-                : status === 413
-                  ? "Request body too large."
-                  : "Bad request.";
-      res.status(status).json({ error: { code, message } });
-    },
-  );
+  // Route that triggers a SyntaxError with a configurable status
+  app.get("/api/test-syntax-error/:status", (req, _res, next) => {
+    const status = parseInt(req.params.status, 10);
+    const err: SyntaxError & { status?: number } = new SyntaxError("fake");
+    err.status = status;
+    next(err);
+  });
+
+  app.use(globalErrorHandler);
 
   return app;
 }
@@ -148,6 +115,19 @@ describe("Global error handler", () => {
     // Must NOT contain parser internals like "Unexpected token"
     expect(res.body.error.message).not.toContain("Unexpected token");
     expect(res.body.error.message).toBe("Invalid JSON in request body.");
+
+    logSpy.mockRestore();
+  });
+
+  it("does not return 'Invalid JSON' for a SyntaxError with non-400 status", async () => {
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
+    const res = await request(createErrorTestApp()).get("/api/test-syntax-error/404");
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("NOT_FOUND");
+    // Should say "Not found." not "Invalid JSON in request body."
+    expect(res.body.error.message).toBe("Not found.");
 
     logSpy.mockRestore();
   });
