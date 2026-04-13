@@ -23,7 +23,7 @@ export function formatDateFromParts(parts: Intl.DateTimeFormatPart[], tz: string
   if (!year || !month || !day) {
     throw new Error(`getTodayDate: missing date parts for timezone "${tz}"`);
   }
-  return `${year}-${month}-${day}`;
+  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 }
 
 export async function getTodayDate(): Promise<string> {
@@ -42,6 +42,17 @@ export async function getTodayDate(): Promise<string> {
 
 // --- Side-effect operations (called by chapters service) ---
 
+/**
+ * Snapshot today's word count total for velocity tracking.
+ *
+ * Opens its own transaction internally — must NOT be called from within
+ * a store.transaction() callback (SqliteProjectStore forbids nesting).
+ *
+ * getTodayDate() is called before the transaction because it reads the
+ * settings table via getDb() (root connection). Reading via the root
+ * connection while a write transaction is active on it would deadlock
+ * on better-sqlite3.
+ */
 export async function updateDailySnapshot(projectId: string): Promise<void> {
   const store = getProjectStore();
   const today = await getTodayDate();
@@ -51,9 +62,12 @@ export async function updateDailySnapshot(projectId: string): Promise<void> {
   });
 }
 
-// Semantic wrapper: called on chapter content save (vs updateDailySnapshot
-// which is called on delete/restore). Currently identical, but kept separate
-// so save-specific logic can be added without touching the delete/restore path.
+/**
+ * Record a content save for velocity tracking.
+ *
+ * Opens its own transaction internally — must NOT be called from within
+ * a store.transaction() callback (SqliteProjectStore forbids nesting).
+ */
 export async function recordSave(projectId: string): Promise<void> {
   await updateDailySnapshot(projectId);
 }
