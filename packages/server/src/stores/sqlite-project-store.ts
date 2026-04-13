@@ -21,7 +21,11 @@ import * as statusesRepo from "../chapter-statuses/chapter-statuses.repository";
 import * as velocityRepo from "../velocity/velocity.repository";
 
 export class SqliteProjectStore implements ProjectStore {
-  constructor(private db: Knex.Transaction | Knex) {}
+  private readonly isTransactionScoped: boolean;
+
+  constructor(private db: Knex.Transaction | Knex, isTransactionScoped = false) {
+    this.isTransactionScoped = isTransactionScoped;
+  }
 
   // --- Projects ---
 
@@ -162,11 +166,11 @@ export class SqliteProjectStore implements ProjectStore {
   // --- Transactions ---
 
   async transaction<T>(fn: (txStore: ProjectStore) => Promise<T>): Promise<T> {
-    if (this.db.isTransaction) {
+    if (this.isTransactionScoped) {
       throw new Error("Nested transactions are not supported");
     }
     return (this.db as Knex).transaction(async (trx) => {
-      const txStore = new SqliteProjectStore(trx);
+      const txStore = new SqliteProjectStore(trx, true);
       return fn(txStore);
     });
   }
