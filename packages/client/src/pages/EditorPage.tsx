@@ -230,9 +230,8 @@ export function EditorPage() {
   const hasChapters = project.chapters.length > 0;
   const showActiveEditor = hasChapters && activeChapter;
 
-  if (!hasChapters && !activeChapter) {
-    // Empty project — waiting for first chapter, no view mode nav needed
-  } else if (!activeChapter) {
+  // Chapters exist but haven't loaded the active one yet — show loading
+  if (hasChapters && !activeChapter) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-primary">
         <p className="text-text-muted">{STRINGS.nav.loading}</p>
