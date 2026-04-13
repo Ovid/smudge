@@ -421,7 +421,8 @@ describe("SqliteProjectStore", () => {
 
       await store.upsertDailySnapshot(proj.id, "2026-01-15", 100);
 
-      const row = await ctx.db("daily_snapshots")
+      const row = await ctx
+        .db("daily_snapshots")
         .where({ project_id: proj.id, date: "2026-01-15" })
         .first();
       expect(row).toBeDefined();
@@ -436,7 +437,8 @@ describe("SqliteProjectStore", () => {
       await store.upsertDailySnapshot(proj.id, "2026-01-15", 100);
       await store.upsertDailySnapshot(proj.id, "2026-01-15", 250);
 
-      const rows = await ctx.db("daily_snapshots")
+      const rows = await ctx
+        .db("daily_snapshots")
         .where({ project_id: proj.id, date: "2026-01-15" });
       expect(rows).toHaveLength(1);
       expect(rows[0].total_word_count).toBe(250);
