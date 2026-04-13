@@ -15,10 +15,12 @@ import type {
   UpdateChapterData,
 } from "../chapters/chapters.types";
 import type { ChapterStatusRow } from "../chapter-statuses/chapter-statuses.types";
+import type { SettingRow } from "../settings/settings.types";
 import * as projectsRepo from "../projects/projects.repository";
 import * as chaptersRepo from "../chapters/chapters.repository";
 import * as statusesRepo from "../chapter-statuses/chapter-statuses.repository";
 import * as velocityRepo from "../velocity/velocity.repository";
+import * as settingsRepo from "../settings/settings.repository";
 
 export class SqliteProjectStore implements ProjectStore {
   private readonly isTransactionScoped: boolean;
@@ -160,10 +162,38 @@ export class SqliteProjectStore implements ProjectStore {
     return statusesRepo.getStatusLabelMap(this.db);
   }
 
+  // --- Settings ---
+
+  listSettings(): Promise<SettingRow[]> {
+    return settingsRepo.listAll(this.db);
+  }
+
+  findSettingByKey(key: string): Promise<SettingRow | undefined> {
+    return settingsRepo.findByKey(this.db, key);
+  }
+
+  upsertSetting(key: string, value: string): Promise<void> {
+    return settingsRepo.upsert(this.db, key, value);
+  }
+
   // --- Velocity ---
 
   upsertDailySnapshot(projectId: string, date: string, totalWordCount: number): Promise<void> {
     return velocityRepo.upsertDailySnapshot(this.db, projectId, date, totalWordCount);
+  }
+
+  getBaselineSnapshot(
+    projectId: string,
+    targetDate: string,
+  ): Promise<{ date: string; total_word_count: number } | undefined> {
+    return velocityRepo.getBaselineSnapshot(this.db, projectId, targetDate);
+  }
+
+  getLastPriorDaySnapshot(
+    projectId: string,
+    today: string,
+  ): Promise<{ date: string; total_word_count: number } | undefined> {
+    return velocityRepo.getLastPriorDaySnapshot(this.db, projectId, today);
   }
 
   // --- Transactions ---

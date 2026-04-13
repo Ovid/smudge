@@ -13,6 +13,7 @@ import type {
   UpdateChapterData,
 } from "../chapters/chapters.types";
 import type { ChapterStatusRow } from "../chapter-statuses/chapter-statuses.types";
+import type { SettingRow } from "../settings/settings.types";
 
 export interface ProjectStore {
   // --- Projects ---
@@ -52,8 +53,21 @@ export interface ProjectStore {
   getStatusLabel(status: string): Promise<string>;
   getStatusLabelMap(): Promise<Record<string, string>>;
 
+  // --- Settings ---
+  listSettings(): Promise<SettingRow[]>;
+  findSettingByKey(key: string): Promise<SettingRow | undefined>;
+  upsertSetting(key: string, value: string): Promise<void>;
+
   // --- Velocity ---
   upsertDailySnapshot(projectId: string, date: string, totalWordCount: number): Promise<void>;
+  getBaselineSnapshot(
+    projectId: string,
+    targetDate: string,
+  ): Promise<{ date: string; total_word_count: number } | undefined>;
+  getLastPriorDaySnapshot(
+    projectId: string,
+    today: string,
+  ): Promise<{ date: string; total_word_count: number } | undefined>;
 
   // --- Transactions ---
 

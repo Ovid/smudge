@@ -1,5 +1,4 @@
-import { getDb } from "../db/connection";
-import * as SettingsRepo from "./settings.repository";
+import { getProjectStore } from "../stores/project-store.injectable";
 import { isValidTimezone } from "../timezone";
 
 const SETTING_VALIDATORS: Record<string, (value: string) => boolean> = {
@@ -7,8 +6,8 @@ const SETTING_VALIDATORS: Record<string, (value: string) => boolean> = {
 };
 
 export async function getAll(): Promise<Record<string, string>> {
-  const db = getDb();
-  const rows = await SettingsRepo.listAll(db);
+  const store = getProjectStore();
+  const rows = await store.listSettings();
   const settings: Record<string, string> = {};
   for (const row of rows) {
     settings[row.key] = row.value;
@@ -33,10 +32,10 @@ export async function update(
     return { errors };
   }
 
-  const db = getDb();
-  await db.transaction(async (trx) => {
+  const store = getProjectStore();
+  await store.transaction(async (txStore) => {
     for (const { key, value } of settings) {
-      await SettingsRepo.upsert(trx, key, value);
+      await txStore.upsertSetting(key, value);
     }
   });
 

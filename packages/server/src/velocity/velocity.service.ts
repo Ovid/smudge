@@ -1,11 +1,4 @@
 import type { VelocityResponse } from "@smudge/shared";
-// This module uses getDb() for velocity-specific read queries (VelocityRepo,
-// SettingsRepo) and getProjectStore() for manuscript data and transactional
-// writes. Both resolve to the same underlying Knex instance in production
-// and tests.
-import { getDb } from "../db/connection";
-import * as VelocityRepo from "./velocity.repository";
-import * as SettingsRepo from "../settings/settings.repository";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { safeTimezone } from "../timezone";
 
@@ -27,8 +20,8 @@ export function formatDateFromParts(parts: Intl.DateTimeFormatPart[], tz: string
 }
 
 export async function getTodayDate(): Promise<string> {
-  const db = getDb();
-  const row = await SettingsRepo.findByKey(db, "timezone");
+  const store = getProjectStore();
+  const row = await store.findSettingByKey("timezone");
   const tz = safeTimezone(row?.value || "UTC");
   const now = new Date();
   const parts = new Intl.DateTimeFormat(DATE_PARTS_LOCALE, {
@@ -100,7 +93,6 @@ function computeRollingAverage(
 }
 
 export async function getVelocityBySlug(slug: string): Promise<VelocityResponse | null> {
-  const db = getDb();
   const store = getProjectStore();
 
   const project = await store.findProjectBySlug(slug);
@@ -111,14 +103,14 @@ export async function getVelocityBySlug(slug: string): Promise<VelocityResponse 
   const currentTotal = await store.sumChapterWordCountByProject(projectId);
 
   // Words today: current total minus last prior-day snapshot
-  const lastPrior = await VelocityRepo.getLastPriorDaySnapshot(db, projectId, today);
+  const lastPrior = await store.getLastPriorDaySnapshot(projectId, today);
   const wordsToday = lastPrior
     ? Math.max(0, currentTotal - lastPrior.total_word_count)
     : currentTotal;
 
   // Rolling averages: find baseline snapshot on or before N days ago
-  const baseline7d = await VelocityRepo.getBaselineSnapshot(db, projectId, daysAgoDate(today, 7));
-  const baseline30d = await VelocityRepo.getBaselineSnapshot(db, projectId, daysAgoDate(today, 30));
+  const baseline7d = await store.getBaselineSnapshot(projectId, daysAgoDate(today, 7));
+  const baseline30d = await store.getBaselineSnapshot(projectId, daysAgoDate(today, 30));
 
   const dailyAverage7d = computeRollingAverage(currentTotal, baseline7d, today);
   const dailyAverage30d = computeRollingAverage(currentTotal, baseline30d, today);
