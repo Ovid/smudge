@@ -410,6 +410,39 @@ describe("SqliteProjectStore", () => {
     });
   });
 
+  // --- Velocity delegation ---
+
+  describe("velocity delegation", () => {
+    it("upsertDailySnapshot inserts a new row", async () => {
+      const store = createStore();
+      const proj = makeProject();
+      await store.insertProject(proj);
+      await store.insertChapter(makeChapter(proj.id, { word_count: 100 }));
+
+      await store.upsertDailySnapshot(proj.id, "2026-01-15", 100);
+
+      const row = await ctx.db("daily_snapshots")
+        .where({ project_id: proj.id, date: "2026-01-15" })
+        .first();
+      expect(row).toBeDefined();
+      expect(row.total_word_count).toBe(100);
+    });
+
+    it("upsertDailySnapshot updates existing row on same date", async () => {
+      const store = createStore();
+      const proj = makeProject();
+      await store.insertProject(proj);
+
+      await store.upsertDailySnapshot(proj.id, "2026-01-15", 100);
+      await store.upsertDailySnapshot(proj.id, "2026-01-15", 250);
+
+      const rows = await ctx.db("daily_snapshots")
+        .where({ project_id: proj.id, date: "2026-01-15" });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].total_word_count).toBe(250);
+    });
+  });
+
   // --- Transaction support ---
 
   describe("transaction support", () => {
