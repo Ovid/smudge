@@ -3,7 +3,7 @@ import pino from "pino";
 const VALID_LEVELS = ["trace", "debug", "info", "warn", "error", "fatal", "silent"] as const;
 
 function resolveLogLevel(): string {
-  const raw = process.env.LOG_LEVEL;
+  const raw = process.env.LOG_LEVEL?.trim();
   if (!raw) return "info";
   if ((VALID_LEVELS as readonly string[]).includes(raw)) return raw;
 
