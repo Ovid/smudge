@@ -125,6 +125,10 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** All server logging uses raw `console.error`/`console.log`/`console.warn`. No structured logging library, no log levels, no request IDs, no correlation between a request and its log output. The global error handler logs the error object but not the request that triggered it (method, path, params). 14 `console.error` calls across server code, none structured.
 - **Evidence:** `packages/server/src/app.ts:53` (`console.error(err)` with `_req` unused), `chapters.service.ts:113-114` (velocity error logging with ad-hoc context).
 - **Found by:** Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** Introduced pino for structured JSON logging; all console.error/log/warn calls replaced with logger.error/info/warn with structured context fields
+- **Status date:** 2026-04-13 08:52 UTC
+- **Status commit:** 57f6bb9
 
 ### [F-02] Client catch blocks discard error details
 - **Category:** 20 (Weak error handling strategy)
