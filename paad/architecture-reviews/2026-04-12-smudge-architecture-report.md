@@ -169,6 +169,10 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** Velocity and settings services use `getDb()` directly to call their repositories, while projects/chapters/chapter-statuses go through `ProjectStore`. The velocity service explicitly acknowledges this split with a code comment. This is documented as intentional (velocity/settings are "app-level concerns outside the ProjectStore boundary") but creates two different data access patterns that diverge if the storage backend changes.
 - **Evidence:** `packages/server/src/velocity/velocity.service.ts:2-7` (explicit comment and `getDb()` import), `settings.service.ts:1` (`getDb()` import). Four specialists flagged this independently.
 - **Found by:** Structure & Boundaries, Coupling & Dependencies, Integration & Data, Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** Added settings and velocity-repo methods to ProjectStore; velocity.service.ts and settings.service.ts now use getProjectStore() instead of getDb()
+- **Status date:** 2026-04-13 11:37 UTC
+- **Status commit:** d7f88a3
 
 ### [F-06] stripCorruptFlag cross-service import
 - **Category:** 3 (Tight coupling)
@@ -198,6 +202,10 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** The pattern of fetching chapters then attaching `status_label` via `store.getStatusLabel()` or `store.getStatusLabelMap()` is repeated in 6+ locations across two services. If the status display model changes, all locations need updating.
 - **Evidence:** `chapters.service.ts:54-55`, `chapters.service.ts:130-134`, `chapters.service.ts:250-254`, `projects.service.ts:110-115`, `projects.service.ts:211-215`, `projects.service.ts:264-267`.
 - **Found by:** Structure & Boundaries
+- **Status:** Fixed
+- **Status reason:** Extracted enrichChapterWithLabel() and enrichChaptersWithLabels() helpers into chapters.types.ts; all 6 sites replaced
+- **Status date:** 2026-04-13 11:34 UTC
+- **Status commit:** 4436599
 
 ### [F-09] Temporal coupling in server startup
 - **Category:** 27 (Temporal coupling)
@@ -216,6 +224,10 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** Three module-level mutable singletons (`let db`, `let store`, `let velocityServiceOverride`) with public setter/resetter functions. The `set*` functions are intended for test injection but are publicly importable by any module. This is the standard injectable singleton pattern for non-DI TypeScript and is reasonable for a single-user app.
 - **Evidence:** `packages/server/src/db/connection.ts:4`, `stores/project-store.injectable.ts:5`, `velocity/velocity.injectable.ts:8`.
 - **Found by:** Structure & Boundaries
+- **Status:** Fixed
+- **Status reason:** With F-05 routing all data access through ProjectStore, getDb() is no longer used by services. All set/reset functions marked @internal; removed from stores barrel export so test-only functions require deliberate direct import.
+- **Status date:** 2026-04-13 11:38 UTC
+- **Status commit:** e68c4b9
 
 ### [F-11] AssetStore and SnapshotStore interfaces with no implementations
 - **Category:** 7 (Over-abstraction)
@@ -245,6 +257,9 @@ Smudge is a single-user web-based writing application for long-form fiction and 
 - **Explanation:** The chapter save transaction completes, then `velocityService.recordSave()` runs in a separate transaction. If velocity fails, the daily_snapshots table may be stale until the next successful save. This is explicitly documented as intentional ("best-effort -- must not break the save").
 - **Evidence:** `packages/server/src/chapters/chapters.service.ts:98-119` (separate transaction boundaries).
 - **Found by:** Integration & Data
+- **Status:** Won't fix
+- **Status reason:** Intentional design — velocity runs outside the save transaction so snapshot failures cannot roll back a successful chapter save. Moving it inside would make the core save pipeline fragile, violating the "saves never fail due to velocity" trust promise. A stale snapshot self-corrects on the next successful save.
+- **Status date:** 2026-04-13 11:39 UTC
 
 ### [F-14] Magic number msPerDay duplicated
 - **Category:** 28 (Magic numbers/strings everywhere)
