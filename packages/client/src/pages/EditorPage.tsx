@@ -240,10 +240,6 @@ export function EditorPage() {
     );
   }
 
-  // When showActiveEditor is truthy, activeChapter is guaranteed non-null.
-  // Extract a narrowed reference for the editor branch of the JSX tree.
-  const currentChapter = showActiveEditor ? activeChapter : null;
-
   return (
     <div className="flex flex-col h-screen bg-bg-primary">
       <header className="border-b border-border/60 px-6 h-12 flex items-center justify-between shrink-0">
@@ -365,7 +361,7 @@ export function EditorPage() {
                 onNavigateToChapter={handleSelectChapterWithFlush}
               />
             </main>
-          ) : (
+          ) : activeChapter ? (
             <main
               className="flex-1 overflow-y-auto px-6 py-8 page-enter"
               aria-label={STRINGS.a11y.mainContent}
@@ -394,21 +390,21 @@ export function EditorPage() {
                 <h2
                   className="mx-auto max-w-[720px] mb-6 text-3xl font-serif font-semibold text-text-primary cursor-pointer hover:text-text-secondary tracking-tight"
                   onDoubleClick={startEditingTitle}
-                  aria-label={currentChapter.title}
+                  aria-label={activeChapter.title}
                 >
-                  {currentChapter.title}
+                  {activeChapter.title}
                 </h2>
               )}
               <Editor
-                key={currentChapter.id}
-                content={currentChapter.content}
+                key={activeChapter.id}
+                content={activeChapter.content}
                 onSave={handleSave}
                 onContentChange={handleContentChange}
                 editorRef={editorRef}
                 onEditorReady={setToolbarEditor}
               />
             </main>
-          )}
+          ) : null}
 
           {showActiveEditor && (
             <EditorFooter
