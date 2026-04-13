@@ -668,6 +668,25 @@ describe("useProjectEditor", () => {
     expect(api.chapters.update).toHaveBeenCalledTimes(1);
   });
 
+  it("handleSave logs 4xx errors with console.warn", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("Bad Request", 400));
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Save failed"),
+      expect.any(ApiRequestError),
+    );
+
+    warnSpy.mockRestore();
+  });
+
   it("handleSave exposes server error message on 4xx failure", async () => {
     vi.mocked(api.chapters.update).mockRejectedValue(
       new ApiRequestError("Invalid status: xyz", 400),

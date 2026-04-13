@@ -97,6 +97,7 @@ export function useProjectEditor(slug: string | undefined) {
         return true;
       } catch (err) {
         if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
+          console.warn("Save failed with 4xx:", err);
           break;
         }
         if (attempt < MAX_RETRIES) {
