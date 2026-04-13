@@ -285,9 +285,7 @@ export function EditorPage() {
           <EditorToolbar editor={toolbarEditor} />
         )}
         <div className="flex items-center gap-2">
-          {showActiveEditor && (
-            <ViewModeNav viewMode={viewMode} onSwitchToView={switchToView} />
-          )}
+          {showActiveEditor && <ViewModeNav viewMode={viewMode} onSwitchToView={switchToView} />}
           <button
             onClick={() => setProjectSettingsOpen(true)}
             aria-label={STRINGS.projectSettings.openLabel}

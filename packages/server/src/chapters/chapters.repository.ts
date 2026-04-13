@@ -17,7 +17,10 @@ function parseContent(row: Record<string, unknown>): ChapterRow {
       return { ...row, content: JSON.parse(row.content) } as ChapterRow;
     } catch (err) {
       logger.error(
-        { parseError: err instanceof Error ? err.name : "UnknownError", chapter_id: row.id ?? "unknown" },
+        {
+          parseError: err instanceof Error ? err.name : "UnknownError",
+          chapter_id: row.id ?? "unknown",
+        },
         "Corrupt JSON in chapter content",
       );
       return { ...row, content: null, content_corrupt: true } as ChapterRow;
