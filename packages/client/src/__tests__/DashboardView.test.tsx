@@ -309,6 +309,7 @@ describe("DashboardView", () => {
 
   it("shows error state when API call fails with Error", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.projects.dashboard).mockRejectedValue(new Error("Network failure"));
 
     render(
@@ -323,11 +324,17 @@ describe("DashboardView", () => {
     await waitFor(() => {
       expect(screen.getByText("Failed to load dashboard")).toBeInTheDocument();
     });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to load dashboard:"),
+      expect.any(Error),
+    );
     errorSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 
   it("shows fallback error message when API rejects with non-Error", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.projects.dashboard).mockRejectedValue("some string error");
 
     render(
@@ -342,7 +349,12 @@ describe("DashboardView", () => {
     await waitFor(() => {
       expect(screen.getByText("Failed to load dashboard")).toBeInTheDocument();
     });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to load dashboard:"),
+      expect.anything(),
+    );
     errorSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 
   it("sorts by word count", async () => {
@@ -434,6 +446,7 @@ describe("DashboardView", () => {
 
   it("shows velocity error state when velocity fetch fails", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
     vi.mocked(api.projects.velocity).mockRejectedValue(new Error("Network failure"));
 
@@ -452,7 +465,12 @@ describe("DashboardView", () => {
 
     // Error state shows a distinct error message (not the empty-state copy)
     expect(screen.getByText(/unable to load/i)).toBeInTheDocument();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to load velocity:"),
+      expect.any(Error),
+    );
     errorSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 
   it("falls back to status_summary keys when statuses prop is empty", async () => {
