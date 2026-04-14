@@ -209,4 +209,29 @@ describe("renderPlainText", () => {
     expect(text).toContain("The Beginning");
     expect(text).toContain("The Middle");
   });
+
+  it("decodes HTML entities including numeric forms in content", () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Entity Test",
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "She said \u2014 hello \u2026 world" }],
+            },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const text = renderPlainText(projectInfo, chapters, { includeToc: false });
+    // Em-dash and ellipsis should appear as UTF-8 characters, not as entity strings
+    expect(text).toContain("\u2014");
+    expect(text).toContain("\u2026");
+    expect(text).not.toContain("&mdash;");
+    expect(text).not.toContain("&hellip;");
+  });
 });
