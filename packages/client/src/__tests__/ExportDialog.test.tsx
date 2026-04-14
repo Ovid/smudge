@@ -114,6 +114,7 @@ describe("ExportDialog", () => {
     vi.mocked(api.projects.export).mockResolvedValue(mockBlob);
     globalThis.URL.createObjectURL = vi.fn(() => "blob:test-url");
     globalThis.URL.revokeObjectURL = vi.fn();
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 
     render(<ExportDialog {...defaultProps} onClose={onClose} />);
     await user.click(screen.getByText("Export"));
@@ -125,6 +126,7 @@ describe("ExportDialog", () => {
       });
       expect(onClose).toHaveBeenCalled();
     });
+    clickSpy.mockRestore();
   });
 
   it("shows generic error message for non-API errors", async () => {
@@ -162,6 +164,7 @@ describe("ExportDialog", () => {
     vi.mocked(api.projects.export).mockResolvedValue(mockBlob);
     globalThis.URL.createObjectURL = vi.fn(() => "blob:test-url");
     globalThis.URL.revokeObjectURL = vi.fn();
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 
     render(<ExportDialog {...defaultProps} onClose={onClose} />);
     await user.click(screen.getByLabelText("Markdown"));
@@ -173,6 +176,7 @@ describe("ExportDialog", () => {
         include_toc: true,
       });
     });
+    clickSpy.mockRestore();
   });
 
   it("exports without TOC when unchecked", async () => {
@@ -182,6 +186,7 @@ describe("ExportDialog", () => {
     vi.mocked(api.projects.export).mockResolvedValue(mockBlob);
     globalThis.URL.createObjectURL = vi.fn(() => "blob:test-url");
     globalThis.URL.revokeObjectURL = vi.fn();
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 
     render(<ExportDialog {...defaultProps} onClose={onClose} />);
     await user.click(screen.getByLabelText("Include table of contents"));
@@ -193,5 +198,6 @@ describe("ExportDialog", () => {
         include_toc: false,
       });
     });
+    clickSpy.mockRestore();
   });
 });
