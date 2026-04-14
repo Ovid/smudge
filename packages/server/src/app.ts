@@ -6,6 +6,7 @@ import { projectsRouter } from "./projects/projects.routes";
 import { chaptersRouter } from "./chapters/chapters.routes";
 import { chapterStatusesRouter } from "./chapter-statuses/chapter-statuses.routes";
 import { settingsRouter } from "./settings/settings.routes";
+import { exportRouter } from "./export/export.routes";
 
 export function asyncHandler(
   fn: (req: Request, res: Response, next: NextFunction) => Promise<void>,
@@ -39,6 +40,7 @@ export function createApp(): express.Express {
   app.use("/api/chapters", chaptersRouter());
   app.use("/api/chapter-statuses", chapterStatusesRouter());
   app.use("/api/settings", settingsRouter());
+  app.use("/api/projects", exportRouter());
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok" });
