@@ -237,6 +237,7 @@ describe("HomePage", () => {
   });
 
   it("shows error banner when loadProjects fails", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.projects.list).mockRejectedValue(new Error("Network error"));
     renderHomePage();
 
@@ -244,9 +245,15 @@ describe("HomePage", () => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
       expect(screen.getByText("Failed to load projects")).toBeInTheDocument();
     });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to load projects:"),
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
   });
 
   it("shows fallback error when loadProjects fails with non-Error", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.projects.list).mockRejectedValue("something weird");
     renderHomePage();
 
@@ -254,9 +261,15 @@ describe("HomePage", () => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
       expect(screen.getByText("Failed to load projects")).toBeInTheDocument();
     });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to load projects:"),
+      expect.anything(),
+    );
+    warnSpy.mockRestore();
   });
 
   it("shows error banner when handleCreate fails", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.projects.list).mockResolvedValue([]);
     vi.mocked(api.projects.create).mockRejectedValue(new Error("Create failed"));
     renderHomePage();
@@ -277,9 +290,15 @@ describe("HomePage", () => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
       expect(screen.getByText("Failed to create project")).toBeInTheDocument();
     });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to create project:"),
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
   });
 
   it("shows error banner when handleDelete fails", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.projects.list).mockResolvedValue([
       {
         id: "p1",
@@ -304,6 +323,11 @@ describe("HomePage", () => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
       expect(screen.getByText("Failed to delete project")).toBeInTheDocument();
     });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to delete project:"),
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
   });
 
   it("cancels delete and keeps project in list", async () => {
