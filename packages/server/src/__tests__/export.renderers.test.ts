@@ -101,6 +101,31 @@ describe("renderHtml", () => {
     expect(html).toContain("Jane Doe");
     expect(html).not.toContain("Table of Contents");
   });
+
+  it("shifts heading levels H3→H1, H4→H2, H5→H3 in chapter content", () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Heading Test",
+        content: {
+          type: "doc",
+          content: [
+            { type: "heading", attrs: { level: 3 }, content: [{ type: "text", text: "Main heading" }] },
+            { type: "heading", attrs: { level: 4 }, content: [{ type: "text", text: "Sub heading" }] },
+            { type: "heading", attrs: { level: 5 }, content: [{ type: "text", text: "Sub sub heading" }] },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const html = renderHtml(projectInfo, chapters, { includeToc: false });
+    expect(html).toContain("<h1>Main heading</h1>");
+    expect(html).toContain("<h2>Sub heading</h2>");
+    expect(html).toContain("<h3>Sub sub heading</h3>");
+    expect(html).not.toContain("<h3>Main heading</h3>");
+    expect(html).not.toContain("<h4>");
+    expect(html).not.toContain("<h5>");
+  });
 });
 
 describe("renderMarkdown", () => {
@@ -154,6 +179,27 @@ describe("renderMarkdown", () => {
     const cjkChapters = [{ id: "ch-1", title: "\u7B2C\u4E00\u7AE0", content: null, sort_order: 0 }];
     const md = renderMarkdown(projectInfo, cjkChapters, { includeToc: true });
     expect(md).toContain("[第一章](#chapter-0)");
+  });
+
+  it("shifts heading levels H3→H1, H4→H2 in Markdown output", () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Heading Test",
+        content: {
+          type: "doc",
+          content: [
+            { type: "heading", attrs: { level: 3 }, content: [{ type: "text", text: "Main heading" }] },
+            { type: "heading", attrs: { level: 4 }, content: [{ type: "text", text: "Sub heading" }] },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const md = renderMarkdown(projectInfo, chapters, { includeToc: false });
+    expect(md).toContain("# Main heading");
+    expect(md).toContain("## Sub heading");
+    expect(md).not.toContain("### Main heading");
   });
 
   it("emits explicit anchor targets before chapter headings", () => {

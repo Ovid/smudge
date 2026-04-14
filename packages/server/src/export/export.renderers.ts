@@ -28,17 +28,24 @@ export interface RenderOptions {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function chapterContentToHtml(content: Record<string, unknown> | null): string {
+function shiftHeadingLevels(html: string): string {
+  return html
+    .replace(/<(\/?)h3(\s|>)/gi, "<$1h1$2")
+    .replace(/<(\/?)h4(\s|>)/gi, "<$1h2$2")
+    .replace(/<(\/?)h5(\s|>)/gi, "<$1h3$2");
+}
+
+export function chapterContentToHtml(content: Record<string, unknown> | null): string {
   if (!content) return "";
   try {
-    return generateHTML(content, serverEditorExtensions);
+    return shiftHeadingLevels(generateHTML(content, serverEditorExtensions));
   } catch (err) {
     logger.warn({ err }, "Failed to render chapter content to HTML during export");
     return "";
   }
 }
 
-function escapeHtml(text: string): string {
+export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
