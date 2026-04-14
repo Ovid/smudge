@@ -79,7 +79,7 @@ export const EXPORT_CONTENT_TYPES: Record<ExportFormatType, string> = {
 export const ExportSchema = z.object({
   format: ExportFormat,
   include_toc: z.boolean().default(true),
-  chapter_ids: z.array(z.string().uuid()).min(1).optional(),
+  chapter_ids: z.array(z.string().uuid()).min(1).max(1000).optional(),
 });
 
 export const UpdateSettingsSchema = z.object({
