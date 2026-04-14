@@ -4,7 +4,7 @@ All direct dependencies used by Smudge are compatible with commercial
 use. This document catalogs every license in the project and explains
 any that need special attention.
 
-Last audited: 2026-04-01
+Last audited: 2026-04-14
 
 ---
 
@@ -38,7 +38,13 @@ or other strong-copyleft licenses are present.
 | express | MIT | |
 | helmet | MIT | |
 | knex | MIT | |
+| @tiptap/core | MIT | TipTap editor core (server-side HTML generation) |
+| @tiptap/extension-heading | MIT | Heading extension for generateHTML() |
+| @tiptap/html | MIT | Server-side HTML generation from TipTap JSON |
+| @tiptap/pm | MIT | ProseMirror peer dependency for TipTap |
+| @tiptap/starter-kit | MIT | Standard extension bundle for generateHTML() |
 | pino | MIT | Structured logging |
+| turndown | MIT | HTML-to-Markdown conversion for export |
 | uuid | MIT | |
 
 ### packages/client
