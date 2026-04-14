@@ -130,7 +130,7 @@ export function EditorPage() {
       cancelled = true;
       if (timerId !== null) clearTimeout(timerId);
     };
-  }, []);
+  }, [setActionError]);
 
   const handleStatusChangeWithError = useCallback(
     (chapterId: string, status: string) => {

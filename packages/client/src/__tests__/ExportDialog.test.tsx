@@ -34,12 +34,19 @@ describe("ExportDialog", () => {
     onClose: vi.fn(),
   };
 
+  const originalCreateObjectURL = globalThis.URL.createObjectURL;
+  const originalRevokeObjectURL = globalThis.URL.revokeObjectURL;
+
   beforeEach(() => {
     vi.restoreAllMocks();
+    globalThis.URL.createObjectURL = vi.fn(() => "blob:test-url");
+    globalThis.URL.revokeObjectURL = vi.fn();
   });
 
   afterEach(() => {
     cleanup();
+    globalThis.URL.createObjectURL = originalCreateObjectURL;
+    globalThis.URL.revokeObjectURL = originalRevokeObjectURL;
   });
 
   it("renders format options", () => {
@@ -112,8 +119,6 @@ describe("ExportDialog", () => {
     const onClose = vi.fn();
     const mockBlob = new Blob(["<html>test</html>"], { type: "text/html" });
     vi.mocked(api.projects.export).mockResolvedValue(mockBlob);
-    globalThis.URL.createObjectURL = vi.fn(() => "blob:test-url");
-    globalThis.URL.revokeObjectURL = vi.fn();
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 
     render(<ExportDialog {...defaultProps} onClose={onClose} />);
@@ -162,8 +167,6 @@ describe("ExportDialog", () => {
     const onClose = vi.fn();
     const mockBlob = new Blob(["# test"], { type: "text/markdown" });
     vi.mocked(api.projects.export).mockResolvedValue(mockBlob);
-    globalThis.URL.createObjectURL = vi.fn(() => "blob:test-url");
-    globalThis.URL.revokeObjectURL = vi.fn();
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 
     render(<ExportDialog {...defaultProps} onClose={onClose} />);
@@ -184,8 +187,6 @@ describe("ExportDialog", () => {
     const onClose = vi.fn();
     const mockBlob = new Blob(["<html>test</html>"], { type: "text/html" });
     vi.mocked(api.projects.export).mockResolvedValue(mockBlob);
-    globalThis.URL.createObjectURL = vi.fn(() => "blob:test-url");
-    globalThis.URL.revokeObjectURL = vi.fn();
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 
     render(<ExportDialog {...defaultProps} onClose={onClose} />);
