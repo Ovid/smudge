@@ -60,8 +60,15 @@ describe("migration 010: simplify progress model", () => {
       "../db/migrations/010_simplify_progress_model.js"
     );
 
-    // First: rollback via Knex (runs down() once, restores columns + table)
-    await db.migrate.down();
+    // First: rollback all migrations after 010, then rollback 010 itself
+    // db.migrate.down() only rolls back the latest migration, which may be
+    // a later migration (e.g., 011_add_author_name) rather than 010.
+    // Roll back until 010 has been undone.
+    let batch = await db.migrate.currentVersion();
+    while (batch > "009") {
+      await db.migrate.down();
+      batch = await db.migrate.currentVersion();
+    }
 
     // Verify rollback restored the columns and table
     const projectCols = await db.raw("PRAGMA table_info(projects)");
