@@ -1,4 +1,9 @@
-import { ExportSchema } from "@smudge/shared";
+import {
+  ExportSchema,
+  EXPORT_FILE_EXTENSIONS,
+  EXPORT_CONTENT_TYPES,
+  type ExportFormatType,
+} from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import {
   renderHtml,
@@ -8,25 +13,11 @@ import {
   type ExportChapter,
 } from "./export.renderers";
 
-export type ExportFormat = "html" | "markdown" | "plaintext";
-
 interface ExportResult {
   content: string;
   contentType: string;
   filename: string;
 }
-
-const CONTENT_TYPES: Record<ExportFormat, string> = {
-  html: "text/html; charset=utf-8",
-  markdown: "text/markdown; charset=utf-8",
-  plaintext: "text/plain; charset=utf-8",
-};
-
-const FILE_EXTENSIONS: Record<ExportFormat, string> = {
-  html: "html",
-  markdown: "md",
-  plaintext: "txt",
-};
 
 export async function exportProject(
   slug: string,
@@ -95,10 +86,10 @@ export async function exportProject(
       break;
   }
 
-  const ext = FILE_EXTENSIONS[format];
+  const ext = EXPORT_FILE_EXTENSIONS[format];
   const filename = `${project.slug || "export"}.${ext}`;
 
   return {
-    result: { content, contentType: CONTENT_TYPES[format], filename },
+    result: { content, contentType: EXPORT_CONTENT_TYPES[format], filename },
   };
 }

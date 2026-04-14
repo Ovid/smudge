@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { EXPORT_FILE_EXTENSIONS, type ExportFormatTypeType } from "@smudge/shared";
 import { api, ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
 
@@ -9,13 +10,11 @@ interface ExportDialogProps {
   onClose: () => void;
 }
 
-type ExportFormat = "html" | "markdown" | "plaintext";
-
 export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
 
-  const [format, setFormat] = useState<ExportFormat>("html");
+  const [format, setFormat] = useState<ExportFormatType>("html");
   const [includeToc, setIncludeToc] = useState(true);
   const [selectingChapters, setSelectingChapters] = useState(false);
   const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
@@ -73,7 +72,7 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
 
     try {
       const config: {
-        format: ExportFormat;
+        format: ExportFormatType;
         include_toc?: boolean;
         chapter_ids?: string[];
       } = {
@@ -87,12 +86,7 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
 
       const blob = await api.projects.export(projectSlug, config);
 
-      const extensions: Record<ExportFormat, string> = {
-        html: "html",
-        markdown: "md",
-        plaintext: "txt",
-      };
-      const filename = `${projectSlug}.${extensions[format]}`;
+      const filename = `${projectSlug}.${EXPORT_FILE_EXTENSIONS[format]}`;
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
