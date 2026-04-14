@@ -65,7 +65,7 @@ describe("migration 010: simplify progress model", () => {
     // a later migration (e.g., 011_add_author_name) rather than 010.
     // Roll back until 010 has been undone.
     let batch = await db.migrate.currentVersion();
-    while (batch > "009") {
+    while (batch >= "010") {
       await db.migrate.down();
       batch = await db.migrate.currentVersion();
     }
