@@ -7,10 +7,7 @@ import {
   UNTITLED_CHAPTER,
 } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
-import {
-  enrichChaptersWithLabels,
-  enrichChapterWithLabel,
-} from "../chapters/chapters.types";
+import { enrichChaptersWithLabels, enrichChapterWithLabel } from "../chapters/chapters.types";
 import type { ProjectRow, ProjectListRow, UpdateProjectData } from "./projects.types";
 import type {
   ChapterWithLabel,
