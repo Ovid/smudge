@@ -37,7 +37,7 @@ pre {
 export async function renderEpub(
   project: ExportProjectInfo,
   chapters: ExportChapter[],
-  _options: RenderOptions,
+  options: RenderOptions,
 ): Promise<Buffer> {
   const author = project.author_name ?? "";
 
@@ -60,6 +60,9 @@ export async function renderEpub(
     }
   }
 
+  // epub-gen-memory always generates an inline TOC page — there is no option
+  // to suppress it. We always pass a tocTitle. The includeToc option controls
+  // whether the TOC is prominently titled or given a minimal heading.
   const epub = new EPub(
     {
       title: project.title,
