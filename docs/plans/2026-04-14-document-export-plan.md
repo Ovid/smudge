@@ -10,15 +10,24 @@
 
 **Design doc:** `docs/plans/2026-04-14-document-export-design.md`
 
+**Task order rationale:** Renderers (Tasks 3-4) are developed before the schema change (Task 5) because adding new values to the `ExportFormat` Zod enum breaks TypeScript's exhaustiveness check on the service's switch statement. By building and testing renderers first, then updating the schema and wiring everything together in one task, we avoid a broken typecheck window.
+
 ---
 
 ## Task 1: Install dependencies and verify licenses
+
+**Requirement:** Design §Integration — `docx` and `epub-gen-memory` as production dependencies
 
 **Files:**
 - Modify: `packages/server/package.json`
 - Modify: `docs/dependency-licenses.md`
 
-**Step 1: Install docx and epub-gen-memory**
+#### RED
+- No test for this task — it's dependency installation and documentation.
+
+#### GREEN
+
+**Step 1: Install packages**
 
 ```bash
 npm install docx epub-gen-memory -w packages/server
@@ -26,7 +35,7 @@ npm install docx epub-gen-memory -w packages/server
 
 **Step 2: Verify licenses**
 
-Check `node_modules/docx/package.json` and `node_modules/epub-gen-memory/package.json` for the `license` field. Both must be MIT (or another acceptable license per CLAUDE.md). If `epub-gen-memory` is not MIT, stop and discuss alternatives.
+Check `node_modules/docx/package.json` and `node_modules/epub-gen-memory/package.json` for the `license` field. Both must be MIT (or another acceptable license per CLAUDE.md). If `epub-gen-memory` is NOT MIT, stop and discuss — fallbacks are `epub-gen` or manual EPUB assembly with a zip library.
 
 **Step 3: Update dependency-licenses.md**
 
@@ -39,6 +48,9 @@ Add both packages to the `packages/server` table in `docs/dependency-licenses.md
 
 Update the MIT count in the summary table (+2).
 
+#### REFACTOR
+- No refactoring needed.
+
 **Step 4: Commit**
 
 ```bash
@@ -50,18 +62,21 @@ git commit -m "chore: add docx and epub-gen-memory dependencies"
 
 ## Task 2: Add heading level shift helper
 
-All export formats should shift TipTap heading levels (H3→H1, H4→H2, H5→H3) in the exported output. This task adds a `shiftHeadingLevels()` helper and retrofits it into the existing HTML and Markdown renderers.
+**Requirement:** Design §Heading Level Shift — all export formats shift H3→H1, H4→H2, H5→H3
+
+All export formats should shift TipTap heading levels in the exported output. This task adds a `shiftHeadingLevels()` helper inside `chapterContentToHtml()` and retrofits it into the existing HTML and Markdown renderers. Also exports `chapterContentToHtml` and `escapeHtml` so the EPUB renderer (Task 4) can reuse them.
 
 **Files:**
 - Modify: `packages/server/src/export/export.renderers.ts`
 - Modify: `packages/server/src/__tests__/export.renderers.test.ts`
 
-**Step 1: Write failing tests for shiftHeadingLevels**
+#### RED
+- Write tests that verify heading shift through `renderHtml` and `renderMarkdown`
+- Expected failure: HTML currently outputs `<h3>` not `<h1>`
 
-Add tests to `export.renderers.test.ts`. Test the helper indirectly through `renderHtml` — after this change, HTML export should output H1/H2/H3 instead of H3/H4/H5.
+Add to the `renderHtml` describe block:
 
 ```typescript
-// In the existing renderHtml describe block, add:
 it("shifts heading levels from H3-H5 to H1-H3", () => {
   const chapters = [
     {
@@ -88,10 +103,9 @@ it("shifts heading levels from H3-H5 to H1-H3", () => {
 });
 ```
 
-Also add a Markdown test:
+Add to the `renderMarkdown` describe block:
 
 ```typescript
-// In the existing renderMarkdown describe block, add:
 it("shifts heading levels from H3-H5 to H1-H3 in chapter content", () => {
   const chapters = [
     {
@@ -109,24 +123,18 @@ it("shifts heading levels from H3-H5 to H1-H3 in chapter content", () => {
   ];
   const md = renderMarkdown(projectInfo, chapters, { includeToc: false });
   // Turndown converts H1 to "# ...", H2 to "## ..."
-  // Chapter heading is "## Headings", then content headings:
   expect(md).toContain("# Main heading");
   expect(md).toContain("## Sub heading");
   expect(md).not.toContain("### Main heading");
 });
 ```
 
-**Step 2: Run tests to verify they fail**
+Run: `npm test -w packages/server -- --run export.renderers`
+Expected: FAIL
 
-```bash
-npm test -w packages/server -- --run export.renderers
-```
+#### GREEN
 
-Expected: FAIL — HTML currently outputs `<h3>` not `<h1>`.
-
-**Step 3: Implement shiftHeadingLevels helper**
-
-In `export.renderers.ts`, add the helper in the Helpers section:
+Add the `shiftHeadingLevels` helper in the Helpers section of `export.renderers.ts`:
 
 ```typescript
 /**
@@ -143,10 +151,10 @@ function shiftHeadingLevels(html: string): string {
 }
 ```
 
-Apply it in `chapterContentToHtml()` — change the return to:
+Apply it in `chapterContentToHtml()`:
 
 ```typescript
-function chapterContentToHtml(content: Record<string, unknown> | null): string {
+export function chapterContentToHtml(content: Record<string, unknown> | null): string {
   if (!content) return "";
   try {
     const html = generateHTML(content, serverEditorExtensions);
@@ -158,25 +166,24 @@ function chapterContentToHtml(content: Record<string, unknown> | null): string {
 }
 ```
 
-This automatically applies to HTML, Markdown (via Turndown), and EPUB (which will also use `chapterContentToHtml`).
+Also export `escapeHtml` so the EPUB renderer can reuse it (Task 4):
 
-**Step 4: Run tests to verify they pass**
-
-```bash
-npm test -w packages/server -- --run export.renderers
+```typescript
+export function escapeHtml(text: string): string {
 ```
 
+Run: `npm test -w packages/server -- --run export.renderers`
 Expected: PASS
 
-**Step 5: Run full test suite to check for regressions**
+#### REFACTOR
 
-```bash
-npm test -w packages/server
-```
+Run the full server test suite (`npm test -w packages/server`) and fix any regressions. Existing tests that assert `<h3>` in HTML output should now expect `<h1>`.
 
-Some existing tests may need updating if they assert `<h3>` in HTML output — these should now expect `<h1>`. Fix any failures.
+Look for:
+- Existing tests that break due to heading shift
+- Any duplication introduced by the export
 
-**Step 6: Commit**
+**Commit:**
 
 ```bash
 git add packages/server/src/export/export.renderers.ts packages/server/src/__tests__/export.renderers.test.ts
@@ -185,85 +192,20 @@ git commit -m "feat(export): shift heading levels H3-H5 to H1-H3 in all exports"
 
 ---
 
-## Task 3: Update shared schema for new formats
+## Task 3: Implement Word (.docx) renderer
 
-**Files:**
-- Modify: `packages/shared/src/schemas.ts`
+**Requirement:** Design §Word (.docx) — full TipTap-to-Word style mapping, Word-native TOC, serif body font
 
-**Step 1: Write failing test**
-
-The shared package may not have its own test for the schema. Instead, we'll verify via the service integration tests later. For now, add the formats to the schema.
-
-Actually — verify: does the existing integration test for "invalid format" assert that `"pdf"` is rejected? If so, that test will fail once we change the enum, which is fine — it proves the schema changed. Check `export.service.test.ts` line 230-237: yes, it tests `format: "pdf"` and expects 400. After adding the new formats, `"pdf"` is still invalid, so that test stays valid.
-
-**Step 2: Update ExportFormat enum**
-
-In `packages/shared/src/schemas.ts`:
-
-```typescript
-export const ExportFormat = z.enum(["html", "markdown", "plaintext", "docx", "epub"]);
-```
-
-**Step 3: Update EXPORT_FILE_EXTENSIONS**
-
-```typescript
-export const EXPORT_FILE_EXTENSIONS: Record<ExportFormatType, string> = {
-  html: "html",
-  markdown: "md",
-  plaintext: "txt",
-  docx: "docx",
-  epub: "epub",
-};
-```
-
-**Step 4: Update EXPORT_CONTENT_TYPES**
-
-```typescript
-export const EXPORT_CONTENT_TYPES: Record<ExportFormatType, string> = {
-  html: "text/html; charset=utf-8",
-  markdown: "text/markdown; charset=utf-8",
-  plaintext: "text/plain; charset=utf-8",
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  epub: "application/epub+zip",
-};
-```
-
-**Step 5: Verify typecheck passes**
-
-```bash
-npx tsc --noEmit -p packages/shared/tsconfig.json
-```
-
-This will fail if the switch statement in `export.service.ts` doesn't handle the new enum values yet. That's expected — we'll fix it in Task 5. For now, just verify the shared package itself compiles.
-
-**Step 6: Commit**
-
-```bash
-git add packages/shared/src/schemas.ts
-git commit -m "feat(shared): add docx and epub to ExportFormat enum"
-```
-
----
-
-## Task 4: Implement Word (.docx) renderer
+The docx renderer is in its own file because it's substantially larger than the text-based renderers and has different dependencies.
 
 **Files:**
 - Create: `packages/server/src/export/docx.renderer.ts`
 - Modify: `packages/server/src/__tests__/export.renderers.test.ts`
 
-The docx renderer is in its own file because it's substantially larger than the text-based renderers and has different dependencies.
-
-**Step 1: Write failing tests for renderDocx**
-
-Add a new describe block in `export.renderers.test.ts`. Import `renderDocx` from `../export/docx.renderer`. Since `docx` produces binary output (Buffer), we need to parse the output to verify structure. The `docx` library's `Packer.toBuffer()` returns a zip (docx is a zip of XML files). We can use the `Document` type to inspect the tree before packing, or we can pack to buffer and just verify it's a valid zip with expected content.
-
-The pragmatic approach: test the renderer produces a Buffer of non-zero size, and test the JSON tree structure before packing by exposing internal helper functions or by parsing the XML from the zip.
-
-Simplest approach: test via the public `renderDocx()` function which returns a `Promise<Buffer>`. Verify:
-- Returns a Buffer
-- Buffer is non-empty
-- Buffer starts with the ZIP magic bytes (`PK`, i.e., `0x50 0x4B`)
-- Test with/without TOC, with/without author name, with zero chapters
+#### RED
+- Write tests for `renderDocx()` which returns a `Promise<Buffer>`
+- Expected failure: `docx.renderer.ts` doesn't exist yet
+- If any test passes unexpectedly: the import succeeded without the file, which means there's a naming collision
 
 ```typescript
 import { renderDocx } from "../export/docx.renderer";
@@ -280,7 +222,6 @@ describe("renderDocx", () => {
 
   it("includes author name when set", async () => {
     const buf = await renderDocx(projectInfo, sampleChapters, { includeToc: false });
-    // Convert to string to search XML content (docx is a zip of XML)
     const text = buf.toString("utf-8");
     expect(text).toContain("Jane Doe");
   });
@@ -321,343 +262,110 @@ describe("renderDocx", () => {
     expect(buf).toBeInstanceOf(Buffer);
     expect(buf.length).toBeGreaterThan(0);
   });
+
+  it("handles CJK characters in title and content", async () => {
+    const cjkProject = { ...projectInfo, title: "我的小说", author_name: "作者" };
+    const cjkChapters = [
+      {
+        id: "ch-1",
+        title: "第一章",
+        content: {
+          type: "doc",
+          content: [
+            { type: "paragraph", content: [{ type: "text", text: "这是第一章的内容。" }] },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(cjkProject, cjkChapters, { includeToc: false });
+    expect(buf).toBeInstanceOf(Buffer);
+    expect(buf.length).toBeGreaterThan(0);
+    const text = buf.toString("utf-8");
+    expect(text).toContain("第一章");
+  });
+
+  it("uses serif body font", async () => {
+    const buf = await renderDocx(projectInfo, sampleChapters, { includeToc: false });
+    const text = buf.toString("utf-8");
+    // Document XML should reference a serif font (Cambria or Times New Roman)
+    expect(text).toMatch(/Cambria|Times New Roman/);
+  });
 });
 ```
 
-**Step 2: Run tests to verify they fail**
+Run: `npm test -w packages/server -- --run export.renderers`
+Expected: FAIL
 
-```bash
-npm test -w packages/server -- --run export.renderers
-```
+#### GREEN
 
-Expected: FAIL — `docx.renderer.ts` doesn't exist yet.
+Create `packages/server/src/export/docx.renderer.ts`.
 
-**Step 3: Implement renderDocx**
+**Key architectural decisions:**
+- Walk TipTap JSON directly (no HTML intermediate)
+- Map heading levels: TipTap H3→Word Heading 1, H4→Heading 2, H5→Heading 3
+- Use Word-native TOC via `TableOfContents` with `headingStyleRange: "1-3"` and `hyperlink: true`
+- Create `Document` with `features: { updateFields: true }` so Word populates the TOC on first open
+- Set document-level default font to a serif (Cambria or Times New Roman) via `styles.default.document.run.font`
+- Return a `Buffer` via `Packer.toBuffer()`
+- Graceful error handling per TipTap node (try/catch, log warning, skip)
 
-Create `packages/server/src/export/docx.renderer.ts`:
+**Document assembly — build children list sequentially, not via index splicing:**
 
 ```typescript
-import {
-  Document,
-  Packer,
-  Paragraph,
-  TextRun,
-  HeadingLevel,
-  AlignmentType,
-  PageBreak,
-  TableOfContents,
-  LevelFormat,
-} from "docx";
-import type { ExportProjectInfo, ExportChapter, RenderOptions } from "./export.renderers";
-import { logger } from "../logger";
+const children: (Paragraph | TableOfContents)[] = [];
 
-// Map TipTap heading levels to Word heading levels
-const HEADING_MAP: Record<number, typeof HeadingLevel[keyof typeof HeadingLevel]> = {
-  3: HeadingLevel.HEADING_1,
-  4: HeadingLevel.HEADING_2,
-  5: HeadingLevel.HEADING_3,
-};
+// 1. Title page
+children.push(titleParagraph);
+if (project.author_name) children.push(authorParagraph);
+children.push(pageBreakParagraph);
 
-interface TipTapNode {
-  type: string;
-  content?: TipTapNode[];
-  text?: string;
-  attrs?: Record<string, unknown>;
-  marks?: Array<{ type: string; attrs?: Record<string, unknown> }>;
+// 2. TOC (if requested and chapters exist)
+if (options.includeToc && chapters.length > 0) {
+  children.push(new TableOfContents("Table of Contents", {
+    hyperlink: true,
+    headingStyleRange: "1-3",
+  }));
+  children.push(pageBreakParagraph);
 }
 
-function hasMark(node: TipTapNode, markType: string): boolean {
-  return node.marks?.some((m) => m.type === markType) ?? false;
-}
-
-function nodeToTextRuns(node: TipTapNode): TextRun[] {
-  if (node.type === "text" && node.text) {
-    return [
-      new TextRun({
-        text: node.text,
-        bold: hasMark(node, "bold"),
-        italics: hasMark(node, "italic"),
-        strike: hasMark(node, "strike"),
-        font: hasMark(node, "code") ? { name: "Courier New" } : undefined,
-      }),
-    ];
-  }
-
-  if (node.type === "hardBreak") {
-    return [new TextRun({ break: 1 })];
-  }
-
-  // Recurse into child nodes
-  if (node.content) {
-    return node.content.flatMap((child) => nodeToTextRuns(child));
-  }
-
-  return [];
-}
-
-function tipTapToParagraphs(content: Record<string, unknown> | null): Paragraph[] {
-  if (!content) return [];
-
-  const doc = content as { type: string; content?: TipTapNode[] };
-  if (doc.type !== "doc" || !doc.content) return [];
-
-  const paragraphs: Paragraph[] = [];
-
-  for (const node of doc.content) {
-    try {
-      switch (node.type) {
-        case "paragraph": {
-          const runs = node.content ? node.content.flatMap(nodeToTextRuns) : [];
-          paragraphs.push(new Paragraph({ children: runs }));
-          break;
-        }
-
-        case "heading": {
-          const level = (node.attrs?.level as number) ?? 3;
-          const headingLevel = HEADING_MAP[level] ?? HeadingLevel.HEADING_1;
-          const runs = node.content ? node.content.flatMap(nodeToTextRuns) : [];
-          paragraphs.push(new Paragraph({ heading: headingLevel, children: runs }));
-          break;
-        }
-
-        case "blockquote": {
-          // Render blockquote children as indented italic paragraphs
-          if (node.content) {
-            for (const child of node.content) {
-              const runs = child.content
-                ? child.content.flatMap(nodeToTextRuns).map(
-                    (run) =>
-                      new TextRun({
-                        ...run,
-                        italics: true,
-                      }),
-                  )
-                : [];
-              paragraphs.push(
-                new Paragraph({
-                  children: runs,
-                  indent: { left: 720 }, // 0.5 inch in twips
-                }),
-              );
-            }
-          }
-          break;
-        }
-
-        case "bulletList": {
-          if (node.content) {
-            for (const listItem of node.content) {
-              if (listItem.type === "listItem" && listItem.content) {
-                for (const child of listItem.content) {
-                  const runs = child.content ? child.content.flatMap(nodeToTextRuns) : [];
-                  paragraphs.push(
-                    new Paragraph({
-                      children: runs,
-                      bullet: { level: 0 },
-                    }),
-                  );
-                }
-              }
-            }
-          }
-          break;
-        }
-
-        case "orderedList": {
-          if (node.content) {
-            for (const [idx, listItem] of node.content.entries()) {
-              if (listItem.type === "listItem" && listItem.content) {
-                for (const child of listItem.content) {
-                  const runs = child.content ? child.content.flatMap(nodeToTextRuns) : [];
-                  paragraphs.push(
-                    new Paragraph({
-                      children: runs,
-                      numbering: { reference: "ordered-list", level: 0 },
-                    }),
-                  );
-                }
-              }
-            }
-          }
-          break;
-        }
-
-        case "codeBlock": {
-          const codeText = node.content?.map((c) => c.text ?? "").join("") ?? "";
-          for (const line of codeText.split("\n")) {
-            paragraphs.push(
-              new Paragraph({
-                children: [new TextRun({ text: line, font: { name: "Courier New" }, size: 20 })],
-                shading: { fill: "F0F0F0" },
-              }),
-            );
-          }
-          break;
-        }
-
-        case "horizontalRule": {
-          paragraphs.push(
-            new Paragraph({
-              children: [new TextRun({ text: "* * *" })],
-              alignment: AlignmentType.CENTER,
-              spacing: { before: 400, after: 400 },
-            }),
-          );
-          break;
-        }
-
-        default:
-          // Unknown node type — skip silently
-          break;
-      }
-    } catch (err) {
-      logger.warn({ err, nodeType: node.type }, "Failed to convert TipTap node to docx");
-    }
-  }
-
-  return paragraphs;
-}
-
-export async function renderDocx(
-  project: ExportProjectInfo,
-  chapters: ExportChapter[],
-  options: RenderOptions,
-): Promise<Buffer> {
-  const sections: Paragraph[] = [];
-
-  // Title page
-  sections.push(
-    new Paragraph({
-      children: [new TextRun({ text: project.title, bold: true, size: 56 })],
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 200 },
-    }),
-  );
-
-  if (project.author_name) {
-    sections.push(
-      new Paragraph({
-        children: [new TextRun({ text: project.author_name, italics: true, size: 28 })],
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 400 },
-      }),
-    );
-  }
-
-  // Page break after title
-  sections.push(new Paragraph({ children: [new PageBreak()] }));
-
-  // Table of contents (Word-native TOC field)
-  if (options.includeToc && chapters.length > 0) {
-    sections.push(
-      new Paragraph({
-        children: [new TextRun({ text: "Table of Contents", bold: true, size: 32 })],
-        spacing: { after: 300 },
-      }),
-    );
-    // This inserts a Word TOC field that auto-populates on open
-    const toc = new TableOfContents("TOC", {
-      hyperlink: true,
-      headingStyleRange: "1-3",
-    });
-    // TableOfContents is added as a child of the document, not a paragraph
-    // We'll handle this in the document construction below
-    sections.push(new Paragraph({ children: [new PageBreak()] }));
-  }
-
-  // Chapters
-  for (const [i, chapter] of chapters.entries()) {
-    // Page break before each chapter (except if right after TOC page break)
-    if (i > 0 || (options.includeToc && chapters.length > 0)) {
-      // Only add page break if not already added one
-      if (i > 0) {
-        sections.push(new Paragraph({ children: [new PageBreak()] }));
-      }
-    }
-
-    // Chapter title as Heading 1
-    sections.push(
-      new Paragraph({
-        heading: HeadingLevel.HEADING_1,
-        children: [new TextRun({ text: chapter.title })],
-        spacing: { after: 300 },
-      }),
-    );
-
-    // Chapter content
-    const contentParagraphs = tipTapToParagraphs(chapter.content);
-    sections.push(...contentParagraphs);
-  }
-
-  const docChildren: (Paragraph | TableOfContents)[] = [];
-
-  // Build the final children list with TOC in the right place
-  if (options.includeToc && chapters.length > 0) {
-    // Title page elements (before TOC)
-    // First element is title, second is author (maybe), then page break
-    let tocInsertIndex = 0;
-    for (const p of sections) {
-      docChildren.push(p);
-      tocInsertIndex++;
-      // After the first page break, insert the TOC
-      if (tocInsertIndex === (project.author_name ? 3 : 2)) {
-        // Insert TOC heading (already in sections), then the TOC field
-        docChildren.push(
-          new TableOfContents("Table of Contents", {
-            hyperlink: true,
-            headingStyleRange: "1-3",
-          }),
-        );
-      }
-    }
-  } else {
-    docChildren.push(...sections);
-  }
-
-  const doc = new Document({
-    features: { updateFields: true },
-    numbering: {
-      config: [
-        {
-          reference: "ordered-list",
-          levels: [
-            {
-              level: 0,
-              format: LevelFormat.DECIMAL,
-              text: "%1.",
-              alignment: AlignmentType.LEFT,
-            },
-          ],
-        },
-      ],
-    },
-    sections: [
-      {
-        children: docChildren,
-      },
-    ],
-  });
-
-  return Buffer.from(await Packer.toBuffer(doc));
+// 3. Chapters
+for (const [i, chapter] of chapters.entries()) {
+  if (i > 0) children.push(pageBreakParagraph);
+  children.push(chapterHeadingParagraph);
+  children.push(...contentParagraphs);
 }
 ```
 
-Note: The exact `docx` API may need adjustments based on the installed version. The implementer should check `docx` docs and type signatures during implementation. The key architectural decisions are:
-- Walk TipTap JSON directly (no HTML intermediate)
-- Map heading levels (3→1, 4→2, 5→3)
-- Use Word-native TOC with `updateFields: true`
-- Return a Buffer
-- Graceful error handling per node
+**TipTap to Word mapping:**
 
-**Step 4: Run tests to verify they pass**
+| TipTap Node | Word Style |
+|---|---|
+| `heading` level 3 | `HeadingLevel.HEADING_1` |
+| `heading` level 4 | `HeadingLevel.HEADING_2` |
+| `heading` level 5 | `HeadingLevel.HEADING_3` |
+| `paragraph` | Normal (default) |
+| `blockquote` | Indented italic paragraphs (`indent: { left: 720 }`) |
+| `bulletList` | `bullet: { level: 0 }` |
+| `orderedList` | `numbering: { reference: "ordered-list", level: 0 }` |
+| `codeBlock` | Monospace font (`Courier New`), light background shading |
+| `horizontalRule` | Centered `* * *` text |
 
-```bash
-npm test -w packages/server -- --run export.renderers
-```
+**Inline marks:** `bold`, `italic`, `strike` → direct `TextRun` properties. `code` → `font: { name: "Courier New" }`.
 
+**Blockquote note:** Do NOT spread a `TextRun` instance — `TextRun` is a class, not a plain object. Instead, extract the text and marks from the child nodes and create new `TextRun` instances with `italics: true` added.
+
+Run: `npm test -w packages/server -- --run export.renderers`
 Expected: PASS
 
-**Step 5: Commit**
+#### REFACTOR
+
+Look for:
+- Any duplicated helper logic between docx renderer and existing renderers
+- Hard-coded font sizes that should be constants
+- Naming consistency with existing renderer pattern
+
+**Commit:**
 
 ```bash
 git add packages/server/src/export/docx.renderer.ts packages/server/src/__tests__/export.renderers.test.ts
@@ -666,15 +374,17 @@ git commit -m "feat(export): add Word (.docx) renderer"
 
 ---
 
-## Task 5: Implement EPUB renderer
+## Task 4: Implement EPUB renderer
+
+**Requirement:** Design §EPUB — HTML content via `chapterContentToHtml()`, embedded stylesheet, metadata, empty chapter handling
 
 **Files:**
 - Create: `packages/server/src/export/epub.renderer.ts`
 - Modify: `packages/server/src/__tests__/export.renderers.test.ts`
 
-**Step 1: Write failing tests for renderEpub**
-
-Add a new describe block in `export.renderers.test.ts`:
+#### RED
+- Write tests for `renderEpub()` which returns a `Promise<Buffer>`
+- Expected failure: `epub.renderer.ts` doesn't exist yet
 
 ```typescript
 import { renderEpub } from "../export/epub.renderer";
@@ -732,142 +442,111 @@ describe("renderEpub", () => {
     expect(buf).toBeInstanceOf(Buffer);
     expect(buf.length).toBeGreaterThan(0);
   });
+
+  it("shifts heading levels from H3-H5 to H1-H3", async () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Headings",
+        content: {
+          type: "doc",
+          content: [
+            { type: "heading", attrs: { level: 3 }, content: [{ type: "text", text: "Main heading" }] },
+            { type: "heading", attrs: { level: 4 }, content: [{ type: "text", text: "Sub heading" }] },
+            { type: "heading", attrs: { level: 5 }, content: [{ type: "text", text: "Sub-sub heading" }] },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderEpub(projectInfo, chapters, { includeToc: false });
+    const text = buf.toString("utf-8");
+    expect(text).toContain("<h1>Main heading</h1>");
+    expect(text).toContain("<h2>Sub heading</h2>");
+    expect(text).toContain("<h3>Sub-sub heading</h3>");
+    expect(text).not.toContain("<h4>");
+    expect(text).not.toContain("<h5>");
+  });
+
+  it("handles CJK characters", async () => {
+    const cjkProject = { ...projectInfo, title: "我的小说", author_name: "作者" };
+    const cjkChapters = [
+      {
+        id: "ch-1",
+        title: "第一章",
+        content: {
+          type: "doc",
+          content: [
+            { type: "paragraph", content: [{ type: "text", text: "这是内容。" }] },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderEpub(cjkProject, cjkChapters, { includeToc: false });
+    expect(buf).toBeInstanceOf(Buffer);
+    expect(buf.length).toBeGreaterThan(0);
+    const text = buf.toString("utf-8");
+    expect(text).toContain("第一章");
+  });
 });
 ```
 
-**Step 2: Run tests to verify they fail**
+Run: `npm test -w packages/server -- --run export.renderers`
+Expected: FAIL
 
-```bash
-npm test -w packages/server -- --run export.renderers
-```
+#### GREEN
 
-Expected: FAIL — `epub.renderer.ts` doesn't exist yet.
+Create `packages/server/src/export/epub.renderer.ts`.
 
-**Step 3: Implement renderEpub**
+**Key decisions:**
+- Import `chapterContentToHtml` and `escapeHtml` from `./export.renderers` — do NOT duplicate them
+- Content conversion: TipTap JSON → HTML via `chapterContentToHtml()` (heading shift already applied in Task 2)
+- Embed a minimal CSS stylesheet (serif font, comfortable line-height, heading sizes, blockquote/code styling)
+- Metadata: title from project, author from `author_name` (empty string if null), language hard-coded to `"en"`
+- Empty chapter handling: if `chapterContentToHtml()` returns `""`, inject `<p>&nbsp;</p>` as placeholder
+- Zero chapters: create a title-page-only EPUB with one section containing the title and author
 
-Create `packages/server/src/export/epub.renderer.ts`. The `epub-gen-memory` library API takes a config object with title, author, content (array of chapters with title and HTML data), and optional CSS.
+**`epub-gen-memory` API shape** (verify against installed version's types):
+- Constructor: `new EPub({ title, author, lang, css, content, tocTitle })`
+- `content`: array of `{ title: string, data: string }` (HTML)
+- `tocTitle`: string or `false` to disable
+- `genEpub()`: returns `Promise<Buffer>`
 
-```typescript
-import EPub from "epub-gen-memory";
-import { chapterContentToHtml } from "./export.renderers";
-import type { ExportProjectInfo, ExportChapter, RenderOptions } from "./export.renderers";
-
-const EPUB_CSS = `
-body {
-  font-family: Georgia, "Times New Roman", serif;
-  line-height: 1.6;
-  margin: 1em;
-}
-h1 { font-size: 1.8em; margin: 1em 0 0.5em; }
-h2 { font-size: 1.4em; margin: 0.8em 0 0.4em; }
-h3 { font-size: 1.2em; margin: 0.6em 0 0.3em; }
-blockquote {
-  margin: 1em 2em;
-  font-style: italic;
-}
-pre, code {
-  font-family: "Courier New", monospace;
-  font-size: 0.9em;
-}
-pre {
-  margin: 1em 0;
-  padding: 0.5em;
-  background: #f5f5f5;
-}
-`;
-
-export async function renderEpub(
-  project: ExportProjectInfo,
-  chapters: ExportChapter[],
-  options: RenderOptions,
-): Promise<Buffer> {
-  const epubChapters = chapters.map((ch) => {
-    let html = chapterContentToHtml(ch.content);
-    // If content is empty, use a non-breaking space so epub-gen-memory
-    // doesn't choke on an empty chapter
-    if (!html) {
-      html = "<p>&nbsp;</p>";
-    }
-    return {
-      title: ch.title,
-      data: html,
-    };
-  });
-
-  // If zero chapters, create a title-page-only EPUB
-  if (epubChapters.length === 0) {
-    const titleHtml = project.author_name
-      ? `<h1>${escapeHtml(project.title)}</h1><p><em>${escapeHtml(project.author_name)}</em></p>`
-      : `<h1>${escapeHtml(project.title)}</h1>`;
-    epubChapters.push({ title: project.title, data: titleHtml });
-  }
-
-  const epubConfig = {
-    title: project.title,
-    author: project.author_name ?? "",
-    lang: "en",
-    css: EPUB_CSS,
-    content: epubChapters,
-    // tocTitle will be used if includeToc is true
-    ...(options.includeToc ? { tocTitle: "Table of Contents" } : { tocTitle: false as const }),
-  };
-
-  const buffer = await new EPub(epubConfig).genEpub();
-  return Buffer.from(buffer);
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-```
-
-**Important:** The `chapterContentToHtml` function must be exported from `export.renderers.ts` so the EPUB renderer can use it. Add `export` to its declaration:
-
-In `export.renderers.ts`, change:
-```typescript
-function chapterContentToHtml(content: Record<string, unknown> | null): string {
-```
-to:
-```typescript
-export function chapterContentToHtml(content: Record<string, unknown> | null): string {
-```
-
-**Note:** The exact `epub-gen-memory` API may differ from what's shown. The implementer should check the installed version's types and README. Key points:
-- Constructor takes config with `title`, `author`, `content` array, `css`
-- `genEpub()` returns a Promise<Buffer>
-- Each content entry has `title` and `data` (HTML string)
-
-**Step 4: Run tests to verify they pass**
-
-```bash
-npm test -w packages/server -- --run export.renderers
-```
-
+Run: `npm test -w packages/server -- --run export.renderers`
 Expected: PASS
 
-**Step 5: Commit**
+#### REFACTOR
+
+Look for:
+- Verify no duplicated `escapeHtml` — should be imported from `export.renderers.ts`
+- CSS string could be extracted to a constant file if it grows, but for now inline is fine
+
+**Commit:**
 
 ```bash
-git add packages/server/src/export/epub.renderer.ts packages/server/src/export/export.renderers.ts packages/server/src/__tests__/export.renderers.test.ts
+git add packages/server/src/export/epub.renderer.ts packages/server/src/__tests__/export.renderers.test.ts
 git commit -m "feat(export): add EPUB renderer"
 ```
 
 ---
 
-## Task 6: Wire new renderers into export service
+## Task 5: Update shared schema and wire renderers into export service
+
+**Requirement:** Design §Integration — add formats to Zod enum, widen ExportResult type, add switch cases
+
+This task combines the schema change and service wiring so there's no window where TypeScript's exhaustiveness check fails.
 
 **Files:**
+- Modify: `packages/shared/src/schemas.ts`
 - Modify: `packages/server/src/export/export.service.ts`
 - Modify: `packages/server/src/__tests__/export.service.test.ts`
 
-**Step 1: Write failing integration tests**
+#### RED
+- Write integration tests for docx and epub export via the HTTP API
+- Expected failure: Zod rejects `"docx"` and `"epub"` as invalid formats (400 response)
 
-Add test cases for docx and epub in `export.service.test.ts`:
+Add to `export.service.test.ts`:
 
 ```typescript
 describe("DOCX export", () => {
@@ -892,6 +571,26 @@ describe("DOCX export", () => {
     expect(res.body).toBeInstanceOf(Buffer);
     expect(res.body.length).toBeGreaterThan(0);
   });
+
+  it("includes author_name in docx when set", async () => {
+    const { projectSlug } = await createProjectWithChapters(t.app, {
+      authorName: "Jane Austen",
+    });
+
+    const res = await request(t.app)
+      .post(`/api/projects/${projectSlug}/export`)
+      .send({ format: "docx" })
+      .buffer(true)
+      .parse((res, callback) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("end", () => callback(null, Buffer.concat(chunks)));
+      });
+
+    expect(res.status).toBe(200);
+    const text = res.body.toString("utf-8");
+    expect(text).toContain("Jane Austen");
+  });
 });
 
 describe("EPUB export", () => {
@@ -914,87 +613,119 @@ describe("EPUB export", () => {
     expect(res.body).toBeInstanceOf(Buffer);
     expect(res.body.length).toBeGreaterThan(0);
   });
+
+  it("zero-chapter EPUB export succeeds", async () => {
+    const { projectSlug, firstChapterId, secondChapterId } = await createProjectWithChapters(t.app);
+
+    await request(t.app).delete(`/api/chapters/${firstChapterId}`);
+    await request(t.app).delete(`/api/chapters/${secondChapterId}`);
+
+    const res = await request(t.app)
+      .post(`/api/projects/${projectSlug}/export`)
+      .send({ format: "epub" })
+      .buffer(true)
+      .parse((res, callback) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("end", () => callback(null, Buffer.concat(chunks)));
+      });
+
+    expect(res.status).toBe(200);
+  });
 });
 ```
 
-**Step 2: Run tests to verify they fail**
+Run: `npm test -w packages/server -- --run export.service`
+Expected: FAIL (400 — Zod rejects new format values)
 
-```bash
-npm test -w packages/server -- --run export.service
-```
+#### GREEN
 
-Expected: FAIL — the service doesn't handle `"docx"` or `"epub"` formats yet (though Zod validation now accepts them, the switch statement has no case for them).
+**Step 1: Update shared schema** (`packages/shared/src/schemas.ts`):
 
-**Step 3: Update export service**
-
-Modify `packages/server/src/export/export.service.ts`:
-
-1. Update the `ExportResult` interface:
 ```typescript
-interface ExportResult {
-  content: string | Buffer;
-  contentType: string;
-  filename: string;
-}
+export const ExportFormat = z.enum(["html", "markdown", "plaintext", "docx", "epub"]);
 ```
 
-2. Import new renderers:
 ```typescript
-import { renderDocx } from "./docx.renderer";
-import { renderEpub } from "./epub.renderer";
+export const EXPORT_FILE_EXTENSIONS: Record<ExportFormatType, string> = {
+  html: "html",
+  markdown: "md",
+  plaintext: "txt",
+  docx: "docx",
+  epub: "epub",
+};
 ```
 
-3. Change `let content: string;` to `let content: string | Buffer;`
-
-4. Add cases to the switch:
 ```typescript
-case "docx":
-  content = await renderDocx(projectInfo, exportChapters, options);
-  break;
-case "epub":
-  content = await renderEpub(projectInfo, exportChapters, options);
-  break;
+export const EXPORT_CONTENT_TYPES: Record<ExportFormatType, string> = {
+  html: "text/html; charset=utf-8",
+  markdown: "text/markdown; charset=utf-8",
+  plaintext: "text/plain; charset=utf-8",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  epub: "application/epub+zip",
+};
 ```
 
-5. Since `renderDocx` and `renderEpub` are async, the switch statement now includes async calls. The function is already async, so this works.
+**Step 2: Update export service** (`packages/server/src/export/export.service.ts`):
 
-**Step 4: Run tests to verify they pass**
+1. Update `ExportResult.content` type: `string` → `string | Buffer`
+2. Update local variable: `let content: string` → `let content: string | Buffer`
+3. Import new renderers:
+   ```typescript
+   import { renderDocx } from "./docx.renderer";
+   import { renderEpub } from "./epub.renderer";
+   ```
+4. Add switch cases:
+   ```typescript
+   case "docx":
+     content = await renderDocx(projectInfo, exportChapters, options);
+     break;
+   case "epub":
+     content = await renderEpub(projectInfo, exportChapters, options);
+     break;
+   ```
 
-```bash
-npm test -w packages/server -- --run export.service
-```
+Note: `res.send()` in the route handler already handles both strings and Buffers — `export.routes.ts` requires no changes.
 
+Run: `npm test -w packages/server -- --run export.service`
 Expected: PASS
 
-**Step 5: Run full server test suite**
+#### REFACTOR
+
+Run full server test suite: `npm test -w packages/server`
+
+Look for:
+- The existing test for "invalid format" uses `format: "pdf"` — this should still be rejected (400). Verify.
+- Any type errors from the `string | Buffer` change propagating
+
+**Commit:**
 
 ```bash
-npm test -w packages/server
-```
-
-Expected: PASS (including existing export tests)
-
-**Step 6: Commit**
-
-```bash
-git add packages/server/src/export/export.service.ts packages/server/src/__tests__/export.service.test.ts
-git commit -m "feat(export): wire docx and epub renderers into export service"
+git add packages/shared/src/schemas.ts packages/server/src/export/export.service.ts packages/server/src/__tests__/export.service.test.ts
+git commit -m "feat(export): wire docx and epub into schema and export service"
 ```
 
 ---
 
-## Task 7: Update client — strings, API type, and ExportDialog
+## Task 6: Update client — strings, API type, and ExportDialog
+
+**Requirement:** Design §Integration — add format options to export dialog
 
 **Files:**
 - Modify: `packages/client/src/strings.ts`
 - Modify: `packages/client/src/api/client.ts`
 - Modify: `packages/client/src/components/ExportDialog.tsx`
 
+#### RED
+- Existing client tests should still pass, and any that assert the number of format radio buttons will need updating
+- Run client tests first to establish baseline: `npm test -w packages/client`
+
+#### GREEN
+
 **Step 1: Update strings.ts**
 
-Add format labels to the export section in `packages/client/src/strings.ts`:
-
 After `formatPlainText: "Plain Text",` add:
+
 ```typescript
 formatDocx: "Word (.docx)",
 formatEpub: "EPUB",
@@ -1002,7 +733,7 @@ formatEpub: "EPUB",
 
 **Step 2: Update API client type**
 
-In `packages/client/src/api/client.ts`, update the format type in the export method (line 109):
+In `packages/client/src/api/client.ts`, update the format type in the export method:
 
 ```typescript
 format: "html" | "markdown" | "plaintext" | "docx" | "epub";
@@ -1010,11 +741,11 @@ format: "html" | "markdown" | "plaintext" | "docx" | "epub";
 
 **Step 3: Update ExportDialog.tsx**
 
-Add two more radio buttons to the format fieldset, after the Plain Text radio. The format fieldset currently uses a `flex gap-4` layout with three radios on one line. With five options, this needs to wrap. Change the container from `flex gap-4` to `flex flex-wrap gap-x-4 gap-y-2`:
+Add two more radio buttons to the format fieldset. Change the container from `flex gap-4` to `flex flex-wrap gap-x-4 gap-y-2` to accommodate five options:
 
 ```tsx
 <div className="flex flex-wrap gap-x-4 gap-y-2">
-  {/* existing three radios */}
+  {/* existing three radios unchanged */}
   <label className="flex items-center gap-1.5 text-sm text-text-secondary">
     <input
       type="radio"
@@ -1038,21 +769,19 @@ Add two more radio buttons to the format fieldset, after the Plain Text radio. T
 </div>
 ```
 
-**Step 4: Verify typecheck passes**
+**Step 4: Verify**
 
 ```bash
 npx tsc --noEmit
-```
-
-**Step 5: Run client tests**
-
-```bash
 npm test -w packages/client
 ```
 
-Some tests may need updating if they assert the number of radio buttons or specific format options.
+#### REFACTOR
 
-**Step 6: Commit**
+Look for:
+- Radio button JSX is repetitive (5 nearly identical blocks). Consider whether a data-driven approach is cleaner, but only if it improves readability — 5 explicit radios is acceptable.
+
+**Commit:**
 
 ```bash
 git add packages/client/src/strings.ts packages/client/src/api/client.ts packages/client/src/components/ExportDialog.tsx
@@ -1061,14 +790,16 @@ git commit -m "feat(export): add docx and epub options to export dialog"
 
 ---
 
-## Task 8: Update e2e tests
+## Task 7: Update e2e tests
+
+**Requirement:** Design §Testing — e2e tests for all five format options, download verification
 
 **Files:**
 - Modify: `e2e/export.spec.ts`
 
-**Step 1: Add e2e tests for new formats**
-
-Add tests in `e2e/export.spec.ts`:
+#### RED
+- Write e2e tests that will fail until the UI and API are wired up (they should pass since Tasks 5-6 are done)
+- If they fail: something in the wiring is broken
 
 ```typescript
 test("exports manuscript as Word (.docx) via dialog", async ({ page }) => {
@@ -1080,7 +811,6 @@ test("exports manuscript as Word (.docx) via dialog", async ({ page }) => {
   await exportButton.click();
   await expect(page.getByText("Export Manuscript")).toBeVisible();
 
-  // Select Word format
   const docxRadio = page.getByRole("radio", { name: "Word (.docx)" });
   await docxRadio.check();
 
@@ -1101,7 +831,6 @@ test("exports manuscript as EPUB via dialog", async ({ page }) => {
   await exportButton.click();
   await expect(page.getByText("Export Manuscript")).toBeVisible();
 
-  // Select EPUB format
   const epubRadio = page.getByRole("radio", { name: "EPUB" });
   await epubRadio.check();
 
@@ -1122,7 +851,6 @@ test("export dialog shows all five format options", async ({ page }) => {
   await exportButton.click();
   await expect(page.getByText("Export Manuscript")).toBeVisible();
 
-  // Verify all five format radios exist
   await expect(page.getByRole("radio", { name: "HTML" })).toBeVisible();
   await expect(page.getByRole("radio", { name: "Markdown" })).toBeVisible();
   await expect(page.getByRole("radio", { name: "Plain Text" })).toBeVisible();
@@ -1131,15 +859,18 @@ test("export dialog shows all five format options", async ({ page }) => {
 });
 ```
 
-**Step 2: Run e2e tests**
+#### GREEN
 
-```bash
-make e2e
-```
+Run: `make e2e`
+Expected: PASS (all wiring done in previous tasks)
 
-Expected: PASS
+#### REFACTOR
 
-**Step 3: Commit**
+Look for:
+- Shared setup patterns across export e2e tests that could be extracted
+- Existing export tests that should be updated (e.g., accessibility test should still pass with new radios)
+
+**Commit:**
 
 ```bash
 git add e2e/export.spec.ts
@@ -1148,25 +879,47 @@ git commit -m "test(export): add e2e tests for docx and epub export"
 
 ---
 
-## Task 9: Full validation pass
+## Task 8: Full validation pass
 
-**Step 1: Run full CI suite**
+**Requirement:** All design requirements covered, all tests green
+
+#### RED
+
+Run full CI suite:
 
 ```bash
 make all
 ```
 
-This runs lint + format + typecheck + coverage + e2e. Fix any issues.
+This runs lint + format + typecheck + coverage + e2e. Fix any issues found.
 
-**Step 2: Manual smoke test**
+#### GREEN
 
-Start the dev server (`make dev`), create a project with a few chapters containing varied content (headings, bold, italic, lists, blockquotes), and export as:
-- HTML — verify headings are H1/H2/H3 (not H3/H4/H5)
-- Markdown — verify headings are #/##/### 
-- Word (.docx) — open in Word/LibreOffice, verify structure, styles, TOC
-- EPUB — open in an EPUB reader (Apple Books, Calibre), verify chapters, navigation, styling
+Fix all failures. Common issues to watch for:
+- Coverage thresholds (95% statements) — new renderer files need sufficient test coverage
+- Lint errors in new files
+- Formatting inconsistencies
 
-**Step 3: Commit any fixes from validation**
+#### REFACTOR
+
+**Manual smoke test:** Start the dev server (`make dev`), create a project with chapters containing varied content (headings, bold, italic, lists, blockquotes, code blocks), and export as:
+
+1. **HTML** — verify headings are H1/H2/H3 (not H3/H4/H5)
+2. **Markdown** — verify headings are `#`/`##`/`###`
+3. **Word (.docx)** — open in Word or LibreOffice Writer, verify:
+   - Title page with project title and author
+   - TOC field (Word may prompt to update fields)
+   - Page breaks between chapters
+   - Chapter headings are Heading 1 style
+   - Serif body font
+   - Bold, italic, lists, blockquotes render correctly
+4. **EPUB** — open in an EPUB reader (Apple Books, Calibre), verify:
+   - Navigation/TOC works
+   - Chapters are separate sections
+   - Styling is readable (serif font, comfortable spacing)
+   - CJK characters render correctly if tested
+
+**Commit any fixes:**
 
 ```bash
 git add -A
