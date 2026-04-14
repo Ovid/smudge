@@ -404,6 +404,301 @@ describe("renderDocx", () => {
     const styles = stylesFile ? await stylesFile.async("string") : "";
     expect(styles).toMatch(/Cambria|Times New Roman/);
   });
+
+  it("maps H3→Heading1, H4→Heading2, H5→Heading3", async () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Heading Test",
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "heading",
+              attrs: { level: 3 },
+              content: [{ type: "text", text: "Level Three" }],
+            },
+            {
+              type: "heading",
+              attrs: { level: 4 },
+              content: [{ type: "text", text: "Level Four" }],
+            },
+            {
+              type: "heading",
+              attrs: { level: 5 },
+              content: [{ type: "text", text: "Level Five" }],
+            },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false });
+    const xml = await docxXml(buf);
+    expect(xml).toContain("Level Three");
+    expect(xml).toContain("Level Four");
+    expect(xml).toContain("Level Five");
+    // docx heading styles are referenced as "Heading1", "Heading2", "Heading3"
+    expect(xml).toMatch(/Heading1/);
+    expect(xml).toMatch(/Heading2/);
+    expect(xml).toMatch(/Heading3/);
+  });
+
+  it("renders blockquote as indented italic paragraphs", async () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Quote Test",
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "blockquote",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "A wise quote." }],
+                },
+              ],
+            },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false });
+    const xml = await docxXml(buf);
+    expect(xml).toContain("A wise quote.");
+    // Indentation: left indent of 720 twips → w:left="720"
+    expect(xml).toContain('w:left="720"');
+    // Italic run property
+    expect(xml).toMatch(/<w:i\s*\/?>|<w:i w:val="true"/);
+  });
+
+  it("renders bullet list items", async () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Bullet Test",
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "bulletList",
+              content: [
+                {
+                  type: "listItem",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "First bullet" }],
+                    },
+                  ],
+                },
+                {
+                  type: "listItem",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "Second bullet" }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false });
+    const xml = await docxXml(buf);
+    expect(xml).toContain("First bullet");
+    expect(xml).toContain("Second bullet");
+    // Bullet list numbering reference
+    expect(xml).toContain("w:numId");
+  });
+
+  it("renders ordered list items with numbering", async () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Ordered Test",
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "orderedList",
+              content: [
+                {
+                  type: "listItem",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "Step one" }],
+                    },
+                  ],
+                },
+                {
+                  type: "listItem",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "Step two" }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false });
+    const xml = await docxXml(buf);
+    expect(xml).toContain("Step one");
+    expect(xml).toContain("Step two");
+    // Ordered list uses numbering with ilvl
+    expect(xml).toContain("w:numId");
+    expect(xml).toContain("w:ilvl");
+  });
+
+  it("renders code block with monospace font and shading", async () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Code Test",
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "codeBlock",
+              content: [{ type: "text", text: "const x = 1;" }],
+            },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false });
+    const xml = await docxXml(buf);
+    expect(xml).toContain("const x = 1;");
+    // Courier New font
+    expect(xml).toContain("Courier New");
+    // Shading fill color F0F0F0
+    expect(xml).toContain("F0F0F0");
+  });
+
+  it("renders horizontal rule as centered '* * *' text", async () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "HR Test",
+        content: {
+          type: "doc",
+          content: [{ type: "horizontalRule" }],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false });
+    const xml = await docxXml(buf);
+    expect(xml).toContain("* * *");
+    // Center alignment
+    expect(xml).toContain('w:val="center"');
+  });
+
+  it("renders inline marks: bold, italic, strike, code", async () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Marks Test",
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "bold text", marks: [{ type: "bold" }] },
+                { type: "text", text: "italic text", marks: [{ type: "italic" }] },
+                { type: "text", text: "struck text", marks: [{ type: "strike" }] },
+                { type: "text", text: "code text", marks: [{ type: "code" }] },
+              ],
+            },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false });
+    const xml = await docxXml(buf);
+    expect(xml).toContain("bold text");
+    expect(xml).toContain("italic text");
+    expect(xml).toContain("struck text");
+    expect(xml).toContain("code text");
+    // Bold: <w:b/> or <w:b w:val="true"/>
+    expect(xml).toMatch(/<w:b\s*\/?>|<w:b w:val="true"/);
+    // Italic: <w:i/> or <w:i w:val="true"/>
+    expect(xml).toMatch(/<w:i\s*\/?>|<w:i w:val="true"/);
+    // Strikethrough: <w:strike/> or <w:strike w:val="true"/>
+    expect(xml).toMatch(/<w:strike\s*\/?>|<w:strike w:val="true"/);
+    // Code font
+    expect(xml).toContain("Courier New");
+  });
+
+  it("renders hard break as line break within a paragraph", async () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Break Test",
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "Before break" },
+                { type: "hardBreak" },
+                { type: "text", text: "After break" },
+              ],
+            },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false });
+    const xml = await docxXml(buf);
+    expect(xml).toContain("Before break");
+    expect(xml).toContain("After break");
+    // Line break element in docx XML
+    expect(xml).toContain("<w:br/>");
+  });
+
+  it("logs warning and skips unknown node types", async () => {
+    vi.mocked(logger.warn).mockClear();
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Unknown Node",
+        content: {
+          type: "doc",
+          content: [
+            { type: "customWidget", content: [] },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const warnSpy = vi.mocked(logger.warn);
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false });
+    expect(buf).toBeInstanceOf(Buffer);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ nodeType: "customWidget" }),
+      expect.stringContaining("Unknown TipTap node type"),
+    );
+  });
 });
 
 async function epubText(buf: Buffer): Promise<string> {
