@@ -159,7 +159,7 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
           <legend className="text-text-primary text-sm font-medium mb-2">
             {STRINGS.export.formatLabel}
           </legend>
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
             <label className="flex items-center gap-1.5 text-sm text-text-secondary">
               <input
                 type="radio"
@@ -189,6 +189,26 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
                 onChange={() => setFormat("plaintext")}
               />
               {STRINGS.export.formatPlainText}
+            </label>
+            <label className="flex items-center gap-1.5 text-sm text-text-secondary">
+              <input
+                type="radio"
+                name="export-format"
+                value="docx"
+                checked={format === "docx"}
+                onChange={() => setFormat("docx")}
+              />
+              {STRINGS.export.formatDocx}
+            </label>
+            <label className="flex items-center gap-1.5 text-sm text-text-secondary">
+              <input
+                type="radio"
+                name="export-format"
+                value="epub"
+                checked={format === "epub"}
+                onChange={() => setFormat("epub")}
+              />
+              {STRINGS.export.formatEpub}
             </label>
           </div>
         </fieldset>

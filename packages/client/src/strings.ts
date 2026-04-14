@@ -202,6 +202,8 @@ export const STRINGS = {
     formatHtml: "HTML",
     formatMarkdown: "Markdown",
     formatPlainText: "Plain Text",
+    formatDocx: "Word (.docx)",
+    formatEpub: "EPUB",
     includeTocLabel: "Include table of contents",
     chapterSelectionAll: "All chapters",
     chapterSelectionChoose: "Select specific chapters...",

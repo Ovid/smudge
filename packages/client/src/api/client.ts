@@ -106,7 +106,7 @@ export const api = {
     export: async (
       slug: string,
       config: {
-        format: "html" | "markdown" | "plaintext";
+        format: "html" | "markdown" | "plaintext" | "docx" | "epub";
         include_toc?: boolean;
         chapter_ids?: string[];
       },
