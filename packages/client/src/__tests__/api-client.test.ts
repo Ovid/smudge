@@ -239,6 +239,49 @@ describe("api.settings", () => {
   });
 });
 
+describe("api.projects.export", () => {
+  it("returns a Blob on successful export", async () => {
+    const mockBlob = new Blob(["<html>exported</html>"], { type: "text/html" });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      blob: () => Promise.resolve(mockBlob),
+    });
+
+    const result = await api.projects.export("my-project", { format: "html", include_toc: true });
+    expect(result).toBeInstanceOf(Blob);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/my-project/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ format: "html", include_toc: true }),
+    });
+  });
+
+  it("throws ApiRequestError with server error message on failure", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: () => Promise.resolve({ error: { code: "VALIDATION_ERROR", message: "Invalid format" } }),
+    });
+
+    await expect(api.projects.export("my-project", { format: "html" })).rejects.toThrow(
+      "Invalid format",
+    );
+  });
+
+  it("throws generic error when error response is not JSON", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.reject(new Error("not JSON")),
+    });
+
+    await expect(api.projects.export("my-project", { format: "html" })).rejects.toThrow(
+      "Export failed: 500",
+    );
+  });
+});
+
 describe("error handling", () => {
   it("throws with server error message when response is not ok", async () => {
     mockFetch.mockResolvedValue(
