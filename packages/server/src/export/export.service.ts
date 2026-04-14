@@ -7,9 +7,11 @@ import {
   type ExportProjectInfo,
   type ExportChapter,
 } from "./export.renderers";
+import { renderDocx } from "./docx.renderer";
+import { renderEpub } from "./epub.renderer";
 
 interface ExportResult {
-  content: string;
+  content: string | Buffer;
   contentType: string;
   filename: string;
 }
@@ -68,7 +70,7 @@ export async function exportProject(
 
   const options = { includeToc: include_toc };
 
-  let content: string;
+  let content: string | Buffer;
   switch (format) {
     case "html":
       content = renderHtml(projectInfo, exportChapters, options);
@@ -78,6 +80,12 @@ export async function exportProject(
       break;
     case "plaintext":
       content = renderPlainText(projectInfo, exportChapters, options);
+      break;
+    case "docx":
+      content = await renderDocx(projectInfo, exportChapters, options);
+      break;
+    case "epub":
+      content = await renderEpub(projectInfo, exportChapters, options);
       break;
   }
 

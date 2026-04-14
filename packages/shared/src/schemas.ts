@@ -61,19 +61,23 @@ export const UpdateChapterSchema = z
     message: "At least one field must be provided",
   });
 
-export const ExportFormat = z.enum(["html", "markdown", "plaintext"]);
+export const ExportFormat = z.enum(["html", "markdown", "plaintext", "docx", "epub"]);
 export type ExportFormatType = z.infer<typeof ExportFormat>;
 
 export const EXPORT_FILE_EXTENSIONS: Record<ExportFormatType, string> = {
   html: "html",
   markdown: "md",
   plaintext: "txt",
+  docx: "docx",
+  epub: "epub",
 };
 
 export const EXPORT_CONTENT_TYPES: Record<ExportFormatType, string> = {
   html: "text/html; charset=utf-8",
   markdown: "text/markdown; charset=utf-8",
   plaintext: "text/plain; charset=utf-8",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  epub: "application/epub+zip",
 };
 
 export const ExportSchema = z.object({

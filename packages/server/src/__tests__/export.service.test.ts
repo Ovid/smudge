@@ -258,4 +258,89 @@ describe("POST /api/projects/:slug/export", () => {
       expect(res.body.error.code).toBe("NOT_FOUND");
     });
   });
+
+  describe("DOCX export", () => {
+    it("exports as Word document", async () => {
+      const { projectSlug } = await createProjectWithChapters(t.app);
+
+      const res = await request(t.app)
+        .post(`/api/projects/${projectSlug}/export`)
+        .send({ format: "docx" })
+        .buffer(true)
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          res.on("end", () => callback(null, Buffer.concat(chunks)));
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toContain(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      );
+      expect(res.headers["content-disposition"]).toContain(`filename="${projectSlug}.docx"`);
+      expect(res.body).toBeInstanceOf(Buffer);
+      expect(res.body.length).toBeGreaterThan(0);
+    });
+
+    it("exports docx with chapter selection", async () => {
+      const { projectSlug, firstChapterId } = await createProjectWithChapters(t.app);
+
+      const res = await request(t.app)
+        .post(`/api/projects/${projectSlug}/export`)
+        .send({ format: "docx", chapter_ids: [firstChapterId] })
+        .buffer(true)
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          res.on("end", () => callback(null, Buffer.concat(chunks)));
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toBeInstanceOf(Buffer);
+      expect(res.body.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("EPUB export", () => {
+    it("exports as EPUB", async () => {
+      const { projectSlug } = await createProjectWithChapters(t.app);
+
+      const res = await request(t.app)
+        .post(`/api/projects/${projectSlug}/export`)
+        .send({ format: "epub" })
+        .buffer(true)
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          res.on("end", () => callback(null, Buffer.concat(chunks)));
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toContain("application/epub+zip");
+      expect(res.headers["content-disposition"]).toContain(`filename="${projectSlug}.epub"`);
+      expect(res.body).toBeInstanceOf(Buffer);
+      expect(res.body.length).toBeGreaterThan(0);
+    });
+
+    it("zero-chapter EPUB export succeeds", async () => {
+      const { projectSlug, firstChapterId, secondChapterId } = await createProjectWithChapters(
+        t.app,
+      );
+
+      await request(t.app).delete(`/api/chapters/${firstChapterId}`);
+      await request(t.app).delete(`/api/chapters/${secondChapterId}`);
+
+      const res = await request(t.app)
+        .post(`/api/projects/${projectSlug}/export`)
+        .send({ format: "epub" })
+        .buffer(true)
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          res.on("end", () => callback(null, Buffer.concat(chunks)));
+        });
+
+      expect(res.status).toBe(200);
+    });
+  });
 });
