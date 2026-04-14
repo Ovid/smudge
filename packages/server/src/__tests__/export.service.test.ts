@@ -188,7 +188,7 @@ describe("POST /api/projects/:slug/export", () => {
   });
 
   describe("zero-chapter export", () => {
-    it("returns 400 when project has no chapters", async () => {
+    it("returns title-page-only export when project has no chapters", async () => {
       const { projectSlug, firstChapterId, secondChapterId } = await createProjectWithChapters(
         t.app,
       );
@@ -201,8 +201,27 @@ describe("POST /api/projects/:slug/export", () => {
         .post(`/api/projects/${projectSlug}/export`)
         .send({ format: "html" });
 
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toMatch(/text\/html/);
+      expect(res.text).toContain("<h1>");
+      expect(res.text).not.toContain("<section");
+    });
+
+    it("returns 400 when chapter_ids provided but all filtered out", async () => {
+      const { projectSlug, firstChapterId, secondChapterId } = await createProjectWithChapters(
+        t.app,
+      );
+
+      // Delete all chapters
+      await request(t.app).delete(`/api/chapters/${firstChapterId}`);
+      await request(t.app).delete(`/api/chapters/${secondChapterId}`);
+
+      const res = await request(t.app)
+        .post(`/api/projects/${projectSlug}/export`)
+        .send({ format: "html", chapter_ids: [firstChapterId] });
+
       expect(res.status).toBe(400);
-      expect(res.body.error.code).toBe("EXPORT_NO_CHAPTERS");
+      expect(res.body.error.code).toBe("EXPORT_INVALID_CHAPTERS");
     });
   });
 
