@@ -47,16 +47,18 @@ No new tables. No new settings.
 - `include_toc` — optional boolean, defaults to `true`
 - `chapter_ids` — optional array of UUIDs. If provided, must be non-empty and all IDs must belong to the project. Soft-deleted chapters in the list are silently omitted. If no chapters remain after filtering, return 400.
 
+**Zero-chapter export:** If the project has no chapters (or all are deleted) and no `chapter_ids` were specified, the export succeeds with a title-page-only file — a manuscript is a manuscript even before the first chapter.
+
 **Success response:**
 
 - `200` with the file body
 - `Content-Type`: `text/html`, `text/markdown`, or `text/plain`
-- `Content-Disposition: attachment; filename="project-title.html"`
-- Filename derived from project title (slugified)
+- `Content-Disposition: attachment; filename="{project-slug}.html"`
+- Filename derived from the project's existing `slug` field (already sanitized and unique). Falls back to `"export"` if slug is somehow empty.
 
 **Error responses:**
 
-- `400` — invalid format, empty chapter list after filtering, invalid JSON
+- `400` — invalid format, empty chapter list after filtering (only when `chapter_ids` explicitly provided), invalid JSON
 - `404` — project not found or soft-deleted
 
 ### Project Settings Update
@@ -121,7 +123,7 @@ Produces a single self-contained `.html` file with embedded CSS:
 </html>
 ```
 
-- Each chapter's TipTap JSON converted via `generateHTML()`, sanitized with DOMPurify
+- Each chapter's TipTap JSON converted via `generateHTML()` (no sanitization needed — content is authored by the single user via TipTap, and the exported file is a static download, not rendered in the app)
 - Chapter titles as `<h2>` elements
 - Chapters separated by a decorative divider
 - If `author_name` is null, the author line is omitted entirely
@@ -171,18 +173,18 @@ Chapter 2: The Middle
 
 - Title page at top
 - Three blank lines between chapters
-- Content extracted by walking the TipTap JSON tree directly (no HTML intermediate)
+- Content extracted via `generateHTML()` then stripping HTML tags — same pipeline as the other renderers, no custom JSON tree walker needed
 - If `author_name` is null, the "by" line is omitted
 
 ---
 
-## Shared Editor Extensions
+## Editor Extensions
 
 The TipTap extension list currently lives in `packages/client/src/editorExtensions.ts`. The server needs the same list for `generateHTML()`.
 
-**Approach:** Move the extension list to `packages/shared/`. Both client and server import from there.
+**Approach:** Duplicate the extension list in the server package (`packages/server/src/export/editorExtensions.ts`). It's 7 lines of code that rarely changes. A test asserts both lists produce identical output for a reference TipTap document, catching any divergence.
 
-**Fallback:** If any extensions have browser-only dependencies that break in Node.js, keep two lists — a shared base list in `packages/shared/` and client-only additions in `packages/client/`. The server uses the base list, which is sufficient for `generateHTML()`.
+This keeps `packages/shared/` lean (types, schemas, utilities only) and avoids adding TipTap as a shared dependency.
 
 ---
 
@@ -248,9 +250,9 @@ Supertest for `POST /api/projects/{id}/export`:
 - Correct filename from project title
 - Validation error responses
 
-### Shared Extensions
+### Extension Divergence Test
 
-- Verify shared extension list produces valid HTML via `generateHTML()` in Node.js
+- Verify client and server extension lists produce identical HTML output for a reference TipTap document
 
 ### Client
 
@@ -277,6 +279,9 @@ Supertest for `POST /api/projects/{id}/export`:
 | Chapter selection UI | Collapsed by default | "Export all" is the common case; keep it to one click |
 | TipTap-to-Markdown | JSON -> HTML -> turndown | Two mature libraries, no custom serializer |
 | HTML export style | Self-contained with embedded CSS | Single file, web-safe fonts, portable |
-| Plain text structure | Minimal — titles + blank line separation | Let the words speak; no decorative noise |
+| Plain text extraction | HTML pipeline + tag stripping | Same pipeline as other renderers; no custom JSON tree walker |
 | Pipeline architecture | Simple functions, no abstraction | YAGNI; refactor when Phase 3b provides concrete requirements |
-| Shared extensions | Move to packages/shared/ | Both client and server need the same list for consistent rendering |
+| Editor extensions | Duplicate in server, test for divergence | Keeps packages/shared lean; 7 lines of code, rarely changes |
+| HTML sanitization | Skipped | Single-user authored content in a downloaded file; no XSS surface |
+| Export filename | Use project slug | Already sanitized and unique; no re-slugification needed |
+| Zero-chapter export | Title-page-only file | A manuscript is a manuscript even before the first chapter |
