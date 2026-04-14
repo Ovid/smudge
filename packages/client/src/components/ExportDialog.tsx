@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { api } from "../api/client";
+import { api, ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
 
 interface ExportDialogProps {
@@ -102,8 +102,8 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
       URL.revokeObjectURL(url);
 
       onClose();
-    } catch {
-      setError(STRINGS.export.errorFailed);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : STRINGS.export.errorFailed);
     } finally {
       setExporting(false);
     }

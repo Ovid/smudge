@@ -2,13 +2,22 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ExportDialog } from "../components/ExportDialog";
-import { api } from "../api/client";
+import { api, ApiRequestError } from "../api/client";
 
 vi.mock("../api/client", () => ({
   api: {
     projects: {
       export: vi.fn(),
     },
+  },
+  ApiRequestError: class ApiRequestError extends Error {
+    constructor(
+      message: string,
+      public readonly status: number,
+    ) {
+      super(message);
+      this.name = "ApiRequestError";
+    }
   },
 }));
 
@@ -102,7 +111,7 @@ describe("ExportDialog", () => {
     });
   });
 
-  it("shows error message when export fails", async () => {
+  it("shows generic error message for non-API errors", async () => {
     const user = userEvent.setup();
     vi.mocked(api.projects.export).mockRejectedValue(new Error("Network error"));
 
@@ -111,6 +120,22 @@ describe("ExportDialog", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent("Export failed. Please try again.");
+    });
+  });
+
+  it("shows specific server error message for ApiRequestError", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.projects.export).mockRejectedValue(
+      new ApiRequestError("One or more chapter IDs do not belong to this project.", 400),
+    );
+
+    render(<ExportDialog {...defaultProps} />);
+    await user.click(screen.getByText("Export"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "One or more chapter IDs do not belong to this project.",
+      );
     });
   });
 
