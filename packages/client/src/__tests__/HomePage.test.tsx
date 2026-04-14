@@ -124,6 +124,7 @@ describe("HomePage", () => {
       mode: "fiction",
       target_word_count: null,
       target_deadline: null,
+      author_name: null,
       created_at: "",
       updated_at: "",
       deleted_at: null,

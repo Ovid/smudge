@@ -84,6 +84,7 @@ const mockProject = {
   deleted_at: null,
   target_word_count: null,
   target_deadline: null,
+  author_name: null,
   chapters: [
     {
       id: "ch-1",
@@ -719,6 +720,7 @@ describe("EditorPage title editing guards", () => {
       mode: mockProject.mode,
       target_word_count: mockProject.target_word_count,
       target_deadline: mockProject.target_deadline,
+      author_name: null,
       created_at: mockProject.created_at,
       updated_at: mockProject.updated_at,
       deleted_at: mockProject.deleted_at,
