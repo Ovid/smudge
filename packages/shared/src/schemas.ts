@@ -56,6 +56,14 @@ export const UpdateChapterSchema = z
     message: "At least one field must be provided",
   });
 
+export const ExportFormat = z.enum(["html", "markdown", "plaintext"]);
+
+export const ExportSchema = z.object({
+  format: ExportFormat,
+  include_toc: z.boolean().default(true),
+  chapter_ids: z.array(z.string().uuid()).min(1).optional(),
+});
+
 export const UpdateSettingsSchema = z.object({
   settings: z
     .array(

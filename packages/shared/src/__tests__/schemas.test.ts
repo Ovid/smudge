@@ -5,6 +5,7 @@ import {
   UpdateChapterSchema,
   UpdateSettingsSchema,
   ChapterStatus,
+  ExportSchema,
 } from "../schemas";
 
 describe("CreateProjectSchema", () => {
@@ -139,6 +140,40 @@ describe("UpdateProjectSchema — target fields", () => {
 
   it("rejects target_deadline as invalid date", () => {
     expect(UpdateProjectSchema.safeParse({ target_deadline: "not-a-date" }).success).toBe(false);
+  });
+});
+
+describe("ExportSchema", () => {
+  it("accepts valid export config with all fields", () => {
+    const result = ExportSchema.safeParse({
+      format: "html",
+      include_toc: true,
+      chapter_ids: ["550e8400-e29b-41d4-a716-446655440000"],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts minimal config (format only)", () => {
+    const result = ExportSchema.safeParse({ format: "markdown" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.include_toc).toBe(true);
+    }
+  });
+
+  it("rejects invalid format", () => {
+    const result = ExportSchema.safeParse({ format: "pdf" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects empty chapter_ids array", () => {
+    const result = ExportSchema.safeParse({ format: "html", chapter_ids: [] });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts plaintext format", () => {
+    const result = ExportSchema.safeParse({ format: "plaintext" });
+    expect(result.success).toBe(true);
   });
 });
 
