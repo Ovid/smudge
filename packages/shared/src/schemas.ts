@@ -27,7 +27,12 @@ export const UpdateProjectSchema = z
         );
       }, "Must be a valid date")
       .nullable(),
-    author_name: z.string().trim().max(500, "Author name is too long").nullable(),
+    author_name: z
+      .string()
+      .trim()
+      .max(500, "Author name is too long")
+      .nullable()
+      .transform((val) => (val === "" ? null : val)),
   })
   .partial()
   .refine((data) => Object.keys(data).length > 0, {

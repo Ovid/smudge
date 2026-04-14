@@ -143,6 +143,38 @@ describe("UpdateProjectSchema — target fields", () => {
   });
 });
 
+describe("UpdateProjectSchema — author_name", () => {
+  it("accepts author_name as a string", () => {
+    const result = UpdateProjectSchema.safeParse({ author_name: "Jane Doe" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.author_name).toBe("Jane Doe");
+  });
+
+  it("accepts author_name as null", () => {
+    const result = UpdateProjectSchema.safeParse({ author_name: null });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.author_name).toBeNull();
+  });
+
+  it("normalizes empty author_name to null", () => {
+    const result = UpdateProjectSchema.safeParse({ author_name: "" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.author_name).toBeNull();
+  });
+
+  it("normalizes whitespace-only author_name to null", () => {
+    const result = UpdateProjectSchema.safeParse({ author_name: "   " });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.author_name).toBeNull();
+  });
+
+  it("trims whitespace from author_name", () => {
+    const result = UpdateProjectSchema.safeParse({ author_name: "  Jane Doe  " });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.author_name).toBe("Jane Doe");
+  });
+});
+
 describe("ExportSchema", () => {
   it("accepts valid export config with all fields", () => {
     const result = ExportSchema.safeParse({
