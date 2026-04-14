@@ -81,6 +81,22 @@ describe("ExportDialog", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("preserves user selections when chapters prop reference changes", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<ExportDialog {...defaultProps} />);
+
+    // Change format to markdown
+    await user.click(screen.getByLabelText("Markdown"));
+    expect(screen.getByLabelText("Markdown")).toBeChecked();
+
+    // Rerender with a new chapters array reference (same data, new object)
+    const newChapters = [...mockChapters.map((ch) => ({ ...ch }))];
+    rerender(<ExportDialog {...defaultProps} chapters={newChapters} />);
+
+    // Format should still be markdown, not reset to html
+    expect(screen.getByLabelText("Markdown")).toBeChecked();
+  });
+
   it("toggles a chapter off when unchecked", async () => {
     const user = userEvent.setup();
     render(<ExportDialog {...defaultProps} />);

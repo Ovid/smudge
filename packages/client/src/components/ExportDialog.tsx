@@ -22,9 +22,10 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset state when dialog opens
+  // Reset state only when the dialog opens (open transitions false → true)
+  const prevOpenRef = useRef(false);
   useEffect(() => {
-    if (open) {
+    if (open && !prevOpenRef.current) {
       setFormat("html");
       setIncludeToc(true);
       setSelectingChapters(false);
@@ -32,6 +33,7 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
       setExporting(false);
       setError(null);
     }
+    prevOpenRef.current = open;
   }, [open, chapters]);
 
   // Show/close modal
