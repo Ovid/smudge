@@ -1,6 +1,7 @@
 import { generateHTML } from "@tiptap/html";
 import TurndownService from "turndown";
 import { serverEditorExtensions } from "./editorExtensions";
+import { logger } from "../logger";
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -31,7 +32,8 @@ function chapterContentToHtml(content: Record<string, unknown> | null): string {
   if (!content) return "";
   try {
     return generateHTML(content, serverEditorExtensions);
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, "Failed to render chapter content to HTML during export");
     return "";
   }
 }
