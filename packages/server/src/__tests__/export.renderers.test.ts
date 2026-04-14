@@ -1,5 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { renderHtml, renderMarkdown, renderPlainText } from "../export/export.renderers";
+import { logger } from "../logger";
+
+vi.mock("../logger", () => ({
+  logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
+}));
 
 const sampleChapters = [
   {
@@ -77,6 +82,10 @@ describe("renderHtml", () => {
     const html = renderHtml(projectInfo, chapters, { includeToc: false });
     expect(html).toContain("Bad Content");
     expect(html).toContain("<!DOCTYPE html>");
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      expect.stringContaining("Failed to render"),
+    );
   });
 
   it("handles chapter with empty-string title", () => {
