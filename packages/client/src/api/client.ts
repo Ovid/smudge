@@ -110,11 +110,13 @@ export const api = {
         include_toc?: boolean;
         chapter_ids?: string[];
       },
+      signal?: AbortSignal,
     ): Promise<Blob> => {
       const res = await fetch(`${BASE}/projects/${slug}/export`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),
+        signal,
       });
 
       if (!res.ok) {

@@ -128,10 +128,11 @@ describe("ExportDialog", () => {
     await user.click(screen.getByText("Export"));
 
     await waitFor(() => {
-      expect(api.projects.export).toHaveBeenCalledWith("test-project", {
-        format: "html",
-        include_toc: true,
-      });
+      expect(api.projects.export).toHaveBeenCalledWith(
+        "test-project",
+        { format: "html", include_toc: true },
+        expect.any(AbortSignal),
+      );
       expect(onClose).toHaveBeenCalled();
     });
     clickSpy.mockRestore();
@@ -177,10 +178,11 @@ describe("ExportDialog", () => {
     await user.click(screen.getByText("Export"));
 
     await waitFor(() => {
-      expect(api.projects.export).toHaveBeenCalledWith("test-project", {
-        format: "markdown",
-        include_toc: true,
-      });
+      expect(api.projects.export).toHaveBeenCalledWith(
+        "test-project",
+        { format: "markdown", include_toc: true },
+        expect.any(AbortSignal),
+      );
     });
     clickSpy.mockRestore();
   });
@@ -242,10 +244,11 @@ describe("ExportDialog", () => {
     await user.click(screen.getByText("Export"));
 
     await waitFor(() => {
-      expect(api.projects.export).toHaveBeenCalledWith("test-project", {
-        format: "html",
-        include_toc: false,
-      });
+      expect(api.projects.export).toHaveBeenCalledWith(
+        "test-project",
+        { format: "html", include_toc: false },
+        expect.any(AbortSignal),
+      );
     });
     clickSpy.mockRestore();
   });

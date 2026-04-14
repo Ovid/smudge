@@ -96,7 +96,7 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
         config.chapter_ids = chapters.filter((c) => selectedChapterIds.has(c.id)).map((c) => c.id);
       }
 
-      const blob = await api.projects.export(projectSlug, config);
+      const blob = await api.projects.export(projectSlug, config, controller.signal);
 
       if (controller.signal.aborted) return;
 
