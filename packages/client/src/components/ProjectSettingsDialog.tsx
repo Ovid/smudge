@@ -19,6 +19,7 @@ interface ProjectSettingsDialogProps {
     slug: string;
     target_word_count: number | null;
     target_deadline: string | null;
+    author_name: string | null;
   };
   onClose: () => void;
   onUpdate: () => void;
@@ -35,6 +36,7 @@ export function ProjectSettingsDialog({
     project.target_word_count != null ? String(project.target_word_count) : "",
   );
   const [deadline, setDeadline] = useState(project.target_deadline ?? "");
+  const [authorName, setAuthorName] = useState(project.author_name ?? "");
   const [timezone, setTimezone] = useState<string>("UTC");
   const [fieldSaveError, setFieldSaveError] = useState<string | null>(null);
   const [timezoneSaveError, setTimezoneSaveError] = useState<string | null>(null);
@@ -47,6 +49,7 @@ export function ProjectSettingsDialog({
   const confirmedFieldsRef = useRef({
     wordCountTarget: project.target_word_count != null ? String(project.target_word_count) : "",
     deadline: project.target_deadline ?? "",
+    authorName: project.author_name ?? "",
   });
 
   // Re-sync project fields from props when the dialog opens.
@@ -60,6 +63,7 @@ export function ProjectSettingsDialog({
         project.target_word_count != null ? String(project.target_word_count) : "",
       );
       setDeadline(project.target_deadline ?? "");
+      setAuthorName(project.author_name ?? "");
       setFieldSaveError(null);
       setTimezoneSaveError(null);
     }
@@ -71,6 +75,7 @@ export function ProjectSettingsDialog({
       confirmedFieldsRef.current = {
         wordCountTarget: project.target_word_count != null ? String(project.target_word_count) : "",
         deadline: project.target_deadline ?? "",
+        authorName: project.author_name ?? "",
       };
       let cancelled = false;
       userChangedTimezoneRef.current = false;
@@ -132,6 +137,9 @@ export function ProjectSettingsDialog({
       if ("target_deadline" in data) {
         confirmedFieldsRef.current.deadline = data.target_deadline ?? "";
       }
+      if ("author_name" in data) {
+        confirmedFieldsRef.current.authorName = data.author_name ?? "";
+      }
       onUpdate();
     } catch (err) {
       console.error("Failed to save project setting:", err);
@@ -142,6 +150,9 @@ export function ProjectSettingsDialog({
       }
       if ("target_deadline" in data) {
         setDeadline(confirmedFieldsRef.current.deadline);
+      }
+      if ("author_name" in data) {
+        setAuthorName(confirmedFieldsRef.current.authorName);
       }
     }
   }
@@ -156,6 +167,11 @@ export function ProjectSettingsDialog({
       return;
     }
     saveField({ target_word_count: parsed });
+  }
+
+  function handleAuthorNameBlur() {
+    const trimmed = authorName.trim();
+    saveField({ author_name: trimmed || null });
   }
 
   function handleDeadlineChange(value: string) {
@@ -283,6 +299,24 @@ export function ProjectSettingsDialog({
               {STRINGS.projectSettings.clear}
             </button>
           </div>
+        </div>
+
+        <div>
+          <label
+            className="block text-sm font-medium text-text-secondary mb-1 font-sans"
+            htmlFor="project-author-name"
+          >
+            {STRINGS.projectSettings.authorName}
+          </label>
+          <input
+            id="project-author-name"
+            type="text"
+            value={authorName}
+            onChange={(e) => setAuthorName(e.target.value)}
+            onBlur={handleAuthorNameBlur}
+            className="w-full rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring"
+            placeholder={STRINGS.projectSettings.authorNamePlaceholder}
+          />
         </div>
 
         <div className="border-t border-border/40 pt-4">

@@ -325,6 +325,7 @@ No API changes. This is an internal refactoring.
 ---
 
 ## Phase 3a: Export Foundation
+<!-- plan: 2026-04-14-export-foundation-design.md -->
 
 ### Goal
 

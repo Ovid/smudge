@@ -7,7 +7,12 @@ export {
   ReorderChaptersSchema,
   ProjectMode,
   ChapterStatus,
+  ExportSchema,
+  ExportFormat,
+  EXPORT_FILE_EXTENSIONS,
+  EXPORT_CONTENT_TYPES,
 } from "./schemas";
+export type { ExportFormatType } from "./schemas";
 export { countWords } from "./wordcount";
 export { generateSlug } from "./slugify";
 export { UNTITLED_CHAPTER, TRASH_RETENTION_DAYS, TRASH_RETENTION_MS } from "./constants";

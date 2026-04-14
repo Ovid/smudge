@@ -135,6 +135,9 @@ export async function updateProject(
   if (parsed.data.target_deadline !== undefined) {
     updates.target_deadline = parsed.data.target_deadline;
   }
+  if (parsed.data.author_name !== undefined) {
+    updates.author_name = parsed.data.author_name;
+  }
   const updated = await store.transaction(async (txStore) => {
     if (parsed.data.title !== undefined) {
       const existingTitle = await txStore.findProjectByTitle(parsed.data.title, project.id);

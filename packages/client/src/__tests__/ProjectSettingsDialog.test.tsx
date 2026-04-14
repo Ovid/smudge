@@ -13,6 +13,7 @@ const defaultProject = {
   mode: "fiction" as const,
   target_word_count: null as number | null,
   target_deadline: null as string | null,
+  author_name: null as string | null,
   created_at: "",
   updated_at: "",
 };

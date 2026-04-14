@@ -8,6 +8,7 @@ export interface ProjectRow {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  author_name: string | null;
 }
 
 export interface CreateProjectRow {
@@ -27,6 +28,7 @@ export interface UpdateProjectData {
   target_deadline?: string | null;
   updated_at: string;
   deleted_at?: string | null;
+  author_name?: string | null;
 }
 
 export interface ProjectListRow {

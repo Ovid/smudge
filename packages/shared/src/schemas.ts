@@ -27,6 +27,12 @@ export const UpdateProjectSchema = z
         );
       }, "Must be a valid date")
       .nullable(),
+    author_name: z
+      .string()
+      .trim()
+      .max(500, "Author name is too long")
+      .nullable()
+      .transform((val) => (val === "" ? null : val)),
   })
   .partial()
   .refine((data) => Object.keys(data).length > 0, {
@@ -54,6 +60,27 @@ export const UpdateChapterSchema = z
   .refine((data) => Object.keys(data).length > 0, {
     message: "At least one field must be provided",
   });
+
+export const ExportFormat = z.enum(["html", "markdown", "plaintext"]);
+export type ExportFormatType = z.infer<typeof ExportFormat>;
+
+export const EXPORT_FILE_EXTENSIONS: Record<ExportFormatType, string> = {
+  html: "html",
+  markdown: "md",
+  plaintext: "txt",
+};
+
+export const EXPORT_CONTENT_TYPES: Record<ExportFormatType, string> = {
+  html: "text/html; charset=utf-8",
+  markdown: "text/markdown; charset=utf-8",
+  plaintext: "text/plain; charset=utf-8",
+};
+
+export const ExportSchema = z.object({
+  format: ExportFormat,
+  include_toc: z.boolean().default(true),
+  chapter_ids: z.array(z.string().uuid()).min(1).max(1000).optional(),
+});
 
 export const UpdateSettingsSchema = z.object({
   settings: z

@@ -80,15 +80,18 @@ Insert a plan comment on the line immediately after the `---` separator that pre
 
 The filename is whatever the brainstorming skill created (it follows the pattern `YYYY-MM-DD-<topic>-design.md`).
 
-### 5b. Update the Phase Structure table status
+### 5b. Update the Phase Structure table statuses
 
-In the **Phase Structure** table near the top of the roadmap, change the phase's Status from `Planned` to `Planned` (brainstorming alone doesn't mark a phase as Done). The valid statuses are:
+In the **Phase Structure** table near the top of the roadmap, make two updates:
+
+1. **Mark the current phase as "In Progress"** — change its status from `Planned` to `In Progress`.
+2. **Mark the previous phase as "Done"** — if the phase immediately before the current one has status `In Progress`, change it to `Done` (it must have been completed if we're moving on to brainstorm the next phase).
+
+The valid statuses are:
 
 - **Planned** — not yet started
-- **In Progress** — implementation underway
+- **In Progress** — brainstorming or implementation underway
 - **Done** — shipped and merged to main
-
-Only update the status if explicitly told to by the user (e.g., marking a phase Done after implementation). Otherwise leave it as-is.
 
 ## 6. Pushback Review
 

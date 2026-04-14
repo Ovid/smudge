@@ -68,6 +68,7 @@ const mockProject = {
   deleted_at: null,
   target_word_count: null,
   target_deadline: null,
+  author_name: null,
   chapters: [
     {
       id: "ch-1",

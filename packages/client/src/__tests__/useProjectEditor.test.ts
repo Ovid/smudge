@@ -92,6 +92,7 @@ const mockProject = {
   deleted_at: null,
   target_word_count: null,
   target_deadline: null,
+  author_name: null,
   chapters: [mockChapter1, mockChapter2],
 };
 
@@ -361,6 +362,7 @@ describe("useProjectEditor", () => {
   });
 
   it("sets error state when project fetch returns 404", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.projects.get).mockRejectedValue(new Error("Project not found."));
 
     const { result } = renderHook(() => useProjectEditor("nonexistent-id"));
@@ -370,6 +372,11 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.project).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to load project:"),
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
   });
 
   it("updates word count on content change", async () => {
@@ -387,6 +394,7 @@ describe("useProjectEditor", () => {
   });
 
   it("sets error when handleCreateChapter fails", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.create).mockRejectedValue(new Error("create boom"));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -397,9 +405,15 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.error).toBe(STRINGS.error.createChapterFailed);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to create chapter:"),
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
   });
 
   it("sets error when handleSelectChapter fails", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.get)
       .mockResolvedValueOnce(mockChapter1) // initial load
       .mockRejectedValueOnce(new Error("select boom")); // select fails
@@ -412,9 +426,15 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.error).toBe(STRINGS.error.loadChapterFailed);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to load chapter:"),
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
   });
 
   it("calls onError callback when handleDeleteChapter fails (does not set full-page error)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.delete).mockRejectedValue(new Error("delete boom"));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -427,6 +447,11 @@ describe("useProjectEditor", () => {
 
     expect(onError).toHaveBeenCalledWith(STRINGS.error.deleteChapterFailed);
     expect(result.current.error).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to delete chapter:"),
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
   });
 
   it("sets activeChapter to null when deleting the last chapter", async () => {
@@ -450,6 +475,7 @@ describe("useProjectEditor", () => {
   });
 
   it("sets error when handleReorderChapters fails", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.projects.reorderChapters).mockRejectedValue(new Error("reorder boom"));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -460,9 +486,15 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.error).toBe(STRINGS.error.reorderFailed);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to reorder chapters:"),
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
   });
 
   it("returns undefined when handleUpdateProjectTitle fails", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.projects.update).mockRejectedValue(new Error("update boom"));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -478,9 +510,15 @@ describe("useProjectEditor", () => {
     expect(result.current.error).toBeNull();
     // Should set inline project title error
     expect(result.current.projectTitleError).toBe(STRINGS.error.updateTitleFailed);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to update project title:"),
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
   });
 
   it("calls onError callback when handleRenameChapter fails (does not set full-page error)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.update).mockRejectedValue(new Error("rename boom"));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -493,6 +531,11 @@ describe("useProjectEditor", () => {
 
     expect(onError).toHaveBeenCalledWith(STRINGS.error.renameChapterFailed);
     expect(result.current.error).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to rename chapter:"),
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
   });
 
   it("handleStatusChange updates chapter status optimistically", async () => {
@@ -628,6 +671,7 @@ describe("useProjectEditor", () => {
   });
 
   it("handleContentChange preserves error save status instead of overwriting", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("Bad Request", 400));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -638,6 +682,10 @@ describe("useProjectEditor", () => {
       await result.current.handleSave({ type: "doc", content: [] });
     });
     expect(result.current.saveStatus).toBe("error");
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Save failed with 4xx:"),
+      expect.any(ApiRequestError),
+    );
 
     // Typing new content should NOT overwrite the error status
     act(() => {
@@ -648,9 +696,11 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.saveStatus).toBe("error");
+    warnSpy.mockRestore();
   });
 
   it("handleSave breaks immediately on 4xx ApiRequestError without retrying", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("Bad Request", 400));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -666,6 +716,11 @@ describe("useProjectEditor", () => {
     expect(result.current.saveStatus).toBe("error");
     // Should only be called once — no retries on client errors
     expect(api.chapters.update).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Save failed with 4xx:"),
+      expect.any(ApiRequestError),
+    );
+    warnSpy.mockRestore();
   });
 
   it("handleSave logs 4xx errors with console.warn", async () => {
@@ -688,6 +743,7 @@ describe("useProjectEditor", () => {
   });
 
   it("handleSave exposes server error message on 4xx failure", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.update).mockRejectedValue(
       new ApiRequestError("Invalid status: xyz", 400),
     );
@@ -701,9 +757,15 @@ describe("useProjectEditor", () => {
 
     expect(result.current.saveStatus).toBe("error");
     expect(result.current.saveErrorMessage).toBe("Unable to save \u2014 check connection");
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Save failed with 4xx:"),
+      expect.any(ApiRequestError),
+    );
+    warnSpy.mockRestore();
   });
 
   it("handleSave clears saveErrorMessage on next save attempt", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.update)
       .mockRejectedValueOnce(new ApiRequestError("Bad Request", 400))
       .mockResolvedValueOnce({ ...mockChapter1, word_count: 3 });
@@ -715,15 +777,21 @@ describe("useProjectEditor", () => {
       await result.current.handleSave({ type: "doc", content: [] });
     });
     expect(result.current.saveErrorMessage).toBe("Unable to save \u2014 check connection");
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Save failed with 4xx:"),
+      expect.any(ApiRequestError),
+    );
 
     await act(async () => {
       await result.current.handleSave({ type: "doc", content: [] });
     });
     expect(result.current.saveStatus).toBe("saved");
     expect(result.current.saveErrorMessage).toBeNull();
+    warnSpy.mockRestore();
   });
 
   it("handleCreateChapter resets saveStatus and saveErrorMessage from a previous failure", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("Bad Request", 400));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -735,6 +803,10 @@ describe("useProjectEditor", () => {
     });
     expect(result.current.saveStatus).toBe("error");
     expect(result.current.saveErrorMessage).not.toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Save failed with 4xx:"),
+      expect.any(ApiRequestError),
+    );
 
     // Create a new chapter — save state should reset
     const newChapter = {
@@ -757,6 +829,7 @@ describe("useProjectEditor", () => {
 
     expect(result.current.saveStatus).toBe("idle");
     expect(result.current.saveErrorMessage).toBeNull();
+    warnSpy.mockRestore();
   });
 
   it("handleDeleteChapter falls through to empty state when secondary chapter fetch fails", async () => {

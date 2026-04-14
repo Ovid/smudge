@@ -11,6 +11,7 @@ import { DashboardView } from "../components/DashboardView";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ProjectSettingsDialog } from "../components/ProjectSettingsDialog";
 import { ShortcutHelpDialog } from "../components/ShortcutHelpDialog";
+import { ExportDialog } from "../components/ExportDialog";
 import { ActionErrorBanner } from "../components/ActionErrorBanner";
 import { ViewModeNav } from "../components/ViewModeNav";
 import { EditorFooter } from "../components/EditorFooter";
@@ -92,6 +93,7 @@ export function EditorPage() {
   } = useTrashManager(project, slug, setProject, handleDeleteChapter, navigate);
 
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("editor");
   const [statuses, setStatuses] = useState<ChapterStatusRow[]>([]);
   const [navAnnouncement, setNavAnnouncement] = useState("");
@@ -128,7 +130,7 @@ export function EditorPage() {
       cancelled = true;
       if (timerId !== null) clearTimeout(timerId);
     };
-  }, []);
+  }, [setActionError]);
 
   const handleStatusChangeWithError = useCallback(
     (chapterId: string, status: string) => {
@@ -289,6 +291,12 @@ export function EditorPage() {
         <div className="flex items-center gap-2">
           {showActiveEditor && <ViewModeNav viewMode={viewMode} onSwitchToView={switchToView} />}
           <button
+            onClick={() => setExportDialogOpen(true)}
+            className="text-sm text-text-muted hover:text-text-secondary rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring"
+          >
+            {STRINGS.export.buttonLabel}
+          </button>
+          <button
             onClick={() => setProjectSettingsOpen(true)}
             aria-label={STRINGS.projectSettings.openLabel}
             className="text-sm text-text-muted hover:text-text-secondary rounded-md p-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring"
@@ -439,6 +447,19 @@ export function EditorPage() {
       />
 
       <ShortcutHelpDialog open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
+
+      {project && (
+        <ExportDialog
+          open={exportDialogOpen}
+          projectSlug={project.slug}
+          chapters={project.chapters.map((ch) => ({
+            id: ch.id,
+            title: ch.title,
+            sort_order: ch.sort_order,
+          }))}
+          onClose={() => setExportDialogOpen(false)}
+        />
+      )}
     </div>
   );
 }
