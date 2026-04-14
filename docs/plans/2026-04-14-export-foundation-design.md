@@ -45,7 +45,7 @@ No new tables. No new settings.
 
 - `format` — required, one of `html`, `markdown`, `plaintext`
 - `include_toc` — optional boolean, defaults to `true`
-- `chapter_ids` — optional array of UUIDs. If provided, must be non-empty and all IDs must belong to the project. Soft-deleted chapters in the list are silently omitted. If no chapters remain after filtering, return 400.
+- `chapter_ids` — optional array of UUIDs. If provided, must be non-empty and all IDs must belong to the project (including soft-deleted chapters, which are rejected as invalid). Returns 400 `EXPORT_INVALID_CHAPTERS` if any ID does not belong to the project or references a soft-deleted chapter.
 
 **Zero-chapter export:** If the project has no chapters (or all are deleted) and no `chapter_ids` were specified, the export succeeds with a title-page-only file — a manuscript is a manuscript even before the first chapter.
 
@@ -58,7 +58,7 @@ No new tables. No new settings.
 
 **Error responses:**
 
-- `400` — invalid format, empty chapter list after filtering (only when `chapter_ids` explicitly provided), invalid JSON
+- `400` — invalid format, invalid `chapter_ids` (IDs not belonging to the project or referencing soft-deleted chapters), no chapters remaining after validation, invalid JSON
 - `404` — project not found or soft-deleted
 
 ### Project Settings Update
