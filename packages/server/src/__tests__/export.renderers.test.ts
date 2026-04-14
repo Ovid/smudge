@@ -146,6 +146,27 @@ describe("renderMarkdown", () => {
     const md = renderMarkdown(projectInfo, cjkChapters, { includeToc: true });
     expect(md).toMatch(/\[第一章\]\(#第一章\)/);
   });
+
+  it("escapes Markdown metacharacters in titles and author", () => {
+    const mdProject = {
+      title: "My *Bold* Novel",
+      author_name: "Jane_Doe [editor]",
+      slug: "my-bold-novel",
+    };
+    const mdChapters = [
+      { id: "ch-1", title: "Chapter #1: The [Beginning]", content: null, sort_order: 0 },
+    ];
+    const md = renderMarkdown(mdProject, mdChapters, { includeToc: true });
+
+    // Title metacharacters are escaped
+    expect(md).toContain("# My \\*Bold\\* Novel");
+    // Author metacharacters are escaped
+    expect(md).toContain("*By Jane\\_Doe \\[editor\\]*");
+    // Chapter heading metacharacters are escaped
+    expect(md).toContain("## Chapter \\#1: The \\[Beginning\\]");
+    // TOC link text is also escaped
+    expect(md).toContain("[Chapter \\#1: The \\[Beginning\\]]");
+  });
 });
 
 describe("renderPlainText", () => {

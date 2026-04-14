@@ -66,6 +66,12 @@ function stripHtmlTags(html: string): string {
   return text.trim();
 }
 
+function escapeMarkdown(text: string): string {
+  return text
+    .replace(/\n/g, " ")
+    .replace(/([\\`*_{}[\]()#+\-.!|])/g, "\\$1");
+}
+
 function slugifyAnchor(text: string): string {
   const slug = text
     .toLowerCase()
@@ -162,11 +168,11 @@ export function renderMarkdown(
   const parts: string[] = [];
 
   // Title
-  parts.push(`# ${project.title}`);
+  parts.push(`# ${escapeMarkdown(project.title)}`);
 
   // Author
   if (project.author_name) {
-    parts.push(`*By ${project.author_name}*`);
+    parts.push(`*By ${escapeMarkdown(project.author_name)}*`);
   }
 
   // TOC: only when requested AND there are chapters
@@ -178,7 +184,7 @@ export function renderMarkdown(
       const count = seenSlugs.get(slug) ?? 0;
       seenSlugs.set(slug, count + 1);
       if (count > 0) slug = `${slug}-${count}`;
-      return `- [${ch.title}](#${slug})`;
+      return `- [${escapeMarkdown(ch.title)}](#${slug})`;
     });
     parts.push(tocLines.join("\n"));
     parts.push("---");
@@ -190,7 +196,7 @@ export function renderMarkdown(
       parts.push("---");
     }
 
-    parts.push(`## ${ch.title}`);
+    parts.push(`## ${escapeMarkdown(ch.title)}`);
 
     const html = chapterContentToHtml(ch.content);
     if (html) {
