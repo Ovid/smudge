@@ -29,7 +29,11 @@ export interface RenderOptions {
 
 function chapterContentToHtml(content: Record<string, unknown> | null): string {
   if (!content) return "";
-  return generateHTML(content, serverEditorExtensions);
+  try {
+    return generateHTML(content, serverEditorExtensions);
+  } catch {
+    return "";
+  }
 }
 
 function escapeHtml(text: string): string {

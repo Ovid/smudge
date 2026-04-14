@@ -65,6 +65,20 @@ describe("renderHtml", () => {
     expect(html).toContain("<!DOCTYPE html>");
   });
 
+  it("handles chapters with malformed TipTap JSON gracefully", () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Bad Content",
+        content: { type: "invalid_node_that_doesnt_exist" } as Record<string, unknown>,
+        sort_order: 0,
+      },
+    ];
+    const html = renderHtml(projectInfo, chapters, { includeToc: false });
+    expect(html).toContain("Bad Content");
+    expect(html).toContain("<!DOCTYPE html>");
+  });
+
   it("handles chapter with empty-string title", () => {
     const chapters = [{ id: "ch-1", title: "", content: null, sort_order: 0 }];
     const html = renderHtml(projectInfo, chapters, { includeToc: false });
