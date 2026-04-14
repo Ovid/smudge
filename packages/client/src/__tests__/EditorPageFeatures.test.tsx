@@ -137,6 +137,7 @@ describe("EditorPage error handling", () => {
   });
 
   it("shows error message when project is not found", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.projects.get).mockRejectedValue(new Error("Project not found."));
 
     renderEditorPage();
@@ -146,6 +147,8 @@ describe("EditorPage error handling", () => {
     });
 
     expect(screen.getByRole("link", { name: "Back to Projects" })).toBeInTheDocument();
+    expect(warnSpy).toHaveBeenCalledWith("Failed to load project:", expect.any(Error));
+    warnSpy.mockRestore();
   });
 });
 
@@ -687,6 +690,7 @@ describe("EditorPage title editing guards", () => {
   });
 
   it("keeps edit mode open when handleUpdateProjectTitle returns undefined", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.projects.update).mockRejectedValue(new Error("update failed"));
 
     renderEditorPage();
@@ -710,6 +714,8 @@ describe("EditorPage title editing guards", () => {
     await waitFor(() => {
       expect(api.projects.update).toHaveBeenCalled();
     });
+    expect(warnSpy).toHaveBeenCalledWith("Failed to update project title:", expect.any(Error));
+    warnSpy.mockRestore();
   });
 
   it("navigates when project title update returns a different slug", async () => {
@@ -840,6 +846,7 @@ describe("EditorPage error view on project load failure", () => {
   });
 
   it("renders error view with back link when project load fails", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.projects.get).mockRejectedValue(new Error("Server error"));
 
     renderEditorPage();
@@ -850,6 +857,8 @@ describe("EditorPage error view on project load failure", () => {
 
     const backLink = screen.getByRole("link", { name: "Back to Projects" });
     expect(backLink).toBeInTheDocument();
+    expect(warnSpy).toHaveBeenCalledWith("Failed to load project:", expect.any(Error));
+    warnSpy.mockRestore();
   });
 });
 
@@ -955,6 +964,7 @@ describe("EditorPage view mode toggles", () => {
   });
 
   it("switches to editor view when clicking Editor tab button", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     renderEditorPage();
 
     await waitFor(() => {
@@ -973,9 +983,12 @@ describe("EditorPage view mode toggles", () => {
       expect(screen.queryByRole("navigation", { name: "Table of Contents" })).toBeNull();
       expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
     });
+    expect(warnSpy).toHaveBeenCalledWith("Failed to load chapter statuses:", expect.any(Error));
+    warnSpy.mockRestore();
   });
 
   it("switches to dashboard view when clicking Dashboard tab button", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     renderEditorPage();
 
     await waitFor(() => {
@@ -989,9 +1002,12 @@ describe("EditorPage view mode toggles", () => {
     await waitFor(() => {
       expect(screen.getByRole("region", { name: /writing progress/i })).toBeInTheDocument();
     });
+    expect(warnSpy).toHaveBeenCalledWith("Failed to load chapter statuses:", expect.any(Error));
+    warnSpy.mockRestore();
   });
 
   it("renders dashboard view with DashboardView component", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     renderEditorPage();
 
     await waitFor(() => {
@@ -1008,5 +1024,7 @@ describe("EditorPage view mode toggles", () => {
     // The Dashboard tab should show as current
     const dashboardButton = screen.getByText("Dashboard");
     expect(dashboardButton).toHaveAttribute("aria-current", "page");
+    expect(warnSpy).toHaveBeenCalledWith("Failed to load chapter statuses:", expect.any(Error));
+    warnSpy.mockRestore();
   });
 });
