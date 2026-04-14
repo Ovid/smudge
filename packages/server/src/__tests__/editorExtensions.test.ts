@@ -53,8 +53,11 @@ describe("server editor extensions", () => {
   });
 
   it("produces identical output to client editor extensions", async () => {
-    const { editorExtensions: clientExtensions } =
-      await import("../../../client/src/editorExtensions");
+    // Dynamic path prevents TypeScript from statically resolving the
+    // cross-package import (rootDir constraint), while Vitest resolves
+    // it at runtime.
+    const clientPath = ["../../../client/src", "editorExtensions"].join("/");
+    const { editorExtensions: clientExtensions } = await import(clientPath);
     const serverHtml = generateHTML(referenceTipTapDoc, serverEditorExtensions);
     const clientHtml = generateHTML(referenceTipTapDoc, clientExtensions);
     expect(serverHtml).toBe(clientHtml);
