@@ -178,15 +178,12 @@ export function renderMarkdown(
   }
 
   // TOC: only when requested AND there are chapters
+  // Uses index-based anchors (<a id="chapter-N">) for deterministic links
+  // regardless of which Markdown renderer the user opens the file with.
   if (options.includeToc && chapters.length > 0) {
     parts.push("## Table of Contents\n");
-    const seenSlugs = new Map<string, number>();
-    const tocLines = chapters.map((ch) => {
-      let slug = slugifyAnchor(ch.title);
-      const count = seenSlugs.get(slug) ?? 0;
-      seenSlugs.set(slug, count + 1);
-      if (count > 0) slug = `${slug}-${count}`;
-      return `- [${escapeMarkdown(ch.title)}](#${slug})`;
+    const tocLines = chapters.map((ch, i) => {
+      return `- [${escapeMarkdown(ch.title)}](#chapter-${i})`;
     });
     parts.push(tocLines.join("\n"));
     parts.push("---");
@@ -198,7 +195,7 @@ export function renderMarkdown(
       parts.push("---");
     }
 
-    parts.push(`## ${escapeMarkdown(ch.title)}`);
+    parts.push(`<a id="chapter-${i}"></a>\n\n## ${escapeMarkdown(ch.title)}`);
 
     const html = chapterContentToHtml(ch.content);
     if (html) {

@@ -104,11 +104,11 @@ describe("renderMarkdown", () => {
     expect(md).toContain("## The Middle");
   });
 
-  it("includes TOC with anchor links", () => {
+  it("includes TOC with index-based anchor links", () => {
     const md = renderMarkdown(projectInfo, sampleChapters, { includeToc: true });
     expect(md).toContain("## Table of Contents");
-    expect(md).toMatch(/\[The Beginning\]/);
-    expect(md).toMatch(/\[The Middle\]/);
+    expect(md).toContain("[The Beginning](#chapter-0)");
+    expect(md).toContain("[The Middle](#chapter-1)");
   });
 
   it("omits TOC when includeToc is false", () => {
@@ -129,22 +129,28 @@ describe("renderMarkdown", () => {
     expect(md).not.toContain("Table of Contents");
   });
 
-  it("deduplicates TOC anchors for chapters with identical titles", () => {
+  it("uses index-based anchors for duplicate chapter titles", () => {
     const dupeChapters = [
       { id: "ch-1", title: "Interlude", content: null, sort_order: 0 },
       { id: "ch-2", title: "Interlude", content: null, sort_order: 1 },
       { id: "ch-3", title: "Interlude", content: null, sort_order: 2 },
     ];
     const md = renderMarkdown(projectInfo, dupeChapters, { includeToc: true });
-    expect(md).toContain("[Interlude](#interlude)");
-    expect(md).toContain("[Interlude](#interlude-1)");
-    expect(md).toContain("[Interlude](#interlude-2)");
+    expect(md).toContain("[Interlude](#chapter-0)");
+    expect(md).toContain("[Interlude](#chapter-1)");
+    expect(md).toContain("[Interlude](#chapter-2)");
   });
 
-  it("handles non-Latin chapter titles in TOC anchors", () => {
+  it("uses index-based anchors for non-Latin chapter titles", () => {
     const cjkChapters = [{ id: "ch-1", title: "\u7B2C\u4E00\u7AE0", content: null, sort_order: 0 }];
     const md = renderMarkdown(projectInfo, cjkChapters, { includeToc: true });
-    expect(md).toMatch(/\[第一章\]\(#第一章\)/);
+    expect(md).toContain("[第一章](#chapter-0)");
+  });
+
+  it("emits explicit anchor targets before chapter headings", () => {
+    const md = renderMarkdown(projectInfo, sampleChapters, { includeToc: true });
+    expect(md).toContain('<a id="chapter-0"></a>');
+    expect(md).toContain('<a id="chapter-1"></a>');
   });
 
   it("escapes Markdown metacharacters in titles and author", () => {
@@ -164,8 +170,8 @@ describe("renderMarkdown", () => {
     expect(md).toContain("*By Jane\\_Doe \\[editor\\]*");
     // Chapter heading metacharacters are escaped
     expect(md).toContain("## Chapter \\#1: The \\[Beginning\\]");
-    // TOC link text is also escaped
-    expect(md).toContain("[Chapter \\#1: The \\[Beginning\\]]");
+    // TOC link text is escaped with index-based anchor
+    expect(md).toContain("[Chapter \\#1: The \\[Beginning\\]](#chapter-0)");
   });
 });
 
