@@ -684,9 +684,7 @@ describe("renderDocx", () => {
         title: "Unknown Node",
         content: {
           type: "doc",
-          content: [
-            { type: "customWidget", content: [] },
-          ],
+          content: [{ type: "customWidget", content: [] }],
         },
         sort_order: 0,
       },
