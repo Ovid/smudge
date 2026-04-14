@@ -261,7 +261,8 @@ describe("api.projects.export", () => {
     mockFetch.mockResolvedValue({
       ok: false,
       status: 400,
-      json: () => Promise.resolve({ error: { code: "VALIDATION_ERROR", message: "Invalid format" } }),
+      json: () =>
+        Promise.resolve({ error: { code: "VALIDATION_ERROR", message: "Invalid format" } }),
     });
 
     await expect(api.projects.export("my-project", { format: "html" })).rejects.toThrow(
