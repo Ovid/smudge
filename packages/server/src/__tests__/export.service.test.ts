@@ -187,8 +187,8 @@ describe("POST /api/projects/:slug/export", () => {
     });
   });
 
-  describe("title-page-only export", () => {
-    it("exports title page only when project has no chapters", async () => {
+  describe("zero-chapter export", () => {
+    it("returns 400 when project has no chapters", async () => {
       const { projectSlug, firstChapterId, secondChapterId } = await createProjectWithChapters(
         t.app,
       );
@@ -201,10 +201,8 @@ describe("POST /api/projects/:slug/export", () => {
         .post(`/api/projects/${projectSlug}/export`)
         .send({ format: "html" });
 
-      expect(res.status).toBe(200);
-      expect(res.text).toContain("My Novel");
-      expect(res.text).not.toContain("Chapter One");
-      expect(res.text).not.toContain("Chapter Two");
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("EXPORT_NO_CHAPTERS");
     });
   });
 
