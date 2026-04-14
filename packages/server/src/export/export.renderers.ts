@@ -170,9 +170,7 @@ export function renderMarkdown(
   }
 
   // Chapters
-  for (let i = 0; i < chapters.length; i++) {
-    const ch = chapters[i];
-
+  for (const [i, ch] of chapters.entries()) {
     if (i > 0) {
       parts.push("---");
     }
