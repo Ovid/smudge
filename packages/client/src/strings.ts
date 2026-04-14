@@ -191,6 +191,8 @@ export const STRINGS = {
     clear: "Clear",
     close: "Close",
     wordCountPlaceholder: "e.g. 80000",
+    authorName: "Author name",
+    authorNamePlaceholder: "e.g. Jane Doe",
     saveError: "Failed to save. Please try again.",
   },
 } as const;
