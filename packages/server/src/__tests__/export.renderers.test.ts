@@ -1,6 +1,14 @@
 import { describe, it, expect, vi } from "vitest";
+import JSZip from "jszip";
 import { renderHtml, renderMarkdown, renderPlainText } from "../export/export.renderers";
+import { renderDocx } from "../export/docx.renderer";
 import { logger } from "../logger";
+
+async function docxXml(buf: Buffer): Promise<string> {
+  const zip = await JSZip.loadAsync(buf);
+  const doc = zip.file("word/document.xml");
+  return doc ? await doc.async("string") : "";
+}
 
 vi.mock("../logger", () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
@@ -294,5 +302,89 @@ describe("renderPlainText", () => {
     expect(text).toContain("\u2026");
     expect(text).not.toContain("&mdash;");
     expect(text).not.toContain("&hellip;");
+  });
+});
+
+describe("renderDocx", () => {
+  it("produces a valid docx buffer", async () => {
+    const buf = await renderDocx(projectInfo, sampleChapters, { includeToc: true });
+    expect(buf).toBeInstanceOf(Buffer);
+    expect(buf.length).toBeGreaterThan(0);
+    // ZIP magic bytes
+    expect(buf[0]).toBe(0x50);
+    expect(buf[1]).toBe(0x4b);
+  });
+
+  it("includes author name when set", async () => {
+    const buf = await renderDocx(projectInfo, sampleChapters, { includeToc: false });
+    const xml = await docxXml(buf);
+    expect(xml).toContain("Jane Doe");
+  });
+
+  it("omits author name when null", async () => {
+    const buf = await renderDocx(
+      { ...projectInfo, author_name: null },
+      sampleChapters,
+      { includeToc: false },
+    );
+    const xml = await docxXml(buf);
+    expect(xml).not.toContain("Jane Doe");
+  });
+
+  it("handles zero chapters (title-page-only)", async () => {
+    const buf = await renderDocx(projectInfo, [], { includeToc: true });
+    expect(buf).toBeInstanceOf(Buffer);
+    expect(buf.length).toBeGreaterThan(0);
+  });
+
+  it("handles chapters with null content", async () => {
+    const chapters = [{ id: "ch-1", title: "Empty", content: null, sort_order: 0 }];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false });
+    expect(buf).toBeInstanceOf(Buffer);
+    expect(buf.length).toBeGreaterThan(0);
+  });
+
+  it("handles chapters with malformed TipTap JSON gracefully", async () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Bad Content",
+        content: { type: "invalid_node" } as Record<string, unknown>,
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false });
+    expect(buf).toBeInstanceOf(Buffer);
+    expect(buf.length).toBeGreaterThan(0);
+  });
+
+  it("handles CJK characters in title and content", async () => {
+    const cjkProject = { title: "我的小说", author_name: null, slug: "cjk-novel" };
+    const cjkChapters = [
+      {
+        id: "ch-1",
+        title: "第一章",
+        content: {
+          type: "doc",
+          content: [
+            { type: "paragraph", content: [{ type: "text", text: "这是第一章的内容。" }] },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(cjkProject, cjkChapters, { includeToc: false });
+    expect(buf).toBeInstanceOf(Buffer);
+    expect(buf.length).toBeGreaterThan(0);
+    const xml = await docxXml(buf);
+    expect(xml).toContain("第一章");
+  });
+
+  it("uses serif body font", async () => {
+    const buf = await renderDocx(projectInfo, sampleChapters, { includeToc: false });
+    const zip = await JSZip.loadAsync(buf);
+    const stylesFile = zip.file("word/styles.xml");
+    const styles = stylesFile ? await stylesFile.async("string") : "";
+    expect(styles).toMatch(/Cambria|Times New Roman/);
   });
 });
