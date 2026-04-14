@@ -142,9 +142,7 @@ describe("renderMarkdown", () => {
   });
 
   it("handles non-Latin chapter titles in TOC anchors", () => {
-    const cjkChapters = [
-      { id: "ch-1", title: "\u7B2C\u4E00\u7AE0", content: null, sort_order: 0 },
-    ];
+    const cjkChapters = [{ id: "ch-1", title: "\u7B2C\u4E00\u7AE0", content: null, sort_order: 0 }];
     const md = renderMarkdown(projectInfo, cjkChapters, { includeToc: true });
     expect(md).toMatch(/\[第一章\]\(#第一章\)/);
   });
