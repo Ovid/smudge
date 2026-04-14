@@ -102,6 +102,34 @@ export const api = {
           least_recent_edit: string | null;
         };
       }>(`/projects/${slug}/dashboard`),
+
+    export: async (
+      slug: string,
+      config: {
+        format: "html" | "markdown" | "plaintext";
+        include_toc?: boolean;
+        chapter_ids?: string[];
+      },
+    ): Promise<Blob> => {
+      const res = await fetch(`${BASE}/projects/${slug}/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(config),
+      });
+
+      if (!res.ok) {
+        let message = `Export failed: ${res.status}`;
+        try {
+          const body = (await res.json()) as ApiError;
+          message = body.error?.message ?? message;
+        } catch {
+          // Response body wasn't JSON
+        }
+        throw new ApiRequestError(message, res.status);
+      }
+
+      return res.blob();
+    },
   },
 
   chapters: {
