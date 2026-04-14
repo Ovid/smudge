@@ -476,6 +476,14 @@ describe("renderHtml", () => {
     expect(html).toContain("<!DOCTYPE html>");
   });
 
+  it("handles chapter with empty-string title", () => {
+    const chapters = [{ id: "ch-1", title: "", content: null, sort_order: 0 }];
+    const html = renderHtml(projectInfo, chapters, { includeToc: false });
+
+    expect(html).toContain("<!DOCTYPE html>");
+    expect(html).toContain("<h2>");
+  });
+
   it("handles zero chapters (title-page-only)", () => {
     const html = renderHtml(projectInfo, [], { includeToc: true });
 
@@ -1058,6 +1066,23 @@ describe("POST /api/projects/:slug/export", () => {
     expect(res.text).not.toContain("Chapter Two");
   });
 
+  it("returns 400 when chapter_ids contain IDs from another project", async () => {
+    const { slug } = await createProjectWithChapters();
+
+    const otherRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Other Project", mode: "fiction" });
+    const otherGet = await request(t.app).get(`/api/projects/${otherRes.body.slug}`);
+    const otherChapterId = otherGet.body.chapters[0].id;
+
+    const res = await request(t.app)
+      .post(`/api/projects/${slug}/export`)
+      .send({ format: "html", chapter_ids: [otherChapterId] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("EXPORT_INVALID_CHAPTERS");
+  });
+
   it("returns 400 when all specified chapters are deleted", async () => {
     const { slug, chapter1Id } = await createProjectWithChapters();
 
@@ -1203,6 +1228,7 @@ export async function exportProject(
   | { validationError: string }
   | { notFound: true }
   | { noChapters: true }
+  | { invalidChapterIds: string[] }
 > {
   const parsed = ExportSchema.safeParse(body);
   if (!parsed.success) {
@@ -1219,6 +1245,14 @@ export async function exportProject(
   let chapters = await store.listChaptersByProject(project.id);
 
   if (chapter_ids) {
+    // Validate all IDs belong to this project (before soft-delete filtering)
+    const allChapterIds = await store.listChapterIdsByProject(project.id);
+    const allIdSet = new Set(allChapterIds);
+    const invalid = chapter_ids.filter((id) => !allIdSet.has(id));
+    if (invalid.length > 0) {
+      return { invalidChapterIds: invalid };
+    }
+
     // Filter to selected chapters, preserving sort_order
     const idSet = new Set(chapter_ids);
     chapters = chapters.filter((ch) => idSet.has(ch.id));
@@ -1311,6 +1345,16 @@ export function exportRouter(): Router {
       if ("notFound" in result) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Project not found." },
+        });
+        return;
+      }
+
+      if ("invalidChapterIds" in result) {
+        res.status(400).json({
+          error: {
+            code: "EXPORT_INVALID_CHAPTERS",
+            message: "One or more chapter IDs do not belong to this project.",
+          },
         });
         return;
       }
@@ -1953,6 +1997,46 @@ test("exports manuscript as HTML via dialog", async ({ page }) => {
   await page.getByRole("button", { name: "Export", exact: true }).click();
   const download = await downloadPromise;
 
+  expect(download.suggestedFilename()).toContain(".html");
+});
+
+test("exports with chapter selection", async ({ page, request }) => {
+  await page.goto(`/project/${projectSlug}`);
+
+  // Create a second chapter via API
+  const ch2Res = await request.post(`/api/projects/${projectSlug}/chapters`);
+  const ch2 = await ch2Res.json();
+  await request.patch(`/api/chapters/${ch2.id}`, {
+    data: {
+      title: "Second Chapter",
+      content: {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "Second content." }] },
+        ],
+      },
+    },
+  });
+
+  // Reload to pick up new chapter
+  await page.reload();
+
+  // Open export dialog
+  await page.getByText("Export").click();
+  await expect(page.getByText("Export Manuscript")).toBeVisible();
+
+  // Switch to chapter selection
+  await page.getByText("Select specific chapters...").click();
+
+  // Uncheck the second chapter
+  await page.getByLabel("Second Chapter").uncheck();
+
+  // Export
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export", exact: true }).click();
+  const download = await downloadPromise;
+
+  // Verify download happened
   expect(download.suggestedFilename()).toContain(".html");
 });
 

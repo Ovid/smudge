@@ -29,7 +29,7 @@ No new tables. No new settings.
 
 ### Export Endpoint
 
-`POST /api/projects/{id}/export`
+`POST /api/projects/{slug}/export`
 
 **Request body:**
 
@@ -63,7 +63,7 @@ No new tables. No new settings.
 
 ### Project Settings Update
 
-`PATCH /api/projects/{id}` — extend to accept `author_name` in the body (nullable string, trimmed).
+`PATCH /api/projects/{slug}` — extend to accept `author_name` in the body (nullable string, trimmed).
 
 ---
 
@@ -73,7 +73,7 @@ No new tables. No new settings.
 
 New `packages/server/src/export/` module:
 
-- **`export.routes.ts`** — Route handler for `POST /api/projects/{id}/export`. Validates request, calls the service, sends the response with appropriate headers.
+- **`export.routes.ts`** — Route handler for `POST /api/projects/{slug}/export`. Validates request, calls the service, sends the response with appropriate headers.
 - **`export.service.ts`** — Orchestrates export: gathers chapters via ProjectStore, calls the appropriate renderer, returns the result.
 - **`export.renderers.ts`** — Three pure functions: `renderHtml()`, `renderMarkdown()`, `renderPlainText()`. Each takes a project (title, author) and an ordered list of chapters, returns a string.
 
@@ -205,7 +205,7 @@ Loading state on the button during the request. Toast or inline message on error
 
 ### Project Settings
 
-Add an **Author Name** text field to the project settings UI. Optional, persisted via `PATCH /api/projects/{id}`.
+Add an **Author Name** text field to the project settings UI. Optional, persisted via `PATCH /api/projects/{slug}`.
 
 ### Strings
 
@@ -244,7 +244,7 @@ Export service with real SQLite:
 
 ### Server — Route Tests
 
-Supertest for `POST /api/projects/{id}/export`:
+Supertest for `POST /api/projects/{slug}/export`:
 
 - Correct Content-Type and Content-Disposition headers per format
 - Correct filename from project title
