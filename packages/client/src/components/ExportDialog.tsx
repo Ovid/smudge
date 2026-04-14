@@ -1,0 +1,244 @@
+import { useEffect, useRef, useState, useCallback } from "react";
+import { api } from "../api/client";
+import { STRINGS } from "../strings";
+
+interface ExportDialogProps {
+  open: boolean;
+  projectSlug: string;
+  chapters: Array<{ id: string; title: string; sort_order: number }>;
+  onClose: () => void;
+}
+
+type ExportFormat = "html" | "markdown" | "plaintext";
+
+export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDialogProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  const [format, setFormat] = useState<ExportFormat>("html");
+  const [includeToc, setIncludeToc] = useState(true);
+  const [selectingChapters, setSelectingChapters] = useState(false);
+  const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Reset state when dialog opens
+  useEffect(() => {
+    if (open) {
+      setFormat("html");
+      setIncludeToc(true);
+      setSelectingChapters(false);
+      setSelectedChapterIds(new Set(chapters.map((c) => c.id)));
+      setExporting(false);
+      setError(null);
+    }
+  }, [open, chapters]);
+
+  // Show/close modal
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    if (open && !dialog.open) {
+      try {
+        dialog.showModal();
+      } catch {
+        // happy-dom doesn't fully support showModal
+      }
+      cancelRef.current?.focus();
+    } else if (!open && dialog.open) {
+      dialog.close();
+    }
+  }, [open]);
+
+  // Escape key handler
+  useEffect(() => {
+    if (!open) return;
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open, onClose]);
+
+  const handleExport = useCallback(async () => {
+    setExporting(true);
+    setError(null);
+
+    try {
+      const config: {
+        format: ExportFormat;
+        include_toc?: boolean;
+        chapter_ids?: string[];
+      } = {
+        format,
+        include_toc: includeToc,
+      };
+
+      if (selectingChapters) {
+        config.chapter_ids = chapters
+          .filter((c) => selectedChapterIds.has(c.id))
+          .map((c) => c.id);
+      }
+
+      const blob = await api.projects.export(projectSlug, config);
+
+      const extensions: Record<ExportFormat, string> = {
+        html: "html",
+        markdown: "md",
+        plaintext: "txt",
+      };
+      const filename = `${projectSlug}.${extensions[format]}`;
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      onClose();
+    } catch {
+      setError(STRINGS.export.errorFailed);
+    } finally {
+      setExporting(false);
+    }
+  }, [format, includeToc, selectingChapters, selectedChapterIds, chapters, projectSlug, onClose]);
+
+  const handleChapterToggle = useCallback((chapterId: string) => {
+    setSelectedChapterIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(chapterId)) {
+        next.delete(chapterId);
+      } else {
+        next.add(chapterId);
+      }
+      return next;
+    });
+  }, []);
+
+  if (!open) return null;
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-label={STRINGS.export.dialogTitle}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-transparent m-0 p-0 w-full h-full border-none backdrop:bg-black/30"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="rounded-xl bg-bg-primary p-8 shadow-xl max-w-sm w-full mx-auto mt-[15vh] border border-border/60">
+        <h2 className="text-text-primary font-semibold text-base mb-4">{STRINGS.export.dialogTitle}</h2>
+
+        {error && (
+          <p role="alert" className="text-status-error text-sm mb-4">
+            {error}
+          </p>
+        )}
+
+        <fieldset className="mb-4">
+          <legend className="text-text-primary text-sm font-medium mb-2">{STRINGS.export.formatLabel}</legend>
+          <div className="flex gap-4">
+            <label className="flex items-center gap-1.5 text-sm text-text-secondary">
+              <input
+                type="radio"
+                name="export-format"
+                value="html"
+                checked={format === "html"}
+                onChange={() => setFormat("html")}
+              />
+              {STRINGS.export.formatHtml}
+            </label>
+            <label className="flex items-center gap-1.5 text-sm text-text-secondary">
+              <input
+                type="radio"
+                name="export-format"
+                value="markdown"
+                checked={format === "markdown"}
+                onChange={() => setFormat("markdown")}
+              />
+              {STRINGS.export.formatMarkdown}
+            </label>
+            <label className="flex items-center gap-1.5 text-sm text-text-secondary">
+              <input
+                type="radio"
+                name="export-format"
+                value="plaintext"
+                checked={format === "plaintext"}
+                onChange={() => setFormat("plaintext")}
+              />
+              {STRINGS.export.formatPlainText}
+            </label>
+          </div>
+        </fieldset>
+
+        <label className="flex items-center gap-2 text-sm text-text-secondary mb-4">
+          <input
+            type="checkbox"
+            checked={includeToc}
+            onChange={(e) => setIncludeToc(e.target.checked)}
+          />
+          {STRINGS.export.includeTocLabel}
+        </label>
+
+        <div className="mb-6">
+          {!selectingChapters ? (
+            <p className="text-sm text-text-secondary">
+              {STRINGS.export.chapterSelectionAll}{" "}
+              <button
+                type="button"
+                className="text-accent underline hover:text-accent/80"
+                onClick={() => setSelectingChapters(true)}
+              >
+                {STRINGS.export.chapterSelectionChoose}
+              </button>
+            </p>
+          ) : (
+            <div className="max-h-40 overflow-y-auto border border-border/40 rounded-lg p-2">
+              {chapters.map((chapter) => (
+                <label
+                  key={chapter.id}
+                  className="flex items-center gap-2 text-sm text-text-secondary py-1"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedChapterIds.has(chapter.id)}
+                    onChange={() => handleChapterToggle(chapter.id)}
+                  />
+                  {chapter.title}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-3">
+          <button
+            ref={cancelRef}
+            type="button"
+            onClick={onClose}
+            className="rounded-lg px-5 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-hover focus:outline-none focus:ring-2 focus:ring-focus-ring"
+          >
+            {STRINGS.export.cancelButton}
+          </button>
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={exporting || (selectingChapters && selectedChapterIds.size === 0)}
+            aria-busy={exporting}
+            className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-text-inverse hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-focus-ring shadow-sm disabled:opacity-50"
+          >
+            {exporting ? STRINGS.export.exportingButton : STRINGS.export.exportButton}
+          </button>
+        </div>
+      </div>
+    </dialog>
+  );
+}
