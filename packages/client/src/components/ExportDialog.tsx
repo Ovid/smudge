@@ -80,9 +80,7 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
       };
 
       if (selectingChapters) {
-        config.chapter_ids = chapters
-          .filter((c) => selectedChapterIds.has(c.id))
-          .map((c) => c.id);
+        config.chapter_ids = chapters.filter((c) => selectedChapterIds.has(c.id)).map((c) => c.id);
       }
 
       const blob = await api.projects.export(projectSlug, config);
@@ -135,7 +133,9 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
       }}
     >
       <div className="rounded-xl bg-bg-primary p-8 shadow-xl max-w-sm w-full mx-auto mt-[15vh] border border-border/60">
-        <h2 className="text-text-primary font-semibold text-base mb-4">{STRINGS.export.dialogTitle}</h2>
+        <h2 className="text-text-primary font-semibold text-base mb-4">
+          {STRINGS.export.dialogTitle}
+        </h2>
 
         {error && (
           <p role="alert" className="text-status-error text-sm mb-4">
@@ -144,7 +144,9 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
         )}
 
         <fieldset className="mb-4">
-          <legend className="text-text-primary text-sm font-medium mb-2">{STRINGS.export.formatLabel}</legend>
+          <legend className="text-text-primary text-sm font-medium mb-2">
+            {STRINGS.export.formatLabel}
+          </legend>
           <div className="flex gap-4">
             <label className="flex items-center gap-1.5 text-sm text-text-secondary">
               <input

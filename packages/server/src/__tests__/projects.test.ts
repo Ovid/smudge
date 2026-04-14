@@ -461,13 +461,9 @@ describe("PATCH /api/projects/:slug — author_name", () => {
       .send({ title: "Author Clear Test", mode: "fiction" });
     const slug = create.body.slug;
 
-    await request(t.app)
-      .patch(`/api/projects/${slug}`)
-      .send({ author_name: "Jane Doe" });
+    await request(t.app).patch(`/api/projects/${slug}`).send({ author_name: "Jane Doe" });
 
-    const res = await request(t.app)
-      .patch(`/api/projects/${slug}`)
-      .send({ author_name: null });
+    const res = await request(t.app).patch(`/api/projects/${slug}`).send({ author_name: null });
 
     expect(res.status).toBe(200);
     expect(res.body.author_name).toBeNull();

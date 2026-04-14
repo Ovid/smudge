@@ -189,8 +189,9 @@ describe("POST /api/projects/:slug/export", () => {
 
   describe("title-page-only export", () => {
     it("exports title page only when project has no chapters", async () => {
-      const { projectSlug, firstChapterId, secondChapterId } =
-        await createProjectWithChapters(t.app);
+      const { projectSlug, firstChapterId, secondChapterId } = await createProjectWithChapters(
+        t.app,
+      );
 
       // Delete all chapters
       await request(t.app).delete(`/api/chapters/${firstChapterId}`);

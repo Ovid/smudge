@@ -18,9 +18,7 @@ const sampleChapters = [
     title: "The Middle",
     content: {
       type: "doc",
-      content: [
-        { type: "paragraph", content: [{ type: "text", text: "The plot thickened." }] },
-      ],
+      content: [{ type: "paragraph", content: [{ type: "text", text: "The plot thickened." }] }],
     },
     sort_order: 1,
   },
@@ -53,7 +51,9 @@ describe("renderHtml", () => {
   });
 
   it("omits author line when author_name is null", () => {
-    const html = renderHtml({ ...projectInfo, author_name: null }, sampleChapters, { includeToc: false });
+    const html = renderHtml({ ...projectInfo, author_name: null }, sampleChapters, {
+      includeToc: false,
+    });
     expect(html).not.toContain("Jane Doe");
     expect(html).not.toContain('class="author"');
   });
@@ -103,7 +103,9 @@ describe("renderMarkdown", () => {
   });
 
   it("omits author line when author_name is null", () => {
-    const md = renderMarkdown({ ...projectInfo, author_name: null }, sampleChapters, { includeToc: false });
+    const md = renderMarkdown({ ...projectInfo, author_name: null }, sampleChapters, {
+      includeToc: false,
+    });
     expect(md).not.toContain("By");
   });
 
@@ -130,7 +132,9 @@ describe("renderPlainText", () => {
   });
 
   it("omits author line when author_name is null", () => {
-    const text = renderPlainText({ ...projectInfo, author_name: null }, sampleChapters, { includeToc: false });
+    const text = renderPlainText({ ...projectInfo, author_name: null }, sampleChapters, {
+      includeToc: false,
+    });
     expect(text).not.toContain("by ");
   });
 

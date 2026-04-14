@@ -53,9 +53,8 @@ describe("server editor extensions", () => {
   });
 
   it("matches the client extension configuration", async () => {
-    const { editorExtensions: clientExtensions } = await import(
-      "../../../client/src/editorExtensions"
-    );
+    const { editorExtensions: clientExtensions } =
+      await import("../../../client/src/editorExtensions");
     const serverHtml = generateHTML(referenceTipTapDoc, serverEditorExtensions);
     const clientHtml = generateHTML(referenceTipTapDoc, clientExtensions);
     expect(serverHtml).toBe(clientHtml);

@@ -27,9 +27,7 @@ export interface RenderOptions {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function chapterContentToHtml(
-  content: Record<string, unknown> | null,
-): string {
+function chapterContentToHtml(content: Record<string, unknown> | null): string {
   if (!content) return "";
   return generateHTML(content, serverEditorExtensions);
 }
@@ -111,10 +109,7 @@ export function renderHtml(
   let tocHtml = "";
   if (options.includeToc && chapters.length > 0) {
     const tocItems = chapters
-      .map(
-        (ch, i) =>
-          `      <li><a href="#chapter-${i}">${escapeHtml(ch.title)}</a></li>`,
-      )
+      .map((ch, i) => `      <li><a href="#chapter-${i}">${escapeHtml(ch.title)}</a></li>`)
       .join("\n");
     tocHtml = `    <nav>\n      <h2>Table of Contents</h2>\n      <ol>\n${tocItems}\n      </ol>\n    </nav>\n`;
   }
@@ -122,10 +117,7 @@ export function renderHtml(
   const chapterSections = chapters
     .map((ch, i) => {
       const body = chapterContentToHtml(ch.content);
-      const divider =
-        i < chapters.length - 1
-          ? `\n    <div class="divider">* * *</div>`
-          : "";
+      const divider = i < chapters.length - 1 ? `\n    <div class="divider">* * *</div>` : "";
       return `    <section id="chapter-${i}">\n      <h2>${escapeHtml(ch.title)}</h2>\n      ${body}${divider}\n    </section>`;
     })
     .join("\n");
@@ -173,9 +165,7 @@ export function renderMarkdown(
   // TOC: only when requested AND there are chapters
   if (options.includeToc && chapters.length > 0) {
     parts.push("## Table of Contents\n");
-    const tocLines = chapters.map(
-      (ch) => `- [${ch.title}](#${slugifyAnchor(ch.title)})`,
-    );
+    const tocLines = chapters.map((ch) => `- [${ch.title}](#${slugifyAnchor(ch.title)})`);
     parts.push(tocLines.join("\n"));
   }
 
