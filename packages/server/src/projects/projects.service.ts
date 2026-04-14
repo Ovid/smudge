@@ -7,7 +7,7 @@ import {
   UNTITLED_CHAPTER,
 } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
-import { stripCorruptFlag } from "../chapters/chapters.types";
+import { enrichChaptersWithLabels, enrichChapterWithLabel } from "../chapters/chapters.types";
 import type { ProjectRow, ProjectListRow, UpdateProjectData } from "./projects.types";
 import type {
   ChapterWithLabel,
@@ -105,15 +105,7 @@ export async function getProject(
   if (!project) return null;
 
   const chapters = await store.listChaptersByProject(project.id);
-  const statusLabelMap = await store.getStatusLabelMap();
-
-  const chaptersWithLabels = chapters.map((ch) => {
-    const clean = stripCorruptFlag(ch);
-    return {
-      ...clean,
-      status_label: statusLabelMap[ch.status] ?? ch.status,
-    };
-  });
+  const chaptersWithLabels = await enrichChaptersWithLabels(store, chapters);
 
   return { project, chapters: chaptersWithLabels };
 }
@@ -208,12 +200,7 @@ export async function createChapter(
   const chapter = await store.findChapterById(chapterId);
   if (!chapter) return "read_after_create_failure";
 
-  const clean = stripCorruptFlag(chapter);
-  const statusLabelMap = await store.getStatusLabelMap();
-  return {
-    ...clean,
-    status_label: statusLabelMap[chapter.status] ?? chapter.status,
-  };
+  return enrichChapterWithLabel(store, chapter);
 }
 
 export async function reorderChapters(
@@ -258,22 +245,14 @@ export async function getDashboard(slug: string): Promise<DashboardResponse | nu
   if (!project) return null;
 
   const chapters = await store.listChapterMetadataByProject(project.id);
-
   const statusLabelMap = await store.getStatusLabelMap();
-
-  const chaptersWithLabels = chapters.map((ch) => ({
-    ...ch,
-    status_label: statusLabelMap[ch.status] ?? ch.status,
-  }));
-
+  const chaptersWithLabels = await enrichChaptersWithLabels(store, chapters, statusLabelMap);
   const statusSummary: Record<string, number> = {};
   for (const status of Object.keys(statusLabelMap)) {
     statusSummary[status] = 0;
   }
   for (const ch of chapters) {
-    if (ch.status in statusSummary) {
-      statusSummary[ch.status] = (statusSummary[ch.status] ?? 0) + 1;
-    }
+    statusSummary[ch.status] = (statusSummary[ch.status] ?? 0) + 1;
   }
 
   const totalWordCount = chapters.reduce((sum, ch) => sum + ch.word_count, 0);

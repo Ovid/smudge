@@ -4,7 +4,7 @@ import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import {
   isCorruptChapter,
-  stripCorruptFlag,
+  enrichChapterWithLabel,
   type ChapterWithLabel,
   type RestoredChapterResponse,
   type UpdateChapterData,
@@ -35,9 +35,7 @@ export async function getChapter(id: string): Promise<ChapterWithLabel | null | 
 
   if (isCorruptChapter(chapter)) return "corrupt";
 
-  const clean = stripCorruptFlag(chapter);
-  const status_label = await store.getStatusLabel(chapter.status);
-  return { ...clean, status_label };
+  return enrichChapterWithLabel(store, chapter);
 }
 
 export async function updateChapter(
@@ -110,14 +108,16 @@ export async function updateChapter(
     return { corrupt: true };
   }
 
-  const clean = stripCorruptFlag(updated);
-  const updatedStatusLabel = await store.getStatusLabel(updated.status);
-  return {
-    chapter: {
-      ...clean,
-      status_label: updatedStatusLabel,
-    },
-  };
+  let enriched: ChapterWithLabel;
+  try {
+    enriched = await enrichChapterWithLabel(store, updated);
+  } catch {
+    // Enrichment failed but the save succeeded — fall back to status as label
+    // so the client sees a successful save, not a false 500.
+    const { content_corrupt: _, ...clean } = updated;
+    enriched = { ...clean, status_label: updated.status };
+  }
+  return { chapter: enriched };
 }
 
 export async function deleteChapter(id: string): Promise<boolean> {
@@ -226,14 +226,12 @@ export async function restoreChapter(
   const restored = await store.findChapterById(id);
   if (!restored) return "read_failure";
 
-  const clean = stripCorruptFlag(restored);
   const updatedProject = await store.findProjectByIdIncludingDeleted(chapter.project_id);
   if (!updatedProject) return "read_failure";
-  const restoredStatusLabel = await store.getStatusLabel(restored.status);
 
+  const enriched = await enrichChapterWithLabel(store, restored);
   return {
-    ...clean,
-    status_label: restoredStatusLabel,
+    ...enriched,
     project_slug: updatedProject.slug,
   };
 }

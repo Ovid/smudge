@@ -74,6 +74,47 @@ export function stripCorruptFlag(chapter: ChapterRow): Omit<ChapterRow, "content
   return rest;
 }
 
+// --- Status label enrichment ---
+
+export interface StatusLabelProvider {
+  getStatusLabel(status: string): Promise<string>;
+  getStatusLabelMap(): Promise<Record<string, string>>;
+}
+
+export async function enrichChapterWithLabel(
+  provider: StatusLabelProvider,
+  chapter: ChapterRow,
+): Promise<ChapterWithLabel> {
+  const clean = stripCorruptFlag(chapter);
+  const status_label = await provider.getStatusLabel(chapter.status);
+  return { ...clean, status_label };
+}
+
+export function enrichChaptersWithLabels(
+  provider: StatusLabelProvider,
+  chapters: ChapterRow[],
+  labelMap?: Record<string, string>,
+): Promise<ChapterWithLabel[]>;
+export function enrichChaptersWithLabels<T extends { status: string }>(
+  provider: StatusLabelProvider,
+  chapters: T[],
+  labelMap?: Record<string, string>,
+): Promise<(T & { status_label: string })[]>;
+export async function enrichChaptersWithLabels(
+  provider: StatusLabelProvider,
+  chapters: { status: string; content_corrupt?: unknown }[],
+  labelMap?: Record<string, string>,
+): Promise<unknown[]> {
+  const map = labelMap ?? (await provider.getStatusLabelMap());
+  return chapters.map((ch) => {
+    if ("content_corrupt" in ch) {
+      const { content_corrupt: _, ...rest } = ch;
+      return { ...rest, status_label: map[ch.status] ?? ch.status };
+    }
+    return { ...ch, status_label: map[ch.status] ?? ch.status };
+  });
+}
+
 export interface CreateChapterRow {
   id: string;
   project_id: string;
