@@ -440,6 +440,40 @@ describe("PATCH /api/projects/:slug — target fields", () => {
   });
 });
 
+describe("PATCH /api/projects/:slug — author_name", () => {
+  it("PATCH /api/projects/:slug updates author_name", async () => {
+    const create = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Author Test", mode: "fiction" });
+    const slug = create.body.slug;
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${slug}`)
+      .send({ author_name: "Jane Doe" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.author_name).toBe("Jane Doe");
+  });
+
+  it("PATCH /api/projects/:slug clears author_name with null", async () => {
+    const create = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Author Clear Test", mode: "fiction" });
+    const slug = create.body.slug;
+
+    await request(t.app)
+      .patch(`/api/projects/${slug}`)
+      .send({ author_name: "Jane Doe" });
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${slug}`)
+      .send({ author_name: null });
+
+    expect(res.status).toBe(200);
+    expect(res.body.author_name).toBeNull();
+  });
+});
+
 describe("DELETE /api/projects/:slug", () => {
   it("soft-deletes a project and returns 200", async () => {
     const createRes = await request(t.app)

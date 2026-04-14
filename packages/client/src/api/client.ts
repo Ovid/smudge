@@ -62,6 +62,7 @@ export const api = {
         title?: string;
         target_word_count?: number | null;
         target_deadline?: string | null;
+        author_name?: string | null;
       },
     ) =>
       apiFetch<Project>(`/projects/${slug}`, {
