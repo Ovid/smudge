@@ -20,6 +20,8 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
   const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const exportingRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Reset state only when the dialog opens (open transitions false → true)
   const prevOpenRef = useRef(false);
@@ -30,7 +32,12 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
       setSelectingChapters(false);
       setSelectedChapterIds(new Set(chapters.map((c) => c.id)));
       setExporting(false);
+      exportingRef.current = false;
       setError(null);
+    } else if (!open && prevOpenRef.current) {
+      // Dialog closing — abort any in-flight export
+      abortRef.current?.abort();
+      abortRef.current = null;
     }
     prevOpenRef.current = open;
   }, [open, chapters]);
@@ -67,8 +74,13 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
   }, [open, onClose]);
 
   const handleExport = useCallback(async () => {
+    if (exportingRef.current) return;
+    exportingRef.current = true;
     setExporting(true);
     setError(null);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     try {
       const config: {
@@ -86,6 +98,8 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
 
       const blob = await api.projects.export(projectSlug, config);
 
+      if (controller.signal.aborted) return;
+
       const filename = `${projectSlug}.${EXPORT_FILE_EXTENSIONS[format]}`;
 
       const url = URL.createObjectURL(blob);
@@ -99,8 +113,10 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
 
       onClose();
     } catch (err) {
+      if (controller.signal.aborted) return;
       setError(err instanceof ApiRequestError ? err.message : STRINGS.export.errorFailed);
     } finally {
+      exportingRef.current = false;
       setExporting(false);
     }
   }, [format, includeToc, selectingChapters, selectedChapterIds, chapters, projectSlug, onClose]);
