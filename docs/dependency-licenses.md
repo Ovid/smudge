@@ -12,7 +12,7 @@ Last audited: 2026-04-14
 
 | License | Count | Commercial use | Ships in production |
 |---------|-------|----------------|---------------------|
-| MIT | ~46 | Yes, unrestricted | Most dependencies |
+| MIT | ~48 | Yes, unrestricted | Most dependencies |
 | Apache-2.0 | 3 | Yes, unrestricted | Yes (DOMPurify in client; others dev-only) |
 | SIL OFL 1.1 | 2 | Yes, bundling permitted | Yes (fonts) |
 | MPL-2.0 | 1 | Yes, with file-level copyleft | No (dev only) |
@@ -44,6 +44,8 @@ or other strong-copyleft licenses are present.
 | @tiptap/pm | MIT | ProseMirror peer dependency for TipTap |
 | @tiptap/starter-kit | MIT | Standard extension bundle for generateHTML() |
 | pino | MIT | Structured logging |
+| docx | MIT | Programmatic Word (.docx) generation |
+| epub-gen-memory | MIT | EPUB generation from HTML content |
 | turndown | MIT | HTML-to-Markdown conversion for export |
 | uuid | MIT | |
 
