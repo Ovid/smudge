@@ -39,7 +39,7 @@ export async function getTodayDate(): Promise<string> {
  * Snapshot today's word count total for velocity tracking.
  *
  * Opens its own transaction internally — must NOT be called from within
- * a store.transaction() callback (SqliteProjectStore forbids nesting).
+ * a store.transaction() callback (ProjectStore.transaction() does not support nesting).
  *
  * getTodayDate() is called before the transaction because it reads the
  * settings table via the root store. Reading via the root store while
@@ -58,7 +58,7 @@ export async function updateDailySnapshot(projectId: string): Promise<void> {
  * Record a content save for velocity tracking.
  *
  * Opens its own transaction internally — must NOT be called from within
- * a store.transaction() callback (SqliteProjectStore forbids nesting).
+ * a store.transaction() callback (ProjectStore.transaction() does not support nesting).
  */
 export async function recordSave(projectId: string): Promise<void> {
   await updateDailySnapshot(projectId);

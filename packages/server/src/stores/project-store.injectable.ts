@@ -20,8 +20,8 @@ export function setProjectStore(s: ProjectStore): void {
 }
 
 /**
- * @internal Test-only: clear the store singleton.
- * Production code uses this only during graceful shutdown.
+ * @internal Clear the store singleton.
+ * Used by tests and graceful shutdown (index.ts).
  */
 export function resetProjectStore(): void {
   store = null;
