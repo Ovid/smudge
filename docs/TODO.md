@@ -1,6 +1,6 @@
 # NOW!!!
 
-- Projects can have mutliple authors. Smudge might want a "default" author.
+- Projects can have multiple authors. Smudge might want a "default" author.
 
 - Absolutely separate files from the database. If we have to reset the
   database for some horrible reason, we don't want their data killed! It
