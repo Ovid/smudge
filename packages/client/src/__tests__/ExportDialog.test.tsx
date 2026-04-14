@@ -34,8 +34,11 @@ describe("ExportDialog", () => {
     onClose: vi.fn(),
   };
 
-  const originalCreateObjectURL = globalThis.URL.createObjectURL;
-  const originalRevokeObjectURL = globalThis.URL.revokeObjectURL;
+  // Save originals (may be undefined in happy-dom); fall back to no-ops
+  // so the component's 100ms setTimeout for revokeObjectURL doesn't crash
+  // if it fires after afterEach restores the originals.
+  const originalCreateObjectURL = globalThis.URL.createObjectURL ?? (() => "blob:noop");
+  const originalRevokeObjectURL = globalThis.URL.revokeObjectURL ?? (() => {});
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -179,6 +182,51 @@ describe("ExportDialog", () => {
         include_toc: true,
       });
     });
+    clickSpy.mockRestore();
+  });
+
+  it("calls onClose when Escape key is pressed", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(<ExportDialog {...defaultProps} onClose={onClose} />);
+    await user.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("shows aria-busy and loading text while export is in flight", async () => {
+    const user = userEvent.setup();
+    let resolveExport!: (blob: Blob) => void;
+    vi.mocked(api.projects.export).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveExport = resolve;
+        }),
+    );
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    render(<ExportDialog {...defaultProps} />);
+    const exportButton = screen.getByRole("button", { name: "Export" });
+    expect(exportButton).not.toHaveAttribute("aria-busy", "true");
+
+    await user.click(exportButton);
+
+    await waitFor(
+      () => {
+        const btn = screen.getByRole("button", { name: "Exporting..." });
+        expect(btn).toHaveAttribute("aria-busy", "true");
+        expect(btn).toBeDisabled();
+      },
+      { timeout: 3000 },
+    );
+
+    // Resolve the export to clean up
+    resolveExport(new Blob(["test"]));
+    await waitFor(
+      () => {
+        expect(defaultProps.onClose).toHaveBeenCalled();
+      },
+      { timeout: 3000 },
+    );
     clickSpy.mockRestore();
   });
 
