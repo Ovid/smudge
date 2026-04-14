@@ -69,19 +69,7 @@ function stripHtmlTags(html: string): string {
 }
 
 function escapeMarkdown(text: string): string {
-  return text
-    .replace(/\n/g, " ")
-    .replace(/([\\`*_{}[\]()#+\-.!|])/g, "\\$1");
-}
-
-function slugifyAnchor(text: string): string {
-  const slug = text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s-]/gu, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-  return slug || "chapter";
+  return text.replace(/\n/g, " ").replace(/([\\`*_{}[\]()#+\-.!|])/g, "\\$1");
 }
 
 // ---------------------------------------------------------------------------
