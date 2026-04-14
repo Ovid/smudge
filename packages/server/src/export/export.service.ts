@@ -82,7 +82,8 @@ export async function exportProject(
   }
 
   const ext = EXPORT_FILE_EXTENSIONS[format];
-  const filename = `${project.slug || "export"}.${ext}`;
+  const safeSlug = (project.slug || "export").replace(/["\\\r\n]/g, "_");
+  const filename = `${safeSlug}.${ext}`;
 
   return {
     result: { content, contentType: EXPORT_CONTENT_TYPES[format], filename },
