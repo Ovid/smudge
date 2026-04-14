@@ -181,6 +181,7 @@ export function renderMarkdown(
       return `- [${ch.title}](#${slug})`;
     });
     parts.push(tocLines.join("\n"));
+    parts.push("---");
   }
 
   // Chapters
