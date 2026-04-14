@@ -65,12 +65,13 @@ function stripHtmlTags(html: string): string {
 }
 
 function slugifyAnchor(text: string): string {
-  return text
+  const slug = text
     .toLowerCase()
-    .replace(/[^\w\s-]/g, "")
+    .replace(/[^\p{L}\p{N}\s-]/gu, "")
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-")
-    .trim();
+    .replace(/^-|-$/g, "");
+  return slug || "chapter";
 }
 
 // ---------------------------------------------------------------------------
@@ -169,7 +170,14 @@ export function renderMarkdown(
   // TOC: only when requested AND there are chapters
   if (options.includeToc && chapters.length > 0) {
     parts.push("## Table of Contents\n");
-    const tocLines = chapters.map((ch) => `- [${ch.title}](#${slugifyAnchor(ch.title)})`);
+    const seenSlugs = new Map<string, number>();
+    const tocLines = chapters.map((ch) => {
+      let slug = slugifyAnchor(ch.title);
+      const count = seenSlugs.get(slug) ?? 0;
+      seenSlugs.set(slug, count + 1);
+      if (count > 0) slug = `${slug}-${count}`;
+      return `- [${ch.title}](#${slug})`;
+    });
     parts.push(tocLines.join("\n"));
   }
 

@@ -128,6 +128,26 @@ describe("renderMarkdown", () => {
     expect(md).toContain("# My Novel");
     expect(md).not.toContain("Table of Contents");
   });
+
+  it("deduplicates TOC anchors for chapters with identical titles", () => {
+    const dupeChapters = [
+      { id: "ch-1", title: "Interlude", content: null, sort_order: 0 },
+      { id: "ch-2", title: "Interlude", content: null, sort_order: 1 },
+      { id: "ch-3", title: "Interlude", content: null, sort_order: 2 },
+    ];
+    const md = renderMarkdown(projectInfo, dupeChapters, { includeToc: true });
+    expect(md).toContain("[Interlude](#interlude)");
+    expect(md).toContain("[Interlude](#interlude-1)");
+    expect(md).toContain("[Interlude](#interlude-2)");
+  });
+
+  it("handles non-Latin chapter titles in TOC anchors", () => {
+    const cjkChapters = [
+      { id: "ch-1", title: "\u7B2C\u4E00\u7AE0", content: null, sort_order: 0 },
+    ];
+    const md = renderMarkdown(projectInfo, cjkChapters, { includeToc: true });
+    expect(md).toMatch(/\[第一章\]\(#第一章\)/);
+  });
 });
 
 describe("renderPlainText", () => {
