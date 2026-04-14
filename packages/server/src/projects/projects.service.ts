@@ -8,7 +8,6 @@ import {
 } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import {
-  stripCorruptFlag,
   enrichChaptersWithLabels,
   enrichChapterWithLabel,
 } from "../chapters/chapters.types";
@@ -109,10 +108,9 @@ export async function getProject(
   if (!project) return null;
 
   const chapters = await store.listChaptersByProject(project.id);
-  const stripped = chapters.map((ch) => stripCorruptFlag(ch));
-  const chaptersWithLabels = await enrichChaptersWithLabels(store, stripped);
+  const chaptersWithLabels = await enrichChaptersWithLabels(store, chapters);
 
-  return { project, chapters: chaptersWithLabels as ChapterWithLabel[] };
+  return { project, chapters: chaptersWithLabels };
 }
 
 export async function updateProject(
@@ -250,9 +248,8 @@ export async function getDashboard(slug: string): Promise<DashboardResponse | nu
   if (!project) return null;
 
   const chapters = await store.listChapterMetadataByProject(project.id);
-  const chaptersWithLabels = await enrichChaptersWithLabels(store, chapters);
-
   const statusLabelMap = await store.getStatusLabelMap();
+  const chaptersWithLabels = await enrichChaptersWithLabels(store, chapters, statusLabelMap);
   const statusSummary: Record<string, number> = {};
   for (const status of Object.keys(statusLabelMap)) {
     statusSummary[status] = 0;
