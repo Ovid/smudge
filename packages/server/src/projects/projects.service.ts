@@ -255,9 +255,7 @@ export async function getDashboard(slug: string): Promise<DashboardResponse | nu
     statusSummary[status] = 0;
   }
   for (const ch of chapters) {
-    if (ch.status in statusSummary) {
-      statusSummary[ch.status] = (statusSummary[ch.status] ?? 0) + 1;
-    }
+    statusSummary[ch.status] = (statusSummary[ch.status] ?? 0) + 1;
   }
 
   const totalWordCount = chapters.reduce((sum, ch) => sum + ch.word_count, 0);
