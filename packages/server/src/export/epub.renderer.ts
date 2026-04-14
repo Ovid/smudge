@@ -37,7 +37,7 @@ pre {
 export async function renderEpub(
   project: ExportProjectInfo,
   chapters: ExportChapter[],
-  options: RenderOptions,
+  _options: RenderOptions,
 ): Promise<Buffer> {
   const author = project.author_name ?? "";
 

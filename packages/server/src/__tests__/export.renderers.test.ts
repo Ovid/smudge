@@ -119,9 +119,21 @@ describe("renderHtml", () => {
         content: {
           type: "doc",
           content: [
-            { type: "heading", attrs: { level: 3 }, content: [{ type: "text", text: "Main heading" }] },
-            { type: "heading", attrs: { level: 4 }, content: [{ type: "text", text: "Sub heading" }] },
-            { type: "heading", attrs: { level: 5 }, content: [{ type: "text", text: "Sub sub heading" }] },
+            {
+              type: "heading",
+              attrs: { level: 3 },
+              content: [{ type: "text", text: "Main heading" }],
+            },
+            {
+              type: "heading",
+              attrs: { level: 4 },
+              content: [{ type: "text", text: "Sub heading" }],
+            },
+            {
+              type: "heading",
+              attrs: { level: 5 },
+              content: [{ type: "text", text: "Sub sub heading" }],
+            },
           ],
         },
         sort_order: 0,
@@ -198,8 +210,16 @@ describe("renderMarkdown", () => {
         content: {
           type: "doc",
           content: [
-            { type: "heading", attrs: { level: 3 }, content: [{ type: "text", text: "Main heading" }] },
-            { type: "heading", attrs: { level: 4 }, content: [{ type: "text", text: "Sub heading" }] },
+            {
+              type: "heading",
+              attrs: { level: 3 },
+              content: [{ type: "text", text: "Main heading" }],
+            },
+            {
+              type: "heading",
+              attrs: { level: 4 },
+              content: [{ type: "text", text: "Sub heading" }],
+            },
           ],
         },
         sort_order: 0,
@@ -323,11 +343,9 @@ describe("renderDocx", () => {
   });
 
   it("omits author name when null", async () => {
-    const buf = await renderDocx(
-      { ...projectInfo, author_name: null },
-      sampleChapters,
-      { includeToc: false },
-    );
+    const buf = await renderDocx({ ...projectInfo, author_name: null }, sampleChapters, {
+      includeToc: false,
+    });
     const xml = await docxXml(buf);
     expect(xml).not.toContain("Jane Doe");
   });
@@ -367,9 +385,7 @@ describe("renderDocx", () => {
         title: "第一章",
         content: {
           type: "doc",
-          content: [
-            { type: "paragraph", content: [{ type: "text", text: "这是第一章的内容。" }] },
-          ],
+          content: [{ type: "paragraph", content: [{ type: "text", text: "这是第一章的内容。" }] }],
         },
         sort_order: 0,
       },
@@ -419,11 +435,9 @@ describe("renderEpub", () => {
   });
 
   it("omits author when null", async () => {
-    const buf = await renderEpub(
-      { ...projectInfo, author_name: null },
-      sampleChapters,
-      { includeToc: false },
-    );
+    const buf = await renderEpub({ ...projectInfo, author_name: null }, sampleChapters, {
+      includeToc: false,
+    });
     const text = await epubText(buf);
     expect(text).not.toContain("Jane Doe");
   });
@@ -463,9 +477,21 @@ describe("renderEpub", () => {
         content: {
           type: "doc",
           content: [
-            { type: "heading", attrs: { level: 3 }, content: [{ type: "text", text: "Main heading" }] },
-            { type: "heading", attrs: { level: 4 }, content: [{ type: "text", text: "Sub heading" }] },
-            { type: "heading", attrs: { level: 5 }, content: [{ type: "text", text: "Sub sub heading" }] },
+            {
+              type: "heading",
+              attrs: { level: 3 },
+              content: [{ type: "text", text: "Main heading" }],
+            },
+            {
+              type: "heading",
+              attrs: { level: 4 },
+              content: [{ type: "text", text: "Sub heading" }],
+            },
+            {
+              type: "heading",
+              attrs: { level: 5 },
+              content: [{ type: "text", text: "Sub sub heading" }],
+            },
           ],
         },
         sort_order: 0,
@@ -488,9 +514,7 @@ describe("renderEpub", () => {
         title: "第一章",
         content: {
           type: "doc",
-          content: [
-            { type: "paragraph", content: [{ type: "text", text: "这是第一章的内容。" }] },
-          ],
+          content: [{ type: "paragraph", content: [{ type: "text", text: "这是第一章的内容。" }] }],
         },
         sort_order: 0,
       },
