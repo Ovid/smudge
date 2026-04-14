@@ -108,9 +108,16 @@ export async function updateChapter(
     return { corrupt: true };
   }
 
-  return {
-    chapter: await enrichChapterWithLabel(store, updated),
-  };
+  let enriched: ChapterWithLabel;
+  try {
+    enriched = await enrichChapterWithLabel(store, updated);
+  } catch {
+    // Enrichment failed but the save succeeded — fall back to status as label
+    // so the client sees a successful save, not a false 500.
+    const { content_corrupt: _, ...clean } = updated;
+    enriched = { ...clean, status_label: updated.status };
+  }
+  return { chapter: enriched };
 }
 
 export async function deleteChapter(id: string): Promise<boolean> {
