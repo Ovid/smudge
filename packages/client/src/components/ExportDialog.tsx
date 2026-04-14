@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { EXPORT_FILE_EXTENSIONS, type ExportFormatTypeType } from "@smudge/shared";
+import { EXPORT_FILE_EXTENSIONS, type ExportFormatType } from "@smudge/shared";
 import { api, ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
 

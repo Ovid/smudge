@@ -1,9 +1,4 @@
-import {
-  ExportSchema,
-  EXPORT_FILE_EXTENSIONS,
-  EXPORT_CONTENT_TYPES,
-  type ExportFormatType,
-} from "@smudge/shared";
+import { ExportSchema, EXPORT_FILE_EXTENSIONS, EXPORT_CONTENT_TYPES } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import {
   renderHtml,
