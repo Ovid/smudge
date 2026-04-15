@@ -83,7 +83,15 @@ export async function updateChapter(
   // reference counts atomically with the content save.
   let imageRefDiff: { added: string[]; removed: string[] } | null = null;
   if (parsed.data.content !== undefined) {
-    const oldContent = chapter.content ? JSON.parse(chapter.content) : null;
+    let oldContent: Record<string, unknown> | null = null;
+    if (chapter.content) {
+      try {
+        oldContent = JSON.parse(chapter.content);
+      } catch {
+        // Stored content is corrupt — treat as no previous images so the save
+        // can overwrite/repair the corrupt content instead of crashing.
+      }
+    }
     const oldIds = extractImageIds(oldContent);
     const newIds = extractImageIds(parsed.data.content as Record<string, unknown>);
     imageRefDiff = diffImageReferences(oldIds, newIds);
@@ -155,7 +163,14 @@ export async function deleteChapter(id: string): Promise<boolean> {
 
   // Best-effort: decrement reference_count for images referenced by the deleted chapter
   try {
-    const content = chapter.content ? JSON.parse(chapter.content) : null;
+    let content: Record<string, unknown> | null = null;
+    if (chapter.content) {
+      try {
+        content = JSON.parse(chapter.content);
+      } catch {
+        // Corrupt content — no image IDs to decrement
+      }
+    }
     const imageIds = extractImageIds(content);
     if (imageIds.length > 0) {
       for (const imageId of imageIds) {
@@ -263,7 +278,14 @@ export async function restoreChapter(
 
   // Best-effort: re-increment reference_count for images in the restored chapter
   try {
-    const content = chapter.content ? JSON.parse(chapter.content) : null;
+    let content: Record<string, unknown> | null = null;
+    if (chapter.content) {
+      try {
+        content = JSON.parse(chapter.content);
+      } catch {
+        // Corrupt content — no image IDs to increment
+      }
+    }
     const imageIds = extractImageIds(content);
     if (imageIds.length > 0) {
       for (const imageId of imageIds) {
