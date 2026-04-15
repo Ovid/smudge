@@ -214,4 +214,10 @@ export const STRINGS = {
     errorFailed: "Export failed. Please try again.",
     close: "Close export dialog",
   },
+  referencePanel: {
+    ariaLabel: "Reference panel",
+    resizeHandle: "Resize reference panel",
+    toggleTooltip: "Toggle reference panel (Ctrl+.)",
+    imagesTab: "Images",
+  },
 } as const;
