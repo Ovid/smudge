@@ -567,6 +567,53 @@ describe("renderDocx", () => {
     expect(xml).toContain("w:ilvl");
   });
 
+  it("resets ordered list numbering between separate lists", async () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Two Lists",
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "orderedList",
+              content: [
+                {
+                  type: "listItem",
+                  content: [
+                    { type: "paragraph", content: [{ type: "text", text: "First A" }] },
+                  ],
+                },
+              ],
+            },
+            { type: "paragraph", content: [{ type: "text", text: "Break" }] },
+            {
+              type: "orderedList",
+              content: [
+                {
+                  type: "listItem",
+                  content: [
+                    { type: "paragraph", content: [{ type: "text", text: "Second A" }] },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false });
+    const xml = await docxXml(buf);
+    // Each ordered list should reference a different numbering ID so they restart
+    const numIdMatches = xml.match(/w:numId w:val="(\d+)"/g) ?? [];
+    const numIds = numIdMatches.map((m) => m.match(/w:val="(\d+)"/)![1]);
+    // Filter to only the two ordered-list numIds (bullet lists also have numIds)
+    const uniqueIds = [...new Set(numIds)];
+    // There should be at least 2 distinct numbering IDs (one per ordered list)
+    expect(uniqueIds.length).toBeGreaterThanOrEqual(2);
+  });
+
   it("renders code block with monospace font and shading", async () => {
     const chapters = [
       {

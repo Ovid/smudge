@@ -89,10 +89,47 @@ function inlineToRuns(
 }
 
 // ---------------------------------------------------------------------------
+// Build state — tracks per-document numbering for ordered lists
+// ---------------------------------------------------------------------------
+
+interface DocxBuildState {
+  nextListId: number;
+  numberingConfigs: Array<{
+    reference: string;
+    levels: Array<{
+      level: number;
+      format: (typeof LevelFormat)[keyof typeof LevelFormat];
+      text: string;
+      alignment: (typeof AlignmentType)[keyof typeof AlignmentType];
+    }>;
+  }>;
+}
+
+function newBuildState(): DocxBuildState {
+  return { nextListId: 0, numberingConfigs: [] };
+}
+
+function allocateOrderedListRef(state: DocxBuildState): string {
+  const ref = `ordered-list-${state.nextListId++}`;
+  state.numberingConfigs.push({
+    reference: ref,
+    levels: [
+      {
+        level: 0,
+        format: LevelFormat.DECIMAL,
+        text: "%1.",
+        alignment: AlignmentType.START,
+      },
+    ],
+  });
+  return ref;
+}
+
+// ---------------------------------------------------------------------------
 // Convert a single TipTap block node → Paragraph[]
 // ---------------------------------------------------------------------------
 
-function blockToParagraphs(node: Record<string, unknown>): Paragraph[] {
+function blockToParagraphs(node: Record<string, unknown>, state: DocxBuildState): Paragraph[] {
   try {
     const type = node.type as string;
     const content = node.content as Array<Record<string, unknown>> | undefined;
@@ -151,6 +188,7 @@ function blockToParagraphs(node: Record<string, unknown>): Paragraph[] {
 
       case "orderedList": {
         if (!content) return [];
+        const listRef = allocateOrderedListRef(state);
         const items: Paragraph[] = [];
         for (const listItem of content) {
           const liContent = listItem.content as Array<Record<string, unknown>> | undefined;
@@ -159,7 +197,7 @@ function blockToParagraphs(node: Record<string, unknown>): Paragraph[] {
               const blockContent = block.content as Array<Record<string, unknown>> | undefined;
               items.push(
                 new Paragraph({
-                  numbering: { reference: "ordered-list", level: 0 },
+                  numbering: { reference: listRef, level: 0 },
                   children: inlineToRuns(blockContent),
                 }),
               );
@@ -201,13 +239,16 @@ function blockToParagraphs(node: Record<string, unknown>): Paragraph[] {
 // Convert full TipTap doc JSON → Paragraph[]
 // ---------------------------------------------------------------------------
 
-function tipTapToParagraphs(content: Record<string, unknown> | null): Paragraph[] {
+function tipTapToParagraphs(
+  content: Record<string, unknown> | null,
+  state: DocxBuildState,
+): Paragraph[] {
   if (!content) return [];
   const docContent = content.content as Array<Record<string, unknown>> | undefined;
   if (!docContent) return [];
   const paragraphs: Paragraph[] = [];
   for (const node of docContent) {
-    paragraphs.push(...blockToParagraphs(node));
+    paragraphs.push(...blockToParagraphs(node, state));
   }
   return paragraphs;
 }
@@ -221,6 +262,7 @@ export async function renderDocx(
   chapters: ExportChapter[],
   options: RenderOptions,
 ): Promise<Buffer> {
+  const state = newBuildState();
   const children: (Paragraph | TableOfContents)[] = [];
 
   // 1. Title page
@@ -280,7 +322,7 @@ export async function renderDocx(
     );
 
     // Chapter content
-    children.push(...tipTapToParagraphs(chapter.content));
+    children.push(...tipTapToParagraphs(chapter.content, state));
   }
 
   const doc = new Document({
@@ -296,19 +338,7 @@ export async function renderDocx(
       },
     },
     numbering: {
-      config: [
-        {
-          reference: "ordered-list",
-          levels: [
-            {
-              level: 0,
-              format: LevelFormat.DECIMAL,
-              text: "%1.",
-              alignment: AlignmentType.START,
-            },
-          ],
-        },
-      ],
+      config: state.numberingConfigs,
     },
     sections: [{ children }],
   });
