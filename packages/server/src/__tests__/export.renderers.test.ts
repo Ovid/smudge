@@ -647,6 +647,95 @@ describe("renderDocx", () => {
     expect(xml).toContain("w:ilvl");
   });
 
+  it("renders nested list inside a list item without dropping content", async () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Nested List",
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "bulletList",
+              content: [
+                {
+                  type: "listItem",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "Top-level item" }],
+                    },
+                    {
+                      type: "bulletList",
+                      content: [
+                        {
+                          type: "listItem",
+                          content: [
+                            {
+                              type: "paragraph",
+                              content: [{ type: "text", text: "Nested item" }],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false });
+    const xml = await docxXml(buf);
+    expect(xml).toContain("Top-level item");
+    expect(xml).toContain("Nested item");
+  });
+
+  it("renders blockquote inside a list item without dropping content", async () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "BQ in List",
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "orderedList",
+              content: [
+                {
+                  type: "listItem",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "List text" }],
+                    },
+                    {
+                      type: "blockquote",
+                      content: [
+                        {
+                          type: "paragraph",
+                          content: [{ type: "text", text: "Quoted in list" }],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false });
+    const xml = await docxXml(buf);
+    expect(xml).toContain("List text");
+    expect(xml).toContain("Quoted in list");
+  });
+
   it("resets ordered list numbering between separate lists", async () => {
     const chapters = [
       {

@@ -218,14 +218,18 @@ function blockToParagraphs(
           const liContent = listItem.content as Array<Record<string, unknown>> | undefined;
           if (liContent) {
             for (const block of liContent) {
-              const blockContent = block.content as Array<Record<string, unknown>> | undefined;
-              items.push(
-                new Paragraph({
-                  bullet: { level: 0 },
-                  ...(ctx?.indent ? { indent: ctx.indent } : {}),
-                  children: inlineToRuns(blockContent, ctx?.extraRunProps),
-                }),
-              );
+              if ((block.type as string) === "paragraph") {
+                const blockContent = block.content as Array<Record<string, unknown>> | undefined;
+                items.push(
+                  new Paragraph({
+                    bullet: { level: 0 },
+                    ...(ctx?.indent ? { indent: ctx.indent } : {}),
+                    children: inlineToRuns(blockContent, ctx?.extraRunProps),
+                  }),
+                );
+              } else {
+                items.push(...blockToParagraphs(block, state, ctx));
+              }
             }
           }
         }
@@ -240,14 +244,18 @@ function blockToParagraphs(
           const liContent = listItem.content as Array<Record<string, unknown>> | undefined;
           if (liContent) {
             for (const block of liContent) {
-              const blockContent = block.content as Array<Record<string, unknown>> | undefined;
-              items.push(
-                new Paragraph({
-                  numbering: { reference: listRef, level: 0 },
-                  ...(ctx?.indent ? { indent: ctx.indent } : {}),
-                  children: inlineToRuns(blockContent, ctx?.extraRunProps),
-                }),
-              );
+              if ((block.type as string) === "paragraph") {
+                const blockContent = block.content as Array<Record<string, unknown>> | undefined;
+                items.push(
+                  new Paragraph({
+                    numbering: { reference: listRef, level: 0 },
+                    ...(ctx?.indent ? { indent: ctx.indent } : {}),
+                    children: inlineToRuns(blockContent, ctx?.extraRunProps),
+                  }),
+                );
+              } else {
+                items.push(...blockToParagraphs(block, state, ctx));
+              }
             }
           }
         }
