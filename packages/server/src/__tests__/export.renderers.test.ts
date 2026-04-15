@@ -111,7 +111,7 @@ describe("renderHtml", () => {
     expect(html).not.toContain("Table of Contents");
   });
 
-  it("shifts heading levels H3→H1, H4→H2, H5→H3 in chapter content", () => {
+  it("preserves heading levels H3/H4/H5 in chapter content (subordinate to H2 chapter titles)", () => {
     const chapters = [
       {
         id: "ch-1",
@@ -140,12 +140,11 @@ describe("renderHtml", () => {
       },
     ];
     const html = renderHtml(projectInfo, chapters, { includeToc: false });
-    expect(html).toContain("<h1>Main heading</h1>");
-    expect(html).toContain("<h2>Sub heading</h2>");
-    expect(html).toContain("<h3>Sub sub heading</h3>");
-    expect(html).not.toContain("<h3>Main heading</h3>");
-    expect(html).not.toContain("<h4>");
-    expect(html).not.toContain("<h5>");
+    // Body headings stay at H3/H4/H5 — correct hierarchy under H1 (title) and H2 (chapter)
+    expect(html).toContain("<h3>Main heading</h3>");
+    expect(html).toContain("<h4>Sub heading</h4>");
+    expect(html).toContain("<h5>Sub sub heading</h5>");
+    expect(html).not.toContain("<h1>Main heading</h1>");
   });
 });
 
@@ -202,7 +201,7 @@ describe("renderMarkdown", () => {
     expect(md).toContain("[第一章](#chapter-0)");
   });
 
-  it("shifts heading levels H3→H1, H4→H2 in Markdown output", () => {
+  it("preserves heading levels H3/H4 in Markdown output (subordinate to ## chapter titles)", () => {
     const chapters = [
       {
         id: "ch-1",
@@ -226,9 +225,12 @@ describe("renderMarkdown", () => {
       },
     ];
     const md = renderMarkdown(projectInfo, chapters, { includeToc: false });
-    expect(md).toContain("# Main heading");
-    expect(md).toContain("## Sub heading");
-    expect(md).not.toContain("### Main heading");
+    // Body headings stay at ###/#### — correct hierarchy under # (title) and ## (chapter)
+    expect(md).toContain("### Main heading");
+    expect(md).toContain("#### Sub heading");
+    // Body headings should NOT be at top level (# or ##)
+    expect(md).not.toMatch(/^# Main heading$/m);
+    expect(md).not.toMatch(/^## Main heading$/m);
   });
 
   it("emits explicit anchor targets before chapter headings", () => {
@@ -405,7 +407,7 @@ describe("renderDocx", () => {
     expect(styles).toMatch(/Cambria|Times New Roman/);
   });
 
-  it("maps H3→Heading1, H4→Heading2, H5→Heading3", async () => {
+  it("maps H3→Heading2, H4→Heading3, H5→Heading4 (subordinate to chapter Heading1)", async () => {
     const chapters = [
       {
         id: "ch-1",
@@ -438,10 +440,11 @@ describe("renderDocx", () => {
     expect(xml).toContain("Level Three");
     expect(xml).toContain("Level Four");
     expect(xml).toContain("Level Five");
-    // docx heading styles are referenced as "Heading1", "Heading2", "Heading3"
-    expect(xml).toMatch(/Heading1/);
-    expect(xml).toMatch(/Heading2/);
-    expect(xml).toMatch(/Heading3/);
+    // Chapter title is Heading1; body headings are Heading2/3/4
+    expect(xml).toMatch(/Heading1/); // chapter title
+    expect(xml).toMatch(/Heading2/); // H3
+    expect(xml).toMatch(/Heading3/); // H4
+    expect(xml).toMatch(/Heading4/); // H5
   });
 
   it("renders blockquote as indented italic paragraphs", async () => {
@@ -762,7 +765,7 @@ describe("renderEpub", () => {
     expect(buf.length).toBeGreaterThan(0);
   });
 
-  it("shifts heading levels from H3-H5 to H1-H3", async () => {
+  it("preserves heading levels H3/H4/H5 in EPUB content", async () => {
     const chapters = [
       {
         id: "ch-1",
@@ -792,11 +795,10 @@ describe("renderEpub", () => {
     ];
     const buf = await renderEpub(projectInfo, chapters, { includeToc: false });
     const text = await epubText(buf);
-    expect(text).toContain("<h1>");
-    expect(text).toContain("<h2>");
+    // Body headings stay at H3/H4/H5 — no shift
     expect(text).toContain("<h3>");
-    expect(text).not.toContain("<h4>");
-    expect(text).not.toContain("<h5>");
+    expect(text).toContain("<h4>");
+    expect(text).toContain("<h5>");
   });
 
   it("handles CJK characters", async () => {

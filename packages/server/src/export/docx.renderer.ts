@@ -14,13 +14,14 @@ import type { ExportProjectInfo, ExportChapter, RenderOptions } from "./export.r
 import { logger } from "../logger";
 
 // ---------------------------------------------------------------------------
-// Heading‐level mapping: TipTap H3→Word H1, H4→H2, H5→H3
+// Heading‐level mapping: TipTap H3→Word H2, H4→H3, H5→H4
+// Chapter titles are Heading 1; body headings start at Heading 2.
 // ---------------------------------------------------------------------------
 
 const HEADING_MAP: Record<number, (typeof HeadingLevel)[keyof typeof HeadingLevel]> = {
-  3: HeadingLevel.HEADING_1,
-  4: HeadingLevel.HEADING_2,
-  5: HeadingLevel.HEADING_3,
+  3: HeadingLevel.HEADING_2,
+  4: HeadingLevel.HEADING_3,
+  5: HeadingLevel.HEADING_4,
 };
 
 // ---------------------------------------------------------------------------
@@ -107,7 +108,8 @@ function blockToParagraphs(node: Record<string, unknown>): Paragraph[] {
         if (heading) {
           return [new Paragraph({ heading, children: inlineToRuns(content) })];
         }
-        // Unmapped heading level → normal paragraph
+        // Unmapped heading level → normal paragraph with warning
+        logger.warn({ level }, "Unmapped TipTap heading level in docx export, rendering as paragraph");
         return [new Paragraph({ children: inlineToRuns(content) })];
       }
 
@@ -257,7 +259,7 @@ export async function renderDocx(
     children.push(
       new TableOfContents("Table of Contents", {
         hyperlink: true,
-        headingStyleRange: "1-3",
+        headingStyleRange: "1-4",
       }),
     );
     children.push(new Paragraph({ children: [new PageBreak()] }));
