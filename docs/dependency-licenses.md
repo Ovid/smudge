@@ -12,7 +12,7 @@ Last audited: 2026-04-14
 
 | License | Count | Commercial use | Ships in production |
 |---------|-------|----------------|---------------------|
-| MIT | ~48 | Yes, unrestricted | Most dependencies |
+| MIT | ~49 | Yes, unrestricted | Most dependencies |
 | Apache-2.0 | 3 | Yes, unrestricted | Yes (DOMPurify in client; others dev-only) |
 | SIL OFL 1.1 | 2 | Yes, bundling permitted | Yes (fonts) |
 | MPL-2.0 | 1 | Yes, with file-level copyleft | No (dev only) |
@@ -38,6 +38,7 @@ or other strong-copyleft licenses are present.
 | express | MIT | |
 | helmet | MIT | |
 | knex | MIT | |
+| multer | MIT | Multipart form-data handling for image uploads |
 | @tiptap/core | MIT | TipTap editor core (server-side HTML generation) |
 | @tiptap/extension-heading | MIT | Heading extension for generateHTML() |
 | @tiptap/html | MIT | Server-side HTML generation from TipTap JSON |
