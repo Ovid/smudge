@@ -1,7 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import * as imagesRepo from "../images/images.repository";
 import { getDb } from "../db/connection";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export interface ResolvedImage {
   id: string;

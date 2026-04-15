@@ -1,5 +1,6 @@
 import { mkdir, writeFile, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { v4 as uuidv4 } from "uuid";
 import { UpdateImageSchema } from "@smudge/shared";
 import { getDb } from "../db/connection";
@@ -8,6 +9,8 @@ import * as imagesRepo from "./images.repository";
 import { liveCheckImageReferences } from "./images.references";
 import type { ImageRow, UpdateImageData } from "./images.types";
 import { logger } from "../logger";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 

@@ -19,6 +19,7 @@ export function ReferencePanel({ width, onResize, children }: ReferencePanelProp
 
   return (
     <aside
+      id="reference-panel"
       aria-label={STRINGS.referencePanel.ariaLabel}
       className="border-l border-border/60 bg-bg-sidebar flex flex-col h-full overflow-hidden relative"
       style={{ width: `${width}px`, minWidth: `${width}px` }}

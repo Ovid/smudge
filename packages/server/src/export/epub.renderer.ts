@@ -1,10 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { EPub } from "epub-gen-memory";
 import { chapterContentToHtml, escapeHtml } from "./export.renderers";
 import * as imagesRepo from "../images/images.repository";
 import { getDb } from "../db/connection";
 import type { ExportProjectInfo, ExportChapter, RenderOptions } from "./export.renderers";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export interface EpubRenderOptions extends RenderOptions {
   coverImageId?: string;
