@@ -48,7 +48,7 @@ const imagePasteExtension = Extension.create({
             const images = Array.from(items).filter((i) => i.type.startsWith("image/"));
             if (images.length === 0) return false;
             event.preventDefault();
-            const file = images[0].getAsFile();
+            const file = images[0]?.getAsFile();
             if (file) {
               const handler = imageUploadHandlers.get(activeEditorId);
               handler?.(file);
@@ -63,7 +63,8 @@ const imagePasteExtension = Extension.create({
             if (images.length === 0) return false;
             event.preventDefault();
             const handler = imageUploadHandlers.get(activeEditorId);
-            handler?.(images[0]);
+            const first = images[0];
+            if (first) handler?.(first);
             return true;
           },
         },
