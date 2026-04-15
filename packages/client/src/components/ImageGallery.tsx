@@ -227,28 +227,29 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
         {images.length === 0 ? (
           <p className="p-4 text-sm text-text-secondary">{S.noImages}</p>
         ) : (
-          <div className="grid grid-cols-2 gap-2 p-4 overflow-y-auto">
+          <ul role="list" className="grid grid-cols-2 gap-2 p-4 overflow-y-auto">
             {images.map((image) => (
-              <button
-                key={image.id}
-                onClick={() => openDetail(image)}
-                aria-label={`${image.filename}${image.reference_count === 0 ? `, ${S.unusedBadge}` : ""}`}
-                className="relative aspect-square rounded-lg overflow-hidden border border-border/40 hover:border-accent focus:outline-none focus:ring-2 focus:ring-focus-ring group"
-              >
-                <img
-                  src={`/api/images/${image.id}`}
-                  alt={image.alt_text || image.filename}
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition-opacity flex flex-col justify-end p-1.5">
-                  <span className="text-xs text-white truncate">{image.filename}</span>
-                  {image.reference_count === 0 && (
-                    <span className="text-xs text-amber-300">{S.unusedBadge}</span>
-                  )}
-                </div>
-              </button>
+              <li key={image.id}>
+                <button
+                  onClick={() => openDetail(image)}
+                  aria-label={`${image.filename}${image.reference_count === 0 ? `, ${S.unusedBadge}` : ""}`}
+                  className="relative w-full aspect-square rounded-lg overflow-hidden border border-border/40 hover:border-accent focus:outline-none focus:ring-2 focus:ring-focus-ring group"
+                >
+                  <img
+                    src={`/api/images/${image.id}`}
+                    alt={image.alt_text || image.filename}
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition-opacity flex flex-col justify-end p-1.5">
+                    <span className="text-xs text-white truncate">{image.filename}</span>
+                    {image.reference_count === 0 && (
+                      <span className="text-xs text-amber-300">{S.unusedBadge}</span>
+                    )}
+                  </div>
+                </button>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
 
         <div aria-live="polite" className="sr-only">
