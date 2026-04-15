@@ -22,16 +22,17 @@ Generated programmatically via the `docx` npm package (MIT licensed). The render
 **Document structure:**
 
 1. **Title page** — Project title (centered heading) + author name (centered subtitle) + page break
-2. **Table of contents** — Word-native TOC field (if `include_toc` is true) + page break. Uses `TableOfContents` from the `docx` library with `headingStyleRange: "1-3"` and `hyperlink: true`. The Document is created with `updateFields: true` so Word populates the TOC on first open. Note: some Word versions show a prompt asking whether to update fields — this is normal and expected.
+2. **Table of contents** — Word-native TOC field (if `include_toc` is true) + page break. Uses `TableOfContents` from the `docx` library with `headingStyleRange: "1-4"` and `hyperlink: true`. The Document is created with `updateFields: true` so Word populates the TOC on first open. Note: some Word versions show a prompt asking whether to update fields — this is normal and expected.
 3. **Chapters** — Each chapter starts on a new page (page break before each chapter heading)
 
 **TipTap to Word style mapping:**
 
 | TipTap Node | Word Style |
 |---|---|
-| H3 | Heading 1 |
-| H4 | Heading 2 |
-| H5 | Heading 3 |
+| Chapter title | Heading 1 |
+| H3 | Heading 2 |
+| H4 | Heading 3 |
+| H5 | Heading 4 |
 | Paragraph | Normal |
 | Blockquote | Block Text (indented, italic) |
 | Bullet list | List Bullet |
@@ -39,7 +40,7 @@ Generated programmatically via the `docx` npm package (MIT licensed). The render
 | Code block | Monospace font, light background |
 | Horizontal rule | Decorative divider (centered `* * *`) |
 
-The heading level shift (H3→Heading 1, H4→Heading 2, H5→Heading 3) is intentional. In the TipTap editor, H1–H2 are reserved for the page structure (project title, chapter titles). In the exported document, each chapter is its own top-level context, so writer headings map to Word's top-level heading styles.
+Chapter titles are mapped to Heading 1. Body headings are shifted down one level (H3→Heading 2, H4→Heading 3, H5→Heading 4) to create a proper parent-child hierarchy under the chapter heading. This ensures the Word document has correct heading structure and the TOC nests body headings under chapter titles. In the TipTap editor, H1–H2 are reserved for the page structure (project title, chapter titles), so body content headings start at H3.
 
 **Inline marks:** Bold, italic, strikethrough, and inline code map directly to Word run-level formatting properties.
 
@@ -55,7 +56,7 @@ Generated via `epub-gen-memory` (MIT licensed), which handles the EPUB packaging
 2. **Table of contents** — EPUB's built-in navigation (NCX/nav document), generated automatically from chapter titles. An inline HTML TOC page is also included if `include_toc` is true.
 3. **Chapters** — Each chapter is a separate XHTML file. This is the EPUB convention and naturally creates page breaks on e-readers.
 
-**Content conversion:** TipTap JSON → HTML via the existing `chapterContentToHtml()` helper (the same one the HTML export uses). A `shiftHeadingLevels(html)` post-processing helper remaps `<h3>`→`<h1>`, `<h4>`→`<h2>`, `<h5>`→`<h3>` in the HTML output before packaging into EPUB. This helper is also used by the HTML renderer (see Heading Level Shift section below).
+**Content conversion:** TipTap JSON → HTML via the existing `chapterContentToHtml()` helper (the same one the HTML export uses). Heading levels are preserved as-is (H3/H4/H5) — see Heading Hierarchy section below for rationale.
 
 **Empty chapter handling:** If `chapterContentToHtml()` returns `""` for a chapter with null or empty content, the EPUB chapter renders as a title-only section (heading with no body). If `epub-gen-memory` cannot handle empty HTML content, a `<p>&nbsp;</p>` placeholder is injected as a fallback.
 
@@ -120,16 +121,17 @@ The changes touch a small, well-defined set of files. The export dialog, chapter
 
 Both must be added to `docs/dependency-licenses.md` per project policy. The `epub-gen-memory` license should be verified from `node_modules/epub-gen-memory/package.json` at install time — if it turns out to be GPL or similar, `epub-gen` or manual EPUB assembly with a zip library are fallbacks.
 
-## Heading Level Shift
+## Heading Hierarchy
 
-All export formats shift heading levels: TipTap H3→H1, H4→H2, H5→H3. In the editor, H1–H2 are reserved for page structure (project title, chapter titles). In exported documents, each chapter is its own top-level context, so writer headings map to top-level heading styles.
+In the TipTap editor, H1–H2 are reserved for page structure (project title, chapter titles). Body content headings start at H3. Each export format preserves a correct heading hierarchy relative to the document structure:
 
 **Implementation:**
 
-- **docx:** The heading shift happens naturally during the TipTap JSON tree walk — the renderer maps `heading` nodes with `level: 3` to Word's Heading 1 style, etc.
-- **HTML and EPUB:** A shared `shiftHeadingLevels(html: string)` post-processing helper remaps `<h3>`→`<h1>`, `<h4>`→`<h2>`, `<h5>`→`<h3>` in the HTML output from `chapterContentToHtml()`. This is applied in the EPUB renderer before packaging, and retroactively applied in the existing HTML renderer for consistency across all formats.
-- **Markdown:** The Markdown renderer uses Turndown on the HTML output. The heading shift is applied to the HTML before Turndown processes it, so Markdown headings automatically come out as `#`, `##`, `###`.
-- **Plain text:** No headings in plain text output, so no shift needed.
+- **docx:** Chapter titles map to Word Heading 1. Body headings shift down one level: H3→Heading 2, H4→Heading 3, H5→Heading 4. This creates a proper parent-child hierarchy under the chapter heading. The TOC uses `headingStyleRange: "1-4"` to capture all levels.
+- **HTML:** Project title is `<h1>`, chapter titles are `<h2>`, and body headings are preserved as `<h3>`/`<h4>`/`<h5>` — correct nesting within the single-document structure.
+- **EPUB:** Body headings are preserved as `<h3>`/`<h4>`/`<h5>` within each chapter's XHTML. The `epub-gen-memory` library manages chapter-level structure and TOC generation.
+- **Markdown:** Project title is `#`, chapter titles are `##`, body headings are `###`/`####`/`#####` — consistent with the HTML hierarchy.
+- **Plain text:** No heading levels in plain text output.
 
 ## Testing Strategy
 

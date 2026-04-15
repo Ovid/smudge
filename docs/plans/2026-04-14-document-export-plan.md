@@ -4,7 +4,7 @@
 
 **Goal:** Add Word (.docx) and EPUB export formats to the existing export pipeline.
 
-**Architecture:** Extends the Phase 3a export pipeline with two new renderers. The docx renderer walks TipTap JSON directly to produce styled Word documents. The EPUB renderer converts TipTap JSON → HTML (reusing `chapterContentToHtml()`) then packages it via `epub-gen-memory`. A shared `shiftHeadingLevels()` helper remaps H3→H1, H4→H2, H5→H3 across all HTML-based formats (HTML, Markdown, EPUB). The `ExportResult.content` type widens from `string` to `string | Buffer` to accommodate binary formats.
+**Architecture:** Extends the Phase 3a export pipeline with two new renderers. The docx renderer walks TipTap JSON directly to produce styled Word documents with chapter titles as Heading 1 and body headings at Heading 2+. The EPUB renderer converts TipTap JSON → HTML (reusing `chapterContentToHtml()`) then packages it via `epub-gen-memory`. HTML/Markdown/EPUB preserve heading levels (H3/H4/H5) to maintain correct hierarchy under document and chapter titles. The `ExportResult.content` type widens from `string` to `string | Buffer` to accommodate binary formats.
 
 **Tech Stack:** `docx` (Word generation), `epub-gen-memory` (EPUB packaging), existing TipTap HTML pipeline
 
@@ -60,11 +60,13 @@ git commit -m "chore: add docx and epub-gen-memory dependencies"
 
 ---
 
-## Task 2: Add heading level shift helper
+## Task 2: Export `chapterContentToHtml` and `escapeHtml` helpers
 
-**Requirement:** Design §Heading Level Shift — all export formats shift H3→H1, H4→H2, H5→H3
+**Requirement:** Design §Heading Hierarchy — preserve correct heading hierarchy per format
 
-All export formats should shift TipTap heading levels in the exported output. This task adds a `shiftHeadingLevels()` helper inside `chapterContentToHtml()` and retrofits it into the existing HTML and Markdown renderers. Also exports `chapterContentToHtml` and `escapeHtml` so the EPUB renderer (Task 4) can reuse them.
+> **Implementation note:** The original design called for a `shiftHeadingLevels()` helper that would remap H3→H1 across all formats. During implementation, this was found to break HTML heading hierarchy (H1 project title, H2 chapter title, then H1 body heading). Instead, heading levels are preserved as-is in HTML/Markdown/EPUB, and the docx renderer maps body headings one level below chapter titles (H3→Heading 2). See Design §Heading Hierarchy.
+
+This task exports `chapterContentToHtml` and `escapeHtml` so the EPUB renderer (Task 4) can reuse them.
 
 **Files:**
 - Modify: `packages/server/src/export/export.renderers.ts`
@@ -341,9 +343,10 @@ for (const [i, chapter] of chapters.entries()) {
 
 | TipTap Node | Word Style |
 |---|---|
-| `heading` level 3 | `HeadingLevel.HEADING_1` |
-| `heading` level 4 | `HeadingLevel.HEADING_2` |
-| `heading` level 5 | `HeadingLevel.HEADING_3` |
+| Chapter title | `HeadingLevel.HEADING_1` |
+| `heading` level 3 | `HeadingLevel.HEADING_2` |
+| `heading` level 4 | `HeadingLevel.HEADING_3` |
+| `heading` level 5 | `HeadingLevel.HEADING_4` |
 | `paragraph` | Normal (default) |
 | `blockquote` | Indented italic paragraphs (`indent: { left: 720 }`) |
 | `bulletList` | `bullet: { level: 0 }` |

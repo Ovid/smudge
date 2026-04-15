@@ -40,6 +40,10 @@
   Word. Have a simple subset, but use setting to enable more. Also, move
   "settings" under "trash" to top bar.
   Also, export formats need to handle those new tools?
+- Docx export: blockquote non-paragraph children (headings, lists) lose
+  indentation and italic styling. Content is preserved but visually appears
+  outside the blockquote. Requires passing blockquote context through the
+  recursive paragraph builder.
 - If they run `make clean`, how can we restore? This seems very bad.
 
 # Bugs
