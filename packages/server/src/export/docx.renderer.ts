@@ -73,13 +73,23 @@ function inlineToRuns(
         const text = typeof node.text === "string" ? node.text : "";
         if (!text) continue;
         const markProps = marksToProps(node.marks as Array<{ type: string }> | undefined);
-        runs.push(
-          new TextRun({
-            text,
-            ...markProps,
-            ...extraProps,
-          }),
-        );
+        // Split on newlines and interleave break runs so multi-line
+        // content (especially code blocks) preserves line breaks in Word.
+        const segments = text.split("\n");
+        for (let si = 0; si < segments.length; si++) {
+          if (si > 0) {
+            runs.push(new TextRun({ break: 1, ...markProps, ...extraProps }));
+          }
+          if (segments[si]) {
+            runs.push(
+              new TextRun({
+                text: segments[si],
+                ...markProps,
+                ...extraProps,
+              }),
+            );
+          }
+        }
       } else if (node.type === "hardBreak") {
         runs.push(new TextRun({ break: 1, ...extraProps }));
       }

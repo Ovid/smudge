@@ -670,6 +670,33 @@ describe("renderDocx", () => {
     expect(xml).toContain("F0F0F0");
   });
 
+  it("preserves line breaks in multi-line code blocks", async () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Multi-line Code",
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "codeBlock",
+              content: [{ type: "text", text: "line one\nline two\nline three" }],
+            },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false });
+    const xml = await docxXml(buf);
+    expect(xml).toContain("line one");
+    expect(xml).toContain("line two");
+    expect(xml).toContain("line three");
+    // Each line break should produce a <w:br/> element in the XML
+    const breakCount = (xml.match(/<w:br\/>/g) ?? []).length;
+    expect(breakCount).toBeGreaterThanOrEqual(2);
+  });
+
   it("renders horizontal rule as centered '* * *' text", async () => {
     const chapters = [
       {
