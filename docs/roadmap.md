@@ -25,8 +25,8 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 2.5a | Simplify Progress Model | Reduce velocity to project-level targets + daily totals, demote save_events | Done |
 | 2.5b | Storage Architecture | ProjectStore/AssetStore/SnapshotStore abstractions, clean seams for future | Done |
 | 3a | Export Foundation | Export pipeline, HTML, Markdown, plain text, config dialog, download | Done |
-| 3b | Document Export | PDF, Word (.docx), EPUB | In Progress |
-| 4a | Reference Panel & Images | Collapsible side panel infrastructure, image upload/storage | Planned |
+| 3b | Document Export | PDF, Word (.docx), EPUB | Done |
+| 4a | Reference Panel & Images | Collapsible side panel infrastructure, image upload/storage | In Progress |
 | 4b | Snapshots & Find-and-Replace | Manual/auto snapshots, project-wide search and replace | Planned |
 | 4c | Notes, Tags & Outtakes | Inline notes, paragraph tags, scratchpad for cut text | Planned |
 | 5a | Fiction: Characters | Character sheets with structured fields and freeform notes | Planned |
@@ -447,6 +447,7 @@ These formats extend the export pipeline and config dialog built in Phase 3a. Th
 ---
 
 ## Phase 4a: Reference Panel & Images
+<!-- plan: 2026-04-15-reference-panel-images-design.md -->
 
 ### Goal
 
