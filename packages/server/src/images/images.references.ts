@@ -51,10 +51,9 @@ export function diffImageReferences(
 
 /**
  * Scans all non-deleted chapters in a project for references to a specific image.
- * Returns the list of chapters that reference it and corrects the image's
- * `reference_count` if it has drifted.
+ * Pure read — does NOT update reference_count in the database.
  */
-export async function liveCheckImageReferences(
+export async function scanImageReferences(
   imageId: string,
   projectId: string,
 ): Promise<Array<{ id: string; title: string }>> {
@@ -72,6 +71,21 @@ export async function liveCheckImageReferences(
       referencingChapters.push({ id: ch.id, title: ch.title });
     }
   }
+
+  return referencingChapters;
+}
+
+/**
+ * Scans all non-deleted chapters in a project for references to a specific image
+ * and corrects the image's `reference_count` if it has drifted.
+ * Use this only on write paths (e.g. delete), not on GET endpoints.
+ */
+export async function liveCheckImageReferences(
+  imageId: string,
+  projectId: string,
+): Promise<Array<{ id: string; title: string }>> {
+  const db = getDb();
+  const referencingChapters = await scanImageReferences(imageId, projectId);
 
   // Correct reference_count if it drifted
   await db("images").where("id", imageId).update({ reference_count: referencingChapters.length });

@@ -152,6 +152,23 @@ export async function deleteChapter(id: string): Promise<boolean> {
     await txStore.updateProjectTimestamp(chapter.project_id, now);
   });
 
+  // Best-effort: decrement reference_count for images referenced by the deleted chapter
+  try {
+    const content = chapter.content ? JSON.parse(chapter.content) : null;
+    const imageIds = extractImageIds(content);
+    if (imageIds.length > 0) {
+      const db = getDb();
+      for (const imageId of imageIds) {
+        await imagesRepo.incrementReferenceCount(db, imageId, -1);
+      }
+    }
+  } catch (err: unknown) {
+    logger.error(
+      { err, chapter_id: id },
+      "Image reference count decrement on delete failed (best-effort)",
+    );
+  }
+
   try {
     await getVelocityService().updateDailySnapshot(chapter.project_id);
   } catch (err: unknown) {

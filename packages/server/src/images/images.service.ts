@@ -1,27 +1,16 @@
 import { mkdir, writeFile, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { v4 as uuidv4 } from "uuid";
 import { UpdateImageSchema } from "@smudge/shared";
 import { getDb } from "../db/connection";
 import { getProjectStore } from "../stores/project-store.injectable";
 import * as imagesRepo from "./images.repository";
-import { liveCheckImageReferences } from "./images.references";
+import { liveCheckImageReferences, scanImageReferences } from "./images.references";
+import { ALLOWED_MIMES, mimeToExt, getImagePath } from "./images.paths";
 import type { ImageRow, UpdateImageData } from "./images.types";
 import { logger } from "../logger";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
-
-const ALLOWED_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
-
-const MIME_TO_EXT: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/gif": "gif",
-  "image/webp": "webp",
-};
 
 export interface FileInput {
   buffer: Buffer;
@@ -49,14 +38,6 @@ type ReferencesResult =
   | { chapters: Array<{ id: string; title: string }>; notFound?: undefined }
   | { notFound: true; chapters?: undefined };
 
-function getDataDir(): string {
-  return process.env.DATA_DIR ?? path.join(__dirname, "../../data");
-}
-
-function getImagePath(projectId: string, imageId: string, ext: string): string {
-  return path.join(getDataDir(), "images", projectId, `${imageId}.${ext}`);
-}
-
 export async function uploadImage(projectId: string, file: FileInput): Promise<UploadResult> {
   if (!ALLOWED_MIMES.has(file.mimetype)) {
     return {
@@ -77,21 +58,28 @@ export async function uploadImage(projectId: string, file: FileInput): Promise<U
 
   const id = uuidv4();
   // ALLOWED_MIMES check above guarantees this key exists
-  const ext = MIME_TO_EXT[file.mimetype] ?? "bin";
+  const ext = mimeToExt(file.mimetype);
   const filePath = getImagePath(projectId, id, ext);
 
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, file.buffer);
 
   const db = getDb();
-  const row = await imagesRepo.insert(db, {
-    id,
-    project_id: projectId,
-    filename: file.originalname,
-    mime_type: file.mimetype,
-    size_bytes: file.size,
-    created_at: new Date().toISOString(),
-  });
+  let row: ImageRow;
+  try {
+    row = await imagesRepo.insert(db, {
+      id,
+      project_id: projectId,
+      filename: file.originalname,
+      mime_type: file.mimetype,
+      size_bytes: file.size,
+      created_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    // Clean up the orphaned file — the DB insert failed so nothing references it
+    await unlink(filePath).catch(() => {});
+    throw err;
+  }
 
   return { image: row };
 }
@@ -111,7 +99,7 @@ export async function serveImage(id: string): Promise<{ data: Buffer; mimeType: 
   const image = await imagesRepo.findById(db, id);
   if (!image) return null;
 
-  const ext = MIME_TO_EXT[image.mime_type];
+  const ext = mimeToExt(image.mime_type);
   if (!ext) return null;
 
   const filePath = getImagePath(image.project_id, image.id, ext);
@@ -157,7 +145,7 @@ export async function deleteImage(id: string): Promise<DeleteResult> {
     return { referenced: chapters };
   }
 
-  const ext = MIME_TO_EXT[image.mime_type];
+  const ext = mimeToExt(image.mime_type);
   if (ext) {
     const filePath = getImagePath(image.project_id, image.id, ext);
     try {
@@ -178,6 +166,7 @@ export async function getImageReferences(id: string): Promise<ReferencesResult> 
     return { notFound: true };
   }
 
-  const chapters = await liveCheckImageReferences(id, image.project_id);
+  // Read-only scan — does not mutate reference_count on a GET path
+  const chapters = await scanImageReferences(id, image.project_id);
   return { chapters };
 }

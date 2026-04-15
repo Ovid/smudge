@@ -111,6 +111,7 @@ export const api = {
         format: ExportFormatType;
         include_toc?: boolean;
         chapter_ids?: string[];
+        epub_cover_image_id?: string;
       },
       signal?: AbortSignal,
     ): Promise<Blob> => {
@@ -218,7 +219,7 @@ export const api = {
         }
     > {
       const res = await fetch(`${BASE}/images/${id}`, { method: "DELETE" });
-      const body = await res.json();
+      const body = await res.json().catch(() => null);
       if (res.status === 409) return body;
       if (!res.ok) {
         throw new ApiRequestError(

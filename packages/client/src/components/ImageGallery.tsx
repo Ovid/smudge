@@ -34,6 +34,7 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [announcement, setAnnouncement] = useState("");
   const [references, setReferences] = useState<Array<{ id: string; title: string }>>([]);
+  const [referencesLoaded, setReferencesLoaded] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -86,10 +87,16 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
     api.images
       .references(selectedImageId)
       .then((data) => {
-        if (!cancelled) setReferences(data.chapters);
+        if (!cancelled) {
+          setReferences(data.chapters);
+          setReferencesLoaded(true);
+        }
       })
       .catch(() => {
-        if (!cancelled) setReferences([]);
+        if (!cancelled) {
+          setReferences([]);
+          setReferencesLoaded(true);
+        }
       });
     return () => {
       cancelled = true;
@@ -130,11 +137,13 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
     });
     setSaveStatus("idle");
     setConfirmingDelete(false);
+    setReferencesLoaded(false);
   }
 
   function backToGrid() {
     setSelectedImage(null);
     setReferences([]);
+    setReferencesLoaded(false);
     setConfirmingDelete(false);
   }
 
@@ -150,8 +159,19 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
     }
   }
 
-  function handleInsert() {
+  async function handleInsert() {
     if (!selectedImage) return;
+    // Auto-save pending metadata changes before inserting so the DB stays in sync
+    if (saveStatus !== "saved" && saveStatus !== "saving") {
+      try {
+        setSaveStatus("saving");
+        const updated = await api.images.update(selectedImage.id, formState);
+        setSelectedImage(updated);
+        setSaveStatus("saved");
+      } catch {
+        setSaveStatus("idle");
+      }
+    }
     onInsertImage(`/api/images/${selectedImage.id}`, formState.alt_text);
     announce(S.insertSuccess(selectedImage.filename));
   }
@@ -159,14 +179,20 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
   async function handleDelete() {
     if (!selectedImage) return;
 
-    const result = await api.images.delete(selectedImage.id);
-    if ("error" in result) {
-      // Image is in use — blocked
-      return;
+    try {
+      const result = await api.images.delete(selectedImage.id);
+      if ("error" in result) {
+        // Image is in use — blocked
+        return;
+      }
+      setSelectedImage(null);
+      setConfirmingDelete(false);
+      incrementRefreshKey();
+    } catch (err: unknown) {
+      const reason = err instanceof Error ? err.message : "Unknown error";
+      announce(S.deleteFailed(reason));
+      setConfirmingDelete(false);
     }
-    setSelectedImage(null);
-    setConfirmingDelete(false);
-    incrementRefreshKey();
   }
 
   function updateField(field: keyof DetailFormState, value: string) {
@@ -229,7 +255,9 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
   }
 
   // --- Detail View ---
-  const isUsed = selectedImage.reference_count > 0;
+  // Once references have loaded from the server, use that as the source of truth
+  // instead of the potentially-stale reference_count from the image list.
+  const isUsed = referencesLoaded ? references.length > 0 : selectedImage.reference_count > 0;
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">

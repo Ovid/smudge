@@ -25,9 +25,15 @@ interface EditorProps {
 
 const AUTO_SAVE_DEBOUNCE_MS = 1500;
 
-// Module-level holder for the image upload handler — the ProseMirror plugin
-// reads this during paste/drop events, not during render.
-let imageUploadHandler: (file: File) => void = () => {};
+// Module-level map from editor instance ID to upload handler.
+// Each Editor component registers its own handler keyed by a unique ID,
+// so multiple instances don't overwrite each other.
+let nextEditorId = 0;
+const imageUploadHandlers = new Map<number, (file: File) => void>();
+
+// The extension is module-level (ProseMirror plugins are created once).
+// At event time it looks up the handler for the most recently focused editor.
+let activeEditorId = -1;
 
 const imagePasteExtension = Extension.create({
   name: "imagePaste",
@@ -43,7 +49,10 @@ const imagePasteExtension = Extension.create({
               if (item.type.startsWith("image/")) {
                 event.preventDefault();
                 const file = item.getAsFile();
-                if (file) imageUploadHandler(file);
+                if (file) {
+                  const handler = imageUploadHandlers.get(activeEditorId);
+                  handler?.(file);
+                }
                 return true;
               }
             }
@@ -54,7 +63,8 @@ const imagePasteExtension = Extension.create({
             for (const file of Array.from(event.dataTransfer.files)) {
               if (file.type.startsWith("image/")) {
                 event.preventDefault();
-                imageUploadHandler(file);
+                const handler = imageUploadHandlers.get(activeEditorId);
+                handler?.(file);
                 return true;
               }
             }
@@ -79,6 +89,7 @@ export function Editor({
   const onContentChangeRef = useRef(onContentChange);
   const projectIdRef = useRef(projectId);
   const onImageAnnouncementRef = useRef(onImageAnnouncement);
+  const editorIdRef = useRef(nextEditorId++);
 
   useEffect(() => {
     onSaveRef.current = onSave;
@@ -141,8 +152,6 @@ export function Editor({
     };
   }, []);
 
-  // Keep the module-level image upload handler in sync with the current editor + props
-
   const editor = useEditor({
     extensions: [
       ...editorExtensions,
@@ -173,6 +182,9 @@ export function Editor({
           dirtyRef.current = true;
         });
     },
+    onFocus: () => {
+      activeEditorId = editorIdRef.current;
+    },
     editorProps: {
       attributes: {
         class:
@@ -189,8 +201,11 @@ export function Editor({
     editorInstanceRef.current = editor;
   }, [editor]);
 
+  // Register instance-scoped image upload handler
   useEffect(() => {
-    imageUploadHandler = async (file: File) => {
+    const id = editorIdRef.current;
+    activeEditorId = id;
+    imageUploadHandlers.set(id, async (file: File) => {
       try {
         const image = await api.images.upload(projectIdRef.current, file);
         if (editor) {
@@ -205,9 +220,10 @@ export function Editor({
         const message = err instanceof Error ? err.message : "Unknown error";
         onImageAnnouncementRef.current?.(STRINGS.imageGallery.uploadFailed(message));
       }
-    };
+    });
     return () => {
-      imageUploadHandler = () => {};
+      imageUploadHandlers.delete(id);
+      if (activeEditorId === id) activeEditorId = -1;
     };
   }, [editor]);
 

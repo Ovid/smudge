@@ -1,10 +1,7 @@
 import fs from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import * as imagesRepo from "../images/images.repository";
 import { getDb } from "../db/connection";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { mimeToExt, getImagePath } from "../images/images.paths";
 
 export interface ResolvedImage {
   id: string;
@@ -16,28 +13,13 @@ export interface ResolvedImage {
   license: string;
 }
 
-function getDataDir(): string {
-  return process.env.DATA_DIR ?? path.join(__dirname, "../../data");
-}
-
-function mimeToExt(mime: string): string {
-  const map: Record<string, string> = {
-    "image/jpeg": "jpg",
-    "image/png": "png",
-    "image/gif": "gif",
-    "image/webp": "webp",
-  };
-  return map[mime] ?? "bin";
-}
-
 export async function resolveImage(imageId: string): Promise<ResolvedImage | null> {
   const db = getDb();
   const row = await imagesRepo.findById(db, imageId);
   if (!row) return null;
 
-  const dataDir = getDataDir();
   const ext = mimeToExt(row.mime_type);
-  const filePath = path.join(dataDir, "images", row.project_id, `${row.id}.${ext}`);
+  const filePath = getImagePath(row.project_id, row.id, ext);
 
   try {
     const data = await fs.readFile(filePath);
@@ -74,21 +56,24 @@ export async function resolveImagesInHtml(html: string): Promise<{
   let resolvedHtml = html;
   for (const [id, img] of images) {
     const dataUri = `data:${img.mimeType};base64,${img.data.toString("base64")}`;
+    // Tag each <img> with data-image-id so the figcaption pass can match by unique ID
     resolvedHtml = resolvedHtml.replace(
       new RegExp(`src="/api/images/${id}"`, "gi"),
-      `src="${dataUri}"`,
+      `data-image-id="${id}" src="${dataUri}"`,
     );
   }
 
-  // Add figure/figcaption for images with captions
-  for (const [, img] of images) {
+  // Add figure/figcaption for images with captions, matched by unique image ID
+  for (const [id, img] of images) {
     if (img.caption) {
       const escapedCaption = img.caption
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
       resolvedHtml = resolvedHtml.replace(
-        new RegExp(`(<img[^>]*src="data:${img.mimeType.replace("/", "\\/")}[^"]*"[^>]*>)`, "g"),
+        new RegExp(`(<img[^>]*data-image-id="${id}"[^>]*>)`, "g"),
         `<figure>$1<figcaption>${escapedCaption}</figcaption></figure>`,
       );
     }

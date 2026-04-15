@@ -1,30 +1,13 @@
 import fs from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { EPub } from "epub-gen-memory";
 import { chapterContentToHtml, escapeHtml } from "./export.renderers";
 import * as imagesRepo from "../images/images.repository";
 import { getDb } from "../db/connection";
+import { mimeToExt, getImagePath } from "../images/images.paths";
 import type { ExportProjectInfo, ExportChapter, RenderOptions } from "./export.renderers";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export interface EpubRenderOptions extends RenderOptions {
   coverImageId?: string;
-}
-
-function getDataDir(): string {
-  return process.env.DATA_DIR ?? path.join(__dirname, "../../data");
-}
-
-function mimeToExt(mime: string): string {
-  const map: Record<string, string> = {
-    "image/jpeg": "jpg",
-    "image/png": "png",
-    "image/gif": "gif",
-    "image/webp": "webp",
-  };
-  return map[mime] ?? "bin";
 }
 
 /**
@@ -36,7 +19,6 @@ async function resolveImagesForEpub(html: string): Promise<string> {
   const matches = [...html.matchAll(pattern)];
   if (matches.length === 0) return html;
 
-  const dataDir = getDataDir();
   const db = getDb();
 
   let resolvedHtml = html;
@@ -46,7 +28,7 @@ async function resolveImagesForEpub(html: string): Promise<string> {
     const row = await imagesRepo.findById(db, id);
     if (!row) continue;
     const ext = mimeToExt(row.mime_type);
-    const filePath = path.join(dataDir, "images", row.project_id, `${row.id}.${ext}`);
+    const filePath = getImagePath(row.project_id, row.id, ext);
     try {
       await fs.access(filePath);
       const fileUrl = `file://${filePath}`;
@@ -139,9 +121,8 @@ export async function renderEpub(
     const db = getDb();
     const row = await imagesRepo.findById(db, options.coverImageId);
     if (row) {
-      const dataDir = getDataDir();
       const ext = mimeToExt(row.mime_type);
-      const filePath = path.join(dataDir, "images", row.project_id, `${row.id}.${ext}`);
+      const filePath = getImagePath(row.project_id, row.id, ext);
       try {
         await fs.access(filePath);
         coverFileUrl = `file://${filePath}`;

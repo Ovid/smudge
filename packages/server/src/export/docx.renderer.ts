@@ -202,11 +202,10 @@ async function listItemsToParagraphs(
 const DEFAULT_IMAGE_WIDTH = 3657600;
 const DEFAULT_IMAGE_HEIGHT = 2743200;
 
-const MIME_TO_DOCX_TYPE: Record<string, "jpg" | "png" | "gif" | "bmp"> = {
+const MIME_TO_DOCX_TYPE: Record<string, "jpg" | "png" | "gif"> = {
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/gif": "gif",
-  "image/bmp": "bmp",
 };
 
 async function blockToParagraphs(
@@ -326,11 +325,24 @@ async function blockToParagraphs(
 
         const docxType = MIME_TO_DOCX_TYPE[resolved.mimeType];
         if (!docxType) {
+          // Format not supported by docx library — render a text placeholder
+          // so the image is not silently lost (e.g. webp uploads).
           logger.warn(
             { mimeType: resolved.mimeType },
-            "Unsupported image MIME type for docx export",
+            "Unsupported image MIME type for docx export, rendering as text placeholder",
           );
-          return [];
+          return [
+            new Paragraph({
+              ...(ctx?.indent ? { indent: ctx.indent } : {}),
+              alignment: AlignmentType.CENTER,
+              children: [
+                new TextRun({
+                  text: `[Image: ${resolved.altText || "image"}]`,
+                  italics: true,
+                }),
+              ],
+            }),
+          ];
         }
 
         const paragraphs: Paragraph[] = [
