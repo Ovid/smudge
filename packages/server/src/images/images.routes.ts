@@ -65,6 +65,12 @@ export function imagesRouter(): Router {
     "/:projectId/images",
     asyncHandler(async (req, res) => {
       const images = await imagesService.listImages(req.params.projectId as string);
+      if (images === null) {
+        res.status(404).json({
+          error: { code: "NOT_FOUND", message: "Project not found." },
+        });
+        return;
+      }
       res.json(images);
     }),
   );

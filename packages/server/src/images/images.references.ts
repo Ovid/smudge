@@ -1,4 +1,4 @@
-import { getDb } from "../db/connection";
+import { getProjectStore } from "../stores/project-store.injectable";
 
 /**
  * Walks TipTap JSON content tree and extracts image UUIDs from
@@ -57,11 +57,8 @@ export async function scanImageReferences(
   imageId: string,
   projectId: string,
 ): Promise<Array<{ id: string; title: string }>> {
-  const db = getDb();
-  const chapters = await db("chapters")
-    .where("project_id", projectId)
-    .whereNull("deleted_at")
-    .select("id", "title", "content");
+  const store = getProjectStore();
+  const chapters = await store.listChapterContentByProject(projectId);
 
   const referencingChapters: Array<{ id: string; title: string }> = [];
 
@@ -91,11 +88,11 @@ export async function liveCheckImageReferences(
   imageId: string,
   projectId: string,
 ): Promise<Array<{ id: string; title: string }>> {
-  const db = getDb();
+  const store = getProjectStore();
   const referencingChapters = await scanImageReferences(imageId, projectId);
 
   // Correct reference_count if it drifted
-  await db("images").where("id", imageId).update({ reference_count: referencingChapters.length });
+  await store.setImageReferenceCount(imageId, referencingChapters.length);
 
   return referencingChapters;
 }

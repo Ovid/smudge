@@ -14,6 +14,7 @@ import type {
 } from "../chapters/chapters.types";
 import type { ChapterStatusRow } from "../chapter-statuses/chapter-statuses.types";
 import type { SettingRow } from "../settings/settings.types";
+import type { ImageRow, CreateImageRow, UpdateImageData } from "../images/images.types";
 
 export interface ProjectStore {
   // --- Projects ---
@@ -68,6 +69,19 @@ export interface ProjectStore {
     projectId: string,
     today: string,
   ): Promise<{ date: string; total_word_count: number } | undefined>;
+
+  // --- Images ---
+  insertImage(data: CreateImageRow): Promise<ImageRow>;
+  findImageById(id: string): Promise<ImageRow | null>;
+  listImagesByProject(projectId: string): Promise<ImageRow[]>;
+  updateImage(id: string, data: UpdateImageData): Promise<number>;
+  removeImage(id: string): Promise<number>;
+  removeImagesByProject(projectId: string): Promise<number>;
+  incrementImageReferenceCount(id: string, delta: number): Promise<void>;
+  setImageReferenceCount(id: string, count: number): Promise<void>;
+  listChapterContentByProject(
+    projectId: string,
+  ): Promise<Array<{ id: string; title: string; content: string | null }>>;
 
   // --- Transactions ---
 

@@ -2,9 +2,7 @@ import { mkdir, writeFile, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { v4 as uuidv4 } from "uuid";
 import { UpdateImageSchema } from "@smudge/shared";
-import { getDb } from "../db/connection";
 import { getProjectStore } from "../stores/project-store.injectable";
-import * as imagesRepo from "./images.repository";
 import { liveCheckImageReferences, scanImageReferences } from "./images.references";
 import { ALLOWED_MIMES, mimeToExt, getImagePath } from "./images.paths";
 import type { ImageRow, UpdateImageData } from "./images.types";
@@ -51,7 +49,8 @@ export async function uploadImage(projectId: string, file: FileInput): Promise<U
     };
   }
 
-  const project = await getProjectStore().findProjectById(projectId);
+  const store = getProjectStore();
+  const project = await store.findProjectById(projectId);
   if (!project) {
     return { notFound: true };
   }
@@ -64,10 +63,9 @@ export async function uploadImage(projectId: string, file: FileInput): Promise<U
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, file.buffer);
 
-  const db = getDb();
   let row: ImageRow;
   try {
-    row = await imagesRepo.insert(db, {
+    row = await store.insertImage({
       id,
       project_id: projectId,
       filename: file.originalname,
@@ -84,19 +82,21 @@ export async function uploadImage(projectId: string, file: FileInput): Promise<U
   return { image: row };
 }
 
-export async function listImages(projectId: string): Promise<ImageRow[]> {
-  const db = getDb();
-  return imagesRepo.listByProject(db, projectId);
+export async function listImages(projectId: string): Promise<ImageRow[] | null> {
+  const store = getProjectStore();
+  const project = await store.findProjectById(projectId);
+  if (!project) return null;
+  return store.listImagesByProject(projectId);
 }
 
 export async function getImage(id: string): Promise<ImageRow | null> {
-  const db = getDb();
-  return imagesRepo.findById(db, id);
+  const store = getProjectStore();
+  return store.findImageById(id);
 }
 
 export async function serveImage(id: string): Promise<{ data: Buffer; mimeType: string } | null> {
-  const db = getDb();
-  const image = await imagesRepo.findById(db, id);
+  const store = getProjectStore();
+  const image = await store.findImageById(id);
   if (!image) return null;
 
   const ext = mimeToExt(image.mime_type);
@@ -120,21 +120,21 @@ export async function updateImageMetadata(id: string, body: unknown): Promise<Up
     };
   }
 
-  const db = getDb();
-  const existing = await imagesRepo.findById(db, id);
+  const store = getProjectStore();
+  const existing = await store.findImageById(id);
   if (!existing) {
     return { notFound: true };
   }
 
-  await imagesRepo.update(db, id, parsed.data as UpdateImageData);
-  const updated = await imagesRepo.findById(db, id);
+  await store.updateImage(id, parsed.data as UpdateImageData);
+  const updated = await store.findImageById(id);
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- we just verified existence above and updated in-place
   return { image: updated! };
 }
 
 export async function deleteImage(id: string): Promise<DeleteResult> {
-  const db = getDb();
-  const image = await imagesRepo.findById(db, id);
+  const store = getProjectStore();
+  const image = await store.findImageById(id);
   if (!image) {
     return { notFound: true };
   }
@@ -155,13 +155,13 @@ export async function deleteImage(id: string): Promise<DeleteResult> {
     }
   }
 
-  await imagesRepo.remove(db, id);
+  await store.removeImage(id);
   return { deleted: true };
 }
 
 export async function getImageReferences(id: string): Promise<ReferencesResult> {
-  const db = getDb();
-  const image = await imagesRepo.findById(db, id);
+  const store = getProjectStore();
+  const image = await store.findImageById(id);
   if (!image) {
     return { notFound: true };
   }

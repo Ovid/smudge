@@ -2,9 +2,7 @@ import { UpdateChapterSchema, countWords, generateSlug } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
-import { getDb } from "../db/connection";
 import { extractImageIds, diffImageReferences } from "../images/images.references";
-import * as imagesRepo from "../images/images.repository";
 import {
   isCorruptChapter,
   enrichChapterWithLabel,
@@ -81,10 +79,31 @@ export async function updateChapter(
     updates.status = parsed.data.status;
   }
 
+  // Compute image reference diff before the transaction so we can update
+  // reference counts atomically with the content save.
+  let imageRefDiff: { added: string[]; removed: string[] } | null = null;
+  if (parsed.data.content !== undefined) {
+    const oldContent = chapter.content ? JSON.parse(chapter.content) : null;
+    const oldIds = extractImageIds(oldContent);
+    const newIds = extractImageIds(parsed.data.content as Record<string, unknown>);
+    imageRefDiff = diffImageReferences(oldIds, newIds);
+  }
+
   const rowsUpdated = await store.transaction(async (txStore) => {
     const count = await txStore.updateChapter(id, updates);
     if (count === 0) return 0;
     await txStore.updateProjectTimestamp(chapter.project_id, updates.updated_at);
+
+    // Update image reference counts inside the same transaction
+    if (imageRefDiff) {
+      for (const imageId of imageRefDiff.added) {
+        await txStore.incrementImageReferenceCount(imageId, 1);
+      }
+      for (const imageId of imageRefDiff.removed) {
+        await txStore.incrementImageReferenceCount(imageId, -1);
+      }
+    }
+
     return count;
   });
 
@@ -100,24 +119,6 @@ export async function updateChapter(
         { err, project_id: chapter.project_id, chapter_id: id },
         "Velocity recordSave failed (best-effort)",
       );
-    }
-
-    // Best-effort reference count update
-    try {
-      const oldContent = chapter.content ? JSON.parse(chapter.content) : null;
-      const oldIds = extractImageIds(oldContent);
-      const newIds = extractImageIds(parsed.data.content as Record<string, unknown>);
-      const { added, removed } = diffImageReferences(oldIds, newIds);
-
-      const db = getDb();
-      for (const imageId of added) {
-        await imagesRepo.incrementReferenceCount(db, imageId, 1);
-      }
-      for (const imageId of removed) {
-        await imagesRepo.incrementReferenceCount(db, imageId, -1);
-      }
-    } catch (err: unknown) {
-      logger.error({ err, chapter_id: id }, "Image reference count update failed (best-effort)");
     }
   }
 
@@ -157,9 +158,8 @@ export async function deleteChapter(id: string): Promise<boolean> {
     const content = chapter.content ? JSON.parse(chapter.content) : null;
     const imageIds = extractImageIds(content);
     if (imageIds.length > 0) {
-      const db = getDb();
       for (const imageId of imageIds) {
-        await imagesRepo.incrementReferenceCount(db, imageId, -1);
+        await store.incrementImageReferenceCount(imageId, -1);
       }
     }
   } catch (err: unknown) {
@@ -258,6 +258,22 @@ export async function restoreChapter(
     logger.error(
       { err, project_id: chapter.project_id, chapter_id: id },
       "Velocity updateDailySnapshot failed (best-effort)",
+    );
+  }
+
+  // Best-effort: re-increment reference_count for images in the restored chapter
+  try {
+    const content = chapter.content ? JSON.parse(chapter.content) : null;
+    const imageIds = extractImageIds(content);
+    if (imageIds.length > 0) {
+      for (const imageId of imageIds) {
+        await store.incrementImageReferenceCount(imageId, 1);
+      }
+    }
+  } catch (err: unknown) {
+    logger.error(
+      { err, chapter_id: id },
+      "Image reference count increment on restore failed (best-effort)",
     );
   }
 
