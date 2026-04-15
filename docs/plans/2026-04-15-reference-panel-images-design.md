@@ -177,11 +177,10 @@ The existing export pipeline (Phase 3a/3b) renderers need to resolve image URLs 
 - **Plain text** — Images are represented as `[Image: {alt text or filename}]`.
 - **DOCX** — Images are embedded as binary media in the document package.
 - **EPUB** — Images are added to the EPUB manifest and referenced from chapter XHTML.
-- **PDF** — Images are embedded inline.
 
 ### Caption and Source in Export
 
-When an image has a caption, it renders as a figure caption below the image in HTML, DOCX, EPUB, and PDF. Source and license are appended to the caption in parentheses if present (e.g., "A quiet street at dusk (Photo: Jane Doe, CC BY 4.0)").
+When an image has a caption, it renders as a figure caption below the image in HTML, DOCX, and EPUB. Source and license are appended to the caption in parentheses if present (e.g., "A quiet street at dusk (Photo: Jane Doe, CC BY 4.0)").
 
 ### EPUB Cover Image
 

@@ -267,6 +267,7 @@ import fs from "node:fs/promises";
 import { v4 as uuidv4 } from "uuid";
 import { UpdateImageSchema } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
+import { getDb } from "../db/connection";
 import { logger } from "../logger";
 import * as imagesRepo from "./images.repository";
 import type { ImageRow, ImageWithUsage } from "./images.types";
@@ -326,9 +327,7 @@ export async function uploadImage(
   await fs.writeFile(filePath, file.buffer);
 
   const now = new Date().toISOString();
-  const db = (store as any).db; // Access underlying Knex instance
-  // Note: The implementer should add a `getDb()` method or pass db through the store.
-  // For now, use the store's transaction wrapper to get a db reference.
+  const db = getDb();
 
   const image = await imagesRepo.insert(db, {
     id,
@@ -343,12 +342,7 @@ export async function uploadImage(
 }
 ```
 
-**Important implementation note:** The service needs direct Knex access for the images repository (images are not part of the ProjectStore interface). Two clean approaches:
-
-1. **Add image methods to ProjectStore** — follows existing pattern but bloats the interface
-2. **Create a separate DB accessor for images** — the images module imports `getDb()` from `db/connection` directly
-
-Approach 2 is cleaner since images are a separate domain. Check `packages/server/src/db/connection.ts` — it likely exports a `getDb()` function. Use that directly in the images repository/service rather than going through ProjectStore.
+**DB access pattern:** The images module uses `getDb()` from `packages/server/src/db/connection.ts` directly rather than going through ProjectStore. Images are a separate domain that doesn't share transactions with projects/chapters, so a direct DB accessor is cleaner than bloating the ProjectStore interface. See `notes/TODO.md` for a note on potentially decomposing ProjectStore in the future.
 
 **Step 4: Run tests to verify they pass**
 
@@ -385,6 +379,12 @@ Test `diffImageReferences(oldIds, newIds)`:
 - Returns `{ added: [], removed: [] }` for identical sets
 - Returns correct added/removed for changes
 - Handles first save (old is empty)
+
+Test `liveCheckImageReferences(imageId, projectId)`:
+- Returns empty chapter list when image is not referenced in any chapter
+- Returns chapter list (id + title) when image is referenced
+- Corrects a drifted reference_count: set reference_count to 0 manually, run live check, verify it corrects to 1 and returns the chapter
+- Corrects over-count: set reference_count to 5 manually when only 1 reference exists, verify correction to 1
 
 **Step 2: Run tests to verify they fail**
 
@@ -437,6 +437,39 @@ export function diffImageReferences(
   const removed = oldIds.filter((id) => !newSet.has(id));
   return { added: [...new Set(added)], removed: [...new Set(removed)] };
 }
+
+/**
+ * Live check: scan all chapter content for a specific image's URL.
+ * Returns the list of chapters referencing it.
+ * Corrects reference_count if it has drifted.
+ * Used as a safety net before destructive actions (delete, purge).
+ */
+export async function liveCheckImageReferences(
+  imageId: string,
+  projectId: string,
+): Promise<Array<{ id: string; title: string }>> {
+  const db = getDb();
+  const chapters = await db("chapters")
+    .where("project_id", projectId)
+    .whereNull("deleted_at")
+    .select("id", "title", "content");
+
+  const imageUrl = `/api/images/${imageId}`;
+  const referencingChapters: Array<{ id: string; title: string }> = [];
+
+  for (const ch of chapters) {
+    if (ch.content && ch.content.includes(imageUrl)) {
+      referencingChapters.push({ id: ch.id, title: ch.title });
+    }
+  }
+
+  // Correct reference_count if it drifted
+  await db("images")
+    .where("id", imageId)
+    .update({ reference_count: referencingChapters.length });
+
+  return referencingChapters;
+}
 ```
 
 **Step 4: Run tests to verify they pass**
@@ -449,23 +482,26 @@ Expected: PASS
 Modify `packages/server/src/chapters/chapters.service.ts` — in the `updateChapter` function, after the content update succeeds, add a best-effort reference count update:
 
 ```typescript
+// Static imports at the top of chapters.service.ts:
+import { getDb } from "../db/connection";
+import { extractImageIds, diffImageReferences } from "../images/images.references";
+import * as imagesRepo from "../images/images.repository";
+
 // After the transaction block (line ~88), alongside the velocity side-effect:
 if (parsed.data.content !== undefined) {
   // Best-effort reference count update
   try {
-    const { extractImageIds, diffImageReferences } = await import("../images/images.references");
     const oldContent = chapter.content ? JSON.parse(chapter.content) : null;
     const oldIds = extractImageIds(oldContent);
     const newIds = extractImageIds(parsed.data.content as Record<string, unknown>);
     const { added, removed } = diffImageReferences(oldIds, newIds);
 
-    const db = (await import("../db/connection")).getDb();
-    const repo = await import("../images/images.repository");
-    for (const id of added) {
-      await repo.incrementReferenceCount(db, id, 1);
+    const db = getDb();
+    for (const imageId of added) {
+      await imagesRepo.incrementReferenceCount(db, imageId, 1);
     }
-    for (const id of removed) {
-      await repo.incrementReferenceCount(db, id, -1);
+    for (const imageId of removed) {
+      await imagesRepo.incrementReferenceCount(db, imageId, -1);
     }
   } catch (err: unknown) {
     logger.error(
@@ -475,8 +511,6 @@ if (parsed.data.content !== undefined) {
   }
 }
 ```
-
-**Note:** Use static imports at the top of the file rather than dynamic imports — the above shows the logic, but the implementer should use normal `import` statements at the top.
 
 **Step 6: Write integration test for reference counting through chapter save**
 
@@ -526,6 +560,9 @@ Tests via supertest:
 - `PATCH /api/images/:id` — updates metadata → 200
 - `PATCH /api/images/:id` — empty body → 400
 - `PATCH /api/images/:id` — non-existent → 404
+- `GET /api/images/:id/references` — returns chapter list for referenced image
+- `GET /api/images/:id/references` — returns empty list for unreferenced image
+- `GET /api/images/:id/references` — non-existent → 404
 - `DELETE /api/images/:id` — unreferenced image → 200
 - `DELETE /api/images/:id` — referenced image → 409 with chapter list
 - `DELETE /api/images/:id` — non-existent → 404
@@ -628,6 +665,19 @@ export function imagesDirectRouter(): Router {
         return;
       }
       res.json(result.image);
+    }),
+  );
+
+  // GET /api/images/:id/references — list chapters using this image
+  router.get(
+    "/:id/references",
+    asyncHandler(async (req, res) => {
+      const result = await imagesService.getImageReferences(req.params.id);
+      if ("notFound" in result) {
+        res.status(404).json({ error: { code: "NOT_FOUND", message: "Image not found." } });
+        return;
+      }
+      res.json({ chapters: result.chapters });
     }),
   );
 
@@ -879,6 +929,10 @@ images: {
   async serve(id: string): Promise<string> {
     // Returns the URL to use as img src — just the API path
     return `/api/images/${id}`;
+  },
+
+  references(id: string): Promise<{ chapters: Array<{ id: string; title: string }> }> {
+    return apiFetch(`/images/${id}/references`);
   },
 
   update(id: string, data: { alt_text?: string; caption?: string; source?: string; license?: string }): Promise<ImageRow> {
@@ -1195,19 +1249,21 @@ Props:
 interface ImageGalleryProps {
   projectId: string;
   onInsertImage: (imageUrl: string, altText: string) => void;
+  onNavigateToChapter: (chapterId: string) => void;
 }
 ```
 
 Key implementation details:
 - Fetch images via `api.images.list(projectId)` on mount and after upload
 - Upload via hidden `<input type="file" accept="image/jpeg,image/png,image/gif,image/webp">`
+- **Client-side file size check:** Before calling `api.images.upload()`, check `file.size > 10 * 1024 * 1024`. If exceeded, show error via the `aria-live` region immediately without uploading. This prevents wasting time/bandwidth on large files.
 - Thumbnails as a CSS grid: `grid grid-cols-2 gap-2 p-4`
 - Each thumbnail: `<button>` wrapping `<img>` with `object-fit: cover`, `aspect-ratio: 1`
 - Detail view: form with controlled inputs, save on button click
-- Delete: show confirmation, handle 409 by showing chapter list
+- **Where-used display:** When an image has `reference_count > 0`, the detail view fetches `GET /api/images/{id}/references` and shows a "Used in" section listing chapter titles as clickable links. Clicking a chapter link calls `onNavigateToChapter(chapterId)` which the parent (EditorPage) wires to `handleSelectChapter`.
+- Delete: show confirmation, handle 409 by showing chapter list (data already available from the references fetch)
 - `aria-live="polite"` region for upload/insert announcements
 - "Unused" badge when `reference_count === 0`
-- "Used in" section with chapter links when `reference_count > 0` (fetch from delete attempt's 409 response, or add a dedicated endpoint)
 
 **Step 3: Commit**
 
@@ -1268,12 +1324,16 @@ Modify `packages/client/src/pages/EditorPage.tsx`:
            onInsertImage={(url, alt) => {
              editorRef.current?.insertImage(url, alt);
            }}
+           onNavigateToChapter={(chapterId) => {
+             handleSelectChapterWithFlush(chapterId);
+           }}
          />
        </ReferencePanel>
      )}
    </div>
    ```
 6. Add `insertImage` method to the editor ref/handle interface
+7. **Add aria-live announcement for image insert.** After `editorRef.current?.insertImage(url, alt)` succeeds, set an announcement string (e.g., `setImageAnnouncement(STRINGS.imageGallery.insertSuccess(filename))`) on the existing aria-live region pattern. Add `imageAnnouncement` state alongside `navAnnouncement`, clear it after a timeout. Same pattern for upload success/failure announcements from the gallery.
 
 **Step 3: Add `insertImage` to Editor component**
 
@@ -1355,7 +1415,8 @@ const imagePastePlugin = new Plugin({
 The `handleImageUpload` function:
 1. Calls `api.images.upload(projectId, file)`
 2. On success, inserts an image node at the drop/paste position: `editor.chain().setImage({ src: '/api/images/' + image.id, alt: image.alt_text }).run()`
-3. On failure, shows a toast/announcement via the `aria-live` region
+3. On success, also triggers an `aria-live="polite"` announcement: "Image inserted: {filename}" via a callback prop (e.g., `onImageAnnouncement`)
+4. On failure, announces "Upload failed: {reason}" via the same aria-live region
 
 The Editor component needs the `projectId` prop to know where to upload.
 
@@ -1394,6 +1455,7 @@ Create `packages/server/src/__tests__/export.images.test.ts`:
 - Export DOCX with image → verify buffer contains the image (check DOCX structure)
 - Export EPUB with image → verify EPUB contains image in manifest
 - Export EPUB with cover image → verify cover is set
+- Export with caption/source → verify figure caption rendered with source attribution
 
 **Step 2: Run tests to verify they fail**
 
@@ -1492,11 +1554,11 @@ export async function resolveImagesInHtml(html: string): Promise<{
 
 **Step 4: Update renderers**
 
-- **HTML renderer** (`export.renderers.ts`): After generating HTML, call `resolveImagesInHtml()` to replace image URLs with base64. Also add `<figure>` wrapper with `<figcaption>` for images that have captions.
-- **Markdown renderer**: After converting to markdown, resolve images similarly (replace URLs with data URIs or note format).
+- **HTML renderer** (`export.renderers.ts`): After generating HTML, call `resolveImagesInHtml()` to replace image URLs with base64. Add `<figure>` wrapper with `<figcaption>` for images that have captions. Append source/license to caption in parentheses.
+- **Markdown renderer**: After converting to markdown, resolve images similarly (replace URLs with data URIs or note format). Add caption as italicized text below image.
 - **Plain text renderer**: Walk the TipTap JSON looking for image nodes, insert `[Image: {alt text}]` in place.
-- **DOCX renderer** (`docx.renderer.ts`): Handle image nodes in the TipTap JSON walker — create `ImageRun` with the resolved image buffer.
-- **EPUB renderer** (`epub.renderer.ts`): After generating chapter HTML, resolve images and include them in the EPUB manifest. Add cover image support.
+- **DOCX renderer** (`docx.renderer.ts`): Handle image nodes in the TipTap JSON walker — create `ImageRun` with the resolved image buffer. Add caption as paragraph below image.
+- **EPUB renderer** (`epub.renderer.ts`): After generating chapter HTML, resolve images and include them in the EPUB manifest. Add cover image support. Add `<figure>`/`<figcaption>` for captioned images.
 
 **Step 5: Update ExportSchema and export service for EPUB cover**
 
