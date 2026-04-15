@@ -283,6 +283,167 @@ describe("api.projects.export", () => {
   });
 });
 
+describe("api.images", () => {
+  it("list(projectId) fetches GET /api/projects/:id/images", async () => {
+    const images = [{ id: "img-1", project_id: "p1", filename: "cover.png" }];
+    mockFetch.mockResolvedValue(jsonResponse(images));
+
+    const result = await api.images.list("p1");
+    expect(result).toEqual(images);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1/images", {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  it("upload(projectId, file) sends POST multipart to /api/projects/:id/images", async () => {
+    const uploaded = { id: "img-2", project_id: "p1", filename: "photo.jpg" };
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(uploaded),
+    });
+
+    const file = new File(["fake-image-data"], "photo.jpg", { type: "image/jpeg" });
+    const result = await api.images.upload("p1", file);
+
+    expect(result).toEqual(uploaded);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1/images", {
+      method: "POST",
+      body: expect.any(FormData),
+    });
+
+    // Verify FormData contains the file
+    const callArgs = mockFetch.mock.calls[0];
+    const formData = callArgs[1].body as FormData;
+    expect(formData.get("file")).toBe(file);
+  });
+
+  it("upload throws ApiRequestError on failure with server message", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 413,
+      json: () =>
+        Promise.resolve({ error: { code: "FILE_TOO_LARGE", message: "File exceeds 5MB limit" } }),
+    });
+
+    const file = new File(["big-data"], "huge.jpg", { type: "image/jpeg" });
+    await expect(api.images.upload("p1", file)).rejects.toThrow("File exceeds 5MB limit");
+  });
+
+  it("upload throws ApiRequestError with fallback message when body is not JSON", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.reject(new Error("not JSON")),
+    });
+
+    const file = new File(["data"], "img.png", { type: "image/png" });
+    await expect(api.images.upload("p1", file)).rejects.toThrow("Upload failed (500)");
+  });
+
+  it("references(id) fetches GET /api/images/:id/references", async () => {
+    const refs = { chapters: [{ id: "ch-1", title: "Chapter One" }] };
+    mockFetch.mockResolvedValue(jsonResponse(refs));
+
+    const result = await api.images.references("img-1");
+    expect(result).toEqual(refs);
+    expect(mockFetch).toHaveBeenCalledWith("/api/images/img-1/references", {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  it("update(id, data) sends PATCH /api/images/:id", async () => {
+    const updated = { id: "img-1", alt_text: "A sunset", caption: "Beautiful sunset" };
+    mockFetch.mockResolvedValue(jsonResponse(updated));
+
+    const result = await api.images.update("img-1", {
+      alt_text: "A sunset",
+      caption: "Beautiful sunset",
+    });
+    expect(result).toEqual(updated);
+    expect(mockFetch).toHaveBeenCalledWith("/api/images/img-1", {
+      headers: { "Content-Type": "application/json" },
+      method: "PATCH",
+      body: JSON.stringify({ alt_text: "A sunset", caption: "Beautiful sunset" }),
+    });
+  });
+
+  it("delete(id) sends DELETE /api/images/:id and returns success", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ deleted: true }),
+    });
+
+    const result = await api.images.delete("img-1");
+    expect(result).toEqual({ deleted: true });
+    expect(mockFetch).toHaveBeenCalledWith("/api/images/img-1", { method: "DELETE" });
+  });
+
+  it("delete(id) returns conflict body when image is still referenced (409)", async () => {
+    const conflictBody = {
+      error: {
+        code: "IMAGE_IN_USE",
+        message: "Image is referenced by chapters",
+        chapters: [{ id: "ch-1", title: "Chapter One" }],
+      },
+    };
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: () => Promise.resolve(conflictBody),
+    });
+
+    const result = await api.images.delete("img-1");
+    expect(result).toEqual(conflictBody);
+  });
+
+  it("delete(id) throws ApiRequestError on non-409 failure with server message", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ error: { message: "Internal error" } }),
+    });
+
+    await expect(api.images.delete("img-1")).rejects.toThrow("Internal error");
+  });
+
+  it("delete(id) throws ApiRequestError with fallback when error body lacks message", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({}),
+    });
+
+    await expect(api.images.delete("img-1")).rejects.toThrow("Delete failed (500)");
+  });
+});
+
+describe("api.projects.export (additional)", () => {
+  it("passes abort signal to fetch", async () => {
+    const mockBlob = new Blob(["content"], { type: "application/epub+zip" });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      blob: () => Promise.resolve(mockBlob),
+    });
+
+    const controller = new AbortController();
+    await api.projects.export(
+      "p1",
+      { format: "epub", chapter_ids: ["ch1", "ch2"] },
+      controller.signal,
+    );
+
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ format: "epub", chapter_ids: ["ch1", "ch2"] }),
+      signal: controller.signal,
+    });
+  });
+});
+
 describe("error handling", () => {
   it("throws with server error message when response is not ok", async () => {
     mockFetch.mockResolvedValue(

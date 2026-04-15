@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, cleanup, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ExportDialog } from "../components/ExportDialog";
 import { api, ApiRequestError } from "../api/client";
@@ -8,6 +8,9 @@ vi.mock("../api/client", () => ({
   api: {
     projects: {
       export: vi.fn(),
+    },
+    images: {
+      list: vi.fn().mockResolvedValue([]),
     },
   },
   ApiRequestError: class ApiRequestError extends Error {
@@ -252,5 +255,232 @@ describe("ExportDialog", () => {
       );
     });
     clickSpy.mockRestore();
+  });
+
+  it("shows cover image selector when epub format is selected and images exist", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.images.list).mockResolvedValue([
+      {
+        id: "img-1",
+        project_id: "proj-1",
+        filename: "cover.jpg",
+        alt_text: "Cover",
+        caption: null,
+        source: null,
+        license: null,
+        mime_type: "image/jpeg",
+        size_bytes: 5000,
+        created_at: "2026-01-01T00:00:00Z",
+      },
+      {
+        id: "img-2",
+        project_id: "proj-1",
+        filename: "back.png",
+        alt_text: "Back",
+        caption: null,
+        source: null,
+        license: null,
+        mime_type: "image/png",
+        size_bytes: 3000,
+        created_at: "2026-01-02T00:00:00Z",
+      },
+    ]);
+
+    render(<ExportDialog {...defaultProps} />);
+    await user.click(screen.getByLabelText("EPUB"));
+
+    await waitFor(() => {
+      expect(api.images.list).toHaveBeenCalledWith("proj-1");
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Cover image")).toBeInTheDocument();
+    });
+
+    // Verify the select has the None option and the two images
+    const select = screen.getByRole("combobox");
+    expect(select).toBeInTheDocument();
+    expect(screen.getByText("None")).toBeInTheDocument();
+    expect(screen.getByText("cover.jpg")).toBeInTheDocument();
+    expect(screen.getByText("back.png")).toBeInTheDocument();
+  });
+
+  it("does not show cover image selector when epub images list is empty", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.images.list).mockResolvedValue([]);
+
+    render(<ExportDialog {...defaultProps} />);
+    await user.click(screen.getByLabelText("EPUB"));
+
+    await waitFor(() => {
+      expect(api.images.list).toHaveBeenCalledWith("proj-1");
+    });
+
+    // Give it a tick to settle
+    await act(async () => {});
+    expect(screen.queryByText("Cover image")).not.toBeInTheDocument();
+  });
+
+  it("does not show cover image selector when images.list fails", async () => {
+    const user = userEvent.setup();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(api.images.list).mockRejectedValue(new Error("Network error"));
+
+    render(<ExportDialog {...defaultProps} />);
+    await user.click(screen.getByLabelText("EPUB"));
+
+    await waitFor(() => {
+      expect(api.images.list).toHaveBeenCalledWith("proj-1");
+    });
+
+    await act(async () => {});
+    expect(screen.queryByText("Cover image")).not.toBeInTheDocument();
+
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it("includes epub_cover_image_id in export when cover image is selected", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const mockBlob = new Blob(["epub-data"], { type: "application/epub+zip" });
+    vi.mocked(api.projects.export).mockResolvedValue(mockBlob);
+    vi.mocked(api.images.list).mockResolvedValue([
+      {
+        id: "img-cover",
+        project_id: "proj-1",
+        filename: "cover.jpg",
+        alt_text: "Cover",
+        caption: null,
+        source: null,
+        license: null,
+        mime_type: "image/jpeg",
+        size_bytes: 5000,
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    render(<ExportDialog {...defaultProps} onClose={onClose} />);
+    await user.click(screen.getByLabelText("EPUB"));
+
+    // Wait for the cover image select to appear
+    await waitFor(() => {
+      expect(screen.getByText("cover.jpg")).toBeInTheDocument();
+    });
+
+    // Select the cover image
+    await user.selectOptions(screen.getByRole("combobox"), "img-cover");
+
+    await user.click(screen.getByText("Export"));
+
+    await waitFor(() => {
+      expect(api.projects.export).toHaveBeenCalledWith(
+        "test-project",
+        {
+          format: "epub",
+          include_toc: true,
+          epub_cover_image_id: "img-cover",
+        },
+        expect.any(AbortSignal),
+      );
+    });
+    clickSpy.mockRestore();
+  });
+
+  it("toggles a chapter back on after toggling it off", async () => {
+    const user = userEvent.setup();
+    render(<ExportDialog {...defaultProps} />);
+    await user.click(screen.getByText("Select specific chapters..."));
+
+    const chapterOneCheckbox = screen.getByLabelText("Chapter One");
+    expect(chapterOneCheckbox).toBeChecked();
+
+    // Toggle off
+    await user.click(chapterOneCheckbox);
+    expect(chapterOneCheckbox).not.toBeChecked();
+
+    // Toggle back on
+    await user.click(chapterOneCheckbox);
+    expect(chapterOneCheckbox).toBeChecked();
+  });
+
+  it("disables export button when selecting chapters and none are selected", async () => {
+    const user = userEvent.setup();
+    render(
+      <ExportDialog
+        {...defaultProps}
+        chapters={[{ id: "ch-1", title: "Only Chapter", sort_order: 0 }]}
+      />,
+    );
+    await user.click(screen.getByText("Select specific chapters..."));
+
+    // Uncheck the only chapter
+    await user.click(screen.getByLabelText("Only Chapter"));
+
+    const exportButton = screen.getByRole("button", { name: "Export" });
+    expect(exportButton).toBeDisabled();
+  });
+
+  it("resets state when dialog reopens", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<ExportDialog {...defaultProps} />);
+
+    // Change format to markdown
+    await user.click(screen.getByLabelText("Markdown"));
+    expect(screen.getByLabelText("Markdown")).toBeChecked();
+
+    // Close dialog
+    rerender(<ExportDialog {...defaultProps} open={false} />);
+
+    // Reopen dialog
+    rerender(<ExportDialog {...defaultProps} open={true} />);
+
+    // Format should be reset to HTML
+    expect(screen.getByLabelText("HTML")).toBeChecked();
+  });
+
+  it("exports with selected chapters only", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const mockBlob = new Blob(["<html>test</html>"], { type: "text/html" });
+    vi.mocked(api.projects.export).mockResolvedValue(mockBlob);
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    render(<ExportDialog {...defaultProps} onClose={onClose} />);
+
+    // Switch to specific chapter selection
+    await user.click(screen.getByText("Select specific chapters..."));
+
+    // Uncheck Chapter Two
+    await user.click(screen.getByLabelText("Chapter Two"));
+
+    await user.click(screen.getByText("Export"));
+
+    await waitFor(() => {
+      expect(api.projects.export).toHaveBeenCalledWith(
+        "test-project",
+        {
+          format: "html",
+          include_toc: true,
+          chapter_ids: ["ch-1"],
+        },
+        expect.any(AbortSignal),
+      );
+    });
+    clickSpy.mockRestore();
+  });
+
+  it("calls onClose when clicking backdrop", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(<ExportDialog {...defaultProps} onClose={onClose} />);
+
+    // Click directly on the dialog element (backdrop)
+    const dialog = screen.getByRole("dialog");
+    await user.click(dialog);
+
+    expect(onClose).toHaveBeenCalled();
   });
 });
