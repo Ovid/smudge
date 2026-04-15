@@ -7,6 +7,7 @@ import { STRINGS } from "../strings";
 export interface EditorHandle {
   flushSave: () => Promise<void>;
   editor: TipTapEditor | null;
+  insertImage: (src: string, alt: string) => void;
 }
 
 interface EditorProps {
@@ -146,6 +147,11 @@ export function Editor({
             });
         },
         editor: editor,
+        insertImage: (src: string, alt: string) => {
+          if (editor) {
+            editor.chain().focus().setImage({ src, alt }).run();
+          }
+        },
       };
     }
   }, [editor, editorRef]);

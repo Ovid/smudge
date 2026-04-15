@@ -18,6 +18,9 @@ import { EditorFooter } from "../components/EditorFooter";
 import { STRINGS } from "../strings";
 import { useProjectEditor } from "../hooks/useProjectEditor";
 import { useSidebarState } from "../hooks/useSidebarState";
+import { useReferencePanelState } from "../hooks/useReferencePanelState";
+import { ReferencePanel } from "../components/ReferencePanel";
+import { ImageGallery } from "../components/ImageGallery";
 import { useChapterTitleEditing } from "../hooks/useChapterTitleEditing";
 import { useProjectTitleEditing } from "../hooks/useProjectTitleEditing";
 import { useTrashManager } from "../hooks/useTrashManager";
@@ -51,6 +54,7 @@ export function EditorPage() {
   } = useProjectEditor(slug);
 
   const { sidebarWidth, sidebarOpen, handleSidebarResize, toggleSidebar } = useSidebarState();
+  const { panelWidth, panelOpen, handlePanelResize, togglePanel } = useReferencePanelState();
 
   const {
     editingTitle,
@@ -99,6 +103,7 @@ export function EditorPage() {
   const [navAnnouncement, setNavAnnouncement] = useState("");
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
   const [wordCountAnnouncement, setWordCountAnnouncement] = useState("");
+  const [imageAnnouncement, setImageAnnouncement] = useState("");
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const editorRef = useRef<EditorHandle | null>(null);
   const [toolbarEditor, setToolbarEditor] = useState<TipTapEditor | null>(null);
@@ -189,6 +194,7 @@ export function EditorPage() {
     shortcutHelpOpen,
     deleteTarget,
     projectSettingsOpen,
+    exportDialogOpen,
     viewMode,
     activeChapter,
     project,
@@ -200,6 +206,7 @@ export function EditorPage() {
     setWordCountAnnouncement,
     setNavAnnouncement,
     switchToView,
+    togglePanel,
   });
 
   if (error) {
@@ -295,6 +302,19 @@ export function EditorPage() {
             className="text-sm text-text-muted hover:text-text-secondary rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring"
           >
             {STRINGS.export.buttonLabel}
+          </button>
+          <button
+            type="button"
+            onClick={togglePanel}
+            aria-expanded={panelOpen}
+            aria-controls="reference-panel"
+            title={STRINGS.referencePanel.toggleTooltip}
+            className="p-2 rounded hover:bg-bg-hover text-text-secondary focus:outline-none focus:ring-2 focus:ring-focus-ring"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="3" width="20" height="18" rx="2" />
+              <line x1="15" y1="3" x2="15" y2="21" />
+            </svg>
           </button>
           <button
             onClick={() => setProjectSettingsOpen(true)}
@@ -418,6 +438,24 @@ export function EditorPage() {
             />
           )}
         </div>
+        {panelOpen && project && (
+          <ReferencePanel
+            width={panelWidth}
+            onResize={handlePanelResize}
+          >
+            <ImageGallery
+              projectId={project.id}
+              onInsertImage={(url, alt) => {
+                editorRef.current?.insertImage(url, alt);
+                setImageAnnouncement(STRINGS.imageGallery.insertSuccess(alt || "image"));
+                setTimeout(() => setImageAnnouncement(""), 3000);
+              }}
+              onNavigateToChapter={(chapterId) => {
+                handleSelectChapterWithFlush(chapterId);
+              }}
+            />
+          </ReferencePanel>
+        )}
       </div>
 
       {deleteTarget && (
@@ -436,6 +474,9 @@ export function EditorPage() {
       </div>
       <div aria-live="polite" className="sr-only" data-testid="word-count-announcement">
         {wordCountAnnouncement}
+      </div>
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {imageAnnouncement}
       </div>
 
       <ProjectSettingsDialog

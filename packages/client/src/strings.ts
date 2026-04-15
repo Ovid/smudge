@@ -79,6 +79,8 @@ export const STRINGS = {
     keyNextChapter: "Ctrl+Shift+\u2193",
     keyAnnounceWordCount: "Ctrl+Shift+W",
     keyShowShortcuts: "Ctrl+/",
+    toggleReferencePanel: "Toggle reference panel",
+    keyToggleReferencePanel: "Ctrl+.",
   },
   sidebar: {
     addChapter: "Add Chapter",
