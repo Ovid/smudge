@@ -7,6 +7,7 @@ import type {
   CreateProjectInput,
   ApiError,
   VelocityResponse,
+  ExportFormatType,
 } from "@smudge/shared";
 
 export type { VelocityResponse };
@@ -106,7 +107,7 @@ export const api = {
     export: async (
       slug: string,
       config: {
-        format: "html" | "markdown" | "plaintext" | "docx" | "epub";
+        format: ExportFormatType;
         include_toc?: boolean;
         chapter_ids?: string[];
       },

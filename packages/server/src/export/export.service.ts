@@ -58,7 +58,6 @@ export async function exportProject(
   const projectInfo: ExportProjectInfo = {
     title: project.title,
     author_name: project.author_name,
-    slug: project.slug,
   };
 
   const exportChapters: ExportChapter[] = chapters.map((ch) => ({
@@ -87,6 +86,10 @@ export async function exportProject(
     case "epub":
       content = await renderEpub(projectInfo, exportChapters, options);
       break;
+    default: {
+      const _exhaustive: never = format;
+      throw new Error(`Unhandled export format: ${_exhaustive}`);
+    }
   }
 
   const ext = EXPORT_FILE_EXTENSIONS[format];

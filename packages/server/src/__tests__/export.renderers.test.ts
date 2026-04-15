@@ -38,7 +38,7 @@ const sampleChapters = [
   },
 ];
 
-const projectInfo = { title: "My Novel", author_name: "Jane Doe", slug: "my-novel" };
+const projectInfo = { title: "My Novel", author_name: "Jane Doe" };
 
 describe("renderHtml", () => {
   it("produces a self-contained HTML document", () => {
@@ -243,7 +243,6 @@ describe("renderMarkdown", () => {
     const mdProject = {
       title: "My *Bold* Novel",
       author_name: "Jane_Doe [editor]",
-      slug: "my-bold-novel",
     };
     const mdChapters = [
       { id: "ch-1", title: "Chapter #1: The [Beginning]", content: null, sort_order: 0 },
@@ -380,7 +379,7 @@ describe("renderDocx", () => {
   });
 
   it("handles CJK characters in title and content", async () => {
-    const cjkProject = { title: "我的小说", author_name: null, slug: "cjk-novel" };
+    const cjkProject = { title: "我的小说", author_name: null };
     const cjkChapters = [
       {
         id: "ch-1",
@@ -882,7 +881,7 @@ describe("renderEpub", () => {
   });
 
   it("handles CJK characters", async () => {
-    const cjkProject = { title: "我的小说", author_name: null, slug: "cjk-novel" };
+    const cjkProject = { title: "我的小说", author_name: null };
     const cjkChapters = [
       {
         id: "ch-1",

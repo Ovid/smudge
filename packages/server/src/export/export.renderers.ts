@@ -10,7 +10,6 @@ import { logger } from "../logger";
 export interface ExportProjectInfo {
   title: string;
   author_name: string | null;
-  slug: string;
 }
 
 export interface ExportChapter {
