@@ -45,30 +45,26 @@ const imagePasteExtension = Extension.create({
           handlePaste(_view, event) {
             const items = event.clipboardData?.items;
             if (!items) return false;
-            for (const item of Array.from(items)) {
-              if (item.type.startsWith("image/")) {
-                event.preventDefault();
-                const file = item.getAsFile();
-                if (file) {
-                  const handler = imageUploadHandlers.get(activeEditorId);
-                  handler?.(file);
-                }
-                return true;
-              }
+            const images = Array.from(items).filter((i) => i.type.startsWith("image/"));
+            if (images.length === 0) return false;
+            event.preventDefault();
+            const file = images[0].getAsFile();
+            if (file) {
+              const handler = imageUploadHandlers.get(activeEditorId);
+              handler?.(file);
             }
-            return false;
+            return true;
           },
           handleDrop(_view, event) {
             if (!event.dataTransfer?.files) return false;
-            for (const file of Array.from(event.dataTransfer.files)) {
-              if (file.type.startsWith("image/")) {
-                event.preventDefault();
-                const handler = imageUploadHandlers.get(activeEditorId);
-                handler?.(file);
-                return true;
-              }
-            }
-            return false;
+            const images = Array.from(event.dataTransfer.files).filter((f) =>
+              f.type.startsWith("image/"),
+            );
+            if (images.length === 0) return false;
+            event.preventDefault();
+            const handler = imageUploadHandlers.get(activeEditorId);
+            handler?.(images[0]);
+            return true;
           },
         },
       }),
