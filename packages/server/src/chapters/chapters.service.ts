@@ -155,34 +155,27 @@ export async function deleteChapter(id: string): Promise<boolean> {
   const chapter = await store.findChapterByIdRaw(id);
   if (!chapter) return false;
 
+  // Parse image IDs from content before the transaction (may be corrupt)
+  let imageIds: string[] = [];
+  if (chapter.content) {
+    try {
+      const content = JSON.parse(chapter.content);
+      imageIds = extractImageIds(content);
+    } catch {
+      // Corrupt content — no image IDs to decrement
+    }
+  }
+
   const now = new Date().toISOString();
   await store.transaction(async (txStore) => {
     await txStore.softDeleteChapter(id, now);
     await txStore.updateProjectTimestamp(chapter.project_id, now);
-  });
 
-  // Best-effort: decrement reference_count for images referenced by the deleted chapter
-  try {
-    let content: Record<string, unknown> | null = null;
-    if (chapter.content) {
-      try {
-        content = JSON.parse(chapter.content);
-      } catch {
-        // Corrupt content — no image IDs to decrement
-      }
+    // Decrement reference counts atomically with the soft-delete
+    for (const imageId of imageIds) {
+      await txStore.incrementImageReferenceCount(imageId, -1);
     }
-    const imageIds = extractImageIds(content);
-    if (imageIds.length > 0) {
-      for (const imageId of imageIds) {
-        await store.incrementImageReferenceCount(imageId, -1);
-      }
-    }
-  } catch (err: unknown) {
-    logger.error(
-      { err, chapter_id: id },
-      "Image reference count decrement on delete failed (best-effort)",
-    );
-  }
+  });
 
   try {
     await getVelocityService().updateDailySnapshot(chapter.project_id);
@@ -203,6 +196,17 @@ export async function restoreChapter(
   const store = getProjectStore();
   const chapter = await store.findDeletedChapterById(id);
   if (!chapter) return null;
+
+  // Parse image IDs from content before the transaction (may be corrupt)
+  let imageIds: string[] = [];
+  if (chapter.content) {
+    try {
+      const content = JSON.parse(chapter.content);
+      imageIds = extractImageIds(content);
+    } catch {
+      // Corrupt content — no image IDs to increment
+    }
+  }
 
   try {
     const now = new Date().toISOString();
@@ -239,6 +243,11 @@ export async function restoreChapter(
       } else {
         await txStore.updateProjectTimestamp(chapter.project_id, now);
       }
+
+      // Increment reference counts atomically with the restore
+      for (const imgId of imageIds) {
+        await txStore.incrementImageReferenceCount(imgId, 1);
+      }
     });
   } catch (err: unknown) {
     if (err instanceof ParentPurgedError) {
@@ -273,29 +282,6 @@ export async function restoreChapter(
     logger.error(
       { err, project_id: chapter.project_id, chapter_id: id },
       "Velocity updateDailySnapshot failed (best-effort)",
-    );
-  }
-
-  // Best-effort: re-increment reference_count for images in the restored chapter
-  try {
-    let content: Record<string, unknown> | null = null;
-    if (chapter.content) {
-      try {
-        content = JSON.parse(chapter.content);
-      } catch {
-        // Corrupt content — no image IDs to increment
-      }
-    }
-    const imageIds = extractImageIds(content);
-    if (imageIds.length > 0) {
-      for (const imageId of imageIds) {
-        await store.incrementImageReferenceCount(imageId, 1);
-      }
-    }
-  } catch (err: unknown) {
-    logger.error(
-      { err, chapter_id: id },
-      "Image reference count increment on restore failed (best-effort)",
     );
   }
 
