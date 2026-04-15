@@ -92,7 +92,7 @@ export async function exportProject(
   }
 
   const ext = EXPORT_FILE_EXTENSIONS[format];
-  const safeSlug = (project.slug || "export").replace(/["\\\r\n]/g, "_");
+  const safeSlug = (project.slug || "export").replace(/[^a-z0-9_.-]/gi, "_");
   const filename = `${safeSlug}.${ext}`;
 
   return {
