@@ -44,12 +44,15 @@ jspm_packages/
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
 
-# TypeScript cache and generated declarations
+# TypeScript cache and generated declarations — prevent stale tsc output
+# from shadowing .ts source files in bundler resolution
 *.tsbuildinfo
-packages/client/src/editorExtensions.d.ts
-packages/client/src/editorExtensions.d.ts.map
-packages/client/src/editorExtensions.js
-packages/client/src/editorExtensions.js.map
+packages/*/src/**/*.js
+packages/*/src/**/*.js.map
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.d.ts.map
+!packages/*/src/vite-env.d.ts
+!packages/*/src/db/migrations/*.js
 
 # Optional npm cache directory
 .npm
