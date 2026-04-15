@@ -6,11 +6,12 @@ import { STRINGS } from "../strings";
 interface ExportDialogProps {
   open: boolean;
   projectSlug: string;
+  projectId: string;
   chapters: Array<{ id: string; title: string; sort_order: number }>;
   onClose: () => void;
 }
 
-export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDialogProps) {
+export function ExportDialog({ open, projectSlug, projectId, chapters, onClose }: ExportDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
 
@@ -20,6 +21,8 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
   const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [epubCoverImageId, setEpubCoverImageId] = useState<string>("");
+  const [coverImages, setCoverImages] = useState<Array<{ id: string; filename: string }>>([]);
   const exportingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -34,6 +37,8 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
       setExporting(false);
       exportingRef.current = false;
       setError(null);
+      setEpubCoverImageId("");
+      setCoverImages([]);
     } else if (!open && prevOpenRef.current) {
       // Dialog closing — abort any in-flight export
       abortRef.current?.abort();
@@ -73,6 +78,16 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [open, onClose]);
 
+  useEffect(() => {
+    if (format === "epub" && open) {
+      api.images.list(projectId).then((imgs) => {
+        setCoverImages(imgs.map((i) => ({ id: i.id, filename: i.filename })));
+      }).catch(() => {
+        setCoverImages([]);
+      });
+    }
+  }, [format, open, projectId]);
+
   const handleExport = useCallback(async () => {
     if (exportingRef.current) return;
     exportingRef.current = true;
@@ -87,10 +102,15 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
         format: ExportFormatType;
         include_toc?: boolean;
         chapter_ids?: string[];
+        epub_cover_image_id?: string;
       } = {
         format,
         include_toc: includeToc,
       };
+
+      if (format === "epub" && epubCoverImageId) {
+        config.epub_cover_image_id = epubCoverImageId;
+      }
 
       if (selectingChapters) {
         config.chapter_ids = chapters.filter((c) => selectedChapterIds.has(c.id)).map((c) => c.id);
@@ -119,7 +139,7 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
       exportingRef.current = false;
       setExporting(false);
     }
-  }, [format, includeToc, selectingChapters, selectedChapterIds, chapters, projectSlug, onClose]);
+  }, [format, includeToc, selectingChapters, selectedChapterIds, chapters, projectSlug, epubCoverImageId, onClose]);
 
   const handleChapterToggle = useCallback((chapterId: string) => {
     setSelectedChapterIds((prev) => {
@@ -221,6 +241,24 @@ export function ExportDialog({ open, projectSlug, chapters, onClose }: ExportDia
           />
           {STRINGS.export.includeTocLabel}
         </label>
+
+        {format === "epub" && coverImages.length > 0 && (
+          <label className="flex items-center gap-2 text-sm text-text-secondary mb-4">
+            {STRINGS.export.epubCoverImageLabel}
+            <select
+              value={epubCoverImageId}
+              onChange={(e) => setEpubCoverImageId(e.target.value)}
+              className="rounded border border-border/60 bg-bg-primary px-2 py-1 text-sm"
+            >
+              <option value="">{STRINGS.export.epubCoverImageNone}</option>
+              {coverImages.map((img) => (
+                <option key={img.id} value={img.id}>
+                  {img.filename}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
         <div className="mb-6">
           {!selectingChapters ? (

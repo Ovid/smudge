@@ -215,6 +215,8 @@ export const STRINGS = {
     success: (title: string) => `Exported "${title}"`,
     errorFailed: "Export failed. Please try again.",
     close: "Close export dialog",
+    epubCoverImageLabel: "Cover image",
+    epubCoverImageNone: "None",
   },
   referencePanel: {
     ariaLabel: "Reference panel",

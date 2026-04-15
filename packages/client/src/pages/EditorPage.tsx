@@ -311,7 +311,17 @@ export function EditorPage() {
             title={STRINGS.referencePanel.toggleTooltip}
             className="p-2 rounded hover:bg-bg-hover text-text-secondary focus:outline-none focus:ring-2 focus:ring-focus-ring"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <rect x="2" y="3" width="20" height="18" rx="2" />
               <line x1="15" y1="3" x2="15" y2="21" />
             </svg>
@@ -444,10 +454,7 @@ export function EditorPage() {
           )}
         </div>
         {panelOpen && project && (
-          <ReferencePanel
-            width={panelWidth}
-            onResize={handlePanelResize}
-          >
+          <ReferencePanel width={panelWidth} onResize={handlePanelResize}>
             <ImageGallery
               projectId={project.id}
               onInsertImage={(url, alt) => {
@@ -498,6 +505,7 @@ export function EditorPage() {
         <ExportDialog
           open={exportDialogOpen}
           projectSlug={project.slug}
+          projectId={project.id}
           chapters={project.chapters.map((ch) => ({
             id: ch.id,
             title: ch.title,
