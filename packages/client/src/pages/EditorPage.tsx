@@ -106,6 +106,7 @@ export function EditorPage() {
   const [imageAnnouncement, setImageAnnouncement] = useState("");
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const editorRef = useRef<EditorHandle | null>(null);
+  const imageAnnouncementTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [toolbarEditor, setToolbarEditor] = useState<TipTapEditor | null>(null);
 
   // Fetch chapter statuses with retry
@@ -308,6 +309,7 @@ export function EditorPage() {
             onClick={togglePanel}
             aria-expanded={panelOpen}
             aria-controls="reference-panel"
+            aria-label={STRINGS.referencePanel.toggleTooltip}
             title={STRINGS.referencePanel.toggleTooltip}
             className="p-2 rounded hover:bg-bg-hover text-text-secondary focus:outline-none focus:ring-2 focus:ring-focus-ring"
           >
@@ -436,8 +438,11 @@ export function EditorPage() {
                 onEditorReady={setToolbarEditor}
                 projectId={project.id}
                 onImageAnnouncement={(msg) => {
+                  if (imageAnnouncementTimerRef.current) {
+                    clearTimeout(imageAnnouncementTimerRef.current);
+                  }
                   setImageAnnouncement(msg);
-                  setTimeout(() => setImageAnnouncement(""), 3000);
+                  imageAnnouncementTimerRef.current = setTimeout(() => setImageAnnouncement(""), 3000);
                 }}
               />
             </main>
@@ -459,8 +464,6 @@ export function EditorPage() {
               projectId={project.id}
               onInsertImage={(url, alt) => {
                 editorRef.current?.insertImage(url, alt);
-                setImageAnnouncement(STRINGS.imageGallery.insertSuccess(alt || "image"));
-                setTimeout(() => setImageAnnouncement(""), 3000);
               }}
               onNavigateToChapter={(chapterId) => {
                 handleSelectChapterWithFlush(chapterId);
