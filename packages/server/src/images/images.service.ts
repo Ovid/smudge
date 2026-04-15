@@ -57,7 +57,10 @@ export async function uploadImage(projectId: string, file: FileInput): Promise<U
 
   const id = uuidv4();
   // ALLOWED_MIMES check above guarantees this returns a non-null extension
-  const ext = mimeToExt(file.mimetype)!;
+  const ext = mimeToExt(file.mimetype);
+  if (!ext) {
+    return { validationError: `Unsupported file extension for MIME type: ${file.mimetype}` };
+  }
   const filePath = getImagePath(projectId, id, ext);
 
   await mkdir(path.dirname(filePath), { recursive: true });
