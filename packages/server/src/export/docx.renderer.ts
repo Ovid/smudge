@@ -202,7 +202,7 @@ function blockToParagraphs(
         if (!content) return [];
         const bqCtx: BlockContext = {
           indent: { left: (ctx?.indent?.left ?? 0) + 720 },
-          extraRunProps: { italics: true, ...ctx?.extraRunProps },
+          extraRunProps: { ...ctx?.extraRunProps, italics: true },
         };
         const paragraphs: Paragraph[] = [];
         for (const child of content) {

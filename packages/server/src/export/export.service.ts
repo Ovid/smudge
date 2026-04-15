@@ -23,7 +23,6 @@ export async function exportProject(
   | { result: ExportResult }
   | { validationError: string }
   | { notFound: true }
-  | { noChapters: true }
   | { invalidChapterIds: string[] }
 > {
   const parsed = ExportSchema.safeParse(body);
@@ -48,10 +47,6 @@ export async function exportProject(
 
     const idSet = new Set(chapter_ids);
     chapters = chapters.filter((ch) => idSet.has(ch.id));
-
-    if (chapters.length === 0) {
-      return { noChapters: true };
-    }
   }
 
   const projectInfo: ExportProjectInfo = {
