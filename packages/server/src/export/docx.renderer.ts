@@ -121,19 +121,20 @@ function newBuildState(): DocxBuildState {
   return { nextListId: 0, numberingConfigs: [] };
 }
 
+const MAX_LIST_DEPTH = 9; // Word supports levels 0-8
+
 function allocateOrderedListRef(state: DocxBuildState): string {
   const ref = `ordered-list-${state.nextListId++}`;
-  state.numberingConfigs.push({
-    reference: ref,
-    levels: [
-      {
-        level: 0,
-        format: LevelFormat.DECIMAL,
-        text: "%1.",
-        alignment: AlignmentType.START,
-      },
-    ],
-  });
+  const levels = [];
+  for (let i = 0; i < MAX_LIST_DEPTH; i++) {
+    levels.push({
+      level: i,
+      format: LevelFormat.DECIMAL,
+      text: `%${i + 1}.`,
+      alignment: AlignmentType.START,
+    });
+  }
+  state.numberingConfigs.push({ reference: ref, levels });
   return ref;
 }
 
@@ -145,6 +146,46 @@ function allocateOrderedListRef(state: DocxBuildState): string {
 interface BlockContext {
   indent?: { left: number };
   extraRunProps?: MarkInfo;
+  listDepth?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Shared list-item processing for bullet and ordered lists.
+// The markerProps callback receives the current nesting level and returns the
+// list-marker properties (bullet or numbering) for each paragraph item.
+// ---------------------------------------------------------------------------
+
+function listItemsToParagraphs(
+  listItems: Array<Record<string, unknown>>,
+  markerProps: (level: number) => Record<string, unknown>,
+  state: DocxBuildState,
+  ctx?: BlockContext,
+): Paragraph[] {
+  const level = Math.min(ctx?.listDepth ?? 0, MAX_LIST_DEPTH - 1);
+  // Child blocks (e.g. nested lists) see an incremented depth so they
+  // render at the next indentation level in Word.
+  const childCtx: BlockContext = { ...ctx, listDepth: level + 1 };
+  const items: Paragraph[] = [];
+  for (const listItem of listItems) {
+    const liContent = listItem.content as Array<Record<string, unknown>> | undefined;
+    if (liContent) {
+      for (const block of liContent) {
+        if ((block.type as string) === "paragraph") {
+          const blockContent = block.content as Array<Record<string, unknown>> | undefined;
+          items.push(
+            new Paragraph({
+              ...markerProps(level),
+              ...(ctx?.indent ? { indent: ctx.indent } : {}),
+              children: inlineToRuns(blockContent, ctx?.extraRunProps),
+            }),
+          );
+        } else {
+          items.push(...blockToParagraphs(block, state, childCtx));
+        }
+      }
+    }
+  }
+  return items;
 }
 
 // ---------------------------------------------------------------------------
@@ -213,53 +254,23 @@ function blockToParagraphs(
 
       case "bulletList": {
         if (!content) return [];
-        const items: Paragraph[] = [];
-        for (const listItem of content) {
-          const liContent = listItem.content as Array<Record<string, unknown>> | undefined;
-          if (liContent) {
-            for (const block of liContent) {
-              if ((block.type as string) === "paragraph") {
-                const blockContent = block.content as Array<Record<string, unknown>> | undefined;
-                items.push(
-                  new Paragraph({
-                    bullet: { level: 0 },
-                    ...(ctx?.indent ? { indent: ctx.indent } : {}),
-                    children: inlineToRuns(blockContent, ctx?.extraRunProps),
-                  }),
-                );
-              } else {
-                items.push(...blockToParagraphs(block, state, ctx));
-              }
-            }
-          }
-        }
-        return items;
+        return listItemsToParagraphs(
+          content,
+          (level) => ({ bullet: { level } }),
+          state,
+          ctx,
+        );
       }
 
       case "orderedList": {
         if (!content) return [];
         const listRef = allocateOrderedListRef(state);
-        const items: Paragraph[] = [];
-        for (const listItem of content) {
-          const liContent = listItem.content as Array<Record<string, unknown>> | undefined;
-          if (liContent) {
-            for (const block of liContent) {
-              if ((block.type as string) === "paragraph") {
-                const blockContent = block.content as Array<Record<string, unknown>> | undefined;
-                items.push(
-                  new Paragraph({
-                    numbering: { reference: listRef, level: 0 },
-                    ...(ctx?.indent ? { indent: ctx.indent } : {}),
-                    children: inlineToRuns(blockContent, ctx?.extraRunProps),
-                  }),
-                );
-              } else {
-                items.push(...blockToParagraphs(block, state, ctx));
-              }
-            }
-          }
-        }
-        return items;
+        return listItemsToParagraphs(
+          content,
+          (level) => ({ numbering: { reference: listRef, level } }),
+          state,
+          ctx,
+        );
       }
 
       case "codeBlock": {

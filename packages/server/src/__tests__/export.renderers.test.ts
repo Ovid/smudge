@@ -693,6 +693,18 @@ describe("renderDocx", () => {
     const xml = await docxXml(buf);
     expect(xml).toContain("Top-level item");
     expect(xml).toContain("Nested item");
+
+    // Top-level bullet uses ilvl 0, nested bullet uses ilvl 1
+    const topPara = xml.match(
+      /<w:p\b[^>]*>(?:(?!<w:p\b).)*?Top-level item(?:(?!<w:p\b).)*?<\/w:p>/s,
+    );
+    expect(topPara).not.toBeNull();
+    expect(topPara![0]).toContain('w:ilvl w:val="0"');
+    const nestedPara = xml.match(
+      /<w:p\b[^>]*>(?:(?!<w:p\b).)*?Nested item(?:(?!<w:p\b).)*?<\/w:p>/s,
+    );
+    expect(nestedPara).not.toBeNull();
+    expect(nestedPara![0]).toContain('w:ilvl w:val="1"');
   });
 
   it("renders blockquote inside a list item without dropping content", async () => {
