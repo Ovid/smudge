@@ -91,6 +91,7 @@ describe("renderHtml", () => {
     const html = renderHtml(projectInfo, chapters, { includeToc: false });
     expect(html).toContain("Bad Content");
     expect(html).toContain("<!DOCTYPE html>");
+    expect(html).toContain("[Content could not be exported]");
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ err: expect.any(Error) }),
       expect.stringContaining("Failed to render"),
