@@ -206,6 +206,10 @@ const MIME_TO_DOCX_TYPE: Record<string, "jpg" | "png" | "gif"> = {
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/gif": "gif",
+  // WebP is embedded as-is but tagged "png" — modern Word (2019+) and
+  // LibreOffice read magic bytes and render correctly regardless of the
+  // content-type label in the DOCX package.
+  "image/webp": "png",
 };
 
 async function blockToParagraphs(
