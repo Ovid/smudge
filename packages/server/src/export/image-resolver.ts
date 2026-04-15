@@ -19,6 +19,7 @@ export async function resolveImage(imageId: string): Promise<ResolvedImage | nul
   if (!row) return null;
 
   const ext = mimeToExt(row.mime_type);
+  if (!ext) return null;
   const filePath = getImagePath(row.project_id, row.id, ext);
 
   try {

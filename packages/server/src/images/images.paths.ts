@@ -12,8 +12,8 @@ const MIME_TO_EXT: Record<string, string> = {
   "image/webp": "webp",
 };
 
-export function mimeToExt(mime: string): string {
-  return MIME_TO_EXT[mime] ?? "bin";
+export function mimeToExt(mime: string): string | null {
+  return MIME_TO_EXT[mime] ?? null;
 }
 
 export function getDataDir(): string {

@@ -28,6 +28,7 @@ async function resolveImagesForEpub(html: string): Promise<string> {
     const row = await imagesRepo.findById(db, id);
     if (!row) continue;
     const ext = mimeToExt(row.mime_type);
+    if (!ext) continue;
     const filePath = getImagePath(row.project_id, row.id, ext);
     try {
       await fs.access(filePath);
@@ -122,12 +123,14 @@ export async function renderEpub(
     const row = await imagesRepo.findById(db, options.coverImageId);
     if (row) {
       const ext = mimeToExt(row.mime_type);
-      const filePath = getImagePath(row.project_id, row.id, ext);
-      try {
-        await fs.access(filePath);
-        coverFileUrl = `file://${filePath}`;
-      } catch {
-        // Cover image file not found — proceed without cover
+      if (ext) {
+        const filePath = getImagePath(row.project_id, row.id, ext);
+        try {
+          await fs.access(filePath);
+          coverFileUrl = `file://${filePath}`;
+        } catch {
+          // Cover image file not found — proceed without cover
+        }
       }
     }
   }

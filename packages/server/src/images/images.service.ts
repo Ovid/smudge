@@ -57,8 +57,8 @@ export async function uploadImage(projectId: string, file: FileInput): Promise<U
   }
 
   const id = uuidv4();
-  // ALLOWED_MIMES check above guarantees this key exists
-  const ext = mimeToExt(file.mimetype);
+  // ALLOWED_MIMES check above guarantees this returns a non-null extension
+  const ext = mimeToExt(file.mimetype)!;
   const filePath = getImagePath(projectId, id, ext);
 
   await mkdir(path.dirname(filePath), { recursive: true });
