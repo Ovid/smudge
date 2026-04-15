@@ -1,8 +1,11 @@
 import { useEditor, EditorContent, type Editor as TipTapEditor } from "@tiptap/react";
+import { Extension } from "@tiptap/core";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
 import Placeholder from "@tiptap/extension-placeholder";
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useMemo } from "react";
 import { editorExtensions } from "../editorExtensions";
 import { STRINGS } from "../strings";
+import { api } from "../api/client";
 
 export interface EditorHandle {
   flushSave: () => Promise<void>;
@@ -16,6 +19,8 @@ interface EditorProps {
   onContentChange?: (content: Record<string, unknown>) => void;
   editorRef?: React.MutableRefObject<EditorHandle | null>;
   onEditorReady?: (editor: TipTapEditor | null) => void;
+  projectId: string;
+  onImageAnnouncement?: (message: string) => void;
 }
 
 const AUTO_SAVE_DEBOUNCE_MS = 1500;
@@ -26,9 +31,15 @@ export function Editor({
   onContentChange,
   editorRef,
   onEditorReady,
+  projectId,
+  onImageAnnouncement,
 }: EditorProps) {
   const onSaveRef = useRef(onSave);
   const onContentChangeRef = useRef(onContentChange);
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
+  const onImageAnnouncementRef = useRef(onImageAnnouncement);
+  onImageAnnouncementRef.current = onImageAnnouncement;
 
   useEffect(() => {
     onSaveRef.current = onSave;
@@ -83,12 +94,56 @@ export function Editor({
     };
   }, []);
 
+  const handleImageUploadRef = useRef<(file: File) => void>(() => {});
+
+  const imagePasteExtension = useMemo(
+    () =>
+      Extension.create({
+        name: "imagePaste",
+        addProseMirrorPlugins() {
+          return [
+            new Plugin({
+              key: new PluginKey("imagePaste"),
+              props: {
+                handlePaste(_view, event) {
+                  const items = event.clipboardData?.items;
+                  if (!items) return false;
+                  for (const item of Array.from(items)) {
+                    if (item.type.startsWith("image/")) {
+                      event.preventDefault();
+                      const file = item.getAsFile();
+                      if (file) handleImageUploadRef.current(file);
+                      return true;
+                    }
+                  }
+                  return false;
+                },
+                handleDrop(_view, event) {
+                  if (!event.dataTransfer?.files) return false;
+                  for (const file of Array.from(event.dataTransfer.files)) {
+                    if (file.type.startsWith("image/")) {
+                      event.preventDefault();
+                      handleImageUploadRef.current(file);
+                      return true;
+                    }
+                  }
+                  return false;
+                },
+              },
+            }),
+          ];
+        },
+      }),
+    [],
+  );
+
   const editor = useEditor({
     extensions: [
       ...editorExtensions,
       Placeholder.configure({
         placeholder: STRINGS.editor.placeholder,
       }),
+      imagePasteExtension,
     ],
     content: content ?? { type: "doc", content: [{ type: "paragraph" }] },
     onUpdate: ({ editor: ed }) => {
@@ -126,6 +181,27 @@ export function Editor({
 
   useEffect(() => {
     editorInstanceRef.current = editor;
+  }, [editor]);
+
+  useEffect(() => {
+    handleImageUploadRef.current = async (file: File) => {
+      try {
+        const image = await api.images.upload(projectIdRef.current, file);
+        if (editor) {
+          editor
+            .chain()
+            .focus()
+            .setImage({ src: `/api/images/${image.id}`, alt: image.alt_text })
+            .run();
+          onImageAnnouncementRef.current?.(
+            STRINGS.imageGallery.insertSuccess(image.filename),
+          );
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        onImageAnnouncementRef.current?.(STRINGS.imageGallery.uploadFailed(message));
+      }
+    };
   }, [editor]);
 
   useEffect(() => {

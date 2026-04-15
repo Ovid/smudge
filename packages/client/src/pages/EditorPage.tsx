@@ -424,6 +424,11 @@ export function EditorPage() {
                 onContentChange={handleContentChange}
                 editorRef={editorRef}
                 onEditorReady={setToolbarEditor}
+                projectId={project.id}
+                onImageAnnouncement={(msg) => {
+                  setImageAnnouncement(msg);
+                  setTimeout(() => setImageAnnouncement(""), 3000);
+                }}
               />
             </main>
           ) : null}
