@@ -146,7 +146,10 @@ function blockToParagraphs(node: Record<string, unknown>, state: DocxBuildState)
           return [new Paragraph({ heading, children: inlineToRuns(content) })];
         }
         // Unmapped heading level → normal paragraph with warning
-        logger.warn({ level }, "Unmapped TipTap heading level in docx export, rendering as paragraph");
+        logger.warn(
+          { level },
+          "Unmapped TipTap heading level in docx export, rendering as paragraph",
+        );
         return [new Paragraph({ children: inlineToRuns(content) })];
       }
 

@@ -612,9 +612,7 @@ describe("renderDocx", () => {
               content: [
                 {
                   type: "listItem",
-                  content: [
-                    { type: "paragraph", content: [{ type: "text", text: "First A" }] },
-                  ],
+                  content: [{ type: "paragraph", content: [{ type: "text", text: "First A" }] }],
                 },
               ],
             },
@@ -624,9 +622,7 @@ describe("renderDocx", () => {
               content: [
                 {
                   type: "listItem",
-                  content: [
-                    { type: "paragraph", content: [{ type: "text", text: "Second A" }] },
-                  ],
+                  content: [{ type: "paragraph", content: [{ type: "text", text: "Second A" }] }],
                 },
               ],
             },
