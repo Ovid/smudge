@@ -337,7 +337,7 @@ async function blockToParagraphs(
               alignment: AlignmentType.CENTER,
               children: [
                 new TextRun({
-                  text: `[Image: ${resolved.altText || "image"}]`,
+                  text: `[Image: ${resolved.altText || "image"} — format not supported in DOCX]`,
                   italics: true,
                 }),
               ],
