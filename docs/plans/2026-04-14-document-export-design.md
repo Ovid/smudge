@@ -153,7 +153,7 @@ In the TipTap editor, H1–H2 are reserved for page structure (project title, ch
 - Metadata set correctly (title, author, language)
 - Stylesheet embedded
 - TOC generation (both NCX and inline)
-- Heading level shift (H3→H1, H4→H2, H5→H3)
+- Heading levels preserved as-is (H3/H4/H5) within each chapter's XHTML
 - Null/empty content handled gracefully
 
 **Both formats:**
