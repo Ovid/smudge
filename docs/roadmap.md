@@ -23,7 +23,7 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 1 | Writer's Dashboard | Chapter status labels, project overview, chapter navigation shortcuts | Done |
 | 2 | Goals & Velocity | Word targets, deadlines, daily tracking, session stats, burndown | Done |
 | 2.5a | Simplify Progress Model | Reduce velocity to project-level targets + daily totals, demote save_events | Done |
-| 2.5b | Storage Architecture | ProjectStore/AssetStore/SnapshotStore abstractions, clean seams for future | Planned |
+| 2.5b | Storage Architecture | ProjectStore/AssetStore/SnapshotStore abstractions, clean seams for future | Done |
 | 3a | Export Foundation | Export pipeline, HTML, Markdown, plain text, config dialog, download | Done |
 | 3b | Document Export | PDF, Word (.docx), EPUB | In Progress |
 | 4a | Reference Panel & Images | Collapsible side panel infrastructure, image upload/storage | Planned |
