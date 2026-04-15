@@ -11,7 +11,13 @@ interface ExportDialogProps {
   onClose: () => void;
 }
 
-export function ExportDialog({ open, projectSlug, projectId, chapters, onClose }: ExportDialogProps) {
+export function ExportDialog({
+  open,
+  projectSlug,
+  projectId,
+  chapters,
+  onClose,
+}: ExportDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
 
@@ -80,11 +86,14 @@ export function ExportDialog({ open, projectSlug, projectId, chapters, onClose }
 
   useEffect(() => {
     if (format === "epub" && open) {
-      api.images.list(projectId).then((imgs) => {
-        setCoverImages(imgs.map((i) => ({ id: i.id, filename: i.filename })));
-      }).catch(() => {
-        setCoverImages([]);
-      });
+      api.images
+        .list(projectId)
+        .then((imgs) => {
+          setCoverImages(imgs.map((i) => ({ id: i.id, filename: i.filename })));
+        })
+        .catch(() => {
+          setCoverImages([]);
+        });
     }
   }, [format, open, projectId]);
 
@@ -139,7 +148,16 @@ export function ExportDialog({ open, projectSlug, projectId, chapters, onClose }
       exportingRef.current = false;
       setExporting(false);
     }
-  }, [format, includeToc, selectingChapters, selectedChapterIds, chapters, projectSlug, epubCoverImageId, onClose]);
+  }, [
+    format,
+    includeToc,
+    selectingChapters,
+    selectedChapterIds,
+    chapters,
+    projectSlug,
+    epubCoverImageId,
+    onClose,
+  ]);
 
   const handleChapterToggle = useCallback((chapterId: string) => {
     setSelectedChapterIds((prev) => {
