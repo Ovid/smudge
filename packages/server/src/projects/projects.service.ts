@@ -8,6 +8,7 @@ import {
 } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { enrichChaptersWithLabels, enrichChapterWithLabel } from "../chapters/chapters.types";
+import { extractImageIds } from "../images/images.references";
 import type { ProjectRow, ProjectListRow, UpdateProjectData } from "./projects.types";
 import type {
   ChapterWithLabel,
@@ -161,9 +162,30 @@ export async function deleteProject(slug: string): Promise<boolean> {
 
   const now = new Date().toISOString();
 
+  // Collect image IDs from all active chapters before the transaction so we
+  // can decrement reference counts atomically with the soft-delete (mirrors
+  // the per-chapter decrement in deleteChapter).
+  const chapters = await store.listChapterContentByProject(project.id);
+  const allImageIds: string[] = [];
+  for (const ch of chapters) {
+    if (ch.content) {
+      try {
+        const content = JSON.parse(ch.content);
+        allImageIds.push(...extractImageIds(content));
+      } catch {
+        // Corrupt content — skip
+      }
+    }
+  }
+
   await store.transaction(async (txStore) => {
     await txStore.softDeleteChaptersByProject(project.id, now);
     await txStore.softDeleteProject(project.id, now);
+
+    // Decrement image reference counts for all images in the deleted chapters
+    for (const imageId of allImageIds) {
+      await txStore.incrementImageReferenceCount(imageId, -1);
+    }
   });
 
   // Intentionally skip updateDailySnapshot here: all chapters are now
