@@ -13,7 +13,7 @@ Phase 4a adds two features to Smudge: a collapsible, resizable reference panel o
 
 **Layout change:** The editor area becomes a three-column flexbox layout: sidebar (left) | editor content (center, `flex-1`) | reference panel (right). The reference panel mirrors the sidebar's resize implementation — pixel width stored in localStorage, drag handle on its left edge, keyboard resize with Arrow keys, constrained between 240px and 480px, default 320px.
 
-The panel is toggled via a toolbar icon in the header bar and the keyboard shortcut Ctrl+. (period). Toggle state (open/closed) and width are persisted in localStorage under keys `smudge-ref-panel-open` and `smudge-ref-panel-width`.
+The panel is toggled via a toolbar icon in the header bar and the keyboard shortcut Ctrl+. (period). Toggle state (open/closed) and width are persisted in localStorage under keys `smudge:ref-panel-open` and `smudge:ref-panel-width` (colon-separated, matching the existing sidebar key convention).
 
 **Tab infrastructure:** The panel renders a tab bar at the top and a content area below. Tabs are registered declaratively — each tab provides a label, icon, and component. In this phase, there is one tab: "Images." Future phases add tabs by registering new entries (notes, characters, scenes, etc.) without modifying the panel infrastructure itself.
 
