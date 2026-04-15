@@ -26,5 +26,6 @@ export type {
   ProjectWithChapters,
   ChapterStatusRow,
   ApiError,
+  ImageRow,
   VelocityResponse,
 } from "./types";

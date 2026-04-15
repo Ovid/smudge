@@ -8,6 +8,7 @@ import type {
   ApiError,
   VelocityResponse,
   ExportFormatType,
+  ImageRow,
 } from "@smudge/shared";
 
 export type { VelocityResponse };
@@ -162,6 +163,75 @@ export const api = {
 
   chapterStatuses: {
     list: () => apiFetch<ChapterStatusRow[]>("/chapter-statuses"),
+  },
+
+  images: {
+    list(projectId: string): Promise<ImageRow[]> {
+      return apiFetch(`/projects/${projectId}/images`);
+    },
+
+    async upload(projectId: string, file: File): Promise<ImageRow> {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`${BASE}/projects/${projectId}/images`, {
+        method: "POST",
+        body: formData,
+        // No Content-Type header — browser sets multipart boundary automatically
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new ApiRequestError(
+          body?.error?.message ?? `Upload failed (${res.status})`,
+          res.status,
+        );
+      }
+      return res.json();
+    },
+
+    references(
+      id: string,
+    ): Promise<{ chapters: Array<{ id: string; title: string }> }> {
+      return apiFetch(`/images/${id}/references`);
+    },
+
+    update(
+      id: string,
+      data: {
+        alt_text?: string;
+        caption?: string;
+        source?: string;
+        license?: string;
+      },
+    ): Promise<ImageRow> {
+      return apiFetch(`/images/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      });
+    },
+
+    async delete(
+      id: string,
+    ): Promise<
+      | { deleted: boolean }
+      | {
+          error: {
+            code: string;
+            message: string;
+            chapters: Array<{ id: string; title: string }>;
+          };
+        }
+    > {
+      const res = await fetch(`${BASE}/images/${id}`, { method: "DELETE" });
+      const body = await res.json();
+      if (res.status === 409) return body;
+      if (!res.ok) {
+        throw new ApiRequestError(
+          body?.error?.message ?? `Delete failed (${res.status})`,
+          res.status,
+        );
+      }
+      return body;
+    },
   },
 
   settings: {
