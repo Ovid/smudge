@@ -442,7 +442,10 @@ export function EditorPage() {
                     clearTimeout(imageAnnouncementTimerRef.current);
                   }
                   setImageAnnouncement(msg);
-                  imageAnnouncementTimerRef.current = setTimeout(() => setImageAnnouncement(""), 3000);
+                  imageAnnouncementTimerRef.current = setTimeout(
+                    () => setImageAnnouncement(""),
+                    3000,
+                  );
                 }}
               />
             </main>
