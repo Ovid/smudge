@@ -151,17 +151,25 @@ function blockToParagraphs(node: Record<string, unknown>, state: DocxBuildState)
       }
 
       case "blockquote": {
-        // Each child block in a blockquote becomes an indented italic paragraph
+        // Each child block in a blockquote becomes indented italic content.
+        // Paragraph children use inlineToRuns directly; other block types
+        // (headings, lists, nested blockquotes) recurse into blockToParagraphs
+        // to avoid silently dropping their content.
         if (!content) return [];
         const paragraphs: Paragraph[] = [];
         for (const child of content) {
-          const childContent = child.content as Array<Record<string, unknown>> | undefined;
-          paragraphs.push(
-            new Paragraph({
-              indent: { left: 720 },
-              children: inlineToRuns(childContent, { italics: true }),
-            }),
-          );
+          if ((child.type as string) === "paragraph") {
+            const childContent = child.content as Array<Record<string, unknown>> | undefined;
+            paragraphs.push(
+              new Paragraph({
+                indent: { left: 720 },
+                children: inlineToRuns(childContent, { italics: true }),
+              }),
+            );
+          } else {
+            // Recurse for non-paragraph children (headings, lists, etc.)
+            paragraphs.push(...blockToParagraphs(child, state));
+          }
         }
         return paragraphs;
       }

@@ -478,6 +478,39 @@ describe("renderDocx", () => {
     expect(xml).toMatch(/<w:i\s*\/?>|<w:i w:val="true"/);
   });
 
+  it("renders blockquote with nested heading without losing content", async () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Nested Quote",
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "blockquote",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "Quote text." }],
+                },
+                {
+                  type: "heading",
+                  attrs: { level: 3 },
+                  content: [{ type: "text", text: "Heading inside quote" }],
+                },
+              ],
+            },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false });
+    const xml = await docxXml(buf);
+    expect(xml).toContain("Quote text.");
+    expect(xml).toContain("Heading inside quote");
+  });
+
   it("renders bullet list items", async () => {
     const chapters = [
       {
