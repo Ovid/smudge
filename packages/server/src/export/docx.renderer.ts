@@ -201,8 +201,8 @@ function blockToParagraphs(
         // lists, and other block types also receive the formatting.
         if (!content) return [];
         const bqCtx: BlockContext = {
-          indent: { left: 720 },
-          extraRunProps: { italics: true },
+          indent: { left: (ctx?.indent?.left ?? 0) + 720 },
+          extraRunProps: { italics: true, ...ctx?.extraRunProps },
         };
         const paragraphs: Paragraph[] = [];
         for (const child of content) {

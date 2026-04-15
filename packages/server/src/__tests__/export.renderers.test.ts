@@ -479,6 +479,45 @@ describe("renderDocx", () => {
     expect(xml).toMatch(/<w:i\s*\/?>|<w:i w:val="true"/);
   });
 
+  it("accumulates indent for nested blockquotes", async () => {
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Nested BQ",
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "blockquote",
+              content: [
+                {
+                  type: "blockquote",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "Double nested quote." }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false });
+    const xml = await docxXml(buf);
+    expect(xml).toContain("Double nested quote.");
+    // Find the paragraph containing "Double nested quote." and verify its indent
+    const paraMatch = xml.match(
+      /<w:p\b[^>]*>(?:(?!<w:p\b).)*?Double nested quote\.(?:(?!<w:p\b).)*?<\/w:p>/s,
+    );
+    expect(paraMatch).not.toBeNull();
+    // Double-nested blockquote should have 1440 twips indent (720 * 2)
+    expect(paraMatch![0]).toContain('w:left="1440"');
+  });
+
   it("renders blockquote with nested heading without losing content", async () => {
     const chapters = [
       {
