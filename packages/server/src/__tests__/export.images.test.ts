@@ -7,6 +7,8 @@ import knex, { type Knex } from "knex";
 import JSZip from "jszip";
 import { createTestKnexConfig } from "../db/knexfile";
 import { setDb, closeDb } from "../db/connection";
+import { setProjectStore, resetProjectStore } from "../stores/project-store.injectable";
+import { SqliteProjectStore } from "../stores";
 import * as imagesRepo from "../images/images.repository";
 import { resolveImage, resolveImagesInHtml } from "../export/image-resolver";
 import { renderHtml, renderMarkdown, renderPlainText } from "../export/export.renderers";
@@ -53,6 +55,7 @@ beforeAll(async () => {
   testDb = knex(createTestKnexConfig());
   await testDb.migrate.latest();
   await setDb(testDb);
+  setProjectStore(new SqliteProjectStore(testDb));
 
   // Create temp data dir for image files
   tmpDataDir = await mkdtemp(path.join(tmpdir(), "smudge-export-img-test-"));
@@ -102,6 +105,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   delete process.env.DATA_DIR;
+  resetProjectStore();
   await closeDb();
   await rm(tmpDataDir, { recursive: true, force: true });
 });
@@ -294,6 +298,35 @@ describe("renderEpub with images", () => {
     // EPUB is a zip file
     expect(buf[0]).toBe(0x50);
     expect(buf[1]).toBe(0x4b);
+  });
+
+  it("includes figcaption for images with captions in EPUB", async () => {
+    const chapters: ExportChapter[] = [
+      {
+        id: "ch-1",
+        title: "Chapter with Captioned Image",
+        content: makeChapterWithImage(imageIdWithCaption),
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderEpub(projectInfo, chapters, { includeToc: false });
+    const zip = await JSZip.loadAsync(buf);
+
+    // Find the chapter XHTML file and check it contains the figcaption
+    const xhtmlFiles = Object.keys(zip.files).filter(
+      (f) => f.endsWith(".xhtml") || f.endsWith(".html"),
+    );
+    let foundCaption = false;
+    for (const file of xhtmlFiles) {
+      const content = await zip.files[file]!.async("text");
+      if (content.includes("A lovely caption")) {
+        foundCaption = true;
+        expect(content).toContain("<figure>");
+        expect(content).toContain("<figcaption>");
+        break;
+      }
+    }
+    expect(foundCaption).toBe(true);
   });
 
   it("accepts a cover image ID and produces a valid EPUB", async () => {

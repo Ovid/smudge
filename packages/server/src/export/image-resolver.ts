@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
-import * as imagesRepo from "../images/images.repository";
-import { getDb } from "../db/connection";
+import { getProjectStore } from "../stores/project-store.injectable";
 import { mimeToExt, getImagePath } from "../images/images.paths";
 
 export interface ResolvedImage {
@@ -14,8 +13,8 @@ export interface ResolvedImage {
 }
 
 export async function resolveImage(imageId: string): Promise<ResolvedImage | null> {
-  const db = getDb();
-  const row = await imagesRepo.findById(db, imageId);
+  const store = getProjectStore();
+  const row = await store.findImageById(imageId);
   if (!row) return null;
 
   const ext = mimeToExt(row.mime_type);

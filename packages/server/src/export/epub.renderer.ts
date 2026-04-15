@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
 import { EPub } from "epub-gen-memory";
 import { chapterContentToHtml, escapeHtml } from "./export.renderers";
-import * as imagesRepo from "../images/images.repository";
-import { getDb } from "../db/connection";
+import { getProjectStore } from "../stores/project-store.injectable";
 import { mimeToExt, getImagePath } from "../images/images.paths";
+import { buildCaptionText, type ResolvedImage } from "./image-resolver";
 import type { ExportProjectInfo, ExportChapter, RenderOptions } from "./export.renderers";
 
 export interface EpubRenderOptions extends RenderOptions {
@@ -12,20 +12,24 @@ export interface EpubRenderOptions extends RenderOptions {
 
 /**
  * Replace /api/images/{uuid} URLs with file:// URLs pointing to the
- * actual image files on disk. epub-gen-memory supports file:// URLs natively.
+ * actual image files on disk, and wrap captioned images in <figure>/<figcaption>.
+ * epub-gen-memory supports file:// URLs natively.
  */
 async function resolveImagesForEpub(html: string): Promise<string> {
   const pattern = /src="\/api\/images\/([0-9a-f-]{36})"/gi;
   const matches = [...html.matchAll(pattern)];
   if (matches.length === 0) return html;
 
-  const db = getDb();
+  const store = getProjectStore();
+
+  // Collect unique image metadata for the caption pass
+  const imageData = new Map<string, ResolvedImage>();
 
   let resolvedHtml = html;
   for (const match of matches) {
     const id = match[1];
     if (!id) continue;
-    const row = await imagesRepo.findById(db, id);
+    const row = await store.findImageById(id);
     if (!row) continue;
     const ext = mimeToExt(row.mime_type);
     if (!ext) continue;
@@ -35,8 +39,20 @@ async function resolveImagesForEpub(html: string): Promise<string> {
       const fileUrl = `file://${filePath}`;
       resolvedHtml = resolvedHtml.replace(
         new RegExp(`src="/api/images/${id}"`, "gi"),
-        `src="${fileUrl}"`,
+        `data-image-id="${id}" src="${fileUrl}"`,
       );
+      // Store metadata for the caption pass (read file only if we need it for captions)
+      if (!imageData.has(id)) {
+        imageData.set(id, {
+          id: row.id,
+          data: Buffer.alloc(0), // Not used for EPUB — file:// URLs are used instead
+          mimeType: row.mime_type,
+          altText: row.alt_text,
+          caption: row.caption,
+          source: row.source,
+          license: row.license,
+        });
+      }
     } catch {
       // File doesn't exist — remove the img tag
       resolvedHtml = resolvedHtml.replace(
@@ -45,6 +61,24 @@ async function resolveImagesForEpub(html: string): Promise<string> {
       );
     }
   }
+
+  // Add figure/figcaption for images with captions or attribution
+  for (const [id, img] of imageData) {
+    const fullCaption = buildCaptionText(img);
+    if (fullCaption) {
+      const escapedCaption = fullCaption
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+      resolvedHtml = resolvedHtml.replace(
+        new RegExp(`(<img[^>]*data-image-id="${id}"[^>]*>)`, "g"),
+        `<figure>$1<figcaption>${escapedCaption}</figcaption></figure>`,
+      );
+    }
+  }
+
   return resolvedHtml;
 }
 
@@ -104,7 +138,7 @@ export async function renderEpub(
       if (html === "") {
         html = "<p>&nbsp;</p>";
       } else {
-        // Resolve images — replace /api/images/ URLs with file:// URLs
+        // Resolve images — replace /api/images/ URLs with file:// URLs and add captions
         html = await resolveImagesForEpub(html);
       }
       epubChapters.push({
@@ -119,8 +153,8 @@ export async function renderEpub(
   // Resolve cover image if provided — use file:// URL for epub-gen-memory
   let coverFileUrl: string | undefined;
   if (options.coverImageId) {
-    const db = getDb();
-    const row = await imagesRepo.findById(db, options.coverImageId);
+    const store = getProjectStore();
+    const row = await store.findImageById(options.coverImageId);
     if (row) {
       const ext = mimeToExt(row.mime_type);
       if (ext) {
