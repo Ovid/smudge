@@ -249,5 +249,6 @@ export const STRINGS = {
     fileTooLarge: "File too large. Maximum: 10MB.",
     deleteFailed: (reason: string) => `Delete failed: ${reason}`,
     saveFailed: "Save failed. Your changes have not been saved.",
+    deleteBlockedLoading: "This image is in use. Loading details...",
   },
 } as const;

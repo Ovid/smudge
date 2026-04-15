@@ -394,7 +394,9 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
           {confirmingDelete ? (
             isUsed ? (
               <p className="text-sm text-status-error">
-                {S.deleteBlocked(references.map((r) => r.title))}
+                {referencesLoaded
+                  ? S.deleteBlocked(references.map((r) => r.title))
+                  : S.deleteBlockedLoading}
               </p>
             ) : (
               <div className="flex items-center gap-2">
