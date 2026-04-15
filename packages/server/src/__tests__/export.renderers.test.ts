@@ -821,11 +821,18 @@ describe("renderEpub", () => {
     expect(text).toContain("第一章");
   });
 
-  it("includes inline TOC page", async () => {
-    // epub-gen-memory always generates an inline TOC page — there is no
-    // option to suppress it. We verify it exists with the expected title.
+  it("includes inline TOC page with chapter links when includeToc is true", async () => {
     const buf = await renderEpub(projectInfo, sampleChapters, { includeToc: true });
     const text = await epubText(buf);
     expect(text).toContain("Table of Contents");
+    expect(text).toContain("The Beginning");
+    expect(text).toContain("The Middle");
+  });
+
+  it("produces empty TOC page when includeToc is false", async () => {
+    const buf = await renderEpub(projectInfo, sampleChapters, { includeToc: false });
+    const text = await epubText(buf);
+    // TOC page still exists but with no title and no chapter links
+    expect(text).not.toContain("Table of Contents");
   });
 });

@@ -37,12 +37,12 @@ pre {
 export async function renderEpub(
   project: ExportProjectInfo,
   chapters: ExportChapter[],
-  _options: RenderOptions,
+  options: RenderOptions,
 ): Promise<Buffer> {
   const author = project.author_name ?? "";
 
   // Build chapter content array for epub-gen-memory
-  const epubChapters: Array<{ title: string; content: string }> = [];
+  const epubChapters: Array<{ title: string; content: string; excludeFromToc?: boolean }> = [];
 
   if (chapters.length === 0) {
     // Title-page-only EPUB: one section with title and author
@@ -56,20 +56,26 @@ export async function renderEpub(
       if (html === "") {
         html = "<p>&nbsp;</p>";
       }
-      epubChapters.push({ title: chapter.title, content: html });
+      epubChapters.push({
+        title: chapter.title,
+        content: html,
+        // When TOC is disabled, exclude chapters from the inline TOC listing
+        excludeFromToc: !options.includeToc,
+      });
     }
   }
 
-  // epub-gen-memory always generates an inline TOC page — there is no option
-  // to suppress it. We always pass a tocTitle. The includeToc option controls
-  // whether the TOC is prominently titled or given a minimal heading.
+  // epub-gen-memory always generates a TOC page — it cannot be fully
+  // suppressed. When includeToc is false, we set tocTitle to an empty
+  // string and mark all chapters as excludeFromToc, producing an
+  // effectively empty TOC page.
   const epub = new EPub(
     {
       title: project.title,
       author: author || undefined,
       lang: "en",
       css: EPUB_CSS,
-      tocTitle: "Table of Contents",
+      tocTitle: options.includeToc ? "Table of Contents" : "",
       verbose: false,
     },
     epubChapters,
