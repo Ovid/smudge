@@ -2,6 +2,9 @@ import { UpdateChapterSchema, countWords, generateSlug } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
+import { getDb } from "../db/connection";
+import { extractImageIds, diffImageReferences } from "../images/images.references";
+import * as imagesRepo from "../images/images.repository";
 import {
   isCorruptChapter,
   enrichChapterWithLabel,
@@ -96,6 +99,27 @@ export async function updateChapter(
       logger.error(
         { err, project_id: chapter.project_id, chapter_id: id },
         "Velocity recordSave failed (best-effort)",
+      );
+    }
+
+    // Best-effort reference count update
+    try {
+      const oldContent = chapter.content ? JSON.parse(chapter.content) : null;
+      const oldIds = extractImageIds(oldContent);
+      const newIds = extractImageIds(parsed.data.content as Record<string, unknown>);
+      const { added, removed } = diffImageReferences(oldIds, newIds);
+
+      const db = getDb();
+      for (const imageId of added) {
+        await imagesRepo.incrementReferenceCount(db, imageId, 1);
+      }
+      for (const imageId of removed) {
+        await imagesRepo.incrementReferenceCount(db, imageId, -1);
+      }
+    } catch (err: unknown) {
+      logger.error(
+        { err, chapter_id: id },
+        "Image reference count update failed (best-effort)",
       );
     }
   }

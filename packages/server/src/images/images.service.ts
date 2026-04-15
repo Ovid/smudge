@@ -5,6 +5,7 @@ import { UpdateImageSchema } from "@smudge/shared";
 import { getDb } from "../db/connection";
 import { getProjectStore } from "../stores/project-store.injectable";
 import * as imagesRepo from "./images.repository";
+import { liveCheckImageReferences } from "./images.references";
 import type { ImageRow, UpdateImageData } from "./images.types";
 import { logger } from "../logger";
 
@@ -146,9 +147,10 @@ export async function deleteImage(id: string): Promise<DeleteResult> {
     return { notFound: true };
   }
 
-  if (image.reference_count > 0) {
-    // Task 4 will populate this with actual chapter references
-    return { referenced: [] };
+  // Live check: scan chapters for actual references and correct drift
+  const chapters = await liveCheckImageReferences(id, image.project_id);
+  if (chapters.length > 0) {
+    return { referenced: chapters };
   }
 
   const ext = MIME_TO_EXT[image.mime_type];
@@ -172,6 +174,6 @@ export async function getImageReferences(id: string): Promise<ReferencesResult> 
     return { notFound: true };
   }
 
-  // Placeholder — Task 4 will implement the live check
-  return { chapters: [] };
+  const chapters = await liveCheckImageReferences(id, image.project_id);
+  return { chapters };
 }

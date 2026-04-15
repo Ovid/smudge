@@ -1,0 +1,82 @@
+import { getDb } from "../db/connection";
+
+/**
+ * Walks TipTap JSON content tree and extracts image UUIDs from
+ * nodes with `type: "image"` whose `attrs.src` matches `/api/images/{uuid}`.
+ * Returns deduplicated, lowercased UUIDs.
+ */
+export function extractImageIds(content: Record<string, unknown> | null): string[] {
+  if (!content) return [];
+  const ids = new Set<string>();
+
+  function walk(node: Record<string, unknown>) {
+    if (node.type === "image" && typeof node.attrs === "object" && node.attrs !== null) {
+      const attrs = node.attrs as Record<string, unknown>;
+      if (typeof attrs.src === "string") {
+        const match =
+          /\/api\/images\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(
+            attrs.src,
+          );
+        if (match?.[1]) ids.add(match[1].toLowerCase());
+      }
+    }
+    if (Array.isArray(node.content)) {
+      for (const child of node.content) {
+        if (typeof child === "object" && child !== null) {
+          walk(child as Record<string, unknown>);
+        }
+      }
+    }
+  }
+
+  walk(content);
+  return [...ids];
+}
+
+/**
+ * Compares two arrays of image IDs and returns which were added and removed.
+ */
+export function diffImageReferences(
+  oldIds: string[],
+  newIds: string[],
+): { added: string[]; removed: string[] } {
+  const oldSet = new Set(oldIds);
+  const newSet = new Set(newIds);
+
+  const added = newIds.filter((id) => !oldSet.has(id));
+  const removed = oldIds.filter((id) => !newSet.has(id));
+
+  return { added, removed };
+}
+
+/**
+ * Scans all non-deleted chapters in a project for references to a specific image.
+ * Returns the list of chapters that reference it and corrects the image's
+ * `reference_count` if it has drifted.
+ */
+export async function liveCheckImageReferences(
+  imageId: string,
+  projectId: string,
+): Promise<Array<{ id: string; title: string }>> {
+  const db = getDb();
+  const chapters = await db("chapters")
+    .where("project_id", projectId)
+    .whereNull("deleted_at")
+    .select("id", "title", "content");
+
+  const imageUrl = `/api/images/${imageId}`;
+  const referencingChapters: Array<{ id: string; title: string }> = [];
+
+  for (const ch of chapters) {
+    if (ch.content && ch.content.includes(imageUrl)) {
+      referencingChapters.push({ id: ch.id, title: ch.title });
+    }
+  }
+
+  // Correct reference_count if it drifted
+  await db("images")
+    .where("id", imageId)
+    .update({ reference_count: referencingChapters.length });
+
+  return referencingChapters;
+}

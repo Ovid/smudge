@@ -246,7 +246,7 @@ describe("images.service", () => {
       expect(result).toHaveProperty("notFound", true);
     });
 
-    it("returns referenced when reference_count > 0", async () => {
+    it("returns referenced when image is used in a chapter", async () => {
       const projectId = await createTestProject();
       const uploadResult = await imagesService.uploadImage(projectId, {
         buffer: TEST_PNG,
@@ -256,12 +256,29 @@ describe("images.service", () => {
       });
       const imageId = (uploadResult as { image: { id: string } }).image.id;
 
-      // Manually bump reference_count
-      await t.db("images").where("id", imageId).update({ reference_count: 1 });
+      // Get the auto-created chapter via the project slug
+      const projectRes = await request(t.app).get("/api/projects");
+      const project = projectRes.body[0];
+      const projectDetail = await request(t.app).get(`/api/projects/${project.slug}`);
+      const chapterId = projectDetail.body.chapters[0].id;
+
+      // Save chapter with content referencing the image
+      await request(t.app)
+        .patch(`/api/chapters/${chapterId}`)
+        .send({
+          content: {
+            type: "doc",
+            content: [
+              { type: "image", attrs: { src: `/api/images/${imageId}` } },
+            ],
+          },
+        });
 
       const result = await imagesService.deleteImage(imageId);
       expect(result).toHaveProperty("referenced");
-      expect(Array.isArray((result as { referenced: unknown[] }).referenced)).toBe(true);
+      const referenced = (result as { referenced: Array<{ id: string; title: string }> }).referenced;
+      expect(referenced).toHaveLength(1);
+      expect(referenced[0]!.id).toBe(chapterId);
 
       // Verify image still exists
       const image = await imagesService.getImage(imageId);
