@@ -17,9 +17,7 @@ export function imagesRouter(): Router {
   router.post(
     "/:projectId/images",
     (req, res, next) => {
-      // Cast through unknown to work around duplicate @types/express-serve-static-core versions
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (upload.single("file") as any)(req, res, (err: unknown) => {
+      upload.single("file")(req, res, (err: unknown) => {
         if (err && (err as Error & { code?: string }).code === "LIMIT_FILE_SIZE") {
           res.status(413).json({
             error: { code: "PAYLOAD_TOO_LARGE", message: "File too large. Maximum: 10MB." },
