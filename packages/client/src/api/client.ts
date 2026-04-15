@@ -220,7 +220,10 @@ export const api = {
     > {
       const res = await fetch(`${BASE}/images/${id}`, { method: "DELETE" });
       const body = await res.json().catch(() => null);
-      if (res.status === 409) return body;
+      if (res.status === 409) {
+        if (body && typeof body === "object") return body;
+        throw new ApiRequestError("Delete blocked (conflict)", 409);
+      }
       if (!res.ok) {
         throw new ApiRequestError(
           body?.error?.message ?? `Delete failed (${res.status})`,

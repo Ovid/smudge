@@ -96,5 +96,13 @@ export async function resolveImagesInHtml(html: string): Promise<{
     }
   }
 
+  // Remove any remaining /api/images/ references that couldn't be resolved
+  // (e.g. image file missing from disk) to avoid leaking internal API URLs
+  // in exported documents.
+  resolvedHtml = resolvedHtml.replace(
+    /<img[^>]*src="\/api\/images\/[^"]*"[^>]*>/gi,
+    "",
+  );
+
   return { html: resolvedHtml, images };
 }

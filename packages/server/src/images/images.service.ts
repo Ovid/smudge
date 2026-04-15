@@ -148,6 +148,11 @@ export async function deleteImage(id: string): Promise<DeleteResult> {
     return { referenced: chapters };
   }
 
+  // Remove the DB record first, then the file. If removeImage fails, nothing
+  // is lost. If unlink fails after removal, we have an orphan file (harmless)
+  // rather than a ghost record (visible in gallery but serving 404).
+  await store.removeImage(id);
+
   const ext = mimeToExt(image.mime_type);
   if (ext) {
     const filePath = getImagePath(image.project_id, image.id, ext);
@@ -158,7 +163,6 @@ export async function deleteImage(id: string): Promise<DeleteResult> {
     }
   }
 
-  await store.removeImage(id);
   return { deleted: true };
 }
 
