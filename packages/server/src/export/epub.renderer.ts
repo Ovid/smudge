@@ -15,6 +15,8 @@ body {
 h1 { font-size: 1.8em; margin: 1em 0 0.5em; }
 h2 { font-size: 1.4em; margin: 0.8em 0 0.4em; }
 h3 { font-size: 1.2em; margin: 0.6em 0 0.3em; }
+h4 { font-size: 1.1em; margin: 0.5em 0 0.25em; }
+h5 { font-size: 1.0em; margin: 0.4em 0 0.2em; }
 blockquote {
   margin: 1em 2em;
   font-style: italic;
