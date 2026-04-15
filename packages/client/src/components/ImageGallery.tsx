@@ -170,6 +170,7 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
         setSaveStatus("saved");
       } catch {
         setSaveStatus("idle");
+        return;
       }
     }
     onInsertImage(`/api/images/${selectedImage.id}`, formState.alt_text);
@@ -182,7 +183,9 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
     try {
       const result = await api.images.delete(selectedImage.id);
       if ("error" in result) {
-        // Image is in use — blocked
+        const chapters = (result.error as { chapters?: Array<{ title: string }> }).chapters ?? [];
+        announce(S.deleteBlocked(chapters.map((c) => c.title)));
+        setConfirmingDelete(false);
         return;
       }
       setSelectedImage(null);
