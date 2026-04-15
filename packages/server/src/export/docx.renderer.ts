@@ -257,12 +257,7 @@ function blockToParagraphs(
 
       case "bulletList": {
         if (!content) return [];
-        return listItemsToParagraphs(
-          content,
-          (level) => ({ bullet: { level } }),
-          state,
-          ctx,
-        );
+        return listItemsToParagraphs(content, (level) => ({ bullet: { level } }), state, ctx);
       }
 
       case "orderedList": {
