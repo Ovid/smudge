@@ -13,6 +13,7 @@
     "@smudge/shared": "*",
     "@tiptap/core": "^2.27.2",
     "@tiptap/extension-heading": "^2.27.2",
+    "@tiptap/extension-image": "^2.27.2",
     "@tiptap/html": "^2.27.2",
     "@tiptap/pm": "^2.27.2",
     "@tiptap/starter-kit": "^2.27.2",
