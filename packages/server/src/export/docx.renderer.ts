@@ -197,10 +197,10 @@ async function listItemsToParagraphs(
 // Convert a single TipTap block node → Paragraph[]
 // ---------------------------------------------------------------------------
 
-// Default image dimensions in EMUs (English Metric Units).
-// 1 inch = 914400 EMUs; these default to ~4in x ~3in.
-const DEFAULT_IMAGE_WIDTH = 3657600;
-const DEFAULT_IMAGE_HEIGHT = 2743200;
+// Default image dimensions in pixels for the `docx` library's ImageRun,
+// which internally converts pixels → EMUs (* 9525).  ~4in × 3in at 96 DPI.
+const DEFAULT_IMAGE_WIDTH = 400;
+const DEFAULT_IMAGE_HEIGHT = 300;
 
 const MIME_TO_DOCX_TYPE: Record<string, "jpg" | "png" | "gif"> = {
   "image/jpeg": "jpg",
