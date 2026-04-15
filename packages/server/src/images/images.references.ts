@@ -63,12 +63,19 @@ export async function scanImageReferences(
     .whereNull("deleted_at")
     .select("id", "title", "content");
 
-  const imageUrl = `/api/images/${imageId}`;
   const referencingChapters: Array<{ id: string; title: string }> = [];
 
   for (const ch of chapters) {
-    if (ch.content && ch.content.includes(imageUrl)) {
-      referencingChapters.push({ id: ch.id, title: ch.title });
+    if (ch.content) {
+      try {
+        const parsed = JSON.parse(ch.content) as Record<string, unknown>;
+        const ids = extractImageIds(parsed);
+        if (ids.includes(imageId.toLowerCase())) {
+          referencingChapters.push({ id: ch.id, title: ch.title });
+        }
+      } catch {
+        // Corrupt JSON — skip this chapter
+      }
     }
   }
 
