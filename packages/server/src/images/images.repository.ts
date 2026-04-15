@@ -1,18 +1,12 @@
 import type { Knex } from "knex";
 import type { ImageRow, CreateImageRow, UpdateImageData } from "./images.types";
 
-export async function insert(
-  db: Knex | Knex.Transaction,
-  data: CreateImageRow,
-): Promise<ImageRow> {
+export async function insert(db: Knex | Knex.Transaction, data: CreateImageRow): Promise<ImageRow> {
   await db("images").insert(data);
   return db("images").where("id", data.id).first();
 }
 
-export async function findById(
-  db: Knex | Knex.Transaction,
-  id: string,
-): Promise<ImageRow | null> {
+export async function findById(db: Knex | Knex.Transaction, id: string): Promise<ImageRow | null> {
   const row = await db("images").where("id", id).first();
   return row ?? null;
 }
@@ -21,9 +15,7 @@ export async function listByProject(
   db: Knex | Knex.Transaction,
   projectId: string,
 ): Promise<ImageRow[]> {
-  return db("images")
-    .where("project_id", projectId)
-    .orderBy("created_at", "desc");
+  return db("images").where("project_id", projectId).orderBy("created_at", "desc");
 }
 
 export async function update(
@@ -34,10 +26,7 @@ export async function update(
   return db("images").where("id", id).update(data);
 }
 
-export async function remove(
-  db: Knex | Knex.Transaction,
-  id: string,
-): Promise<number> {
+export async function remove(db: Knex | Knex.Transaction, id: string): Promise<number> {
   return db("images").where("id", id).delete();
 }
 
