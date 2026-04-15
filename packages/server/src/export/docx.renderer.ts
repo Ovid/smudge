@@ -138,10 +138,24 @@ function allocateOrderedListRef(state: DocxBuildState): string {
 }
 
 // ---------------------------------------------------------------------------
+// Blockquote context — propagated through recursion so nested content
+// inherits indent and italic styling from enclosing blockquotes.
+// ---------------------------------------------------------------------------
+
+interface BlockContext {
+  indent?: { left: number };
+  extraRunProps?: MarkInfo;
+}
+
+// ---------------------------------------------------------------------------
 // Convert a single TipTap block node → Paragraph[]
 // ---------------------------------------------------------------------------
 
-function blockToParagraphs(node: Record<string, unknown>, state: DocxBuildState): Paragraph[] {
+function blockToParagraphs(
+  node: Record<string, unknown>,
+  state: DocxBuildState,
+  ctx?: BlockContext,
+): Paragraph[] {
   try {
     const type = node.type as string;
     const content = node.content as Array<Record<string, unknown>> | undefined;
@@ -149,42 +163,50 @@ function blockToParagraphs(node: Record<string, unknown>, state: DocxBuildState)
 
     switch (type) {
       case "paragraph":
-        return [new Paragraph({ children: inlineToRuns(content) })];
+        return [
+          new Paragraph({
+            ...( ctx?.indent ? { indent: ctx.indent } : {}),
+            children: inlineToRuns(content, ctx?.extraRunProps),
+          }),
+        ];
 
       case "heading": {
         const level = attrs.level as number;
         const heading = HEADING_MAP[level];
         if (heading) {
-          return [new Paragraph({ heading, children: inlineToRuns(content) })];
+          return [
+            new Paragraph({
+              heading,
+              ...( ctx?.indent ? { indent: ctx.indent } : {}),
+              children: inlineToRuns(content, ctx?.extraRunProps),
+            }),
+          ];
         }
         // Unmapped heading level → normal paragraph with warning
         logger.warn(
           { level },
           "Unmapped TipTap heading level in docx export, rendering as paragraph",
         );
-        return [new Paragraph({ children: inlineToRuns(content) })];
+        return [
+          new Paragraph({
+            ...( ctx?.indent ? { indent: ctx.indent } : {}),
+            children: inlineToRuns(content, ctx?.extraRunProps),
+          }),
+        ];
       }
 
       case "blockquote": {
-        // Each child block in a blockquote becomes indented italic content.
-        // Paragraph children use inlineToRuns directly; other block types
-        // (headings, lists, nested blockquotes) recurse into blockToParagraphs
-        // to avoid silently dropping their content.
+        // All children inherit blockquote styling (indent + italic).
+        // The context is propagated through recursion so nested headings,
+        // lists, and other block types also receive the formatting.
         if (!content) return [];
+        const bqCtx: BlockContext = {
+          indent: { left: 720 },
+          extraRunProps: { italics: true },
+        };
         const paragraphs: Paragraph[] = [];
         for (const child of content) {
-          if ((child.type as string) === "paragraph") {
-            const childContent = child.content as Array<Record<string, unknown>> | undefined;
-            paragraphs.push(
-              new Paragraph({
-                indent: { left: 720 },
-                children: inlineToRuns(childContent, { italics: true }),
-              }),
-            );
-          } else {
-            // Recurse for non-paragraph children (headings, lists, etc.)
-            paragraphs.push(...blockToParagraphs(child, state));
-          }
+          paragraphs.push(...blockToParagraphs(child, state, bqCtx));
         }
         return paragraphs;
       }
@@ -200,7 +222,8 @@ function blockToParagraphs(node: Record<string, unknown>, state: DocxBuildState)
               items.push(
                 new Paragraph({
                   bullet: { level: 0 },
-                  children: inlineToRuns(blockContent),
+                  ...( ctx?.indent ? { indent: ctx.indent } : {}),
+                  children: inlineToRuns(blockContent, ctx?.extraRunProps),
                 }),
               );
             }
@@ -221,7 +244,8 @@ function blockToParagraphs(node: Record<string, unknown>, state: DocxBuildState)
               items.push(
                 new Paragraph({
                   numbering: { reference: listRef, level: 0 },
-                  children: inlineToRuns(blockContent),
+                  ...( ctx?.indent ? { indent: ctx.indent } : {}),
+                  children: inlineToRuns(blockContent, ctx?.extraRunProps),
                 }),
               );
             }
@@ -231,11 +255,12 @@ function blockToParagraphs(node: Record<string, unknown>, state: DocxBuildState)
       }
 
       case "codeBlock": {
-        const runs = inlineToRuns(content, { font: { name: "Courier New" } });
+        const runs = inlineToRuns(content, { font: { name: "Courier New" }, ...ctx?.extraRunProps });
         return [
           new Paragraph({
             children: runs,
             shading: { type: ShadingType.CLEAR, color: "auto", fill: "F0F0F0" },
+            ...( ctx?.indent ? { indent: ctx.indent } : {}),
           }),
         ];
       }

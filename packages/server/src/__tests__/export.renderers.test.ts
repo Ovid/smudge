@@ -510,6 +510,13 @@ describe("renderDocx", () => {
     const xml = await docxXml(buf);
     expect(xml).toContain("Quote text.");
     expect(xml).toContain("Heading inside quote");
+    // Nested heading inside blockquote should also have indent
+    // Find the paragraph containing "Heading inside quote" and verify it has indent
+    const headingParaMatch = xml.match(
+      /<w:p\b[^>]*>(?:(?!<w:p\b).)*?Heading inside quote(?:(?!<w:p\b).)*?<\/w:p>/s,
+    );
+    expect(headingParaMatch).not.toBeNull();
+    expect(headingParaMatch![0]).toContain('w:left="720"');
   });
 
   it("renders bullet list items", async () => {
