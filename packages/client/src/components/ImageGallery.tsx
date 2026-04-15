@@ -156,6 +156,7 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
       setSaveStatus("saved");
     } catch {
       setSaveStatus("idle");
+      announce(S.saveFailed);
     }
   }
 
