@@ -16,6 +16,9 @@ import { logger } from "../logger";
 // ---------------------------------------------------------------------------
 // Heading‐level mapping: TipTap H3→Word H2, H4→H3, H5→H4
 // Chapter titles are Heading 1; body headings start at Heading 2.
+// Only H3-H5 are mapped because the editor restricts body headings to those
+// levels (H1-H2 are reserved for page structure). If pasted content introduces
+// an H1 or H2, it falls through to a plain paragraph with a logger warning.
 // ---------------------------------------------------------------------------
 
 const HEADING_MAP: Record<number, (typeof HeadingLevel)[keyof typeof HeadingLevel]> = {
