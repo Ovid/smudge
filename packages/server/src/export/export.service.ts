@@ -40,8 +40,7 @@ export async function exportProject(
   let chapters = await store.listChaptersByProject(project.id);
 
   if (chapter_ids) {
-    const validIds = await store.listChapterIdsByProject(project.id);
-    const validIdSet = new Set(validIds);
+    const validIdSet = new Set(chapters.map((ch) => ch.id));
     const invalid = chapter_ids.filter((id) => !validIdSet.has(id));
     if (invalid.length > 0) {
       return { invalidChapterIds: invalid };
