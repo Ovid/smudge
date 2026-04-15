@@ -228,17 +228,14 @@ export class SqliteProjectStore implements ProjectStore {
     return imagesRepo.incrementReferenceCount(this.db, id, delta);
   }
 
-  async setImageReferenceCount(id: string, count: number): Promise<void> {
-    await this.db("images").where("id", id).update({ reference_count: count });
+  setImageReferenceCount(id: string, count: number): Promise<void> {
+    return imagesRepo.setReferenceCount(this.db, id, count);
   }
 
-  async listChapterContentByProject(
+  listChapterContentByProject(
     projectId: string,
   ): Promise<Array<{ id: string; title: string; content: string | null }>> {
-    return this.db("chapters")
-      .where("project_id", projectId)
-      .whereNull("deleted_at")
-      .select("id", "title", "content");
+    return chaptersRepo.listContentByProject(this.db, projectId);
   }
 
   // --- Transactions ---

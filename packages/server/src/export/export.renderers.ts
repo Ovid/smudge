@@ -244,14 +244,12 @@ export async function renderPlainText(
   const chapterTexts = chapters.map((ch) => {
     let html = chapterContentToHtml(ch.content);
     if (html) {
-      // Replace <img> tags with text markers before stripping HTML
+      // Replace <img> tags with text markers before stripping HTML.
+      // First pass captures alt text; second pass catches any remaining
+      // alt-less <img> tags (the first pass already removed them from the
+      // string, so the second regex only matches genuinely alt-less tags).
       html = html.replace(/<img[^>]*alt="([^"]*)"[^>]*>/gi, "[Image: $1]");
-      // Also handle img tags where alt comes after src
-      html = html.replace(/<img[^>]*>/gi, (match) => {
-        // Already replaced by the previous regex if it had alt
-        if (match.startsWith("[Image:")) return match;
-        return "[Image]";
-      });
+      html = html.replace(/<img[^>]*>/gi, "[Image]");
     }
     const body = html ? stripHtmlTags(html) : "";
     const header = ch.title;

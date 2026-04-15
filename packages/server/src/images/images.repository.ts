@@ -3,7 +3,9 @@ import type { ImageRow, CreateImageRow, UpdateImageData } from "./images.types";
 
 export async function insert(db: Knex | Knex.Transaction, data: CreateImageRow): Promise<ImageRow> {
   await db("images").insert(data);
-  return db("images").where("id", data.id).first();
+  const row = await db("images").where("id", data.id).first();
+  if (!row) throw new Error(`Image ${data.id} not found after insert`);
+  return row;
 }
 
 export async function findById(db: Knex | Knex.Transaction, id: string): Promise<ImageRow | null> {
@@ -47,4 +49,12 @@ export async function incrementReferenceCount(
     .update({
       reference_count: db.raw("MAX(0, reference_count + ?)", [delta]),
     });
+}
+
+export async function setReferenceCount(
+  db: Knex | Knex.Transaction,
+  id: string,
+  count: number,
+): Promise<void> {
+  await db("images").where("id", id).update({ reference_count: count });
 }

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { mimeToExt, getImagePath } from "../images/images.paths";
+import { escapeHtml } from "./export.renderers";
 
 export interface ResolvedImage {
   id: string;
@@ -39,7 +40,7 @@ export async function resolveImage(imageId: string): Promise<ResolvedImage | nul
 
 /**
  * Build the full caption string with source and license appended when present.
- * Format: "Caption (Source: X, License)" or "Caption (Source: X)" etc.
+ * Format: "Caption (source, license)" or "Caption (source)" etc.
  */
 export function buildCaptionText(img: ResolvedImage): string {
   let caption = img.caption;
@@ -83,15 +84,9 @@ export async function resolveImagesInHtml(html: string): Promise<{
   for (const [id, img] of images) {
     const fullCaption = buildCaptionText(img);
     if (fullCaption) {
-      const escapedCaption = fullCaption
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
       resolvedHtml = resolvedHtml.replace(
         new RegExp(`(<img[^>]*data-image-id="${id}"[^>]*>)`, "g"),
-        `<figure>$1<figcaption>${escapedCaption}</figcaption></figure>`,
+        `<figure>$1<figcaption>${escapeHtml(fullCaption)}</figcaption></figure>`,
       );
     }
   }
@@ -99,10 +94,7 @@ export async function resolveImagesInHtml(html: string): Promise<{
   // Remove any remaining /api/images/ references that couldn't be resolved
   // (e.g. image file missing from disk) to avoid leaking internal API URLs
   // in exported documents.
-  resolvedHtml = resolvedHtml.replace(
-    /<img[^>]*src="\/api\/images\/[^"]*"[^>]*>/gi,
-    "",
-  );
+  resolvedHtml = resolvedHtml.replace(/<img[^>]*src="\/api\/images\/[^"]*"[^>]*>/gi, "");
 
   return { html: resolvedHtml, images };
 }

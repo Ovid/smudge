@@ -66,15 +66,9 @@ async function resolveImagesForEpub(html: string): Promise<string> {
   for (const [id, img] of imageData) {
     const fullCaption = buildCaptionText(img);
     if (fullCaption) {
-      const escapedCaption = fullCaption
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
       resolvedHtml = resolvedHtml.replace(
         new RegExp(`(<img[^>]*data-image-id="${id}"[^>]*>)`, "g"),
-        `<figure>$1<figcaption>${escapedCaption}</figcaption></figure>`,
+        `<figure>$1<figcaption>${escapeHtml(fullCaption)}</figcaption></figure>`,
       );
     }
   }
