@@ -1,6 +1,7 @@
 import { generateHTML } from "@tiptap/html";
 import TurndownService from "turndown";
 import { serverEditorExtensions } from "./editorExtensions";
+import { resolveImagesInHtml } from "./image-resolver";
 import { logger } from "../logger";
 
 // ---------------------------------------------------------------------------
@@ -103,11 +104,11 @@ const HTML_STYLES = `
     .divider { text-align: center; margin: 2em 0; letter-spacing: 0.5em; color: #6B4720; }
 `;
 
-export function renderHtml(
+export async function renderHtml(
   project: ExportProjectInfo,
   chapters: ExportChapter[],
   options: RenderOptions,
-): string {
+): Promise<string> {
   const titleEsc = escapeHtml(project.title);
 
   const authorHtml = project.author_name
@@ -131,7 +132,7 @@ export function renderHtml(
     })
     .join("\n");
 
-  return `<!DOCTYPE html>
+  let html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -145,17 +146,23 @@ export function renderHtml(
 ${authorHtml}${tocHtml}${chapterSections}
 </body>
 </html>`;
+
+  // Resolve images — replace /api/images/ URLs with embedded base64 data URIs
+  const resolved = await resolveImagesInHtml(html);
+  html = resolved.html;
+
+  return html;
 }
 
 // ---------------------------------------------------------------------------
 // Markdown Renderer
 // ---------------------------------------------------------------------------
 
-export function renderMarkdown(
+export async function renderMarkdown(
   project: ExportProjectInfo,
   chapters: ExportChapter[],
   options: RenderOptions,
-): string {
+): Promise<string> {
   const turndown = new TurndownService({
     headingStyle: "atx",
     codeBlockStyle: "fenced",
@@ -191,8 +198,15 @@ export function renderMarkdown(
 
     parts.push(`<a id="chapter-${i}"></a>\n\n## ${escapeMarkdown(ch.title)}`);
 
-    const html = chapterContentToHtml(ch.content);
+    let html = chapterContentToHtml(ch.content);
     if (html) {
+      // Resolve images in HTML before converting to markdown
+      const resolved = await resolveImagesInHtml(html);
+      html = resolved.html;
+
+      // For images with figcaption, add caption as italic text after the image in markdown
+      // The turndown conversion will handle the <figure>/<figcaption> naturally,
+      // but let's ensure captions appear as italic text below images
       const md = turndown.turndown(html);
       parts.push(md);
     }
@@ -205,11 +219,11 @@ export function renderMarkdown(
 // Plain Text Renderer
 // ---------------------------------------------------------------------------
 
-export function renderPlainText(
+export async function renderPlainText(
   project: ExportProjectInfo,
   chapters: ExportChapter[],
   options: RenderOptions,
-): string {
+): Promise<string> {
   const parts: string[] = [];
 
   // Title (uppercase)
@@ -228,7 +242,17 @@ export function renderPlainText(
 
   // Chapters separated by 3 blank lines (= 4 newlines between content)
   const chapterTexts = chapters.map((ch) => {
-    const html = chapterContentToHtml(ch.content);
+    let html = chapterContentToHtml(ch.content);
+    if (html) {
+      // Replace <img> tags with text markers before stripping HTML
+      html = html.replace(/<img[^>]*alt="([^"]*)"[^>]*>/gi, "[Image: $1]");
+      // Also handle img tags where alt comes after src
+      html = html.replace(/<img[^>]*>/gi, (match) => {
+        // Already replaced by the previous regex if it had alt
+        if (match.startsWith("[Image:")) return match;
+        return "[Image]";
+      });
+    }
     const body = html ? stripHtmlTags(html) : "";
     const header = ch.title;
     return body ? `${header}\n\n${body}` : header;

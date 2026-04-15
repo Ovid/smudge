@@ -42,8 +42,8 @@ const sampleChapters = [
 const projectInfo = { title: "My Novel", author_name: "Jane Doe" };
 
 describe("renderHtml", () => {
-  it("produces a self-contained HTML document", () => {
-    const html = renderHtml(projectInfo, sampleChapters, { includeToc: true });
+  it("produces a self-contained HTML document", async () => {
+    const html = await renderHtml(projectInfo, sampleChapters, { includeToc: true });
     expect(html).toContain("<!DOCTYPE html>");
     expect(html).toContain("<title>My Novel</title>");
     expect(html).toContain("Jane Doe");
@@ -53,34 +53,34 @@ describe("renderHtml", () => {
     expect(html).toContain("The Middle");
   });
 
-  it("includes a table of contents when includeToc is true", () => {
-    const html = renderHtml(projectInfo, sampleChapters, { includeToc: true });
+  it("includes a table of contents when includeToc is true", async () => {
+    const html = await renderHtml(projectInfo, sampleChapters, { includeToc: true });
     expect(html).toContain("Table of Contents");
     expect(html).toContain("#chapter-0");
     expect(html).toContain("#chapter-1");
   });
 
-  it("omits table of contents when includeToc is false", () => {
-    const html = renderHtml(projectInfo, sampleChapters, { includeToc: false });
+  it("omits table of contents when includeToc is false", async () => {
+    const html = await renderHtml(projectInfo, sampleChapters, { includeToc: false });
     expect(html).not.toContain("Table of Contents");
   });
 
-  it("omits author line when author_name is null", () => {
-    const html = renderHtml({ ...projectInfo, author_name: null }, sampleChapters, {
+  it("omits author line when author_name is null", async () => {
+    const html = await renderHtml({ ...projectInfo, author_name: null }, sampleChapters, {
       includeToc: false,
     });
     expect(html).not.toContain("Jane Doe");
     expect(html).not.toContain('class="author"');
   });
 
-  it("handles chapters with null content", () => {
+  it("handles chapters with null content", async () => {
     const chapters = [{ id: "ch-1", title: "Empty", content: null, sort_order: 0 }];
-    const html = renderHtml(projectInfo, chapters, { includeToc: false });
+    const html = await renderHtml(projectInfo, chapters, { includeToc: false });
     expect(html).toContain("Empty");
     expect(html).toContain("<!DOCTYPE html>");
   });
 
-  it("handles chapters with malformed TipTap JSON gracefully", () => {
+  it("handles chapters with malformed TipTap JSON gracefully", async () => {
     const chapters = [
       {
         id: "ch-1",
@@ -89,7 +89,7 @@ describe("renderHtml", () => {
         sort_order: 0,
       },
     ];
-    const html = renderHtml(projectInfo, chapters, { includeToc: false });
+    const html = await renderHtml(projectInfo, chapters, { includeToc: false });
     expect(html).toContain("Bad Content");
     expect(html).toContain("<!DOCTYPE html>");
     // Error fallback returns empty string — no internal error message leaks into output
@@ -100,21 +100,21 @@ describe("renderHtml", () => {
     );
   });
 
-  it("handles chapter with empty-string title", () => {
+  it("handles chapter with empty-string title", async () => {
     const chapters = [{ id: "ch-1", title: "", content: null, sort_order: 0 }];
-    const html = renderHtml(projectInfo, chapters, { includeToc: false });
+    const html = await renderHtml(projectInfo, chapters, { includeToc: false });
     expect(html).toContain("<!DOCTYPE html>");
     expect(html).toContain("<h2>");
   });
 
-  it("handles zero chapters (title-page-only)", () => {
-    const html = renderHtml(projectInfo, [], { includeToc: true });
+  it("handles zero chapters (title-page-only)", async () => {
+    const html = await renderHtml(projectInfo, [], { includeToc: true });
     expect(html).toContain("<title>My Novel</title>");
     expect(html).toContain("Jane Doe");
     expect(html).not.toContain("Table of Contents");
   });
 
-  it("preserves heading levels H3/H4/H5 in chapter content (subordinate to H2 chapter titles)", () => {
+  it("preserves heading levels H3/H4/H5 in chapter content (subordinate to H2 chapter titles)", async () => {
     const chapters = [
       {
         id: "ch-1",
@@ -142,7 +142,7 @@ describe("renderHtml", () => {
         sort_order: 0,
       },
     ];
-    const html = renderHtml(projectInfo, chapters, { includeToc: false });
+    const html = await renderHtml(projectInfo, chapters, { includeToc: false });
     // Body headings stay at H3/H4/H5 — correct hierarchy under H1 (title) and H2 (chapter)
     expect(html).toContain("<h3>Main heading</h3>");
     expect(html).toContain("<h4>Sub heading</h4>");
@@ -152,8 +152,8 @@ describe("renderHtml", () => {
 });
 
 describe("renderMarkdown", () => {
-  it("produces valid Markdown with title and chapters", () => {
-    const md = renderMarkdown(projectInfo, sampleChapters, { includeToc: true });
+  it("produces valid Markdown with title and chapters", async () => {
+    const md = await renderMarkdown(projectInfo, sampleChapters, { includeToc: true });
     expect(md).toContain("# My Novel");
     expect(md).toContain("*By Jane Doe*");
     expect(md).toContain("## The Beginning");
@@ -161,50 +161,50 @@ describe("renderMarkdown", () => {
     expect(md).toContain("## The Middle");
   });
 
-  it("includes TOC with index-based anchor links", () => {
-    const md = renderMarkdown(projectInfo, sampleChapters, { includeToc: true });
+  it("includes TOC with index-based anchor links", async () => {
+    const md = await renderMarkdown(projectInfo, sampleChapters, { includeToc: true });
     expect(md).toContain("## Table of Contents");
     expect(md).toContain("[The Beginning](#chapter-0)");
     expect(md).toContain("[The Middle](#chapter-1)");
   });
 
-  it("omits TOC when includeToc is false", () => {
-    const md = renderMarkdown(projectInfo, sampleChapters, { includeToc: false });
+  it("omits TOC when includeToc is false", async () => {
+    const md = await renderMarkdown(projectInfo, sampleChapters, { includeToc: false });
     expect(md).not.toContain("Table of Contents");
   });
 
-  it("omits author line when author_name is null", () => {
-    const md = renderMarkdown({ ...projectInfo, author_name: null }, sampleChapters, {
+  it("omits author line when author_name is null", async () => {
+    const md = await renderMarkdown({ ...projectInfo, author_name: null }, sampleChapters, {
       includeToc: false,
     });
     expect(md).not.toContain("By");
   });
 
-  it("handles zero chapters", () => {
-    const md = renderMarkdown(projectInfo, [], { includeToc: true });
+  it("handles zero chapters", async () => {
+    const md = await renderMarkdown(projectInfo, [], { includeToc: true });
     expect(md).toContain("# My Novel");
     expect(md).not.toContain("Table of Contents");
   });
 
-  it("uses index-based anchors for duplicate chapter titles", () => {
+  it("uses index-based anchors for duplicate chapter titles", async () => {
     const dupeChapters = [
       { id: "ch-1", title: "Interlude", content: null, sort_order: 0 },
       { id: "ch-2", title: "Interlude", content: null, sort_order: 1 },
       { id: "ch-3", title: "Interlude", content: null, sort_order: 2 },
     ];
-    const md = renderMarkdown(projectInfo, dupeChapters, { includeToc: true });
+    const md = await renderMarkdown(projectInfo, dupeChapters, { includeToc: true });
     expect(md).toContain("[Interlude](#chapter-0)");
     expect(md).toContain("[Interlude](#chapter-1)");
     expect(md).toContain("[Interlude](#chapter-2)");
   });
 
-  it("uses index-based anchors for non-Latin chapter titles", () => {
+  it("uses index-based anchors for non-Latin chapter titles", async () => {
     const cjkChapters = [{ id: "ch-1", title: "\u7B2C\u4E00\u7AE0", content: null, sort_order: 0 }];
-    const md = renderMarkdown(projectInfo, cjkChapters, { includeToc: true });
+    const md = await renderMarkdown(projectInfo, cjkChapters, { includeToc: true });
     expect(md).toContain("[第一章](#chapter-0)");
   });
 
-  it("preserves heading levels H3/H4 in Markdown output (subordinate to ## chapter titles)", () => {
+  it("preserves heading levels H3/H4 in Markdown output (subordinate to ## chapter titles)", async () => {
     const chapters = [
       {
         id: "ch-1",
@@ -227,7 +227,7 @@ describe("renderMarkdown", () => {
         sort_order: 0,
       },
     ];
-    const md = renderMarkdown(projectInfo, chapters, { includeToc: false });
+    const md = await renderMarkdown(projectInfo, chapters, { includeToc: false });
     // Body headings stay at ###/#### — correct hierarchy under # (title) and ## (chapter)
     expect(md).toContain("### Main heading");
     expect(md).toContain("#### Sub heading");
@@ -236,13 +236,13 @@ describe("renderMarkdown", () => {
     expect(md).not.toMatch(/^## Main heading$/m);
   });
 
-  it("emits explicit anchor targets before chapter headings", () => {
-    const md = renderMarkdown(projectInfo, sampleChapters, { includeToc: true });
+  it("emits explicit anchor targets before chapter headings", async () => {
+    const md = await renderMarkdown(projectInfo, sampleChapters, { includeToc: true });
     expect(md).toContain('<a id="chapter-0"></a>');
     expect(md).toContain('<a id="chapter-1"></a>');
   });
 
-  it("escapes Markdown metacharacters in titles and author", () => {
+  it("escapes Markdown metacharacters in titles and author", async () => {
     const mdProject = {
       title: "My *Bold* Novel",
       author_name: "Jane_Doe [editor]",
@@ -250,7 +250,7 @@ describe("renderMarkdown", () => {
     const mdChapters = [
       { id: "ch-1", title: "Chapter #1: The [Beginning]", content: null, sort_order: 0 },
     ];
-    const md = renderMarkdown(mdProject, mdChapters, { includeToc: true });
+    const md = await renderMarkdown(mdProject, mdChapters, { includeToc: true });
 
     // Title metacharacters are escaped
     expect(md).toContain("# My \\*Bold\\* Novel");
@@ -264,8 +264,8 @@ describe("renderMarkdown", () => {
 });
 
 describe("renderPlainText", () => {
-  it("produces plain text with title and chapters", () => {
-    const text = renderPlainText(projectInfo, sampleChapters, { includeToc: false });
+  it("produces plain text with title and chapters", async () => {
+    const text = await renderPlainText(projectInfo, sampleChapters, { includeToc: false });
     expect(text).toContain("MY NOVEL");
     expect(text).toContain("by Jane Doe");
     expect(text).toContain("The Beginning");
@@ -273,38 +273,38 @@ describe("renderPlainText", () => {
     expect(text).toContain("The Middle");
   });
 
-  it("separates chapters with three blank lines", () => {
-    const text = renderPlainText(projectInfo, sampleChapters, { includeToc: false });
+  it("separates chapters with three blank lines", async () => {
+    const text = await renderPlainText(projectInfo, sampleChapters, { includeToc: false });
     expect(text).toContain("\n\n\n\n");
   });
 
-  it("omits author line when author_name is null", () => {
-    const text = renderPlainText({ ...projectInfo, author_name: null }, sampleChapters, {
+  it("omits author line when author_name is null", async () => {
+    const text = await renderPlainText({ ...projectInfo, author_name: null }, sampleChapters, {
       includeToc: false,
     });
     expect(text).not.toContain("by ");
   });
 
-  it("handles chapters with null content", () => {
+  it("handles chapters with null content", async () => {
     const chapters = [{ id: "ch-1", title: "Empty", content: null, sort_order: 0 }];
-    const text = renderPlainText(projectInfo, chapters, { includeToc: false });
+    const text = await renderPlainText(projectInfo, chapters, { includeToc: false });
     expect(text).toContain("Empty");
   });
 
-  it("handles zero chapters", () => {
-    const text = renderPlainText(projectInfo, [], { includeToc: false });
+  it("handles zero chapters", async () => {
+    const text = await renderPlainText(projectInfo, [], { includeToc: false });
     expect(text).toContain("MY NOVEL");
     expect(text).toContain("by Jane Doe");
   });
 
-  it("includes TOC when includeToc is true", () => {
-    const text = renderPlainText(projectInfo, sampleChapters, { includeToc: true });
+  it("includes TOC when includeToc is true", async () => {
+    const text = await renderPlainText(projectInfo, sampleChapters, { includeToc: true });
     expect(text).toContain("Contents");
     expect(text).toContain("The Beginning");
     expect(text).toContain("The Middle");
   });
 
-  it("decodes HTML entities including numeric forms in content", () => {
+  it("decodes HTML entities including numeric forms in content", async () => {
     const chapters = [
       {
         id: "ch-1",
@@ -321,7 +321,7 @@ describe("renderPlainText", () => {
         sort_order: 0,
       },
     ];
-    const text = renderPlainText(projectInfo, chapters, { includeToc: false });
+    const text = await renderPlainText(projectInfo, chapters, { includeToc: false });
     // Em-dash and ellipsis should appear as UTF-8 characters, not as entity strings
     expect(text).toContain("\u2014");
     expect(text).toContain("\u2026");

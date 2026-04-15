@@ -66,19 +66,22 @@ export async function exportProject(
   let content: string | Buffer;
   switch (format) {
     case "html":
-      content = renderHtml(projectInfo, exportChapters, options);
+      content = await renderHtml(projectInfo, exportChapters, options);
       break;
     case "markdown":
-      content = renderMarkdown(projectInfo, exportChapters, options);
+      content = await renderMarkdown(projectInfo, exportChapters, options);
       break;
     case "plaintext":
-      content = renderPlainText(projectInfo, exportChapters, options);
+      content = await renderPlainText(projectInfo, exportChapters, options);
       break;
     case "docx":
       content = await renderDocx(projectInfo, exportChapters, options);
       break;
     case "epub":
-      content = await renderEpub(projectInfo, exportChapters, options);
+      content = await renderEpub(projectInfo, exportChapters, {
+        ...options,
+        coverImageId: parsed.data.epub_cover_image_id,
+      });
       break;
     default: {
       const _exhaustive: never = format;

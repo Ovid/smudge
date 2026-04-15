@@ -3,6 +3,7 @@ import {
   Packer,
   Paragraph,
   TextRun,
+  ImageRun,
   HeadingLevel,
   AlignmentType,
   PageBreak,
@@ -11,6 +12,7 @@ import {
   ShadingType,
 } from "docx";
 import type { ExportProjectInfo, ExportChapter, RenderOptions } from "./export.renderers";
+import { resolveImage } from "./image-resolver";
 import { logger } from "../logger";
 
 // ---------------------------------------------------------------------------
@@ -158,12 +160,12 @@ interface BlockContext {
 // list-marker properties (bullet or numbering) for each paragraph item.
 // ---------------------------------------------------------------------------
 
-function listItemsToParagraphs(
+async function listItemsToParagraphs(
   listItems: Array<Record<string, unknown>>,
   markerProps: (level: number) => Record<string, unknown>,
   state: DocxBuildState,
   ctx?: BlockContext,
-): Paragraph[] {
+): Promise<Paragraph[]> {
   const level = Math.min(ctx?.listDepth ?? 0, MAX_LIST_DEPTH - 1);
   // Child blocks (e.g. nested lists) see an incremented depth so they
   // render at the next indentation level in Word.
@@ -183,7 +185,7 @@ function listItemsToParagraphs(
             }),
           );
         } else {
-          items.push(...blockToParagraphs(block, state, childCtx));
+          items.push(...(await blockToParagraphs(block, state, childCtx)));
         }
       }
     }
@@ -195,11 +197,23 @@ function listItemsToParagraphs(
 // Convert a single TipTap block node → Paragraph[]
 // ---------------------------------------------------------------------------
 
-function blockToParagraphs(
+// Default image dimensions in EMUs (English Metric Units).
+// 1 inch = 914400 EMUs; these default to ~4in x ~3in.
+const DEFAULT_IMAGE_WIDTH = 3657600;
+const DEFAULT_IMAGE_HEIGHT = 2743200;
+
+const MIME_TO_DOCX_TYPE: Record<string, "jpg" | "png" | "gif" | "bmp"> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/gif": "gif",
+  "image/bmp": "bmp",
+};
+
+async function blockToParagraphs(
   node: Record<string, unknown>,
   state: DocxBuildState,
   ctx?: BlockContext,
-): Paragraph[] {
+): Promise<Paragraph[]> {
   try {
     const type = node.type as string;
     const content = node.content as Array<Record<string, unknown>> | undefined;
@@ -250,7 +264,7 @@ function blockToParagraphs(
         };
         const paragraphs: Paragraph[] = [];
         for (const child of content) {
-          paragraphs.push(...blockToParagraphs(child, state, bqCtx));
+          paragraphs.push(...(await blockToParagraphs(child, state, bqCtx)));
         }
         return paragraphs;
       }
@@ -293,6 +307,67 @@ function blockToParagraphs(
           }),
         ];
 
+      case "image": {
+        const src = attrs.src as string | undefined;
+        if (!src) return [];
+
+        // Extract image ID from /api/images/{uuid} URL
+        const idMatch = src.match(/\/api\/images\/([0-9a-f-]{36})/i);
+        if (!idMatch?.[1]) {
+          logger.warn({ src }, "Image src not a recognized /api/images/ URL in docx export");
+          return [];
+        }
+
+        const resolved = await resolveImage(idMatch[1]);
+        if (!resolved) {
+          logger.warn({ imageId: idMatch[1] }, "Could not resolve image for docx export");
+          return [];
+        }
+
+        const docxType = MIME_TO_DOCX_TYPE[resolved.mimeType];
+        if (!docxType) {
+          logger.warn(
+            { mimeType: resolved.mimeType },
+            "Unsupported image MIME type for docx export",
+          );
+          return [];
+        }
+
+        const paragraphs: Paragraph[] = [
+          new Paragraph({
+            ...(ctx?.indent ? { indent: ctx.indent } : {}),
+            children: [
+              new ImageRun({
+                data: resolved.data,
+                type: docxType,
+                transformation: {
+                  width: DEFAULT_IMAGE_WIDTH,
+                  height: DEFAULT_IMAGE_HEIGHT,
+                },
+                altText: {
+                  title: resolved.altText || "Image",
+                  description: resolved.altText || "",
+                  name: resolved.altText || "Image",
+                },
+              }),
+            ],
+          }),
+        ];
+
+        // Add caption as italic paragraph below the image
+        if (resolved.caption) {
+          paragraphs.push(
+            new Paragraph({
+              ...(ctx?.indent ? { indent: ctx.indent } : {}),
+              alignment: AlignmentType.CENTER,
+              children: [new TextRun({ text: resolved.caption, italics: true })],
+            }),
+          );
+        }
+
+        return paragraphs;
+      }
+
       default:
         logger.warn({ nodeType: type }, "Unknown TipTap node type in docx export, skipping");
         return [];
@@ -307,16 +382,16 @@ function blockToParagraphs(
 // Convert full TipTap doc JSON → Paragraph[]
 // ---------------------------------------------------------------------------
 
-function tipTapToParagraphs(
+async function tipTapToParagraphs(
   content: Record<string, unknown> | null,
   state: DocxBuildState,
-): Paragraph[] {
+): Promise<Paragraph[]> {
   if (!content) return [];
   const docContent = content.content as Array<Record<string, unknown>> | undefined;
   if (!docContent) return [];
   const paragraphs: Paragraph[] = [];
   for (const node of docContent) {
-    paragraphs.push(...blockToParagraphs(node, state));
+    paragraphs.push(...(await blockToParagraphs(node, state)));
   }
   return paragraphs;
 }
@@ -390,7 +465,7 @@ export async function renderDocx(
     );
 
     // Chapter content
-    children.push(...tipTapToParagraphs(chapter.content, state));
+    children.push(...(await tipTapToParagraphs(chapter.content, state)));
   }
 
   const doc = new Document({
