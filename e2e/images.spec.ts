@@ -178,13 +178,7 @@ test.describe("Image Gallery & Reference Panel E2e Tests", () => {
     await expect(panel.getByRole("button", { name: /test-upload\.png/ })).toBeVisible();
   });
 
-  // BUG: TipTap's Image extension is included in the editorExtensions array
-  // (confirmed: 3 extensions with names starterKit, heading, image) but
-  // useEditor does not register the image node in the ProseMirror schema.
-  // The setImage command is unavailable at runtime, causing insertImage to
-  // silently fail. This test is skipped until the TipTap extension loading
-  // bug is resolved.
-  test.skip("insert image from gallery into editor", async ({ page, request }) => {
+  test("insert image from gallery into editor", async ({ page, request }) => {
     await uploadTestImage(request, project.id, "gallery-insert.png");
 
     await page.goto(`/projects/${project.slug}`);
