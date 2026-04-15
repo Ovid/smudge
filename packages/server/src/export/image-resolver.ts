@@ -38,6 +38,22 @@ export async function resolveImage(imageId: string): Promise<ResolvedImage | nul
   }
 }
 
+/**
+ * Build the full caption string with source and license appended when present.
+ * Format: "Caption (Source: X, License)" or "Caption (Source: X)" etc.
+ */
+export function buildCaptionText(img: ResolvedImage): string {
+  let caption = img.caption;
+  const parts: string[] = [];
+  if (img.source) parts.push(img.source);
+  if (img.license) parts.push(img.license);
+  if (parts.length > 0) {
+    const attribution = parts.join(", ");
+    caption = caption ? `${caption} (${attribution})` : `(${attribution})`;
+  }
+  return caption;
+}
+
 export async function resolveImagesInHtml(html: string): Promise<{
   html: string;
   images: Map<string, ResolvedImage>;
@@ -64,10 +80,11 @@ export async function resolveImagesInHtml(html: string): Promise<{
     );
   }
 
-  // Add figure/figcaption for images with captions, matched by unique image ID
+  // Add figure/figcaption for images with captions or attribution, matched by unique image ID
   for (const [id, img] of images) {
-    if (img.caption) {
-      const escapedCaption = img.caption
+    const fullCaption = buildCaptionText(img);
+    if (fullCaption) {
+      const escapedCaption = fullCaption
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")

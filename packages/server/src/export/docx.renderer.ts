@@ -12,7 +12,7 @@ import {
   ShadingType,
 } from "docx";
 import type { ExportProjectInfo, ExportChapter, RenderOptions } from "./export.renderers";
-import { resolveImage } from "./image-resolver";
+import { resolveImage, buildCaptionText } from "./image-resolver";
 import { logger } from "../logger";
 
 // ---------------------------------------------------------------------------
@@ -366,13 +366,14 @@ async function blockToParagraphs(
           }),
         ];
 
-        // Add caption as italic paragraph below the image
-        if (resolved.caption) {
+        // Add caption (with source/license) as italic paragraph below the image
+        const fullCaption = buildCaptionText(resolved);
+        if (fullCaption) {
           paragraphs.push(
             new Paragraph({
               ...(ctx?.indent ? { indent: ctx.indent } : {}),
               alignment: AlignmentType.CENTER,
-              children: [new TextRun({ text: resolved.caption, italics: true })],
+              children: [new TextRun({ text: fullCaption, italics: true })],
             }),
           );
         }
