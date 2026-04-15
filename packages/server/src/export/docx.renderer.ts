@@ -165,7 +165,7 @@ function blockToParagraphs(
       case "paragraph":
         return [
           new Paragraph({
-            ...( ctx?.indent ? { indent: ctx.indent } : {}),
+            ...(ctx?.indent ? { indent: ctx.indent } : {}),
             children: inlineToRuns(content, ctx?.extraRunProps),
           }),
         ];
@@ -177,7 +177,7 @@ function blockToParagraphs(
           return [
             new Paragraph({
               heading,
-              ...( ctx?.indent ? { indent: ctx.indent } : {}),
+              ...(ctx?.indent ? { indent: ctx.indent } : {}),
               children: inlineToRuns(content, ctx?.extraRunProps),
             }),
           ];
@@ -189,7 +189,7 @@ function blockToParagraphs(
         );
         return [
           new Paragraph({
-            ...( ctx?.indent ? { indent: ctx.indent } : {}),
+            ...(ctx?.indent ? { indent: ctx.indent } : {}),
             children: inlineToRuns(content, ctx?.extraRunProps),
           }),
         ];
@@ -222,7 +222,7 @@ function blockToParagraphs(
               items.push(
                 new Paragraph({
                   bullet: { level: 0 },
-                  ...( ctx?.indent ? { indent: ctx.indent } : {}),
+                  ...(ctx?.indent ? { indent: ctx.indent } : {}),
                   children: inlineToRuns(blockContent, ctx?.extraRunProps),
                 }),
               );
@@ -244,7 +244,7 @@ function blockToParagraphs(
               items.push(
                 new Paragraph({
                   numbering: { reference: listRef, level: 0 },
-                  ...( ctx?.indent ? { indent: ctx.indent } : {}),
+                  ...(ctx?.indent ? { indent: ctx.indent } : {}),
                   children: inlineToRuns(blockContent, ctx?.extraRunProps),
                 }),
               );
@@ -255,12 +255,15 @@ function blockToParagraphs(
       }
 
       case "codeBlock": {
-        const runs = inlineToRuns(content, { font: { name: "Courier New" }, ...ctx?.extraRunProps });
+        const runs = inlineToRuns(content, {
+          font: { name: "Courier New" },
+          ...ctx?.extraRunProps,
+        });
         return [
           new Paragraph({
             children: runs,
             shading: { type: ShadingType.CLEAR, color: "auto", fill: "F0F0F0" },
-            ...( ctx?.indent ? { indent: ctx.indent } : {}),
+            ...(ctx?.indent ? { indent: ctx.indent } : {}),
           }),
         ];
       }
