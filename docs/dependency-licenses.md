@@ -81,7 +81,7 @@ All dev dependencies are MIT or Apache-2.0, with one exception:
 | @axe-core/playwright | MPL-2.0 | Dev-only (a11y testing). See [axe-core](#axe-core) |
 | @playwright/test | Apache-2.0 | |
 | typescript | Apache-2.0 | |
-| jszip | MIT OR GPL-3.0-or-later | Dev-only (test helper). We elect **MIT**. See [JSZip](#jszip) |
+| jszip | MIT OR GPL-3.0-or-later | Dev + transitive production (via docx, epub-gen-memory). We elect **MIT**. See [JSZip](#jszip) |
 | eslint, prettier, vitest, vite, tailwindcss, jsdom, etc. | MIT | |
 | pino-pretty | MIT | Dev-only (structured log formatting) |
 | @testing-library/\*, @types/\*, @vitejs/\* | MIT | |
@@ -122,9 +122,10 @@ the license text (included in the npm package).
 
 jszip is dual-licensed under **MIT OR GPL-3.0-or-later**. We elect
 the **MIT** license, which is a permissive license with no copyleft
-requirements. This is a **dev-only** dependency used for inspecting
-generated .docx and .epub files in tests. It is never bundled into the
-production build.
+requirements. jszip is a direct dev dependency (used for inspecting
+generated .docx and .epub files in tests) and also ships transitively
+in production as a runtime dependency of both `docx` and
+`epub-gen-memory`.
 
 ### axe-core
 
