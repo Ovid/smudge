@@ -3,7 +3,7 @@ import path from "node:path";
 import { v4 as uuidv4 } from "uuid";
 import { UpdateImageSchema } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
-import { liveCheckImageReferences, scanImageReferences } from "./images.references";
+import { extractImageIds, scanImageReferences } from "./images.references";
 import { ALLOWED_MIMES, mimeToExt, getImagePath } from "./images.paths";
 import type { ImageRow, UpdateImageData } from "./images.types";
 import { logger } from "../logger";
@@ -142,17 +142,44 @@ export async function deleteImage(id: string): Promise<DeleteResult> {
     return { notFound: true };
   }
 
-  // Live check: scan chapters for actual references and correct drift
-  const chapters = await liveCheckImageReferences(id, image.project_id);
-  if (chapters.length > 0) {
-    return { referenced: chapters };
+  // Live-check + removal in a single transaction to prevent a concurrent
+  // chapter save from inserting a reference between the check and the delete.
+  const result = await store.transaction(async (txStore) => {
+    // Scan chapters for actual references and correct drift
+    const chapters = await txStore.listChapterContentByProject(image.project_id);
+    const referencingChapters: Array<{ id: string; title: string }> = [];
+    for (const ch of chapters) {
+      if (ch.content) {
+        try {
+          const parsed = JSON.parse(ch.content) as Record<string, unknown>;
+          const ids = extractImageIds(parsed);
+          if (ids.includes(id.toLowerCase())) {
+            referencingChapters.push({ id: ch.id, title: ch.title });
+          }
+        } catch {
+          // Corrupt JSON — skip
+        }
+      }
+    }
+
+    // Correct reference_count if it drifted
+    await txStore.setImageReferenceCount(id, referencingChapters.length);
+
+    if (referencingChapters.length > 0) {
+      return { referenced: referencingChapters } as const;
+    }
+
+    // Remove the DB record inside the transaction
+    await txStore.removeImage(id);
+    return { deleted: true } as const;
+  });
+
+  if ("referenced" in result) {
+    return result;
   }
 
-  // Remove the DB record first, then the file. If removeImage fails, nothing
-  // is lost. If unlink fails after removal, we have an orphan file (harmless)
-  // rather than a ghost record (visible in gallery but serving 404).
-  await store.removeImage(id);
-
+  // File deletion happens after the transaction commits. If unlink fails,
+  // we have an orphan file (harmless) rather than a ghost record.
   const ext = mimeToExt(image.mime_type);
   if (ext) {
     const filePath = getImagePath(image.project_id, image.id, ext);
