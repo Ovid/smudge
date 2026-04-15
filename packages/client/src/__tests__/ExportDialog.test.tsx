@@ -29,6 +29,7 @@ const mockChapters = [
 describe("ExportDialog", () => {
   const defaultProps = {
     open: true,
+    projectId: "proj-1",
     projectSlug: "test-project",
     chapters: mockChapters,
     onClose: vi.fn(),

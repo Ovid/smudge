@@ -11,7 +11,9 @@ describe("Editor", () => {
   const mockOnSave = () => vi.fn().mockResolvedValue(true);
 
   it("shows placeholder attribute when content is empty", () => {
-    const { container } = render(<Editor content={null} onSave={mockOnSave()} />);
+    const { container } = render(
+      <Editor projectId="test-project" content={null} onSave={mockOnSave()} />,
+    );
     const placeholder = container.querySelector("[data-placeholder]");
     expect(placeholder).not.toBeNull();
     expect(placeholder?.getAttribute("data-placeholder")).toBe("Start writing\u2026");
@@ -22,7 +24,9 @@ describe("Editor", () => {
       type: "doc",
       content: [{ type: "paragraph", content: [{ type: "text", text: "Hello world" }] }],
     };
-    const { container } = render(<Editor content={content} onSave={mockOnSave()} />);
+    const { container } = render(
+      <Editor projectId="test-project" content={content} onSave={mockOnSave()} />,
+    );
     expect(within(container).getByText("Hello world")).toBeInTheDocument();
     const emptyParagraph = container.querySelector(".is-editor-empty");
     expect(emptyParagraph).toBeNull();
@@ -30,14 +34,23 @@ describe("Editor", () => {
 
   it("exposes the editor instance via editorRef", async () => {
     const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
-    render(<Editor content={null} onSave={mockOnSave()} editorRef={editorRef} />);
+    render(
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={mockOnSave()}
+        editorRef={editorRef}
+      />,
+    );
     await waitFor(() => {
       expect(editorRef.current?.editor).not.toBeNull();
     });
   });
 
   it("has correct ARIA attributes on the editor", () => {
-    const { container } = render(<Editor content={null} onSave={mockOnSave()} />);
+    const { container } = render(
+      <Editor projectId="test-project" content={null} onSave={mockOnSave()} />,
+    );
     const editor = container.querySelector("[role='textbox'][aria-label='Chapter content']");
     expect(editor).not.toBeNull();
     expect(editor?.getAttribute("aria-multiline")).toBe("true");
@@ -45,7 +58,9 @@ describe("Editor", () => {
   });
 
   it("renders editor content area without toolbar", () => {
-    const { container } = render(<Editor content={null} onSave={mockOnSave()} />);
+    const { container } = render(
+      <Editor projectId="test-project" content={null} onSave={mockOnSave()} />,
+    );
     expect(container.querySelector("[role='textbox']")).not.toBeNull();
     expect(container.querySelector("[role='toolbar']")).toBeNull();
   });
@@ -53,7 +68,9 @@ describe("Editor", () => {
   it("does not fire onSave on blur when content is unchanged", async () => {
     const onSave = mockOnSave();
     const content = { type: "doc", content: [{ type: "paragraph" }] };
-    const { container } = render(<Editor content={content} onSave={onSave} />);
+    const { container } = render(
+      <Editor projectId="test-project" content={content} onSave={onSave} />,
+    );
 
     const editorEl = container.querySelector("[role='textbox']") as HTMLElement;
     expect(editorEl).not.toBeNull();
@@ -69,7 +86,9 @@ describe("Editor", () => {
 
   it("calls onSave after debounce when content changes (auto-save)", async () => {
     const onSave = mockOnSave();
-    const { container } = render(<Editor content={null} onSave={onSave} />);
+    const { container } = render(
+      <Editor projectId="test-project" content={null} onSave={onSave} />,
+    );
 
     const editorEl = container.querySelector("[role='textbox']") as HTMLElement;
     // Simulate typing by dispatching input
@@ -90,7 +109,9 @@ describe("Editor", () => {
   });
 
   it("mounts with empty editor when content is null (new chapter)", async () => {
-    const { container } = render(<Editor content={null} onSave={mockOnSave()} />);
+    const { container } = render(
+      <Editor projectId="test-project" content={null} onSave={mockOnSave()} />,
+    );
     await waitFor(() => {
       expect(container.querySelector(".is-editor-empty")).not.toBeNull();
     });
@@ -102,7 +123,9 @@ describe("Editor", () => {
       content: [{ type: "paragraph", content: [{ type: "text", text: "First" }] }],
     };
 
-    const { container } = render(<Editor content={content1} onSave={mockOnSave()} />);
+    const { container } = render(
+      <Editor projectId="test-project" content={content1} onSave={mockOnSave()} />,
+    );
     await waitFor(() => {
       expect(within(container).getByText("First")).toBeInTheDocument();
     });
@@ -112,7 +135,12 @@ describe("Editor", () => {
     const onSave = vi.fn().mockResolvedValue(true);
     const onContentChange = vi.fn();
     const { container } = render(
-      <Editor content={null} onSave={onSave} onContentChange={onContentChange} />,
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={onSave}
+        onContentChange={onContentChange}
+      />,
     );
 
     const editorEl = container.querySelector("[role='textbox']") as HTMLElement;
@@ -142,7 +170,12 @@ describe("Editor", () => {
     const onSave = vi.fn().mockRejectedValue(new Error("network error"));
     const onContentChange = vi.fn();
     const { container } = render(
-      <Editor content={null} onSave={onSave} onContentChange={onContentChange} />,
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={onSave}
+        onContentChange={onContentChange}
+      />,
     );
 
     const editorEl = container.querySelector("[role='textbox']") as HTMLElement;
@@ -181,7 +214,12 @@ describe("Editor", () => {
     const onSave = vi.fn().mockResolvedValue(true);
     const onContentChange = vi.fn();
     const { container } = render(
-      <Editor content={null} onSave={onSave} onContentChange={onContentChange} />,
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={onSave}
+        onContentChange={onContentChange}
+      />,
     );
 
     const editorEl = container.querySelector("[role='textbox']") as HTMLElement;
@@ -221,6 +259,7 @@ describe("Editor", () => {
 
     const { container } = render(
       <Editor
+        projectId="test-project"
         content={null}
         onSave={onSave}
         onContentChange={onContentChange}
@@ -254,7 +293,9 @@ describe("Editor", () => {
     const onSave = vi.fn().mockResolvedValue(true);
     const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
 
-    render(<Editor content={null} onSave={onSave} editorRef={editorRef} />);
+    render(
+      <Editor projectId="test-project" content={null} onSave={onSave} editorRef={editorRef} />,
+    );
 
     await waitFor(() => {
       expect(editorRef.current).not.toBeNull();
@@ -272,6 +313,7 @@ describe("Editor", () => {
 
     const { container } = render(
       <Editor
+        projectId="test-project"
         content={null}
         onSave={onSave}
         onContentChange={onContentChange}
@@ -309,7 +351,12 @@ describe("Editor", () => {
     const onSave = vi.fn().mockResolvedValue(true);
     const onContentChange = vi.fn();
     const { container, unmount } = render(
-      <Editor content={null} onSave={onSave} onContentChange={onContentChange} />,
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={onSave}
+        onContentChange={onContentChange}
+      />,
     );
 
     const editorEl = container.querySelector("[role='textbox']") as HTMLElement;
@@ -335,7 +382,7 @@ describe("Editor", () => {
 
   it("does not fire save on unmount when not dirty", async () => {
     const onSave = vi.fn().mockResolvedValue(true);
-    const { unmount } = render(<Editor content={null} onSave={onSave} />);
+    const { unmount } = render(<Editor projectId="test-project" content={null} onSave={onSave} />);
 
     // Unmount without typing — should not save
     unmount();
@@ -348,7 +395,12 @@ describe("Editor", () => {
     const onSave = vi.fn().mockResolvedValue(true);
     const onContentChange = vi.fn();
     const { container } = render(
-      <Editor content={null} onSave={onSave} onContentChange={onContentChange} />,
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={onSave}
+        onContentChange={onContentChange}
+      />,
     );
 
     const editorEl = container.querySelector("[role='textbox']") as HTMLElement;
@@ -371,7 +423,9 @@ describe("Editor", () => {
   });
 
   it("beforeunload handler does nothing when not dirty", () => {
-    const { unmount } = render(<Editor content={null} onSave={mockOnSave()} />);
+    const { unmount } = render(
+      <Editor projectId="test-project" content={null} onSave={mockOnSave()} />,
+    );
 
     const event = new Event("beforeunload", { cancelable: true });
     const preventDefaultSpy = vi.spyOn(event, "preventDefault");
