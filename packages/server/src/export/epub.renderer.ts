@@ -73,6 +73,9 @@ async function resolveImagesForEpub(html: string): Promise<string> {
     }
   }
 
+  // Strip any remaining unresolved /api/images/ references (DB miss, null ext, etc.)
+  resolvedHtml = resolvedHtml.replace(/<img[^>]*src="\/api\/images\/[^"]*"[^>]*>/gi, "");
+
   return resolvedHtml;
 }
 
