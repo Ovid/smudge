@@ -33,7 +33,7 @@ export function chapterContentToHtml(content: Record<string, unknown> | null): s
     return generateHTML(content, serverEditorExtensions);
   } catch (err) {
     logger.warn({ err }, "Failed to render chapter content to HTML during export");
-    return "<p>[Content could not be exported]</p>";
+    return "";
   }
 }
 

@@ -92,7 +92,8 @@ describe("renderHtml", () => {
     const html = renderHtml(projectInfo, chapters, { includeToc: false });
     expect(html).toContain("Bad Content");
     expect(html).toContain("<!DOCTYPE html>");
-    expect(html).toContain("[Content could not be exported]");
+    // Error fallback returns empty string — no internal error message leaks into output
+    expect(html).not.toContain("[Content could not be exported]");
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ err: expect.any(Error) }),
       expect.stringContaining("Failed to render"),
@@ -990,7 +991,7 @@ describe("renderEpub", () => {
     expect(buf.length).toBeGreaterThan(0);
   });
 
-  it("handles chapters with malformed TipTap JSON gracefully", async () => {
+  it("handles chapters with malformed TipTap JSON gracefully using nbsp placeholder", async () => {
     const chapters = [
       {
         id: "ch-1",
@@ -1002,6 +1003,10 @@ describe("renderEpub", () => {
     const buf = await renderEpub(projectInfo, chapters, { includeToc: false });
     expect(buf).toBeInstanceOf(Buffer);
     expect(buf.length).toBeGreaterThan(0);
+    const text = await epubText(buf);
+    // Error fallback should produce empty string from chapterContentToHtml,
+    // which triggers the EPUB renderer's nbsp placeholder — not an error message
+    expect(text).not.toContain("[Content could not be exported]");
   });
 
   it("preserves heading levels H3/H4/H5 in EPUB content", async () => {
