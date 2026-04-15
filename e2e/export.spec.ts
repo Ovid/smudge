@@ -137,6 +137,62 @@ test.describe("Export E2e Tests", () => {
     expect(download.suggestedFilename()).toBeTruthy();
   });
 
+  test("exports manuscript as Word (.docx) via dialog", async ({ page }) => {
+    await page.goto(`/projects/${project.slug}`);
+    const editor = page.getByRole("textbox");
+    await expect(editor).toBeVisible();
+
+    const exportButton = page.getByRole("button", { name: "Export", exact: true });
+    await exportButton.click();
+    await expect(page.getByText("Export Manuscript")).toBeVisible();
+
+    const docxRadio = page.getByRole("radio", { name: "Word (.docx)" });
+    await docxRadio.check();
+
+    const downloadPromise = page.waitForEvent("download");
+    const dialogExportButton = page.locator("dialog button", { hasText: "Export" }).last();
+    await dialogExportButton.click();
+
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toContain(".docx");
+  });
+
+  test("exports manuscript as EPUB via dialog", async ({ page }) => {
+    await page.goto(`/projects/${project.slug}`);
+    const editor = page.getByRole("textbox");
+    await expect(editor).toBeVisible();
+
+    const exportButton = page.getByRole("button", { name: "Export", exact: true });
+    await exportButton.click();
+    await expect(page.getByText("Export Manuscript")).toBeVisible();
+
+    const epubRadio = page.getByRole("radio", { name: "EPUB" });
+    await epubRadio.check();
+
+    const downloadPromise = page.waitForEvent("download");
+    const dialogExportButton = page.locator("dialog button", { hasText: "Export" }).last();
+    await dialogExportButton.click();
+
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toContain(".epub");
+  });
+
+  test("export dialog shows all five format options", async ({ page }) => {
+    await page.goto(`/projects/${project.slug}`);
+    const editor = page.getByRole("textbox");
+    await expect(editor).toBeVisible();
+
+    const exportButton = page.getByRole("button", { name: "Export", exact: true });
+    await exportButton.click();
+    await expect(page.getByText("Export Manuscript")).toBeVisible();
+
+    await expect(page.getByRole("radio", { name: "HTML" })).toBeVisible();
+    await expect(page.getByRole("radio", { name: "Markdown" })).toBeVisible();
+    await expect(page.getByRole("radio", { name: "Plain Text" })).toBeVisible();
+    await expect(page.getByRole("radio", { name: "Word (.docx)" })).toBeVisible();
+    await expect(page.getByRole("radio", { name: "EPUB" })).toBeVisible();
+  });
+
   test("export dialog is accessible", async ({ page }) => {
     await page.goto(`/projects/${project.slug}`);
 

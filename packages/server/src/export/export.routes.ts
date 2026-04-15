@@ -31,12 +31,6 @@ export function exportRouter(): Router {
         });
         return;
       }
-      if ("noChapters" in result) {
-        res.status(400).json({
-          error: { code: "EXPORT_NO_CHAPTERS", message: "No chapters available for export." },
-        });
-        return;
-      }
 
       const { content, contentType, filename } = result.result;
       res.setHeader("Content-Type", contentType);

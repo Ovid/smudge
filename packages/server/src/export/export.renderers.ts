@@ -10,7 +10,6 @@ import { logger } from "../logger";
 export interface ExportProjectInfo {
   title: string;
   author_name: string | null;
-  slug: string;
 }
 
 export interface ExportChapter {
@@ -28,7 +27,7 @@ export interface RenderOptions {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function chapterContentToHtml(content: Record<string, unknown> | null): string {
+export function chapterContentToHtml(content: Record<string, unknown> | null): string {
   if (!content) return "";
   try {
     return generateHTML(content, serverEditorExtensions);
@@ -38,7 +37,7 @@ function chapterContentToHtml(content: Record<string, unknown> | null): string {
   }
 }
 
-function escapeHtml(text: string): string {
+export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -62,8 +61,14 @@ function stripHtmlTags(html: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, " ")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)));
+    .replace(/&#(\d+);/g, (_, n) => {
+      const cp = Number(n);
+      return cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : "";
+    })
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => {
+      const cp = parseInt(h, 16);
+      return cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : "";
+    });
   // Collapse multiple blank lines into two newlines max
   text = text.replace(/\n{3,}/g, "\n\n");
   return text.trim();

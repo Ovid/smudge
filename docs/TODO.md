@@ -39,6 +39,11 @@
 - Editing: we need much richer editing tools, like you'd expect to see in
   Word. Have a simple subset, but use setting to enable more. Also, move
   "settings" under "trash" to top bar.
+  Also, export formats need to handle those new tools?
+- Docx export: blockquote non-paragraph children (headings, lists) lose
+  indentation and italic styling. Content is preserved but visually appears
+  outside the blockquote. Requires passing blockquote context through the
+  recursive paragraph builder.
 - If they run `make clean`, how can we restore? This seems very bad.
 
 # Bugs
@@ -90,7 +95,7 @@
 - Need help page. Not until close to done. CLAUDE.md instructions to ensure
   it's updated after every public-facing change.
 - Logo should link to github repo. Eventually, to a website.
-- i18n
+- i18n. Also, epub format metadata is currently hard-coded to "en".
 - Import from Word, Google Docs, etc.
 - Screenplay support? Final Draft support? Fountain support?
 - Shareable README

@@ -7,9 +7,11 @@ import {
   type ExportProjectInfo,
   type ExportChapter,
 } from "./export.renderers";
+import { renderDocx } from "./docx.renderer";
+import { renderEpub } from "./epub.renderer";
 
 interface ExportResult {
-  content: string;
+  content: string | Buffer;
   contentType: string;
   filename: string;
 }
@@ -21,7 +23,6 @@ export async function exportProject(
   | { result: ExportResult }
   | { validationError: string }
   | { notFound: true }
-  | { noChapters: true }
   | { invalidChapterIds: string[] }
 > {
   const parsed = ExportSchema.safeParse(body);
@@ -38,8 +39,7 @@ export async function exportProject(
   let chapters = await store.listChaptersByProject(project.id);
 
   if (chapter_ids) {
-    const validIds = await store.listChapterIdsByProject(project.id);
-    const validIdSet = new Set(validIds);
+    const validIdSet = new Set(chapters.map((ch) => ch.id));
     const invalid = chapter_ids.filter((id) => !validIdSet.has(id));
     if (invalid.length > 0) {
       return { invalidChapterIds: invalid };
@@ -47,16 +47,11 @@ export async function exportProject(
 
     const idSet = new Set(chapter_ids);
     chapters = chapters.filter((ch) => idSet.has(ch.id));
-
-    if (chapters.length === 0) {
-      return { noChapters: true };
-    }
   }
 
   const projectInfo: ExportProjectInfo = {
     title: project.title,
     author_name: project.author_name,
-    slug: project.slug,
   };
 
   const exportChapters: ExportChapter[] = chapters.map((ch) => ({
@@ -68,7 +63,7 @@ export async function exportProject(
 
   const options = { includeToc: include_toc };
 
-  let content: string;
+  let content: string | Buffer;
   switch (format) {
     case "html":
       content = renderHtml(projectInfo, exportChapters, options);
@@ -79,10 +74,20 @@ export async function exportProject(
     case "plaintext":
       content = renderPlainText(projectInfo, exportChapters, options);
       break;
+    case "docx":
+      content = await renderDocx(projectInfo, exportChapters, options);
+      break;
+    case "epub":
+      content = await renderEpub(projectInfo, exportChapters, options);
+      break;
+    default: {
+      const _exhaustive: never = format;
+      throw new Error(`Unhandled export format: ${_exhaustive}`);
+    }
   }
 
   const ext = EXPORT_FILE_EXTENSIONS[format];
-  const safeSlug = (project.slug || "export").replace(/["\\\r\n]/g, "_");
+  const safeSlug = (project.slug || "export").replace(/[^a-z0-9_.-]/gi, "_");
   const filename = `${safeSlug}.${ext}`;
 
   return {

@@ -23,9 +23,9 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 1 | Writer's Dashboard | Chapter status labels, project overview, chapter navigation shortcuts | Done |
 | 2 | Goals & Velocity | Word targets, deadlines, daily tracking, session stats, burndown | Done |
 | 2.5a | Simplify Progress Model | Reduce velocity to project-level targets + daily totals, demote save_events | Done |
-| 2.5b | Storage Architecture | ProjectStore/AssetStore/SnapshotStore abstractions, clean seams for future | Planned |
-| 3a | Export Foundation | Export pipeline, HTML, Markdown, plain text, config dialog, download | Planned |
-| 3b | Document Export | PDF, Word (.docx), EPUB | Planned |
+| 2.5b | Storage Architecture | ProjectStore/AssetStore/SnapshotStore abstractions, clean seams for future | Done |
+| 3a | Export Foundation | Export pipeline, HTML, Markdown, plain text, config dialog, download | Done |
+| 3b | Document Export | PDF, Word (.docx), EPUB | In Progress |
 | 4a | Reference Panel & Images | Collapsible side panel infrastructure, image upload/storage | Planned |
 | 4b | Snapshots & Find-and-Replace | Manual/auto snapshots, project-wide search and replace | Planned |
 | 4c | Notes, Tags & Outtakes | Inline notes, paragraph tags, scratchpad for cut text | Planned |
@@ -403,6 +403,7 @@ Steps 2 and 3 are initially no-ops or minimal in Phase 3a; later phases add new 
 ---
 
 ## Phase 3b: Document Export
+<!-- plan: 2026-04-14-document-export-design.md -->
 
 ### Goal
 
@@ -478,7 +479,7 @@ Writers commonly want images in multiple contexts: reference photos for characte
 - Accepted formats: JPEG, PNG, GIF, WebP. Maximum file size: 10MB per image.
 - Images are referenced by URL in the TipTap JSON. Deleting an image node from the document does not delete the file (avoids data loss if the writer undoes). Orphaned image cleanup can be a background task.
 
-**Export integration:** When exporting (Phase 3 pipeline), images referenced in chapter content are embedded in the output file (base64 for HTML, embedded for EPUB/DOCX, rendered for PDF).
+**Export integration:** When exporting (Phase 3 pipeline), images referenced in chapter content are embedded in the output file (base64 for HTML, embedded for EPUB/DOCX, rendered for PDF). This phase should also add EPUB cover image support (deferred from Phase 3b) — EPUB natively supports cover images, and the image infrastructure built here makes it straightforward.
 
 ### Data Model Changes
 
