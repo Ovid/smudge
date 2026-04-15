@@ -8,7 +8,8 @@ import { logger } from "../logger";
 async function docxXml(buf: Buffer): Promise<string> {
   const zip = await JSZip.loadAsync(buf);
   const doc = zip.file("word/document.xml");
-  return doc ? await doc.async("string") : "";
+  if (!doc) throw new Error("word/document.xml not found in docx ZIP");
+  return doc.async("string");
 }
 
 vi.mock("../logger", () => ({

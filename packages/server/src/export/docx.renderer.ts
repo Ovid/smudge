@@ -70,10 +70,12 @@ function inlineToRuns(
   for (const node of nodes) {
     try {
       if (node.type === "text") {
+        const text = typeof node.text === "string" ? node.text : "";
+        if (!text) continue;
         const markProps = marksToProps(node.marks as Array<{ type: string }> | undefined);
         runs.push(
           new TextRun({
-            text: node.text as string,
+            text,
             ...markProps,
             ...extraProps,
           }),

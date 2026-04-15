@@ -16,6 +16,8 @@
  * stderr output passes through unchanged.
  */
 
+import { afterAll } from "vitest";
+
 const origStderrWrite = process.stderr.write.bind(process.stderr);
 
 const filteredWrite: typeof process.stderr.write = function (
@@ -34,3 +36,7 @@ const filteredWrite: typeof process.stderr.write = function (
 };
 
 process.stderr.write = filteredWrite;
+
+afterAll(() => {
+  process.stderr.write = origStderrWrite;
+});

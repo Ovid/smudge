@@ -83,5 +83,11 @@ export async function renderEpub(
     epubChapters,
   );
 
-  return await epub.genEpub();
+  try {
+    return await epub.genEpub();
+  } catch (err) {
+    throw new Error(
+      `EPUB generation failed for "${project.title}": ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 }
