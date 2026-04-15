@@ -78,7 +78,12 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
       }
 
       // Don't process shortcuts when a dialog is open (focus trap)
-      if (shortcutHelpOpenRef.current || deleteTargetRef.current || projectSettingsOpenRef.current || exportDialogOpenRef.current)
+      if (
+        shortcutHelpOpenRef.current ||
+        deleteTargetRef.current ||
+        projectSettingsOpenRef.current ||
+        exportDialogOpenRef.current
+      )
         return;
 
       if (ctrl && e.shiftKey && e.code === "KeyN") {

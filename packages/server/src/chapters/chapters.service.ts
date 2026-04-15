@@ -117,10 +117,7 @@ export async function updateChapter(
         await imagesRepo.incrementReferenceCount(db, imageId, -1);
       }
     } catch (err: unknown) {
-      logger.error(
-        { err, chapter_id: id },
-        "Image reference count update failed (best-effort)",
-      );
+      logger.error({ err, chapter_id: id }, "Image reference count update failed (best-effort)");
     }
   }
 

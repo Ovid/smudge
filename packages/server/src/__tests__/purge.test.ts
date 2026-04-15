@@ -200,7 +200,9 @@ describe("purgeOldTrash", () => {
     await fs.mkdir(imageDir, { recursive: true });
     await fs.writeFile(path.join(imageDir, "photo.jpg"), "fake-image-data");
 
-    const warnSpy = vi.spyOn((await import("../logger")).logger, "warn").mockImplementation(() => {});
+    const warnSpy = vi
+      .spyOn((await import("../logger")).logger, "warn")
+      .mockImplementation(() => {});
 
     await purgeOldTrash(db, tmpDir);
 

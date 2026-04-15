@@ -268,15 +268,14 @@ describe("images.service", () => {
         .send({
           content: {
             type: "doc",
-            content: [
-              { type: "image", attrs: { src: `/api/images/${imageId}` } },
-            ],
+            content: [{ type: "image", attrs: { src: `/api/images/${imageId}` } }],
           },
         });
 
       const result = await imagesService.deleteImage(imageId);
       expect(result).toHaveProperty("referenced");
-      const referenced = (result as { referenced: Array<{ id: string; title: string }> }).referenced;
+      const referenced = (result as { referenced: Array<{ id: string; title: string }> })
+        .referenced;
       expect(referenced).toHaveLength(1);
       expect(referenced[0]!.id).toBe(chapterId);
 

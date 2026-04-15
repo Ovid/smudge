@@ -78,9 +78,7 @@ describe("POST /api/projects/:projectId/images", () => {
   it("returns 400 when no file is provided", async () => {
     const projectId = await createTestProject();
 
-    const res = await request(t.app)
-      .post(`/api/projects/${projectId}/images`)
-      .send({});
+    const res = await request(t.app).post(`/api/projects/${projectId}/images`).send({});
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
@@ -145,9 +143,7 @@ describe("GET /api/images/:id", () => {
   });
 
   it("returns 404 for non-existent image", async () => {
-    const res = await request(t.app).get(
-      "/api/images/00000000-0000-0000-0000-000000000000",
-    );
+    const res = await request(t.app).get("/api/images/00000000-0000-0000-0000-000000000000");
 
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe("NOT_FOUND");
@@ -226,9 +222,7 @@ describe("DELETE /api/images/:id", () => {
 
     // Get the auto-created chapter via the project's slug
     const projectsRes = await request(t.app).get("/api/projects");
-    const project = projectsRes.body.find(
-      (p: { id: string }) => p.id === projectId,
-    );
+    const project = projectsRes.body.find((p: { id: string }) => p.id === projectId);
     const projectRes = await request(t.app).get(`/api/projects/${project.slug}`);
     const chapterId = projectRes.body.chapters[0].id;
 
@@ -242,9 +236,7 @@ describe("DELETE /api/images/:id", () => {
       ],
     };
 
-    await request(t.app)
-      .patch(`/api/chapters/${chapterId}`)
-      .send({ content: contentWithImage });
+    await request(t.app).patch(`/api/chapters/${chapterId}`).send({ content: contentWithImage });
 
     const res = await request(t.app).delete(`/api/images/${imageId}`);
 
@@ -255,9 +247,7 @@ describe("DELETE /api/images/:id", () => {
   });
 
   it("returns 404 for non-existent image", async () => {
-    const res = await request(t.app).delete(
-      "/api/images/00000000-0000-0000-0000-000000000000",
-    );
+    const res = await request(t.app).delete("/api/images/00000000-0000-0000-0000-000000000000");
 
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe("NOT_FOUND");

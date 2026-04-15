@@ -188,9 +188,7 @@ export const api = {
       return res.json();
     },
 
-    references(
-      id: string,
-    ): Promise<{ chapters: Array<{ id: string; title: string }> }> {
+    references(id: string): Promise<{ chapters: Array<{ id: string; title: string }> }> {
       return apiFetch(`/images/${id}/references`);
     },
 
@@ -209,9 +207,7 @@ export const api = {
       });
     },
 
-    async delete(
-      id: string,
-    ): Promise<
+    async delete(id: string): Promise<
       | { deleted: boolean }
       | {
           error: {

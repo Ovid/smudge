@@ -169,13 +169,8 @@ async function createTestProject(): Promise<{ id: string; slug: string }> {
   return { id: res.body.id, slug: res.body.slug };
 }
 
-async function createTestChapter(
-  projectSlug: string,
-  title = "Chapter 1",
-): Promise<string> {
-  const res = await request(t.app)
-    .post(`/api/projects/${projectSlug}/chapters`)
-    .send();
+async function createTestChapter(projectSlug: string, title = "Chapter 1"): Promise<string> {
+  const res = await request(t.app).post(`/api/projects/${projectSlug}/chapters`).send();
   const chapterId = res.body.id;
   // Set title if non-default
   if (title !== "Chapter 1") {

@@ -2,7 +2,7 @@ import { useEditor, EditorContent, type Editor as TipTapEditor } from "@tiptap/r
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import Placeholder from "@tiptap/extension-placeholder";
-import { useEffect, useRef, useCallback, useMemo } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { editorExtensions } from "../editorExtensions";
 import { STRINGS } from "../strings";
 import { api } from "../api/client";
@@ -25,6 +25,47 @@ interface EditorProps {
 
 const AUTO_SAVE_DEBOUNCE_MS = 1500;
 
+// Module-level holder for the image upload handler — the ProseMirror plugin
+// reads this during paste/drop events, not during render.
+let imageUploadHandler: (file: File) => void = () => {};
+
+const imagePasteExtension = Extension.create({
+  name: "imagePaste",
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey("imagePaste"),
+        props: {
+          handlePaste(_view, event) {
+            const items = event.clipboardData?.items;
+            if (!items) return false;
+            for (const item of Array.from(items)) {
+              if (item.type.startsWith("image/")) {
+                event.preventDefault();
+                const file = item.getAsFile();
+                if (file) imageUploadHandler(file);
+                return true;
+              }
+            }
+            return false;
+          },
+          handleDrop(_view, event) {
+            if (!event.dataTransfer?.files) return false;
+            for (const file of Array.from(event.dataTransfer.files)) {
+              if (file.type.startsWith("image/")) {
+                event.preventDefault();
+                imageUploadHandler(file);
+                return true;
+              }
+            }
+            return false;
+          },
+        },
+      }),
+    ];
+  },
+});
+
 export function Editor({
   content,
   onSave,
@@ -37,9 +78,7 @@ export function Editor({
   const onSaveRef = useRef(onSave);
   const onContentChangeRef = useRef(onContentChange);
   const projectIdRef = useRef(projectId);
-  projectIdRef.current = projectId;
   const onImageAnnouncementRef = useRef(onImageAnnouncement);
-  onImageAnnouncementRef.current = onImageAnnouncement;
 
   useEffect(() => {
     onSaveRef.current = onSave;
@@ -48,6 +87,14 @@ export function Editor({
   useEffect(() => {
     onContentChangeRef.current = onContentChange;
   }, [onContentChange]);
+
+  useEffect(() => {
+    projectIdRef.current = projectId;
+  }, [projectId]);
+
+  useEffect(() => {
+    onImageAnnouncementRef.current = onImageAnnouncement;
+  }, [onImageAnnouncement]);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyRef = useRef(false);
   const editorInstanceRef = useRef<{ getJSON: () => Record<string, unknown> } | null>(null);
@@ -94,48 +141,7 @@ export function Editor({
     };
   }, []);
 
-  const handleImageUploadRef = useRef<(file: File) => void>(() => {});
-
-  const imagePasteExtension = useMemo(
-    () =>
-      Extension.create({
-        name: "imagePaste",
-        addProseMirrorPlugins() {
-          return [
-            new Plugin({
-              key: new PluginKey("imagePaste"),
-              props: {
-                handlePaste(_view, event) {
-                  const items = event.clipboardData?.items;
-                  if (!items) return false;
-                  for (const item of Array.from(items)) {
-                    if (item.type.startsWith("image/")) {
-                      event.preventDefault();
-                      const file = item.getAsFile();
-                      if (file) handleImageUploadRef.current(file);
-                      return true;
-                    }
-                  }
-                  return false;
-                },
-                handleDrop(_view, event) {
-                  if (!event.dataTransfer?.files) return false;
-                  for (const file of Array.from(event.dataTransfer.files)) {
-                    if (file.type.startsWith("image/")) {
-                      event.preventDefault();
-                      handleImageUploadRef.current(file);
-                      return true;
-                    }
-                  }
-                  return false;
-                },
-              },
-            }),
-          ];
-        },
-      }),
-    [],
-  );
+  // Keep the module-level image upload handler in sync with the current editor + props
 
   const editor = useEditor({
     extensions: [
@@ -184,7 +190,7 @@ export function Editor({
   }, [editor]);
 
   useEffect(() => {
-    handleImageUploadRef.current = async (file: File) => {
+    imageUploadHandler = async (file: File) => {
       try {
         const image = await api.images.upload(projectIdRef.current, file);
         if (editor) {
@@ -193,14 +199,15 @@ export function Editor({
             .focus()
             .setImage({ src: `/api/images/${image.id}`, alt: image.alt_text })
             .run();
-          onImageAnnouncementRef.current?.(
-            STRINGS.imageGallery.insertSuccess(image.filename),
-          );
+          onImageAnnouncementRef.current?.(STRINGS.imageGallery.insertSuccess(image.filename));
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
         onImageAnnouncementRef.current?.(STRINGS.imageGallery.uploadFailed(message));
       }
+    };
+    return () => {
+      imageUploadHandler = () => {};
     };
   }, [editor]);
 

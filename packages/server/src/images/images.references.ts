@@ -74,9 +74,7 @@ export async function liveCheckImageReferences(
   }
 
   // Correct reference_count if it drifted
-  await db("images")
-    .where("id", imageId)
-    .update({ reference_count: referencingChapters.length });
+  await db("images").where("id", imageId).update({ reference_count: referencingChapters.length });
 
   return referencingChapters;
 }
