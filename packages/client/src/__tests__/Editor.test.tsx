@@ -494,10 +494,11 @@ describe("Editor", () => {
   });
 
   // Helper to find the imagePaste plugin from editor state
-  function findImagePastePlugin(editor: { view: { state: { plugins: unknown[] } } }) {
-    const plugins = editor.view.state.plugins;
-    return plugins.find((p) => {
-      const key = (p as unknown as { key: string }).key;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function findImagePastePlugin(editor: any) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return editor.view.state.plugins.find((p: any) => {
+      const key = p?.key;
       return typeof key === "string" && key.includes("imagePaste");
     });
   }
@@ -510,12 +511,13 @@ describe("Editor", () => {
       project_id: "test-project",
       filename: "photo.png",
       alt_text: "photo",
-      caption: null,
-      source: null,
-      license: null,
+      caption: "",
+      source: "",
+      license: "",
       mime_type: "image/png",
       size_bytes: 1024,
       created_at: "2026-01-01T00:00:00Z",
+      reference_count: 0,
     });
 
     render(
@@ -547,7 +549,7 @@ describe("Editor", () => {
       },
     };
 
-    const handled = (imagePastePlugin!.props.handlePaste as (...args: unknown[]) => unknown)(
+    const handled = (imagePastePlugin.props.handlePaste as (...args: unknown[]) => unknown)(
       editor.view,
       fakeEvent,
       editor.view.state.doc.slice(0),
@@ -596,7 +598,7 @@ describe("Editor", () => {
       },
     };
 
-    (imagePastePlugin!.props.handlePaste as (...args: unknown[]) => unknown)(
+    (imagePastePlugin.props.handlePaste as (...args: unknown[]) => unknown)(
       editor.view,
       fakeEvent,
       editor.view.state.doc.slice(0),
@@ -619,12 +621,13 @@ describe("Editor", () => {
       project_id: "test-project",
       filename: "dropped.jpg",
       alt_text: "dropped",
-      caption: null,
-      source: null,
-      license: null,
+      caption: "",
+      source: "",
+      license: "",
       mime_type: "image/jpeg",
       size_bytes: 2048,
       created_at: "2026-01-01T00:00:00Z",
+      reference_count: 0,
     });
 
     render(
@@ -654,7 +657,7 @@ describe("Editor", () => {
       },
     };
 
-    const handled = (imagePastePlugin!.props.handleDrop as (...args: unknown[]) => unknown)(
+    const handled = (imagePastePlugin.props.handleDrop as (...args: unknown[]) => unknown)(
       editor.view,
       fakeEvent,
     );
@@ -697,7 +700,7 @@ describe("Editor", () => {
       },
     };
 
-    const handled = (imagePastePlugin!.props.handlePaste as (...args: unknown[]) => unknown)(
+    const handled = (imagePastePlugin.props.handlePaste as (...args: unknown[]) => unknown)(
       editor.view,
       fakeEvent,
       editor.view.state.doc.slice(0),
@@ -732,7 +735,7 @@ describe("Editor", () => {
       },
     };
 
-    const handled = (imagePastePlugin!.props.handleDrop as (...args: unknown[]) => unknown)(
+    const handled = (imagePastePlugin.props.handleDrop as (...args: unknown[]) => unknown)(
       editor.view,
       fakeEvent,
     );

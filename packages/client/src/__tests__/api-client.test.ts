@@ -313,8 +313,8 @@ describe("api.images", () => {
     });
 
     // Verify FormData contains the file
-    const callArgs = mockFetch.mock.calls[0];
-    const formData = callArgs[1].body as FormData;
+    const callArgs = mockFetch.mock.calls[0]!;
+    const formData = (callArgs[1] as { body: FormData }).body;
     expect(formData.get("file")).toBe(file);
   });
 
