@@ -21,7 +21,7 @@ export interface UseFindReplaceStateReturn {
   search: (projectSlug: string) => Promise<void>;
 }
 
-export function useFindReplaceState(): UseFindReplaceStateReturn {
+export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateReturn {
   const [panelOpen, setPanelOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [replacement, setReplacement] = useState("");
@@ -35,7 +35,14 @@ export function useFindReplaceState(): UseFindReplaceStateReturn {
   const [error, setError] = useState<string | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latestSlugRef = useRef<string | null>(null);
+  const latestSlugRef = useRef<string | null>(projectSlug ?? null);
+
+  // Keep latestSlugRef in sync with projectSlug prop
+  useEffect(() => {
+    if (projectSlug) {
+      latestSlugRef.current = projectSlug;
+    }
+  }, [projectSlug]);
 
   const togglePanel = useCallback(() => {
     setPanelOpen((prev) => !prev);
@@ -53,7 +60,7 @@ export function useFindReplaceState(): UseFindReplaceStateReturn {
   );
 
   const search = useCallback(
-    async (projectSlug: string) => {
+    async (slug: string) => {
       if (!query) {
         setResults(null);
         setError(null);
@@ -62,7 +69,7 @@ export function useFindReplaceState(): UseFindReplaceStateReturn {
       setLoading(true);
       setError(null);
       try {
-        const result = await api.search.find(projectSlug, query, options);
+        const result = await api.search.find(slug, query, options);
         setResults(result);
       } catch (err) {
         if (err instanceof ApiRequestError && err.status === 400) {
@@ -97,20 +104,12 @@ export function useFindReplaceState(): UseFindReplaceStateReturn {
     };
   }, [panelOpen, query, options, search]);
 
-  // Expose a way to set the project slug for debounced search
-  const setQueryWithSlug = useCallback(
-    (q: string) => {
-      setQuery(q);
-    },
-    [],
-  );
-
   return {
     panelOpen,
     togglePanel,
     closePanel,
     query,
-    setQuery: setQueryWithSlug,
+    setQuery,
     replacement,
     setReplacement,
     options,
@@ -119,9 +118,9 @@ export function useFindReplaceState(): UseFindReplaceStateReturn {
     loading,
     error,
     search: useCallback(
-      async (projectSlug: string) => {
-        latestSlugRef.current = projectSlug;
-        await search(projectSlug);
+      async (slug: string) => {
+        latestSlugRef.current = slug;
+        await search(slug);
       },
       [search],
     ),

@@ -24,6 +24,7 @@ interface KeyboardShortcutDeps {
   setNavAnnouncement: React.Dispatch<React.SetStateAction<string>>;
   switchToView: (mode: ViewMode) => Promise<void>;
   togglePanel: () => void;
+  toggleFindReplace?: () => void;
 }
 
 export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
@@ -59,6 +60,8 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
   switchToViewRef.current = deps.switchToView;
   const togglePanelRef = useRef(deps.togglePanel);
   togglePanelRef.current = deps.togglePanel;
+  const toggleFindReplaceRef = useRef(deps.toggleFindReplace);
+  toggleFindReplaceRef.current = deps.toggleFindReplace;
 
   useEffect(() => {
     let navAnnouncementTimer: ReturnType<typeof setTimeout> | null = null;
@@ -84,6 +87,13 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
       if (ctrl && e.code === "KeyS") {
         e.preventDefault();
         flushSaveRef.current?.();
+        return;
+      }
+
+      // Toggle find-and-replace panel (Ctrl/Cmd+H)
+      if (ctrl && e.code === "KeyH") {
+        e.preventDefault();
+        toggleFindReplaceRef.current?.();
         return;
       }
 

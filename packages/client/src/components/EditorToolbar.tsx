@@ -5,9 +5,10 @@ interface EditorToolbarProps {
   editor: Editor;
   snapshotCount?: number;
   onToggleSnapshots?: () => void;
+  onToggleFindReplace?: () => void;
 }
 
-export function EditorToolbar({ editor, snapshotCount, onToggleSnapshots }: EditorToolbarProps) {
+export function EditorToolbar({ editor, snapshotCount, onToggleSnapshots, onToggleFindReplace }: EditorToolbarProps) {
   const snapshotLabel = `Snapshots${snapshotCount != null && snapshotCount > 0 ? ` (${snapshotCount})` : ""}`;
   return (
     <div
@@ -143,6 +144,33 @@ export function EditorToolbar({ editor, snapshotCount, onToggleSnapshots }: Edit
                 {snapshotCount}
               </span>
             )}
+          </button>
+        </>
+      )}
+      {onToggleFindReplace && (
+        <>
+          <span className="mx-0.5 self-stretch w-px bg-border/40" aria-hidden="true" />
+          <button
+            onClick={onToggleFindReplace}
+            aria-label={STRINGS.findReplace.toggleTooltip}
+            title={STRINGS.findReplace.toggleTooltip}
+            className="rounded-md px-2.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-focus-ring text-text-muted hover:text-text-secondary hover:bg-bg-hover"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
           </button>
         </>
       )}

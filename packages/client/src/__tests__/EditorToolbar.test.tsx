@@ -98,6 +98,40 @@ describe("EditorToolbar", () => {
     expect(toolbar?.getAttribute("aria-label")).toBe("Formatting");
   });
 
+  describe("find-replace button", () => {
+    it("does not render find-replace button when onToggleFindReplace is not provided", () => {
+      const editor = createMockEditor();
+      const { container } = render(<EditorToolbar editor={editor} />);
+      const toolbar = container.querySelector("[role='toolbar']") as HTMLElement;
+      expect(within(toolbar).queryByRole("button", { name: /find and replace/i })).not.toBeInTheDocument();
+    });
+
+    it("renders find-replace button when onToggleFindReplace is provided", () => {
+      const editor = createMockEditor();
+      const onToggle = vi.fn();
+      const { container } = render(
+        <EditorToolbar editor={editor} onToggleFindReplace={onToggle} />,
+      );
+      const toolbar = container.querySelector("[role='toolbar']") as HTMLElement;
+      const btn = within(toolbar).getByRole("button", { name: /find and replace/i });
+      expect(btn).toBeInTheDocument();
+    });
+
+    it("calls onToggleFindReplace when clicked", () => {
+      const editor = createMockEditor();
+      const onToggle = vi.fn();
+      const { container } = render(
+        <EditorToolbar editor={editor} onToggleFindReplace={onToggle} />,
+      );
+      const toolbar = container.querySelector("[role='toolbar']") as HTMLElement;
+      const btn = within(toolbar).getByRole("button", { name: /find and replace/i });
+      fireEvent.click(btn);
+      expect(onToggle).toHaveBeenCalledOnce();
+      // Should NOT trigger editor.chain (it's not a formatting command)
+      expect(editor.chain).not.toHaveBeenCalled();
+    });
+  });
+
   describe("snapshot button", () => {
     it("does not render snapshot button when onToggleSnapshots is not provided", () => {
       const editor = createMockEditor();

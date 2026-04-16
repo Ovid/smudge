@@ -20,8 +20,10 @@ import { useProjectEditor } from "../hooks/useProjectEditor";
 import { useSidebarState } from "../hooks/useSidebarState";
 import { useReferencePanelState } from "../hooks/useReferencePanelState";
 import { useSnapshotState } from "../hooks/useSnapshotState";
+import { useFindReplaceState } from "../hooks/useFindReplaceState";
 import { ReferencePanel } from "../components/ReferencePanel";
 import { SnapshotPanel } from "../components/SnapshotPanel";
+import { FindReplacePanel } from "../components/FindReplacePanel";
 import { SnapshotBanner } from "../components/SnapshotBanner";
 import { ImageGallery } from "../components/ImageGallery";
 import { useChapterTitleEditing } from "../hooks/useChapterTitleEditing";
@@ -83,21 +85,34 @@ export function EditorPage() {
     snapshotPanelRef,
   } = useSnapshotState(activeChapter?.id ?? null);
 
+  const findReplace = useFindReplaceState(slug);
+
   // Panel exclusivity: when snapshot panel opens, close reference panel and vice versa
   const handleToggleSnapshotPanel = useCallback(() => {
     if (!snapshotPanelOpen) {
       setPanelOpen(false);
+      findReplace.closePanel();
     }
     toggleSnapshotPanel();
-  }, [snapshotPanelOpen, setPanelOpen, toggleSnapshotPanel]);
+  }, [snapshotPanelOpen, setPanelOpen, findReplace, toggleSnapshotPanel]);
 
   const handleToggleReferencePanel = useCallback(() => {
     if (!panelOpen) {
       setSnapshotPanelOpen(false);
       exitSnapshotView();
+      findReplace.closePanel();
     }
     togglePanel();
-  }, [panelOpen, setSnapshotPanelOpen, exitSnapshotView, togglePanel]);
+  }, [panelOpen, setSnapshotPanelOpen, exitSnapshotView, findReplace, togglePanel]);
+
+  const handleToggleFindReplace = useCallback(() => {
+    if (!findReplace.panelOpen) {
+      setPanelOpen(false);
+      setSnapshotPanelOpen(false);
+      exitSnapshotView();
+    }
+    findReplace.togglePanel();
+  }, [findReplace, setPanelOpen, setSnapshotPanelOpen, exitSnapshotView]);
 
   const handleRestoreSnapshot = useCallback(async () => {
     if (!viewingSnapshot || !activeChapter) return;
@@ -108,6 +123,57 @@ export function EditorPage() {
       snapshotPanelRef.current?.refreshSnapshots();
     }
   }, [viewingSnapshot, activeChapter, restoreSnapshot, handleSelectChapter, snapshotPanelRef]);
+
+  const handleReplaceAllInManuscript = useCallback(async () => {
+    if (!project || !slug) return;
+    await editorRef.current?.flushSave();
+    const result = await api.search.replace(
+      slug,
+      findReplace.query,
+      findReplace.replacement,
+      findReplace.options,
+      { type: "project" },
+    );
+    if (activeChapter && result.affected_chapter_ids.includes(activeChapter.id)) {
+      await handleSelectChapter(activeChapter.id);
+    }
+    await findReplace.search(slug);
+    snapshotPanelRef.current?.refreshSnapshots();
+  }, [project, slug, findReplace, activeChapter, handleSelectChapter, snapshotPanelRef]);
+
+  const handleReplaceAllInChapter = useCallback(async (chapterId: string) => {
+    if (!project || !slug) return;
+    await editorRef.current?.flushSave();
+    const result = await api.search.replace(
+      slug,
+      findReplace.query,
+      findReplace.replacement,
+      findReplace.options,
+      { type: "chapter", chapter_id: chapterId },
+    );
+    if (activeChapter && result.affected_chapter_ids.includes(activeChapter.id)) {
+      await handleSelectChapter(activeChapter.id);
+    }
+    await findReplace.search(slug);
+    snapshotPanelRef.current?.refreshSnapshots();
+  }, [project, slug, findReplace, activeChapter, handleSelectChapter, snapshotPanelRef]);
+
+  const handleReplaceOne = useCallback(async (chapterId: string, _matchIndex: number) => {
+    if (!project || !slug) return;
+    await editorRef.current?.flushSave();
+    const result = await api.search.replace(
+      slug,
+      findReplace.query,
+      findReplace.replacement,
+      findReplace.options,
+      { type: "chapter", chapter_id: chapterId },
+    );
+    if (activeChapter && result.affected_chapter_ids.includes(activeChapter.id)) {
+      await handleSelectChapter(activeChapter.id);
+    }
+    await findReplace.search(slug);
+    snapshotPanelRef.current?.refreshSnapshots();
+  }, [project, slug, findReplace, activeChapter, handleSelectChapter, snapshotPanelRef]);
 
   const {
     editingTitle,
@@ -271,6 +337,7 @@ export function EditorPage() {
     setNavAnnouncement,
     switchToView,
     togglePanel: handleToggleReferencePanel,
+    toggleFindReplace: handleToggleFindReplace,
   });
 
   if (error) {
@@ -361,6 +428,7 @@ export function EditorPage() {
             editor={toolbarEditor}
             snapshotCount={snapshotCount}
             onToggleSnapshots={handleToggleSnapshotPanel}
+            onToggleFindReplace={handleToggleFindReplace}
           />
         )}
         <div className="flex items-center gap-2">
@@ -569,6 +637,24 @@ export function EditorPage() {
             isOpen={snapshotPanelOpen}
             onClose={() => setSnapshotPanelOpen(false)}
             onView={viewSnapshot}
+          />
+        )}
+        {findReplace.panelOpen && project && (
+          <FindReplacePanel
+            isOpen={findReplace.panelOpen}
+            onClose={() => findReplace.closePanel()}
+            results={findReplace.results}
+            loading={findReplace.loading}
+            error={findReplace.error}
+            query={findReplace.query}
+            onQueryChange={findReplace.setQuery}
+            replacement={findReplace.replacement}
+            onReplacementChange={findReplace.setReplacement}
+            options={findReplace.options}
+            onToggleOption={findReplace.toggleOption}
+            onReplaceOne={handleReplaceOne}
+            onReplaceAllInChapter={handleReplaceAllInChapter}
+            onReplaceAllInManuscript={handleReplaceAllInManuscript}
           />
         )}
       </div>

@@ -83,6 +83,8 @@ export const STRINGS = {
     keySave: "Ctrl+S",
     toggleReferencePanel: "Toggle reference panel",
     keyToggleReferencePanel: "Ctrl+.",
+    findReplace: "Find and replace",
+    keyFindReplace: "Ctrl+H",
   },
   sidebar: {
     addChapter: "Add Chapter",
@@ -306,5 +308,6 @@ export const STRINGS = {
     chapterMatches: (title: string, count: number) =>
       `${title} (${count} match${count === 1 ? "" : "es"})`,
     ariaLabel: "Find and replace",
+    toggleTooltip: "Find and replace (Ctrl+H)",
   },
 } as const;

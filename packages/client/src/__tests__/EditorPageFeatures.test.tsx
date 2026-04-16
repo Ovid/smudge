@@ -57,6 +57,10 @@ vi.mock("../api/client", () => ({
       get: vi.fn(),
       restore: vi.fn(),
     },
+    search: {
+      find: vi.fn().mockResolvedValue({ total_count: 0, chapters: [] }),
+      replace: vi.fn().mockResolvedValue({ replaced_count: 0, affected_chapter_ids: [] }),
+    },
     settings: {
       get: vi.fn().mockResolvedValue({ timezone: "UTC" }),
       update: vi.fn().mockResolvedValue({ message: "ok" }),
