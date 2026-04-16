@@ -59,11 +59,13 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
 
   useEffect(() => {
     let cancelled = false;
-    setLoadError(false);
     api.images
       .list(projectId)
       .then((list) => {
-        if (!cancelled) setImages(list);
+        if (!cancelled) {
+          setImages(list);
+          setLoadError(false);
+        }
       })
       .catch(() => {
         if (!cancelled) setLoadError(true);

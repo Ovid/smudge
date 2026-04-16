@@ -217,8 +217,7 @@ export const STRINGS = {
     close: "Close export dialog",
     epubCoverImageLabel: "Cover image",
     epubCoverImageNone: "None",
-    docxWebpWarning:
-      "Some images use WebP format, which may not display in Word 2016 or earlier.",
+    docxWebpWarning: "Some images use WebP format, which may not display in Word 2016 or earlier.",
   },
   referencePanel: {
     ariaLabel: "Reference panel",
