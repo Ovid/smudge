@@ -249,6 +249,7 @@ export const STRINGS = {
     saving: "Saving...",
     saved: "Saved",
     fileTooLarge: "File too large. Maximum: 10MB.",
+    deleteSuccess: (filename: string) => `Image deleted: ${filename}`,
     deleteFailed: (reason: string) => `Delete failed: ${reason}`,
     saveFailed: "Save failed. Your changes have not been saved.",
     deleteBlockedLoading: "This image is in use. Loading details...",

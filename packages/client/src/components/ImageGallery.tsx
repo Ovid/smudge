@@ -189,6 +189,7 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
     try {
       const result = await api.images.delete(selectedImage.id);
       if ("deleted" in result && result.deleted) {
+        announce(S.deleteSuccess(selectedImage.filename));
         setSelectedImage(null);
         setConfirmingDelete(false);
         incrementRefreshKey();
