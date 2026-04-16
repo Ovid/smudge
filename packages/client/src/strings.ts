@@ -260,4 +260,28 @@ export const STRINGS = {
     loadFailed: "Failed to load images.",
     retryButton: "Retry",
   },
+  snapshots: {
+    panelTitle: "Snapshots",
+    createButton: "Create Snapshot",
+    labelPlaceholder: "Optional label (e.g., 'before major rewrite')",
+    save: "Save",
+    cancel: "Cancel",
+    untitled: "Untitled snapshot",
+    auto: "auto",
+    view: "View",
+    delete: "Delete",
+    deleteConfirm: "Delete this snapshot? This cannot be undone.",
+    deleteConfirmButton: "Delete",
+    deleteCancel: "Cancel",
+    restoreButton: "Restore",
+    restoreConfirm:
+      "Replace current chapter content with this snapshot? A snapshot of your current content will be saved automatically.",
+    backToEditing: "Back to editing",
+    viewingBanner: (label: string, date: string) => `Viewing snapshot: ${label} — ${date}`,
+    emptyState: "No snapshots yet. Create one to save a checkpoint of your work.",
+    count: (manual: number, auto: number) =>
+      `${manual + auto} snapshots (${manual} manual, ${auto} auto)`,
+    duplicateSkipped: "Content unchanged since last snapshot.",
+    ariaLabel: "Chapter snapshots",
+  },
 } as const;
