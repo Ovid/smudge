@@ -259,7 +259,10 @@ export async function renderPlainText(
         );
         // Also replace any <figure> wrapper that resolveImagesInHtml may have added
         html = html.replace(
-          new RegExp(`<figure>\\[Image: ${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\]<figcaption>[^<]*</figcaption></figure>`, "gi"),
+          new RegExp(
+            `<figure>\\[Image: ${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\]<figcaption>[^<]*</figcaption></figure>`,
+            "gi",
+          ),
           `[Image: ${label}]`,
         );
       }

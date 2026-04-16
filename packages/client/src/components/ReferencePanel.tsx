@@ -80,7 +80,12 @@ export function ReferencePanel({ width, onResize, children }: ReferencePanelProp
         </button>
       </div>
 
-      <div id="images-tabpanel" role="tabpanel" aria-labelledby="images-tab" className="flex-1 overflow-y-auto">
+      <div
+        id="images-tabpanel"
+        role="tabpanel"
+        aria-labelledby="images-tab"
+        className="flex-1 overflow-y-auto"
+      >
         {children}
       </div>
     </aside>
