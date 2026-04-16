@@ -251,11 +251,12 @@ export async function renderPlainText(
       html = resolvedHtml;
 
       // Replace resolved <img> tags (with data-image-id) using metadata.
-      // Priority: HTML alt attribute > DB alt_text > image ID
+      // Priority: HTML alt attribute > DB alt_text > filename > image ID
       for (const [id, img] of images) {
         html = html.replace(new RegExp(`<img[^>]*data-image-id="${id}"[^>]*>`, "gi"), (match) => {
           const altMatch = /alt="([^"]*)"/.exec(match);
-          const label = (altMatch?.[1] || img.altText || img.id).trim() || img.id;
+          const label =
+            (altMatch?.[1] || img.altText || img.filename || img.id).trim() || img.id;
           return `[Image: ${label}]`;
         });
         // Strip any <figure> wrapper that resolveImagesInHtml added around the marker

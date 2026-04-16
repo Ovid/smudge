@@ -5,6 +5,7 @@ import { escapeHtml } from "./export.renderers";
 
 export interface ResolvedImage {
   id: string;
+  filename: string;
   data: Buffer;
   mimeType: string;
   altText: string;
@@ -26,6 +27,7 @@ export async function resolveImage(imageId: string): Promise<ResolvedImage | nul
     const data = await fs.readFile(filePath);
     return {
       id: row.id,
+      filename: row.filename,
       data,
       mimeType: row.mime_type,
       altText: row.alt_text,

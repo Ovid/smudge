@@ -46,6 +46,7 @@ async function resolveImagesForEpub(html: string): Promise<string> {
       if (!imageData.has(id)) {
         imageData.set(id, {
           id: row.id,
+          filename: row.filename,
           data: Buffer.alloc(0), // Not used for EPUB — file:// URLs are used instead
           mimeType: row.mime_type,
           altText: row.alt_text,
