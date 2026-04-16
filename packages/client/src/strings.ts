@@ -284,4 +284,27 @@ export const STRINGS = {
     duplicateSkipped: "Content unchanged since last snapshot.",
     ariaLabel: "Chapter snapshots",
   },
+  findReplace: {
+    panelTitle: "Find and Replace",
+    searchPlaceholder: "Search...",
+    replacePlaceholder: "Replace with...",
+    matchCase: "Match case",
+    wholeWord: "Whole word",
+    regex: "Regular expression",
+    noMatches: "No matches found",
+    matchCount: (count: number, chapters: number) =>
+      `Found ${count} occurrence${count === 1 ? "" : "s"} in ${chapters} chapter${chapters === 1 ? "" : "s"}`,
+    replaceOne: "Replace",
+    replaceAllInChapter: "Replace All in Chapter",
+    replaceAllInManuscript: "Replace All in Manuscript",
+    replaceConfirm: (count: number, search: string, replace: string, chapters: number) =>
+      `Replace ${count} occurrence${count === 1 ? "" : "s"} of '${search}' with '${replace}' across ${chapters} chapter${chapters === 1 ? "" : "s"}? Snapshots of all affected chapters will be created automatically.`,
+    replaceChapterConfirm: (count: number, search: string, replace: string) =>
+      `Replace ${count} occurrence${count === 1 ? "" : "s"} of '${search}' with '${replace}' in this chapter? A snapshot will be created automatically.`,
+    matchNotFound: "Match no longer found — try searching again.",
+    invalidRegex: "Invalid regular expression",
+    chapterMatches: (title: string, count: number) =>
+      `${title} (${count} match${count === 1 ? "" : "es"})`,
+    ariaLabel: "Find and replace",
+  },
 } as const;
