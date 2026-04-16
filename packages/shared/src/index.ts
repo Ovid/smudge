@@ -12,6 +12,7 @@ export {
   EXPORT_FILE_EXTENSIONS,
   EXPORT_CONTENT_TYPES,
   UpdateImageSchema,
+  CreateSnapshotSchema,
 } from "./schemas";
 export type { ExportFormatType } from "./schemas";
 export { countWords } from "./wordcount";

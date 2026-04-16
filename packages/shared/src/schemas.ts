@@ -109,3 +109,7 @@ export const UpdateSettingsSchema = z.object({
     )
     .min(1, "At least one setting must be provided"),
 });
+
+export const CreateSnapshotSchema = z.object({
+  label: z.string().trim().max(500, "Label is too long").optional(),
+});
