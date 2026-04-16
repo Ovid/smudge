@@ -70,15 +70,17 @@ export function ReferencePanel({ width, onResize, children }: ReferencePanelProp
 
       <div role="tablist" className="border-b border-border/40 px-4 py-2 flex gap-2">
         <button
+          id="images-tab"
           role="tab"
           aria-selected={true}
+          aria-controls="images-tabpanel"
           className="text-sm font-medium text-text-primary px-2 py-1 border-b-2 border-accent"
         >
           {STRINGS.referencePanel.imagesTab}
         </button>
       </div>
 
-      <div role="tabpanel" className="flex-1 overflow-y-auto">
+      <div id="images-tabpanel" role="tabpanel" aria-labelledby="images-tab" className="flex-1 overflow-y-auto">
         {children}
       </div>
     </aside>
