@@ -2,13 +2,14 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import multer from "multer";
 import { asyncHandler } from "../app";
 import * as imagesService from "./images.service";
+import { UUID_PATTERN } from "./images.paths";
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB streaming rejection
 });
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE = new RegExp(`^${UUID_PATTERN}$`, "i");
 
 function requireUuidParam(paramName: string) {
   return (req: Request, res: Response, next: NextFunction) => {
