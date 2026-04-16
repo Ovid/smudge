@@ -77,7 +77,7 @@ export async function uploadImage(projectId: string, file: FileInput): Promise<U
     row = await store.insertImage({
       id,
       project_id: projectId,
-      filename: file.originalname,
+      filename: path.basename(file.originalname).replace(/\0/g, ""),
       mime_type: file.mimetype,
       size_bytes: file.size,
       created_at: new Date().toISOString(),
