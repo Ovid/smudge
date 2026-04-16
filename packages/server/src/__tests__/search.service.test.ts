@@ -355,6 +355,40 @@ describe("search.service", () => {
       expect(doc.content[0].content[0].text).toBe("world");
     });
 
+    it("scoped chapter replace returns 0 when chapter is soft-deleted", async () => {
+      const { replaceInProject } = await import("../search/search.service");
+      const projectId = await createProject();
+      const ch1 = await createChapter(projectId, "Ch 1", JSON.stringify(makeDoc("hello world")), 0);
+
+      // Soft-delete the chapter
+      await t
+        .db("chapters")
+        .where({ id: ch1 })
+        .update({ deleted_at: new Date().toISOString() });
+
+      const result = await replaceInProject(projectId, "hello", "goodbye", undefined, {
+        type: "chapter",
+        chapter_id: ch1,
+      });
+
+      const r = result as { replaced_count: number; affected_chapter_ids: string[] };
+      expect(r.replaced_count).toBe(0);
+      expect(r.affected_chapter_ids).toEqual([]);
+    });
+
+    it("skips chapters with corrupt JSON content during replace", async () => {
+      const { replaceInProject } = await import("../search/search.service");
+      const projectId = await createProject();
+      const ch1 = await createChapter(projectId, "Good", JSON.stringify(makeDoc("hello world")), 0);
+      await createChapter(projectId, "Corrupt", "{not valid json!!!", 1);
+
+      const result = await replaceInProject(projectId, "hello", "goodbye");
+
+      const r = result as { replaced_count: number; affected_chapter_ids: string[] };
+      expect(r.replaced_count).toBe(1);
+      expect(r.affected_chapter_ids).toEqual([ch1]);
+    });
+
     it("image reference counts adjusted via applyImageRefDiff", async () => {
       const { replaceInProject } = await import("../search/search.service");
       const projectId = await createProject();

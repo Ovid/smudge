@@ -1,8 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
+import { logger } from "../logger";
 
 const t = setupTestDb();
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 async function createProjectWithChapters(): Promise<{
   projectId: string;
@@ -82,6 +87,26 @@ describe("search routes", () => {
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe("VALIDATION_ERROR");
     });
+
+    it("re-throws non-regex errors from searchProject", async () => {
+      const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+      const { projectSlug } = await createProjectWithChapters();
+
+      // Spy on SearchService to throw a generic error
+      const SearchService = await import("../search/search.service");
+      const spy = vi
+        .spyOn(SearchService, "searchProject")
+        .mockRejectedValueOnce(new Error("unexpected DB error"));
+
+      const res = await request(t.app)
+        .post(`/api/projects/${projectSlug}/search`)
+        .send({ query: "test" });
+
+      expect(res.status).toBe(500);
+      expect(logSpy).toHaveBeenCalled();
+      spy.mockRestore();
+      logSpy.mockRestore();
+    });
   });
 
   describe("POST /api/projects/:slug/replace", () => {
@@ -135,6 +160,21 @@ describe("search routes", () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 404 when replaceInProject returns null (project vanished between slug lookup and service)", async () => {
+      const { projectSlug } = await createProjectWithChapters();
+
+      const SearchService = await import("../search/search.service");
+      const spy = vi.spyOn(SearchService, "replaceInProject").mockResolvedValueOnce(null);
+
+      const res = await request(t.app)
+        .post(`/api/projects/${projectSlug}/replace`)
+        .send({ search: "test", replace: "other" });
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("NOT_FOUND");
+      spy.mockRestore();
     });
 
     it("returns 400 for empty search", async () => {

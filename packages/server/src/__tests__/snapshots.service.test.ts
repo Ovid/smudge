@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { v4 as uuid } from "uuid";
 import { setupTestDb } from "./test-helpers";
 import { setVelocityService, resetVelocityService } from "../velocity/velocity.injectable";
+import { logger } from "../logger";
 
 const t = setupTestDb();
 
@@ -323,6 +324,94 @@ describe("snapshots.service", () => {
       const { restoreSnapshot } = await import("../snapshots/snapshots.service");
       const result = await restoreSnapshot(uuid());
       expect(result).toBeNull();
+    });
+
+    it("uses snapshot label in auto-backup label when present", async () => {
+      stubVelocity();
+      const { chapterId } = await createProjectAndChapter();
+      const { createSnapshot, restoreSnapshot, listSnapshots } =
+        await import("../snapshots/snapshots.service");
+
+      // Create a snapshot WITH a label
+      const snap = (await createSnapshot(chapterId, "My Named Snapshot")) as Exclude<
+        Awaited<ReturnType<typeof createSnapshot>>,
+        null | "duplicate"
+      >;
+
+      // Change content so restore does something
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ content: JSON.stringify(DOC_JSON_ALT), word_count: 2 });
+
+      await restoreSnapshot(snap.id);
+
+      // Check the auto-backup snapshot label includes the named label
+      const snapshots = await listSnapshots(chapterId);
+      const autoSnap = snapshots!.find((s) => s.is_auto && s.label?.includes("My Named Snapshot"));
+      expect(autoSnap).toBeDefined();
+      expect(autoSnap!.label).toBe("Before restore to 'My Named Snapshot'");
+    });
+
+    it("uses snapshot created_at in auto-backup label when no label is set", async () => {
+      stubVelocity();
+      const { chapterId } = await createProjectAndChapter();
+      const { createSnapshot, restoreSnapshot, listSnapshots } =
+        await import("../snapshots/snapshots.service");
+
+      // Create a snapshot WITHOUT a label
+      const snap = (await createSnapshot(chapterId, null)) as Exclude<
+        Awaited<ReturnType<typeof createSnapshot>>,
+        null | "duplicate"
+      >;
+
+      // Change content so restore does something
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ content: JSON.stringify(DOC_JSON_ALT), word_count: 2 });
+
+      await restoreSnapshot(snap.id);
+
+      const snapshots = await listSnapshots(chapterId);
+      const autoSnap = snapshots!.find(
+        (s) => s.is_auto && s.label?.startsWith("Before restore to snapshot from"),
+      );
+      expect(autoSnap).toBeDefined();
+    });
+
+    it("handles corrupt snapshot content gracefully (word count defaults to 0)", async () => {
+      const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+      stubVelocity();
+      const { chapterId } = await createProjectAndChapter();
+      const { createSnapshot, restoreSnapshot } = await import("../snapshots/snapshots.service");
+
+      // Create a normal snapshot first
+      const snap = (await createSnapshot(chapterId, "Normal")) as Exclude<
+        Awaited<ReturnType<typeof createSnapshot>>,
+        null | "duplicate"
+      >;
+
+      // Corrupt the snapshot's content directly in the DB
+      await t
+        .db("chapter_snapshots")
+        .where({ id: snap.id })
+        .update({ content: "{corrupt json!!!" });
+
+      // Change chapter content so restore attempts
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ content: JSON.stringify(DOC_JSON_ALT), word_count: 2 });
+
+      const result = await restoreSnapshot(snap.id);
+      expect(result).not.toBeNull();
+
+      // The chapter should have the corrupt content and word_count = 0
+      const chapter = await t.db("chapters").where({ id: chapterId }).first();
+      expect(chapter.content).toBe("{corrupt json!!!");
+      expect(chapter.word_count).toBe(0);
+      logSpy.mockRestore();
     });
 
     it("returns null if chapter not found (snapshot's chapter was purged)", async () => {

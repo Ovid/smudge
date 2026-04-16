@@ -342,6 +342,41 @@ describe("replaceInDoc", () => {
     expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("a longer-replacement c");
   });
 
+  it("handles marksAtOffset past end of segments (replacement longer than original)", () => {
+    // When replacement is longer than the original text, marksAtOffset gets
+    // called with offset past the end of segments — triggers fallback path
+    const d = doc(paragraph(text("ab", [bold()])));
+    const result = replaceInDoc(d, "ab", "abcdef");
+    expect(result.count).toBe(1);
+    const para = contentOf(result.doc)[0];
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("abcdef");
+    // The replacement should inherit the bold mark from the match start
+    const content = para!.content as TipTapTextNode[];
+    expect(content[0]!.marks).toEqual([bold()]);
+  });
+
+  it("handles empty segments in marksAtOffset (empty paragraph)", () => {
+    // A paragraph that has no text nodes — segments will be empty
+    const d = { type: "doc", content: [{ type: "paragraph", content: [] }] };
+    const result = searchInDoc(d as unknown as Record<string, unknown>, "anything");
+    expect(result).toEqual([]);
+  });
+
+  it("searches within codeBlock nodes", () => {
+    const d = {
+      type: "doc",
+      content: [
+        {
+          type: "codeBlock",
+          content: [{ type: "text", text: "const x = 42;" }],
+        },
+      ],
+    } as unknown as Record<string, unknown>;
+    const results = searchInDoc(d, "42");
+    expect(results).toHaveLength(1);
+    expect(results[0]!.blockIndex).toBe(0);
+  });
+
   it("handles replacement when all text is deleted", () => {
     const d = doc(paragraph(text("hello")));
     const result = replaceInDoc(d, "hello", "");
