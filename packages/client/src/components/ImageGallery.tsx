@@ -173,6 +173,7 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
         incrementRefreshKey();
       } catch {
         setSaveStatus("idle");
+        announce(S.saveFailed);
         return;
       }
     }
