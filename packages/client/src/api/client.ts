@@ -9,6 +9,8 @@ import type {
   VelocityResponse,
   ExportFormatType,
   ImageRow,
+  SnapshotRow,
+  SnapshotListItem,
 } from "@smudge/shared";
 
 export type { VelocityResponse };
@@ -250,6 +252,24 @@ export const api = {
       }
       return body;
     },
+  },
+
+  snapshots: {
+    list: (chapterId: string) =>
+      apiFetch<SnapshotListItem[]>(`/chapters/${chapterId}/snapshots`),
+
+    create: (chapterId: string, label?: string) =>
+      apiFetch<SnapshotRow | { message: string }>(`/chapters/${chapterId}/snapshots`, {
+        method: "POST",
+        body: JSON.stringify(label ? { label } : {}),
+      }),
+
+    get: (id: string) => apiFetch<SnapshotRow>(`/snapshots/${id}`),
+
+    delete: (id: string) => apiFetch<void>(`/snapshots/${id}`, { method: "DELETE" }),
+
+    restore: (id: string) =>
+      apiFetch<Chapter>(`/snapshots/${id}/restore`, { method: "POST" }),
   },
 
   settings: {

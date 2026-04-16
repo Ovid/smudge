@@ -29,4 +29,6 @@ export type {
   ApiError,
   ImageRow,
   VelocityResponse,
+  SnapshotRow,
+  SnapshotListItem,
 } from "./types";
