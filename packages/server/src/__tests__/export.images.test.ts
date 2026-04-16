@@ -47,6 +47,7 @@ function makeChapterWithImage(imgId: string): Record<string, unknown> {
 }
 
 const projectInfo: ExportProjectInfo = {
+  id: "proj-img-test",
   title: "Image Test Project",
   author_name: "Test Author",
 };

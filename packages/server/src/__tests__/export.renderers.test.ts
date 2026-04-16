@@ -39,7 +39,7 @@ const sampleChapters = [
   },
 ];
 
-const projectInfo = { title: "My Novel", author_name: "Jane Doe" };
+const projectInfo = { id: "proj-1", title: "My Novel", author_name: "Jane Doe" };
 
 describe("renderHtml", () => {
   it("produces a self-contained HTML document", async () => {
@@ -244,6 +244,7 @@ describe("renderMarkdown", () => {
 
   it("escapes Markdown metacharacters in titles and author", async () => {
     const mdProject = {
+      id: "proj-md",
       title: "My *Bold* Novel",
       author_name: "Jane_Doe [editor]",
     };
@@ -382,7 +383,7 @@ describe("renderDocx", () => {
   });
 
   it("handles CJK characters in title and content", async () => {
-    const cjkProject = { title: "我的小说", author_name: null };
+    const cjkProject = { id: "proj-cjk", title: "我的小说", author_name: null };
     const cjkChapters = [
       {
         id: "ch-1",
@@ -1058,7 +1059,7 @@ describe("renderEpub", () => {
   });
 
   it("handles CJK characters", async () => {
-    const cjkProject = { title: "我的小说", author_name: null };
+    const cjkProject = { id: "proj-cjk", title: "我的小说", author_name: null };
     const cjkChapters = [
       {
         id: "ch-1",
