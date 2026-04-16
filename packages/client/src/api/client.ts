@@ -240,6 +240,14 @@ export const api = {
           res.status,
         );
       }
+      if (
+        !body ||
+        typeof body !== "object" ||
+        !("deleted" in body) ||
+        typeof body.deleted !== "boolean"
+      ) {
+        throw new ApiRequestError(`Delete failed (${res.status})`, res.status);
+      }
       return body;
     },
   },
