@@ -26,10 +26,11 @@ async function resolveImagesForEpub(html: string): Promise<string> {
   // Collect unique image metadata for the caption pass
   const imageData = new Map<string, ResolvedImage>();
 
+  // Deduplicate IDs — the global regex may match the same image multiple times
+  const uniqueIds = [...new Set(matches.map((m) => m[1]).filter(Boolean))] as string[];
+
   let resolvedHtml = html;
-  for (const match of matches) {
-    const id = match[1];
-    if (!id) continue;
+  for (const id of uniqueIds) {
     const row = await store.findImageById(id);
     if (!row) continue;
     const ext = mimeToExt(row.mime_type);
@@ -42,19 +43,16 @@ async function resolveImagesForEpub(html: string): Promise<string> {
         new RegExp(`src="/api/images/${id}"`, "gi"),
         `data-image-id="${id}" src="${fileUrl}"`,
       );
-      // Store metadata for the caption pass (read file only if we need it for captions)
-      if (!imageData.has(id)) {
-        imageData.set(id, {
-          id: row.id,
-          filename: row.filename,
-          data: Buffer.alloc(0), // Not used for EPUB — file:// URLs are used instead
-          mimeType: row.mime_type,
-          altText: row.alt_text,
-          caption: row.caption,
-          source: row.source,
-          license: row.license,
-        });
-      }
+      imageData.set(id, {
+        id: row.id,
+        filename: row.filename,
+        data: Buffer.alloc(0), // Not used for EPUB — file:// URLs are used instead
+        mimeType: row.mime_type,
+        altText: row.alt_text,
+        caption: row.caption,
+        source: row.source,
+        license: row.license,
+      });
     } catch {
       // File doesn't exist — remove the img tag
       resolvedHtml = resolvedHtml.replace(
