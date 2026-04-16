@@ -1,5 +1,7 @@
 # NOW!!!
 
+- Need to resize images in editor, left align, right align, captions, etc.
+  Maybe part of wider "formatting" spec?
 - Need to check to see if we mark chapters as "dirty" so that we only save
   dirty and not all (or is this really a problem?)
 - Projects can have multiple authors. Smudge might want a "default" author.
