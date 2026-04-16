@@ -10,10 +10,11 @@ export function snapshotChapterRouter(): Router {
   router.post(
     "/:id/snapshots",
     asyncHandler(async (req, res) => {
+      const id = req.params.id as string;
       const parsed = CreateSnapshotSchema.safeParse(req.body);
       const label = parsed.success ? parsed.data.label : undefined;
 
-      const result = await SnapshotService.createSnapshot(req.params.id, label);
+      const result = await SnapshotService.createSnapshot(id, label);
       if (result === null) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Chapter not found." },
@@ -34,7 +35,8 @@ export function snapshotChapterRouter(): Router {
   router.get(
     "/:id/snapshots",
     asyncHandler(async (req, res) => {
-      const result = await SnapshotService.listSnapshots(req.params.id);
+      const id = req.params.id as string;
+      const result = await SnapshotService.listSnapshots(id);
       if (result === null) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Chapter not found." },
@@ -55,7 +57,8 @@ export function snapshotDirectRouter(): Router {
   router.get(
     "/:id",
     asyncHandler(async (req, res) => {
-      const snapshot = await SnapshotService.getSnapshot(req.params.id);
+      const id = req.params.id as string;
+      const snapshot = await SnapshotService.getSnapshot(id);
       if (!snapshot) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Snapshot not found." },
@@ -70,7 +73,8 @@ export function snapshotDirectRouter(): Router {
   router.delete(
     "/:id",
     asyncHandler(async (req, res) => {
-      const deleted = await SnapshotService.deleteSnapshot(req.params.id);
+      const id = req.params.id as string;
+      const deleted = await SnapshotService.deleteSnapshot(id);
       if (!deleted) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Snapshot not found." },
@@ -85,7 +89,8 @@ export function snapshotDirectRouter(): Router {
   router.post(
     "/:id/restore",
     asyncHandler(async (req, res) => {
-      const result = await SnapshotService.restoreSnapshot(req.params.id);
+      const id = req.params.id as string;
+      const result = await SnapshotService.restoreSnapshot(id);
       if (!result) {
         res.status(404).json({
           error: {

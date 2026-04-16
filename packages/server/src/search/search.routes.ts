@@ -51,8 +51,9 @@ export function searchRouter(): Router {
       const { query, options } = parsed.data;
 
       // Resolve slug to project ID
+      const slug = req.params.slug as string;
       const store = getProjectStore();
-      const project = await store.findProjectBySlug(req.params.slug);
+      const project = await store.findProjectBySlug(slug);
       if (!project) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Project not found." },
@@ -102,8 +103,9 @@ export function searchRouter(): Router {
       const { search, replace, options, scope } = parsed.data;
 
       // Resolve slug to project ID
+      const slug = req.params.slug as string;
       const store = getProjectStore();
-      const project = await store.findProjectBySlug(req.params.slug);
+      const project = await store.findProjectBySlug(slug);
       if (!project) {
         res.status(404).json({
           error: { code: "NOT_FOUND", message: "Project not found." },

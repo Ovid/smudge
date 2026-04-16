@@ -82,10 +82,10 @@ describe("search.service", () => {
       expect(result).not.toBeNull();
       expect(result!.total_count).toBe(2);
       expect(result!.chapters).toHaveLength(2);
-      expect(result!.chapters[0].chapter_title).toBe("Chapter 1");
-      expect(result!.chapters[0].matches).toHaveLength(1);
-      expect(result!.chapters[1].chapter_title).toBe("Chapter 2");
-      expect(result!.chapters[1].matches).toHaveLength(1);
+      expect(result!.chapters[0]!.chapter_title).toBe("Chapter 1");
+      expect(result!.chapters[0]!.matches).toHaveLength(1);
+      expect(result!.chapters[1]!.chapter_title).toBe("Chapter 2");
+      expect(result!.chapters[1]!.matches).toHaveLength(1);
     });
 
     it("returns total count and per-chapter counts", async () => {
@@ -103,8 +103,8 @@ describe("search.service", () => {
 
       expect(result).not.toBeNull();
       expect(result!.total_count).toBe(5);
-      expect(result!.chapters[0].matches).toHaveLength(4);
-      expect(result!.chapters[1].matches).toHaveLength(1);
+      expect(result!.chapters[0]!.matches).toHaveLength(4);
+      expect(result!.chapters[1]!.matches).toHaveLength(1);
     });
 
     it("is case-insensitive by default", async () => {
@@ -183,7 +183,7 @@ describe("search.service", () => {
       expect(result).not.toBeNull();
       expect(result!.total_count).toBe(1);
       expect(result!.chapters).toHaveLength(1);
-      expect(result!.chapters[0].chapter_title).toBe("Good");
+      expect(result!.chapters[0]!.chapter_title).toBe("Good");
       warnSpy.mockRestore();
     });
 

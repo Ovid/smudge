@@ -105,13 +105,13 @@ describe("snapshots repository", () => {
       const list = await SnapshotsRepo.listByChapter(t.db, chapterId);
       expect(list).toHaveLength(2);
       // Newest first
-      expect(list[0].id).toBe(newer.id);
-      expect(list[1].id).toBe(older.id);
+      expect(list[0]!.id).toBe(newer.id);
+      expect(list[1]!.id).toBe(older.id);
       // No content field
-      expect(list[0]).not.toHaveProperty("content");
-      expect(list[1]).not.toHaveProperty("content");
+      expect(list[0]!).not.toHaveProperty("content");
+      expect(list[1]!).not.toHaveProperty("content");
       // Has expected fields
-      expect(list[0]).toHaveProperty("word_count");
+      expect(list[0]!).toHaveProperty("word_count");
       expect(list[0]).toHaveProperty("is_auto");
       expect(list[0]).toHaveProperty("created_at");
     });

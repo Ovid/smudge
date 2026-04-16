@@ -171,10 +171,10 @@ describe("snapshots.service", () => {
       const list = result as NonNullable<typeof result>;
       expect(list).toHaveLength(2);
       // Newest first
-      expect(list[0].label).toBe("Second");
-      expect(list[1].label).toBe("First");
+      expect(list[0]!.label).toBe("Second");
+      expect(list[1]!.label).toBe("First");
       // No content field
-      expect("content" in list[0]).toBe(false);
+      expect("content" in list[0]!).toBe(false);
     });
 
     it("returns null if chapter not found", async () => {
