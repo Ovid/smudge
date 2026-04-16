@@ -80,20 +80,20 @@ describe("searchInDoc", () => {
     const d = doc(paragraph(text("The quick brown fox")));
     const results = searchInDoc(d, "quick");
     expect(results).toHaveLength(1);
-    expect(results[0].index).toBe(0);
-    expect(results[0].blockIndex).toBe(0);
-    expect(results[0].offset).toBe(4);
-    expect(results[0].length).toBe(5);
+    expect(results[0]!.index).toBe(0);
+    expect(results[0]!.blockIndex).toBe(0);
+    expect(results[0]!.offset).toBe(4);
+    expect(results[0]!.length).toBe(5);
   });
 
   it("finds multiple matches across paragraphs", () => {
     const d = doc(paragraph(text("The cat sat on the mat")), paragraph(text("The cat came back")));
     const results = searchInDoc(d, "cat");
     expect(results).toHaveLength(2);
-    expect(results[0].blockIndex).toBe(0);
-    expect(results[1].blockIndex).toBe(1);
-    expect(results[0].index).toBe(0);
-    expect(results[1].index).toBe(1);
+    expect(results[0]!.blockIndex).toBe(0);
+    expect(results[1]!.blockIndex).toBe(1);
+    expect(results[0]!.index).toBe(0);
+    expect(results[1]!.index).toBe(1);
   });
 
   it("performs case-insensitive search by default", () => {
@@ -106,14 +106,14 @@ describe("searchInDoc", () => {
     const d = doc(paragraph(text("Hello World hello HELLO")));
     const results = searchInDoc(d, "hello", { case_sensitive: true });
     expect(results).toHaveLength(1);
-    expect(results[0].offset).toBe(12);
+    expect(results[0]!.offset).toBe(12);
   });
 
   it("supports whole-word search", () => {
     const d = doc(paragraph(text("the cat sat on the category mat")));
     const results = searchInDoc(d, "cat", { whole_word: true });
     expect(results).toHaveLength(1);
-    expect(results[0].offset).toBe(4);
+    expect(results[0]!.offset).toBe(4);
   });
 
   it("supports regex search", () => {
@@ -128,16 +128,16 @@ describe("searchInDoc", () => {
     const d = doc(paragraph(text(longText)));
     const results = searchInDoc(d, "target");
     expect(results).toHaveLength(1);
-    expect(results[0].context).toContain("target");
-    expect(results[0].context.length).toBeLessThanOrEqual("target".length + 80 + 10);
+    expect(results[0]!.context).toContain("target");
+    expect(results[0]!.context.length).toBeLessThanOrEqual("target".length + 80 + 10);
   });
 
   it("finds match spanning two text nodes with different marks", () => {
     const d = doc(paragraph(text("she "), text("sud", [bold()]), text("denly realized")));
     const results = searchInDoc(d, "suddenly");
     expect(results).toHaveLength(1);
-    expect(results[0].offset).toBe(4);
-    expect(results[0].length).toBe(8);
+    expect(results[0]!.offset).toBe(4);
+    expect(results[0]!.length).toBe(8);
   });
 
   it("returns empty array for no matches", () => {
@@ -188,9 +188,9 @@ describe("searchInDoc", () => {
     const d = doc(paragraph(text("the the the")));
     const results = searchInDoc(d, "the");
     expect(results).toHaveLength(3);
-    expect(results[0].offset).toBe(0);
-    expect(results[1].offset).toBe(4);
-    expect(results[2].offset).toBe(8);
+    expect(results[0]!.offset).toBe(0);
+    expect(results[1]!.offset).toBe(4);
+    expect(results[2]!.offset).toBe(8);
   });
 });
 
@@ -281,17 +281,17 @@ describe("replaceInDoc", () => {
     );
     const result = replaceInDoc(d, "quick", "fast");
     const para = contentOf(result.doc)[0];
-    const content = para.content as TipTapTextNode[];
+    const content = para!.content as TipTapTextNode[];
     const boldNodes = content.filter((n) => n.marks && n.marks.some((m) => m.type === "bold"));
     expect(boldNodes).toHaveLength(1);
-    expect(boldNodes[0].text).toBe("fast");
+    expect(boldNodes[0]!.text).toBe("fast");
   });
 
   it("removes empty text nodes after replacement", () => {
     const d = doc(paragraph(text("hello"), text(" world")));
     const result = replaceInDoc(d, "hello", "");
     const para = contentOf(result.doc)[0];
-    const content = para.content as TipTapTextNode[];
+    const content = para!.content as TipTapTextNode[];
     for (const node of content) {
       expect(node.text).not.toBe("");
     }
@@ -302,7 +302,7 @@ describe("replaceInDoc", () => {
     const d = doc(blockquote(paragraph(text("A wise old saying"))));
     const result = replaceInDoc(d, "wise", "foolish");
     expect(result.count).toBe(1);
-    const bq = contentOf(result.doc)[0];
+    const bq = contentOf(result.doc)[0]!;
     const para = bq.content![0] as TipTapBlock;
     expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("A foolish old saying");
   });
@@ -328,7 +328,7 @@ describe("replaceInDoc", () => {
     expect(result.count).toBe(1);
     const para = contentOf(result.doc)[0];
     expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("I am very sad today");
-    const content = para.content as TipTapTextNode[];
+    const content = para!.content as TipTapTextNode[];
     const sadNode = content.find((n) => n.text === "sad");
     expect(sadNode).toBeDefined();
     expect(sadNode!.marks).toEqual([italic()]);
@@ -347,7 +347,7 @@ describe("replaceInDoc", () => {
     const result = replaceInDoc(d, "hello", "");
     expect(result.count).toBe(1);
     const para = contentOf(result.doc)[0];
-    const content = (para.content ?? []) as TipTapTextNode[];
+    const content = (para!.content ?? []) as TipTapTextNode[];
     for (const node of content) {
       expect(node.text).not.toBe("");
     }
