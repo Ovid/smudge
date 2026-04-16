@@ -48,6 +48,45 @@ export function diffImageReferences(
 }
 
 /**
+ * Parses old and new content JSON strings, computes the image reference diff,
+ * and applies increment/decrement to the store. Shared by chapter update and
+ * snapshot restore to avoid duplicating the parse → extract → diff → apply pattern.
+ */
+export async function applyImageRefDiff(
+  txStore: { incrementImageReferenceCount(id: string, delta: number): Promise<void> },
+  oldContentJson: string | null,
+  newContentJson: string | null,
+): Promise<void> {
+  let oldContent: Record<string, unknown> | null = null;
+  if (oldContentJson) {
+    try {
+      oldContent = JSON.parse(oldContentJson);
+    } catch {
+      /* corrupt */
+    }
+  }
+  let newContent: Record<string, unknown> | null = null;
+  if (newContentJson) {
+    try {
+      newContent = JSON.parse(newContentJson);
+    } catch {
+      /* corrupt */
+    }
+  }
+
+  const oldIds = extractImageIds(oldContent);
+  const newIds = extractImageIds(newContent);
+  const diff = diffImageReferences(oldIds, newIds);
+
+  for (const id of diff.added) {
+    await txStore.incrementImageReferenceCount(id, 1);
+  }
+  for (const id of diff.removed) {
+    await txStore.incrementImageReferenceCount(id, -1);
+  }
+}
+
+/**
  * Scans all non-deleted chapters in a project for references to a specific image.
  * Pure read — does NOT update reference_count in the database.
  */

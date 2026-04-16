@@ -2,7 +2,7 @@ import { UpdateChapterSchema, countWords, generateSlug } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
-import { extractImageIds, diffImageReferences } from "../images/images.references";
+import { extractImageIds, applyImageRefDiff } from "../images/images.references";
 import {
   isCorruptChapter,
   enrichChapterWithLabel,
@@ -83,34 +83,17 @@ export async function updateChapter(
     const chapter = await txStore.findChapterByIdRaw(id);
     if (!chapter) return null;
 
-    let imageRefDiff: { added: string[]; removed: string[] } | null = null;
-    if (parsed.data.content !== undefined) {
-      let oldContent: Record<string, unknown> | null = null;
-      if (chapter.content) {
-        try {
-          oldContent = JSON.parse(chapter.content);
-        } catch {
-          // Stored content is corrupt — treat as no previous images so the save
-          // can overwrite/repair the corrupt content instead of crashing.
-        }
-      }
-      const oldIds = extractImageIds(oldContent);
-      const newIds = extractImageIds(parsed.data.content as Record<string, unknown>);
-      imageRefDiff = diffImageReferences(oldIds, newIds);
-    }
-
     const count = await txStore.updateChapter(id, updates);
     if (count === 0) return null;
     await txStore.updateProjectTimestamp(chapter.project_id, updates.updated_at);
 
     // Update image reference counts inside the same transaction
-    if (imageRefDiff) {
-      for (const imageId of imageRefDiff.added) {
-        await txStore.incrementImageReferenceCount(imageId, 1);
-      }
-      for (const imageId of imageRefDiff.removed) {
-        await txStore.incrementImageReferenceCount(imageId, -1);
-      }
+    if (parsed.data.content !== undefined) {
+      await applyImageRefDiff(
+        txStore,
+        chapter.content,
+        JSON.stringify(parsed.data.content),
+      );
     }
 
     return { project_id: chapter.project_id };
