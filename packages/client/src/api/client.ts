@@ -256,8 +256,7 @@ export const api = {
   },
 
   snapshots: {
-    list: (chapterId: string) =>
-      apiFetch<SnapshotListItem[]>(`/chapters/${chapterId}/snapshots`),
+    list: (chapterId: string) => apiFetch<SnapshotListItem[]>(`/chapters/${chapterId}/snapshots`),
 
     create: (chapterId: string, label?: string) =>
       apiFetch<SnapshotRow | { message: string }>(`/chapters/${chapterId}/snapshots`, {
@@ -267,10 +266,9 @@ export const api = {
 
     get: (id: string) => apiFetch<SnapshotRow>(`/snapshots/${id}`),
 
-    delete: (id: string) => apiFetch<void>(`/snapshots/${id}`, { method: "DELETE" }),
+    delete: (id: string) => apiFetch<undefined>(`/snapshots/${id}`, { method: "DELETE" }),
 
-    restore: (id: string) =>
-      apiFetch<Chapter>(`/snapshots/${id}/restore`, { method: "POST" }),
+    restore: (id: string) => apiFetch<Chapter>(`/snapshots/${id}/restore`, { method: "POST" }),
   },
 
   search: {

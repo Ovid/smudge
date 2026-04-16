@@ -52,12 +52,9 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
     setPanelOpen(false);
   }, []);
 
-  const toggleOption = useCallback(
-    (opt: "case_sensitive" | "whole_word" | "regex") => {
-      setOptions((prev) => ({ ...prev, [opt]: !prev[opt] }));
-    },
-    [],
-  );
+  const toggleOption = useCallback((opt: "case_sensitive" | "whole_word" | "regex") => {
+    setOptions((prev) => ({ ...prev, [opt]: !prev[opt] }));
+  }, []);
 
   const search = useCallback(
     async (slug: string) => {

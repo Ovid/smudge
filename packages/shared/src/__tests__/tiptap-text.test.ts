@@ -87,10 +87,7 @@ describe("searchInDoc", () => {
   });
 
   it("finds multiple matches across paragraphs", () => {
-    const d = doc(
-      paragraph(text("The cat sat on the mat")),
-      paragraph(text("The cat came back")),
-    );
+    const d = doc(paragraph(text("The cat sat on the mat")), paragraph(text("The cat came back")));
     const results = searchInDoc(d, "cat");
     expect(results).toHaveLength(2);
     expect(results[0].blockIndex).toBe(0);
@@ -132,19 +129,11 @@ describe("searchInDoc", () => {
     const results = searchInDoc(d, "target");
     expect(results).toHaveLength(1);
     expect(results[0].context).toContain("target");
-    expect(results[0].context.length).toBeLessThanOrEqual(
-      "target".length + 80 + 10,
-    );
+    expect(results[0].context.length).toBeLessThanOrEqual("target".length + 80 + 10);
   });
 
   it("finds match spanning two text nodes with different marks", () => {
-    const d = doc(
-      paragraph(
-        text("she "),
-        text("sud", [bold()]),
-        text("denly realized"),
-      ),
-    );
+    const d = doc(paragraph(text("she "), text("sud", [bold()]), text("denly realized")));
     const results = searchInDoc(d, "suddenly");
     expect(results).toHaveLength(1);
     expect(results[0].offset).toBe(4);
@@ -183,10 +172,7 @@ describe("searchInDoc", () => {
 
   it("finds matches in list items", () => {
     const d = doc(
-      bulletList(
-        listItem(paragraph(text("First item"))),
-        listItem(paragraph(text("Second item"))),
-      ),
+      bulletList(listItem(paragraph(text("First item"))), listItem(paragraph(text("Second item")))),
     );
     const results = searchInDoc(d, "item");
     expect(results).toHaveLength(2);
@@ -214,25 +200,15 @@ describe("replaceInDoc", () => {
     const result = replaceInDoc(d, "quick", "slow");
     expect(result.count).toBe(1);
     const para = contentOf(result.doc)[0];
-    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe(
-      "The slow brown fox",
-    );
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("The slow brown fox");
   });
 
   it("replaces across mark boundaries preserving marks", () => {
-    const d = doc(
-      paragraph(
-        text("she "),
-        text("sud", [bold()]),
-        text("denly realized"),
-      ),
-    );
+    const d = doc(paragraph(text("she "), text("sud", [bold()]), text("denly realized")));
     const result = replaceInDoc(d, "suddenly", "quickly");
     expect(result.count).toBe(1);
     const para = contentOf(result.doc)[0];
-    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe(
-      "she quickly realized",
-    );
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("she quickly realized");
   });
 
   it("replaces all occurrences in a block", () => {
@@ -240,25 +216,16 @@ describe("replaceInDoc", () => {
     const result = replaceInDoc(d, "cat", "dog");
     expect(result.count).toBe(2);
     const para = contentOf(result.doc)[0];
-    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe(
-      "the dog and the dog",
-    );
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("the dog and the dog");
   });
 
   it("replaces across multiple blocks", () => {
-    const d = doc(
-      paragraph(text("hello world")),
-      paragraph(text("hello again")),
-    );
+    const d = doc(paragraph(text("hello world")), paragraph(text("hello again")));
     const result = replaceInDoc(d, "hello", "goodbye");
     expect(result.count).toBe(2);
     const blocks = contentOf(result.doc);
-    expect(flatTextOf(blocks[0] as unknown as Record<string, unknown>)).toBe(
-      "goodbye world",
-    );
-    expect(flatTextOf(blocks[1] as unknown as Record<string, unknown>)).toBe(
-      "goodbye again",
-    );
+    expect(flatTextOf(blocks[0] as unknown as Record<string, unknown>)).toBe("goodbye world");
+    expect(flatTextOf(blocks[1] as unknown as Record<string, unknown>)).toBe("goodbye again");
   });
 
   it("performs case-insensitive replacement by default", () => {
@@ -266,9 +233,7 @@ describe("replaceInDoc", () => {
     const result = replaceInDoc(d, "hello", "hi");
     expect(result.count).toBe(3);
     const para = contentOf(result.doc)[0];
-    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe(
-      "hi hi hi",
-    );
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("hi hi hi");
   });
 
   it("performs whole-word replacement", () => {
@@ -286,9 +251,7 @@ describe("replaceInDoc", () => {
     const result = replaceInDoc(d, "(\\w+)ly", "$1", { regex: true });
     expect(result.count).toBe(2);
     const para = contentOf(result.doc)[0];
-    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe(
-      "quick and sudden",
-    );
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("quick and sudden");
   });
 
   it("replaces with empty string (deletion)", () => {
@@ -296,9 +259,7 @@ describe("replaceInDoc", () => {
     const result = replaceInDoc(d, " this", "");
     expect(result.count).toBe(1);
     const para = contentOf(result.doc)[0];
-    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe(
-      "remove word",
-    );
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("remove word");
   });
 
   it("returns unchanged doc if no matches", () => {
@@ -309,30 +270,19 @@ describe("replaceInDoc", () => {
   });
 
   it("returns correct count", () => {
-    const d = doc(
-      paragraph(text("aaa")),
-      paragraph(text("aaa")),
-      paragraph(text("bbb")),
-    );
+    const d = doc(paragraph(text("aaa")), paragraph(text("aaa")), paragraph(text("bbb")));
     const result = replaceInDoc(d, "aaa", "ccc");
     expect(result.count).toBe(2);
   });
 
   it("merges adjacent text nodes with same marks after replacement", () => {
     const d = doc(
-      paragraph(
-        text("the "),
-        text("qui", [bold()]),
-        text("ck", [bold()]),
-        text(" fox"),
-      ),
+      paragraph(text("the "), text("qui", [bold()]), text("ck", [bold()]), text(" fox")),
     );
     const result = replaceInDoc(d, "quick", "fast");
     const para = contentOf(result.doc)[0];
     const content = para.content as TipTapTextNode[];
-    const boldNodes = content.filter(
-      (n) => n.marks && n.marks.some((m) => m.type === "bold"),
-    );
+    const boldNodes = content.filter((n) => n.marks && n.marks.some((m) => m.type === "bold"));
     expect(boldNodes).toHaveLength(1);
     expect(boldNodes[0].text).toBe("fast");
   });
@@ -345,9 +295,7 @@ describe("replaceInDoc", () => {
     for (const node of content) {
       expect(node.text).not.toBe("");
     }
-    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe(
-      " world",
-    );
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe(" world");
   });
 
   it("handles nested structures (blockquote > paragraph)", () => {
@@ -356,9 +304,7 @@ describe("replaceInDoc", () => {
     expect(result.count).toBe(1);
     const bq = contentOf(result.doc)[0];
     const para = bq.content![0] as TipTapBlock;
-    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe(
-      "A foolish old saying",
-    );
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("A foolish old saying");
   });
 
   it("does not mutate the original doc", () => {
@@ -381,9 +327,7 @@ describe("replaceInDoc", () => {
     const result = replaceInDoc(d, "happy", "sad");
     expect(result.count).toBe(1);
     const para = contentOf(result.doc)[0];
-    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe(
-      "I am very sad today",
-    );
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("I am very sad today");
     const content = para.content as TipTapTextNode[];
     const sadNode = content.find((n) => n.text === "sad");
     expect(sadNode).toBeDefined();
@@ -395,9 +339,7 @@ describe("replaceInDoc", () => {
     const result = replaceInDoc(d, "b", "longer-replacement");
     expect(result.count).toBe(1);
     const para = contentOf(result.doc)[0];
-    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe(
-      "a longer-replacement c",
-    );
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("a longer-replacement c");
   });
 
   it("handles replacement when all text is deleted", () => {

@@ -14,7 +14,11 @@ export interface UseSnapshotStateReturn {
   toggleSnapshotPanel: () => void;
   setSnapshotPanelOpen: (open: boolean) => void;
   viewingSnapshot: ViewingSnapshot | null;
-  viewSnapshot: (snapshot: { id: string; label: string | null; created_at: string }) => Promise<void>;
+  viewSnapshot: (snapshot: {
+    id: string;
+    label: string | null;
+    created_at: string;
+  }) => Promise<void>;
   exitSnapshotView: () => void;
   restoreSnapshot: (snapshotId: string) => Promise<boolean>;
   snapshotCount: number;
@@ -30,16 +34,20 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   // Fetch snapshot count when chapterId changes or panel opens
   useEffect(() => {
     if (!chapterId) {
-      setSnapshotCount(0);
       return;
     }
     let cancelled = false;
-    api.snapshots.list(chapterId).then((data) => {
-      if (!cancelled) setSnapshotCount(data.length);
-    }).catch(() => {
-      // Silently fail
-    });
-    return () => { cancelled = true; };
+    api.snapshots
+      .list(chapterId)
+      .then((data) => {
+        if (!cancelled) setSnapshotCount(data.length);
+      })
+      .catch(() => {
+        // Silently fail
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [chapterId]);
 
   const setSnapshotPanelOpen = useCallback((open: boolean) => {
@@ -50,46 +58,58 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
     setSnapshotPanelOpenState((prev) => !prev);
   }, []);
 
-  const viewSnapshot = useCallback(async (snapshot: { id: string; label: string | null; created_at: string }) => {
-    try {
-      const full = await api.snapshots.get(snapshot.id);
-      const content = typeof full.content === "string" ? JSON.parse(full.content) : full.content;
-      setViewingSnapshot({
-        id: snapshot.id,
-        label: snapshot.label,
-        content,
-        created_at: snapshot.created_at,
-      });
-    } catch {
-      // Silently fail
-    }
-  }, []);
+  const viewSnapshot = useCallback(
+    async (snapshot: { id: string; label: string | null; created_at: string }) => {
+      try {
+        const full = await api.snapshots.get(snapshot.id);
+        const content = typeof full.content === "string" ? JSON.parse(full.content) : full.content;
+        setViewingSnapshot({
+          id: snapshot.id,
+          label: snapshot.label,
+          content,
+          created_at: snapshot.created_at,
+        });
+      } catch {
+        // Silently fail
+      }
+    },
+    [],
+  );
 
   const exitSnapshotView = useCallback(() => {
     setViewingSnapshot(null);
   }, []);
 
-  const restoreSnapshot = useCallback(async (snapshotId: string): Promise<boolean> => {
-    try {
-      await api.snapshots.restore(snapshotId);
-      setViewingSnapshot(null);
-      // Refresh the count (the auto-snapshot from restore adds one)
-      if (chapterId) {
-        api.snapshots.list(chapterId).then((data) => {
-          setSnapshotCount(data.length);
-        }).catch(() => {});
+  const restoreSnapshot = useCallback(
+    async (snapshotId: string): Promise<boolean> => {
+      try {
+        await api.snapshots.restore(snapshotId);
+        setViewingSnapshot(null);
+        // Refresh the count (the auto-snapshot from restore adds one)
+        if (chapterId) {
+          api.snapshots
+            .list(chapterId)
+            .then((data) => {
+              setSnapshotCount(data.length);
+            })
+            .catch(() => {});
+        }
+        return true;
+      } catch {
+        return false;
       }
-      return true;
-    } catch {
-      return false;
-    }
-  }, [chapterId]);
+    },
+    [chapterId],
+  );
 
   const refreshCount = useCallback(() => {
     if (!chapterId) return;
-    api.snapshots.list(chapterId).then((data) => {
-      setSnapshotCount(data.length);
-    }).catch(() => {});
+    api.snapshots
+      .list(chapterId)
+      .then((data) => {
+        setSnapshotCount(data.length);
+      })
+      .catch(() => {});
   }, [chapterId]);
 
   // Refresh count when panel closes (user may have created/deleted snapshots)

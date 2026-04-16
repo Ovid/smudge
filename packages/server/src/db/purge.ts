@@ -16,9 +16,7 @@ export async function purgeOldTrash(
 
   const { chapters, projects, images, purgedProjectIds } = await db.transaction(async (trx) => {
     // Delete snapshots for chapters that expired on their own, then delete those chapters
-    const expiredChapterIds = await trx("chapters")
-      .where("deleted_at", "<", cutoff)
-      .select("id");
+    const expiredChapterIds = await trx("chapters").where("deleted_at", "<", cutoff).select("id");
     if (expiredChapterIds.length > 0) {
       await trx("chapter_snapshots")
         .whereIn(

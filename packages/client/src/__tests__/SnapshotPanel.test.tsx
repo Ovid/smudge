@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, waitFor, within } from "@testing-library/react";
+import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SnapshotPanel } from "../components/SnapshotPanel";
 import { api } from "../api/client";
@@ -61,9 +61,7 @@ describe("SnapshotPanel", () => {
     it("renders an aside with the correct aria label", async () => {
       render(<SnapshotPanel {...defaultProps} />);
       await waitFor(() => {
-        expect(
-          screen.getByRole("complementary", { name: S.ariaLabel }),
-        ).toBeInTheDocument();
+        expect(screen.getByRole("complementary", { name: S.ariaLabel })).toBeInTheDocument();
       });
     });
 

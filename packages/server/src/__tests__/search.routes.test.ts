@@ -28,9 +28,7 @@ async function createProjectWithChapters(): Promise<{
         content: [
           {
             type: "paragraph",
-            content: [
-              { type: "text", text: "The quick brown fox jumps over the lazy dog" },
-            ],
+            content: [{ type: "text", text: "The quick brown fox jumps over the lazy dog" }],
           },
         ],
       },
@@ -107,14 +105,10 @@ describe("search routes", () => {
         .send({ search: "quick", replace: "slow" });
 
       // Verify snapshot was created via the snapshots API
-      const snapRes = await request(t.app).get(
-        `/api/chapters/${chapterId}/snapshots`,
-      );
+      const snapRes = await request(t.app).get(`/api/chapters/${chapterId}/snapshots`);
       expect(snapRes.status).toBe(200);
       expect(snapRes.body.length).toBeGreaterThanOrEqual(1);
-      const autoSnapshot = snapRes.body.find(
-        (s: { is_auto: boolean }) => s.is_auto,
-      );
+      const autoSnapshot = snapRes.body.find((s: { is_auto: boolean }) => s.is_auto);
       expect(autoSnapshot).toBeDefined();
       expect(autoSnapshot.label).toContain("find-and-replace");
     });

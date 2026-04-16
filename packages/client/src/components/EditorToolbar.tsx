@@ -8,7 +8,12 @@ interface EditorToolbarProps {
   onToggleFindReplace?: () => void;
 }
 
-export function EditorToolbar({ editor, snapshotCount, onToggleSnapshots, onToggleFindReplace }: EditorToolbarProps) {
+export function EditorToolbar({
+  editor,
+  snapshotCount,
+  onToggleSnapshots,
+  onToggleFindReplace,
+}: EditorToolbarProps) {
   const snapshotLabel = `Snapshots${snapshotCount != null && snapshotCount > 0 ? ` (${snapshotCount})` : ""}`;
   return (
     <div

@@ -66,7 +66,10 @@ describe("useSnapshotState", () => {
   });
 
   it("fetches snapshot count on mount", async () => {
-    vi.mocked(api.snapshots.list).mockResolvedValue([makeListItem(), makeListItem({ id: "snap-2" })]);
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      makeListItem(),
+      makeListItem({ id: "snap-2" }),
+    ]);
     const { result } = renderHook(() => useSnapshotState("ch-1"));
     // Wait for the async effect
     await vi.waitFor(() => {

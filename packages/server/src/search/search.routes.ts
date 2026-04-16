@@ -61,17 +61,16 @@ export function searchRouter(): Router {
       }
 
       try {
-        const result = await SearchService.searchProject(
-          project.id,
-          query,
-          options,
-        );
+        const result = await SearchService.searchProject(project.id, query, options);
         // searchProject returns null only when project not found,
         // which we've already handled above
         res.json(result);
       } catch (err) {
         // Invalid regex throws from searchInDoc
-        if (err instanceof SyntaxError || (err as Error).message?.includes("Invalid regular expression")) {
+        if (
+          err instanceof SyntaxError ||
+          (err as Error).message?.includes("Invalid regular expression")
+        ) {
           res.status(400).json({
             error: {
               code: "VALIDATION_ERROR",

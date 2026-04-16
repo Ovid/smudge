@@ -1,11 +1,4 @@
-import {
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-  useImperativeHandle,
-  forwardRef,
-} from "react";
+import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from "react";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
 import type { SnapshotListItem } from "@smudge/shared";
@@ -69,10 +62,20 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
 
     // Fetch on mount and when chapterId changes
     useEffect(() => {
-      if (isOpen && chapterId) {
-        fetchSnapshots();
-      }
-    }, [isOpen, chapterId, fetchSnapshots]);
+      if (!isOpen || !chapterId) return;
+      let cancelled = false;
+      api.snapshots
+        .list(chapterId)
+        .then((data) => {
+          if (!cancelled) setSnapshots(data);
+        })
+        .catch(() => {
+          // Silently fail — panel shows empty state
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [isOpen, chapterId]);
 
     // Focus management
     useEffect(() => {
@@ -104,20 +107,21 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
     }, [isOpen, onClose]);
 
     // Reset form state when panel closes or chapter changes
-    useEffect(() => {
+    // Uses React's "store previous value in state" pattern to avoid setState in effects
+    const resetKey = `${chapterId}:${isOpen}`;
+    const [prevResetKey, setPrevResetKey] = useState(resetKey);
+    if (prevResetKey !== resetKey) {
+      setPrevResetKey(resetKey);
       setShowCreateForm(false);
       setCreateLabel("");
       setDuplicateMessage(false);
       setConfirmDeleteId(null);
-    }, [chapterId, isOpen]);
+    }
 
     const handleCreate = async () => {
       if (!chapterId) return;
       try {
-        const result = await api.snapshots.create(
-          chapterId,
-          createLabel.trim() || undefined,
-        );
+        const result = await api.snapshots.create(chapterId, createLabel.trim() || undefined);
         if ("message" in result) {
           setDuplicateMessage(true);
           return;
@@ -216,9 +220,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
 
           {/* Empty state */}
           {snapshots.length === 0 && (
-            <p className="text-sm text-text-secondary text-center py-6 font-sans">
-              {S.emptyState}
-            </p>
+            <p className="text-sm text-text-secondary text-center py-6 font-sans">{S.emptyState}</p>
           )}
 
           {/* Snapshot list */}

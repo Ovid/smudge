@@ -108,9 +108,7 @@ export function FindReplacePanel({
     >
       {/* Header */}
       <div className="border-b border-border/40 px-4 py-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-text-primary font-sans">
-          {S.panelTitle}
-        </h2>
+        <h2 className="text-sm font-semibold text-text-primary font-sans">{S.panelTitle}</h2>
         <button
           type="button"
           onClick={onClose}

@@ -47,7 +47,9 @@ export async function replaceInProject(
   replace: string,
   options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
   scope?: { type: "project" } | { type: "chapter"; chapter_id: string },
-): Promise<{ replaced_count: number; affected_chapter_ids: string[] } | null | { validationError: string }> {
+): Promise<
+  { replaced_count: number; affected_chapter_ids: string[] } | null | { validationError: string }
+> {
   // Validate regex up front
   if (options?.regex) {
     try {

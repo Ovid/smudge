@@ -71,7 +71,8 @@ export function EditorPage() {
   } = useProjectEditor(slug);
 
   const { sidebarWidth, sidebarOpen, handleSidebarResize, toggleSidebar } = useSidebarState();
-  const { panelWidth, panelOpen, setPanelOpen, handlePanelResize, togglePanel } = useReferencePanelState();
+  const { panelWidth, panelOpen, setPanelOpen, handlePanelResize, togglePanel } =
+    useReferencePanelState();
 
   const {
     snapshotPanelOpen,
@@ -141,39 +142,45 @@ export function EditorPage() {
     snapshotPanelRef.current?.refreshSnapshots();
   }, [project, slug, findReplace, activeChapter, handleSelectChapter, snapshotPanelRef]);
 
-  const handleReplaceAllInChapter = useCallback(async (chapterId: string) => {
-    if (!project || !slug) return;
-    await editorRef.current?.flushSave();
-    const result = await api.search.replace(
-      slug,
-      findReplace.query,
-      findReplace.replacement,
-      findReplace.options,
-      { type: "chapter", chapter_id: chapterId },
-    );
-    if (activeChapter && result.affected_chapter_ids.includes(activeChapter.id)) {
-      await handleSelectChapter(activeChapter.id);
-    }
-    await findReplace.search(slug);
-    snapshotPanelRef.current?.refreshSnapshots();
-  }, [project, slug, findReplace, activeChapter, handleSelectChapter, snapshotPanelRef]);
+  const handleReplaceAllInChapter = useCallback(
+    async (chapterId: string) => {
+      if (!project || !slug) return;
+      await editorRef.current?.flushSave();
+      const result = await api.search.replace(
+        slug,
+        findReplace.query,
+        findReplace.replacement,
+        findReplace.options,
+        { type: "chapter", chapter_id: chapterId },
+      );
+      if (activeChapter && result.affected_chapter_ids.includes(activeChapter.id)) {
+        await handleSelectChapter(activeChapter.id);
+      }
+      await findReplace.search(slug);
+      snapshotPanelRef.current?.refreshSnapshots();
+    },
+    [project, slug, findReplace, activeChapter, handleSelectChapter, snapshotPanelRef],
+  );
 
-  const handleReplaceOne = useCallback(async (chapterId: string, _matchIndex: number) => {
-    if (!project || !slug) return;
-    await editorRef.current?.flushSave();
-    const result = await api.search.replace(
-      slug,
-      findReplace.query,
-      findReplace.replacement,
-      findReplace.options,
-      { type: "chapter", chapter_id: chapterId },
-    );
-    if (activeChapter && result.affected_chapter_ids.includes(activeChapter.id)) {
-      await handleSelectChapter(activeChapter.id);
-    }
-    await findReplace.search(slug);
-    snapshotPanelRef.current?.refreshSnapshots();
-  }, [project, slug, findReplace, activeChapter, handleSelectChapter, snapshotPanelRef]);
+  const handleReplaceOne = useCallback(
+    async (chapterId: string, _matchIndex: number) => {
+      if (!project || !slug) return;
+      await editorRef.current?.flushSave();
+      const result = await api.search.replace(
+        slug,
+        findReplace.query,
+        findReplace.replacement,
+        findReplace.options,
+        { type: "chapter", chapter_id: chapterId },
+      );
+      if (activeChapter && result.affected_chapter_ids.includes(activeChapter.id)) {
+        await handleSelectChapter(activeChapter.id);
+      }
+      await findReplace.search(slug);
+      snapshotPanelRef.current?.refreshSnapshots();
+    },
+    [project, slug, findReplace, activeChapter, handleSelectChapter, snapshotPanelRef],
+  );
 
   const {
     editingTitle,

@@ -102,9 +102,7 @@ function makeTextNode(text: string, marks?: Mark[]): TipTapNode {
 
 /** Remove empty text nodes and merge adjacent nodes with identical marks. */
 function cleanupTextNodes(nodes: TipTapNode[]): TipTapNode[] {
-  const nonEmpty = nodes.filter(
-    (n) => n.type !== "text" || (n.text != null && n.text !== ""),
-  );
+  const nonEmpty = nodes.filter((n) => n.type !== "text" || (n.text != null && n.text !== ""));
   const merged: TipTapNode[] = [];
   for (const node of nonEmpty) {
     if (node.type !== "text") {

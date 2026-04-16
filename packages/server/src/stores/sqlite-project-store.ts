@@ -17,7 +17,11 @@ import type {
 import type { ChapterStatusRow } from "../chapter-statuses/chapter-statuses.types";
 import type { SettingRow } from "../settings/settings.types";
 import type { ImageRow, CreateImageRow, UpdateImageData } from "../images/images.types";
-import type { SnapshotRow, SnapshotListItem, CreateSnapshotData } from "../snapshots/snapshots.types";
+import type {
+  SnapshotRow,
+  SnapshotListItem,
+  CreateSnapshotData,
+} from "../snapshots/snapshots.types";
 import * as projectsRepo from "../projects/projects.repository";
 import * as chaptersRepo from "../chapters/chapters.repository";
 import * as statusesRepo from "../chapter-statuses/chapter-statuses.repository";

@@ -490,7 +490,9 @@ describe("Ctrl+H toggles find-and-replace panel", () => {
     expect(preventDefaultSpy).toHaveBeenCalled();
     await waitFor(
       () => {
-        expect(screen.getByRole("complementary", { name: /find and replace/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole("complementary", { name: /find and replace/i }),
+        ).toBeInTheDocument();
       },
       { timeout: 3000 },
     );
@@ -509,7 +511,9 @@ describe("Ctrl+H toggles find-and-replace panel", () => {
     fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
     await waitFor(
       () => {
-        expect(screen.getByRole("complementary", { name: /find and replace/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole("complementary", { name: /find and replace/i }),
+        ).toBeInTheDocument();
       },
       { timeout: 3000 },
     );
@@ -546,7 +550,9 @@ describe("Ctrl+H toggles find-and-replace panel", () => {
     expect(preventDefaultSpy).toHaveBeenCalled();
     await waitFor(
       () => {
-        expect(screen.getByRole("complementary", { name: /find and replace/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole("complementary", { name: /find and replace/i }),
+        ).toBeInTheDocument();
       },
       { timeout: 3000 },
     );

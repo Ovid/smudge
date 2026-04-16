@@ -18,7 +18,12 @@ async function createTestProject(): Promise<{ projectId: string; chapterId: stri
   // Give the chapter some content so snapshots have something to capture
   await request(t.app)
     .patch(`/api/chapters/${chapterId}`)
-    .send({ content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hello world" }] }] } });
+    .send({
+      content: {
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "Hello world" }] }],
+      },
+    });
 
   return { projectId, chapterId };
 }
@@ -28,9 +33,7 @@ describe("snapshot routes", () => {
     it("returns 201 with snapshot when no label provided", async () => {
       const { chapterId } = await createTestProject();
 
-      const res = await request(t.app)
-        .post(`/api/chapters/${chapterId}/snapshots`)
-        .send({});
+      const res = await request(t.app).post(`/api/chapters/${chapterId}/snapshots`).send({});
 
       expect(res.status).toBe(201);
       expect(res.body.id).toBeDefined();
@@ -66,15 +69,11 @@ describe("snapshot routes", () => {
       const { chapterId } = await createTestProject();
 
       // First snapshot
-      const first = await request(t.app)
-        .post(`/api/chapters/${chapterId}/snapshots`)
-        .send({});
+      const first = await request(t.app).post(`/api/chapters/${chapterId}/snapshots`).send({});
       expect(first.status).toBe(201);
 
       // Second snapshot with same content
-      const second = await request(t.app)
-        .post(`/api/chapters/${chapterId}/snapshots`)
-        .send({});
+      const second = await request(t.app).post(`/api/chapters/${chapterId}/snapshots`).send({});
       expect(second.status).toBe(200);
       expect(second.body.message).toBeDefined();
     });
@@ -85,9 +84,7 @@ describe("snapshot routes", () => {
       const { chapterId } = await createTestProject();
 
       // Create a snapshot first
-      await request(t.app)
-        .post(`/api/chapters/${chapterId}/snapshots`)
-        .send({ label: "v1" });
+      await request(t.app).post(`/api/chapters/${chapterId}/snapshots`).send({ label: "v1" });
 
       const res = await request(t.app).get(`/api/chapters/${chapterId}/snapshots`);
 
@@ -127,9 +124,7 @@ describe("snapshot routes", () => {
     });
 
     it("returns 404 for non-existent snapshot", async () => {
-      const res = await request(t.app).get(
-        "/api/snapshots/00000000-0000-0000-0000-000000000000",
-      );
+      const res = await request(t.app).get("/api/snapshots/00000000-0000-0000-0000-000000000000");
 
       expect(res.status).toBe(404);
       expect(res.body.error.code).toBe("NOT_FOUND");
@@ -140,9 +135,7 @@ describe("snapshot routes", () => {
     it("returns 204 on success", async () => {
       const { chapterId } = await createTestProject();
 
-      const createRes = await request(t.app)
-        .post(`/api/chapters/${chapterId}/snapshots`)
-        .send({});
+      const createRes = await request(t.app).post(`/api/chapters/${chapterId}/snapshots`).send({});
       const snapshotId = createRes.body.id;
 
       const res = await request(t.app).delete(`/api/snapshots/${snapshotId}`);
@@ -176,7 +169,14 @@ describe("snapshot routes", () => {
       // Change the chapter content
       await request(t.app)
         .patch(`/api/chapters/${chapterId}`)
-        .send({ content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Changed content entirely" }] }] } });
+        .send({
+          content: {
+            type: "doc",
+            content: [
+              { type: "paragraph", content: [{ type: "text", text: "Changed content entirely" }] },
+            ],
+          },
+        });
 
       // Restore to the snapshot
       const res = await request(t.app).post(`/api/snapshots/${snapshotId}/restore`);

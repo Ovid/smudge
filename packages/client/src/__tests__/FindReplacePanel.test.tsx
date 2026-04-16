@@ -15,7 +15,13 @@ function makeResults(overrides: Partial<SearchResult> = {}): SearchResult {
         chapter_id: "ch-1",
         chapter_title: "Chapter 1: The Beginning",
         matches: [
-          { index: 0, context: "...the dark forest was quiet...", blockIndex: 0, offset: 8, length: 4 },
+          {
+            index: 0,
+            context: "...the dark forest was quiet...",
+            blockIndex: 0,
+            offset: 8,
+            length: 4,
+          },
           { index: 1, context: "...into the dark night...", blockIndex: 1, offset: 9, length: 4 },
         ],
       },
@@ -66,16 +72,12 @@ describe("FindReplacePanel", () => {
 
     it("renders as aside with correct aria label", () => {
       render(<FindReplacePanel {...defaultProps} />);
-      expect(
-        screen.getByRole("complementary", { name: S.ariaLabel }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("complementary", { name: S.ariaLabel })).toBeInTheDocument();
     });
 
     it("does not render when isOpen is false", () => {
       render(<FindReplacePanel {...defaultProps} isOpen={false} />);
-      expect(
-        screen.queryByRole("complementary", { name: S.ariaLabel }),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByRole("complementary", { name: S.ariaLabel })).not.toBeInTheDocument();
     });
 
     it("renders panel title and close button", () => {
@@ -119,32 +121,22 @@ describe("FindReplacePanel", () => {
   describe("results display", () => {
     it("displays results grouped by chapter with match counts", () => {
       const results = makeResults();
-      render(
-        <FindReplacePanel {...defaultProps} query="dark" results={results} />,
-      );
+      render(<FindReplacePanel {...defaultProps} query="dark" results={results} />);
 
-      expect(
-        screen.getByText(S.chapterMatches("Chapter 1: The Beginning", 2)),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText(S.chapterMatches("Chapter 2: The Journey", 1)),
-      ).toBeInTheDocument();
+      expect(screen.getByText(S.chapterMatches("Chapter 1: The Beginning", 2))).toBeInTheDocument();
+      expect(screen.getByText(S.chapterMatches("Chapter 2: The Journey", 1))).toBeInTheDocument();
     });
 
     it("shows match count summary", () => {
       const results = makeResults();
-      render(
-        <FindReplacePanel {...defaultProps} query="dark" results={results} />,
-      );
+      render(<FindReplacePanel {...defaultProps} query="dark" results={results} />);
 
       expect(screen.getByText(S.matchCount(3, 2))).toBeInTheDocument();
     });
 
     it("highlights match text in context", () => {
       const results = makeResults();
-      render(
-        <FindReplacePanel {...defaultProps} query="dark" results={results} />,
-      );
+      render(<FindReplacePanel {...defaultProps} query="dark" results={results} />);
 
       const marks = document.querySelectorAll("mark");
       expect(marks.length).toBeGreaterThan(0);
@@ -153,21 +145,13 @@ describe("FindReplacePanel", () => {
 
     it("shows 'No matches found' when results have 0 total_count", () => {
       const results: SearchResult = { total_count: 0, chapters: [] };
-      render(
-        <FindReplacePanel {...defaultProps} query="missing" results={results} />,
-      );
+      render(<FindReplacePanel {...defaultProps} query="missing" results={results} />);
 
       expect(screen.getByText(S.noMatches)).toBeInTheDocument();
     });
 
     it("shows error message for invalid regex", () => {
-      render(
-        <FindReplacePanel
-          {...defaultProps}
-          query="[invalid"
-          error={S.invalidRegex}
-        />,
-      );
+      render(<FindReplacePanel {...defaultProps} query="[invalid" error={S.invalidRegex} />);
 
       expect(screen.getByText(S.invalidRegex)).toBeInTheDocument();
     });
@@ -251,14 +235,7 @@ describe("FindReplacePanel", () => {
 
     it("'Replace All in Manuscript' button is disabled when no replacement text", () => {
       const results = makeResults();
-      render(
-        <FindReplacePanel
-          {...defaultProps}
-          query="dark"
-          replacement=""
-          results={results}
-        />,
-      );
+      render(<FindReplacePanel {...defaultProps} query="dark" replacement="" results={results} />);
 
       const manuscriptButton = screen.getByRole("button", {
         name: S.replaceAllInManuscript,
@@ -294,9 +271,7 @@ describe("FindReplacePanel", () => {
         return 0;
       });
 
-      const { rerender } = render(
-        <FindReplacePanel {...defaultProps} isOpen={false} />,
-      );
+      const { rerender } = render(<FindReplacePanel {...defaultProps} isOpen={false} />);
       rerender(<FindReplacePanel {...defaultProps} isOpen={true} />);
 
       expect(screen.getByPlaceholderText(S.searchPlaceholder)).toHaveFocus();
@@ -316,9 +291,7 @@ describe("FindReplacePanel", () => {
       const { rerender } = render(
         <FindReplacePanel {...defaultProps} isOpen={true} triggerRef={triggerRef} />,
       );
-      rerender(
-        <FindReplacePanel {...defaultProps} isOpen={false} triggerRef={triggerRef} />,
-      );
+      rerender(<FindReplacePanel {...defaultProps} isOpen={false} triggerRef={triggerRef} />);
 
       expect(focusSpy).toHaveBeenCalled();
       document.body.removeChild(triggerButton);

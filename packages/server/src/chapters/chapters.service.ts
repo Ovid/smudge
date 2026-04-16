@@ -89,11 +89,7 @@ export async function updateChapter(
 
     // Update image reference counts inside the same transaction
     if (parsed.data.content !== undefined) {
-      await applyImageRefDiff(
-        txStore,
-        chapter.content,
-        JSON.stringify(parsed.data.content),
-      );
+      await applyImageRefDiff(txStore, chapter.content, JSON.stringify(parsed.data.content));
     }
 
     return { project_id: chapter.project_id };

@@ -235,9 +235,8 @@ describe("snapshots.service", () => {
     it("replaces chapter content, creates auto backup snapshot, recalculates word count", async () => {
       stubVelocity();
       const { chapterId } = await createProjectAndChapter();
-      const { createSnapshot, restoreSnapshot, listSnapshots } = await import(
-        "../snapshots/snapshots.service"
-      );
+      const { createSnapshot, restoreSnapshot, listSnapshots } =
+        await import("../snapshots/snapshots.service");
 
       // Create a snapshot of the original content
       const snap = (await createSnapshot(chapterId, "Original")) as Exclude<
@@ -267,9 +266,7 @@ describe("snapshots.service", () => {
       // Verify an auto "before restore" snapshot was created
       const snapshots = await listSnapshots(chapterId);
       expect(snapshots).not.toBeNull();
-      const autoSnap = snapshots!.find(
-        (s) => s.is_auto && s.label?.startsWith("Before restore"),
-      );
+      const autoSnap = snapshots!.find((s) => s.is_auto && s.label?.startsWith("Before restore"));
       expect(autoSnap).toBeDefined();
     });
 

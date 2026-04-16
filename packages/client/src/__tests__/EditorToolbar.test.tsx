@@ -103,7 +103,9 @@ describe("EditorToolbar", () => {
       const editor = createMockEditor();
       const { container } = render(<EditorToolbar editor={editor} />);
       const toolbar = container.querySelector("[role='toolbar']") as HTMLElement;
-      expect(within(toolbar).queryByRole("button", { name: /find and replace/i })).not.toBeInTheDocument();
+      expect(
+        within(toolbar).queryByRole("button", { name: /find and replace/i }),
+      ).not.toBeInTheDocument();
     });
 
     it("renders find-replace button when onToggleFindReplace is provided", () => {

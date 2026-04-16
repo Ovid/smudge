@@ -25,7 +25,7 @@ function makeDocMultiParagraph(texts: string[]) {
   };
 }
 
-const EMPTY_DOC = { type: "doc", content: [] };
+const _EMPTY_DOC = { type: "doc", content: [] };
 
 async function createProject(title = "Test Project") {
   const projectId = uuid();
@@ -69,7 +69,12 @@ describe("search.service", () => {
     it("finds matches across multiple chapters, grouped by chapter", async () => {
       const { searchProject } = await import("../search/search.service");
       const projectId = await createProject();
-      await createChapter(projectId, "Chapter 1", JSON.stringify(makeDoc("The cat sat on the mat")), 0);
+      await createChapter(
+        projectId,
+        "Chapter 1",
+        JSON.stringify(makeDoc("The cat sat on the mat")),
+        0,
+      );
       await createChapter(projectId, "Chapter 2", JSON.stringify(makeDoc("The cat ran away")), 1);
 
       const result = await searchProject(projectId, "cat");
@@ -256,7 +261,12 @@ describe("search.service", () => {
       const { replaceInProject } = await import("../search/search.service");
       const projectId = await createProject();
       const ch1 = await createChapter(projectId, "Ch 1", JSON.stringify(makeDoc("hello world")), 0);
-      const ch2 = await createChapter(projectId, "Ch 2", JSON.stringify(makeDoc("goodbye world")), 1);
+      const ch2 = await createChapter(
+        projectId,
+        "Ch 2",
+        JSON.stringify(makeDoc("goodbye world")),
+        1,
+      );
       const originalContent = JSON.stringify(makeDoc("goodbye world"));
 
       await replaceInProject(projectId, "hello", "hi");
@@ -280,13 +290,10 @@ describe("search.service", () => {
       const ch1 = await createChapter(projectId, "Ch 1", JSON.stringify(makeDoc("hello world")), 0);
       const ch2 = await createChapter(projectId, "Ch 2", JSON.stringify(makeDoc("hello there")), 1);
 
-      const result = await replaceInProject(
-        projectId,
-        "hello",
-        "goodbye",
-        undefined,
-        { type: "chapter", chapter_id: ch1 },
-      );
+      const result = await replaceInProject(projectId, "hello", "goodbye", undefined, {
+        type: "chapter",
+        chapter_id: ch1,
+      });
 
       const r = result as { replaced_count: number; affected_chapter_ids: string[] };
       expect(r.replaced_count).toBe(1);
@@ -361,7 +368,7 @@ describe("search.service", () => {
           { type: "image", attrs: { src: `/api/images/${imageId}` } },
         ],
       };
-      const ch1 = await createChapter(projectId, "Ch 1", JSON.stringify(docWithImage), 0);
+      await createChapter(projectId, "Ch 1", JSON.stringify(docWithImage), 0);
 
       // Insert an image record
       await t.db("images").insert({
