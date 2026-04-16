@@ -162,23 +162,22 @@ export async function deleteProject(slug: string): Promise<boolean> {
 
   const now = new Date().toISOString();
 
-  // Collect image IDs from all active chapters before the transaction so we
-  // can decrement reference counts atomically with the soft-delete (mirrors
-  // the per-chapter decrement in deleteChapter).
-  const chapters = await store.listChapterContentByProject(project.id);
-  const allImageIds: string[] = [];
-  for (const ch of chapters) {
-    if (ch.content) {
-      try {
-        const content = JSON.parse(ch.content);
-        allImageIds.push(...extractImageIds(content));
-      } catch {
-        // Corrupt content — skip
+  await store.transaction(async (txStore) => {
+    // Read chapter content inside the transaction so the image ref diff
+    // is based on the committed content state.
+    const chapters = await txStore.listChapterContentByProject(project.id);
+    const allImageIds: string[] = [];
+    for (const ch of chapters) {
+      if (ch.content) {
+        try {
+          const content = JSON.parse(ch.content);
+          allImageIds.push(...extractImageIds(content));
+        } catch {
+          // Corrupt content — skip
+        }
       }
     }
-  }
 
-  await store.transaction(async (txStore) => {
     await txStore.softDeleteChaptersByProject(project.id, now);
     await txStore.softDeleteProject(project.id, now);
 
