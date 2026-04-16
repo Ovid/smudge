@@ -16,6 +16,8 @@ export {
 } from "./schemas";
 export type { ExportFormatType } from "./schemas";
 export { countWords } from "./wordcount";
+export { searchInDoc, replaceInDoc } from "./tiptap-text";
+export type { SearchMatch, SearchOptions } from "./tiptap-text";
 export { generateSlug } from "./slugify";
 export { UNTITLED_CHAPTER, TRASH_RETENTION_DAYS, TRASH_RETENTION_MS } from "./constants";
 export type {
