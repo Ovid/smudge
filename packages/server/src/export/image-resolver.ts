@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { mimeToExt, getImagePath, IMAGE_SRC_REGEX } from "../images/images.paths";
 import { escapeHtml } from "./export.renderers";
@@ -56,33 +57,49 @@ export function buildCaptionText(img: ResolvedImage): string {
   return caption;
 }
 
-export async function resolveImagesInHtml(html: string): Promise<{
-  html: string;
-  images: Map<string, ResolvedImage>;
-}> {
-  const images = new Map<string, ResolvedImage>();
+// ---------------------------------------------------------------------------
+// Shared image-resolution pipeline
+// ---------------------------------------------------------------------------
+
+interface ImageResolution {
+  src: string;
+  image: ResolvedImage;
+}
+
+/**
+ * Resolve /api/images/{uuid} URLs in HTML. The `resolve` callback determines
+ * how each image is resolved — either as a base64 data URI (for HTML/MD/text
+ * exports) or a file:// URL (for EPUB).
+ *
+ * Pipeline:
+ * 1. Scan for image IDs via IMAGE_SRC_REGEX
+ * 2. Resolve each unique ID via the callback
+ * 3. Add figure/figcaption for images with captions
+ * 4. Strip any unresolved /api/images/ references
+ */
+async function resolveImageSrcs(
+  html: string,
+  resolve: (id: string) => Promise<ImageResolution | null>,
+): Promise<{ html: string; images: Map<string, ResolvedImage> }> {
   IMAGE_SRC_REGEX.lastIndex = 0;
   const matches = [...html.matchAll(IMAGE_SRC_REGEX)];
+  const uniqueIds = [...new Set(matches.map((m) => m[1]).filter(Boolean))] as string[];
 
-  for (const match of matches) {
-    const id = match[1];
-    if (id && !images.has(id)) {
-      const resolved = await resolveImage(id);
-      if (resolved) images.set(id, resolved);
+  const images = new Map<string, ResolvedImage>();
+  let resolvedHtml = html;
+
+  for (const id of uniqueIds) {
+    const result = await resolve(id);
+    if (result) {
+      images.set(id, result.image);
+      resolvedHtml = resolvedHtml.replace(
+        new RegExp(`src="/api/images/${id}"`, "gi"),
+        `data-image-id="${id}" src="${result.src}"`,
+      );
     }
   }
 
-  let resolvedHtml = html;
-  for (const [id, img] of images) {
-    const dataUri = `data:${img.mimeType};base64,${img.data.toString("base64")}`;
-    // Tag each <img> with data-image-id so the figcaption pass can match by unique ID
-    resolvedHtml = resolvedHtml.replace(
-      new RegExp(`src="/api/images/${id}"`, "gi"),
-      `data-image-id="${id}" src="${dataUri}"`,
-    );
-  }
-
-  // Add figure/figcaption for images with captions or attribution, matched by unique image ID
+  // Add figure/figcaption for images with captions or attribution
   for (const [id, img] of images) {
     const fullCaption = buildCaptionText(img);
     if (fullCaption) {
@@ -94,9 +111,61 @@ export async function resolveImagesInHtml(html: string): Promise<{
   }
 
   // Remove any remaining /api/images/ references that couldn't be resolved
-  // (e.g. image file missing from disk) to avoid leaking internal API URLs
-  // in exported documents.
   resolvedHtml = resolvedHtml.replace(/<img[^>]*src="\/api\/images\/[^"]*"[^>]*>/gi, "");
 
   return { html: resolvedHtml, images };
+}
+
+// ---------------------------------------------------------------------------
+// Format-specific resolvers
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve images as base64 data URIs — used for HTML, Markdown, and plain text exports.
+ */
+export async function resolveImagesInHtml(html: string): Promise<{
+  html: string;
+  images: Map<string, ResolvedImage>;
+}> {
+  return resolveImageSrcs(html, async (id) => {
+    const resolved = await resolveImage(id);
+    if (!resolved) return null;
+    const dataUri = `data:${resolved.mimeType};base64,${resolved.data.toString("base64")}`;
+    return { src: dataUri, image: resolved };
+  });
+}
+
+/**
+ * Resolve images as file:// URLs — used for EPUB exports.
+ * epub-gen-memory supports file:// URLs natively.
+ */
+export async function resolveImagesForEpub(html: string): Promise<string> {
+  const store = getProjectStore();
+  const { html: resolvedHtml } = await resolveImageSrcs(html, async (id) => {
+    const row = await store.findImageById(id);
+    if (!row) return null;
+    const ext = mimeToExt(row.mime_type);
+    if (!ext) return null;
+    const filePath = getImagePath(row.project_id, row.id, ext);
+    try {
+      await fs.access(filePath);
+    } catch {
+      return null;
+    }
+    const fileUrl = pathToFileURL(filePath).href;
+    return {
+      src: fileUrl,
+      image: {
+        id: row.id,
+        filename: row.filename,
+        data: Buffer.alloc(0), // Not used for EPUB — file:// URLs are used instead
+        mimeType: row.mime_type,
+        altText: row.alt_text,
+        caption: row.caption,
+        source: row.source,
+        license: row.license,
+      },
+    };
+  });
+  return resolvedHtml;
 }

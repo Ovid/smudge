@@ -3,80 +3,12 @@ import { pathToFileURL } from "node:url";
 import { EPub } from "epub-gen-memory";
 import { chapterContentToHtml, escapeHtml } from "./export.renderers";
 import { getProjectStore } from "../stores/project-store.injectable";
-import { mimeToExt, getImagePath, IMAGE_SRC_REGEX } from "../images/images.paths";
-import { buildCaptionText, type ResolvedImage } from "./image-resolver";
+import { mimeToExt, getImagePath } from "../images/images.paths";
+import { resolveImagesForEpub } from "./image-resolver";
 import type { ExportProjectInfo, ExportChapter, RenderOptions } from "./export.renderers";
 
 export interface EpubRenderOptions extends RenderOptions {
   coverImageId?: string;
-}
-
-/**
- * Replace /api/images/{uuid} URLs with file:// URLs pointing to the
- * actual image files on disk, and wrap captioned images in <figure>/<figcaption>.
- * epub-gen-memory supports file:// URLs natively.
- */
-async function resolveImagesForEpub(html: string): Promise<string> {
-  IMAGE_SRC_REGEX.lastIndex = 0;
-  const matches = [...html.matchAll(IMAGE_SRC_REGEX)];
-  if (matches.length === 0) return html;
-
-  const store = getProjectStore();
-
-  // Collect unique image metadata for the caption pass
-  const imageData = new Map<string, ResolvedImage>();
-
-  // Deduplicate IDs — the global regex may match the same image multiple times
-  const uniqueIds = [...new Set(matches.map((m) => m[1]).filter(Boolean))] as string[];
-
-  let resolvedHtml = html;
-  for (const id of uniqueIds) {
-    const row = await store.findImageById(id);
-    if (!row) continue;
-    const ext = mimeToExt(row.mime_type);
-    if (!ext) continue;
-    const filePath = getImagePath(row.project_id, row.id, ext);
-    try {
-      await fs.access(filePath);
-      const fileUrl = pathToFileURL(filePath).href;
-      resolvedHtml = resolvedHtml.replace(
-        new RegExp(`src="/api/images/${id}"`, "gi"),
-        `data-image-id="${id}" src="${fileUrl}"`,
-      );
-      imageData.set(id, {
-        id: row.id,
-        filename: row.filename,
-        data: Buffer.alloc(0), // Not used for EPUB — file:// URLs are used instead
-        mimeType: row.mime_type,
-        altText: row.alt_text,
-        caption: row.caption,
-        source: row.source,
-        license: row.license,
-      });
-    } catch {
-      // File doesn't exist — remove the img tag
-      resolvedHtml = resolvedHtml.replace(
-        new RegExp(`<img[^>]*src="/api/images/${id}"[^>]*>`, "gi"),
-        "",
-      );
-    }
-  }
-
-  // Add figure/figcaption for images with captions or attribution
-  for (const [id, img] of imageData) {
-    const fullCaption = buildCaptionText(img);
-    if (fullCaption) {
-      resolvedHtml = resolvedHtml.replace(
-        new RegExp(`(<img[^>]*data-image-id="${id}"[^>]*>)`, "g"),
-        `<figure>$1<figcaption>${escapeHtml(fullCaption)}</figcaption></figure>`,
-      );
-    }
-  }
-
-  // Strip any remaining unresolved /api/images/ references (DB miss, null ext, etc.)
-  resolvedHtml = resolvedHtml.replace(/<img[^>]*src="\/api\/images\/[^"]*"[^>]*>/gi, "");
-
-  return resolvedHtml;
 }
 
 // ---------------------------------------------------------------------------
