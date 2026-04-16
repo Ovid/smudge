@@ -140,8 +140,8 @@ export async function resolveImagesInHtml(html: string): Promise<{
  * epub-gen-memory supports file:// URLs natively.
  */
 export async function resolveImagesForEpub(html: string): Promise<string> {
-  const store = getProjectStore();
   const { html: resolvedHtml } = await resolveImageSrcs(html, async (id) => {
+    const store = getProjectStore();
     const row = await store.findImageById(id);
     if (!row) return null;
     const ext = mimeToExt(row.mime_type);
