@@ -101,6 +101,19 @@ describe("images.service", () => {
       expect(image.filename).toBe("passwd.png");
     });
 
+    it("returns validationError for zero-byte file", async () => {
+      const projectId = await createTestProject();
+      const result = await imagesService.uploadImage(projectId, {
+        buffer: Buffer.alloc(0),
+        originalname: "empty.png",
+        mimetype: "image/png",
+        size: 0,
+      });
+
+      expect(result).toHaveProperty("validationError");
+      expect((result as { validationError: string }).validationError).toBe("File is empty");
+    });
+
     it("returns notFound for non-existent project", async () => {
       const result = await imagesService.uploadImage("00000000-0000-0000-0000-000000000000", {
         buffer: TEST_PNG,
@@ -295,6 +308,83 @@ describe("images.service", () => {
       // Verify image still exists
       const image = await imagesService.getImage(imageId);
       expect(image).not.toBeNull();
+    });
+
+    it("includes trashed flag for soft-deleted chapters in referenced response", async () => {
+      const projectId = await createTestProject();
+      const uploadResult = await imagesService.uploadImage(projectId, {
+        buffer: TEST_PNG,
+        originalname: "test.png",
+        mimetype: "image/png",
+        size: TEST_PNG.length,
+      });
+      const imageId = (uploadResult as { image: { id: string } }).image.id;
+
+      // Get the auto-created chapter
+      const projectRes = await request(t.app).get("/api/projects");
+      const project = projectRes.body[0];
+      const projectDetail = await request(t.app).get(`/api/projects/${project.slug}`);
+      const chapterId = projectDetail.body.chapters[0].id;
+
+      // Save chapter with content referencing the image
+      await request(t.app)
+        .patch(`/api/chapters/${chapterId}`)
+        .send({
+          content: {
+            type: "doc",
+            content: [{ type: "image", attrs: { src: `/api/images/${imageId}` } }],
+          },
+        });
+
+      // Soft-delete the chapter
+      await request(t.app).delete(`/api/chapters/${chapterId}`);
+
+      const result = await imagesService.deleteImage(imageId);
+      expect(result).toHaveProperty("referenced");
+      const referenced = (
+        result as { referenced: Array<{ id: string; title: string; trashed: boolean }> }
+      ).referenced;
+      expect(referenced).toHaveLength(1);
+      expect(referenced[0]!.trashed).toBe(true);
+    });
+
+    it("does not set reference_count to 0 when blocked by soft-deleted chapters only", async () => {
+      const projectId = await createTestProject();
+      const uploadResult = await imagesService.uploadImage(projectId, {
+        buffer: TEST_PNG,
+        originalname: "test.png",
+        mimetype: "image/png",
+        size: TEST_PNG.length,
+      });
+      const imageId = (uploadResult as { image: { id: string } }).image.id;
+
+      // Get the auto-created chapter
+      const projectRes = await request(t.app).get("/api/projects");
+      const project = projectRes.body[0];
+      const projectDetail = await request(t.app).get(`/api/projects/${project.slug}`);
+      const chapterId = projectDetail.body.chapters[0].id;
+
+      // Save chapter with content referencing the image (increments ref count to 1)
+      await request(t.app)
+        .patch(`/api/chapters/${chapterId}`)
+        .send({
+          content: {
+            type: "doc",
+            content: [{ type: "image", attrs: { src: `/api/images/${imageId}` } }],
+          },
+        });
+
+      // Soft-delete the chapter (decrements ref count to 0)
+      await request(t.app).delete(`/api/chapters/${chapterId}`);
+
+      // Attempt to delete the image — blocked by trashed chapter
+      const result = await imagesService.deleteImage(imageId);
+      expect(result).toHaveProperty("referenced");
+
+      // ref_count should be corrected to 0 (only active chapters count)
+      const image = await imagesService.getImage(imageId);
+      expect(image).not.toBeNull();
+      expect(image!.reference_count).toBe(0);
     });
   });
 
