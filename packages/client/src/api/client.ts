@@ -11,6 +11,7 @@ import type {
   ImageRow,
   SnapshotRow,
   SnapshotListItem,
+  SearchResult,
 } from "@smudge/shared";
 
 export type { VelocityResponse };
@@ -270,6 +271,33 @@ export const api = {
 
     restore: (id: string) =>
       apiFetch<Chapter>(`/snapshots/${id}/restore`, { method: "POST" }),
+  },
+
+  search: {
+    find: (
+      projectSlug: string,
+      query: string,
+      options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
+    ) =>
+      apiFetch<SearchResult>(`/projects/${projectSlug}/search`, {
+        method: "POST",
+        body: JSON.stringify({ query, options }),
+      }),
+
+    replace: (
+      projectSlug: string,
+      search: string,
+      replace: string,
+      options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
+      scope?: { type: "project" } | { type: "chapter"; chapter_id: string },
+    ) =>
+      apiFetch<{ replaced_count: number; affected_chapter_ids: string[] }>(
+        `/projects/${projectSlug}/replace`,
+        {
+          method: "POST",
+          body: JSON.stringify({ search, replace, options, scope }),
+        },
+      ),
   },
 
   settings: {

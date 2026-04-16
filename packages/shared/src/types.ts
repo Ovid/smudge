@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { CreateProjectSchema, ProjectMode } from "./schemas";
+import type { SearchMatch } from "./tiptap-text";
 
 export type ProjectMode = z.infer<typeof ProjectMode>;
 
@@ -103,4 +104,13 @@ export interface VelocityResponse {
   required_pace: number | null;
   projected_completion_date: string | null;
   today: string;
+}
+
+export interface SearchResult {
+  total_count: number;
+  chapters: Array<{
+    chapter_id: string;
+    chapter_title: string;
+    matches: SearchMatch[];
+  }>;
 }

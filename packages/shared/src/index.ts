@@ -33,4 +33,5 @@ export type {
   VelocityResponse,
   SnapshotRow,
   SnapshotListItem,
+  SearchResult,
 } from "./types";
