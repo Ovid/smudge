@@ -3,7 +3,7 @@ import { pathToFileURL } from "node:url";
 import { EPub } from "epub-gen-memory";
 import { chapterContentToHtml, escapeHtml } from "./export.renderers";
 import { getProjectStore } from "../stores/project-store.injectable";
-import { mimeToExt, getImagePath } from "../images/images.paths";
+import { mimeToExt, getImagePath, IMAGE_SRC_REGEX } from "../images/images.paths";
 import { buildCaptionText, type ResolvedImage } from "./image-resolver";
 import type { ExportProjectInfo, ExportChapter, RenderOptions } from "./export.renderers";
 
@@ -17,8 +17,8 @@ export interface EpubRenderOptions extends RenderOptions {
  * epub-gen-memory supports file:// URLs natively.
  */
 async function resolveImagesForEpub(html: string): Promise<string> {
-  const pattern = /src="\/api\/images\/([0-9a-f-]{36})"/gi;
-  const matches = [...html.matchAll(pattern)];
+  IMAGE_SRC_REGEX.lastIndex = 0;
+  const matches = [...html.matchAll(IMAGE_SRC_REGEX)];
   if (matches.length === 0) return html;
 
   const store = getProjectStore();

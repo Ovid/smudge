@@ -5,6 +5,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const ALLOWED_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
+/** Strict UUID v4 capture pattern — used by reference counting and export resolvers. */
+export const UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+
+/** Regex matching /api/images/{uuid} src attributes — case-insensitive, global. */
+export const IMAGE_SRC_REGEX = new RegExp(`src="/api/images/(${UUID_PATTERN})"`, "gi");
+
 const MIME_TO_EXT: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",

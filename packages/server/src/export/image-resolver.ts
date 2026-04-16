@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import { getProjectStore } from "../stores/project-store.injectable";
-import { mimeToExt, getImagePath } from "../images/images.paths";
+import { mimeToExt, getImagePath, IMAGE_SRC_REGEX } from "../images/images.paths";
 import { escapeHtml } from "./export.renderers";
 
 export interface ResolvedImage {
@@ -61,8 +61,8 @@ export async function resolveImagesInHtml(html: string): Promise<{
   images: Map<string, ResolvedImage>;
 }> {
   const images = new Map<string, ResolvedImage>();
-  const pattern = /src="\/api\/images\/([0-9a-f-]{36})"/gi;
-  const matches = [...html.matchAll(pattern)];
+  IMAGE_SRC_REGEX.lastIndex = 0;
+  const matches = [...html.matchAll(IMAGE_SRC_REGEX)];
 
   for (const match of matches) {
     const id = match[1];

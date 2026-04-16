@@ -13,6 +13,7 @@ import {
 } from "docx";
 import type { ExportProjectInfo, ExportChapter, RenderOptions } from "./export.renderers";
 import { resolveImage, buildCaptionText } from "./image-resolver";
+import { UUID_PATTERN } from "../images/images.paths";
 import { logger } from "../logger";
 
 // ---------------------------------------------------------------------------
@@ -316,7 +317,7 @@ async function blockToParagraphs(
         if (!src) return [];
 
         // Extract image ID from /api/images/{uuid} URL
-        const idMatch = src.match(/\/api\/images\/([0-9a-f-]{36})/i);
+        const idMatch = src.match(new RegExp(`/api/images/(${UUID_PATTERN})`, "i"));
         if (!idMatch?.[1]) {
           logger.warn({ src }, "Image src not a recognized /api/images/ URL in docx export");
           return [];
