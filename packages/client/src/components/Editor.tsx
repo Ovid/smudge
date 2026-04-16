@@ -205,7 +205,7 @@ export function Editor({
     imageUploadHandlers.set(id, async (file: File) => {
       try {
         const image = await api.images.upload(projectIdRef.current, file);
-        if (editor) {
+        if (editor && !editor.isDestroyed) {
           editor
             .chain()
             .focus()
