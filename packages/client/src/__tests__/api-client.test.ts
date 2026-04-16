@@ -510,10 +510,16 @@ describe("api.search", () => {
     const replaceResult = { replaced_count: 3, affected_chapter_ids: ["ch-1"] };
     mockFetch.mockResolvedValue(jsonResponse(replaceResult));
 
-    const result = await api.search.replace("my-project", "old", "new", { whole_word: true }, {
-      type: "chapter",
-      chapter_id: "ch-1",
-    });
+    const result = await api.search.replace(
+      "my-project",
+      "old",
+      "new",
+      { whole_word: true },
+      {
+        type: "chapter",
+        chapter_id: "ch-1",
+      },
+    );
     expect(result).toEqual(replaceResult);
     expect(mockFetch).toHaveBeenCalledWith("/api/projects/my-project/replace", {
       headers: { "Content-Type": "application/json" },

@@ -375,10 +375,7 @@ describe("chapters.service", () => {
       const { chapterId } = await createProjectAndChapter();
 
       // Set content to corrupt JSON
-      await t
-        .db("chapters")
-        .where({ id: chapterId })
-        .update({ content: "{not valid json!!!" });
+      await t.db("chapters").where({ id: chapterId }).update({ content: "{not valid json!!!" });
 
       // Soft-delete the chapter
       const now = new Date().toISOString();

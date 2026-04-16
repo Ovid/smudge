@@ -37,9 +37,7 @@ describe("PATCH /api/projects/:slug — non-title-exists error re-throws", () =>
     const projectSlug = projRes.body.slug;
 
     const ProjectService = await import("../projects/projects.service");
-    vi.spyOn(ProjectService, "updateProject").mockRejectedValueOnce(
-      new Error("unexpected error"),
-    );
+    vi.spyOn(ProjectService, "updateProject").mockRejectedValueOnce(new Error("unexpected error"));
 
     const res = await request(t.app)
       .patch(`/api/projects/${projectSlug}`)
@@ -55,9 +53,7 @@ describe("POST /api/projects — non-title-exists error re-throws", () => {
   it("re-throws non-ProjectTitleExistsError from createProject", async () => {
     const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
     const ProjectService = await import("../projects/projects.service");
-    vi.spyOn(ProjectService, "createProject").mockRejectedValueOnce(
-      new Error("unexpected error"),
-    );
+    vi.spyOn(ProjectService, "createProject").mockRejectedValueOnce(new Error("unexpected error"));
 
     const res = await request(t.app)
       .post("/api/projects")

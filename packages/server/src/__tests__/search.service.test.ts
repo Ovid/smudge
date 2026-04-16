@@ -361,10 +361,7 @@ describe("search.service", () => {
       const ch1 = await createChapter(projectId, "Ch 1", JSON.stringify(makeDoc("hello world")), 0);
 
       // Soft-delete the chapter
-      await t
-        .db("chapters")
-        .where({ id: ch1 })
-        .update({ deleted_at: new Date().toISOString() });
+      await t.db("chapters").where({ id: ch1 }).update({ deleted_at: new Date().toISOString() });
 
       const result = await replaceInProject(projectId, "hello", "goodbye", undefined, {
         type: "chapter",
