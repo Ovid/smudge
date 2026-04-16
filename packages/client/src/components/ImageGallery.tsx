@@ -137,7 +137,7 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
       source: image.source,
       license: image.license,
     });
-    setSaveStatus("idle");
+    setSaveStatus("saved");
     setConfirmingDelete(false);
     setReferencesLoaded(false);
   }
