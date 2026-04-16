@@ -251,6 +251,12 @@ export async function renderPlainText(
       const { html: resolvedHtml, images } = await resolveImagesInHtml(html);
       html = resolvedHtml;
 
+      // Strip <figcaption> and <figure> tags before converting images to text markers.
+      // resolveImagesInHtml adds these for captioned images, but plain text should
+      // not include captions — they would appear as inline body text.
+      html = html.replace(/<figcaption>[\s\S]*?<\/figcaption>/gi, "");
+      html = html.replace(/<\/?figure>/gi, "");
+
       // Replace resolved <img> tags (with data-image-id) using metadata.
       // Priority: HTML alt attribute > DB alt_text > filename > image ID
       for (const [id, img] of images) {
@@ -260,11 +266,6 @@ export async function renderPlainText(
             (altMatch?.[1] || img.altText || img.filename || img.id).trim() || img.id;
           return `[Image: ${label}]`;
         });
-        // Strip any <figure> wrapper that resolveImagesInHtml added around the marker
-        html = html.replace(
-          new RegExp(`<figure>(\\[Image: [^\\]]*\\])<figcaption>[^<]*</figcaption></figure>`, "gi"),
-          "$1",
-        );
       }
 
       // Catch any remaining unresolved <img> tags with alt text
