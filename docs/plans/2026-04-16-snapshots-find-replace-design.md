@@ -81,6 +81,7 @@ Restore a snapshot to its chapter. In a single transaction:
 1. Auto-snapshot the chapter's current content with label "Before restore to '[snapshot label/date]'"
 2. Replace chapter content with snapshot content
 3. Recalculate word_count
+4. Diff old vs. new image IDs and adjust image reference counts (same pattern as `updateChapter`)
 
 - **Returns:** 200 with the updated chapter
 - **Errors:** 404 if snapshot or its chapter not found
@@ -113,12 +114,12 @@ Search across all chapters in a project.
     ]
   }
   ```
-- Searches the text content of TipTap JSON (walking the document tree), not the raw JSON string
+- Searches the text content of TipTap JSON (walking the document tree), not the raw JSON string. For each block-level node (paragraph, heading, etc.), text node contents are concatenated into a plain string for searching — this ensures matches that span formatting boundaries (e.g., a word split across bold/non-bold text nodes) are found correctly.
 - **Errors:** 404 if project not found, 400 if regex is invalid
 
 ### `POST /api/projects/:id/replace`
 
-Replace across chapters. In a single transaction: find all affected chapters, auto-snapshot each, perform replacements in TipTap JSON text nodes, recalculate word counts.
+Replace across chapters. In a single transaction: find all affected chapters, auto-snapshot each, perform replacements in TipTap JSON text nodes (using the same flattened-text-per-block approach as search, with results mapped back onto the original node structure preserving marks), recalculate word counts. Also adjusts image reference counts for any affected chapters (same pattern as `updateChapter`).
 
 - **Body:** `{ "search": string, "replace": string, "options"?: { "case_sensitive"?: boolean, "whole_word"?: boolean, "regex"?: boolean }, "scope": { "type": "project" } | { "type": "chapter", "chapter_id": string } }`
 - **Returns:** `{ "replaced_count": 17, "affected_chapter_ids": ["...", "..."] }`
@@ -126,7 +127,7 @@ Replace across chapters. In a single transaction: find all affected chapters, au
 
 ### Replace-one
 
-Handled client-side: the client applies the replacement to the single match locally, then PATCHes the chapter content via the normal auto-save path. No special API needed.
+Handled client-side: when the writer clicks "Replace" on a match, the client locates the match in the live editor content (using the search term and surrounding context, not stored offsets) and applies the replacement there. If the match can't be found because the content has changed since the search, the client shows "Match no longer found — try searching again." The replacement is then saved via the normal auto-save PATCH path. No special API needed.
 
 ---
 
@@ -189,7 +190,7 @@ Ctrl/Cmd+H opens panel -> cursor in search field -> type query -> Tab to replace
 
 ## Ctrl/Cmd+S Interception
 
-Intercept Ctrl/Cmd+S in the editor to prevent the browser's "Save Page" dialog. Behavior:
+Intercept Ctrl/Cmd+S app-wide (registered on the window/document level, not just the editor) to prevent the browser's "Save Page" dialog regardless of what has focus. Behavior:
 - If there are pending unsaved changes, flush the auto-save immediately
 - If content is already saved, no-op (optionally show a brief "Already saved" indication)
 - Does NOT create a snapshot — save and snapshot are separate concepts
@@ -202,6 +203,7 @@ Included in 4b-i as a small addition alongside snapshot work.
 
 ### Snapshots
 
+- **Duplicate snapshot guard** — before creating any snapshot (manual or auto), compare a content hash against the most recent snapshot for that chapter. If identical, skip creation. Prevents accidental duplicates from double-clicks or auto-snapshot when content hasn't changed.
 - **Snapshot of empty chapter** — allowed. A writer might snapshot before deleting all content to start fresh.
 - **Restore to a modified chapter** — the auto-snapshot captures whatever is currently saved. Force-save-before-restore (same pattern as chapter switching) ensures pending edits are flushed first.
 - **Snapshot of soft-deleted chapter** — not exposed in UI (deleted chapters aren't in the editor). Snapshots survive soft-delete and are available if the chapter is restored.
