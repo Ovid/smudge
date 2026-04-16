@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, cleanup } from "@testing-library/react";
 import { useFindReplaceState } from "../hooks/useFindReplaceState";
-import { api, ApiRequestError } from "../api/client";
+import { api } from "../api/client";
 
 vi.mock("../api/client", () => ({
   api: {

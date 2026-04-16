@@ -125,7 +125,8 @@ function marksAtOffset(segments: TextSegment[], offset: number): Mark[] | undefi
     if (offset >= seg.start && offset < seg.end) return seg.marks;
   }
   // Past end — use last segment
-  if (segments.length > 0) return segments[segments.length - 1]!.marks;
+  const last = segments[segments.length - 1];
+  if (last) return last.marks;
   return undefined;
 }
 
@@ -149,7 +150,9 @@ export function searchInDoc(
   let matchIndex = 0;
 
   for (let blockIndex = 0; blockIndex < leafBlocks.length; blockIndex++) {
-    const { flat } = flattenBlock(leafBlocks[blockIndex]!);
+    const block = leafBlocks[blockIndex];
+    if (!block) continue;
+    const { flat } = flattenBlock(block);
     if (!flat) continue;
 
     const re = buildRegex(query, opts);
@@ -226,8 +229,9 @@ export function replaceInDoc(
     let oldCursor = 0;
 
     for (let i = 0; i < matchPositions.length; i++) {
-      const mp = matchPositions[i]!;
-      const repText = repTexts[i]!;
+      const mp = matchPositions[i];
+      const repText = repTexts[i];
+      if (!mp || repText === undefined) continue;
 
       // Non-replaced text before this match: character-by-character mark mapping
       if (oldCursor < mp.start) {
@@ -271,13 +275,13 @@ function appendWithMarks(
   for (let i = 0; i < text.length; i++) {
     const marks = marksAtOffset(segments, startOffset + i);
     if (marksEqual(marks, currentMarks)) {
-      currentText += text[i]!;
+      currentText += text[i] ?? "";
     } else {
       if (currentText) {
         nodes.push(makeTextNode(currentText, currentMarks));
       }
       currentMarks = marks;
-      currentText = text[i]!;
+      currentText = text[i] ?? "";
     }
   }
   if (currentText) {
