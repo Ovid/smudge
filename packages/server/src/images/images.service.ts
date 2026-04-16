@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import { UpdateImageSchema } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { extractImageIds, scanImageReferences } from "./images.references";
-import { ALLOWED_MIMES, mimeToExt, getImagePath } from "./images.paths";
+import { ALLOWED_MIMES, mimeToExt, getImagePath, validateMagicBytes } from "./images.paths";
 import type { ImageRow, UpdateImageData } from "./images.types";
 import { logger } from "../logger";
 
@@ -40,6 +40,12 @@ export async function uploadImage(projectId: string, file: FileInput): Promise<U
   if (!ALLOWED_MIMES.has(file.mimetype)) {
     return {
       validationError: `Unsupported MIME type: ${file.mimetype}. Allowed: jpeg, png, gif, webp`,
+    };
+  }
+
+  if (!validateMagicBytes(file.buffer, file.mimetype)) {
+    return {
+      validationError: `File content does not match declared type ${file.mimetype}`,
     };
   }
 
