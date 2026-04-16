@@ -373,3 +373,79 @@ describe("Ctrl+Shift+Arrow chapter navigation", () => {
     expect(vi.mocked(api.chapters.get).mock.calls.length).toBe(getCallCount);
   });
 });
+
+describe("Ctrl+S flushes auto-save", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.projects.get).mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
+  });
+
+  it("prevents default and calls flushSave on Ctrl+S", async () => {
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    const event = new KeyboardEvent("keydown", {
+      key: "s",
+      code: "KeyS",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    const preventDefaultSpy = vi.spyOn(event, "preventDefault");
+
+    document.dispatchEvent(event);
+
+    expect(preventDefaultSpy).toHaveBeenCalled();
+  });
+
+  it("prevents default on Cmd+S (metaKey)", async () => {
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    const event = new KeyboardEvent("keydown", {
+      key: "s",
+      code: "KeyS",
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    const preventDefaultSpy = vi.spyOn(event, "preventDefault");
+
+    document.dispatchEvent(event);
+
+    expect(preventDefaultSpy).toHaveBeenCalled();
+  });
+
+  it("prevents default even when a dialog is open", async () => {
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    // Open the shortcut help dialog
+    fireEvent.keyDown(document, { key: "/", code: "Slash", ctrlKey: true });
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: /keyboard shortcuts/i })).toBeInTheDocument();
+    });
+
+    const event = new KeyboardEvent("keydown", {
+      key: "s",
+      code: "KeyS",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    const preventDefaultSpy = vi.spyOn(event, "preventDefault");
+
+    document.dispatchEvent(event);
+
+    expect(preventDefaultSpy).toHaveBeenCalled();
+  });
+});

@@ -209,6 +209,7 @@ export function EditorPage() {
     activeChapter,
     project,
     chapterWordCount,
+    flushSave: () => editorRef.current?.flushSave(),
     setShortcutHelpOpen,
     toggleSidebar,
     handleCreateChapter,

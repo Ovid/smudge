@@ -15,6 +15,7 @@ interface KeyboardShortcutDeps {
   project: ProjectWithChapters | null;
   chapterWordCount: number;
   // Actions
+  flushSave?: () => void;
   setShortcutHelpOpen: React.Dispatch<React.SetStateAction<boolean>>;
   toggleSidebar: () => void;
   handleCreateChapter: () => void;
@@ -46,6 +47,8 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
   projectSettingsOpenRef.current = deps.projectSettingsOpen;
   const exportDialogOpenRef = useRef(deps.exportDialogOpen);
   exportDialogOpenRef.current = deps.exportDialogOpen;
+  const flushSaveRef = useRef(deps.flushSave);
+  flushSaveRef.current = deps.flushSave;
   const handleCreateChapterRef = useRef(deps.handleCreateChapter);
   handleCreateChapterRef.current = deps.handleCreateChapter;
   const toggleSidebarRef = useRef(deps.toggleSidebar);
@@ -74,6 +77,13 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
       if (shortcutHelpOpenRef.current && e.key === "Escape") {
         e.preventDefault();
         deps.setShortcutHelpOpen(false);
+        return;
+      }
+
+      // Always intercept Ctrl/Cmd+S to prevent browser "Save Page" dialog
+      if (ctrl && e.code === "KeyS") {
+        e.preventDefault();
+        flushSaveRef.current?.();
         return;
       }
 
