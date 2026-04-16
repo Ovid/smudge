@@ -203,7 +203,7 @@ Included in 4b-i as a small addition alongside snapshot work.
 
 ### Snapshots
 
-- **Duplicate snapshot guard** — before creating any snapshot (manual or auto), compare a content hash against the most recent snapshot for that chapter. If identical, skip creation. Prevents accidental duplicates from double-clicks or auto-snapshot when content hasn't changed.
+- **Duplicate snapshot guard** — before creating a manual snapshot, compare a content hash against the most recent snapshot for that chapter. If identical, skip creation. Prevents accidental duplicates from double-clicks. Auto-snapshots (restore, find-and-replace) are always created regardless of content hash — they document that a specific action occurred and serve as an audit trail.
 - **Snapshot of empty chapter** — allowed. A writer might snapshot before deleting all content to start fresh.
 - **Restore to a modified chapter** — the auto-snapshot captures whatever is currently saved. Force-save-before-restore (same pattern as chapter switching) ensures pending edits are flushed first.
 - **Snapshot of soft-deleted chapter** — not exposed in UI (deleted chapters aren't in the editor). Snapshots survive soft-delete and are available if the chapter is restored.

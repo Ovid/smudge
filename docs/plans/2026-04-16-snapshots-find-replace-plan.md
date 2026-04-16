@@ -270,10 +270,12 @@ export async function createSnapshot(
 
   const content = chapter.content ?? JSON.stringify({ type: "doc", content: [] });
 
-  // Dedup guard: skip if content matches latest snapshot
-  const contentHash = createHash("sha256").update(content).digest("hex");
-  const latestHash = await store.getLatestSnapshotContentHash(chapterId);
-  if (latestHash === contentHash) return "duplicate";
+  // Dedup guard: skip if content matches latest snapshot (manual snapshots only)
+  if (!isAuto) {
+    const contentHash = createHash("sha256").update(content).digest("hex");
+    const latestHash = await store.getLatestSnapshotContentHash(chapterId);
+    if (latestHash === contentHash) return "duplicate";
+  }
 
   const now = new Date().toISOString();
   const snapshot = await store.insertSnapshot({
@@ -684,6 +686,8 @@ A panel component that:
 - Has "Create Snapshot" button that expands inline form with label input
 - Lists snapshots newest-first with View/Delete actions
 - Delete shows confirmation dialog before calling `api.snapshots.delete(id)`
+- **Escape key closes the panel** — add a `keydown` listener for Escape that calls `onClose`
+- **Focus management:** when panel opens, move focus to the panel (e.g., the "Create Snapshot" button or the panel heading). When panel closes, return focus to the clock icon toolbar button that triggered it. Pass a `triggerRef` prop for focus return.
 
 **Step 4: Run tests, commit**
 
@@ -729,7 +733,8 @@ Add a button after the existing toolbar buttons with a clock icon (use a simple 
 
 - When `viewingSnapshot` is non-null, render the editor in read-only mode with snapshot content instead of chapter content
 - Show `SnapshotBanner` above the editor with snapshot label, date, Restore button, "Back to editing" button
-- Restore calls `api.snapshots.restore(id)`, then reloads chapter content
+- **Before calling `api.snapshots.restore(id)`, call `await editorRef.current.flushSave()` to ensure pending edits are saved to the server.** This is critical — the auto-snapshot of "current content" must capture the writer's latest unsaved edits, not stale server-side content. Same force-save pattern used for chapter switching.
+- After restore completes, reload chapter content from server into the editor
 - "Back to editing" calls `exitSnapshotView()`
 
 **Step 4: Write tests for the integration**
@@ -1219,8 +1224,10 @@ Component structure:
 - Replace input
 - Option toggle buttons (Aa, ab|, .*)
 - Results summary (aria-live="polite")
-- Results list grouped by chapter
+- Results list grouped by chapter, with per-chapter "Replace All in Chapter" button
 - Footer with "Replace All in Manuscript" button
+- **Escape key closes the panel** — add a `keydown` listener for Escape that calls `onClose`
+- **Focus management:** when panel opens, move focus to the search input. When panel closes, return focus to the magnifying glass toolbar button (or Ctrl+H trigger). Pass a `triggerRef` prop for focus return.
 
 **Step 5: Run tests, commit**
 
@@ -1242,19 +1249,28 @@ Connect the panel to the editor with keyboard shortcuts and replace-one logic.
 
 In `useKeyboardShortcuts`, add handler for `ctrl && e.code === "KeyH"` that calls `toggleFindReplace()`. Add `toggleFindReplace` to the deps interface.
 
-**Step 2: Wire into EditorPage**
+**Step 2: Add magnifying glass icon to EditorToolbar**
+
+Add a magnifying glass icon button to `EditorToolbar.tsx` (same pattern as the clock icon for snapshots). onClick calls `toggleFindReplace`. Provides an alternative entry point to Ctrl/Cmd+H.
+
+**Step 3: Wire into EditorPage**
 
 - Add `useFindReplaceState` hook
 - Render `FindReplacePanel` in the right-side panel area (same position as snapshot panel / reference panel — these should be mutually exclusive or tabbed)
-- On "Replace All": force-save current chapter, call `api.search.replace(...)`, then reload current chapter if affected
-- On "Replace One": locate the match in the live editor content, apply replacement via TipTap, trigger auto-save
+- **Replace All in Manuscript flow:**
+  1. Call `await editorRef.current.flushSave()` to ensure pending edits are saved to the server
+  2. Call `api.search.replace(projectId, search, replace, options, { type: "project" })`
+  3. If the currently open chapter is in `affected_chapter_ids`, reload its content from the server into the editor
+  4. Re-run search to refresh results (should show zero matches)
+- **Replace All in Chapter flow:** Same as manuscript but with `scope: { type: "chapter", chapter_id }`. Also requires force-save first, confirmation dialog, and editor reload if current chapter affected.
+- **Replace One flow:** Locate the match in the live editor content using the search term and surrounding context (not stored offsets). Apply replacement via TipTap's API. If the match can't be found (content drifted), show "Match no longer found — try searching again." Trigger auto-save after replacement. Re-run search to refresh results.
 - After any replace operation, re-run search to refresh results
 
-**Step 3: Handle panel exclusivity**
+**Step 4: Handle panel exclusivity**
 
 When find-replace panel opens, close snapshot panel and reference panel (or use a panel state machine). Ctrl+H toggles find-replace; clock icon toggles snapshots; Ctrl+. toggles reference panel.
 
-**Step 4: Write integration tests, run, commit**
+**Step 5: Write integration tests, run, commit**
 
 ```
 feat: wire find-and-replace panel into editor with Ctrl+H shortcut
