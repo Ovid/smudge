@@ -238,6 +238,14 @@ export class SqliteProjectStore implements ProjectStore {
     return chaptersRepo.listContentByProject(this.db, projectId);
   }
 
+  listAllChapterContentByProject(
+    projectId: string,
+  ): Promise<
+    Array<{ id: string; title: string; content: string | null; deleted_at: string | null }>
+  > {
+    return chaptersRepo.listAllContentByProject(this.db, projectId);
+  }
+
   // --- Transactions ---
 
   async transaction<T>(fn: (txStore: ProjectStore) => Promise<T>): Promise<T> {

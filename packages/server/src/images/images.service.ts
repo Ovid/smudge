@@ -153,9 +153,13 @@ export async function deleteImage(id: string): Promise<DeleteResult> {
   // Live-check + removal in a single transaction to prevent a concurrent
   // chapter save from inserting a reference between the check and the delete.
   const result = await store.transaction(async (txStore) => {
-    // Scan chapters for actual references and correct drift
-    const chapters = await txStore.listChapterContentByProject(image.project_id);
+    // Scan ALL chapters (including soft-deleted) for actual references.
+    // Including soft-deleted chapters prevents deleting an image that a
+    // trashed chapter still references — restoring that chapter would
+    // produce a broken image if we allowed the delete.
+    const chapters = await txStore.listAllChapterContentByProject(image.project_id);
     const referencingChapters: Array<{ id: string; title: string }> = [];
+    let activeRefCount = 0;
     for (const ch of chapters) {
       if (ch.content) {
         try {
@@ -163,6 +167,7 @@ export async function deleteImage(id: string): Promise<DeleteResult> {
           const ids = extractImageIds(parsed);
           if (ids.includes(id.toLowerCase())) {
             referencingChapters.push({ id: ch.id, title: ch.title });
+            if (!ch.deleted_at) activeRefCount++;
           }
         } catch {
           // Corrupt JSON — skip
@@ -170,8 +175,9 @@ export async function deleteImage(id: string): Promise<DeleteResult> {
       }
     }
 
-    // Correct reference_count if it drifted
-    await txStore.setImageReferenceCount(id, referencingChapters.length);
+    // Correct reference_count to reflect only active (non-deleted) chapters,
+    // since that is what the rest of the codebase maintains.
+    await txStore.setImageReferenceCount(id, activeRefCount);
 
     if (referencingChapters.length > 0) {
       return { referenced: referencingChapters } as const;
