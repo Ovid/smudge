@@ -131,8 +131,10 @@ export async function updateImageMetadata(id: string, body: unknown): Promise<Up
 
   await store.updateImage(id, parsed.data as UpdateImageData);
   const updated = await store.findImageById(id);
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- we just verified existence above and updated in-place
-  return { image: updated! };
+  if (!updated) {
+    return { notFound: true };
+  }
+  return { image: updated };
 }
 
 export async function deleteImage(id: string): Promise<DeleteResult> {
