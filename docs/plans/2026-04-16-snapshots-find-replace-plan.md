@@ -12,6 +12,35 @@
 
 ---
 
+## TDD Methodology (applies to all tasks)
+
+Every task that produces code follows **RED → GREEN → REFACTOR**:
+
+### RED — Write a failing test first
+- Define expected behavior before writing implementation code
+- Run the test and **verify it fails for the right reason** (e.g., "module not found" or "function not defined", not a syntax error in the test)
+- **If it passes unexpectedly:** stop and investigate. Either the feature already exists, your test is wrong, or your assumptions about the codebase are wrong. All three are valuable to discover early.
+
+### GREEN — Write minimal code to pass
+- Implement the simplest thing that makes the test pass
+- No anticipatory abstractions, no "while I'm here" improvements
+- If you need to suppress console output in tests that exercise error paths, spy on the logger/console and assert the expected message
+
+### REFACTOR — Clean up what you just wrote
+After each GREEN pass, explicitly check for:
+- **Duplicated logic** to extract into a helper (especially patterns shared with existing chapter/image code)
+- **Hard-coded values** that belong in constants or config
+- **Inconsistent patterns** with existing code in the same domain (naming, error handling, return types)
+- **Missing type exports** from index files
+- **Test helper opportunities** — shared fixtures or factories that would reduce test duplication
+
+Only refactor what you just wrote. Don't clean up surrounding code.
+
+### Commit cadence
+Commit after each task's GREEN+REFACTOR pass. Each commit should leave the codebase in a passing state.
+
+---
+
 ## Sub-phase 4b-i: Snapshots
 
 ### Task 1: Database Migration
@@ -384,7 +413,13 @@ export async function restoreSnapshot(
 Run: `npm test -w packages/server -- --run -t "snapshot"`
 Expected: All PASS
 
-**Step 5: Commit**
+**Step 5: REFACTOR checklist**
+
+- The image ref diff pattern (parse JSON → extractImageIds → diffImageReferences → increment/decrement) is duplicated from `chapters.service.ts`. Consider extracting a shared helper like `applyImageRefDiff(txStore, oldContent, newContent)` that both services can call. Only do this if the duplication is genuinely identical — if the error handling or context differs, keep them separate.
+- The `restoreSnapshot` return type uses `Record<string, unknown>` — check if it should return a proper `ChapterWithLabel` enriched type for consistency with the chapters service.
+- Verify that the service test fixtures follow the same patterns as `chapters.service.test.ts` for consistency.
+
+**Step 6: Commit**
 
 ```
 feat: add snapshot service with dedup guard and image ref tracking
@@ -844,7 +879,15 @@ This is the most complex piece of the feature. Take care with:
 Run: `npm test -w packages/shared -- --run -t "tiptap-text"`
 Expected: All PASS
 
-**Step 5: Commit**
+**Step 5: REFACTOR checklist**
+
+This is the most complex utility in the feature. After GREEN, specifically check:
+- Can the tree-walking logic be shared with `extractImageIds` in `images.references.ts`? Both walk TipTap JSON. If the walk patterns differ enough, don't force it — but note if a shared `walkTipTapNodes()` iterator would simplify both.
+- Can the text-node flattening logic be shared with `countWords` in `packages/shared/src/wordcount.ts`? Both need to extract text from the JSON tree.
+- Are the regex construction and escaping functions cleanly separated from the tree-walking logic?
+- Are edge cases (empty text nodes, adjacent-same-mark merging) handled in named helper functions, not inline in the main algorithm?
+
+**Step 6: Commit**
 
 ```
 feat: add TipTap text walker with search and replace support
