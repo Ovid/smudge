@@ -37,6 +37,10 @@ type ReferencesResult =
   | { notFound: true; chapters?: undefined };
 
 export async function uploadImage(projectId: string, file: FileInput): Promise<UploadResult> {
+  if (file.size === 0) {
+    return { validationError: "File is empty" };
+  }
+
   if (!ALLOWED_MIMES.has(file.mimetype)) {
     return {
       validationError: `Unsupported MIME type: ${file.mimetype}. Allowed: jpeg, png, gif, webp`,
