@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
 import { asyncHandler } from "../app";
 import * as imagesService from "./images.service";
@@ -8,11 +8,27 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB streaming rejection
 });
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function requireUuidParam(paramName: string) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!UUID_RE.test(req.params[paramName] as string)) {
+      res.status(400).json({
+        error: { code: "VALIDATION_ERROR", message: `Invalid ${paramName} format.` },
+      });
+      return;
+    }
+    next();
+  };
+}
+
 /**
  * Mounted at /api/projects — project-scoped image endpoints.
  */
 export function imagesRouter(): Router {
   const router = Router();
+
+  router.use("/:projectId/images", requireUuidParam("projectId"));
 
   router.post(
     "/:projectId/images",
@@ -84,6 +100,8 @@ export function imagesRouter(): Router {
 export function imagesDirectRouter(): Router {
   const router = Router();
 
+  router.use("/:id", requireUuidParam("id"));
+
   router.get(
     "/:id",
     asyncHandler(async (req, res) => {
@@ -96,6 +114,7 @@ export function imagesDirectRouter(): Router {
       }
 
       res.set("Content-Type", result.mimeType);
+      res.set("X-Content-Type-Options", "nosniff");
       res.set("Cache-Control", "public, max-age=31536000, immutable");
       res.send(result.data);
     }),
