@@ -456,7 +456,23 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
             )
           ) : (
             <button
-              onClick={() => setConfirmingDelete(true)}
+              onClick={() => {
+                // Re-fetch references to avoid stale state blocking a valid delete
+                if (selectedImage) {
+                  setReferencesLoaded(false);
+                  api.images
+                    .references(selectedImage.id)
+                    .then((data) => {
+                      setReferences(data.chapters);
+                      setReferencesLoaded(true);
+                    })
+                    .catch(() => {
+                      setReferences([]);
+                      setReferencesLoaded(true);
+                    });
+                }
+                setConfirmingDelete(true);
+              }}
               className="text-sm text-status-error hover:underline focus:outline-none focus:ring-2 focus:ring-focus-ring rounded px-1"
             >
               {S.deleteButton}
