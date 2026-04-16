@@ -264,6 +264,7 @@ async function blockToParagraphs(
         const bqCtx: BlockContext = {
           indent: { left: (ctx?.indent?.left ?? 0) + 720 },
           extraRunProps: { ...ctx?.extraRunProps, italics: true },
+          listDepth: ctx?.listDepth,
         };
         const paragraphs: Paragraph[] = [];
         for (const child of content) {
