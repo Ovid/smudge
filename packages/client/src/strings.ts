@@ -240,6 +240,8 @@ export const STRINGS = {
     deleteConfirm: "Delete this image?",
     deleteBlocked: (chapters: string[]) =>
       `This image is used in: ${chapters.join(", ")}. Remove it from those chapters first.`,
+    deleteBlockedPrefix: "This image is used in:",
+    deleteBlockedSuffix: "Remove it from those chapters first.",
     uploadSuccess: (filename: string) => `Image uploaded: ${filename}`,
     uploadFailed: (reason: string) => `Upload failed: ${reason}`,
     insertSuccess: (filename: string) => `Image inserted: ${filename}`,

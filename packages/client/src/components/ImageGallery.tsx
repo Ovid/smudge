@@ -154,6 +154,7 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
       const updated = await api.images.update(selectedImage.id, formState);
       setSelectedImage(updated);
       setSaveStatus("saved");
+      incrementRefreshKey();
     } catch {
       setSaveStatus("idle");
       announce(S.saveFailed);
@@ -163,12 +164,13 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
   async function handleInsert() {
     if (!selectedImage) return;
     // Auto-save pending metadata changes before inserting so the DB stays in sync
-    if (saveStatus !== "saved" && saveStatus !== "saving") {
+    if (saveStatus !== "saved") {
       try {
         setSaveStatus("saving");
         const updated = await api.images.update(selectedImage.id, formState);
         setSelectedImage(updated);
         setSaveStatus("saved");
+        incrementRefreshKey();
       } catch {
         setSaveStatus("idle");
         return;
@@ -183,15 +185,23 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
 
     try {
       const result = await api.images.delete(selectedImage.id);
-      if ("error" in result) {
-        const chapters = (result.error as { chapters?: Array<{ title: string }> }).chapters ?? [];
-        announce(S.deleteBlocked(chapters.map((c) => c.title)));
+      if ("deleted" in result && result.deleted) {
+        setSelectedImage(null);
         setConfirmingDelete(false);
+        incrementRefreshKey();
         return;
       }
-      setSelectedImage(null);
+      // 409 or unexpected response — treat as blocked
+      const chapters =
+        "error" in result &&
+        result.error &&
+        typeof result.error === "object" &&
+        "chapters" in result.error &&
+        Array.isArray((result.error as { chapters: unknown }).chapters)
+          ? (result.error as { chapters: Array<{ title: string }> }).chapters.map((c) => c.title)
+          : [];
+      announce(S.deleteBlocked(chapters));
       setConfirmingDelete(false);
-      incrementRefreshKey();
     } catch (err: unknown) {
       const reason = err instanceof Error ? err.message : "Unknown error";
       announce(S.deleteFailed(reason));
@@ -365,7 +375,8 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
 
           <button
             onClick={handleInsert}
-            className="w-full rounded-lg border border-accent px-4 py-2 text-sm font-medium text-accent hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-focus-ring"
+            disabled={saveStatus === "saving"}
+            className="w-full rounded-lg border border-accent px-4 py-2 text-sm font-medium text-accent hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-focus-ring disabled:opacity-60"
           >
             {S.insertButton}
           </button>
@@ -394,11 +405,28 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
         <div className="pt-2 border-t border-border/40">
           {confirmingDelete ? (
             isUsed ? (
-              <p className="text-sm text-status-error">
-                {referencesLoaded
-                  ? S.deleteBlocked(references.map((r) => r.title))
-                  : S.deleteBlockedLoading}
-              </p>
+              <div className="text-sm text-status-error">
+                {referencesLoaded ? (
+                  <>
+                    <p>{S.deleteBlockedPrefix}</p>
+                    <ul className="mt-1 space-y-0.5">
+                      {references.map((r) => (
+                        <li key={r.id}>
+                          <button
+                            onClick={() => onNavigateToChapter(r.id)}
+                            className="text-accent hover:underline focus:outline-none focus:ring-2 focus:ring-focus-ring rounded px-1"
+                          >
+                            {r.title}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-1">{S.deleteBlockedSuffix}</p>
+                  </>
+                ) : (
+                  <p>{S.deleteBlockedLoading}</p>
+                )}
+              </div>
             ) : (
               <div className="flex items-center gap-2">
                 <p className="text-sm text-text-secondary flex-1">{S.deleteConfirm}</p>
