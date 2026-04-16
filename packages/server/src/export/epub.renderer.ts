@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import { EPub } from "epub-gen-memory";
 import { chapterContentToHtml, escapeHtml } from "./export.renderers";
 import { getProjectStore } from "../stores/project-store.injectable";
@@ -36,7 +37,7 @@ async function resolveImagesForEpub(html: string): Promise<string> {
     const filePath = getImagePath(row.project_id, row.id, ext);
     try {
       await fs.access(filePath);
-      const fileUrl = `file://${filePath}`;
+      const fileUrl = pathToFileURL(filePath).href;
       resolvedHtml = resolvedHtml.replace(
         new RegExp(`src="/api/images/${id}"`, "gi"),
         `data-image-id="${id}" src="${fileUrl}"`,
@@ -158,7 +159,7 @@ export async function renderEpub(
         const filePath = getImagePath(row.project_id, row.id, ext);
         try {
           await fs.access(filePath);
-          coverFileUrl = `file://${filePath}`;
+          coverFileUrl = pathToFileURL(filePath).href;
         } catch {
           // Cover image file not found — proceed without cover
         }
