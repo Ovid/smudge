@@ -26,8 +26,8 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 2.5b | Storage Architecture | ProjectStore/AssetStore/SnapshotStore abstractions, clean seams for future | Done |
 | 3a | Export Foundation | Export pipeline, HTML, Markdown, plain text, config dialog, download | Done |
 | 3b | Document Export | PDF, Word (.docx), EPUB | Done |
-| 4a | Reference Panel & Images | Collapsible side panel infrastructure, image upload/storage | In Progress |
-| 4b | Snapshots & Find-and-Replace | Manual/auto snapshots, project-wide search and replace | Planned |
+| 4a | Reference Panel & Images | Collapsible side panel infrastructure, image upload/storage | Done |
+| 4b | Snapshots & Find-and-Replace | Manual/auto snapshots, project-wide search and replace | In Progress |
 | 4c | Notes, Tags & Outtakes | Inline notes, paragraph tags, scratchpad for cut text | Planned |
 | 5a | Fiction: Characters | Character sheets with structured fields and freeform notes | Planned |
 | 5b | Fiction: Scene Cards | Scene cards / outline mode with drag-and-drop | Planned |
@@ -497,6 +497,7 @@ No new database tables. The reference panel is UI-only state. Images are stored 
 ---
 
 ## Phase 4b: Snapshots & Find-and-Replace
+<!-- plan: 2026-04-16-snapshots-find-replace-design.md -->
 
 ### Goal
 
