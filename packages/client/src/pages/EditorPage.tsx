@@ -109,6 +109,15 @@ export function EditorPage() {
   const imageAnnouncementTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [toolbarEditor, setToolbarEditor] = useState<TipTapEditor | null>(null);
 
+  // Clean up image announcement timer on unmount
+  useEffect(() => {
+    return () => {
+      if (imageAnnouncementTimerRef.current) {
+        clearTimeout(imageAnnouncementTimerRef.current);
+      }
+    };
+  }, []);
+
   // Fetch chapter statuses with retry
   useEffect(() => {
     let cancelled = false;
