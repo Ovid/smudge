@@ -28,7 +28,9 @@ export function ExportDialog({
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [epubCoverImageId, setEpubCoverImageId] = useState<string>("");
-  const [coverImages, setCoverImages] = useState<Array<{ id: string; filename: string }>>([]);
+  const [coverImages, setCoverImages] = useState<
+    Array<{ id: string; filename: string; mime_type: string }>
+  >([]);
   const exportingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -85,11 +87,13 @@ export function ExportDialog({
   }, [open, onClose]);
 
   useEffect(() => {
-    if (format === "epub" && open) {
+    if ((format === "epub" || format === "docx") && open) {
       api.images
         .list(projectId)
         .then((imgs) => {
-          setCoverImages(imgs.map((i) => ({ id: i.id, filename: i.filename })));
+          setCoverImages(
+            imgs.map((i) => ({ id: i.id, filename: i.filename, mime_type: i.mime_type })),
+          );
         })
         .catch(() => {
           setCoverImages([]);
@@ -259,6 +263,10 @@ export function ExportDialog({
           />
           {STRINGS.export.includeTocLabel}
         </label>
+
+        {format === "docx" && coverImages.some((i) => i.mime_type === "image/webp") && (
+          <p className="text-xs text-status-error mb-4">{STRINGS.export.docxWebpWarning}</p>
+        )}
 
         {format === "epub" && coverImages.length > 0 && (
           <label className="flex items-center gap-2 text-sm text-text-secondary mb-4">
