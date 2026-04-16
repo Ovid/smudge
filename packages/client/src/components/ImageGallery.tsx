@@ -36,6 +36,7 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
   const [references, setReferences] = useState<Array<{ id: string; title: string }>>([]);
   const [referencesLoaded, setReferencesLoaded] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const announcementTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -58,13 +59,14 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
 
   useEffect(() => {
     let cancelled = false;
+    setLoadError(false);
     api.images
       .list(projectId)
       .then((list) => {
         if (!cancelled) setImages(list);
       })
       .catch(() => {
-        // Silently fail — the empty state handles it
+        if (!cancelled) setLoadError(true);
       });
     return () => {
       cancelled = true;
@@ -238,7 +240,17 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
           />
         </div>
 
-        {images.length === 0 ? (
+        {loadError ? (
+          <div className="p-4 space-y-2">
+            <p className="text-sm text-status-error">{S.loadFailed}</p>
+            <button
+              onClick={incrementRefreshKey}
+              className="text-sm text-accent hover:underline focus:outline-none focus:ring-2 focus:ring-focus-ring rounded px-1"
+            >
+              {S.retryButton}
+            </button>
+          </div>
+        ) : images.length === 0 ? (
           <p className="p-4 text-sm text-text-secondary">{S.noImages}</p>
         ) : (
           <ul role="list" className="grid grid-cols-2 gap-2 p-4 overflow-y-auto">
