@@ -262,8 +262,7 @@ export async function renderPlainText(
       for (const [id, img] of images) {
         html = html.replace(new RegExp(`<img[^>]*data-image-id="${id}"[^>]*>`, "gi"), (match) => {
           const altMatch = /alt="([^"]*)"/.exec(match);
-          const label =
-            (altMatch?.[1] || img.altText || img.filename || img.id).trim() || img.id;
+          const label = (altMatch?.[1] || img.altText || img.filename || img.id).trim() || img.id;
           return `[Image: ${label}]`;
         });
       }
