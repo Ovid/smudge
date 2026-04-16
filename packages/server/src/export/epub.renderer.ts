@@ -154,7 +154,7 @@ export async function renderEpub(
   if (options.coverImageId) {
     const store = getProjectStore();
     const row = await store.findImageById(options.coverImageId);
-    if (row) {
+    if (row && row.project_id === project.id) {
       const ext = mimeToExt(row.mime_type);
       if (ext) {
         const filePath = getImagePath(row.project_id, row.id, ext);

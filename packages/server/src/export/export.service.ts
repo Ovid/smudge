@@ -50,6 +50,7 @@ export async function exportProject(
   }
 
   const projectInfo: ExportProjectInfo = {
+    id: project.id,
     title: project.title,
     author_name: project.author_name,
   };
