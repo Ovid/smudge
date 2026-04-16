@@ -88,6 +88,19 @@ describe("images.service", () => {
       expect((result as { validationError: string }).validationError).toContain("10");
     });
 
+    it("strips path components from uploaded filename", async () => {
+      const projectId = await createTestProject();
+      const result = await imagesService.uploadImage(projectId, {
+        buffer: TEST_PNG,
+        originalname: "../../../etc/passwd.png",
+        mimetype: "image/png",
+        size: TEST_PNG.length,
+      });
+
+      const image = (result as { image: { filename: string } }).image;
+      expect(image.filename).toBe("passwd.png");
+    });
+
     it("returns notFound for non-existent project", async () => {
       const result = await imagesService.uploadImage("00000000-0000-0000-0000-000000000000", {
         buffer: TEST_PNG,

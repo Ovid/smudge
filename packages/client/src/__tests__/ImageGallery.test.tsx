@@ -299,6 +299,8 @@ describe("ImageGallery", () => {
     );
     await renderAndOpenDetail(makeImage(), user);
 
+    // Edit a field to transition from "saved" (initial) to "idle"
+    await user.type(screen.getByLabelText(S.captionLabel), "x");
     await user.click(screen.getByText(S.saveButton));
 
     await waitFor(() => {
@@ -316,6 +318,8 @@ describe("ImageGallery", () => {
     vi.mocked(api.images.update).mockRejectedValue(new Error("Save failed"));
     await renderAndOpenDetail(makeImage(), user);
 
+    // Edit a field to transition from "saved" (initial) to "idle"
+    await user.type(screen.getByLabelText(S.captionLabel), "x");
     await user.click(screen.getByText(S.saveButton));
 
     await waitFor(() => {
@@ -328,6 +332,8 @@ describe("ImageGallery", () => {
     vi.mocked(api.images.update).mockResolvedValue(makeImage());
     await renderAndOpenDetail(makeImage(), user);
 
+    // Edit a field to transition from "saved" (initial) to "idle"
+    await user.type(screen.getByLabelText(S.captionLabel), "x");
     await user.click(screen.getByText(S.saveButton));
 
     await waitFor(() => {
@@ -396,6 +402,20 @@ describe("ImageGallery", () => {
     expect(api.images.delete).toHaveBeenCalledWith("img-1");
   });
 
+  it("announces deletion success for screen readers", async () => {
+    const user = userEvent.setup();
+    const image = makeImage({ reference_count: 0, filename: "sunset.png" });
+    vi.mocked(api.images.delete).mockResolvedValue({ deleted: true });
+    await renderAndOpenDetail(image, user);
+
+    await user.click(screen.getByText(S.deleteButton));
+    await user.click(screen.getByText(S.deleteButton));
+
+    await waitFor(() => {
+      expect(screen.getByText(S.deleteSuccess("sunset.png"))).toBeInTheDocument();
+    });
+  });
+
   it("shows delete-blocked message for images in use", async () => {
     const user = userEvent.setup();
     const image = makeImage({ reference_count: 2 });
@@ -420,6 +440,29 @@ describe("ImageGallery", () => {
     // Chapter titles appear in both "Used in" and delete-blocked sections
     expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText("Chapter Two").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("re-fetches references when delete button is clicked", async () => {
+    const user = userEvent.setup();
+    const image = makeImage({ reference_count: 1 });
+    // Initial fetch shows references, second fetch (on delete click) shows none
+    vi.mocked(api.images.references)
+      .mockResolvedValueOnce({ chapters: [{ id: "ch-1", title: "Chapter One" }] })
+      .mockResolvedValueOnce({ chapters: [] });
+    await renderAndOpenDetail(image, user);
+
+    await waitFor(() => {
+      expect(screen.getByText("Chapter One")).toBeInTheDocument();
+    });
+
+    // Click delete — triggers re-fetch that returns empty references
+    await user.click(screen.getByText(S.deleteButton));
+
+    // After re-fetch resolves, should show delete confirmation (not blocked)
+    await waitFor(() => {
+      expect(screen.getByText(S.deleteConfirm)).toBeInTheDocument();
+    });
+    expect(api.images.references).toHaveBeenCalledTimes(2);
   });
 
   // --- Where-used / references ---
@@ -469,14 +512,33 @@ describe("ImageGallery", () => {
 
   // --- Error handling ---
 
-  it("handles list API failure gracefully (shows empty state)", async () => {
+  it("shows error state with retry button on list API failure", async () => {
     vi.mocked(api.images.list).mockRejectedValue(new Error("Network failure"));
 
     render(<ImageGallery {...defaultProps} />);
 
-    // Should fall through to empty state
     await waitFor(() => {
-      expect(screen.getByText(S.noImages)).toBeInTheDocument();
+      expect(screen.getByText(S.loadFailed)).toBeInTheDocument();
+    });
+    expect(screen.getByText(S.retryButton)).toBeInTheDocument();
+  });
+
+  it("retries loading images when retry button is clicked", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.images.list)
+      .mockRejectedValueOnce(new Error("Network failure"))
+      .mockResolvedValueOnce([makeImage({ filename: "recovered.png" })]);
+
+    render(<ImageGallery {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(S.loadFailed)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText(S.retryButton));
+
+    await waitFor(() => {
+      expect(screen.queryByText(S.loadFailed)).not.toBeInTheDocument();
     });
   });
 

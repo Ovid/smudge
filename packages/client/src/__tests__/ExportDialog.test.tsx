@@ -392,6 +392,64 @@ describe("ExportDialog", () => {
     clickSpy.mockRestore();
   });
 
+  it("shows WebP warning when DOCX format is selected and WebP images exist", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.images.list).mockResolvedValue([
+      {
+        id: "img-webp",
+        project_id: "proj-1",
+        filename: "photo.webp",
+        alt_text: "",
+        caption: "",
+        source: "",
+        license: "",
+        mime_type: "image/webp",
+        size_bytes: 5000,
+        created_at: "2026-01-01T00:00:00Z",
+        reference_count: 0,
+      },
+    ]);
+
+    render(<ExportDialog {...defaultProps} />);
+    await user.click(screen.getByLabelText("Word (.docx)"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/WebP format, which may not display in Word 2016/),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("does not show WebP warning for DOCX when no WebP images exist", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.images.list).mockResolvedValue([
+      {
+        id: "img-png",
+        project_id: "proj-1",
+        filename: "photo.png",
+        alt_text: "",
+        caption: "",
+        source: "",
+        license: "",
+        mime_type: "image/png",
+        size_bytes: 5000,
+        created_at: "2026-01-01T00:00:00Z",
+        reference_count: 0,
+      },
+    ]);
+
+    render(<ExportDialog {...defaultProps} />);
+    await user.click(screen.getByLabelText("Word (.docx)"));
+
+    await waitFor(() => {
+      expect(api.images.list).toHaveBeenCalledWith("proj-1");
+    });
+
+    expect(
+      screen.queryByText(/WebP format, which may not display in Word 2016/),
+    ).not.toBeInTheDocument();
+  });
+
   it("toggles a chapter back on after toggling it off", async () => {
     const user = userEvent.setup();
     render(<ExportDialog {...defaultProps} />);
