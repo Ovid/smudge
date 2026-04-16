@@ -52,6 +52,11 @@ vi.mock("../api/client", () => ({
     chapterStatuses: {
       list: vi.fn().mockResolvedValue([]),
     },
+    snapshots: {
+      list: vi.fn().mockResolvedValue([]),
+      get: vi.fn(),
+      restore: vi.fn(),
+    },
     settings: {
       get: vi.fn().mockResolvedValue({ timezone: "UTC" }),
       update: vi.fn().mockResolvedValue({ message: "ok" }),

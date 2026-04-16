@@ -19,7 +19,10 @@ import { STRINGS } from "../strings";
 import { useProjectEditor } from "../hooks/useProjectEditor";
 import { useSidebarState } from "../hooks/useSidebarState";
 import { useReferencePanelState } from "../hooks/useReferencePanelState";
+import { useSnapshotState } from "../hooks/useSnapshotState";
 import { ReferencePanel } from "../components/ReferencePanel";
+import { SnapshotPanel } from "../components/SnapshotPanel";
+import { SnapshotBanner } from "../components/SnapshotBanner";
 import { ImageGallery } from "../components/ImageGallery";
 import { useChapterTitleEditing } from "../hooks/useChapterTitleEditing";
 import { useProjectTitleEditing } from "../hooks/useProjectTitleEditing";
@@ -27,6 +30,18 @@ import { useTrashManager } from "../hooks/useTrashManager";
 import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcuts";
 import { api } from "../api/client";
 import { Logo } from "../components/Logo";
+import { generateHTML } from "@tiptap/html";
+import DOMPurify from "dompurify";
+import { editorExtensions } from "../editorExtensions";
+
+function renderSnapshotContent(content: Record<string, unknown>): string {
+  try {
+    const html = generateHTML(content as Parameters<typeof generateHTML>[0], editorExtensions);
+    return DOMPurify.sanitize(html);
+  } catch {
+    return "<p>Unable to render snapshot content</p>";
+  }
+}
 
 export function EditorPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -54,7 +69,45 @@ export function EditorPage() {
   } = useProjectEditor(slug);
 
   const { sidebarWidth, sidebarOpen, handleSidebarResize, toggleSidebar } = useSidebarState();
-  const { panelWidth, panelOpen, handlePanelResize, togglePanel } = useReferencePanelState();
+  const { panelWidth, panelOpen, setPanelOpen, handlePanelResize, togglePanel } = useReferencePanelState();
+
+  const {
+    snapshotPanelOpen,
+    toggleSnapshotPanel,
+    setSnapshotPanelOpen,
+    viewingSnapshot,
+    viewSnapshot,
+    exitSnapshotView,
+    restoreSnapshot,
+    snapshotCount,
+    snapshotPanelRef,
+  } = useSnapshotState(activeChapter?.id ?? null);
+
+  // Panel exclusivity: when snapshot panel opens, close reference panel and vice versa
+  const handleToggleSnapshotPanel = useCallback(() => {
+    if (!snapshotPanelOpen) {
+      setPanelOpen(false);
+    }
+    toggleSnapshotPanel();
+  }, [snapshotPanelOpen, setPanelOpen, toggleSnapshotPanel]);
+
+  const handleToggleReferencePanel = useCallback(() => {
+    if (!panelOpen) {
+      setSnapshotPanelOpen(false);
+      exitSnapshotView();
+    }
+    togglePanel();
+  }, [panelOpen, setSnapshotPanelOpen, exitSnapshotView, togglePanel]);
+
+  const handleRestoreSnapshot = useCallback(async () => {
+    if (!viewingSnapshot || !activeChapter) return;
+    await editorRef.current?.flushSave();
+    const ok = await restoreSnapshot(viewingSnapshot.id);
+    if (ok) {
+      await handleSelectChapter(activeChapter.id);
+      snapshotPanelRef.current?.refreshSnapshots();
+    }
+  }, [viewingSnapshot, activeChapter, restoreSnapshot, handleSelectChapter, snapshotPanelRef]);
 
   const {
     editingTitle,
@@ -217,7 +270,7 @@ export function EditorPage() {
     setWordCountAnnouncement,
     setNavAnnouncement,
     switchToView,
-    togglePanel,
+    togglePanel: handleToggleReferencePanel,
   });
 
   if (error) {
@@ -304,7 +357,11 @@ export function EditorPage() {
           )}
         </div>
         {showActiveEditor && viewMode === "editor" && toolbarEditor && (
-          <EditorToolbar editor={toolbarEditor} />
+          <EditorToolbar
+            editor={toolbarEditor}
+            snapshotCount={snapshotCount}
+            onToggleSnapshots={handleToggleSnapshotPanel}
+          />
         )}
         <div className="flex items-center gap-2">
           {showActiveEditor && <ViewModeNav viewMode={viewMode} onSwitchToView={switchToView} />}
@@ -316,7 +373,7 @@ export function EditorPage() {
           </button>
           <button
             type="button"
-            onClick={togglePanel}
+            onClick={handleToggleReferencePanel}
             aria-expanded={panelOpen}
             aria-controls="reference-panel"
             aria-label={STRINGS.referencePanel.toggleTooltip}
@@ -407,57 +464,78 @@ export function EditorPage() {
             </main>
           ) : activeChapter ? (
             <main
-              className="flex-1 overflow-y-auto px-6 py-8 page-enter"
+              className="flex-1 overflow-y-auto flex flex-col"
               aria-label={STRINGS.a11y.mainContent}
             >
-              {editingTitle ? (
-                <div className="mx-auto max-w-[720px] mb-6">
-                  <input
-                    ref={titleInputRef}
-                    value={titleDraft}
-                    onChange={(e) => setTitleDraft(e.target.value)}
-                    onBlur={saveTitle}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") saveTitle();
-                      if (e.key === "Escape") cancelEditingTitle();
-                    }}
-                    className="block text-3xl font-serif font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none w-full tracking-tight"
-                    aria-label={STRINGS.a11y.chapterTitleInput}
-                  />
-                  {titleError && (
-                    <p role="alert" className="text-xs text-status-error mt-1">
-                      {titleError}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <h2
-                  className="mx-auto max-w-[720px] mb-6 text-3xl font-serif font-semibold text-text-primary cursor-pointer hover:text-text-secondary tracking-tight"
-                  onDoubleClick={startEditingTitle}
-                  aria-label={activeChapter.title}
-                >
-                  {activeChapter.title}
-                </h2>
+              {viewingSnapshot && (
+                <SnapshotBanner
+                  label={viewingSnapshot.label}
+                  date={viewingSnapshot.created_at}
+                  onRestore={handleRestoreSnapshot}
+                  onBack={exitSnapshotView}
+                />
               )}
-              <Editor
-                key={activeChapter.id}
-                content={activeChapter.content}
-                onSave={handleSave}
-                onContentChange={handleContentChange}
-                editorRef={editorRef}
-                onEditorReady={setToolbarEditor}
-                projectId={project.id}
-                onImageAnnouncement={(msg) => {
-                  if (imageAnnouncementTimerRef.current) {
-                    clearTimeout(imageAnnouncementTimerRef.current);
-                  }
-                  setImageAnnouncement(msg);
-                  imageAnnouncementTimerRef.current = setTimeout(
-                    () => setImageAnnouncement(""),
-                    3000,
-                  );
-                }}
-              />
+              <div className="flex-1 overflow-y-auto px-6 py-8 page-enter">
+                {viewingSnapshot ? (
+                  <div
+                    className="mx-auto max-w-[720px] prose prose-lg font-serif text-text-primary prose-headings:text-text-primary prose-a:text-accent"
+                    dangerouslySetInnerHTML={{
+                      __html: renderSnapshotContent(viewingSnapshot.content),
+                    }}
+                  />
+                ) : (
+                  <>
+                    {editingTitle ? (
+                      <div className="mx-auto max-w-[720px] mb-6">
+                        <input
+                          ref={titleInputRef}
+                          value={titleDraft}
+                          onChange={(e) => setTitleDraft(e.target.value)}
+                          onBlur={saveTitle}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveTitle();
+                            if (e.key === "Escape") cancelEditingTitle();
+                          }}
+                          className="block text-3xl font-serif font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none w-full tracking-tight"
+                          aria-label={STRINGS.a11y.chapterTitleInput}
+                        />
+                        {titleError && (
+                          <p role="alert" className="text-xs text-status-error mt-1">
+                            {titleError}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <h2
+                        className="mx-auto max-w-[720px] mb-6 text-3xl font-serif font-semibold text-text-primary cursor-pointer hover:text-text-secondary tracking-tight"
+                        onDoubleClick={startEditingTitle}
+                        aria-label={activeChapter.title}
+                      >
+                        {activeChapter.title}
+                      </h2>
+                    )}
+                    <Editor
+                      key={activeChapter.id}
+                      content={activeChapter.content}
+                      onSave={handleSave}
+                      onContentChange={handleContentChange}
+                      editorRef={editorRef}
+                      onEditorReady={setToolbarEditor}
+                      projectId={project.id}
+                      onImageAnnouncement={(msg) => {
+                        if (imageAnnouncementTimerRef.current) {
+                          clearTimeout(imageAnnouncementTimerRef.current);
+                        }
+                        setImageAnnouncement(msg);
+                        imageAnnouncementTimerRef.current = setTimeout(
+                          () => setImageAnnouncement(""),
+                          3000,
+                        );
+                      }}
+                    />
+                  </>
+                )}
+              </div>
             </main>
           ) : null}
 
@@ -483,6 +561,15 @@ export function EditorPage() {
               }}
             />
           </ReferencePanel>
+        )}
+        {snapshotPanelOpen && activeChapter && (
+          <SnapshotPanel
+            ref={snapshotPanelRef}
+            chapterId={activeChapter.id}
+            isOpen={snapshotPanelOpen}
+            onClose={() => setSnapshotPanelOpen(false)}
+            onView={viewSnapshot}
+          />
         )}
       </div>
 
