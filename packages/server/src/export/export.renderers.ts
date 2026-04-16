@@ -253,14 +253,11 @@ export async function renderPlainText(
       // Replace resolved <img> tags (with data-image-id) using metadata.
       // Priority: HTML alt attribute > DB alt_text > image ID
       for (const [id, img] of images) {
-        html = html.replace(
-          new RegExp(`<img[^>]*data-image-id="${id}"[^>]*>`, "gi"),
-          (match) => {
-            const altMatch = /alt="([^"]*)"/.exec(match);
-            const label = (altMatch?.[1] || img.altText || img.id).trim() || img.id;
-            return `[Image: ${label}]`;
-          },
-        );
+        html = html.replace(new RegExp(`<img[^>]*data-image-id="${id}"[^>]*>`, "gi"), (match) => {
+          const altMatch = /alt="([^"]*)"/.exec(match);
+          const label = (altMatch?.[1] || img.altText || img.id).trim() || img.id;
+          return `[Image: ${label}]`;
+        });
         // Strip any <figure> wrapper that resolveImagesInHtml added around the marker
         html = html.replace(
           new RegExp(`<figure>(\\[Image: [^\\]]*\\])<figcaption>[^<]*</figcaption></figure>`, "gi"),
