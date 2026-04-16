@@ -241,20 +241,38 @@ export async function renderPlainText(
   }
 
   // Chapters separated by 3 blank lines (= 4 newlines between content)
-  const chapterTexts = chapters.map((ch) => {
+  const chapterTexts: string[] = [];
+  for (const ch of chapters) {
     let html = chapterContentToHtml(ch.content);
     if (html) {
-      // Replace <img> tags with text markers before stripping HTML.
-      // First pass captures alt text; second pass catches any remaining
-      // alt-less <img> tags (the first pass already removed them from the
-      // string, so the second regex only matches genuinely alt-less tags).
-      html = html.replace(/<img[^>]*alt="([^"]*)"[^>]*>/gi, "[Image: $1]");
+      // Resolve images to get metadata (alt text, filename) for text markers.
+      // The resolved map provides filename fallback when alt text is empty.
+      const { html: resolvedHtml, images } = await resolveImagesInHtml(html);
+      html = resolvedHtml;
+
+      // Replace resolved <img> tags (with data-image-id) using metadata
+      for (const [id, img] of images) {
+        const label = img.altText || img.id;
+        html = html.replace(
+          new RegExp(`<img[^>]*data-image-id="${id}"[^>]*>`, "gi"),
+          `[Image: ${label}]`,
+        );
+        // Also replace any <figure> wrapper that resolveImagesInHtml may have added
+        html = html.replace(
+          new RegExp(`<figure>\\[Image: ${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\]<figcaption>[^<]*</figcaption></figure>`, "gi"),
+          `[Image: ${label}]`,
+        );
+      }
+
+      // Catch any remaining unresolved <img> tags with alt text
+      html = html.replace(/<img[^>]*alt="([^"]+)"[^>]*>/gi, "[Image: $1]");
+      // Final fallback for <img> tags with empty or no alt
       html = html.replace(/<img[^>]*>/gi, "[Image]");
     }
     const body = html ? stripHtmlTags(html) : "";
     const header = ch.title;
-    return body ? `${header}\n\n${body}` : header;
-  });
+    chapterTexts.push(body ? `${header}\n\n${body}` : header);
+  }
 
   if (chapterTexts.length > 0) {
     parts.push(chapterTexts.join("\n\n\n\n"));
