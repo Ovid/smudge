@@ -55,8 +55,6 @@ export async function updateChapter(
   }
 
   const store = getProjectStore();
-  const chapter = await store.findChapterByIdRaw(id);
-  if (!chapter) return null;
 
   const updates: UpdateChapterData = {
     updated_at: new Date().toISOString(),
@@ -79,27 +77,30 @@ export async function updateChapter(
     updates.status = parsed.data.status;
   }
 
-  // Compute image reference diff before the transaction so we can update
-  // reference counts atomically with the content save.
-  let imageRefDiff: { added: string[]; removed: string[] } | null = null;
-  if (parsed.data.content !== undefined) {
-    let oldContent: Record<string, unknown> | null = null;
-    if (chapter.content) {
-      try {
-        oldContent = JSON.parse(chapter.content);
-      } catch {
-        // Stored content is corrupt — treat as no previous images so the save
-        // can overwrite/repair the corrupt content instead of crashing.
-      }
-    }
-    const oldIds = extractImageIds(oldContent);
-    const newIds = extractImageIds(parsed.data.content as Record<string, unknown>);
-    imageRefDiff = diffImageReferences(oldIds, newIds);
-  }
+  // Read chapter, compute image diff, and apply updates in a single
+  // transaction so the diff is based on the committed content state.
+  const txResult = await store.transaction(async (txStore) => {
+    const chapter = await txStore.findChapterByIdRaw(id);
+    if (!chapter) return null;
 
-  const rowsUpdated = await store.transaction(async (txStore) => {
+    let imageRefDiff: { added: string[]; removed: string[] } | null = null;
+    if (parsed.data.content !== undefined) {
+      let oldContent: Record<string, unknown> | null = null;
+      if (chapter.content) {
+        try {
+          oldContent = JSON.parse(chapter.content);
+        } catch {
+          // Stored content is corrupt — treat as no previous images so the save
+          // can overwrite/repair the corrupt content instead of crashing.
+        }
+      }
+      const oldIds = extractImageIds(oldContent);
+      const newIds = extractImageIds(parsed.data.content as Record<string, unknown>);
+      imageRefDiff = diffImageReferences(oldIds, newIds);
+    }
+
     const count = await txStore.updateChapter(id, updates);
-    if (count === 0) return 0;
+    if (count === 0) return null;
     await txStore.updateProjectTimestamp(chapter.project_id, updates.updated_at);
 
     // Update image reference counts inside the same transaction
@@ -112,19 +113,20 @@ export async function updateChapter(
       }
     }
 
-    return count;
+    return { project_id: chapter.project_id };
   });
 
-  if (rowsUpdated === 0) return null;
+  if (!txResult) return null;
+  const { project_id: projectId } = txResult;
 
   // Fire velocity side-effects (best-effort — must not break the save)
   if (parsed.data.content !== undefined) {
     try {
       const svc = getVelocityService();
-      await svc.recordSave(chapter.project_id);
+      await svc.recordSave(projectId);
     } catch (err: unknown) {
       logger.error(
-        { err, project_id: chapter.project_id, chapter_id: id },
+        { err, project_id: projectId, chapter_id: id },
         "Velocity recordSave failed (best-effort)",
       );
     }
