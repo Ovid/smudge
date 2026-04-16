@@ -16,11 +16,13 @@ import type {
 } from "../chapters/chapters.types";
 import type { ChapterStatusRow } from "../chapter-statuses/chapter-statuses.types";
 import type { SettingRow } from "../settings/settings.types";
+import type { ImageRow, CreateImageRow, UpdateImageData } from "../images/images.types";
 import * as projectsRepo from "../projects/projects.repository";
 import * as chaptersRepo from "../chapters/chapters.repository";
 import * as statusesRepo from "../chapter-statuses/chapter-statuses.repository";
 import * as velocityRepo from "../velocity/velocity.repository";
 import * as settingsRepo from "../settings/settings.repository";
+import * as imagesRepo from "../images/images.repository";
 
 export class SqliteProjectStore implements ProjectStore {
   private readonly isTransactionScoped: boolean;
@@ -194,6 +196,54 @@ export class SqliteProjectStore implements ProjectStore {
     today: string,
   ): Promise<{ date: string; total_word_count: number } | undefined> {
     return velocityRepo.getLastPriorDaySnapshot(this.db, projectId, today);
+  }
+
+  // --- Images ---
+
+  insertImage(data: CreateImageRow): Promise<ImageRow> {
+    return imagesRepo.insert(this.db, data);
+  }
+
+  findImageById(id: string): Promise<ImageRow | null> {
+    return imagesRepo.findById(this.db, id);
+  }
+
+  listImagesByProject(projectId: string): Promise<ImageRow[]> {
+    return imagesRepo.listByProject(this.db, projectId);
+  }
+
+  updateImage(id: string, data: UpdateImageData): Promise<number> {
+    return imagesRepo.update(this.db, id, data);
+  }
+
+  removeImage(id: string): Promise<number> {
+    return imagesRepo.remove(this.db, id);
+  }
+
+  removeImagesByProject(projectId: string): Promise<number> {
+    return imagesRepo.removeByProject(this.db, projectId);
+  }
+
+  incrementImageReferenceCount(id: string, delta: number): Promise<void> {
+    return imagesRepo.incrementReferenceCount(this.db, id, delta);
+  }
+
+  setImageReferenceCount(id: string, count: number): Promise<void> {
+    return imagesRepo.setReferenceCount(this.db, id, count);
+  }
+
+  listChapterContentByProject(
+    projectId: string,
+  ): Promise<Array<{ id: string; title: string; content: string | null }>> {
+    return chaptersRepo.listContentByProject(this.db, projectId);
+  }
+
+  listAllChapterContentByProject(
+    projectId: string,
+  ): Promise<
+    Array<{ id: string; title: string; content: string | null; deleted_at: string | null }>
+  > {
+    return chaptersRepo.listAllContentByProject(this.db, projectId);
   }
 
   // --- Transactions ---

@@ -1,6 +1,15 @@
+import fs from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import { EPub } from "epub-gen-memory";
 import { chapterContentToHtml, escapeHtml } from "./export.renderers";
+import { getProjectStore } from "../stores/project-store.injectable";
+import { mimeToExt, getImagePath } from "../images/images.paths";
+import { resolveImagesForEpub } from "./image-resolver";
 import type { ExportProjectInfo, ExportChapter, RenderOptions } from "./export.renderers";
+
+export interface EpubRenderOptions extends RenderOptions {
+  coverImageId?: string;
+}
 
 // ---------------------------------------------------------------------------
 // Embedded stylesheet for EPUB content
@@ -39,7 +48,7 @@ pre {
 export async function renderEpub(
   project: ExportProjectInfo,
   chapters: ExportChapter[],
-  options: RenderOptions,
+  options: EpubRenderOptions,
 ): Promise<Buffer> {
   const author = project.author_name ?? "";
 
@@ -57,6 +66,9 @@ export async function renderEpub(
       let html = chapterContentToHtml(chapter.content);
       if (html === "") {
         html = "<p>&nbsp;</p>";
+      } else {
+        // Resolve images — replace /api/images/ URLs with file:// URLs and add captions
+        html = await resolveImagesForEpub(html);
       }
       epubChapters.push({
         title: chapter.title,
@@ -64,6 +76,25 @@ export async function renderEpub(
         // When TOC is disabled, exclude chapters from the inline TOC listing
         excludeFromToc: !options.includeToc,
       });
+    }
+  }
+
+  // Resolve cover image if provided — use file:// URL for epub-gen-memory
+  let coverFileUrl: string | undefined;
+  if (options.coverImageId) {
+    const store = getProjectStore();
+    const row = await store.findImageById(options.coverImageId);
+    if (row && row.project_id === project.id) {
+      const ext = mimeToExt(row.mime_type);
+      if (ext) {
+        const filePath = getImagePath(row.project_id, row.id, ext);
+        try {
+          await fs.access(filePath);
+          coverFileUrl = pathToFileURL(filePath).href;
+        } catch {
+          // Cover image file not found — proceed without cover
+        }
+      }
     }
   }
 
@@ -79,6 +110,7 @@ export async function renderEpub(
       css: EPUB_CSS,
       tocTitle: options.includeToc ? "Table of Contents" : "",
       verbose: false,
+      ...(coverFileUrl ? { cover: coverFileUrl } : {}),
     },
     epubChapters,
   );

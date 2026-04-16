@@ -84,7 +84,20 @@ export const ExportSchema = z.object({
   format: ExportFormat,
   include_toc: z.boolean().default(true),
   chapter_ids: z.array(z.string().uuid()).min(1).max(1000).optional(),
+  epub_cover_image_id: z.string().uuid().optional(),
 });
+
+export const UpdateImageSchema = z
+  .object({
+    alt_text: z.string().max(1000, "Alt text is too long"),
+    caption: z.string().max(2000, "Caption is too long"),
+    source: z.string().max(1000, "Source is too long"),
+    license: z.string().max(500, "License is too long"),
+  })
+  .partial()
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "At least one field must be provided",
+  });
 
 export const UpdateSettingsSchema = z.object({
   settings: z

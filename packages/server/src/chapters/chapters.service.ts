@@ -2,6 +2,7 @@ import { UpdateChapterSchema, countWords, generateSlug } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
+import { extractImageIds, diffImageReferences } from "../images/images.references";
 import {
   isCorruptChapter,
   enrichChapterWithLabel,
@@ -54,8 +55,6 @@ export async function updateChapter(
   }
 
   const store = getProjectStore();
-  const chapter = await store.findChapterByIdRaw(id);
-  if (!chapter) return null;
 
   const updates: UpdateChapterData = {
     updated_at: new Date().toISOString(),
@@ -78,23 +77,56 @@ export async function updateChapter(
     updates.status = parsed.data.status;
   }
 
-  const rowsUpdated = await store.transaction(async (txStore) => {
+  // Read chapter, compute image diff, and apply updates in a single
+  // transaction so the diff is based on the committed content state.
+  const txResult = await store.transaction(async (txStore) => {
+    const chapter = await txStore.findChapterByIdRaw(id);
+    if (!chapter) return null;
+
+    let imageRefDiff: { added: string[]; removed: string[] } | null = null;
+    if (parsed.data.content !== undefined) {
+      let oldContent: Record<string, unknown> | null = null;
+      if (chapter.content) {
+        try {
+          oldContent = JSON.parse(chapter.content);
+        } catch {
+          // Stored content is corrupt — treat as no previous images so the save
+          // can overwrite/repair the corrupt content instead of crashing.
+        }
+      }
+      const oldIds = extractImageIds(oldContent);
+      const newIds = extractImageIds(parsed.data.content as Record<string, unknown>);
+      imageRefDiff = diffImageReferences(oldIds, newIds);
+    }
+
     const count = await txStore.updateChapter(id, updates);
-    if (count === 0) return 0;
+    if (count === 0) return null;
     await txStore.updateProjectTimestamp(chapter.project_id, updates.updated_at);
-    return count;
+
+    // Update image reference counts inside the same transaction
+    if (imageRefDiff) {
+      for (const imageId of imageRefDiff.added) {
+        await txStore.incrementImageReferenceCount(imageId, 1);
+      }
+      for (const imageId of imageRefDiff.removed) {
+        await txStore.incrementImageReferenceCount(imageId, -1);
+      }
+    }
+
+    return { project_id: chapter.project_id };
   });
 
-  if (rowsUpdated === 0) return null;
+  if (!txResult) return null;
+  const { project_id: projectId } = txResult;
 
   // Fire velocity side-effects (best-effort — must not break the save)
   if (parsed.data.content !== undefined) {
     try {
       const svc = getVelocityService();
-      await svc.recordSave(chapter.project_id);
+      await svc.recordSave(projectId);
     } catch (err: unknown) {
       logger.error(
-        { err, project_id: chapter.project_id, chapter_id: id },
+        { err, project_id: projectId, chapter_id: id },
         "Velocity recordSave failed (best-effort)",
       );
     }
@@ -122,20 +154,42 @@ export async function updateChapter(
 
 export async function deleteChapter(id: string): Promise<boolean> {
   const store = getProjectStore();
-  const chapter = await store.findChapterByIdRaw(id);
-  if (!chapter) return false;
 
   const now = new Date().toISOString();
-  await store.transaction(async (txStore) => {
+  const projectId = await store.transaction(async (txStore) => {
+    // Read content inside the transaction so the image ref diff is based
+    // on the committed content state (consistent with deleteProject/updateChapter).
+    const chapter = await txStore.findChapterByIdRaw(id);
+    if (!chapter) return null;
+
+    let imageIds: string[] = [];
+    if (chapter.content) {
+      try {
+        const content = JSON.parse(chapter.content);
+        imageIds = extractImageIds(content);
+      } catch {
+        // Corrupt content — no image IDs to decrement
+      }
+    }
+
     await txStore.softDeleteChapter(id, now);
     await txStore.updateProjectTimestamp(chapter.project_id, now);
+
+    // Decrement reference counts atomically with the soft-delete
+    for (const imageId of imageIds) {
+      await txStore.incrementImageReferenceCount(imageId, -1);
+    }
+
+    return chapter.project_id;
   });
 
+  if (!projectId) return false;
+
   try {
-    await getVelocityService().updateDailySnapshot(chapter.project_id);
+    await getVelocityService().updateDailySnapshot(projectId);
   } catch (err: unknown) {
     logger.error(
-      { err, project_id: chapter.project_id, chapter_id: id },
+      { err, project_id: projectId, chapter_id: id },
       "Velocity updateDailySnapshot failed (best-effort)",
     );
   }
@@ -185,6 +239,21 @@ export async function restoreChapter(
         });
       } else {
         await txStore.updateProjectTimestamp(chapter.project_id, now);
+      }
+
+      // Read content inside the transaction to get the committed state
+      // and increment image reference counts atomically with the restore.
+      const restoredRow = await txStore.findChapterByIdRaw(id);
+      if (restoredRow?.content) {
+        try {
+          const content = JSON.parse(restoredRow.content);
+          const imageIds = extractImageIds(content);
+          for (const imgId of imageIds) {
+            await txStore.incrementImageReferenceCount(imgId, 1);
+          }
+        } catch {
+          // Corrupt content — no image IDs to increment
+        }
       }
     });
   } catch (err: unknown) {

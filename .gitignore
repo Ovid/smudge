@@ -46,10 +46,14 @@ web_modules/
 
 # TypeScript cache and generated declarations
 *.tsbuildinfo
-packages/client/src/editorExtensions.d.ts
-packages/client/src/editorExtensions.d.ts.map
-packages/client/src/editorExtensions.js
-packages/client/src/editorExtensions.js.map
+
+# Prevent stale tsc output from shadowing .ts source in Vite resolution.
+# Scoped to client only — server may have intentional .js files.
+packages/client/src/**/*.js
+packages/client/src/**/*.js.map
+packages/client/src/**/*.d.ts
+!packages/client/src/vite-env.d.ts
+packages/client/src/**/*.d.ts.map
 
 # Optional npm cache directory
 .npm

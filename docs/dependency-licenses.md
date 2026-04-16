@@ -4,7 +4,7 @@ All direct dependencies used by Smudge are compatible with commercial
 use. This document catalogs every license in the project and explains
 any that need special attention.
 
-Last audited: 2026-04-14
+Last audited: 2026-04-15
 
 ---
 
@@ -12,7 +12,7 @@ Last audited: 2026-04-14
 
 | License | Count | Commercial use | Ships in production |
 |---------|-------|----------------|---------------------|
-| MIT | ~48 | Yes, unrestricted | Most dependencies |
+| MIT | ~52 | Yes, unrestricted | Most dependencies |
 | Apache-2.0 | 3 | Yes, unrestricted | Yes (DOMPurify in client; others dev-only) |
 | SIL OFL 1.1 | 2 | Yes, bundling permitted | Yes (fonts) |
 | MPL-2.0 | 1 | Yes, with file-level copyleft | No (dev only) |
@@ -38,8 +38,10 @@ or other strong-copyleft licenses are present.
 | express | MIT | |
 | helmet | MIT | |
 | knex | MIT | |
+| multer | MIT | Multipart form-data handling for image uploads |
 | @tiptap/core | MIT | TipTap editor core (server-side HTML generation) |
 | @tiptap/extension-heading | MIT | Heading extension for generateHTML() |
+| @tiptap/extension-image | MIT | Image node support for generateHTML() |
 | @tiptap/html | MIT | Server-side HTML generation from TipTap JSON |
 | @tiptap/pm | MIT | ProseMirror peer dependency for TipTap |
 | @tiptap/starter-kit | MIT | Standard extension bundle for generateHTML() |
@@ -60,6 +62,7 @@ or other strong-copyleft licenses are present.
 | @fontsource/cormorant-garamond | OFL-1.1 | See [Fonts](#fonts) |
 | @fontsource-variable/dm-sans | OFL-1.1 | See [Fonts](#fonts) |
 | @tiptap/extension-heading | MIT | |
+| @tiptap/extension-image | MIT | Image node support for editor and export |
 | @tiptap/extension-placeholder | MIT | |
 | @tiptap/html | MIT | |
 | @tiptap/pm | MIT | |
@@ -84,6 +87,7 @@ All dev dependencies are MIT or Apache-2.0, with one exception:
 | jszip | MIT OR GPL-3.0-or-later | Dev + transitive production (via docx, epub-gen-memory). We elect **MIT**. See [JSZip](#jszip) |
 | eslint, prettier, vitest, vite, tailwindcss, jsdom, etc. | MIT | |
 | pino-pretty | MIT | Dev-only (structured log formatting) |
+| @types/multer | MIT | TypeScript types for multer (dev-only) |
 | @testing-library/\*, @types/\*, @vitejs/\* | MIT | |
 
 ---

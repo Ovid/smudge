@@ -1,12 +1,16 @@
 import { useEditor, EditorContent, type Editor as TipTapEditor } from "@tiptap/react";
+import { Extension } from "@tiptap/core";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
 import Placeholder from "@tiptap/extension-placeholder";
 import { useEffect, useRef, useCallback } from "react";
 import { editorExtensions } from "../editorExtensions";
 import { STRINGS } from "../strings";
+import { api } from "../api/client";
 
 export interface EditorHandle {
   flushSave: () => Promise<void>;
   editor: TipTapEditor | null;
+  insertImage: (src: string, alt: string) => void;
 }
 
 interface EditorProps {
@@ -15,9 +19,59 @@ interface EditorProps {
   onContentChange?: (content: Record<string, unknown>) => void;
   editorRef?: React.MutableRefObject<EditorHandle | null>;
   onEditorReady?: (editor: TipTapEditor | null) => void;
+  projectId: string;
+  onImageAnnouncement?: (message: string) => void;
 }
 
 const AUTO_SAVE_DEBOUNCE_MS = 1500;
+
+// Module-level map from editor instance ID to upload handler.
+// Each Editor component registers its own handler keyed by a unique ID,
+// so multiple instances don't overwrite each other.
+let nextEditorId = 0;
+const imageUploadHandlers = new Map<number, (file: File) => void>();
+
+// The extension is module-level (ProseMirror plugins are created once).
+// At event time it looks up the handler for the most recently focused editor.
+let activeEditorId = -1;
+
+const imagePasteExtension = Extension.create({
+  name: "imagePaste",
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey("imagePaste"),
+        props: {
+          handlePaste(_view, event) {
+            const items = event.clipboardData?.items;
+            if (!items) return false;
+            const images = Array.from(items).filter((i) => i.type.startsWith("image/"));
+            if (images.length === 0) return false;
+            event.preventDefault();
+            const file = images[0]?.getAsFile();
+            if (file) {
+              const handler = imageUploadHandlers.get(activeEditorId);
+              handler?.(file);
+            }
+            return true;
+          },
+          handleDrop(_view, event) {
+            if (!event.dataTransfer?.files) return false;
+            const images = Array.from(event.dataTransfer.files).filter((f) =>
+              f.type.startsWith("image/"),
+            );
+            if (images.length === 0) return false;
+            event.preventDefault();
+            const handler = imageUploadHandlers.get(activeEditorId);
+            const first = images[0];
+            if (first) handler?.(first);
+            return true;
+          },
+        },
+      }),
+    ];
+  },
+});
 
 export function Editor({
   content,
@@ -25,9 +79,14 @@ export function Editor({
   onContentChange,
   editorRef,
   onEditorReady,
+  projectId,
+  onImageAnnouncement,
 }: EditorProps) {
   const onSaveRef = useRef(onSave);
   const onContentChangeRef = useRef(onContentChange);
+  const projectIdRef = useRef(projectId);
+  const onImageAnnouncementRef = useRef(onImageAnnouncement);
+  const editorIdRef = useRef(nextEditorId++);
 
   useEffect(() => {
     onSaveRef.current = onSave;
@@ -36,6 +95,14 @@ export function Editor({
   useEffect(() => {
     onContentChangeRef.current = onContentChange;
   }, [onContentChange]);
+
+  useEffect(() => {
+    projectIdRef.current = projectId;
+  }, [projectId]);
+
+  useEffect(() => {
+    onImageAnnouncementRef.current = onImageAnnouncement;
+  }, [onImageAnnouncement]);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyRef = useRef(false);
   const editorInstanceRef = useRef<{ getJSON: () => Record<string, unknown> } | null>(null);
@@ -88,6 +155,7 @@ export function Editor({
       Placeholder.configure({
         placeholder: STRINGS.editor.placeholder,
       }),
+      imagePasteExtension,
     ],
     content: content ?? { type: "doc", content: [{ type: "paragraph" }] },
     onUpdate: ({ editor: ed }) => {
@@ -111,6 +179,9 @@ export function Editor({
           dirtyRef.current = true;
         });
     },
+    onFocus: () => {
+      activeEditorId = editorIdRef.current;
+    },
     editorProps: {
       attributes: {
         class:
@@ -125,6 +196,32 @@ export function Editor({
 
   useEffect(() => {
     editorInstanceRef.current = editor;
+  }, [editor]);
+
+  // Register instance-scoped image upload handler
+  useEffect(() => {
+    const id = editorIdRef.current;
+    activeEditorId = id;
+    imageUploadHandlers.set(id, async (file: File) => {
+      try {
+        const image = await api.images.upload(projectIdRef.current, file);
+        if (editor && !editor.isDestroyed) {
+          editor
+            .chain()
+            .focus()
+            .setImage({ src: `/api/images/${image.id}`, alt: image.alt_text })
+            .run();
+          onImageAnnouncementRef.current?.(STRINGS.imageGallery.insertSuccess(image.filename));
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        onImageAnnouncementRef.current?.(STRINGS.imageGallery.uploadFailed(message));
+      }
+    });
+    return () => {
+      imageUploadHandlers.delete(id);
+      if (activeEditorId === id) activeEditorId = -1;
+    };
   }, [editor]);
 
   useEffect(() => {
@@ -146,6 +243,11 @@ export function Editor({
             });
         },
         editor: editor,
+        insertImage: (src: string, alt: string) => {
+          if (editor) {
+            editor.chain().focus().setImage({ src, alt }).run();
+          }
+        },
       };
     }
   }, [editor, editorRef]);

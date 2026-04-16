@@ -11,6 +11,7 @@ export {
   ExportFormat,
   EXPORT_FILE_EXTENSIONS,
   EXPORT_CONTENT_TYPES,
+  UpdateImageSchema,
 } from "./schemas";
 export type { ExportFormatType } from "./schemas";
 export { countWords } from "./wordcount";
@@ -25,5 +26,6 @@ export type {
   ProjectWithChapters,
   ChapterStatusRow,
   ApiError,
+  ImageRow,
   VelocityResponse,
 } from "./types";

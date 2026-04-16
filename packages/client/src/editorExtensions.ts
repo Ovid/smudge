@@ -1,5 +1,6 @@
 import StarterKit from "@tiptap/starter-kit";
 import Heading from "@tiptap/extension-heading";
+import Image from "@tiptap/extension-image";
 
 /**
  * Shared TipTap extension configuration used by both the Editor component
@@ -12,5 +13,9 @@ export const editorExtensions = [
   }),
   Heading.configure({
     levels: [3, 4, 5],
+  }),
+  Image.configure({
+    inline: false,
+    allowBase64: false,
   }),
 ];

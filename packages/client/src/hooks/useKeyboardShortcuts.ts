@@ -8,6 +8,7 @@ interface KeyboardShortcutDeps {
   shortcutHelpOpen: boolean;
   deleteTarget: Chapter | null;
   projectSettingsOpen: boolean;
+  exportDialogOpen: boolean;
   // Current state
   viewMode: ViewMode;
   activeChapter: Chapter | null;
@@ -21,6 +22,7 @@ interface KeyboardShortcutDeps {
   setWordCountAnnouncement: React.Dispatch<React.SetStateAction<string>>;
   setNavAnnouncement: React.Dispatch<React.SetStateAction<string>>;
   switchToView: (mode: ViewMode) => Promise<void>;
+  togglePanel: () => void;
 }
 
 export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
@@ -42,6 +44,8 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
   chapterWordCountRef.current = deps.chapterWordCount;
   const projectSettingsOpenRef = useRef(deps.projectSettingsOpen);
   projectSettingsOpenRef.current = deps.projectSettingsOpen;
+  const exportDialogOpenRef = useRef(deps.exportDialogOpen);
+  exportDialogOpenRef.current = deps.exportDialogOpen;
   const handleCreateChapterRef = useRef(deps.handleCreateChapter);
   handleCreateChapterRef.current = deps.handleCreateChapter;
   const toggleSidebarRef = useRef(deps.toggleSidebar);
@@ -50,6 +54,8 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
   handleSelectChapterWithFlushRef.current = deps.handleSelectChapterWithFlush;
   const switchToViewRef = useRef(deps.switchToView);
   switchToViewRef.current = deps.switchToView;
+  const togglePanelRef = useRef(deps.togglePanel);
+  togglePanelRef.current = deps.togglePanel;
 
   useEffect(() => {
     let navAnnouncementTimer: ReturnType<typeof setTimeout> | null = null;
@@ -72,7 +78,12 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
       }
 
       // Don't process shortcuts when a dialog is open (focus trap)
-      if (shortcutHelpOpenRef.current || deleteTargetRef.current || projectSettingsOpenRef.current)
+      if (
+        shortcutHelpOpenRef.current ||
+        deleteTargetRef.current ||
+        projectSettingsOpenRef.current ||
+        exportDialogOpenRef.current
+      )
         return;
 
       if (ctrl && e.shiftKey && e.code === "KeyN") {
@@ -101,6 +112,12 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
         e.preventDefault();
         const target = viewModeRef.current === "preview" ? "editor" : "preview";
         switchToViewRef.current(target).catch(() => {});
+        return;
+      }
+
+      if (ctrl && e.code === "Period") {
+        e.preventDefault();
+        togglePanelRef.current();
         return;
       }
 

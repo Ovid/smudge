@@ -30,9 +30,9 @@ async function main() {
   initProjectStore(db);
 
   const purged = await purgeOldTrash(db);
-  if (purged.chapters > 0 || purged.projects > 0) {
+  if (purged.chapters > 0 || purged.projects > 0 || purged.images > 0) {
     logger.info(
-      { chapters: purged.chapters, projects: purged.projects },
+      { chapters: purged.chapters, projects: purged.projects, images: purged.images },
       "Purged old trash entries",
     );
   }

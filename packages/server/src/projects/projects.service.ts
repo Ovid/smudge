@@ -8,6 +8,7 @@ import {
 } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { enrichChaptersWithLabels, enrichChapterWithLabel } from "../chapters/chapters.types";
+import { extractImageIds } from "../images/images.references";
 import type { ProjectRow, ProjectListRow, UpdateProjectData } from "./projects.types";
 import type {
   ChapterWithLabel,
@@ -162,8 +163,28 @@ export async function deleteProject(slug: string): Promise<boolean> {
   const now = new Date().toISOString();
 
   await store.transaction(async (txStore) => {
+    // Read chapter content inside the transaction so the image ref diff
+    // is based on the committed content state.
+    const chapters = await txStore.listChapterContentByProject(project.id);
+    const allImageIds: string[] = [];
+    for (const ch of chapters) {
+      if (ch.content) {
+        try {
+          const content = JSON.parse(ch.content);
+          allImageIds.push(...extractImageIds(content));
+        } catch {
+          // Corrupt content — skip
+        }
+      }
+    }
+
     await txStore.softDeleteChaptersByProject(project.id, now);
     await txStore.softDeleteProject(project.id, now);
+
+    // Decrement image reference counts for all images in the deleted chapters
+    for (const imageId of allImageIds) {
+      await txStore.incrementImageReferenceCount(imageId, -1);
+    }
   });
 
   // Intentionally skip updateDailySnapshot here: all chapters are now

@@ -70,6 +70,12 @@ export function ShortcutHelpDialog({ open, onClose }: ShortcutHelpDialogProps) {
           </dd>
         </div>
         <div className="flex justify-between items-center">
+          <dt className="text-text-secondary">{STRINGS.shortcuts.toggleReferencePanel}</dt>
+          <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
+            {STRINGS.shortcuts.keyToggleReferencePanel}
+          </dd>
+        </div>
+        <div className="flex justify-between items-center">
           <dt className="text-text-secondary">{STRINGS.shortcuts.showShortcuts}</dt>
           <dd className="font-mono text-xs text-text-muted bg-bg-sidebar px-2 py-0.5 rounded">
             {STRINGS.shortcuts.keyShowShortcuts}
