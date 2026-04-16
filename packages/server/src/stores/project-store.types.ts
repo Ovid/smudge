@@ -84,7 +84,9 @@ export interface ProjectStore {
   ): Promise<Array<{ id: string; title: string; content: string | null }>>;
   listAllChapterContentByProject(
     projectId: string,
-  ): Promise<Array<{ id: string; title: string; content: string | null; deleted_at: string | null }>>;
+  ): Promise<
+    Array<{ id: string; title: string; content: string | null; deleted_at: string | null }>
+  >;
 
   // --- Transactions ---
 

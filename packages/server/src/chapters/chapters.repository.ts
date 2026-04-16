@@ -206,7 +206,9 @@ export async function listContentByProject(
 export async function listAllContentByProject(
   db: Knex | Knex.Transaction,
   projectId: string,
-): Promise<Array<{ id: string; title: string; content: string | null; deleted_at: string | null }>> {
+): Promise<
+  Array<{ id: string; title: string; content: string | null; deleted_at: string | null }>
+> {
   return db("chapters")
     .where("project_id", projectId)
     .select("id", "title", "content", "deleted_at");
