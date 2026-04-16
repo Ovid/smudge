@@ -154,22 +154,24 @@ export async function updateChapter(
 
 export async function deleteChapter(id: string): Promise<boolean> {
   const store = getProjectStore();
-  const chapter = await store.findChapterByIdRaw(id);
-  if (!chapter) return false;
-
-  // Parse image IDs from content before the transaction (may be corrupt)
-  let imageIds: string[] = [];
-  if (chapter.content) {
-    try {
-      const content = JSON.parse(chapter.content);
-      imageIds = extractImageIds(content);
-    } catch {
-      // Corrupt content — no image IDs to decrement
-    }
-  }
 
   const now = new Date().toISOString();
-  await store.transaction(async (txStore) => {
+  const projectId = await store.transaction(async (txStore) => {
+    // Read content inside the transaction so the image ref diff is based
+    // on the committed content state (consistent with deleteProject/updateChapter).
+    const chapter = await txStore.findChapterByIdRaw(id);
+    if (!chapter) return null;
+
+    let imageIds: string[] = [];
+    if (chapter.content) {
+      try {
+        const content = JSON.parse(chapter.content);
+        imageIds = extractImageIds(content);
+      } catch {
+        // Corrupt content — no image IDs to decrement
+      }
+    }
+
     await txStore.softDeleteChapter(id, now);
     await txStore.updateProjectTimestamp(chapter.project_id, now);
 
@@ -177,13 +179,17 @@ export async function deleteChapter(id: string): Promise<boolean> {
     for (const imageId of imageIds) {
       await txStore.incrementImageReferenceCount(imageId, -1);
     }
+
+    return chapter.project_id;
   });
 
+  if (!projectId) return false;
+
   try {
-    await getVelocityService().updateDailySnapshot(chapter.project_id);
+    await getVelocityService().updateDailySnapshot(projectId);
   } catch (err: unknown) {
     logger.error(
-      { err, project_id: chapter.project_id, chapter_id: id },
+      { err, project_id: projectId, chapter_id: id },
       "Velocity updateDailySnapshot failed (best-effort)",
     );
   }
@@ -198,17 +204,6 @@ export async function restoreChapter(
   const store = getProjectStore();
   const chapter = await store.findDeletedChapterById(id);
   if (!chapter) return null;
-
-  // Parse image IDs from content before the transaction (may be corrupt)
-  let imageIds: string[] = [];
-  if (chapter.content) {
-    try {
-      const content = JSON.parse(chapter.content);
-      imageIds = extractImageIds(content);
-    } catch {
-      // Corrupt content — no image IDs to increment
-    }
-  }
 
   try {
     const now = new Date().toISOString();
@@ -246,9 +241,19 @@ export async function restoreChapter(
         await txStore.updateProjectTimestamp(chapter.project_id, now);
       }
 
-      // Increment reference counts atomically with the restore
-      for (const imgId of imageIds) {
-        await txStore.incrementImageReferenceCount(imgId, 1);
+      // Read content inside the transaction to get the committed state
+      // and increment image reference counts atomically with the restore.
+      const restoredRow = await txStore.findChapterByIdRaw(id);
+      if (restoredRow?.content) {
+        try {
+          const content = JSON.parse(restoredRow.content);
+          const imageIds = extractImageIds(content);
+          for (const imgId of imageIds) {
+            await txStore.incrementImageReferenceCount(imgId, 1);
+          }
+        } catch {
+          // Corrupt content — no image IDs to increment
+        }
       }
     });
   } catch (err: unknown) {
