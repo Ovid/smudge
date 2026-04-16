@@ -34,7 +34,7 @@ After each GREEN pass, explicitly check for:
 - **Missing type exports** from index files
 - **Test helper opportunities** — shared fixtures or factories that would reduce test duplication
 
-Only refactor what you just wrote. Don't clean up surrounding code.
+Focus refactoring on what you just wrote. Touching surrounding code is fine when the refactor requires it (e.g., extracting a shared helper from existing code, or changing a function signature to support reuse) — the test suite will catch regressions. Don't do drive-by cleanup unrelated to the current task.
 
 ### Commit cadence
 Commit after each task's GREEN+REFACTOR pass. Each commit should leave the codebase in a passing state.
