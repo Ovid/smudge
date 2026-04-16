@@ -30,7 +30,11 @@ type UpdateResult =
 type DeleteResult =
   | { deleted: true; notFound?: undefined; referenced?: undefined }
   | { notFound: true; deleted?: undefined; referenced?: undefined }
-  | { referenced: Array<{ id: string; title: string }>; deleted?: undefined; notFound?: undefined };
+  | {
+      referenced: Array<{ id: string; title: string; trashed: boolean }>;
+      deleted?: undefined;
+      notFound?: undefined;
+    };
 
 type ReferencesResult =
   | { chapters: Array<{ id: string; title: string }>; notFound?: undefined }
@@ -162,7 +166,7 @@ export async function deleteImage(id: string): Promise<DeleteResult> {
     // trashed chapter still references — restoring that chapter would
     // produce a broken image if we allowed the delete.
     const chapters = await txStore.listAllChapterContentByProject(image.project_id);
-    const referencingChapters: Array<{ id: string; title: string }> = [];
+    const referencingChapters: Array<{ id: string; title: string; trashed: boolean }> = [];
     let activeRefCount = 0;
     for (const ch of chapters) {
       if (ch.content) {
@@ -170,7 +174,7 @@ export async function deleteImage(id: string): Promise<DeleteResult> {
           const parsed = JSON.parse(ch.content) as Record<string, unknown>;
           const ids = extractImageIds(parsed);
           if (ids.includes(id.toLowerCase())) {
-            referencingChapters.push({ id: ch.id, title: ch.title });
+            referencingChapters.push({ id: ch.id, title: ch.title, trashed: !!ch.deleted_at });
             if (!ch.deleted_at) activeRefCount++;
           }
         } catch {

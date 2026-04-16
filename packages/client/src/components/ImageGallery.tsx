@@ -206,7 +206,9 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
         typeof result.error === "object" &&
         "chapters" in result.error &&
         Array.isArray((result.error as { chapters: unknown }).chapters)
-          ? (result.error as { chapters: Array<{ title: string }> }).chapters.map((c) => c.title)
+          ? (
+              result.error as { chapters: Array<{ title: string; trashed?: boolean }> }
+            ).chapters.map((c) => (c.trashed ? `${c.title} (${S.inTrash})` : c.title))
           : [];
       announce(S.deleteBlocked(chapters));
       setConfirmingDelete(false);

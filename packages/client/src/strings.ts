@@ -254,6 +254,7 @@ export const STRINGS = {
     deleteFailed: (reason: string) => `Delete failed: ${reason}`,
     saveFailed: "Save failed. Your changes have not been saved.",
     deleteBlockedLoading: "This image is in use. Loading details...",
+    inTrash: "in trash",
     loadFailed: "Failed to load images.",
     retryButton: "Retry",
   },
