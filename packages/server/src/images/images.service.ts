@@ -202,6 +202,11 @@ export async function deleteImage(id: string): Promise<DeleteResult> {
     } catch (err) {
       logger.warn({ err, imageId: id }, "Failed to delete image file from disk");
     }
+  } else {
+    logger.warn(
+      { imageId: id, mimeType: image.mime_type },
+      "Could not determine extension for deleted image; file left on disk",
+    );
   }
 
   return { deleted: true };

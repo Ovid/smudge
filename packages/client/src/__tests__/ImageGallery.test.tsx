@@ -346,16 +346,20 @@ describe("ImageGallery", () => {
     const user = userEvent.setup();
     const onInsertImage = vi.fn();
     const image = makeImage({ id: "img-42", alt_text: "My image" });
+    vi.mocked(api.images.update).mockResolvedValue(image);
     await renderAndOpenDetail(image, user, { onInsertImage });
 
     await user.click(screen.getByText(S.insertButton));
 
-    expect(onInsertImage).toHaveBeenCalledWith("/api/images/img-42", "My image");
+    await waitFor(() => {
+      expect(onInsertImage).toHaveBeenCalledWith("/api/images/img-42", "My image");
+    });
   });
 
   it("announces insert success", async () => {
     const user = userEvent.setup();
     const image = makeImage({ filename: "hero.png" });
+    vi.mocked(api.images.update).mockResolvedValue(image);
     await renderAndOpenDetail(image, user);
 
     await user.click(screen.getByText(S.insertButton));
@@ -544,10 +548,13 @@ describe("ImageGallery", () => {
     expect(licenseInput).toHaveValue("new license");
   });
 
-  it("uses current form state for insert alt text, not original image alt text", async () => {
+  it("uses server-returned alt text for insert after auto-save", async () => {
     const user = userEvent.setup();
     const onInsertImage = vi.fn();
     const image = makeImage({ id: "img-1", alt_text: "Original" });
+    vi.mocked(api.images.update).mockResolvedValue(
+      makeImage({ id: "img-1", alt_text: "Edited alt" }),
+    );
     await renderAndOpenDetail(image, user, { onInsertImage });
 
     const altInput = screen.getByLabelText(S.altTextLabel);
@@ -556,7 +563,9 @@ describe("ImageGallery", () => {
 
     await user.click(screen.getByText(S.insertButton));
 
-    expect(onInsertImage).toHaveBeenCalledWith("/api/images/img-1", "Edited alt");
+    await waitFor(() => {
+      expect(onInsertImage).toHaveBeenCalledWith("/api/images/img-1", "Edited alt");
+    });
   });
 
   it("fetches images on mount with the correct project ID", () => {

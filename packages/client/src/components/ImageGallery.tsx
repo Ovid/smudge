@@ -164,6 +164,7 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
   async function handleInsert() {
     if (!selectedImage) return;
     // Auto-save pending metadata changes before inserting so the DB stays in sync
+    let imageToInsert = selectedImage;
     if (saveStatus !== "saved") {
       try {
         setSaveStatus("saving");
@@ -171,14 +172,15 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
         setSelectedImage(updated);
         setSaveStatus("saved");
         incrementRefreshKey();
+        imageToInsert = updated;
       } catch {
         setSaveStatus("idle");
         announce(S.saveFailed);
         return;
       }
     }
-    onInsertImage(`/api/images/${selectedImage.id}`, formState.alt_text);
-    announce(S.insertSuccess(selectedImage.filename));
+    onInsertImage(`/api/images/${imageToInsert.id}`, imageToInsert.alt_text);
+    announce(S.insertSuccess(imageToInsert.filename));
   }
 
   async function handleDelete() {
