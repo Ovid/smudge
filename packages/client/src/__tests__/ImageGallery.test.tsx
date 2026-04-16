@@ -408,10 +408,14 @@ describe("ImageGallery", () => {
       expect(screen.getByText(S.usedInChapters)).toBeInTheDocument();
     });
 
-    // Click delete — should show blocked message since image is in use
+    // Click delete — should show blocked message with clickable chapter links
     await user.click(screen.getByText(S.deleteButton));
 
-    expect(screen.getByText(S.deleteBlocked(["Chapter One", "Chapter Two"]))).toBeInTheDocument();
+    expect(screen.getByText(S.deleteBlockedPrefix)).toBeInTheDocument();
+    expect(screen.getByText(S.deleteBlockedSuffix)).toBeInTheDocument();
+    // Chapter titles appear in both "Used in" and delete-blocked sections
+    expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Chapter Two").length).toBeGreaterThanOrEqual(2);
   });
 
   // --- Where-used / references ---
