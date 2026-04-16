@@ -79,20 +79,3 @@ export async function scanImageReferences(
   return referencingChapters;
 }
 
-/**
- * Scans all non-deleted chapters in a project for references to a specific image
- * and corrects the image's `reference_count` if it has drifted.
- * Use this only on write paths (e.g. delete), not on GET endpoints.
- */
-export async function liveCheckImageReferences(
-  imageId: string,
-  projectId: string,
-): Promise<Array<{ id: string; title: string }>> {
-  const store = getProjectStore();
-  const referencingChapters = await scanImageReferences(imageId, projectId);
-
-  // Correct reference_count if it drifted
-  await store.setImageReferenceCount(imageId, referencingChapters.length);
-
-  return referencingChapters;
-}

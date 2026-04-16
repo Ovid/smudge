@@ -7,7 +7,7 @@ import { setupTestDb } from "./test-helpers";
 import {
   extractImageIds,
   diffImageReferences,
-  liveCheckImageReferences,
+  scanImageReferences,
 } from "../images/images.references";
 import * as imagesService from "../images/images.service";
 
@@ -228,7 +228,7 @@ function makeContentNoImages(): Record<string, unknown> {
   };
 }
 
-describe("liveCheckImageReferences()", () => {
+describe("scanImageReferences()", () => {
   it("returns empty array when image is not referenced", async () => {
     const { id: projectId, slug } = await createTestProject();
     const imageId = await uploadTestImage(projectId);
@@ -239,7 +239,7 @@ describe("liveCheckImageReferences()", () => {
       .patch(`/api/chapters/${chapterId}`)
       .send({ content: makeContentNoImages() });
 
-    const result = await liveCheckImageReferences(imageId, projectId);
+    const result = await scanImageReferences(imageId, projectId);
     expect(result).toEqual([]);
   });
 
@@ -252,13 +252,15 @@ describe("liveCheckImageReferences()", () => {
       .patch(`/api/chapters/${chapterId}`)
       .send({ content: makeContentWithImage(imageId) });
 
-    const result = await liveCheckImageReferences(imageId, projectId);
+    const result = await scanImageReferences(imageId, projectId);
     expect(result).toHaveLength(1);
     expect(result[0]!.id).toBe(chapterId);
     expect(result[0]!.title).toBe("My Chapter");
   });
+});
 
-  it("corrects a drifted reference_count (under-count)", async () => {
+describe("deleteImage corrects drifted reference_count", () => {
+  it("corrects under-count and blocks deletion when image is still referenced", async () => {
     const { id: projectId, slug } = await createTestProject();
     const imageId = await uploadTestImage(projectId);
     const chapterId = await createTestChapter(slug);
@@ -270,28 +272,30 @@ describe("liveCheckImageReferences()", () => {
     // Manually set reference_count to 0 (drift)
     await t.db("images").where("id", imageId).update({ reference_count: 0 });
 
-    await liveCheckImageReferences(imageId, projectId);
+    // deleteImage should live-check, correct the count, and block the delete
+    const res = await request(t.app).delete(`/api/images/${imageId}`);
+    expect(res.status).toBe(409);
 
     const image = await t.db("images").where("id", imageId).first();
     expect(image.reference_count).toBe(1);
   });
 
-  it("corrects an over-count", async () => {
+  it("corrects over-count and allows deletion when image is not referenced", async () => {
     const { id: projectId, slug } = await createTestProject();
     const imageId = await uploadTestImage(projectId);
     const chapterId = await createTestChapter(slug);
 
     await request(t.app)
       .patch(`/api/chapters/${chapterId}`)
-      .send({ content: makeContentWithImage(imageId) });
+      .send({ content: makeContentNoImages() });
 
     // Manually set reference_count to 5 (over-count)
     await t.db("images").where("id", imageId).update({ reference_count: 5 });
 
-    await liveCheckImageReferences(imageId, projectId);
-
-    const image = await t.db("images").where("id", imageId).first();
-    expect(image.reference_count).toBe(1);
+    // deleteImage should live-check, correct the count, and allow deletion
+    const res = await request(t.app).delete(`/api/images/${imageId}`);
+    expect(res.status).toBe(200);
+    expect(res.body.deleted).toBe(true);
   });
 });
 
