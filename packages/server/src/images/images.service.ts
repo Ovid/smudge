@@ -179,11 +179,11 @@ export async function deleteImage(id: string): Promise<DeleteResult> {
       }
     }
 
-    // Correct reference_count to reflect only active (non-deleted) chapters,
-    // since that is what the rest of the codebase maintains.
-    await txStore.setImageReferenceCount(id, activeRefCount);
-
     if (referencingChapters.length > 0) {
+      // Correct reference_count to reflect only active (non-deleted) chapters,
+      // since that is what the rest of the codebase maintains. Only update when
+      // the delete is blocked — when it succeeds, the row is removed anyway.
+      await txStore.setImageReferenceCount(id, activeRefCount);
       return { referenced: referencingChapters } as const;
     }
 
