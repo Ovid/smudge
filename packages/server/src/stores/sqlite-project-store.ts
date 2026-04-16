@@ -17,12 +17,14 @@ import type {
 import type { ChapterStatusRow } from "../chapter-statuses/chapter-statuses.types";
 import type { SettingRow } from "../settings/settings.types";
 import type { ImageRow, CreateImageRow, UpdateImageData } from "../images/images.types";
+import type { SnapshotRow, SnapshotListItem, CreateSnapshotData } from "../snapshots/snapshots.types";
 import * as projectsRepo from "../projects/projects.repository";
 import * as chaptersRepo from "../chapters/chapters.repository";
 import * as statusesRepo from "../chapter-statuses/chapter-statuses.repository";
 import * as velocityRepo from "../velocity/velocity.repository";
 import * as settingsRepo from "../settings/settings.repository";
 import * as imagesRepo from "../images/images.repository";
+import * as snapshotsRepo from "../snapshots/snapshots.repository";
 
 export class SqliteProjectStore implements ProjectStore {
   private readonly isTransactionScoped: boolean;
@@ -244,6 +246,32 @@ export class SqliteProjectStore implements ProjectStore {
     Array<{ id: string; title: string; content: string | null; deleted_at: string | null }>
   > {
     return chaptersRepo.listAllContentByProject(this.db, projectId);
+  }
+
+  // --- Snapshots ---
+
+  insertSnapshot(data: CreateSnapshotData): Promise<SnapshotRow> {
+    return snapshotsRepo.insert(this.db, data);
+  }
+
+  findSnapshotById(id: string): Promise<SnapshotRow | null> {
+    return snapshotsRepo.findById(this.db, id);
+  }
+
+  listSnapshotsByChapter(chapterId: string): Promise<SnapshotListItem[]> {
+    return snapshotsRepo.listByChapter(this.db, chapterId);
+  }
+
+  deleteSnapshot(id: string): Promise<number> {
+    return snapshotsRepo.remove(this.db, id);
+  }
+
+  getLatestSnapshotContentHash(chapterId: string): Promise<string | null> {
+    return snapshotsRepo.getLatestContentHash(this.db, chapterId);
+  }
+
+  deleteSnapshotsByChapter(chapterId: string): Promise<number> {
+    return snapshotsRepo.deleteByChapter(this.db, chapterId);
   }
 
   // --- Transactions ---

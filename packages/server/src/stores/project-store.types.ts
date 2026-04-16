@@ -15,6 +15,11 @@ import type {
 import type { ChapterStatusRow } from "../chapter-statuses/chapter-statuses.types";
 import type { SettingRow } from "../settings/settings.types";
 import type { ImageRow, CreateImageRow, UpdateImageData } from "../images/images.types";
+import type {
+  SnapshotRow,
+  SnapshotListItem,
+  CreateSnapshotData,
+} from "../snapshots/snapshots.types";
 
 export interface ProjectStore {
   // --- Projects ---
@@ -87,6 +92,14 @@ export interface ProjectStore {
   ): Promise<
     Array<{ id: string; title: string; content: string | null; deleted_at: string | null }>
   >;
+
+  // --- Snapshots ---
+  insertSnapshot(data: CreateSnapshotData): Promise<SnapshotRow>;
+  findSnapshotById(id: string): Promise<SnapshotRow | null>;
+  listSnapshotsByChapter(chapterId: string): Promise<SnapshotListItem[]>;
+  deleteSnapshot(id: string): Promise<number>;
+  getLatestSnapshotContentHash(chapterId: string): Promise<string | null>;
+  deleteSnapshotsByChapter(chapterId: string): Promise<number>;
 
   // --- Transactions ---
 

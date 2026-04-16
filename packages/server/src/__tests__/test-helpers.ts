@@ -28,6 +28,7 @@ export function setupTestDb() {
   });
 
   beforeEach(async () => {
+    await testDb("chapter_snapshots").del();
     await testDb("images").del();
     await testDb("daily_snapshots").del();
     await testDb("settings").del();
