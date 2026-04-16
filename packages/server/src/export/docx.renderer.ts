@@ -329,8 +329,9 @@ async function blockToParagraphs(
 
         const docxType = MIME_TO_DOCX_TYPE[resolved.mimeType];
         if (!docxType) {
-          // Format not supported by docx library — render a text placeholder
-          // so the image is not silently lost (e.g. webp uploads).
+          // Defensive: all currently allowed MIME types (jpeg, png, gif, webp) are
+          // mapped in MIME_TO_DOCX_TYPE. This branch fires only if a new MIME type
+          // is added to ALLOWED_MIMES without a corresponding DOCX mapping.
           logger.warn(
             { mimeType: resolved.mimeType },
             "Unsupported image MIME type for docx export, rendering as text placeholder",
