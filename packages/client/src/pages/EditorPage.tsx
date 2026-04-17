@@ -70,6 +70,7 @@ export function EditorPage() {
     handleUpdateProjectTitle,
     handleRenameChapter,
     handleStatusChange,
+    getActiveChapter,
   } = useProjectEditor(slug);
 
   const { sidebarWidth, sidebarOpen, handleSidebarResize, toggleSidebar } = useSidebarState();
@@ -123,32 +124,52 @@ export function EditorPage() {
 
   const handleRestoreSnapshot = useCallback(async () => {
     if (!viewingSnapshot || !activeChapter) return;
-    await editorRef.current?.flushSave();
+    // If the pending save failed, do not reload — reload would clear the
+    // client-side unsaved-content cache, losing the user's unsaved edits.
+    const flushed = (await editorRef.current?.flushSave()) ?? true;
+    if (!flushed) {
+      setActionError(STRINGS.snapshots.restoreFailed);
+      return;
+    }
     const ok = await restoreSnapshot(viewingSnapshot.id);
     if (ok) {
       await reloadActiveChapter();
       snapshotPanelRef.current?.refreshSnapshots();
+    } else {
+      setActionError(STRINGS.snapshots.restoreFailed);
     }
   }, [viewingSnapshot, activeChapter, restoreSnapshot, reloadActiveChapter, snapshotPanelRef]);
 
   const executeReplace = useCallback(
     async (scope: { type: "project" } | { type: "chapter"; chapter_id: string }) => {
       if (!project || !slug) return;
-      await editorRef.current?.flushSave();
-      const result = await api.search.replace(
-        slug,
-        findReplace.query,
-        findReplace.replacement,
-        findReplace.options,
-        scope,
-      );
-      if (activeChapter && result.affected_chapter_ids.includes(activeChapter.id)) {
-        await reloadActiveChapter();
+      const flushed = (await editorRef.current?.flushSave()) ?? true;
+      if (!flushed) {
+        setActionError(STRINGS.findReplace.replaceFailed);
+        return;
       }
-      await findReplace.search(slug);
-      snapshotPanelRef.current?.refreshSnapshots();
+      try {
+        const result = await api.search.replace(
+          slug,
+          findReplace.query,
+          findReplace.replacement,
+          findReplace.options,
+          scope,
+        );
+        // Read the CURRENT active chapter (not the closure value) so a
+        // chapter switch between click and response still reloads when the
+        // now-active chapter was affected.
+        const current = getActiveChapter();
+        if (current && result.affected_chapter_ids.includes(current.id)) {
+          await reloadActiveChapter();
+        }
+        await findReplace.search(slug);
+        snapshotPanelRef.current?.refreshSnapshots();
+      } catch {
+        setActionError(STRINGS.findReplace.replaceFailed);
+      }
     },
-    [project, slug, findReplace, activeChapter, reloadActiveChapter, snapshotPanelRef],
+    [project, slug, findReplace, reloadActiveChapter, snapshotPanelRef, getActiveChapter],
   );
 
   const handleReplaceAllInManuscript = useCallback(() => {
@@ -162,7 +183,11 @@ export function EditorPage() {
   const handleReplaceOne = useCallback(
     async (chapterId: string, matchIndex: number) => {
       if (!project || !slug) return;
-      await editorRef.current?.flushSave();
+      const flushed = (await editorRef.current?.flushSave()) ?? true;
+      if (!flushed) {
+        setActionError(STRINGS.findReplace.replaceFailed);
+        return;
+      }
       try {
         const result = await api.search.replace(
           slug,
@@ -171,7 +196,8 @@ export function EditorPage() {
           findReplace.options,
           { type: "chapter", chapter_id: chapterId, match_index: matchIndex },
         );
-        if (activeChapter && result.affected_chapter_ids.includes(activeChapter.id)) {
+        const current = getActiveChapter();
+        if (current && result.affected_chapter_ids.includes(current.id)) {
           await reloadActiveChapter();
         }
         await findReplace.search(slug);
@@ -180,7 +206,7 @@ export function EditorPage() {
         setActionError(STRINGS.findReplace.replaceFailed);
       }
     },
-    [project, slug, findReplace, activeChapter, reloadActiveChapter, snapshotPanelRef],
+    [project, slug, findReplace, reloadActiveChapter, snapshotPanelRef, getActiveChapter],
   );
 
   const {

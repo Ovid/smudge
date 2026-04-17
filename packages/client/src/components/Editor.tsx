@@ -8,7 +8,7 @@ import { STRINGS } from "../strings";
 import { api } from "../api/client";
 
 export interface EditorHandle {
-  flushSave: () => Promise<void>;
+  flushSave: () => Promise<boolean>;
   editor: TipTapEditor | null;
   insertImage: (src: string, alt: string) => void;
 }
@@ -228,7 +228,7 @@ export function Editor({
     if (editorRef) {
       editorRef.current = {
         flushSave: () => {
-          if (!dirtyRef.current || !editor) return Promise.resolve();
+          if (!dirtyRef.current || !editor) return Promise.resolve(true);
           if (debounceTimerRef.current) {
             clearTimeout(debounceTimerRef.current);
             debounceTimerRef.current = null;
@@ -237,9 +237,11 @@ export function Editor({
             .current(editor.getJSON() as Record<string, unknown>)
             .then((ok) => {
               dirtyRef.current = !ok;
+              return ok;
             })
             .catch(() => {
               dirtyRef.current = true;
+              return false;
             });
         },
         editor: editor,

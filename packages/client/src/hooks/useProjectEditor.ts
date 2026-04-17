@@ -393,5 +393,8 @@ export function useProjectEditor(slug: string | undefined) {
     handleUpdateProjectTitle,
     handleRenameChapter,
     handleStatusChange,
+    // Getter for reading the current active chapter from inside async
+    // callbacks whose closure would otherwise see a stale value.
+    getActiveChapter: () => activeChapterRef.current,
   };
 }
