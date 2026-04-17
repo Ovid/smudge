@@ -115,7 +115,7 @@ describe("search routes", () => {
 
       const res = await request(t.app)
         .post(`/api/projects/${projectSlug}/replace`)
-        .send({ search: "quick brown", replace: "slow red" });
+        .send({ search: "quick brown", replace: "slow red", scope: { type: "project" } });
 
       expect(res.status).toBe(200);
       expect(res.body.replaced_count).toBe(1);
@@ -127,7 +127,7 @@ describe("search routes", () => {
 
       await request(t.app)
         .post(`/api/projects/${projectSlug}/replace`)
-        .send({ search: "quick", replace: "slow" });
+        .send({ search: "quick", replace: "slow", scope: { type: "project" } });
 
       // Verify snapshot was created via the snapshots API
       const snapRes = await request(t.app).get(`/api/chapters/${chapterId}/snapshots`);
@@ -141,7 +141,7 @@ describe("search routes", () => {
     it("returns 404 for non-existent project", async () => {
       const res = await request(t.app)
         .post("/api/projects/nonexistent-slug/replace")
-        .send({ search: "test", replace: "other" });
+        .send({ search: "test", replace: "other", scope: { type: "project" } });
 
       expect(res.status).toBe(404);
       expect(res.body.error.code).toBe("NOT_FOUND");
@@ -170,7 +170,7 @@ describe("search routes", () => {
 
       const res = await request(t.app)
         .post(`/api/projects/${projectSlug}/replace`)
-        .send({ search: "test", replace: "other" });
+        .send({ search: "test", replace: "other", scope: { type: "project" } });
 
       expect(res.status).toBe(404);
       expect(res.body.error.code).toBe("NOT_FOUND");
@@ -182,7 +182,7 @@ describe("search routes", () => {
 
       const res = await request(t.app)
         .post(`/api/projects/${projectSlug}/replace`)
-        .send({ search: "", replace: "test" });
+        .send({ search: "", replace: "test", scope: { type: "project" } });
 
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe("VALIDATION_ERROR");
@@ -193,7 +193,7 @@ describe("search routes", () => {
 
       const res = await request(t.app)
         .post(`/api/projects/${projectSlug}/replace`)
-        .send({ search: "quick brown ", replace: "" });
+        .send({ search: "quick brown ", replace: "", scope: { type: "project" } });
 
       expect(res.status).toBe(200);
       expect(res.body.replaced_count).toBe(1);

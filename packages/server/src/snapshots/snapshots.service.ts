@@ -109,8 +109,10 @@ export async function restoreSnapshot(
     });
     await txStore.updateProjectTimestamp(chapter.project_id, now);
 
-    // Adjust image reference counts
-    await applyImageRefDiff(txStore, chapter.content, snapshot.content);
+    // Adjust image reference counts — use the same coalesced content used
+    // for the pre-restore auto-snapshot so a never-saved chapter (NULL
+    // content) is treated as the empty doc here too.
+    await applyImageRefDiff(txStore, currentContent, snapshot.content);
 
     return { chapter_id: chapter.id, project_id: chapter.project_id };
   });

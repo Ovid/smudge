@@ -154,7 +154,15 @@ export function FindReplacePanel({
             value={replacement}
             onChange={(e) => onReplacementChange(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && results !== null && results.total_count > 0) {
+              // Match the footer button's disabled condition: Enter only
+              // fires Replace All when there are results AND a replacement.
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                results !== null &&
+                results.total_count > 0 &&
+                replacement.length > 0
+              ) {
                 e.preventDefault();
                 onReplaceAllInManuscript();
               }

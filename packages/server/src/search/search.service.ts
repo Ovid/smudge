@@ -13,6 +13,32 @@ import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
 import type { SearchResult } from "./search.types";
 
+/**
+ * Truncate a user-supplied string for display in a snapshot label:
+ *   - strip control chars (other than tab) which corrupt logs and UI;
+ *   - truncate by grapheme (not code unit) to avoid splitting surrogate
+ *     pairs or combining sequences.
+ */
+function truncateForLabel(s: string, max = 30): string {
+  const cleaned = s.replace(/[\u0000-\u0008\u000A-\u001F\u007F]/g, "");
+  const segmenter =
+    typeof Intl !== "undefined" && "Segmenter" in Intl
+      ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+      : null;
+  if (!segmenter) {
+    return cleaned.length > max ? cleaned.slice(0, max) + "..." : cleaned;
+  }
+  const graphemes: string[] = [];
+  for (const { segment } of segmenter.segment(cleaned)) {
+    graphemes.push(segment);
+    if (graphemes.length > max) break;
+  }
+  if (graphemes.length > max) {
+    return graphemes.slice(0, max).join("") + "...";
+  }
+  return cleaned;
+}
+
 class MatchCapExceeded extends Error {
   constructor() {
     super(`Too many matches (>${MAX_MATCHES_PER_REQUEST}); refine your search.`);
@@ -163,10 +189,7 @@ export async function replaceInProject(
       }
       affectedIds.push(chapter.id);
 
-      // Truncate label parts to keep it readable
-      const truncSearch = search.length > 30 ? search.slice(0, 30) + "..." : search;
-      const truncReplace = replace.length > 30 ? replace.slice(0, 30) + "..." : replace;
-      const label = `Before find-and-replace: '${truncSearch}' → '${truncReplace}'`;
+      const label = `Before find-and-replace: '${truncateForLabel(search)}' → '${truncateForLabel(replace)}'`;
 
       // Auto-snapshot before replacement (using DB-committed word_count)
       await txStore.insertSnapshot({

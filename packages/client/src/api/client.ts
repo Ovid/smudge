@@ -291,16 +291,17 @@ export const api = {
       projectSlug: string,
       search: string,
       replace: string,
-      options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
-      scope?: { type: "project" } | { type: "chapter"; chapter_id: string; match_index?: number },
+      options: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean } | undefined,
+      scope: { type: "project" } | { type: "chapter"; chapter_id: string; match_index?: number },
     ) =>
-      apiFetch<{ replaced_count: number; affected_chapter_ids: string[] }>(
-        `/projects/${projectSlug}/replace`,
-        {
-          method: "POST",
-          body: JSON.stringify({ search, replace, options, scope }),
-        },
-      ),
+      apiFetch<{
+        replaced_count: number;
+        affected_chapter_ids: string[];
+        skipped_chapter_ids?: string[];
+      }>(`/projects/${projectSlug}/replace`, {
+        method: "POST",
+        body: JSON.stringify({ search, replace, options, scope }),
+      }),
   },
 
   settings: {

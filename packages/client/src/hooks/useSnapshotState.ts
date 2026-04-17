@@ -38,24 +38,24 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   const [viewingSnapshot, setViewingSnapshot] = useState<ViewingSnapshot | null>(null);
   const [snapshotCount, setSnapshotCount] = useState(0);
   const snapshotPanelRef = useRef<SnapshotPanelHandle>(null);
+  // Monotonic counter to discard stale list responses after a chapter switch.
+  const chapterSeqRef = useRef(0);
 
   // Fetch snapshot count when chapterId changes or panel opens
   useEffect(() => {
-    if (!chapterId) {
-      return;
-    }
-    let cancelled = false;
+    const seq = ++chapterSeqRef.current;
+    // Reset to 0 immediately so the badge shows the new chapter's count
+    // rather than the previous chapter's until the fetch resolves.
+    setSnapshotCount(0);
+    if (!chapterId) return;
     api.snapshots
       .list(chapterId)
       .then((data) => {
-        if (!cancelled) setSnapshotCount(data.length);
+        if (seq === chapterSeqRef.current) setSnapshotCount(data.length);
       })
       .catch(() => {
         // Silently fail
       });
-    return () => {
-      cancelled = true;
-    };
   }, [chapterId]);
 
   const setSnapshotPanelOpen = useCallback((open: boolean) => {
@@ -94,10 +94,11 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         await api.snapshots.restore(snapshotId);
         setViewingSnapshot(null);
         if (chapterId) {
+          const seq = chapterSeqRef.current;
           api.snapshots
             .list(chapterId)
             .then((data) => {
-              setSnapshotCount(data.length);
+              if (seq === chapterSeqRef.current) setSnapshotCount(data.length);
             })
             .catch(() => {});
         }
@@ -117,10 +118,11 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
 
   const refreshCount = useCallback(() => {
     if (!chapterId) return;
+    const seq = chapterSeqRef.current;
     api.snapshots
       .list(chapterId)
       .then((data) => {
-        setSnapshotCount(data.length);
+        if (seq === chapterSeqRef.current) setSnapshotCount(data.length);
       })
       .catch(() => {});
   }, [chapterId]);

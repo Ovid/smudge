@@ -30,17 +30,14 @@ const ReplaceSchema = z.object({
     .max(MAX_QUERY_LENGTH, "Search term is too long"),
   replace: z.string().max(MAX_REPLACE_LENGTH, "Replacement is too long"),
   options: SearchOptionsSchema,
-  scope: z
-    .union([
-      z.object({ type: z.literal("project") }),
-      z.object({
-        type: z.literal("chapter"),
-        chapter_id: z.string().uuid(),
-        match_index: z.number().int().min(0).optional(),
-      }),
-    ])
-    .optional()
-    .default({ type: "project" }),
+  scope: z.union([
+    z.object({ type: z.literal("project") }),
+    z.object({
+      type: z.literal("chapter"),
+      chapter_id: z.string().uuid(),
+      match_index: z.number().int().min(0).optional(),
+    }),
+  ]),
 });
 
 export function searchRouter(): Router {
