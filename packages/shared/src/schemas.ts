@@ -143,10 +143,11 @@ export const UpdateSettingsSchema = z.object({
 /**
  * Strip characters that would let a label spoof display in the snapshot
  * list:
- *   - C0 control chars except tab (U+0000..U+0008, U+000A..U+001F), DEL (U+007F)
+ *   - All C0 control chars including TAB (U+0000..U+001F), DEL (U+007F)
  *   - C1 control chars (U+0080..U+009F) — non-printing
  *   - Bidi overrides (U+202A..U+202E, U+2066..U+2069) — Trojan-Source-style
  *   - Line/paragraph separators (U+2028, U+2029) — break list row layout
+ *   - Zero-width chars (U+200B..U+200D, U+2060, U+FEFF)
  *
  * Exported so server auto-snapshot labels (built from user search/replace
  * strings) share the same sanitization surface as manual snapshots.
