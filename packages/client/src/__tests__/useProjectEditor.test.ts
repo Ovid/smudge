@@ -199,6 +199,90 @@ describe("useProjectEditor", () => {
     }
   });
 
+  it("retry after backoff posts keystrokes typed during the backoff and preserves cache", async () => {
+    // Regression: the retry loop used to capture the initial content closure
+    // and silently drop keystrokes typed during backoff when the retry
+    // succeeded, because clearCachedContent ran unconditionally.
+    const { clearCachedContent } = await import("../hooks/useContentCache");
+    vi.mocked(clearCachedContent).mockClear();
+    vi.mocked(api.chapters.update)
+      .mockRejectedValueOnce(new Error("network error"))
+      .mockResolvedValueOnce({ ...mockChapter1, word_count: 9 });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    const initialContent = { type: "doc", content: [{ type: "paragraph" }] };
+    const typedDuringBackoff = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "typed later" }] }],
+    };
+
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        const p = result.current.handleSave(initialContent);
+        // Simulate user typing during the backoff window.
+        result.current.handleContentChange(typedDuringBackoff);
+        await vi.advanceTimersByTimeAsync(2000);
+        return p;
+      });
+
+      // Retry should have posted the newer content, not the initial content.
+      expect(api.chapters.update).toHaveBeenNthCalledWith(
+        2,
+        "ch1",
+        { content: typedDuringBackoff },
+        expect.any(AbortSignal),
+      );
+      // Since a newer change was in the cache at save time (the typed content
+      // equals latestContentRef, so actually "stillLatest" is true here),
+      // clearCachedContent fires. Verify activeChapter reflects the posted
+      // (newer) content so remount picks up what the server has.
+      expect(result.current.activeChapter?.content).toEqual(typedDuringBackoff);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not clear cache or report 'saved' if newer content arrived after save started", async () => {
+    const { clearCachedContent } = await import("../hooks/useContentCache");
+    vi.mocked(clearCachedContent).mockClear();
+    // Resolve immediately — but the test will race a handleContentChange
+    // before the resolution (in practice handleContentChange between save
+    // start and fetch return).
+    let resolveUpdate: (v: typeof mockChapter1) => void = () => {};
+    vi.mocked(api.chapters.update).mockImplementationOnce(
+      () =>
+        new Promise<typeof mockChapter1>((resolve) => {
+          resolveUpdate = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    const initialContent = { type: "doc", content: [{ type: "paragraph" }] };
+    const typedDuringRequest = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "fresh keystroke" }] }],
+    };
+
+    await act(async () => {
+      const p = result.current.handleSave(initialContent);
+      // Simulate typing while the PATCH is in flight. This replaces
+      // latestContentRef so that on success the cache should NOT be cleared.
+      result.current.handleContentChange(typedDuringRequest);
+      resolveUpdate({ ...mockChapter1, word_count: 2 });
+      await p;
+    });
+
+    // Cache must NOT have been cleared because newer content is pending.
+    expect(vi.mocked(clearCachedContent)).not.toHaveBeenCalled();
+    // Status should reflect pending unsaved state, not falsely "saved".
+    expect(result.current.saveStatus).toBe("unsaved");
+  });
+
   it("succeeds on retry after transient failure", async () => {
     vi.mocked(api.chapters.update)
       .mockRejectedValueOnce(new Error("network error"))

@@ -19,6 +19,11 @@ export function useProjectEditor(slug: string | undefined) {
   const [cacheWarning, setCacheWarning] = useState(false);
   const activeChapterRef = useRef<Chapter | null>(null);
   activeChapterRef.current = activeChapter;
+  // Tracks the most recent content per chapter id (updated by handleContentChange).
+  // Retries inside handleSave re-read from this ref so a backoff that resumes
+  // after the user has kept typing posts the new content rather than silently
+  // discarding it when clearCachedContent runs on success.
+  const latestContentRef = useRef<{ id: string; content: Record<string, unknown> } | null>(null);
   const projectSlugRef = useRef(slug);
   if (project?.slug !== undefined) {
     projectSlugRef.current = project.slug;
@@ -64,6 +69,9 @@ export function useProjectEditor(slug: string | undefined) {
     const current = activeChapterRef.current;
     if (!current) return false;
     const savingChapterId = current.id;
+    // Seed the latest-content ref so the first attempt posts the caller's content.
+    // Subsequent keystrokes during backoff replace this via handleContentChange.
+    latestContentRef.current = { id: savingChapterId, content };
     const seq = ++saveSeqRef.current;
     // AbortController lets cancelPendingSaves actually abort an in-flight
     // PATCH — without this, a retry could land on the server after a
@@ -77,14 +85,23 @@ export function useProjectEditor(slug: string | undefined) {
     setSaveErrorMessage(null);
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (seq !== saveSeqRef.current) return false; // chapter changed, abort retries
+      // Re-read latest content each attempt so backoff retries post keystrokes
+      // that arrived after the initial call.
+      const latest = latestContentRef.current;
+      const postedContent =
+        latest && latest.id === savingChapterId ? latest.content : content;
       try {
-        const updated = await api.chapters.update(savingChapterId, { content }, controller.signal);
+        const updated = await api.chapters.update(
+          savingChapterId,
+          { content: postedContent },
+          controller.signal,
+        );
         if (seq !== saveSeqRef.current) return false; // chapter changed during request
         // Keep activeChapter in sync so that re-mounting the editor
         // (e.g. after toggling Preview → Editor) uses the latest content.
         if (activeChapterRef.current?.id === savingChapterId) {
           setActiveChapter((prev) =>
-            prev ? { ...prev, content, word_count: updated.word_count } : prev,
+            prev ? { ...prev, content: postedContent, word_count: updated.word_count } : prev,
           );
         }
         setProject((prev) => {
@@ -92,14 +109,24 @@ export function useProjectEditor(slug: string | undefined) {
           return {
             ...prev,
             chapters: prev.chapters.map((c) =>
-              c.id === savingChapterId ? { ...c, word_count: updated.word_count, content } : c,
+              c.id === savingChapterId
+                ? { ...c, word_count: updated.word_count, content: postedContent }
+                : c,
             ),
           };
         });
-        clearCachedContent(savingChapterId);
-        setCacheWarning(false);
+        // Only clear the localStorage cache if no newer content has arrived
+        // since we started this attempt. Otherwise the pending typing would
+        // be dropped.
+        const stillLatest =
+          latestContentRef.current?.id === savingChapterId &&
+          latestContentRef.current.content === postedContent;
+        if (stillLatest) {
+          clearCachedContent(savingChapterId);
+          setCacheWarning(false);
+        }
         if (activeChapterRef.current?.id === savingChapterId) {
-          setSaveStatus("saved");
+          setSaveStatus(stillLatest ? "saved" : "unsaved");
         }
         if (saveAbortRef.current === controller) saveAbortRef.current = null;
         return true;
@@ -133,6 +160,7 @@ export function useProjectEditor(slug: string | undefined) {
     // until a new save attempt succeeds (the debounced save will retry automatically).
     setSaveStatus((prev) => (prev === "error" ? "error" : "unsaved"));
     if (activeChapterRef.current) {
+      latestContentRef.current = { id: activeChapterRef.current.id, content };
       const cached = setCachedContent(activeChapterRef.current.id, content);
       setCacheWarning(!cached);
     }
