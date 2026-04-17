@@ -4,10 +4,27 @@ type TipTapNode = {
   content?: TipTapNode[];
 };
 
+/**
+ * Walk TipTap JSON extracting text. Adjacent text siblings (e.g. text nodes
+ * split by differing marks) concatenate without a separator so "<b>foo</b><i>bar</i>"
+ * counts as one word — matching how TipTap renders it and how tiptap-text.ts
+ * flattens runs for find-and-replace. Non-text children (block boundaries,
+ * hardBreak, image, etc.) act as word separators so paragraphs and line breaks
+ * don't silently merge adjacent words.
+ */
 function extractText(node: TipTapNode): string {
   if (node.text) return node.text;
   if (!node.content) return "";
-  return node.content.map(extractText).join(" ");
+  let out = "";
+  for (const child of node.content) {
+    if (child.type === "text") {
+      out += extractText(child);
+    } else {
+      if (out && !/\s$/.test(out)) out += " ";
+      out += extractText(child);
+    }
+  }
+  return out;
 }
 
 export function countWords(doc: Record<string, unknown> | null): number {

@@ -537,3 +537,23 @@ describe("assertSafeRegexPattern", () => {
     expect(() => assertSafeRegexPattern("a{1,5}")).not.toThrow();
   });
 });
+
+describe("replaceInDoc mark canonicalization (I2)", () => {
+  it("merges adjacent text nodes when marks have the same attrs in different key order", () => {
+    // Two link marks with same attrs but different key insertion order —
+    // should still be treated as equal so cleanupTextNodes merges.
+    const d = doc(
+      paragraph(
+        text("foo", [{ type: "link", attrs: { href: "x", target: "_blank" } }]),
+        text("bar", [{ type: "link", attrs: { target: "_blank", href: "x" } }]),
+      ),
+    );
+    const result = replaceInDoc(d, "oob", "OOB");
+    expect(result.count).toBe(1);
+    const para = (result.doc as unknown as TipTapDoc).content[0] as TipTapBlock;
+    // With canonical mark compare, the three pieces ("f", "OOB", "ar") all
+    // carry the same link and should merge into a single text node.
+    expect(para.content).toHaveLength(1);
+    expect((para.content![0] as TipTapTextNode).text).toBe("fOOBar");
+  });
+});

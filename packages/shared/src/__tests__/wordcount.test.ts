@@ -61,6 +61,41 @@ describe("countWords", () => {
     expect(countWords(doc)).toBe(3);
   });
 
+  it("treats adjacent marked text nodes as a single word (no phantom separator)", () => {
+    // TipTap splits "foobar" into two text nodes when marks differ
+    // (e.g. bold foo + italic bar). Joining with " " would inflate the count.
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", marks: [{ type: "bold" }], text: "foo" },
+            { type: "text", marks: [{ type: "italic" }], text: "bar" },
+          ],
+        },
+      ],
+    };
+    expect(countWords(doc)).toBe(1);
+  });
+
+  it("treats hardBreak as a word separator", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "foo" },
+            { type: "hardBreak" },
+            { type: "text", text: "bar" },
+          ],
+        },
+      ],
+    };
+    expect(countWords(doc)).toBe(2);
+  });
+
   it("handles hyphenated compounds", () => {
     const doc = {
       type: "doc",

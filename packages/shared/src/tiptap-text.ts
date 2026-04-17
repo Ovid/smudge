@@ -220,11 +220,28 @@ function extractContext(flat: string, offset: number, length: number): string {
   return flat.slice(start, end);
 }
 
+/**
+ * Recursively serialize a value with sorted object keys so two objects
+ * with the same content but different key insertion order compare equal.
+ * Used for marks comparison below.
+ */
+function canonicalJSON(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return "[" + value.map(canonicalJSON).join(",") + "]";
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  return "{" + keys.map((k) => JSON.stringify(k) + ":" + canonicalJSON(obj[k])).join(",") + "}";
+}
+
 function marksEqual(a: Mark[] | undefined, b: Mark[] | undefined): boolean {
   const ma = a ?? [];
   const mb = b ?? [];
   if (ma.length !== mb.length) return false;
-  return JSON.stringify(ma) === JSON.stringify(mb);
+  // Canonicalize key order so marks with the same attrs in different
+  // insertion orders still compare equal. Without this, cleanupTextNodes
+  // fails to merge semantically-identical adjacent runs, fragmenting the
+  // document and causing countWords to drift from the editor's live count.
+  return canonicalJSON(ma) === canonicalJSON(mb);
 }
 
 function makeTextNode(text: string, marks?: Mark[]): TipTapNode {
