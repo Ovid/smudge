@@ -230,17 +230,19 @@ export function EditorPage() {
 
   const handleReplaceAllInManuscript = useCallback(() => {
     const results = findReplace.results;
-    // Use the query/options/replacement that produced these results, not the
-    // live input — the user may have typed a new query during the 300ms
-    // debounce, which would make the count and the executed replace disagree.
+    // Use the query/options that produced these results, not the live input
+    // — the user may have typed a new query during the 300ms debounce,
+    // which would make the count and the executed replace disagree.
+    // `replacement` is read live: it does not affect the result set, and
+    // freezing it would either leave the user's latest keystrokes ignored
+    // or re-fire the search on every replace-input change.
     const frozenQuery = findReplace.resultsQuery;
     const frozenOptions = findReplace.resultsOptions;
-    const frozenReplacement = findReplace.resultsReplacement;
-    if (!results || !frozenQuery || !frozenOptions || frozenReplacement === null) return;
+    if (!results || !frozenQuery || !frozenOptions) return;
     setReplaceConfirmation({
       scope: { type: "project" },
       query: frozenQuery,
-      replacement: frozenReplacement,
+      replacement: findReplace.replacement,
       options: frozenOptions,
       totalCount: results.total_count,
       chapterCount: results.chapters.length,
@@ -250,7 +252,7 @@ export function EditorPage() {
     findReplace.results,
     findReplace.resultsQuery,
     findReplace.resultsOptions,
-    findReplace.resultsReplacement,
+    findReplace.replacement,
   ]);
 
   const handleReplaceAllInChapter = useCallback(
@@ -258,14 +260,13 @@ export function EditorPage() {
       const results = findReplace.results;
       const frozenQuery = findReplace.resultsQuery;
       const frozenOptions = findReplace.resultsOptions;
-      const frozenReplacement = findReplace.resultsReplacement;
-      if (!results || !frozenQuery || !frozenOptions || frozenReplacement === null) return;
+      if (!results || !frozenQuery || !frozenOptions) return;
       const chapter = results.chapters.find((c) => c.chapter_id === chapterId);
       if (!chapter) return;
       setReplaceConfirmation({
         scope: { type: "chapter", chapter_id: chapterId },
         query: frozenQuery,
-        replacement: frozenReplacement,
+        replacement: findReplace.replacement,
         options: frozenOptions,
         totalCount: chapter.matches.length,
         chapterCount: 1,
@@ -276,20 +277,19 @@ export function EditorPage() {
       findReplace.results,
       findReplace.resultsQuery,
       findReplace.resultsOptions,
-      findReplace.resultsReplacement,
+      findReplace.replacement,
     ],
   );
 
   const handleReplaceOne = useCallback(
     async (chapterId: string, matchIndex: number) => {
       if (!project || !slug) return;
-      // Use the query/options/replacement that produced the current results —
-      // not the live input — so replace-one targets the match the user
-      // actually sees with the replacement that was visible when they clicked.
+      // Use the query/options that produced the current results — not the
+      // current input state — so replace-one targets the match the user
+      // actually sees, even if they've started typing a new query.
       const frozenQuery = findReplace.resultsQuery;
       const frozenOptions = findReplace.resultsOptions;
-      const frozenReplacement = findReplace.resultsReplacement;
-      if (!frozenQuery || !frozenOptions || frozenReplacement === null) return;
+      if (!frozenQuery || !frozenOptions) return;
       const flushed = (await editorRef.current?.flushSave()) ?? true;
       if (!flushed) {
         setActionError(STRINGS.findReplace.replaceFailed);
@@ -300,7 +300,7 @@ export function EditorPage() {
         const result = await api.search.replace(
           slug,
           frozenQuery,
-          frozenReplacement,
+          findReplace.replacement,
           frozenOptions,
           { type: "chapter", chapter_id: chapterId, match_index: matchIndex },
         );
