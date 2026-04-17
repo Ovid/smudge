@@ -429,4 +429,36 @@ describe("replaceInDoc", () => {
       expect(node.text).not.toBe("");
     }
   });
+
+  it("preserves non-text inline nodes (hardBreak) during replace", () => {
+    const hardBreak = { type: "hardBreak" } as unknown as TipTapTextNode;
+    const d = doc(paragraph(text("hello"), hardBreak, text("world")));
+    const result = replaceInDoc(d, "world", "earth");
+    expect(result.count).toBe(1);
+    const para = contentOf(result.doc)[0]!;
+    const content = (para.content ?? []) as TipTapTextNode[];
+    // Expect: text("hello"), hardBreak, text("earth")
+    expect(content).toHaveLength(3);
+    expect(content[0]!.type).toBe("text");
+    expect(content[0]!.text).toBe("hello");
+    expect((content[1] as unknown as { type: string }).type).toBe("hardBreak");
+    expect(content[2]!.type).toBe("text");
+    expect(content[2]!.text).toBe("earth");
+  });
+
+  it("does not match across a hardBreak boundary", () => {
+    const hardBreak = { type: "hardBreak" } as unknown as TipTapTextNode;
+    const d = doc(paragraph(text("foo"), hardBreak, text("bar")));
+    // "foobar" would only appear if the two runs were concatenated.
+    const result = replaceInDoc(d, "foobar", "baz");
+    expect(result.count).toBe(0);
+  });
+
+  it("searchInDoc does not match across a hardBreak boundary", () => {
+    const hardBreak = { type: "hardBreak" } as unknown as TipTapTextNode;
+    const d = doc(paragraph(text("foo"), hardBreak, text("bar")));
+    expect(searchInDoc(d, "foobar")).toHaveLength(0);
+    expect(searchInDoc(d, "foo")).toHaveLength(1);
+    expect(searchInDoc(d, "bar")).toHaveLength(1);
+  });
 });

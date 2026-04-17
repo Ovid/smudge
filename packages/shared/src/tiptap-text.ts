@@ -57,22 +57,51 @@ interface TextSegment {
   marks: Mark[] | undefined;
 }
 
-/** Flatten a leaf block's text nodes into a string with segment info. */
-function flattenBlock(block: TipTapNode): { flat: string; segments: TextSegment[] } {
-  const segments: TextSegment[] = [];
-  let flat = "";
+/**
+ * A contiguous run of text nodes. Non-text inline nodes (e.g. hardBreak)
+ * split a block into multiple runs so search/replace never crosses them
+ * and so they survive replacement.
+ */
+interface TextRun {
+  flat: string;
+  segments: TextSegment[];
+}
+
+/**
+ * Split a leaf block's inline content into alternating text-runs and
+ * non-text inline nodes. Rebuilding in order (run, node, run, node, …)
+ * reproduces the original inline sequence. Non-text inline nodes act as
+ * hard boundaries for search/replace.
+ */
+function splitBlockRuns(block: TipTapNode): { runs: TextRun[]; separators: TipTapNode[] } {
+  const runs: TextRun[] = [];
+  const separators: TipTapNode[] = [];
+  let currentFlat = "";
+  let currentSegments: TextSegment[] = [];
   let offset = 0;
+
+  const flushRun = () => {
+    runs.push({ flat: currentFlat, segments: currentSegments });
+    currentFlat = "";
+    currentSegments = [];
+    offset = 0;
+  };
+
   if (block.content) {
     for (const child of block.content) {
       if (child.type === "text" && child.text != null) {
         const len = child.text.length;
-        segments.push({ start: offset, end: offset + len, marks: child.marks });
-        flat += child.text;
+        currentSegments.push({ start: offset, end: offset + len, marks: child.marks });
+        currentFlat += child.text;
         offset += len;
+      } else {
+        flushRun();
+        separators.push(child);
       }
     }
   }
-  return { flat, segments };
+  flushRun();
+  return { runs, separators };
 }
 
 function escapeRegex(s: string): string {
@@ -160,20 +189,22 @@ export function searchInDoc(
   for (let blockIndex = 0; blockIndex < leafBlocks.length; blockIndex++) {
     const block = leafBlocks[blockIndex];
     if (!block) continue;
-    const { flat } = flattenBlock(block);
-    if (!flat) continue;
+    const { runs } = splitBlockRuns(block);
 
-    const re = buildRegex(query, opts);
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(flat)) !== null) {
-      matches.push({
-        index: matchIndex++,
-        context: extractContext(flat, m.index, m[0].length),
-        blockIndex,
-        offset: m.index,
-        length: m[0].length,
-      });
-      if (m[0].length === 0) re.lastIndex++;
+    for (const run of runs) {
+      if (!run.flat) continue;
+      const re = buildRegex(query, opts);
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(run.flat)) !== null) {
+        matches.push({
+          index: matchIndex++,
+          context: extractContext(run.flat, m.index, m[0].length),
+          blockIndex,
+          offset: m.index,
+          length: m[0].length,
+        });
+        if (m[0].length === 0) re.lastIndex++;
+      }
     }
   }
 
@@ -205,76 +236,96 @@ export function replaceInDoc(
   const effectiveReplacement = opts.regex ? replacement : replacement.replace(/\$/g, "$$$$");
 
   for (const block of leafBlocks) {
-    const { flat, segments } = flattenBlock(block);
-    if (!flat || segments.length === 0) continue;
+    const { runs, separators } = splitBlockRuns(block);
+    if (runs.length === 0) continue;
 
-    const re = buildRegex(query, opts);
+    // Rewrite each run independently, then re-weave text-runs with the
+    // non-text inline separators (hardBreak etc) so they survive replace.
+    const rebuiltRuns: TipTapNode[][] = [];
+    let blockChanged = false;
 
-    // Count matches
-    const allPositions: { start: number; end: number }[] = [];
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(flat)) !== null) {
-      allPositions.push({ start: m.index, end: m.index + m[0].length });
-      if (m[0].length === 0) re.lastIndex++;
-    }
-
-    if (allPositions.length === 0) continue;
-
-    // Filter to the single requested match if match_index is set.
-    let matchPositions = allPositions;
-    if (typeof opts.match_index === "number") {
-      const localIndex = opts.match_index - globalMatchCursor;
-      const selected = allPositions[localIndex];
-      if (!selected) {
-        globalMatchCursor += allPositions.length;
+    for (const run of runs) {
+      const { flat, segments } = run;
+      if (!flat || segments.length === 0) {
+        rebuiltRuns.push([]);
         continue;
       }
-      matchPositions = [selected];
-    }
-    globalMatchCursor += allPositions.length;
-    totalCount += matchPositions.length;
 
-    // Compute per-match replacement text (honors regex capture groups).
-    const repTexts = matchPositions.map((mp) => {
-      const matchStr = flat.slice(mp.start, mp.end);
-      return matchStr.replace(buildRegex(query, opts), effectiveReplacement);
-    });
+      const re = buildRegex(query, opts);
 
-    // Now build the new text nodes by walking through the new string
-    // and determining marks for each character.
-    const newNodes: TipTapNode[] = [];
-    let oldCursor = 0;
-
-    for (let i = 0; i < matchPositions.length; i++) {
-      const mp = matchPositions[i];
-      const repText = repTexts[i];
-      if (!mp || repText === undefined) continue;
-
-      // Non-replaced text before this match: character-by-character mark mapping
-      if (oldCursor < mp.start) {
-        const beforeText = flat.slice(oldCursor, mp.start);
-        appendWithMarks(newNodes, beforeText, segments, oldCursor);
-        oldCursor = mp.start;
+      const allPositions: { start: number; end: number }[] = [];
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(flat)) !== null) {
+        allPositions.push({ start: m.index, end: m.index + m[0].length });
+        if (m[0].length === 0) re.lastIndex++;
       }
 
-      // Replacement text: inherits marks from the first character of the match
-      if (repText.length > 0) {
-        const marks = marksAtOffset(segments, mp.start);
-        newNodes.push(makeTextNode(repText, marks));
+      if (allPositions.length === 0) {
+        rebuiltRuns.push(cloneTextNodes(segments, flat));
+        continue;
       }
-      oldCursor = mp.end;
+
+      let matchPositions = allPositions;
+      if (typeof opts.match_index === "number") {
+        const localIndex = opts.match_index - globalMatchCursor;
+        const selected = allPositions[localIndex];
+        if (!selected) {
+          globalMatchCursor += allPositions.length;
+          rebuiltRuns.push(cloneTextNodes(segments, flat));
+          continue;
+        }
+        matchPositions = [selected];
+      }
+      globalMatchCursor += allPositions.length;
+      totalCount += matchPositions.length;
+      blockChanged = true;
+
+      const repTexts = matchPositions.map((mp) => {
+        const matchStr = flat.slice(mp.start, mp.end);
+        return matchStr.replace(buildRegex(query, opts), effectiveReplacement);
+      });
+
+      const newNodes: TipTapNode[] = [];
+      let oldCursor = 0;
+      for (let i = 0; i < matchPositions.length; i++) {
+        const mp = matchPositions[i];
+        const repText = repTexts[i];
+        if (!mp || repText === undefined) continue;
+        if (oldCursor < mp.start) {
+          appendWithMarks(newNodes, flat.slice(oldCursor, mp.start), segments, oldCursor);
+        }
+        if (repText.length > 0) {
+          const marks = marksAtOffset(segments, mp.start);
+          newNodes.push(makeTextNode(repText, marks));
+        }
+        oldCursor = mp.end;
+      }
+      if (oldCursor < flat.length) {
+        appendWithMarks(newNodes, flat.slice(oldCursor), segments, oldCursor);
+      }
+      rebuiltRuns.push(cleanupTextNodes(newNodes));
     }
 
-    // Trailing non-replaced text
-    if (oldCursor < flat.length) {
-      const trailingText = flat.slice(oldCursor);
-      appendWithMarks(newNodes, trailingText, segments, oldCursor);
-    }
+    if (!blockChanged) continue;
 
-    block.content = cleanupTextNodes(newNodes);
+    // Weave runs and separators back together.
+    const interleaved: TipTapNode[] = [];
+    for (let i = 0; i < rebuiltRuns.length; i++) {
+      interleaved.push(...(rebuiltRuns[i] ?? []));
+      if (i < separators.length) {
+        const sep = separators[i];
+        if (sep) interleaved.push(sep);
+      }
+    }
+    block.content = interleaved;
   }
 
   return { doc: cloned as unknown as Record<string, unknown>, count: totalCount };
+}
+
+/** Rebuild original text-run nodes from segments (used when no matches). */
+function cloneTextNodes(segments: TextSegment[], flat: string): TipTapNode[] {
+  return segments.map((seg) => makeTextNode(flat.slice(seg.start, seg.end), seg.marks));
 }
 
 /** Append text character by character, grouping by marks from original segments. */
