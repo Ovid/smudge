@@ -31,8 +31,12 @@ export async function remove(db: Knex, id: string): Promise<number> {
 }
 
 export async function getLatestContentHash(db: Knex, chapterId: string): Promise<string | null> {
+  // Dedup only against prior MANUAL snapshots. Otherwise a manual
+  // snapshot taken right after an auto-snapshot (e.g. from restore or
+  // find-and-replace) would silently return "duplicate" even though
+  // the user's explicit intent was to create a new manual marker.
   const row = await db(TABLE)
-    .where({ chapter_id: chapterId })
+    .where({ chapter_id: chapterId, is_auto: false })
     .orderBy("created_at", "desc")
     .select("content")
     .first();

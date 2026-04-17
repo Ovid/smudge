@@ -163,7 +163,7 @@ describe("snapshots repository", () => {
       expect(hash).toBeNull();
     });
 
-    it("returns sha256 hash of latest snapshot content", async () => {
+    it("returns sha256 hash of latest manual snapshot content", async () => {
       const projectId = await createProject();
       const chapterId = await createChapter(projectId);
       const content = '{"type":"doc","content":[{"type":"paragraph"}]}';
@@ -174,7 +174,7 @@ describe("snapshots repository", () => {
         label: null,
         content: "older content",
         word_count: 5,
-        is_auto: true,
+        is_auto: false,
         created_at: "2026-04-01T00:00:00.000Z",
       });
 
@@ -184,13 +184,31 @@ describe("snapshots repository", () => {
         label: null,
         content,
         word_count: 10,
-        is_auto: true,
+        is_auto: false,
         created_at: "2026-04-02T00:00:00.000Z",
       });
 
       const hash = await SnapshotsRepo.getLatestContentHash(t.db, chapterId);
       const expected = createHash("sha256").update(content).digest("hex");
       expect(hash).toBe(expected);
+    });
+
+    it("ignores auto-snapshots so manual dedup does not trip on them", async () => {
+      const projectId = await createProject();
+      const chapterId = await createChapter(projectId);
+
+      await SnapshotsRepo.insert(t.db, {
+        id: uuid(),
+        chapter_id: chapterId,
+        label: null,
+        content: "auto content",
+        word_count: 1,
+        is_auto: true,
+        created_at: "2026-04-03T00:00:00.000Z",
+      });
+
+      const hash = await SnapshotsRepo.getLatestContentHash(t.db, chapterId);
+      expect(hash).toBeNull();
     });
   });
 
