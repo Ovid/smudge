@@ -3,6 +3,12 @@ import { logger } from "../logger";
 import { UUID_PATTERN } from "./images.paths";
 import type { ImageRow } from "./images.types";
 
+// Compiled once at module load rather than per image node. The regex has
+// no `g` flag so `.exec` has no per-call state to worry about; reusing the
+// compiled instance avoids measurable GC pressure during project-wide
+// replace-all operations that walk many image nodes in succession.
+const IMAGE_SRC_RE = new RegExp(`/api/images/(${UUID_PATTERN})`, "i");
+
 /**
  * Walks TipTap JSON content tree and extracts image UUIDs from
  * nodes with `type: "image"` whose `attrs.src` matches `/api/images/{uuid}`.
@@ -16,7 +22,7 @@ export function extractImageIds(content: Record<string, unknown> | null): string
     if (node.type === "image" && typeof node.attrs === "object" && node.attrs !== null) {
       const attrs = node.attrs as Record<string, unknown>;
       if (typeof attrs.src === "string") {
-        const match = new RegExp(`/api/images/(${UUID_PATTERN})`, "i").exec(attrs.src);
+        const match = IMAGE_SRC_RE.exec(attrs.src);
         if (match?.[1]) ids.add(match[1].toLowerCase());
       }
     }

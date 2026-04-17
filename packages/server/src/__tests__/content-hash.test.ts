@@ -22,18 +22,20 @@ describe("canonicalContentHash", () => {
   });
 
   it("falls back to hashing raw string when input is not JSON", () => {
-    // Suppress and assert the corrupt-content warning to keep test output clean.
-    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    // Debug-level (not warn) — a single corrupt chapter would otherwise log
+    // on every snapshot create. Still assert it is emitted so future
+    // refactors don't drop operator-visible observability entirely.
+    const debugSpy = vi.spyOn(logger, "debug").mockImplementation(() => {});
     try {
       // Same invalid string hashes the same; different strings differ.
       expect(canonicalContentHash("{not json")).toBe(canonicalContentHash("{not json"));
       expect(canonicalContentHash("{not json")).not.toBe(canonicalContentHash("other"));
-      expect(warnSpy).toHaveBeenCalledWith(
+      expect(debugSpy).toHaveBeenCalledWith(
         expect.objectContaining({ content_length: expect.any(Number) }),
         expect.stringContaining("not valid JSON"),
       );
     } finally {
-      warnSpy.mockRestore();
+      debugSpy.mockRestore();
     }
   });
 });

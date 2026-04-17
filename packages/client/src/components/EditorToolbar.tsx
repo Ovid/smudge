@@ -18,7 +18,7 @@ export function EditorToolbar({
   snapshotsTriggerRef,
   findReplaceTriggerRef,
 }: EditorToolbarProps) {
-  const snapshotLabel = `Snapshots${snapshotCount != null && snapshotCount > 0 ? ` (${snapshotCount})` : ""}`;
+  const snapshotLabel = STRINGS.snapshots.toolbarLabel(snapshotCount ?? null);
   return (
     <div
       role="toolbar"

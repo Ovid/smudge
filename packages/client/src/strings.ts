@@ -264,6 +264,8 @@ export const STRINGS = {
   },
   snapshots: {
     panelTitle: "Snapshots",
+    toolbarLabel: (count: number | null) =>
+      count != null && count > 0 ? `Snapshots (${count})` : "Snapshots",
     createButton: "Create Snapshot",
     labelPlaceholder: "Optional label (e.g., 'before major rewrite')",
     save: "Save",

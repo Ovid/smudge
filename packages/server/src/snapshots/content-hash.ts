@@ -28,8 +28,11 @@ export function canonicalContentHash(content: string): string {
     canonicalJson = JSON.stringify(canonicalize(JSON.parse(content)));
   } catch {
     // Falling back to raw bytes silently dedups corrupt-but-byte-identical
-    // content across attempts. Log so operators can spot it.
-    logger.warn(
+    // content across attempts. Demoted to debug: a single corrupt chapter
+    // would otherwise log on every snapshot-create and every dedup check,
+    // polluting test output and masking real warnings (CLAUDE.md zero-
+    // warnings policy).
+    logger.debug(
       { content_length: content.length },
       "canonicalContentHash: content is not valid JSON; hashing raw bytes",
     );
