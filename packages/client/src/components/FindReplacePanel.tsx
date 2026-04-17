@@ -112,7 +112,7 @@ export function FindReplacePanel({
         <button
           type="button"
           onClick={onClose}
-          aria-label="Close"
+          aria-label={S.closeLabel}
           className="text-text-secondary hover:text-text-primary transition-colors font-sans text-lg leading-none"
         >
           &times;
@@ -127,7 +127,7 @@ export function FindReplacePanel({
             htmlFor="find-replace-search"
             className="text-xs font-medium text-text-secondary font-sans"
           >
-            Find
+            {S.findLabel}
           </label>
           <input
             ref={searchInputRef}
@@ -146,7 +146,7 @@ export function FindReplacePanel({
             htmlFor="find-replace-replace"
             className="text-xs font-medium text-text-secondary font-sans"
           >
-            Replace
+            {S.replaceLabel}
           </label>
           <input
             id="find-replace-replace"
@@ -204,7 +204,7 @@ export function FindReplacePanel({
 
       {/* Results summary — aria-live for screen readers */}
       <div aria-live="polite" className="px-4 py-2 text-xs text-text-secondary font-sans">
-        {loading && "Searching..."}
+        {loading && S.searching}
         {error && <span className="text-red-700">{error}</span>}
         {!loading &&
           !error &&

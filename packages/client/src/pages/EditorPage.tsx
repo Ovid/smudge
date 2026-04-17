@@ -41,7 +41,7 @@ function renderSnapshotContent(content: Record<string, unknown>): string {
     const html = generateHTML(content as Parameters<typeof generateHTML>[0], editorExtensions);
     return DOMPurify.sanitize(html);
   } catch {
-    return "<p>Unable to render snapshot content</p>";
+    return `<p>${STRINGS.snapshots.renderError}</p>`;
   }
 }
 

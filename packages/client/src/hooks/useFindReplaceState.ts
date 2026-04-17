@@ -36,11 +36,21 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestSlugRef = useRef<string | null>(projectSlug ?? null);
+  // Monotonic counter used to discard stale in-flight search responses.
+  const searchSeqRef = useRef(0);
 
-  // Keep latestSlugRef in sync with projectSlug prop
+  // Keep latestSlugRef in sync with projectSlug prop, and reset search state
+  // when the project changes so a previous project's results never leak into
+  // a new project's panel.
   useEffect(() => {
-    if (projectSlug) {
+    if (!projectSlug) return;
+    if (latestSlugRef.current !== projectSlug) {
       latestSlugRef.current = projectSlug;
+      setQuery("");
+      setReplacement("");
+      setResults(null);
+      setError(null);
+      searchSeqRef.current++;
     }
   }, [projectSlug]);
 
@@ -63,12 +73,15 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
         setError(null);
         return;
       }
+      const seq = ++searchSeqRef.current;
       setLoading(true);
       setError(null);
       try {
         const result = await api.search.find(slug, query, options);
+        if (seq !== searchSeqRef.current) return;
         setResults(result);
       } catch (err) {
+        if (seq !== searchSeqRef.current) return;
         if (err instanceof ApiRequestError && err.status === 400) {
           setError(S.invalidRegex);
         } else {
@@ -76,7 +89,7 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
         }
         setResults(null);
       } finally {
-        setLoading(false);
+        if (seq === searchSeqRef.current) setLoading(false);
       }
     },
     [query, options],

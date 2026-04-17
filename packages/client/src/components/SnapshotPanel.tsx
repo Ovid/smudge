@@ -8,12 +8,12 @@ const S = STRINGS.snapshots;
 function relativeDate(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(ms / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return S.relativeTime.justNow;
+  if (mins < 60) return S.relativeTime.minutes(mins);
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return S.relativeTime.hours(hrs);
   const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
+  return S.relativeTime.days(days);
 }
 
 function fullDate(iso: string): string {
@@ -106,17 +106,13 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
       return () => document.removeEventListener("keydown", handleKeyDown);
     }, [isOpen, onClose]);
 
-    // Reset form state when panel closes or chapter changes
-    // Uses React's "store previous value in state" pattern to avoid setState in effects
-    const resetKey = `${chapterId}:${isOpen}`;
-    const [prevResetKey, setPrevResetKey] = useState(resetKey);
-    if (prevResetKey !== resetKey) {
-      setPrevResetKey(resetKey);
+    // Reset form state when panel closes or chapter changes.
+    useEffect(() => {
       setShowCreateForm(false);
       setCreateLabel("");
       setDuplicateMessage(false);
       setConfirmDeleteId(null);
-    }
+    }, [chapterId, isOpen]);
 
     const handleCreate = async () => {
       if (!chapterId) return;
