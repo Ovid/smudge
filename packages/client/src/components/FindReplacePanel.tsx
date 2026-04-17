@@ -225,6 +225,15 @@ export function FindReplacePanel({
           (results.total_count === 0
             ? S.noMatches
             : S.matchCount(results.total_count, results.chapters.length))}
+        {!loading &&
+          !error &&
+          results !== null &&
+          results.skipped_chapter_ids &&
+          results.skipped_chapter_ids.length > 0 && (
+            <div className="mt-1 text-amber-800">
+              {S.skippedChapters(results.skipped_chapter_ids.length)}
+            </div>
+          )}
       </div>
 
       {/* Results list */}

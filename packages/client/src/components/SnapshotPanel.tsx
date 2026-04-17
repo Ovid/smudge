@@ -56,14 +56,22 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [createLabel, setCreateLabel] = useState("");
     const [duplicateMessage, setDuplicateMessage] = useState(false);
+    const [createError, setCreateError] = useState<string | null>(null);
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
     const panelRef = useRef<HTMLElement>(null);
     const prevIsOpen = useRef(isOpen);
+    // Guards async list responses against rapid chapter switches: every
+    // chapter change bumps the seq, and stale resolutions check before
+    // calling setSnapshots. Without this, the imperative refreshSnapshots()
+    // path could overwrite a newer chapter's list with a stale one.
+    const chapterSeqRef = useRef(0);
 
     const fetchSnapshots = useCallback(async () => {
       if (!chapterId) return;
+      const seq = chapterSeqRef.current;
       try {
         const data = await api.snapshots.list(chapterId);
+        if (seq !== chapterSeqRef.current) return;
         setSnapshots(data);
       } catch {
         // Silently fail — panel shows empty state
@@ -74,19 +82,20 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
 
     // Fetch on mount and when chapterId changes
     useEffect(() => {
+      // Bump seq before fetching so any in-flight list response from the
+      // prior chapter is discarded by fetchSnapshots' seq check.
+      chapterSeqRef.current++;
       if (!isOpen || !chapterId) return;
-      let cancelled = false;
+      const seq = chapterSeqRef.current;
       api.snapshots
         .list(chapterId)
         .then((data) => {
-          if (!cancelled) setSnapshots(data);
+          if (seq !== chapterSeqRef.current) return;
+          setSnapshots(data);
         })
         .catch(() => {
           // Silently fail — panel shows empty state
         });
-      return () => {
-        cancelled = true;
-      };
     }, [isOpen, chapterId]);
 
     // Focus management
@@ -118,26 +127,30 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
       return () => document.removeEventListener("keydown", handleKeyDown);
     }, [isOpen, onClose]);
 
-    // Reset form state when panel closes or chapter changes. Uses the
-    // "store previous value" pattern from the React docs rather than a
-    // setState-in-effect, which the lint rule forbids.
-    const resetKey = `${chapterId}:${isOpen}`;
-    const [prevResetKey, setPrevResetKey] = useState(resetKey);
-    if (prevResetKey !== resetKey) {
-      setPrevResetKey(resetKey);
+    // Reset form state when panel closes or chapter changes. Triggers an
+    // extra render but is safer than the prior setState-in-render pattern
+    // (which Copilot flagged for risk under StrictMode/concurrent mode).
+    useEffect(() => {
       setShowCreateForm(false);
       setCreateLabel("");
       setDuplicateMessage(false);
+      setCreateError(null);
       setConfirmDeleteId(null);
-    }
+    }, [chapterId, isOpen]);
 
     const handleCreate = async () => {
       if (!chapterId) return;
+      setCreateError(null);
       // Ensure any pending editor save has flushed so the server-side
-      // snapshot reflects the user's latest keystrokes.
+      // snapshot reflects the user's latest keystrokes. If the flush
+      // failed, surface that to the user so they don't think the snapshot
+      // succeeded when it was silently aborted.
       if (onBeforeCreate) {
         const flushed = await onBeforeCreate();
-        if (!flushed) return;
+        if (!flushed) {
+          setCreateError(S.createFailed);
+          return;
+        }
       }
       try {
         const result = await api.snapshots.create(chapterId, createLabel.trim() || undefined);
@@ -150,7 +163,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         setDuplicateMessage(false);
         await fetchSnapshots();
       } catch {
-        // Silently fail
+        setCreateError(S.createFailed);
       }
     };
 
@@ -213,6 +226,11 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
               />
               {duplicateMessage && (
                 <p className="text-xs text-amber-700 font-sans">{S.duplicateSkipped}</p>
+              )}
+              {createError && (
+                <p role="alert" className="text-xs text-red-700 font-sans">
+                  {createError}
+                </p>
               )}
               <div className="flex gap-2">
                 <button

@@ -288,6 +288,7 @@ export const STRINGS = {
     count: (manual: number, auto: number) =>
       `${manual + auto} snapshots (${manual} manual, ${auto} auto)`,
     duplicateSkipped: "Content unchanged since last snapshot.",
+    createFailed: "Unable to create snapshot. Save your unsaved changes and try again.",
     ariaLabel: "Chapter snapshots",
     relativeTime: {
       justNow: "just now",
