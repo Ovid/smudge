@@ -671,6 +671,7 @@ export function EditorPage() {
             isOpen={snapshotPanelOpen}
             onClose={() => setSnapshotPanelOpen(false)}
             onView={viewSnapshot}
+            onBeforeCreate={async () => (await editorRef.current?.flushSave()) ?? true}
           />
         )}
         {findReplace.panelOpen && project && (

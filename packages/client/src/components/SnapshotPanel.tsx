@@ -35,11 +35,22 @@ interface SnapshotPanelProps {
   isOpen: boolean;
   onClose: () => void;
   onView: (snapshot: { id: string; label: string | null; created_at: string }) => void;
+  /**
+   * Called before snapshot creation. The panel awaits this so the server
+   * snapshots the chapter AFTER any pending editor save has landed —
+   * otherwise a snapshot taken right after typing captures stale content.
+   * Should resolve true when the pre-save completed (or nothing was dirty)
+   * and false when it failed, in which case snapshot creation is skipped.
+   */
+  onBeforeCreate?: () => Promise<boolean>;
   triggerRef?: React.RefObject<HTMLButtonElement>;
 }
 
 export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>(
-  function SnapshotPanel({ chapterId, isOpen, onClose, onView, triggerRef }, ref) {
+  function SnapshotPanel(
+    { chapterId, isOpen, onClose, onView, onBeforeCreate, triggerRef },
+    ref,
+  ) {
     const [snapshots, setSnapshots] = useState<SnapshotListItem[]>([]);
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [createLabel, setCreateLabel] = useState("");
@@ -116,6 +127,12 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
 
     const handleCreate = async () => {
       if (!chapterId) return;
+      // Ensure any pending editor save has flushed so the server-side
+      // snapshot reflects the user's latest keystrokes.
+      if (onBeforeCreate) {
+        const flushed = await onBeforeCreate();
+        if (!flushed) return;
+      }
       try {
         const result = await api.snapshots.create(chapterId, createLabel.trim() || undefined);
         if ("message" in result) {
