@@ -4,6 +4,7 @@ import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
+import { enrichChapterWithLabel } from "../chapters/chapters.types";
 import { canonicalContentHash } from "./content-hash";
 import type { SnapshotRow, SnapshotListItem } from "./snapshots.types";
 
@@ -126,7 +127,12 @@ export async function restoreSnapshot(
     // content) is treated as the empty doc here too.
     await applyImageRefDiff(txStore, currentContent, snapshot.content);
 
-    return { chapter_id: chapter.id, project_id: chapter.project_id };
+    // Re-read inside the transaction so a concurrent autosave landing
+    // between commit and a post-tx read cannot overwrite the response
+    // body with stale content (silently undoing the restore in the UI).
+    const updated = await txStore.findChapterById(chapter.id);
+    if (!updated) return null;
+    return { chapter: updated, project_id: chapter.project_id, chapter_id: chapter.id };
   });
 
   if (!result) return null;
@@ -142,8 +148,19 @@ export async function restoreSnapshot(
     );
   }
 
-  // Re-read the updated chapter
-  const updated = await store.findChapterById(result.chapter_id);
-  if (!updated) return null;
-  return { chapter: updated as unknown as Record<string, unknown> };
+  // Enrich with status_label to match every other chapter-returning endpoint
+  // (updateChapter, restoreChapter, etc). The client types the response as
+  // Chapter so consumers expect status_label to be present.
+  const store2 = store;
+  let enriched: Record<string, unknown>;
+  try {
+    enriched = (await enrichChapterWithLabel(store2, result.chapter)) as unknown as Record<
+      string,
+      unknown
+    >;
+  } catch {
+    const { content_corrupt: _ignored, ...clean } = result.chapter;
+    enriched = { ...clean, status_label: result.chapter.status } as Record<string, unknown>;
+  }
+  return { chapter: enriched };
 }
