@@ -640,7 +640,7 @@ export function EditorPage() {
         {showActiveEditor && viewMode === "editor" && toolbarEditor && (
           <EditorToolbar
             editor={toolbarEditor}
-            snapshotCount={snapshotCount}
+            snapshotCount={snapshotCount ?? undefined}
             onToggleSnapshots={handleToggleSnapshotPanel}
             onToggleFindReplace={handleToggleFindReplace}
             snapshotsTriggerRef={snapshotsTriggerRef}

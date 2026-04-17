@@ -224,7 +224,7 @@ describe("search.service", () => {
       const result = await replaceInProject(projectId, "hello", "goodbye");
 
       expect(result).not.toBeNull();
-      expect("validationError" in result!).toBe(false);
+      expect("validationError" in (result as object)).toBe(false);
       const r = result as { replaced_count: number; affected_chapter_ids: string[] };
       expect(r.replaced_count).toBe(2);
       expect(r.affected_chapter_ids).toContain(ch1);
@@ -380,7 +380,7 @@ describe("search.service", () => {
       });
 
       expect(result).not.toBeNull();
-      expect("validationError" in result!).toBe(true);
+      expect("validationError" in (result as object)).toBe(true);
       const r = result as { validationError: string };
       expect(r.validationError).toBeTruthy();
     });
@@ -396,7 +396,7 @@ describe("search.service", () => {
 
       const result = await replaceInProject(projectId, "a", "b");
       expect(result).not.toBeNull();
-      expect("validationError" in result!).toBe(true);
+      expect("validationError" in (result as object)).toBe(true);
       const r = result as { validationError: string };
       expect(r.validationError).toMatch(/too many matches/i);
     });
@@ -414,7 +414,7 @@ describe("search.service", () => {
       const result = await replaceInProject(projectId, "a", "a$'", { regex: true });
 
       expect(result).not.toBeNull();
-      expect("validationError" in result!).toBe(true);
+      expect("validationError" in (result as object)).toBe(true);
       const r = result as { validationError: string; code: string };
       expect(r.code).toBe("CONTENT_TOO_LARGE");
     });
@@ -431,7 +431,7 @@ describe("search.service", () => {
 
       const result = await replaceInProject(projectId, "a", "b");
       expect(result).not.toBeNull();
-      expect("validationError" in result!).toBe(true);
+      expect("validationError" in (result as object)).toBe(true);
       const r = result as { code: string };
       expect(r.code).toBe("MATCH_CAP_EXCEEDED");
     });
@@ -444,7 +444,7 @@ describe("search.service", () => {
       const result = await replaceInProject(projectId, "(a+)+", "x", { regex: true });
 
       expect(result).not.toBeNull();
-      expect("validationError" in result!).toBe(true);
+      expect("validationError" in (result as object)).toBe(true);
       const r = result as { validationError: string };
       expect(r.validationError).toMatch(/nested quantifier/i);
     });
@@ -580,7 +580,7 @@ describe("search.service", () => {
       const result = await searchProject(projectId, "hello");
       spy.mockRestore();
 
-      expect(result && "validationError" in result).toBe(true);
+      expect(result && typeof result === "object" && "validationError" in result).toBe(true);
       expect((result as { code: string }).code).toBe("REGEX_TIMEOUT");
     });
 
@@ -597,7 +597,7 @@ describe("search.service", () => {
       const result = await replaceInProject(projectId, "hello", "bye");
       spy.mockRestore();
 
-      expect(result && "validationError" in result).toBe(true);
+      expect(result && typeof result === "object" && "validationError" in result).toBe(true);
       expect((result as { code: string }).code).toBe("REGEX_TIMEOUT");
     });
   });

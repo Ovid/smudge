@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, cleanup } from "@testing-library/react";
 import { useSnapshotState } from "../hooks/useSnapshotState";
 import { api } from "../api/client";
-import type { SnapshotListItem, SnapshotRow } from "@smudge/shared";
+import type { Chapter, SnapshotListItem, SnapshotRow } from "@smudge/shared";
 
 vi.mock("../hooks/useContentCache", () => ({
   getCachedContent: vi.fn().mockReturnValue(null),
@@ -162,10 +162,10 @@ describe("useSnapshotState", () => {
     // Server-side restore succeeds, but the user switched chapters before the
     // promise resolved. We must signal staleChapterSwitch so the caller
     // doesn't reload the now-active (different) chapter.
-    let resolveRestore: (v: unknown) => void = () => {};
+    let resolveRestore: (v: Chapter) => void = () => {};
     vi.mocked(api.snapshots.restore).mockImplementationOnce(
       () =>
-        new Promise((resolve) => {
+        new Promise<Chapter>((resolve) => {
           resolveRestore = resolve;
         }),
     );
@@ -186,7 +186,7 @@ describe("useSnapshotState", () => {
 
     let r: { ok: boolean; staleChapterSwitch?: boolean } = { ok: false };
     await act(async () => {
-      resolveRestore({});
+      resolveRestore({} as Chapter);
       r = await restorePromise;
     });
 

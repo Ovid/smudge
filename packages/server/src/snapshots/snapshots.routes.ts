@@ -9,14 +9,14 @@ const UuidSchema = z.string().uuid();
 function validateUuidParam(
   req: Request,
   res: Response,
-  label: "chapter" | "snapshot" = "id",
+  label?: "chapter" | "snapshot",
 ): string | null {
   const parsed = UuidSchema.safeParse(req.params.id);
   if (!parsed.success) {
     res.status(400).json({
       error: {
         code: "VALIDATION_ERROR",
-        message: label === "id" ? "Invalid id." : `Invalid ${label} id.`,
+        message: label ? `Invalid ${label} id.` : "Invalid id.",
       },
     });
     return null;
