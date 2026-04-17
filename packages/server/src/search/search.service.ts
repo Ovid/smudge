@@ -218,8 +218,13 @@ export async function replaceInProject(
   const project = await store.findProjectById(projectId);
   if (!project) return null;
 
+  type TxSuccess = {
+    replaced_count: number;
+    affected_chapter_ids: string[];
+    skipped_chapter_ids?: string[];
+  };
   const txResult = await store
-    .transaction(async (txStore) => {
+    .transaction<TxSuccess | "scope_not_found">(async (txStore) => {
       // Get chapters to process
       let chapters: Array<{
         id: string;
@@ -231,7 +236,10 @@ export async function replaceInProject(
       if (scope?.type === "chapter") {
         const chapter = await txStore.findChapterByIdRaw(scope.chapter_id);
         if (!chapter || chapter.project_id !== projectId) {
-          return { replaced_count: 0, affected_chapter_ids: [] };
+          // Signal 404 so the caller can distinguish "wrong project" /
+          // "soft-deleted chapter" from "zero matches". Returning 0
+          // replacements here silently masks client integration bugs.
+          return "scope_not_found";
         }
         chapters = [
           {
@@ -340,6 +348,12 @@ export async function replaceInProject(
       throw err;
     });
 
+  if (typeof txResult === "string") {
+    // "scope_not_found" — chapter scope points at a different project or
+    // is soft-deleted. Surface as 404 so the client doesn't interpret it
+    // as a silent "no matches" success.
+    return null;
+  }
   if ("validationError" in txResult) return txResult;
 
   // Fire velocity side-effects after the transaction commits

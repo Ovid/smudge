@@ -326,7 +326,7 @@ describe("search.service", () => {
       expect(result).toBeNull();
     });
 
-    it("refuses to replace a chapter that belongs to a different project", async () => {
+    it("returns null (→ 404) when scope chapter belongs to a different project", async () => {
       const { replaceInProject } = await import("../search/search.service");
       const projectA = await createProject("Project A");
       const projectB = await createProject("Project B");
@@ -342,9 +342,9 @@ describe("search.service", () => {
         chapter_id: chB,
       });
 
-      const r = result as { replaced_count: number; affected_chapter_ids: string[] };
-      expect(r.replaced_count).toBe(0);
-      expect(r.affected_chapter_ids).toEqual([]);
+      // null signals 404 — the client can distinguish "wrong project" from
+      // a genuine 0-match success.
+      expect(result).toBeNull();
 
       // chB content must be unchanged
       const rowB = await t.db("chapters").where({ id: chB }).first();
@@ -446,12 +446,14 @@ describe("search.service", () => {
       expect(doc.content[0].content[0].text).toBe("world");
     });
 
-    it("scoped chapter replace returns 0 when chapter is soft-deleted", async () => {
+    it("scoped chapter replace returns null (→ 404) when chapter is soft-deleted", async () => {
       const { replaceInProject } = await import("../search/search.service");
       const projectId = await createProject();
       const ch1 = await createChapter(projectId, "Ch 1", JSON.stringify(makeDoc("hello world")), 0);
 
-      // Soft-delete the chapter
+      // Soft-delete the chapter — findChapterByIdRaw filters deleted_at,
+      // so the replace service sees it as "not in this project" and
+      // returns null for 404.
       await t.db("chapters").where({ id: ch1 }).update({ deleted_at: new Date().toISOString() });
 
       const result = await replaceInProject(projectId, "hello", "goodbye", undefined, {
@@ -459,9 +461,7 @@ describe("search.service", () => {
         chapter_id: ch1,
       });
 
-      const r = result as { replaced_count: number; affected_chapter_ids: string[] };
-      expect(r.replaced_count).toBe(0);
-      expect(r.affected_chapter_ids).toEqual([]);
+      expect(result).toBeNull();
     });
 
     it("skips chapters with corrupt JSON content during replace", async () => {
