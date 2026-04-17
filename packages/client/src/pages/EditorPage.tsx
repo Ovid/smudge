@@ -153,7 +153,14 @@ export function EditorPage() {
     } else {
       setActionError(STRINGS.snapshots.restoreFailed);
     }
-  }, [viewingSnapshot, activeChapter, restoreSnapshot, reloadActiveChapter, snapshotPanelRef]);
+  }, [
+    viewingSnapshot,
+    activeChapter,
+    restoreSnapshot,
+    reloadActiveChapter,
+    snapshotPanelRef,
+    setActionError,
+  ]);
 
   const executeReplace = useCallback(
     async (frozen: {
@@ -189,7 +196,15 @@ export function EditorPage() {
         setActionError(STRINGS.findReplace.replaceFailed);
       }
     },
-    [project, slug, findReplace, reloadActiveChapter, snapshotPanelRef, getActiveChapter],
+    [
+      project,
+      slug,
+      findReplace,
+      reloadActiveChapter,
+      snapshotPanelRef,
+      getActiveChapter,
+      setActionError,
+    ],
   );
 
   const handleReplaceAllInManuscript = useCallback(() => {
@@ -251,7 +266,15 @@ export function EditorPage() {
         setActionError(STRINGS.findReplace.replaceFailed);
       }
     },
-    [project, slug, findReplace, reloadActiveChapter, snapshotPanelRef, getActiveChapter],
+    [
+      project,
+      slug,
+      findReplace,
+      reloadActiveChapter,
+      snapshotPanelRef,
+      getActiveChapter,
+      setActionError,
+    ],
   );
 
   const {

@@ -224,11 +224,12 @@ export function replaceInDoc(
     let matchPositions = allPositions;
     if (typeof opts.match_index === "number") {
       const localIndex = opts.match_index - globalMatchCursor;
-      if (localIndex < 0 || localIndex >= allPositions.length) {
+      const selected = allPositions[localIndex];
+      if (!selected) {
         globalMatchCursor += allPositions.length;
         continue;
       }
-      matchPositions = [allPositions[localIndex]!];
+      matchPositions = [selected];
     }
     globalMatchCursor += allPositions.length;
     totalCount += matchPositions.length;

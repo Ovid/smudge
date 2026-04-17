@@ -287,9 +287,7 @@ export const api = {
       search: string,
       replace: string,
       options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
-      scope?:
-        | { type: "project" }
-        | { type: "chapter"; chapter_id: string; match_index?: number },
+      scope?: { type: "project" } | { type: "chapter"; chapter_id: string; match_index?: number },
     ) =>
       apiFetch<{ replaced_count: number; affected_chapter_ids: string[] }>(
         `/projects/${projectSlug}/replace`,

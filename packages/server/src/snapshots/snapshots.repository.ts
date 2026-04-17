@@ -43,4 +43,3 @@ export async function getLatestContentHash(db: Knex, chapterId: string): Promise
   if (!row) return null;
   return createHash("sha256").update(row.content).digest("hex");
 }
-

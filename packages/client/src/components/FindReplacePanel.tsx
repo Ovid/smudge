@@ -154,12 +154,7 @@ export function FindReplacePanel({
             value={replacement}
             onChange={(e) => onReplacementChange(e.target.value)}
             onKeyDown={(e) => {
-              if (
-                e.key === "Enter" &&
-                !e.shiftKey &&
-                results !== null &&
-                results.total_count > 0
-              ) {
+              if (e.key === "Enter" && !e.shiftKey && results !== null && results.total_count > 0) {
                 e.preventDefault();
                 onReplaceAllInManuscript();
               }

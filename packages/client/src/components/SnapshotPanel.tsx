@@ -34,9 +34,11 @@ interface SnapshotPanelProps {
   chapterId: string | null;
   isOpen: boolean;
   onClose: () => void;
-  onView: (
-    snapshot: { id: string; label: string | null; created_at: string },
-  ) => void | Promise<void>;
+  onView: (snapshot: {
+    id: string;
+    label: string | null;
+    created_at: string;
+  }) => void | Promise<void>;
   /**
    * Called before snapshot creation. The panel awaits this so the server
    * snapshots the chapter AFTER any pending editor save has landed —
@@ -49,10 +51,7 @@ interface SnapshotPanelProps {
 }
 
 export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>(
-  function SnapshotPanel(
-    { chapterId, isOpen, onClose, onView, onBeforeCreate, triggerRef },
-    ref,
-  ) {
+  function SnapshotPanel({ chapterId, isOpen, onClose, onView, onBeforeCreate, triggerRef }, ref) {
     const [snapshots, setSnapshots] = useState<SnapshotListItem[]>([]);
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [createLabel, setCreateLabel] = useState("");
@@ -119,13 +118,18 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
       return () => document.removeEventListener("keydown", handleKeyDown);
     }, [isOpen, onClose]);
 
-    // Reset form state when panel closes or chapter changes.
-    useEffect(() => {
+    // Reset form state when panel closes or chapter changes. Uses the
+    // "store previous value" pattern from the React docs rather than a
+    // setState-in-effect, which the lint rule forbids.
+    const resetKey = `${chapterId}:${isOpen}`;
+    const [prevResetKey, setPrevResetKey] = useState(resetKey);
+    if (prevResetKey !== resetKey) {
+      setPrevResetKey(resetKey);
       setShowCreateForm(false);
       setCreateLabel("");
       setDuplicateMessage(false);
       setConfirmDeleteId(null);
-    }, [chapterId, isOpen]);
+    }
 
     const handleCreate = async () => {
       if (!chapterId) return;

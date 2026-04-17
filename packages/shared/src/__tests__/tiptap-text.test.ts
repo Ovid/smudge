@@ -293,9 +293,7 @@ describe("replaceInDoc", () => {
     const result = replaceInDoc(d, "bar", "$& and $1 and $$");
     expect(result.count).toBe(1);
     const para = contentOf(result.doc)[0];
-    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe(
-      "foo $& and $1 and $$ baz",
-    );
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("foo $& and $1 and $$ baz");
   });
 
   it("replaces with empty string (deletion)", () => {
