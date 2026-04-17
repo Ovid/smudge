@@ -1,7 +1,21 @@
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
+import { z } from "zod";
 import { asyncHandler } from "../app";
 import { CreateSnapshotSchema } from "@smudge/shared";
 import * as SnapshotService from "./snapshots.service";
+
+const UuidSchema = z.string().uuid();
+
+function validateUuidParam(req: Request, res: Response): string | null {
+  const parsed = UuidSchema.safeParse(req.params.id);
+  if (!parsed.success) {
+    res.status(400).json({
+      error: { code: "VALIDATION_ERROR", message: "Invalid id." },
+    });
+    return null;
+  }
+  return parsed.data;
+}
 
 export function snapshotChapterRouter(): Router {
   const router = Router();
@@ -10,9 +24,19 @@ export function snapshotChapterRouter(): Router {
   router.post(
     "/:id/snapshots",
     asyncHandler(async (req, res) => {
-      const id = req.params.id as string;
-      const parsed = CreateSnapshotSchema.safeParse(req.body);
-      const label = parsed.success ? parsed.data.label : undefined;
+      const id = validateUuidParam(req, res);
+      if (!id) return;
+      const parsed = CreateSnapshotSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        res.status(400).json({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: parsed.error.issues[0]?.message ?? "Invalid request body.",
+          },
+        });
+        return;
+      }
+      const label = parsed.data.label;
 
       const result = await SnapshotService.createSnapshot(id, label);
       if (result === null) {
@@ -35,7 +59,8 @@ export function snapshotChapterRouter(): Router {
   router.get(
     "/:id/snapshots",
     asyncHandler(async (req, res) => {
-      const id = req.params.id as string;
+      const id = validateUuidParam(req, res);
+      if (!id) return;
       const result = await SnapshotService.listSnapshots(id);
       if (result === null) {
         res.status(404).json({
@@ -57,7 +82,8 @@ export function snapshotDirectRouter(): Router {
   router.get(
     "/:id",
     asyncHandler(async (req, res) => {
-      const id = req.params.id as string;
+      const id = validateUuidParam(req, res);
+      if (!id) return;
       const snapshot = await SnapshotService.getSnapshot(id);
       if (!snapshot) {
         res.status(404).json({
@@ -73,7 +99,8 @@ export function snapshotDirectRouter(): Router {
   router.delete(
     "/:id",
     asyncHandler(async (req, res) => {
-      const id = req.params.id as string;
+      const id = validateUuidParam(req, res);
+      if (!id) return;
       const deleted = await SnapshotService.deleteSnapshot(id);
       if (!deleted) {
         res.status(404).json({
@@ -89,7 +116,8 @@ export function snapshotDirectRouter(): Router {
   router.post(
     "/:id/restore",
     asyncHandler(async (req, res) => {
-      const id = req.params.id as string;
+      const id = validateUuidParam(req, res);
+      if (!id) return;
       const result = await SnapshotService.restoreSnapshot(id);
       if (!result) {
         res.status(404).json({
