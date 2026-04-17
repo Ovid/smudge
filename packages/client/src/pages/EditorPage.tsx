@@ -55,6 +55,7 @@ export function EditorPage() {
     setProjectTitleError,
     setProject,
     activeChapter,
+    chapterReloadKey,
     saveStatus,
     saveErrorMessage,
     cacheWarning,
@@ -63,6 +64,7 @@ export function EditorPage() {
     handleContentChange,
     handleCreateChapter,
     handleSelectChapter,
+    reloadActiveChapter,
     handleDeleteChapter,
     handleReorderChapters,
     handleUpdateProjectTitle,
@@ -120,10 +122,10 @@ export function EditorPage() {
     await editorRef.current?.flushSave();
     const ok = await restoreSnapshot(viewingSnapshot.id);
     if (ok) {
-      await handleSelectChapter(activeChapter.id);
+      await reloadActiveChapter();
       snapshotPanelRef.current?.refreshSnapshots();
     }
-  }, [viewingSnapshot, activeChapter, restoreSnapshot, handleSelectChapter, snapshotPanelRef]);
+  }, [viewingSnapshot, activeChapter, restoreSnapshot, reloadActiveChapter, snapshotPanelRef]);
 
   const handleReplaceAllInManuscript = useCallback(async () => {
     if (!project || !slug) return;
@@ -136,11 +138,11 @@ export function EditorPage() {
       { type: "project" },
     );
     if (activeChapter && result.affected_chapter_ids.includes(activeChapter.id)) {
-      await handleSelectChapter(activeChapter.id);
+      await reloadActiveChapter();
     }
     await findReplace.search(slug);
     snapshotPanelRef.current?.refreshSnapshots();
-  }, [project, slug, findReplace, activeChapter, handleSelectChapter, snapshotPanelRef]);
+  }, [project, slug, findReplace, activeChapter, reloadActiveChapter, snapshotPanelRef]);
 
   const handleReplaceAllInChapter = useCallback(
     async (chapterId: string) => {
@@ -154,12 +156,12 @@ export function EditorPage() {
         { type: "chapter", chapter_id: chapterId },
       );
       if (activeChapter && result.affected_chapter_ids.includes(activeChapter.id)) {
-        await handleSelectChapter(activeChapter.id);
+        await reloadActiveChapter();
       }
       await findReplace.search(slug);
       snapshotPanelRef.current?.refreshSnapshots();
     },
-    [project, slug, findReplace, activeChapter, handleSelectChapter, snapshotPanelRef],
+    [project, slug, findReplace, activeChapter, reloadActiveChapter, snapshotPanelRef],
   );
 
   const handleReplaceOne = useCallback(
@@ -174,12 +176,12 @@ export function EditorPage() {
         { type: "chapter", chapter_id: chapterId },
       );
       if (activeChapter && result.affected_chapter_ids.includes(activeChapter.id)) {
-        await handleSelectChapter(activeChapter.id);
+        await reloadActiveChapter();
       }
       await findReplace.search(slug);
       snapshotPanelRef.current?.refreshSnapshots();
     },
-    [project, slug, findReplace, activeChapter, handleSelectChapter, snapshotPanelRef],
+    [project, slug, findReplace, activeChapter, reloadActiveChapter, snapshotPanelRef],
   );
 
   const {
@@ -590,7 +592,7 @@ export function EditorPage() {
                       </h2>
                     )}
                     <Editor
-                      key={activeChapter.id}
+                      key={`${activeChapter.id}:${chapterReloadKey}`}
                       content={activeChapter.content}
                       onSave={handleSave}
                       onContentChange={handleContentChange}

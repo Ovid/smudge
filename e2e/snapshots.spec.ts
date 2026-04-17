@@ -208,12 +208,8 @@ test.describe("Snapshot E2e Tests", () => {
     // The auto-snapshot from restore + the original manual one
     await expect(panel.getByText("auto", { exact: true })).toBeVisible({ timeout: 5000 });
 
-    // Reload to confirm the restored content was persisted server-side.
-    // The editor UI may retain its stale buffer after restore until reload, so
-    // we verify persistence via reload rather than checking the live editor.
-    await page.reload();
+    // Editor should now display the restored content (reloaded from server after restore)
     const editorAfter = page.getByRole("textbox");
-    await expect(editorAfter).toBeVisible();
     await expect(editorAfter).toContainText("Restorable content", { timeout: 5000 });
   });
 

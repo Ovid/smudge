@@ -10,6 +10,7 @@ export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
 export function useProjectEditor(slug: string | undefined) {
   const [project, setProject] = useState<ProjectWithChapters | null>(null);
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
+  const [chapterReloadKey, setChapterReloadKey] = useState(0);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [projectTitleError, setProjectTitleError] = useState<string | null>(null);
@@ -156,6 +157,29 @@ export function useProjectEditor(slug: string | undefined) {
       setChapterWordCount(countWords(effectiveChapter.content));
     } catch (err) {
       console.warn("Failed to load chapter:", err);
+      if (seq !== selectChapterSeqRef.current) return;
+      setError(STRINGS.error.loadChapterFailed);
+    }
+  }, []);
+
+  const reloadActiveChapter = useCallback(async () => {
+    const current = activeChapterRef.current;
+    if (!current) return;
+    // Clear any client-side cached content so the server copy wins after a restore/replace
+    clearCachedContent(current.id);
+    ++saveSeqRef.current;
+    setSaveStatus("idle");
+    setCacheWarning(false);
+    const seq = ++selectChapterSeqRef.current;
+    try {
+      const chapter = await api.chapters.get(current.id);
+      if (seq !== selectChapterSeqRef.current) return;
+      setActiveChapter(chapter);
+      setChapterWordCount(countWords(chapter.content));
+      // Bump reload key so the Editor remounts with fresh server content
+      setChapterReloadKey((k) => k + 1);
+    } catch (err) {
+      console.warn("Failed to reload chapter:", err);
       if (seq !== selectChapterSeqRef.current) return;
       setError(STRINGS.error.loadChapterFailed);
     }
@@ -354,6 +378,7 @@ export function useProjectEditor(slug: string | undefined) {
     setProjectTitleError,
     setProject,
     activeChapter,
+    chapterReloadKey,
     saveStatus,
     saveErrorMessage,
     cacheWarning,
@@ -362,6 +387,7 @@ export function useProjectEditor(slug: string | undefined) {
     handleContentChange,
     handleCreateChapter,
     handleSelectChapter,
+    reloadActiveChapter,
     handleDeleteChapter,
     handleReorderChapters,
     handleUpdateProjectTitle,
