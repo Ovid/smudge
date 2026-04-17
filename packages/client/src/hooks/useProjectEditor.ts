@@ -88,8 +88,7 @@ export function useProjectEditor(slug: string | undefined) {
       // Re-read latest content each attempt so backoff retries post keystrokes
       // that arrived after the initial call.
       const latest = latestContentRef.current;
-      const postedContent =
-        latest && latest.id === savingChapterId ? latest.content : content;
+      const postedContent = latest && latest.id === savingChapterId ? latest.content : content;
       try {
         const updated = await api.chapters.update(
           savingChapterId,

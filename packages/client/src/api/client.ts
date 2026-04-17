@@ -43,8 +43,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     // fetch. Wrap so every call site can rely on ApiRequestError with a
     // NETWORK code rather than seeing a bare TypeError and falling back to
     // generic copy on exactly the path that most needs clear messaging.
-    const message =
-      err instanceof Error ? err.message : "Network request failed";
+    const message = err instanceof Error ? err.message : "Network request failed";
     throw new ApiRequestError(message, 0, "NETWORK");
   });
 
