@@ -353,6 +353,44 @@ describe("snapshots.service", () => {
       expect(autoSnap!.label).toBe("Before restore to 'My Named Snapshot'");
     });
 
+    it("sanitizes and caps the auto-backup label to 500 chars", async () => {
+      stubVelocity();
+      const { chapterId } = await createProjectAndChapter();
+      const { restoreSnapshot, listSnapshots } = await import("../snapshots/snapshots.service");
+
+      // Insert a snapshot directly with an unsanitized/very-long label so we
+      // can verify the restore auto-label pipeline scrubs it. CreateSnapshotSchema
+      // would reject this on the manual path, but legacy rows or a future
+      // writer might produce one.
+      const badLabel = "Legacy\u202Espoof\u0000zwsp\u200B" + "x".repeat(520);
+      await t.db("chapter_snapshots").insert({
+        id: uuid(),
+        chapter_id: chapterId,
+        label: badLabel,
+        content: JSON.stringify({ type: "doc", content: [] }),
+        word_count: 0,
+        is_auto: 0,
+        created_at: new Date().toISOString(),
+      });
+      const [snap] = await t.db("chapter_snapshots").where({ chapter_id: chapterId });
+
+      // Change content so restore does something
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ content: JSON.stringify(DOC_JSON_ALT), word_count: 2 });
+
+      await restoreSnapshot(snap.id);
+
+      const snapshots = await listSnapshots(chapterId);
+      const autoSnap = snapshots!.find((s) => s.is_auto && s.label?.startsWith("Before restore"));
+      expect(autoSnap).toBeDefined();
+      expect(autoSnap!.label).not.toContain("\u202E");
+      expect(autoSnap!.label).not.toContain("\u0000");
+      expect(autoSnap!.label).not.toContain("\u200B");
+      expect(autoSnap!.label!.length).toBeLessThanOrEqual(500);
+    });
+
     it("uses snapshot created_at in auto-backup label when no label is set", async () => {
       stubVelocity();
       const { chapterId } = await createProjectAndChapter();

@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
-import { countWords, validateTipTapDepth } from "@smudge/shared";
+import { countWords, sanitizeSnapshotLabel, validateTipTapDepth } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
@@ -133,9 +133,14 @@ export async function restoreSnapshot(
 
     // Auto-snapshot current content before restore
     const currentContent = chapter.content ?? JSON.stringify({ type: "doc", content: [] });
-    const snapshotLabel = snapshot.label
+    // Run the auto-label through the same sanitize + 500-char clamp pipeline
+    // CreateSnapshotSchema applies to manual labels. A legacy manual label
+    // containing control/bidi chars or near the 500-char limit would otherwise
+    // produce an unsanitized or oversized restore-auto-snapshot label.
+    const rawLabel = snapshot.label
       ? `Before restore to '${snapshot.label}'`
       : `Before restore to snapshot from ${snapshot.created_at}`;
+    const snapshotLabel = sanitizeSnapshotLabel(rawLabel).slice(0, 500);
 
     // Always create auto-restore snapshot (no dedup)
     await txStore.insertSnapshot({
