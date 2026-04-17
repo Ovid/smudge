@@ -19,7 +19,7 @@ export interface FindReplacePanelProps {
   onReplaceOne: (chapterId: string, matchIndex: number) => void;
   onReplaceAllInChapter: (chapterId: string) => void;
   onReplaceAllInManuscript: () => void;
-  triggerRef?: React.RefObject<HTMLButtonElement>;
+  triggerRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
 // Context is `flat.slice(offset - R, offset + length + R)` where R = 40.

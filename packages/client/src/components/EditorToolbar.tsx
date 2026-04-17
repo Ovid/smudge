@@ -6,6 +6,8 @@ interface EditorToolbarProps {
   snapshotCount?: number;
   onToggleSnapshots?: () => void;
   onToggleFindReplace?: () => void;
+  snapshotsTriggerRef?: React.Ref<HTMLButtonElement>;
+  findReplaceTriggerRef?: React.Ref<HTMLButtonElement>;
 }
 
 export function EditorToolbar({
@@ -13,6 +15,8 @@ export function EditorToolbar({
   snapshotCount,
   onToggleSnapshots,
   onToggleFindReplace,
+  snapshotsTriggerRef,
+  findReplaceTriggerRef,
 }: EditorToolbarProps) {
   const snapshotLabel = `Snapshots${snapshotCount != null && snapshotCount > 0 ? ` (${snapshotCount})` : ""}`;
   return (
@@ -121,6 +125,7 @@ export function EditorToolbar({
         <>
           <span className="mx-0.5 self-stretch w-px bg-border/40" aria-hidden="true" />
           <button
+            ref={snapshotsTriggerRef}
             onClick={onToggleSnapshots}
             aria-label={snapshotLabel}
             title={snapshotLabel}
@@ -156,6 +161,7 @@ export function EditorToolbar({
         <>
           <span className="mx-0.5 self-stretch w-px bg-border/40" aria-hidden="true" />
           <button
+            ref={findReplaceTriggerRef}
             onClick={onToggleFindReplace}
             aria-label={STRINGS.findReplace.toggleTooltip}
             title={STRINGS.findReplace.toggleTooltip}

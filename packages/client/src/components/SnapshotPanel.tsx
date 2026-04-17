@@ -43,7 +43,7 @@ interface SnapshotPanelProps {
    * and false when it failed, in which case snapshot creation is skipped.
    */
   onBeforeCreate?: () => Promise<boolean>;
-  triggerRef?: React.RefObject<HTMLButtonElement>;
+  triggerRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
 export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>(

@@ -91,6 +91,11 @@ export function EditorPage() {
 
   const findReplace = useFindReplaceState(slug);
 
+  // Refs on the toolbar buttons so each panel can return focus to its
+  // trigger when closed via Escape (WCAG focus management).
+  const snapshotsTriggerRef = useRef<HTMLButtonElement>(null);
+  const findReplaceTriggerRef = useRef<HTMLButtonElement>(null);
+
   // Frozen snapshot of state at the moment the user clicked "Replace All".
   // This prevents the confirmation copy from drifting if the user edits the
   // panel while the dialog is open.
@@ -502,6 +507,8 @@ export function EditorPage() {
             snapshotCount={snapshotCount}
             onToggleSnapshots={handleToggleSnapshotPanel}
             onToggleFindReplace={handleToggleFindReplace}
+            snapshotsTriggerRef={snapshotsTriggerRef}
+            findReplaceTriggerRef={findReplaceTriggerRef}
           />
         )}
         <div className="flex items-center gap-2">
@@ -711,6 +718,7 @@ export function EditorPage() {
             onClose={() => setSnapshotPanelOpen(false)}
             onView={viewSnapshot}
             onBeforeCreate={async () => (await editorRef.current?.flushSave()) ?? true}
+            triggerRef={snapshotsTriggerRef}
           />
         )}
         {findReplace.panelOpen && project && (
@@ -729,6 +737,7 @@ export function EditorPage() {
             onReplaceOne={handleReplaceOne}
             onReplaceAllInChapter={handleReplaceAllInChapter}
             onReplaceAllInManuscript={handleReplaceAllInManuscript}
+            triggerRef={findReplaceTriggerRef}
           />
         )}
       </div>
