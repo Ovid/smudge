@@ -25,11 +25,23 @@ import type { SearchResult } from "./search.types";
  */
 const REGEX_DEADLINE_MS = 2_000;
 
+/**
+ * Upper bound on the serialized TipTap JSON a single chapter may reach
+ * after a replacement pass. Matches the Express request body limit so
+ * that content produced by replace-all stays autosave-writable. Guards
+ * against amplification via `$'` / `` $` `` in regex replacements: these
+ * splice the entire right/left side of each match into the output, so a
+ * short template can blow up stored content by orders of magnitude even
+ * when the raw replacement string is well under MAX_REPLACE_LENGTH.
+ */
+export const MAX_CHAPTER_CONTENT_BYTES = 5 * 1024 * 1024;
+
 /** Distinct codes for 400 responses so the client can show specific copy. */
 export const SEARCH_ERROR_CODES = {
   INVALID_REGEX: "INVALID_REGEX",
   MATCH_CAP_EXCEEDED: "MATCH_CAP_EXCEEDED",
   REGEX_TIMEOUT: "REGEX_TIMEOUT",
+  CONTENT_TOO_LARGE: "CONTENT_TOO_LARGE",
 } as const;
 export type SearchErrorCode = (typeof SEARCH_ERROR_CODES)[keyof typeof SEARCH_ERROR_CODES];
 
@@ -102,6 +114,27 @@ function regexTimeoutValidationError(): SearchValidationError {
     validationError: `Search timed out after ${REGEX_DEADLINE_MS}ms; refine your pattern.`,
     code: SEARCH_ERROR_CODES.REGEX_TIMEOUT,
   };
+}
+
+function contentTooLargeValidationError(): SearchValidationError {
+  return {
+    validationError:
+      "Replacement would produce chapter content over the size limit; refine your replacement.",
+    code: SEARCH_ERROR_CODES.CONTENT_TOO_LARGE,
+  };
+}
+
+/**
+ * Thrown inside the replace transaction when a chapter's serialized
+ * content would exceed MAX_CHAPTER_CONTENT_BYTES. Caught at the tx
+ * boundary and converted to a 400 response. Caught by value, so the
+ * transaction rolls back and no partial replacements persist.
+ */
+class ContentTooLargeError extends Error {
+  constructor() {
+    super("Replacement produces content over the size cap");
+    this.name = "ContentTooLargeError";
+  }
 }
 
 export async function searchProject(
@@ -263,8 +296,13 @@ export async function replaceInProject(
           created_at: new Date().toISOString(),
         });
 
-        // Update chapter content
+        // Update chapter content — guard against amplification (`$'` / `$\``
+        // in regex replacements can splice the full match context repeatedly)
+        // before writing; the tx will roll back cleanly on throw.
         const newContentJson = JSON.stringify(newDoc);
+        if (Buffer.byteLength(newContentJson, "utf8") > MAX_CHAPTER_CONTENT_BYTES) {
+          throw new ContentTooLargeError();
+        }
         const newWordCount = countWords(newDoc);
         const now = new Date().toISOString();
 
@@ -295,6 +333,9 @@ export async function replaceInProject(
       }
       if (err instanceof RegExpTimeoutError) {
         return regexTimeoutValidationError();
+      }
+      if (err instanceof ContentTooLargeError) {
+        return contentTooLargeValidationError();
       }
       throw err;
     });

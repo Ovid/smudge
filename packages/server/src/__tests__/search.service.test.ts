@@ -400,6 +400,24 @@ describe("search.service", () => {
       expect(r.validationError).toMatch(/too many matches/i);
     });
 
+    it("returns CONTENT_TOO_LARGE when replacement would blow up chapter size", async () => {
+      // `$'` splices the right-of-match into the output. A short template
+      // repeated across ~5000 matches produces quadratic growth (~12.5MB)
+      // which is under the 10 000 match cap but well over the 5MB content
+      // cap. Guard: per-chapter serialized content cap.
+      const { replaceInProject } = await import("../search/search.service");
+      const projectId = await createProject();
+      const big = "a".repeat(5_000);
+      await createChapter(projectId, "Ch", JSON.stringify(makeDoc(big)), 0);
+
+      const result = await replaceInProject(projectId, "a", "a$'", { regex: true });
+
+      expect(result).not.toBeNull();
+      expect("validationError" in result!).toBe(true);
+      const r = result as { validationError: string; code: string };
+      expect(r.code).toBe("CONTENT_TOO_LARGE");
+    });
+
     it("rejects regex patterns with nested quantifiers (ReDoS guard)", async () => {
       const { replaceInProject } = await import("../search/search.service");
       const projectId = await createProject();
