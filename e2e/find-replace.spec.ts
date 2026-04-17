@@ -266,10 +266,7 @@ test.describe("Find-and-Replace E2e Tests", () => {
     await expect(editor).not.toContainText("foo");
   });
 
-  test("Replace-one via Replace All in Chapter replaces matches in that chapter only", async ({
-    page,
-    request,
-  }) => {
+  test("per-match Replace replaces only the clicked occurrence", async ({ page, request }) => {
     // Create a second chapter with content "dog dog" — must remain untouched.
     await createChapterWithContent(request, project.slug, "Chapter Two", "dog dog");
 
@@ -288,17 +285,17 @@ test.describe("Find-and-Replace E2e Tests", () => {
       timeout: 5000,
     });
 
-    // Click "Replace" on the first match in the list — the handler replaces
-    // all occurrences in that chapter (see EditorPage.handleReplaceOne).
+    // Click "Replace" on the first match — only that one occurrence should
+    // be replaced, leaving the other match in the active chapter and both
+    // matches in the other chapter intact (3 total remaining).
     await panel.getByRole("button", { name: "Replace", exact: true }).first().click();
 
-    // After the operation, only the other chapter's two matches should remain.
-    await expect(panel.getByText(/Found 2 occurrences in 1 chapter/)).toBeVisible({
+    await expect(panel.getByText(/Found 3 occurrences in 2 chapters/)).toBeVisible({
       timeout: 5000,
     });
 
-    // Active chapter's content should now show the replacement.
+    // Active chapter: only the first "dog" became "cat".
     const editor = page.getByRole("textbox", { name: "Chapter content" });
-    await expect(editor).toContainText("cat and cat", { timeout: 5000 });
+    await expect(editor).toContainText("cat and dog", { timeout: 5000 });
   });
 });
