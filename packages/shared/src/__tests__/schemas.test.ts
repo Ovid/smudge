@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   CreateProjectSchema,
+  CreateSnapshotSchema,
   UpdateProjectSchema,
   UpdateChapterSchema,
   UpdateSettingsSchema,
@@ -94,6 +95,39 @@ describe("UpdateChapterSchema", () => {
 
   it("rejects invalid status value", () => {
     const result = UpdateChapterSchema.safeParse({ status: "published" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects TipTap content nested beyond the depth cap", () => {
+    // Build a deeply nested structure that exceeds MAX_TIPTAP_DEPTH (64).
+    interface Node {
+      type: string;
+      content?: Node[];
+    }
+    let deep: Node = { type: "paragraph" };
+    for (let i = 0; i < 100; i++) {
+      deep = { type: "blockquote", content: [deep] };
+    }
+    const doc = { type: "doc", content: [deep] };
+    const result = UpdateChapterSchema.safeParse({ content: doc });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("CreateSnapshotSchema", () => {
+  it("accepts a missing label", () => {
+    const result = CreateSnapshotSchema.safeParse({});
+    expect(result.success).toBe(true);
+  });
+
+  it("sanitizes control characters in the label", () => {
+    const result = CreateSnapshotSchema.safeParse({ label: "a\u0000b\u202Ec" });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.label).toBe("abc");
+  });
+
+  it("rejects unknown keys (strict)", () => {
+    const result = CreateSnapshotSchema.safeParse({ label: "x", is_auto: true });
     expect(result.success).toBe(false);
   });
 });

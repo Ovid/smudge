@@ -39,12 +39,36 @@ export const UpdateProjectSchema = z
     message: "At least one field must be provided",
   });
 
+/**
+ * Maximum nesting depth accepted for a TipTap document. The walkers in
+ * @smudge/shared/tiptap-text and countWords recurse into content, so an
+ * adversarial (or buggy) client that submits a 5 MB doc of nested
+ * { content: [ { content: [ ... ] } ] } could blow the stack. Real-world
+ * manuscripts are nowhere near this — even a deeply nested blockquote/list
+ * combination rarely exceeds 10–15.
+ */
+const MAX_TIPTAP_DEPTH = 64;
+
+function validateTipTapDepth(node: unknown, depth: number): boolean {
+  if (depth > MAX_TIPTAP_DEPTH) return false;
+  if (!node || typeof node !== "object") return true;
+  const content = (node as { content?: unknown }).content;
+  if (!Array.isArray(content)) return true;
+  for (const child of content) {
+    if (!validateTipTapDepth(child, depth + 1)) return false;
+  }
+  return true;
+}
+
 const TipTapDocSchema = z
   .object({
     type: z.literal("doc"),
     content: z.array(z.record(z.unknown())).optional(),
   })
-  .passthrough();
+  .passthrough()
+  .refine((doc) => validateTipTapDepth(doc, 0), {
+    message: `TipTap document exceeds maximum nesting depth (${MAX_TIPTAP_DEPTH}).`,
+  });
 
 export const ReorderChaptersSchema = z.object({
   chapter_ids: z.array(z.string().uuid()),
@@ -130,10 +154,12 @@ export function sanitizeSnapshotLabel(raw: string): string {
   );
 }
 
-export const CreateSnapshotSchema = z.object({
-  label: z
-    .string()
-    .transform(sanitizeSnapshotLabel)
-    .pipe(z.string().trim().max(500, "Label is too long"))
-    .optional(),
-});
+export const CreateSnapshotSchema = z
+  .object({
+    label: z
+      .string()
+      .transform(sanitizeSnapshotLabel)
+      .pipe(z.string().trim().max(500, "Label is too long"))
+      .optional(),
+  })
+  .strict();
