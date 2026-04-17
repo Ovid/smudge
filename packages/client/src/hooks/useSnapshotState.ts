@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { api } from "../api/client";
+import { api, ApiRequestError } from "../api/client";
 import type { SnapshotPanelHandle } from "../components/SnapshotPanel";
 
 interface ViewingSnapshot {
@@ -7,6 +7,14 @@ interface ViewingSnapshot {
   label: string | null;
   content: Record<string, unknown>;
   created_at: string;
+}
+
+export type RestoreFailureReason = "corrupt_snapshot" | "network" | "unknown";
+
+export interface RestoreResult {
+  ok: boolean;
+  reason?: RestoreFailureReason;
+  message?: string;
 }
 
 export interface UseSnapshotStateReturn {
@@ -20,7 +28,7 @@ export interface UseSnapshotStateReturn {
     created_at: string;
   }) => Promise<void>;
   exitSnapshotView: () => void;
-  restoreSnapshot: (snapshotId: string) => Promise<boolean>;
+  restoreSnapshot: (snapshotId: string) => Promise<RestoreResult>;
   snapshotCount: number;
   snapshotPanelRef: React.RefObject<SnapshotPanelHandle | null>;
 }
@@ -81,11 +89,10 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   }, []);
 
   const restoreSnapshot = useCallback(
-    async (snapshotId: string): Promise<boolean> => {
+    async (snapshotId: string): Promise<RestoreResult> => {
       try {
         await api.snapshots.restore(snapshotId);
         setViewingSnapshot(null);
-        // Refresh the count (the auto-snapshot from restore adds one)
         if (chapterId) {
           api.snapshots
             .list(chapterId)
@@ -94,9 +101,15 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
             })
             .catch(() => {});
         }
-        return true;
-      } catch {
-        return false;
+        return { ok: true };
+      } catch (err) {
+        if (err instanceof ApiRequestError) {
+          if (err.status === 422 && err.code === "CORRUPT_SNAPSHOT") {
+            return { ok: false, reason: "corrupt_snapshot", message: err.message };
+          }
+          return { ok: false, reason: "network", message: err.message };
+        }
+        return { ok: false, reason: "unknown" };
       }
     },
     [chapterId],

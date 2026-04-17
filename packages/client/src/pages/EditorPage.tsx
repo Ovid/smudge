@@ -159,10 +159,12 @@ export function EditorPage() {
       setActionError(STRINGS.snapshots.restoreFailed);
       return;
     }
-    const ok = await restoreSnapshot(viewingSnapshot.id);
-    if (ok) {
+    const result = await restoreSnapshot(viewingSnapshot.id);
+    if (result.ok) {
       await reloadActiveChapter();
       snapshotPanelRef.current?.refreshSnapshots();
+    } else if (result.reason === "corrupt_snapshot") {
+      setActionError(STRINGS.snapshots.restoreFailedCorrupt);
     } else {
       setActionError(STRINGS.snapshots.restoreFailed);
     }

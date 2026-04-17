@@ -22,6 +22,7 @@ export class ApiRequestError extends Error {
   constructor(
     message: string,
     public readonly status: number,
+    public readonly code?: string,
   ) {
     super(message);
     this.name = "ApiRequestError";
@@ -36,13 +37,15 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     let message = `Request failed: ${res.status}`;
+    let code: string | undefined;
     try {
       const body = (await res.json()) as ApiError;
       message = body.error?.message ?? message;
+      code = body.error?.code;
     } catch {
       // Response body wasn't JSON (e.g., proxy HTML error page)
     }
-    throw new ApiRequestError(message, res.status);
+    throw new ApiRequestError(message, res.status, code);
   }
 
   if (res.status === 204) return undefined as T;

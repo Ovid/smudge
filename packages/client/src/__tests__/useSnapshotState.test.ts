@@ -4,15 +4,20 @@ import { useSnapshotState } from "../hooks/useSnapshotState";
 import { api } from "../api/client";
 import type { SnapshotListItem, SnapshotRow } from "@smudge/shared";
 
-vi.mock("../api/client", () => ({
-  api: {
-    snapshots: {
-      list: vi.fn(),
-      get: vi.fn(),
-      restore: vi.fn(),
+vi.mock("../api/client", async () => {
+  const actual =
+    await vi.importActual<typeof import("../api/client")>("../api/client");
+  return {
+    ...actual,
+    api: {
+      snapshots: {
+        list: vi.fn(),
+        get: vi.fn(),
+        restore: vi.fn(),
+      },
     },
-  },
-}));
+  };
+});
 
 function makeListItem(overrides: Partial<SnapshotListItem> = {}): SnapshotListItem {
   return {
@@ -137,26 +142,44 @@ describe("useSnapshotState", () => {
     expect(result.current.viewingSnapshot).not.toBeNull();
 
     // Now restore
-    let ok: boolean = false;
+    let r: { ok: boolean; reason?: string } = { ok: false };
     await act(async () => {
-      ok = await result.current.restoreSnapshot("snap-1");
+      r = await result.current.restoreSnapshot("snap-1");
     });
 
-    expect(ok).toBe(true);
+    expect(r.ok).toBe(true);
     expect(api.snapshots.restore).toHaveBeenCalledWith("snap-1");
     expect(result.current.viewingSnapshot).toBeNull();
   });
 
-  it("restoreSnapshot returns false on failure", async () => {
+  it("restoreSnapshot returns ok=false on generic failure", async () => {
     vi.mocked(api.snapshots.restore).mockRejectedValue(new Error("fail"));
 
     const { result } = renderHook(() => useSnapshotState("ch-1"));
-    let ok: boolean = true;
+    let r: { ok: boolean; reason?: string } = { ok: true };
     await act(async () => {
-      ok = await result.current.restoreSnapshot("snap-1");
+      r = await result.current.restoreSnapshot("snap-1");
     });
 
-    expect(ok).toBe(false);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("unknown");
+  });
+
+  it("restoreSnapshot surfaces corrupt_snapshot reason on 422", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.snapshots.restore).mockRejectedValue(
+      new ApiRequestError("Corrupt", 422, "CORRUPT_SNAPSHOT"),
+    );
+
+    const { result } = renderHook(() => useSnapshotState("ch-1"));
+    let r: { ok: boolean; reason?: string; message?: string } = { ok: true };
+    await act(async () => {
+      r = await result.current.restoreSnapshot("snap-1");
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("corrupt_snapshot");
+    expect(r.message).toBe("Corrupt");
   });
 
   it("silently handles list fetch failure", async () => {
