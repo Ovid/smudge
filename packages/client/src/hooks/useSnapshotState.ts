@@ -35,14 +35,20 @@ export interface UseSnapshotStateReturn {
   }) => Promise<void>;
   exitSnapshotView: () => void;
   restoreSnapshot: (snapshotId: string) => Promise<RestoreResult>;
-  snapshotCount: number;
+  /**
+   * Number of snapshots for the active chapter, or null when the count
+   * is unknown — either because a fetch is pending or the last fetch
+   * failed. The toolbar badge treats null as "don't display a count"
+   * rather than falsely showing zero on a network blip.
+   */
+  snapshotCount: number | null;
   snapshotPanelRef: React.RefObject<SnapshotPanelHandle | null>;
 }
 
 export function useSnapshotState(chapterId: string | null): UseSnapshotStateReturn {
   const [snapshotPanelOpen, setSnapshotPanelOpenState] = useState(false);
   const [viewingSnapshot, setViewingSnapshot] = useState<ViewingSnapshot | null>(null);
-  const [snapshotCount, setSnapshotCount] = useState(0);
+  const [snapshotCount, setSnapshotCount] = useState<number | null>(null);
   const snapshotPanelRef = useRef<SnapshotPanelHandle>(null);
   // Monotonic counter to discard stale list responses after a chapter switch.
   const chapterSeqRef = useRef(0);
@@ -53,8 +59,10 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   // and a Restore click would silently overwrite chapter A's content.
   useEffect(() => {
     const seq = ++chapterSeqRef.current;
+    // Reset to null (unknown) rather than 0 so the badge doesn't claim
+    // "no snapshots" during the load gap or after a fetch failure.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: must reset before fetch resolves
-    setSnapshotCount(0);
+    setSnapshotCount(null);
 
     setViewingSnapshot(null);
     if (!chapterId) return;
@@ -64,7 +72,8 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         if (seq === chapterSeqRef.current) setSnapshotCount(data.length);
       })
       .catch(() => {
-        // Silently fail
+        // Leave count as null so the badge stays hidden. The next panel
+        // interaction will retry via refreshCount.
       });
   }, [chapterId]);
 

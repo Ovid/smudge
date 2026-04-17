@@ -88,9 +88,9 @@ describe("useSnapshotState", () => {
     });
   });
 
-  it("resets count to 0 when chapterId is null", () => {
+  it("keeps count null when chapterId is null", () => {
     const { result } = renderHook(() => useSnapshotState(null));
-    expect(result.current.snapshotCount).toBe(0);
+    expect(result.current.snapshotCount).toBeNull();
     expect(api.snapshots.list).not.toHaveBeenCalled();
   });
 
@@ -228,16 +228,17 @@ describe("useSnapshotState", () => {
     expect(r.message).toBe("Corrupt");
   });
 
-  it("silently handles list fetch failure", async () => {
+  it("leaves count null when list fetch fails so badge stays hidden", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.snapshots.list).mockRejectedValue(new Error("network error"));
 
     const { result } = renderHook(() => useSnapshotState("ch-1"));
 
-    // Should not throw, count stays at 0
-    await vi.waitFor(() => {
-      expect(result.current.snapshotCount).toBe(0);
-    });
+    // After a failed fetch, count remains null (unknown) rather than being
+    // forced to 0 — that would falsely claim "no snapshots" on a network blip.
+    // Use a small delay to let the rejected promise microtask settle.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(result.current.snapshotCount).toBeNull();
     warnSpy.mockRestore();
   });
 });
