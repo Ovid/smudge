@@ -537,6 +537,7 @@ export function EditorPage() {
     deleteTarget,
     projectSettingsOpen,
     exportDialogOpen,
+    replaceConfirmOpen: replaceConfirmation !== null,
     viewMode,
     activeChapter,
     project,

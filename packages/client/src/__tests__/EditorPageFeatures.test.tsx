@@ -1137,6 +1137,25 @@ describe("EditorPage find-and-replace confirmation", () => {
     });
   });
 
+  it("Ctrl+H is blocked while the replace-confirm dialog is open", async () => {
+    await openPanelAndClickReplaceAll();
+
+    const dialog = await screen.findByRole("alertdialog", {
+      name: "Replace across manuscript?",
+    });
+    expect(dialog).toBeInTheDocument();
+
+    // Ctrl+H must not execute beneath the dialog. Before the fix the
+    // shortcut toggled the panel/find-replace state under the modal; the
+    // guard should now short-circuit so the dialog persists untouched and
+    // no replace API call fires.
+    fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+    expect(
+      screen.getByRole("alertdialog", { name: "Replace across manuscript?" }),
+    ).toBeInTheDocument();
+    expect(api.search.replace).not.toHaveBeenCalled();
+  });
+
   it("does not execute replace when confirmation is cancelled", async () => {
     await openPanelAndClickReplaceAll();
 

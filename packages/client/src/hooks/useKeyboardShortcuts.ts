@@ -9,6 +9,11 @@ interface KeyboardShortcutDeps {
   deleteTarget: Chapter | null;
   projectSettingsOpen: boolean;
   exportDialogOpen: boolean;
+  // True while the Replace-All confirmation dialog is up. Without this,
+  // Ctrl+H would toggle the find-replace panel behind the dialog and
+  // Ctrl+Shift+N would create a chapter, both of which operate against
+  // state the user can't see.
+  replaceConfirmOpen?: boolean;
   // Current state
   viewMode: ViewMode;
   activeChapter: Chapter | null;
@@ -48,6 +53,8 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
   projectSettingsOpenRef.current = deps.projectSettingsOpen;
   const exportDialogOpenRef = useRef(deps.exportDialogOpen);
   exportDialogOpenRef.current = deps.exportDialogOpen;
+  const replaceConfirmOpenRef = useRef(deps.replaceConfirmOpen ?? false);
+  replaceConfirmOpenRef.current = deps.replaceConfirmOpen ?? false;
   const flushSaveRef = useRef(deps.flushSave);
   flushSaveRef.current = deps.flushSave;
   const handleCreateChapterRef = useRef(deps.handleCreateChapter);
@@ -93,7 +100,8 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
           shortcutHelpOpenRef.current ||
           deleteTargetRef.current ||
           projectSettingsOpenRef.current ||
-          exportDialogOpenRef.current
+          exportDialogOpenRef.current ||
+          replaceConfirmOpenRef.current
         )
           return;
         flushSaveRef.current?.();
