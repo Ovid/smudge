@@ -1037,3 +1037,124 @@ describe("EditorPage view mode toggles", () => {
     warnSpy.mockRestore();
   });
 });
+
+describe("EditorPage find-and-replace confirmation", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.projects.get).mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
+    // Reset to default — a previous test sets mockRejectedValue which persists
+    vi.mocked(api.chapterStatuses.list).mockResolvedValue([]);
+    vi.mocked(api.search.find).mockResolvedValue({
+      total_count: 2,
+      chapters: [
+        {
+          chapter_id: "ch-1",
+          chapter_title: "Chapter One",
+          matches: [
+            { index: 0, context: "foo bar", blockIndex: 0, offset: 0, length: 3 },
+            { index: 1, context: "foo baz", blockIndex: 0, offset: 8, length: 3 },
+          ],
+        },
+      ],
+    });
+    vi.mocked(api.search.replace).mockResolvedValue({
+      replaced_count: 2,
+      affected_chapter_ids: [],
+    });
+  });
+
+  /** Opens the find-and-replace panel, types a query and replacement,
+   *  waits for the search results, and clicks "Replace All in Manuscript". */
+  async function openPanelAndClickReplaceAll() {
+    renderEditorPage();
+
+    // Wait for the editor page to load
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    // Open the find-replace panel via Ctrl+H
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+
+    // Wait for the panel to appear
+    const searchInput = await screen.findByLabelText("Find");
+    const replaceInput = screen.getByLabelText("Replace");
+
+    // Fill search and replacement (triggers debounced search)
+    fireEvent.change(searchInput, { target: { value: "foo" } });
+    fireEvent.change(replaceInput, { target: { value: "qux" } });
+
+    // Wait for search results to render — "Replace All in Manuscript" button
+    // is only shown when there are results with total_count > 0.
+    const replaceAllButton = await screen.findByRole(
+      "button",
+      { name: "Replace All in Manuscript" },
+      { timeout: 3000 },
+    );
+    await userEvent.click(replaceAllButton);
+  }
+
+  it("shows confirmation dialog when Replace All in Manuscript is clicked", async () => {
+    await openPanelAndClickReplaceAll();
+
+    const dialog = await screen.findByRole("alertdialog", {
+      name: "Replace across manuscript?",
+    });
+    expect(dialog).toBeInTheDocument();
+  });
+
+  it("executes replace when confirmation is confirmed", async () => {
+    await openPanelAndClickReplaceAll();
+
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+
+    // Click "Replace All" inside the dialog to confirm
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    await waitFor(() => {
+      expect(api.search.replace).toHaveBeenCalledWith(
+        "test-project",
+        "foo",
+        "qux",
+        expect.objectContaining({
+          case_sensitive: expect.any(Boolean),
+          whole_word: expect.any(Boolean),
+          regex: expect.any(Boolean),
+        }),
+        { type: "project" },
+      );
+    });
+
+    // Dialog should close after confirming
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("alertdialog", { name: "Replace across manuscript?" }),
+      ).toBeNull();
+    });
+  });
+
+  it("does not execute replace when confirmation is cancelled", async () => {
+    await openPanelAndClickReplaceAll();
+
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+
+    // Click Cancel in the dialog
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    // Dialog should close
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("alertdialog", { name: "Replace across manuscript?" }),
+      ).toBeNull();
+    });
+
+    // The replace API should not have been called
+    expect(api.search.replace).not.toHaveBeenCalled();
+  });
+});
