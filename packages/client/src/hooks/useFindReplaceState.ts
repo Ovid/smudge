@@ -26,6 +26,8 @@ export interface UseFindReplaceStateReturn {
   resultsQuery: string | null;
   /** The options that produced the current results (frozen at fetch time). */
   resultsOptions: SearchOptionsShape | null;
+  /** The replacement string as of the search that produced current results. */
+  resultsReplacement: string | null;
   loading: boolean;
   error: string | null;
   search: (projectSlug: string) => Promise<void>;
@@ -43,6 +45,7 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
   const [results, setResults] = useState<SearchResult | null>(null);
   const [resultsQuery, setResultsQuery] = useState<string | null>(null);
   const [resultsOptions, setResultsOptions] = useState<SearchOptionsShape | null>(null);
+  const [resultsReplacement, setResultsReplacement] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,6 +66,7 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
       setResults(null);
       setResultsQuery(null);
       setResultsOptions(null);
+      setResultsReplacement(null);
       setError(null);
       searchSeqRef.current++;
     }
@@ -89,15 +93,17 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
         setResults(null);
         setResultsQuery(null);
         setResultsOptions(null);
+        setResultsReplacement(null);
         setError(null);
         setLoading(false);
         return;
       }
-      // Snapshot the query/options as-of the request so replace-one can
-      // use the exact search context that produced the current results
+      // Snapshot the query/options/replacement as-of the request so replace
+      // operations use the exact context that produced the current results
       // (the user may be typing while waiting for the response).
       const frozenQuery = query;
       const frozenOptions: SearchOptionsShape = { ...options };
+      const frozenReplacement = replacement;
       setLoading(true);
       setError(null);
       try {
@@ -106,21 +112,26 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
         setResults(result);
         setResultsQuery(frozenQuery);
         setResultsOptions(frozenOptions);
+        setResultsReplacement(frozenReplacement);
       } catch (err) {
         if (seq !== searchSeqRef.current) return;
         if (err instanceof ApiRequestError && err.status === 400) {
-          setError(S.invalidRegex);
+          // The server uses 400 for both invalid regex and match-cap-exceeded;
+          // surface the server's human message when present, falling back to
+          // the generic invalid-regex string.
+          setError(err.message || S.invalidRegex);
         } else {
           setError(err instanceof Error ? err.message : "Search failed");
         }
         setResults(null);
         setResultsQuery(null);
         setResultsOptions(null);
+        setResultsReplacement(null);
       } finally {
         if (seq === searchSeqRef.current) setLoading(false);
       }
     },
-    [query, options],
+    [query, options, replacement],
   );
 
   // Debounced auto-search when query/options change
@@ -155,6 +166,7 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
     results,
     resultsQuery,
     resultsOptions,
+    resultsReplacement,
     loading,
     error,
     search: useCallback(

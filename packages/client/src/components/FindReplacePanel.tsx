@@ -261,8 +261,9 @@ export function FindReplacePanel({
               {/* Replace all in chapter */}
               <button
                 type="button"
+                disabled={!hasReplacement}
                 onClick={() => onReplaceAllInChapter(chapter.chapter_id)}
-                className="mt-2 text-xs font-medium text-accent border border-accent/40 rounded px-2 py-1 hover:bg-accent/10 transition-colors font-sans w-full"
+                className="mt-2 text-xs font-medium text-accent border border-accent/40 rounded px-2 py-1 hover:bg-accent/10 transition-colors font-sans w-full disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {S.replaceAllInChapter}
               </button>

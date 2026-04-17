@@ -230,46 +230,66 @@ export function EditorPage() {
 
   const handleReplaceAllInManuscript = useCallback(() => {
     const results = findReplace.results;
-    if (!results) return;
+    // Use the query/options/replacement that produced these results, not the
+    // live input — the user may have typed a new query during the 300ms
+    // debounce, which would make the count and the executed replace disagree.
+    const frozenQuery = findReplace.resultsQuery;
+    const frozenOptions = findReplace.resultsOptions;
+    const frozenReplacement = findReplace.resultsReplacement;
+    if (!results || !frozenQuery || !frozenOptions || frozenReplacement === null) return;
     setReplaceConfirmation({
       scope: { type: "project" },
-      query: findReplace.query,
-      replacement: findReplace.replacement,
-      options: findReplace.options,
+      query: frozenQuery,
+      replacement: frozenReplacement,
+      options: frozenOptions,
       totalCount: results.total_count,
       chapterCount: results.chapters.length,
       perChapterCount: 0,
     });
-  }, [findReplace.results, findReplace.query, findReplace.replacement, findReplace.options]);
+  }, [
+    findReplace.results,
+    findReplace.resultsQuery,
+    findReplace.resultsOptions,
+    findReplace.resultsReplacement,
+  ]);
 
   const handleReplaceAllInChapter = useCallback(
     (chapterId: string) => {
       const results = findReplace.results;
-      if (!results) return;
+      const frozenQuery = findReplace.resultsQuery;
+      const frozenOptions = findReplace.resultsOptions;
+      const frozenReplacement = findReplace.resultsReplacement;
+      if (!results || !frozenQuery || !frozenOptions || frozenReplacement === null) return;
       const chapter = results.chapters.find((c) => c.chapter_id === chapterId);
       if (!chapter) return;
       setReplaceConfirmation({
         scope: { type: "chapter", chapter_id: chapterId },
-        query: findReplace.query,
-        replacement: findReplace.replacement,
-        options: findReplace.options,
+        query: frozenQuery,
+        replacement: frozenReplacement,
+        options: frozenOptions,
         totalCount: chapter.matches.length,
         chapterCount: 1,
         perChapterCount: chapter.matches.length,
       });
     },
-    [findReplace.results, findReplace.query, findReplace.replacement, findReplace.options],
+    [
+      findReplace.results,
+      findReplace.resultsQuery,
+      findReplace.resultsOptions,
+      findReplace.resultsReplacement,
+    ],
   );
 
   const handleReplaceOne = useCallback(
     async (chapterId: string, matchIndex: number) => {
       if (!project || !slug) return;
-      // Use the query/options that produced the current results — not the
-      // current input state — so replace-one targets the match the user
-      // actually sees, even if they've started typing a new query.
+      // Use the query/options/replacement that produced the current results —
+      // not the live input — so replace-one targets the match the user
+      // actually sees with the replacement that was visible when they clicked.
       const frozenQuery = findReplace.resultsQuery;
       const frozenOptions = findReplace.resultsOptions;
-      if (!frozenQuery || !frozenOptions) return;
+      const frozenReplacement = findReplace.resultsReplacement;
+      if (!frozenQuery || !frozenOptions || frozenReplacement === null) return;
       const flushed = (await editorRef.current?.flushSave()) ?? true;
       if (!flushed) {
         setActionError(STRINGS.findReplace.replaceFailed);
@@ -280,7 +300,7 @@ export function EditorPage() {
         const result = await api.search.replace(
           slug,
           frozenQuery,
-          findReplace.replacement,
+          frozenReplacement,
           frozenOptions,
           { type: "chapter", chapter_id: chapterId, match_index: matchIndex },
         );

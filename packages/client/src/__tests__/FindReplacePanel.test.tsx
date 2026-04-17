@@ -214,6 +214,7 @@ describe("FindReplacePanel", () => {
         <FindReplacePanel
           {...defaultProps}
           query="dark"
+          replacement="light"
           results={results}
           onReplaceAllInChapter={onReplaceAllInChapter}
         />,
@@ -227,6 +228,16 @@ describe("FindReplacePanel", () => {
 
       await user.click(chapterReplaceButtons[1]!);
       expect(onReplaceAllInChapter).toHaveBeenCalledWith("ch-2");
+    });
+
+    it("'Replace All in Chapter' button is disabled when no replacement text", () => {
+      const results = makeResults();
+      render(<FindReplacePanel {...defaultProps} query="dark" replacement="" results={results} />);
+
+      const chapterButtons = screen.getAllByRole("button", { name: S.replaceAllInChapter });
+      for (const btn of chapterButtons) {
+        expect(btn).toBeDisabled();
+      }
     });
 
     it("'Replace All in Manuscript' button calls onReplaceAllInManuscript", async () => {
