@@ -252,6 +252,11 @@ test.describe("Find-and-Replace E2e Tests", () => {
 
     await panel.getByRole("button", { name: "Replace All in Manuscript" }).click();
 
+    // Confirm the replace in the confirmation dialog
+    const dialog = page.getByRole("alertdialog", { name: "Replace across manuscript?" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Replace All" }).click();
+
     // After replacement, results should refresh to "No matches found".
     await expect(panel.getByText("No matches found")).toBeVisible({ timeout: 5000 });
 

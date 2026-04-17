@@ -90,6 +90,10 @@ export function EditorPage() {
 
   const findReplace = useFindReplaceState(slug);
 
+  const [replaceConfirmation, setReplaceConfirmation] = useState<
+    { type: "project" } | { type: "chapter"; chapter_id: string } | null
+  >(null);
+
   // Panel exclusivity: when snapshot panel opens, close reference panel and vice versa
   const handleToggleSnapshotPanel = useCallback(() => {
     if (!snapshotPanelOpen) {
@@ -127,25 +131,8 @@ export function EditorPage() {
     }
   }, [viewingSnapshot, activeChapter, restoreSnapshot, reloadActiveChapter, snapshotPanelRef]);
 
-  const handleReplaceAllInManuscript = useCallback(async () => {
-    if (!project || !slug) return;
-    await editorRef.current?.flushSave();
-    const result = await api.search.replace(
-      slug,
-      findReplace.query,
-      findReplace.replacement,
-      findReplace.options,
-      { type: "project" },
-    );
-    if (activeChapter && result.affected_chapter_ids.includes(activeChapter.id)) {
-      await reloadActiveChapter();
-    }
-    await findReplace.search(slug);
-    snapshotPanelRef.current?.refreshSnapshots();
-  }, [project, slug, findReplace, activeChapter, reloadActiveChapter, snapshotPanelRef]);
-
-  const handleReplaceAllInChapter = useCallback(
-    async (chapterId: string) => {
+  const executeReplace = useCallback(
+    async (scope: { type: "project" } | { type: "chapter"; chapter_id: string }) => {
       if (!project || !slug) return;
       await editorRef.current?.flushSave();
       const result = await api.search.replace(
@@ -153,7 +140,7 @@ export function EditorPage() {
         findReplace.query,
         findReplace.replacement,
         findReplace.options,
-        { type: "chapter", chapter_id: chapterId },
+        scope,
       );
       if (activeChapter && result.affected_chapter_ids.includes(activeChapter.id)) {
         await reloadActiveChapter();
@@ -163,6 +150,14 @@ export function EditorPage() {
     },
     [project, slug, findReplace, activeChapter, reloadActiveChapter, snapshotPanelRef],
   );
+
+  const handleReplaceAllInManuscript = useCallback(() => {
+    setReplaceConfirmation({ type: "project" });
+  }, []);
+
+  const handleReplaceAllInChapter = useCallback((chapterId: string) => {
+    setReplaceConfirmation({ type: "chapter", chapter_id: chapterId });
+  }, []);
 
   const handleReplaceOne = useCallback(
     async (chapterId: string, _matchIndex: number) => {
@@ -676,6 +671,40 @@ export function EditorPage() {
           cancelLabel={STRINGS.delete.cancelButton}
           onConfirm={confirmDeleteChapter}
           onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {replaceConfirmation && findReplace.results && (
+        <ConfirmDialog
+          title={
+            replaceConfirmation.type === "project"
+              ? STRINGS.findReplace.replaceConfirmTitle
+              : STRINGS.findReplace.replaceChapterConfirmTitle
+          }
+          body={
+            replaceConfirmation.type === "project"
+              ? STRINGS.findReplace.replaceConfirm(
+                  findReplace.results.total_count,
+                  findReplace.query,
+                  findReplace.replacement,
+                  findReplace.results.chapters.length,
+                )
+              : STRINGS.findReplace.replaceChapterConfirm(
+                  findReplace.results.chapters.find(
+                    (c) => c.chapter_id === replaceConfirmation.chapter_id,
+                  )?.matches.length ?? 0,
+                  findReplace.query,
+                  findReplace.replacement,
+                )
+          }
+          confirmLabel={STRINGS.findReplace.replaceConfirmButton}
+          cancelLabel={STRINGS.findReplace.replaceCancelButton}
+          onConfirm={() => {
+            const scope = replaceConfirmation;
+            setReplaceConfirmation(null);
+            void executeReplace(scope);
+          }}
+          onCancel={() => setReplaceConfirmation(null)}
         />
       )}
 

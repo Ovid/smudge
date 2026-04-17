@@ -299,10 +299,14 @@ export const STRINGS = {
     replaceOne: "Replace",
     replaceAllInChapter: "Replace All in Chapter",
     replaceAllInManuscript: "Replace All in Manuscript",
+    replaceConfirmTitle: "Replace across manuscript?",
+    replaceChapterConfirmTitle: "Replace in chapter?",
     replaceConfirm: (count: number, search: string, replace: string, chapters: number) =>
       `Replace ${count} occurrence${count === 1 ? "" : "s"} of '${search}' with '${replace}' across ${chapters} chapter${chapters === 1 ? "" : "s"}? Snapshots of all affected chapters will be created automatically.`,
     replaceChapterConfirm: (count: number, search: string, replace: string) =>
       `Replace ${count} occurrence${count === 1 ? "" : "s"} of '${search}' with '${replace}' in this chapter? A snapshot will be created automatically.`,
+    replaceConfirmButton: "Replace All",
+    replaceCancelButton: "Cancel",
     matchNotFound: "Match no longer found — try searching again.",
     invalidRegex: "Invalid regular expression",
     chapterMatches: (title: string, count: number) =>
