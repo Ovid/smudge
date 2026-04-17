@@ -83,17 +83,20 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
         return;
       }
 
-      // Always intercept Ctrl/Cmd+S to prevent browser "Save Page" dialog
+      // Always intercept Ctrl/Cmd+S so the browser "Save Page" dialog never
+      // opens, even when a modal is up. But don't fire the flush while a
+      // modal is blocking the editor — that would produce a silent
+      // background save the user cannot observe.
       if (ctrl && e.code === "KeyS") {
         e.preventDefault();
+        if (
+          shortcutHelpOpenRef.current ||
+          deleteTargetRef.current ||
+          projectSettingsOpenRef.current ||
+          exportDialogOpenRef.current
+        )
+          return;
         flushSaveRef.current?.();
-        return;
-      }
-
-      // Toggle find-and-replace panel (Ctrl/Cmd+H)
-      if (ctrl && e.code === "KeyH") {
-        e.preventDefault();
-        toggleFindReplaceRef.current?.();
         return;
       }
 
@@ -105,6 +108,15 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
         exportDialogOpenRef.current
       )
         return;
+
+      // Toggle find-and-replace panel (Ctrl/Cmd+H).
+      // Placed after the modal-open guard so the panel can't be toggled
+      // underneath a confirmation dialog.
+      if (ctrl && e.code === "KeyH") {
+        e.preventDefault();
+        toggleFindReplaceRef.current?.();
+        return;
+      }
 
       if (ctrl && e.shiftKey && e.code === "KeyN") {
         e.preventDefault();

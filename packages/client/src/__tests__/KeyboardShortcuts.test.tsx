@@ -558,7 +558,7 @@ describe("Ctrl+H toggles find-and-replace panel", () => {
     );
   });
 
-  it("works even when a dialog is open", async () => {
+  it("does not toggle the panel when a dialog is open", async () => {
     renderEditorPage();
     await waitFor(
       () => {
@@ -586,7 +586,10 @@ describe("Ctrl+H toggles find-and-replace panel", () => {
     const preventDefaultSpy = vi.spyOn(event, "preventDefault");
     document.dispatchEvent(event);
 
-    // Ctrl+H should still be intercepted even with dialog open
-    expect(preventDefaultSpy).toHaveBeenCalled();
+    // Ctrl+H is ignored while a modal is open to avoid toggling the find
+    // panel behind the dialog. preventDefault is therefore not called.
+    expect(preventDefaultSpy).not.toHaveBeenCalled();
+    // And the find-replace panel must not have opened.
+    expect(screen.queryByRole("complementary", { name: /find/i })).not.toBeInTheDocument();
   });
 });
