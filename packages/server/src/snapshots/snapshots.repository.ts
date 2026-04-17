@@ -1,6 +1,6 @@
 import type { Knex } from "knex";
 import type { SnapshotRow, SnapshotListItem, CreateSnapshotData } from "./snapshots.types";
-import { createHash } from "crypto";
+import { canonicalContentHash } from "./content-hash";
 
 const TABLE = "chapter_snapshots";
 
@@ -41,5 +41,5 @@ export async function getLatestContentHash(db: Knex, chapterId: string): Promise
     .select("content")
     .first();
   if (!row) return null;
-  return createHash("sha256").update(row.content).digest("hex");
+  return canonicalContentHash(row.content);
 }

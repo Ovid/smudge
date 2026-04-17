@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { v4 as uuid } from "uuid";
-import { createHash } from "crypto";
+import { canonicalContentHash } from "../snapshots/content-hash";
 import { setupTestDb } from "./test-helpers";
 import * as SnapshotsRepo from "../snapshots/snapshots.repository";
 
@@ -189,7 +189,7 @@ describe("snapshots repository", () => {
       });
 
       const hash = await SnapshotsRepo.getLatestContentHash(t.db, chapterId);
-      const expected = createHash("sha256").update(content).digest("hex");
+      const expected = canonicalContentHash(content);
       expect(hash).toBe(expected);
     });
 

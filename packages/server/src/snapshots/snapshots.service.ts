@@ -1,10 +1,10 @@
 import { v4 as uuidv4 } from "uuid";
-import { createHash } from "crypto";
 import { countWords } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
+import { canonicalContentHash } from "./content-hash";
 import type { SnapshotRow, SnapshotListItem } from "./snapshots.types";
 
 export async function createSnapshot(
@@ -18,9 +18,11 @@ export async function createSnapshot(
 
   const content = chapter.content ?? JSON.stringify({ type: "doc", content: [] });
 
-  // Dedup guard: skip if content matches latest snapshot (manual snapshots only)
+  // Dedup guard: skip if content matches latest snapshot (manual snapshots only).
+  // Canonicalizing key order so dedup survives re-serialization (TipTap
+  // round-trips, replaceInDoc rebuilds, etc).
   if (!isAuto) {
-    const contentHash = createHash("sha256").update(content).digest("hex");
+    const contentHash = canonicalContentHash(content);
     const latestHash = await store.getLatestSnapshotContentHash(chapterId);
     if (latestHash === contentHash) return "duplicate";
   }
