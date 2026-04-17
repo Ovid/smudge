@@ -25,6 +25,7 @@ export function useProjectEditor(slug: string | undefined) {
   }
   const selectChapterSeqRef = useRef(0);
   const saveSeqRef = useRef(0);
+  const saveAbortRef = useRef<AbortController | null>(null);
   const statusChangeSeqRef = useRef(0);
 
   useEffect(() => {
@@ -64,6 +65,11 @@ export function useProjectEditor(slug: string | undefined) {
     if (!current) return false;
     const savingChapterId = current.id;
     const seq = ++saveSeqRef.current;
+    // AbortController lets cancelPendingSaves actually abort an in-flight
+    // PATCH — without this, a retry could land on the server after a
+    // subsequent snapshot restore and overwrite it.
+    const controller = new AbortController();
+    saveAbortRef.current = controller;
     const BACKOFF_MS = [2000, 4000, 8000];
     const MAX_RETRIES = BACKOFF_MS.length;
 
@@ -72,7 +78,11 @@ export function useProjectEditor(slug: string | undefined) {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (seq !== saveSeqRef.current) return false; // chapter changed, abort retries
       try {
-        const updated = await api.chapters.update(savingChapterId, { content });
+        const updated = await api.chapters.update(
+          savingChapterId,
+          { content },
+          controller.signal,
+        );
         if (seq !== saveSeqRef.current) return false; // chapter changed during request
         // Keep activeChapter in sync so that re-mounting the editor
         // (e.g. after toggling Preview → Editor) uses the latest content.
@@ -95,8 +105,15 @@ export function useProjectEditor(slug: string | undefined) {
         if (activeChapterRef.current?.id === savingChapterId) {
           setSaveStatus("saved");
         }
+        if (saveAbortRef.current === controller) saveAbortRef.current = null;
         return true;
       } catch (err) {
+        // Aborted: cancelPendingSaves intentionally cancelled this save
+        // (e.g. before a snapshot restore). Exit cleanly without flagging
+        // an error to the user.
+        if (err instanceof ApiRequestError && err.code === "ABORTED") {
+          return false;
+        }
         if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
           console.warn("Save failed with 4xx:", err);
           break;
@@ -106,6 +123,7 @@ export function useProjectEditor(slug: string | undefined) {
         }
       }
     }
+    if (saveAbortRef.current === controller) saveAbortRef.current = null;
     if (activeChapterRef.current?.id === savingChapterId) {
       setSaveStatus("error");
       setSaveErrorMessage(STRINGS.editor.saveFailed);
@@ -401,6 +419,12 @@ export function useProjectEditor(slug: string | undefined) {
     // while the editor is supposed to be read-only.
     cancelPendingSaves: () => {
       ++saveSeqRef.current;
+      // Abort the in-flight PATCH if any so a stale retry cannot land on
+      // the server after a subsequent snapshot restore.
+      if (saveAbortRef.current) {
+        saveAbortRef.current.abort();
+        saveAbortRef.current = null;
+      }
     },
   };
 }

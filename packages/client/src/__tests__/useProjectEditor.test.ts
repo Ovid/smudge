@@ -150,9 +150,11 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.saveStatus).toBe("saved");
-    expect(api.chapters.update).toHaveBeenCalledWith("ch1", {
-      content: { type: "doc", content: [] },
-    });
+    expect(api.chapters.update).toHaveBeenCalledWith(
+      "ch1",
+      { content: { type: "doc", content: [] } },
+      expect.any(AbortSignal),
+    );
   });
 
   it("syncs activeChapter content and word_count after successful save", async () => {

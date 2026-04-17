@@ -33,6 +33,13 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...options,
+  }).catch((err: unknown) => {
+    // Surface AbortController cancellation as a typed error so callers can
+    // distinguish "request aborted" from real network failure.
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new ApiRequestError("Request aborted", 0, "ABORTED");
+    }
+    throw err;
   });
 
   if (!res.ok) {
@@ -156,10 +163,12 @@ export const api = {
         content?: Record<string, unknown>;
         status?: string;
       },
+      signal?: AbortSignal,
     ) =>
       apiFetch<Chapter>(`/chapters/${id}`, {
         method: "PATCH",
         body: JSON.stringify(data),
+        signal,
       }),
 
     delete: (id: string) => apiFetch<{ message: string }>(`/chapters/${id}`, { method: "DELETE" }),
