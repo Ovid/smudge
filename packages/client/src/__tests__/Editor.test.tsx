@@ -390,6 +390,40 @@ describe("Editor", () => {
     });
   });
 
+  it("markClean prevents the fire-and-forget unmount save", async () => {
+    const onSave = vi.fn().mockResolvedValue(true);
+    const onContentChange = vi.fn();
+    const editorRef = { current: null } as { current: EditorHandle | null };
+    const { container, unmount } = render(
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={onSave}
+        onContentChange={onContentChange}
+        editorRef={editorRef}
+      />,
+    );
+
+    const editorEl = container.querySelector("[role='textbox']") as HTMLElement;
+    fireEvent.focus(editorEl);
+    editorEl.textContent = "dirty content";
+    fireEvent.input(editorEl);
+
+    await waitFor(() => {
+      expect(onContentChange).toHaveBeenCalled();
+    });
+    onSave.mockClear();
+
+    // Orchestration path (e.g. snapshot restore) marks clean before
+    // triggering the remount — unmount must NOT fire a save that would
+    // clobber the just-committed server state.
+    editorRef.current?.markClean();
+    unmount();
+
+    await act(async () => {});
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it("does not fire save on unmount when not dirty", async () => {
     const onSave = vi.fn().mockResolvedValue(true);
     const { unmount } = render(<Editor projectId="test-project" content={null} onSave={onSave} />);

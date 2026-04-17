@@ -181,6 +181,11 @@ export function EditorPage() {
     // Cancel any pending retry saves; their stale content would clobber
     // the restored snapshot once the server-side restore completes.
     cancelPendingSaves();
+    // Mark the editor clean so the unmount triggered by the upcoming
+    // reloadActiveChapter remount does NOT fire a fire-and-forget save of
+    // pre-restore content that would land after the server-side restore
+    // and silently undo it.
+    editorRef.current?.markClean();
     const result = await restoreSnapshot(viewingSnapshot.id);
     if (result.ok) {
       // If the user switched chapters mid-flight, reloading the now-active
@@ -223,6 +228,11 @@ export function EditorPage() {
         return;
       }
       cancelPendingSaves();
+      // Mark the editor clean so the upcoming remount (from
+      // reloadActiveChapter after a successful replace) does not fire
+      // an unmount PATCH with pre-replace content that would clobber
+      // the just-committed replacement.
+      editorRef.current?.markClean();
       setActionInfo(null);
       // Purge the localStorage draft cache BEFORE issuing the replace
       // request. Without this, a chapter switch during the in-flight
@@ -350,6 +360,9 @@ export function EditorPage() {
         return;
       }
       cancelPendingSaves();
+      // Mark editor clean so if a reloadActiveChapter remount follows,
+      // the unmount cleanup does not PATCH pre-replace content.
+      editorRef.current?.markClean();
       try {
         const result = await api.search.replace(
           slug,

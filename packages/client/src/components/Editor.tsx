@@ -11,6 +11,14 @@ export interface EditorHandle {
   flushSave: () => Promise<boolean>;
   editor: TipTapEditor | null;
   insertImage: (src: string, alt: string) => void;
+  /**
+   * Mark the editor as clean and cancel any pending debounced save.
+   * Orchestration paths that mutate chapter content server-side (snapshot
+   * restore, project-wide replace, chapter switch) call this before
+   * triggering a remount so the unmount cleanup does not fire a stale
+   * fire-and-forget save that would clobber the just-committed content.
+   */
+  markClean: () => void;
 }
 
 interface EditorProps {
@@ -248,6 +256,13 @@ export function Editor({
         insertImage: (src: string, alt: string) => {
           if (editor) {
             editor.chain().focus().setImage({ src, alt }).run();
+          }
+        },
+        markClean: () => {
+          dirtyRef.current = false;
+          if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
+            debounceTimerRef.current = null;
           }
         },
       };
