@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { canonicalContentHash } from "../snapshots/content-hash";
+import { logger } from "../logger";
 
 describe("canonicalContentHash", () => {
   it("produces the same hash regardless of key order", () => {
@@ -21,8 +22,18 @@ describe("canonicalContentHash", () => {
   });
 
   it("falls back to hashing raw string when input is not JSON", () => {
-    // Same invalid string hashes the same; different strings differ.
-    expect(canonicalContentHash("{not json")).toBe(canonicalContentHash("{not json"));
-    expect(canonicalContentHash("{not json")).not.toBe(canonicalContentHash("other"));
+    // Suppress and assert the corrupt-content warning to keep test output clean.
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    try {
+      // Same invalid string hashes the same; different strings differ.
+      expect(canonicalContentHash("{not json")).toBe(canonicalContentHash("{not json"));
+      expect(canonicalContentHash("{not json")).not.toBe(canonicalContentHash("other"));
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ content_length: expect.any(Number) }),
+        expect.stringContaining("not valid JSON"),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
