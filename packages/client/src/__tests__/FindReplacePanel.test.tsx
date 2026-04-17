@@ -208,9 +208,7 @@ describe("FindReplacePanel", () => {
 
     it("per-match 'Replace' button is disabled when replacement is empty", () => {
       const results = makeResults();
-      render(
-        <FindReplacePanel {...defaultProps} query="dark" replacement="" results={results} />,
-      );
+      render(<FindReplacePanel {...defaultProps} query="dark" replacement="" results={results} />);
       const replaceButtons = screen.getAllByRole("button", { name: S.replaceOne });
       for (const btn of replaceButtons) {
         expect(btn).toBeDisabled();
