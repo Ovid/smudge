@@ -593,6 +593,22 @@ describe("error handling", () => {
     await expect(api.projects.list()).rejects.toThrow("Request failed: 502");
   });
 
+  it("wraps fetch TypeError as ApiRequestError(0, NETWORK)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    let caught: unknown;
+    try {
+      await api.projects.list();
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("NETWORK");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+    expect((caught as Error).message).toMatch(/Failed to fetch/);
+  });
+
   it("handles 204 No Content response", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
