@@ -30,7 +30,8 @@ import { useChapterTitleEditing } from "../hooks/useChapterTitleEditing";
 import { useProjectTitleEditing } from "../hooks/useProjectTitleEditing";
 import { useTrashManager } from "../hooks/useTrashManager";
 import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcuts";
-import { api, ApiRequestError } from "../api/client";
+import { api } from "../api/client";
+import { mapReplaceErrorToMessage } from "../utils/findReplaceErrors";
 import { clearAllCachedContent, clearCachedContent } from "../hooks/useContentCache";
 import { Logo } from "../components/Logo";
 import { generateHTML } from "@tiptap/html";
@@ -264,29 +265,8 @@ export function EditorPage() {
           );
         }
       } catch (err) {
-        if (err instanceof ApiRequestError) {
-          // User navigated away or we cancelled — no banner.
-          if (err.code === "ABORTED") return;
-          if (err.status === 400) {
-            if (err.code === "MATCH_CAP_EXCEEDED") {
-              setActionError(STRINGS.findReplace.tooManyMatches);
-            } else if (err.code === "REGEX_TIMEOUT") {
-              setActionError(STRINGS.findReplace.searchTimedOut);
-            } else if (err.code === "CONTENT_TOO_LARGE") {
-              setActionError(STRINGS.findReplace.contentTooLarge);
-            } else if (err.code === "INVALID_REGEX") {
-              setActionError(STRINGS.findReplace.invalidRegex);
-            } else {
-              setActionError(err.message);
-            }
-          } else if (err.status === 404 && err.code === "SCOPE_NOT_FOUND") {
-            setActionError(STRINGS.findReplace.replaceScopeNotFound);
-          } else {
-            setActionError(err.message || STRINGS.findReplace.replaceFailed);
-          }
-        } else {
-          setActionError(STRINGS.findReplace.replaceFailed);
-        }
+        const msg = mapReplaceErrorToMessage(err);
+        if (msg) setActionError(msg);
       }
     },
     [
@@ -392,31 +372,8 @@ export function EditorPage() {
         snapshotPanelRef.current?.refreshSnapshots();
         setActionInfo(STRINGS.findReplace.replaceSuccess(result.replaced_count));
       } catch (err) {
-        // Mirror executeReplace's discriminated handling so the user sees
-        // accurate copy for code-specific failures (too many matches,
-        // timeout, oversize replacement, scope missing, abort).
-        if (err instanceof ApiRequestError) {
-          if (err.code === "ABORTED") return;
-          if (err.status === 400) {
-            if (err.code === "MATCH_CAP_EXCEEDED") {
-              setActionError(STRINGS.findReplace.tooManyMatches);
-            } else if (err.code === "REGEX_TIMEOUT") {
-              setActionError(STRINGS.findReplace.searchTimedOut);
-            } else if (err.code === "CONTENT_TOO_LARGE") {
-              setActionError(STRINGS.findReplace.contentTooLarge);
-            } else if (err.code === "INVALID_REGEX") {
-              setActionError(STRINGS.findReplace.invalidRegex);
-            } else {
-              setActionError(err.message);
-            }
-          } else if (err.status === 404 && err.code === "SCOPE_NOT_FOUND") {
-            setActionError(STRINGS.findReplace.replaceScopeNotFound);
-          } else {
-            setActionError(err.message || STRINGS.findReplace.replaceFailed);
-          }
-        } else {
-          setActionError(STRINGS.findReplace.replaceFailed);
-        }
+        const msg = mapReplaceErrorToMessage(err);
+        if (msg) setActionError(msg);
       }
     },
     [
