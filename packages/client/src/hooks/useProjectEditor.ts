@@ -76,6 +76,10 @@ export function useProjectEditor(slug: string | undefined) {
     // AbortController lets cancelPendingSaves actually abort an in-flight
     // PATCH — without this, a retry could land on the server after a
     // subsequent snapshot restore and overwrite it.
+    // Also: abort any prior in-flight save before issuing a new one. Debounce
+    // and onBlur can fire overlapping saves; without this, two PATCHes can
+    // commit out-of-order, regressing persisted content to the older version.
+    saveAbortRef.current?.abort();
     const controller = new AbortController();
     saveAbortRef.current = controller;
     const BACKOFF_MS = [2000, 4000, 8000];
