@@ -1153,4 +1153,33 @@ describe("EditorPage find-and-replace confirmation", () => {
     // The replace API should not have been called
     expect(api.search.replace).not.toHaveBeenCalled();
   });
+
+  it("shows chapter-scope confirmation when Replace All in Chapter is clicked", async () => {
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+
+    const searchInput = await screen.findByLabelText("Find");
+    const replaceInput = screen.getByLabelText("Replace");
+    fireEvent.change(searchInput, { target: { value: "foo" } });
+    fireEvent.change(replaceInput, { target: { value: "qux" } });
+
+    const perChapterButton = await screen.findByRole(
+      "button",
+      { name: "Replace All in Chapter" },
+      { timeout: 3000 },
+    );
+    await userEvent.click(perChapterButton);
+
+    const dialog = await screen.findByRole("alertdialog", { name: "Replace in chapter?" });
+    expect(dialog).toBeInTheDocument();
+    // Dialog body uses the chapter-scope confirm copy with per-chapter count.
+    expect(dialog).toHaveTextContent(/2 occurrences of 'foo' with 'qux' in this chapter/);
+  });
 });

@@ -77,6 +77,24 @@ describe("snapshot routes", () => {
       expect(second.status).toBe(200);
       expect(second.body.message).toBeDefined();
     });
+
+    it("returns 400 when the body fails schema validation", async () => {
+      const { chapterId } = await createTestProject();
+
+      const res = await request(t.app)
+        .post(`/api/chapters/${chapterId}/snapshots`)
+        .send({ label: 42 }); // label must be a string
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 400 when chapter id is not a UUID", async () => {
+      const res = await request(t.app).post(`/api/chapters/not-a-uuid/snapshots`).send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
   });
 
   describe("GET /api/chapters/:id/snapshots", () => {
@@ -200,6 +218,48 @@ describe("snapshot routes", () => {
 
       expect(res.status).toBe(404);
       expect(res.body.error.code).toBe("NOT_FOUND");
+    });
+
+    it("returns 400 for non-UUID snapshot id on restore", async () => {
+      const res = await request(t.app).post("/api/snapshots/not-a-uuid/restore");
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 422 when the snapshot content is corrupt", async () => {
+      const { chapterId } = await createTestProject();
+
+      // Insert a snapshot with intentionally-corrupt content via the raw db.
+      const createRes = await request(t.app)
+        .post(`/api/chapters/${chapterId}/snapshots`)
+        .send({ label: "corrupt-me" });
+      const snapshotId = createRes.body.id;
+      await t
+        .db("chapter_snapshots")
+        .where({ id: snapshotId })
+        .update({ content: "{corrupt json!!" });
+
+      const res = await request(t.app).post(`/api/snapshots/${snapshotId}/restore`);
+
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe("CORRUPT_SNAPSHOT");
+
+      // Chapter must remain unchanged.
+      const chapter = await t.db("chapters").where({ id: chapterId }).first();
+      const parsed = JSON.parse(chapter.content);
+      expect(parsed.content[0].content[0].text).toBe("Hello world");
+    });
+
+    it("returns 400 for non-UUID snapshot id on GET", async () => {
+      const res = await request(t.app).get("/api/snapshots/not-a-uuid");
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 400 for non-UUID snapshot id on DELETE", async () => {
+      const res = await request(t.app).delete("/api/snapshots/not-a-uuid");
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
     });
   });
 });

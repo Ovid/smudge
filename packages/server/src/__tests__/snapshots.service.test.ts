@@ -445,5 +445,40 @@ describe("snapshots.service", () => {
       const result = await restoreSnapshot(snap.id);
       expect(result).toBeNull();
     });
+
+    it("succeeds even when velocity recordSave throws (best-effort)", async () => {
+      const { logger } = await import("../logger");
+      const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+
+      setVelocityService({
+        recordSave: async () => {
+          throw new Error("velocity broken");
+        },
+        updateDailySnapshot: async () => {
+          throw new Error("velocity broken");
+        },
+      });
+
+      const { chapterId } = await createProjectAndChapter();
+      const { createSnapshot, restoreSnapshot } = await import("../snapshots/snapshots.service");
+      const snap = (await createSnapshot(chapterId, "pre-velocity-fail")) as Exclude<
+        Awaited<ReturnType<typeof createSnapshot>>,
+        null | "duplicate"
+      >;
+
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ content: JSON.stringify(DOC_JSON_ALT), word_count: 2 });
+
+      const result = await restoreSnapshot(snap.id);
+      expect(result).not.toBeNull();
+      expect(result).not.toBe("corrupt_snapshot");
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ project_id: expect.any(String) }),
+        "Velocity recordSave failed after restore (best-effort)",
+      );
+      logSpy.mockRestore();
+    });
   });
 });

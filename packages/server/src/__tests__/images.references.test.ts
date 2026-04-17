@@ -4,11 +4,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
+import { vi } from "vitest";
 import {
   extractImageIds,
   diffImageReferences,
   scanImageReferences,
+  applyImageRefDiff,
 } from "../images/images.references";
+import { logger } from "../logger";
 import * as imagesService from "../images/images.service";
 
 const TEST_PNG = Buffer.from(
@@ -227,6 +230,35 @@ function makeContentNoImages(): Record<string, unknown> {
     ],
   };
 }
+
+describe("applyImageRefDiff()", () => {
+  it("logs a warning and skips increment when the referenced image is gone", async () => {
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const incrementCalls: Array<[string, number]> = [];
+    const missingId = "00000000-0000-0000-0000-000000000000";
+
+    await applyImageRefDiff(
+      {
+        findImageById: async () => null,
+        incrementImageReferenceCount: async (id, delta) => {
+          incrementCalls.push([id, delta]);
+        },
+      },
+      null,
+      JSON.stringify({
+        type: "doc",
+        content: [{ type: "image", attrs: { src: `/api/images/${missingId}` } }],
+      }),
+    );
+
+    expect(incrementCalls).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      { image_id: missingId },
+      "Referenced image no longer exists; chapter will render a broken image",
+    );
+    warnSpy.mockRestore();
+  });
+});
 
 describe("scanImageReferences()", () => {
   it("returns empty array when image is not referenced", async () => {
