@@ -1237,7 +1237,9 @@ describe("EditorPage find-and-replace confirmation", () => {
     });
   });
 
-  it("surfaces 5xx with server message rather than generic copy", async () => {
+  it("surfaces 5xx with generic replaceFailed copy (no raw server message leak)", async () => {
+    // CLAUDE.md: all UI strings must route through strings.ts; raw server
+    // messages must not leak to the UI (blocks i18n).
     const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
       new ApiRequestError("Something specific broke", 500, "INTERNAL_ERROR"),
@@ -1248,8 +1250,9 @@ describe("EditorPage find-and-replace confirmation", () => {
     await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
 
     await waitFor(() => {
-      expect(screen.getByText(/Something specific broke/)).toBeInTheDocument();
+      expect(screen.getByText(STRINGS.findReplace.replaceFailed)).toBeInTheDocument();
     });
+    expect(screen.queryByText(/Something specific broke/)).toBeNull();
   });
 
   it("handleReplaceOne surfaces MATCH_CAP_EXCEEDED with tooManyMatches copy", async () => {
@@ -1276,6 +1279,34 @@ describe("EditorPage find-and-replace confirmation", () => {
 
     await waitFor(() => {
       expect(screen.getByText(STRINGS.findReplace.tooManyMatches)).toBeInTheDocument();
+    });
+  });
+
+  it("handleReplaceOne clears the target chapter's cached draft on success", async () => {
+    const { clearCachedContent } = await import("../hooks/useContentCache");
+    vi.mocked(clearCachedContent).mockClear();
+    vi.mocked(api.search.replace).mockResolvedValueOnce({
+      replaced_count: 1,
+      affected_chapter_ids: ["ch-1"],
+    });
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
+    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+
+    const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
+    await userEvent.click(replaceOne[0]!);
+
+    await waitFor(() => {
+      expect(clearCachedContent).toHaveBeenCalledWith("ch-1");
     });
   });
 

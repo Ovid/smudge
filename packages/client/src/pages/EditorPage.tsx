@@ -364,6 +364,12 @@ export function EditorPage() {
           await findReplace.search(slug);
           return;
         }
+        // Purge the localStorage draft cache for the targeted chapter so a
+        // pre-replace draft for a non-active chapter isn't overlayed on the
+        // server's replaced content when the user navigates back. The active
+        // chapter was flushed above; this matters for chapter-scoped replace
+        // when the target is a different chapter than the active one.
+        clearCachedContent(chapterId);
         const current = getActiveChapter();
         if (current && result.affected_chapter_ids.includes(current.id)) {
           await reloadActiveChapter();
