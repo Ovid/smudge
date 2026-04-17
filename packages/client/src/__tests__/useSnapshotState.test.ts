@@ -228,6 +228,23 @@ describe("useSnapshotState", () => {
     expect(r.message).toBe("Corrupt");
   });
 
+  it("restoreSnapshot surfaces not_found reason on 404", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.snapshots.restore).mockRejectedValue(
+      new ApiRequestError("Snapshot or chapter not found.", 404, "NOT_FOUND"),
+    );
+
+    const { result } = renderHook(() => useSnapshotState("ch-1"));
+    let r: { ok: boolean; reason?: string; message?: string } = { ok: true };
+    await act(async () => {
+      r = await result.current.restoreSnapshot("snap-1");
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("not_found");
+    expect(r.message).toBe("Snapshot or chapter not found.");
+  });
+
   it("leaves count null when list fetch fails so badge stays hidden", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.snapshots.list).mockRejectedValue(new Error("network error"));
