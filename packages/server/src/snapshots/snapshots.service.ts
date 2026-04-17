@@ -1,11 +1,12 @@
 import { v4 as uuidv4 } from "uuid";
-import { countWords } from "@smudge/shared";
+import { countWords, validateTipTapDepth } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
 import { enrichChapterWithLabel } from "../chapters/chapters.types";
 import { canonicalContentHash } from "./content-hash";
+import { MAX_CHAPTER_CONTENT_BYTES } from "../search/search.service";
 import type { SnapshotRow, SnapshotListItem } from "./snapshots.types";
 
 export async function createSnapshot(
@@ -91,11 +92,18 @@ export async function restoreSnapshot(
   const snapshot = await store.findSnapshotById(snapshotId);
   if (!snapshot) return null;
 
-  // Refuse to restore corrupt snapshot content into a chapter — doing so
-  // would silently replace valid content with an unparseable blob and
-  // word_count=0, leaving the chapter unrenderable. JSON.parse alone is
-  // insufficient: `42`, `[]`, `{"foo":1}` all parse but are not TipTap
-  // documents and would render as nothing.
+  // Refuse to restore snapshot content that is either corrupt or would
+  // produce a chapter that can't subsequently be autosaved. JSON.parse
+  // alone is insufficient: `42`, `[]`, `{"foo":1}` all parse but are not
+  // TipTap documents and would render as nothing. Also enforce:
+  //  - the shared depth cap (MAX_TIPTAP_DEPTH) so downstream recursive
+  //    walkers (countWords, applyImageRefDiff) can't blow the stack on
+  //    a legacy/imported deeply-nested snapshot — this matches the cap
+  //    enforced on incoming chapter updates via TipTapDocSchema.
+  //  - MAX_CHAPTER_CONTENT_BYTES so a restored chapter stays within the
+  //    autosave request-body limit. Without this, a legacy oversize
+  //    snapshot could be restored into a chapter that every subsequent
+  //    save would reject with 413.
   let newParsed: Record<string, unknown>;
   try {
     const parsed: unknown = JSON.parse(snapshot.content);
@@ -108,8 +116,14 @@ export async function restoreSnapshot(
     ) {
       return "corrupt_snapshot";
     }
+    if (!validateTipTapDepth(parsed)) {
+      return "corrupt_snapshot";
+    }
     newParsed = parsed as Record<string, unknown>;
   } catch {
+    return "corrupt_snapshot";
+  }
+  if (Buffer.byteLength(snapshot.content, "utf8") > MAX_CHAPTER_CONTENT_BYTES) {
     return "corrupt_snapshot";
   }
 

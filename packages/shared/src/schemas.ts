@@ -47,9 +47,15 @@ export const UpdateProjectSchema = z
  * manuscripts are nowhere near this — even a deeply nested blockquote/list
  * combination rarely exceeds 10–15.
  */
-const MAX_TIPTAP_DEPTH = 64;
+export const MAX_TIPTAP_DEPTH = 64;
 
-function validateTipTapDepth(node: unknown, depth: number): boolean {
+/**
+ * Walks a TipTap doc and returns false if any `content[]` recursion
+ * exceeds MAX_TIPTAP_DEPTH. Exported so callers that work with already-
+ * parsed documents (snapshot restore, find/replace) can apply the same
+ * guard without paying for full Zod schema parsing.
+ */
+export function validateTipTapDepth(node: unknown, depth: number = 0): boolean {
   if (depth > MAX_TIPTAP_DEPTH) return false;
   if (!node || typeof node !== "object") return true;
   const content = (node as { content?: unknown }).content;
