@@ -74,7 +74,9 @@ export async function applyImageRefDiff(
     try {
       oldContent = JSON.parse(oldContentJson);
     } catch {
-      /* corrupt */
+      // Old content corrupt: treat old image set as empty. This only
+      // affects *additions* (images newly referenced), which we're happy
+      // to over-count rather than under-count.
     }
   }
   let newContent: Record<string, unknown> | null = null;
@@ -82,7 +84,17 @@ export async function applyImageRefDiff(
     try {
       newContent = JSON.parse(newContentJson);
     } catch {
-      /* corrupt */
+      // New content corrupt: abort. If we proceeded, extractImageIds(null)
+      // would return [] and every old id would be classified as removed —
+      // silently decrementing every referenced image toward purge. Ref
+      // counts must stay conservative, not optimistic. Callers validate
+      // content before writing, so this path is latent today but the
+      // shared surface must be safe for future writers.
+      logger.warn(
+        { project_id: projectId },
+        "applyImageRefDiff: newContent JSON.parse failed; aborting diff to avoid mass decrement",
+      );
+      return;
     }
   }
 
