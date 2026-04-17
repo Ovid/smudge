@@ -1133,9 +1133,7 @@ describe("EditorPage find-and-replace confirmation", () => {
 
     // Dialog should close after confirming
     await waitFor(() => {
-      expect(
-        screen.queryByRole("alertdialog", { name: "Replace across manuscript?" }),
-      ).toBeNull();
+      expect(screen.queryByRole("alertdialog", { name: "Replace across manuscript?" })).toBeNull();
     });
   });
 
@@ -1149,9 +1147,7 @@ describe("EditorPage find-and-replace confirmation", () => {
 
     // Dialog should close
     await waitFor(() => {
-      expect(
-        screen.queryByRole("alertdialog", { name: "Replace across manuscript?" }),
-      ).toBeNull();
+      expect(screen.queryByRole("alertdialog", { name: "Replace across manuscript?" })).toBeNull();
     });
 
     // The replace API should not have been called
