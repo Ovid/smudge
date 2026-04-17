@@ -882,7 +882,7 @@ export function EditorPage() {
               // believes they are just inspecting history.
               await editorRef.current?.flushSave();
               cancelPendingSaves();
-              await viewSnapshot(snap);
+              return viewSnapshot(snap);
             }}
             onBeforeCreate={async () => {
               const flushed = (await editorRef.current?.flushSave()) ?? true;
