@@ -41,11 +41,12 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   // Monotonic counter to discard stale list responses after a chapter switch.
   const chapterSeqRef = useRef(0);
 
-  // Fetch snapshot count when chapterId changes or panel opens
+  // Fetch snapshot count when chapterId changes. Reset to 0 first so the
+  // badge never briefly shows the previous chapter's count while the
+  // list request is in flight.
   useEffect(() => {
     const seq = ++chapterSeqRef.current;
-    // Reset to 0 immediately so the badge shows the new chapter's count
-    // rather than the previous chapter's until the fetch resolves.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: must reset before fetch resolves
     setSnapshotCount(0);
     if (!chapterId) return;
     api.snapshots

@@ -384,6 +384,22 @@ describe("search.service", () => {
       expect(r.validationError).toBeTruthy();
     });
 
+    it("returns validationError when total replacements exceed the match cap", async () => {
+      // Build a chapter large enough that a trivial search pattern finds
+      // more than the MAX_MATCHES_PER_REQUEST (10 000) occurrences.
+      const { replaceInProject } = await import("../search/search.service");
+      const projectId = await createProject();
+      // 10001 "a"s in a single paragraph → 10001 matches for the search "a".
+      const bigText = "a".repeat(10_001);
+      await createChapter(projectId, "Ch", JSON.stringify(makeDoc(bigText)), 0);
+
+      const result = await replaceInProject(projectId, "a", "b");
+      expect(result).not.toBeNull();
+      expect("validationError" in result!).toBe(true);
+      const r = result as { validationError: string };
+      expect(r.validationError).toMatch(/too many matches/i);
+    });
+
     it("rejects regex patterns with nested quantifiers (ReDoS guard)", async () => {
       const { replaceInProject } = await import("../search/search.service");
       const projectId = await createProject();

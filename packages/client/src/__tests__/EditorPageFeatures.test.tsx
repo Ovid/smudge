@@ -1183,3 +1183,92 @@ describe("EditorPage find-and-replace confirmation", () => {
     expect(dialog).toHaveTextContent(/2 occurrences of 'foo' with 'qux' in this chapter/);
   });
 });
+
+describe("EditorPage snapshot panel", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.projects.get).mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
+    vi.mocked(api.snapshots.list).mockResolvedValue([]);
+  });
+
+  it("opens the snapshot panel via toolbar button and shows the empty state", async () => {
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    // The toolbar button's aria-label is "Snapshots" (no count when empty).
+    const button = await screen.findByRole("button", { name: /^Snapshots$/ });
+    await userEvent.click(button);
+
+    await waitFor(() => {
+      expect(screen.getByRole("complementary", { name: "Chapter snapshots" })).toBeInTheDocument();
+    });
+  });
+
+  it("clicks View on a snapshot (exercises onView flushSave/cancelPendingSaves path)", async () => {
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-1",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+    ]);
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-1",
+      chapter_id: "ch-1",
+      label: "v1",
+      content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+      word_count: 5,
+      is_auto: false,
+      created_at: "2026-04-17T10:00:00Z",
+    });
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    const viewBtn = await screen.findByRole("button", { name: "View" });
+    await userEvent.click(viewBtn);
+
+    await waitFor(() => {
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+    });
+  });
+
+  it("clicks Create Snapshot in the panel (exercises onBeforeCreate)", async () => {
+    // @ts-expect-error — mock shape matches client expectations at runtime.
+    vi.mocked(api.snapshots).create = vi.fn().mockResolvedValue({
+      duplicate: false,
+      snapshot: {
+        id: "snap-new",
+        chapter_id: "ch-1",
+        label: null,
+        content: "{}",
+        word_count: 10,
+        is_auto: false,
+        created_at: new Date().toISOString(),
+      },
+    });
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    const button = await screen.findByRole("button", { name: /^Snapshots$/ });
+    await userEvent.click(button);
+
+    const create = await screen.findByRole("button", { name: "Create Snapshot" });
+    await userEvent.click(create);
+
+    const save = await screen.findByRole("button", { name: "Save" });
+    await userEvent.click(save);
+  });
+});

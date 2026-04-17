@@ -463,6 +463,20 @@ describe("replaceInDoc", () => {
     expect(searchInDoc(d2, "café", { whole_word: true })).toHaveLength(1);
   });
 
+  it("replace leaves empty runs around hardBreak untouched", () => {
+    // First run empty, second run has the match. Exercises the empty-run
+    // branch in splitBlockRuns.
+    const hardBreak = { type: "hardBreak" } as unknown as TipTapTextNode;
+    const d = doc(paragraph(hardBreak, text("world")));
+    const result = replaceInDoc(d, "world", "earth");
+    expect(result.count).toBe(1);
+    const para = contentOf(result.doc)[0]!;
+    const content = (para.content ?? []) as TipTapTextNode[];
+    // [hardBreak, text("earth")]
+    expect((content[0] as unknown as { type: string }).type).toBe("hardBreak");
+    expect(content[1]!.text).toBe("earth");
+  });
+
   it("searchInDoc does not match across a hardBreak boundary", () => {
     const hardBreak = { type: "hardBreak" } as unknown as TipTapTextNode;
     const d = doc(paragraph(text("foo"), hardBreak, text("bar")));

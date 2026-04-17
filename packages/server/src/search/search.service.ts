@@ -20,6 +20,7 @@ import type { SearchResult } from "./search.types";
  *     pairs or combining sequences.
  */
 function truncateForLabel(s: string, max = 30): string {
+  // eslint-disable-next-line no-control-regex -- intentionally strips control chars
   const cleaned = s.replace(/[\u0000-\u0008\u000A-\u001F\u007F]/g, "");
   const segmenter =
     typeof Intl !== "undefined" && "Segmenter" in Intl
@@ -74,7 +75,8 @@ export async function searchProject(
   if (!project) return null;
 
   const chapters = await store.listChapterContentByProject(projectId);
-  const result: SearchResult = { total_count: 0, chapters: [], skipped_chapter_ids: [] };
+  const skippedIds: string[] = [];
+  const result: SearchResult = { total_count: 0, chapters: [] };
 
   for (const chapter of chapters) {
     if (!chapter.content) continue;
@@ -87,7 +89,7 @@ export async function searchProject(
         { chapter_id: chapter.id, project_id: projectId },
         "Skipping chapter with corrupt JSON during search",
       );
-      result.skipped_chapter_ids!.push(chapter.id);
+      skippedIds.push(chapter.id);
       continue;
     }
 
@@ -107,9 +109,7 @@ export async function searchProject(
     }
   }
 
-  if (result.skipped_chapter_ids!.length === 0) {
-    delete result.skipped_chapter_ids;
-  }
+  if (skippedIds.length > 0) result.skipped_chapter_ids = skippedIds;
   return result;
 }
 
@@ -136,103 +136,110 @@ export async function replaceInProject(
   const project = await store.findProjectById(projectId);
   if (!project) return null;
 
-  const txResult = await store.transaction(async (txStore) => {
-    // Get chapters to process
-    let chapters: Array<{ id: string; title: string; content: string | null; word_count: number }>;
+  const txResult = await store
+    .transaction(async (txStore) => {
+      // Get chapters to process
+      let chapters: Array<{
+        id: string;
+        title: string;
+        content: string | null;
+        word_count: number;
+      }>;
 
-    if (scope?.type === "chapter") {
-      const chapter = await txStore.findChapterByIdRaw(scope.chapter_id);
-      if (!chapter || chapter.project_id !== projectId) {
-        return { replaced_count: 0, affected_chapter_ids: [] };
+      if (scope?.type === "chapter") {
+        const chapter = await txStore.findChapterByIdRaw(scope.chapter_id);
+        if (!chapter || chapter.project_id !== projectId) {
+          return { replaced_count: 0, affected_chapter_ids: [] };
+        }
+        chapters = [
+          {
+            id: chapter.id,
+            title: chapter.title,
+            content: chapter.content,
+            word_count: chapter.word_count,
+          },
+        ];
+      } else {
+        chapters = await txStore.listChapterContentByProject(projectId);
       }
-      chapters = [
-        {
-          id: chapter.id,
-          title: chapter.title,
+
+      let totalReplaced = 0;
+      const affectedIds: string[] = [];
+      const skippedIds: string[] = [];
+
+      for (const chapter of chapters) {
+        if (!chapter.content) continue;
+
+        let parsed: Record<string, unknown>;
+        try {
+          parsed = JSON.parse(chapter.content);
+        } catch {
+          logger.warn(
+            { chapter_id: chapter.id, project_id: projectId },
+            "Skipping chapter with corrupt JSON during replace",
+          );
+          skippedIds.push(chapter.id);
+          continue;
+        }
+
+        const replaceOptions =
+          scope?.type === "chapter" && typeof scope.match_index === "number"
+            ? { ...options, match_index: scope.match_index }
+            : options;
+        const { doc: newDoc, count } = replaceInDoc(parsed, search, replace, replaceOptions);
+        if (count === 0) continue;
+
+        totalReplaced += count;
+        if (totalReplaced > MAX_MATCHES_PER_REQUEST) {
+          throw new MatchCapExceeded();
+        }
+        affectedIds.push(chapter.id);
+
+        const label = `Before find-and-replace: '${truncateForLabel(search)}' → '${truncateForLabel(replace)}'`;
+
+        // Auto-snapshot before replacement (using DB-committed word_count)
+        await txStore.insertSnapshot({
+          id: uuidv4(),
+          chapter_id: chapter.id,
+          label,
           content: chapter.content,
           word_count: chapter.word_count,
-        },
-      ];
-    } else {
-      chapters = await txStore.listChapterContentByProject(projectId);
-    }
+          is_auto: true,
+          created_at: new Date().toISOString(),
+        });
 
-    let totalReplaced = 0;
-    const affectedIds: string[] = [];
-    const skippedIds: string[] = [];
+        // Update chapter content
+        const newContentJson = JSON.stringify(newDoc);
+        const newWordCount = countWords(newDoc);
+        const now = new Date().toISOString();
 
-    for (const chapter of chapters) {
-      if (!chapter.content) continue;
+        await txStore.updateChapter(chapter.id, {
+          content: newContentJson,
+          word_count: newWordCount,
+          updated_at: now,
+        });
 
-      let parsed: Record<string, unknown>;
-      try {
-        parsed = JSON.parse(chapter.content);
-      } catch {
-        logger.warn(
-          { chapter_id: chapter.id, project_id: projectId },
-          "Skipping chapter with corrupt JSON during replace",
-        );
-        skippedIds.push(chapter.id);
-        continue;
+        // Adjust image reference counts
+        await applyImageRefDiff(txStore, chapter.content, newContentJson);
       }
 
-      const replaceOptions =
-        scope?.type === "chapter" && typeof scope.match_index === "number"
-          ? { ...options, match_index: scope.match_index }
-          : options;
-      const { doc: newDoc, count } = replaceInDoc(parsed, search, replace, replaceOptions);
-      if (count === 0) continue;
-
-      totalReplaced += count;
-      if (totalReplaced > MAX_MATCHES_PER_REQUEST) {
-        throw new MatchCapExceeded();
+      // Bump the project's updated_at once per replace, not once per chapter
+      if (affectedIds.length > 0) {
+        await txStore.updateProjectTimestamp(projectId, new Date().toISOString());
       }
-      affectedIds.push(chapter.id);
 
-      const label = `Before find-and-replace: '${truncateForLabel(search)}' → '${truncateForLabel(replace)}'`;
-
-      // Auto-snapshot before replacement (using DB-committed word_count)
-      await txStore.insertSnapshot({
-        id: uuidv4(),
-        chapter_id: chapter.id,
-        label,
-        content: chapter.content,
-        word_count: chapter.word_count,
-        is_auto: true,
-        created_at: new Date().toISOString(),
-      });
-
-      // Update chapter content
-      const newContentJson = JSON.stringify(newDoc);
-      const newWordCount = countWords(newDoc);
-      const now = new Date().toISOString();
-
-      await txStore.updateChapter(chapter.id, {
-        content: newContentJson,
-        word_count: newWordCount,
-        updated_at: now,
-      });
-
-      // Adjust image reference counts
-      await applyImageRefDiff(txStore, chapter.content, newContentJson);
-    }
-
-    // Bump the project's updated_at once per replace, not once per chapter
-    if (affectedIds.length > 0) {
-      await txStore.updateProjectTimestamp(projectId, new Date().toISOString());
-    }
-
-    return {
-      replaced_count: totalReplaced,
-      affected_chapter_ids: affectedIds,
-      skipped_chapter_ids: skippedIds,
-    };
-  }).catch((err) => {
-    if (err instanceof MatchCapExceeded) {
-      return { validationError: err.message } as const;
-    }
-    throw err;
-  });
+      return {
+        replaced_count: totalReplaced,
+        affected_chapter_ids: affectedIds,
+        skipped_chapter_ids: skippedIds,
+      };
+    })
+    .catch((err) => {
+      if (err instanceof MatchCapExceeded) {
+        return { validationError: err.message } as const;
+      }
+      throw err;
+    });
 
   if ("validationError" in txResult) return txResult;
 
