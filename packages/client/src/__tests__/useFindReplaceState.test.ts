@@ -71,6 +71,35 @@ describe("useFindReplaceState", () => {
     expect(result.current.panelOpen).toBe(false);
   });
 
+  it("closePanel clears stale result state", async () => {
+    mockFind.mockResolvedValue({
+      total_count: 2,
+      chapters: [],
+    });
+
+    const { result } = renderHook(() => useFindReplaceState("my-project"));
+
+    act(() => {
+      result.current.togglePanel();
+      result.current.setQuery("foo");
+    });
+
+    // Let the debounced search fire
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(result.current.results).not.toBeNull();
+
+    act(() => {
+      result.current.closePanel();
+    });
+    expect(result.current.panelOpen).toBe(false);
+    // Reopening must not resurface the stale result set.
+    expect(result.current.results).toBeNull();
+    expect(result.current.resultsQuery).toBeNull();
+    expect(result.current.resultsOptions).toBeNull();
+  });
+
   it("toggleOption toggles search options", () => {
     const { result } = renderHook(() => useFindReplaceState("my-project"));
 

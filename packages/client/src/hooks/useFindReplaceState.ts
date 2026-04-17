@@ -74,6 +74,18 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
 
   const closePanel = useCallback(() => {
     setPanelOpen(false);
+    // Clear result state so reopening the panel (Ctrl+H → Esc → Ctrl+H)
+    // does not surface a stale result set pinned to potentially edited
+    // content. The query input itself is preserved so the user can
+    // pick up where they left off; the debounced effect will re-fire the
+    // search once the panel opens again.
+    setResults(null);
+    setResultsQuery(null);
+    setResultsOptions(null);
+    setError(null);
+    // Invalidate any still-in-flight response so a late reply can't
+    // write results back after the panel was explicitly closed.
+    searchSeqRef.current++;
   }, []);
 
   const toggleOption = useCallback((opt: "case_sensitive" | "whole_word" | "regex") => {
