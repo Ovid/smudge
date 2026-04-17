@@ -91,9 +91,18 @@ export function EditorPage() {
 
   const findReplace = useFindReplaceState(slug);
 
-  const [replaceConfirmation, setReplaceConfirmation] = useState<
-    { type: "project" } | { type: "chapter"; chapter_id: string } | null
-  >(null);
+  // Frozen snapshot of state at the moment the user clicked "Replace All".
+  // This prevents the confirmation copy from drifting if the user edits the
+  // panel while the dialog is open.
+  const [replaceConfirmation, setReplaceConfirmation] = useState<{
+    scope: { type: "project" } | { type: "chapter"; chapter_id: string };
+    query: string;
+    replacement: string;
+    options: { case_sensitive: boolean; whole_word: boolean; regex: boolean };
+    totalCount: number;
+    chapterCount: number;
+    perChapterCount: number;
+  } | null>(null);
 
   // Panel exclusivity: when snapshot panel opens, close reference panel and vice versa
   const handleToggleSnapshotPanel = useCallback(() => {
@@ -141,7 +150,12 @@ export function EditorPage() {
   }, [viewingSnapshot, activeChapter, restoreSnapshot, reloadActiveChapter, snapshotPanelRef]);
 
   const executeReplace = useCallback(
-    async (scope: { type: "project" } | { type: "chapter"; chapter_id: string }) => {
+    async (frozen: {
+      scope: { type: "project" } | { type: "chapter"; chapter_id: string };
+      query: string;
+      replacement: string;
+      options: { case_sensitive: boolean; whole_word: boolean; regex: boolean };
+    }) => {
       if (!project || !slug) return;
       const flushed = (await editorRef.current?.flushSave()) ?? true;
       if (!flushed) {
@@ -151,10 +165,10 @@ export function EditorPage() {
       try {
         const result = await api.search.replace(
           slug,
-          findReplace.query,
-          findReplace.replacement,
-          findReplace.options,
-          scope,
+          frozen.query,
+          frozen.replacement,
+          frozen.options,
+          frozen.scope,
         );
         // Read the CURRENT active chapter (not the closure value) so a
         // chapter switch between click and response still reloads when the
@@ -173,12 +187,37 @@ export function EditorPage() {
   );
 
   const handleReplaceAllInManuscript = useCallback(() => {
-    setReplaceConfirmation({ type: "project" });
-  }, []);
+    const results = findReplace.results;
+    if (!results) return;
+    setReplaceConfirmation({
+      scope: { type: "project" },
+      query: findReplace.query,
+      replacement: findReplace.replacement,
+      options: findReplace.options,
+      totalCount: results.total_count,
+      chapterCount: results.chapters.length,
+      perChapterCount: 0,
+    });
+  }, [findReplace.results, findReplace.query, findReplace.replacement, findReplace.options]);
 
-  const handleReplaceAllInChapter = useCallback((chapterId: string) => {
-    setReplaceConfirmation({ type: "chapter", chapter_id: chapterId });
-  }, []);
+  const handleReplaceAllInChapter = useCallback(
+    (chapterId: string) => {
+      const results = findReplace.results;
+      if (!results) return;
+      const chapter = results.chapters.find((c) => c.chapter_id === chapterId);
+      if (!chapter) return;
+      setReplaceConfirmation({
+        scope: { type: "chapter", chapter_id: chapterId },
+        query: findReplace.query,
+        replacement: findReplace.replacement,
+        options: findReplace.options,
+        totalCount: chapter.matches.length,
+        chapterCount: 1,
+        perChapterCount: chapter.matches.length,
+      });
+    },
+    [findReplace.results, findReplace.query, findReplace.replacement, findReplace.options],
+  );
 
   const handleReplaceOne = useCallback(
     async (chapterId: string, matchIndex: number) => {
@@ -705,35 +744,38 @@ export function EditorPage() {
         />
       )}
 
-      {replaceConfirmation && findReplace.results && (
+      {replaceConfirmation && (
         <ConfirmDialog
           title={
-            replaceConfirmation.type === "project"
+            replaceConfirmation.scope.type === "project"
               ? STRINGS.findReplace.replaceConfirmTitle
               : STRINGS.findReplace.replaceChapterConfirmTitle
           }
           body={
-            replaceConfirmation.type === "project"
+            replaceConfirmation.scope.type === "project"
               ? STRINGS.findReplace.replaceConfirm(
-                  findReplace.results.total_count,
-                  findReplace.query,
-                  findReplace.replacement,
-                  findReplace.results.chapters.length,
+                  replaceConfirmation.totalCount,
+                  replaceConfirmation.query,
+                  replaceConfirmation.replacement,
+                  replaceConfirmation.chapterCount,
                 )
               : STRINGS.findReplace.replaceChapterConfirm(
-                  findReplace.results.chapters.find(
-                    (c) => c.chapter_id === replaceConfirmation.chapter_id,
-                  )?.matches.length ?? 0,
-                  findReplace.query,
-                  findReplace.replacement,
+                  replaceConfirmation.perChapterCount,
+                  replaceConfirmation.query,
+                  replaceConfirmation.replacement,
                 )
           }
           confirmLabel={STRINGS.findReplace.replaceConfirmButton}
           cancelLabel={STRINGS.findReplace.replaceCancelButton}
           onConfirm={() => {
-            const scope = replaceConfirmation;
+            const frozen = replaceConfirmation;
             setReplaceConfirmation(null);
-            void executeReplace(scope);
+            void executeReplace({
+              scope: frozen.scope,
+              query: frozen.query,
+              replacement: frozen.replacement,
+              options: frozen.options,
+            });
           }}
           onCancel={() => setReplaceConfirmation(null)}
         />
