@@ -1244,19 +1244,20 @@ describe("EditorPage snapshot panel", () => {
   });
 
   it("clicks Create Snapshot in the panel (exercises onBeforeCreate)", async () => {
-    // @ts-expect-error — mock shape matches client expectations at runtime.
-    vi.mocked(api.snapshots).create = vi.fn().mockResolvedValue({
-      duplicate: false,
-      snapshot: {
-        id: "snap-new",
-        chapter_id: "ch-1",
-        label: null,
-        content: "{}",
-        word_count: 10,
-        is_auto: false,
-        created_at: new Date().toISOString(),
-      },
-    });
+    (api.snapshots as unknown as { create: ReturnType<typeof vi.fn> }).create = vi
+      .fn()
+      .mockResolvedValue({
+        duplicate: false,
+        snapshot: {
+          id: "snap-new",
+          chapter_id: "ch-1",
+          label: null,
+          content: "{}",
+          word_count: 10,
+          is_auto: false,
+          created_at: new Date().toISOString(),
+        },
+      });
     renderEditorPage();
     await waitFor(() => {
       expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
