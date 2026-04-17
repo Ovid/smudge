@@ -341,6 +341,8 @@ export const STRINGS = {
     searchTimedOut: "Search timed out — refine your pattern and try again.",
     contentTooLarge:
       "Replacement would produce chapter content over the size limit; refine your replacement.",
+    invalidReplaceRequest: "Replace request was rejected. Check your search and replace inputs.",
+    searchFailed: "Search failed. Try again.",
     skippedChapters: (count: number) =>
       `${count} chapter${count === 1 ? " was" : "s were"} skipped due to corrupt content.`,
     skippedAfterReplace: (count: number) =>

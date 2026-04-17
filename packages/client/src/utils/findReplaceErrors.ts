@@ -17,10 +17,12 @@ export function mapReplaceErrorToMessage(err: unknown): string | null {
     if (err.code === "REGEX_TIMEOUT") return STRINGS.findReplace.searchTimedOut;
     if (err.code === "CONTENT_TOO_LARGE") return STRINGS.findReplace.contentTooLarge;
     if (err.code === "INVALID_REGEX") return STRINGS.findReplace.invalidRegex;
-    return err.message;
+    // Unhandled 400 codes (e.g. VALIDATION_ERROR) — don't leak raw English
+    // server copy into the UI (CLAUDE.md: all strings via strings.ts).
+    return STRINGS.findReplace.invalidReplaceRequest;
   }
   if (err.status === 404 && err.code === "SCOPE_NOT_FOUND") {
     return STRINGS.findReplace.replaceScopeNotFound;
   }
-  return err.message || STRINGS.findReplace.replaceFailed;
+  return STRINGS.findReplace.replaceFailed;
 }

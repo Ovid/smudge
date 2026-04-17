@@ -35,9 +35,9 @@ describe("mapReplaceErrorToMessage", () => {
     expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.invalidRegex);
   });
 
-  it("falls back to err.message for other 400 codes", () => {
+  it("returns generic invalidReplaceRequest for other 400 codes (no raw server copy)", () => {
     const err = new ApiRequestError("validation failed", 400, "VALIDATION_ERROR");
-    expect(mapReplaceErrorToMessage(err)).toBe("validation failed");
+    expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.invalidReplaceRequest);
   });
 
   it("maps 404 SCOPE_NOT_FOUND to replaceScopeNotFound", () => {
@@ -45,9 +45,9 @@ describe("mapReplaceErrorToMessage", () => {
     expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceScopeNotFound);
   });
 
-  it("returns err.message for other statuses", () => {
+  it("returns replaceFailed for other statuses (no raw server copy)", () => {
     const err = new ApiRequestError("server boom", 500);
-    expect(mapReplaceErrorToMessage(err)).toBe("server boom");
+    expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceFailed);
   });
 
   it("falls back to replaceFailed when err.message is empty", () => {
