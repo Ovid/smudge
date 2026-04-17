@@ -351,6 +351,11 @@ export function replaceInDoc(
   // Tracks the global match index across blocks so match_index can select
   // a single occurrence.
   let globalMatchCursor = 0;
+  const isMatchIndexMode = typeof opts.match_index === "number";
+  // Once the match_index target is replaced, later runs/blocks must not
+  // enumerate further matches or the match-cap could fire for a single-
+  // match request on a broad pattern.
+  let targetFound = false;
 
   // expandReplacement interprets `$&`/`$1`/etc. only in regex mode, so the
   // raw replacement is passed through verbatim in literal mode.
@@ -372,7 +377,16 @@ export function replaceInDoc(
         continue;
       }
 
+      // Once the target has been replaced, leave remaining runs untouched.
+      if (isMatchIndexMode && targetFound) {
+        rebuiltRuns.push(cloneTextNodes(segments, flat));
+        continue;
+      }
+
       const re = buildRegex(query, opts);
+      const localTarget = isMatchIndexMode
+        ? (opts.match_index as number) - globalMatchCursor
+        : -1;
 
       // Capture each match's full RegExpExecArray so we can expand the
       // replacement template against the captures later — re-running the
@@ -381,11 +395,19 @@ export function replaceInDoc(
       const allMatches: { start: number; end: number; m: RegExpExecArray }[] = [];
       let m: RegExpExecArray | null;
       while ((m = re.exec(flat)) !== null) {
-        if (totalCount + allMatches.length >= MAX_MATCHES_PER_REQUEST) {
+        // Skip the global match cap in match_index mode: the caller wants
+        // a single replacement, and enumerating every match just to reject
+        // the request defeats the point. We still bound enumeration via the
+        // early break below.
+        if (!isMatchIndexMode && totalCount + allMatches.length >= MAX_MATCHES_PER_REQUEST) {
           throw new MatchCapExceededError(MAX_MATCHES_PER_REQUEST);
         }
         allMatches.push({ start: m.index, end: m.index + m[0].length, m });
         if (m[0].length === 0) advancePastZeroLengthMatch(re, flat);
+        // Stop as soon as we have enumerated past the target index. Works
+        // when localTarget is negative (target was in an earlier run):
+        // breaks after the first match, which we don't use.
+        if (isMatchIndexMode && allMatches.length > localTarget) break;
       }
 
       if (allMatches.length === 0) {
@@ -394,15 +416,15 @@ export function replaceInDoc(
       }
 
       let matches = allMatches;
-      if (typeof opts.match_index === "number") {
-        const localIndex = opts.match_index - globalMatchCursor;
-        const selected = allMatches[localIndex];
+      if (isMatchIndexMode) {
+        const selected = allMatches[localTarget];
         if (!selected) {
           globalMatchCursor += allMatches.length;
           rebuiltRuns.push(cloneTextNodes(segments, flat));
           continue;
         }
         matches = [selected];
+        targetFound = true;
       }
       globalMatchCursor += allMatches.length;
       totalCount += matches.length;

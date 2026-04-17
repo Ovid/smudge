@@ -538,6 +538,39 @@ describe("assertSafeRegexPattern", () => {
   });
 });
 
+describe("replaceInDoc match_index bypasses match cap (I3)", () => {
+  it("replaces a single match even when total matches would exceed cap", async () => {
+    // Build a paragraph with MAX_MATCHES_PER_REQUEST + 5 single-letter words.
+    // Without the fix, a broad regex /a/ would trip the cap before resolving
+    // match_index=0 and throw, breaking "Replace this one" on long chapters.
+    const { MAX_MATCHES_PER_REQUEST } = await import("../tiptap-text");
+    const bigText = "a".repeat(MAX_MATCHES_PER_REQUEST + 5);
+    const d = doc(paragraph(text(bigText)));
+    const result = replaceInDoc(d, "a", "b", { regex: true, match_index: 0 });
+    expect(result.count).toBe(1);
+    // Only the first character replaced.
+    const para = (result.doc as unknown as TipTapDoc).content[0] as TipTapBlock;
+    const flat = (para.content!.map((n) => (n as TipTapTextNode).text ?? "").join(""));
+    expect(flat[0]).toBe("b");
+    expect(flat[1]).toBe("a");
+  });
+
+  it("does not double-replace if match_index target is found mid-document", () => {
+    const d = doc(
+      paragraph(text("one two three")),
+      paragraph(text("one two three")),
+      paragraph(text("one two three")),
+    );
+    // "one" appears 3 times globally. Request match_index=1 → only second.
+    const result = replaceInDoc(d, "one", "X", { match_index: 1 });
+    expect(result.count).toBe(1);
+    const paras = (result.doc as unknown as TipTapDoc).content as TipTapBlock[];
+    expect((paras[0]!.content![0] as TipTapTextNode).text).toBe("one two three");
+    expect((paras[1]!.content![0] as TipTapTextNode).text).toBe("X two three");
+    expect((paras[2]!.content![0] as TipTapTextNode).text).toBe("one two three");
+  });
+});
+
 describe("replaceInDoc mark canonicalization (I2)", () => {
   it("merges adjacent text nodes when marks have the same attrs in different key order", () => {
     // Two link marks with same attrs but different key insertion order —
