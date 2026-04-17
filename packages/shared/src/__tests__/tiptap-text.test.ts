@@ -584,9 +584,8 @@ describe("replaceInDoc match_index bypasses match cap (I3)", () => {
 
 describe("match cap and misc edges", () => {
   it("searchInDoc throws MatchCapExceededError when run is dense", async () => {
-    const { searchInDoc, MAX_MATCHES_PER_REQUEST, MatchCapExceededError } = await import(
-      "../tiptap-text"
-    );
+    const { searchInDoc, MAX_MATCHES_PER_REQUEST, MatchCapExceededError } =
+      await import("../tiptap-text");
     const d = doc(paragraph(text("a".repeat(MAX_MATCHES_PER_REQUEST + 5))));
     expect(() => searchInDoc(d, "a")).toThrow(MatchCapExceededError);
   });
