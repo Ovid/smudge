@@ -168,7 +168,11 @@ export const api = {
       apiFetch<Chapter>(`/chapters/${id}`, {
         method: "PATCH",
         body: JSON.stringify(data),
-        signal,
+        // Only include `signal` when one was actually provided; otherwise
+        // the fetch options object differs from the no-signal callers in
+        // ways that break tests asserting the options shape (and can
+        // subtly differ in fetch polyfills).
+        ...(signal ? { signal } : {}),
       }),
 
     delete: (id: string) => apiFetch<{ message: string }>(`/chapters/${id}`, { method: "DELETE" }),
@@ -323,7 +327,7 @@ export const api = {
       apiFetch<{ message: string }>("/settings", {
         method: "PATCH",
         body: JSON.stringify({ settings }),
-        signal,
+        ...(signal ? { signal } : {}),
       }),
   },
 };
