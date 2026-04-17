@@ -92,6 +92,19 @@ export function EditorPage() {
 
   const findReplace = useFindReplaceState(slug);
 
+  const {
+    trashOpen,
+    setTrashOpen,
+    trashedChapters,
+    deleteTarget,
+    setDeleteTarget,
+    actionError,
+    setActionError,
+    openTrash,
+    handleRestore,
+    confirmDeleteChapter,
+  } = useTrashManager(project, slug, setProject, handleDeleteChapter, navigate);
+
   // Refs on the toolbar buttons so each panel can return focus to its
   // trigger when closed via Escape (WCAG focus management).
   const snapshotsTriggerRef = useRef<HTMLButtonElement>(null);
@@ -303,19 +316,6 @@ export function EditorPage() {
     setProjectTitleError,
     navigate,
   );
-
-  const {
-    trashOpen,
-    setTrashOpen,
-    trashedChapters,
-    deleteTarget,
-    setDeleteTarget,
-    actionError,
-    setActionError,
-    openTrash,
-    handleRestore,
-    confirmDeleteChapter,
-  } = useTrashManager(project, slug, setProject, handleDeleteChapter, navigate);
 
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
