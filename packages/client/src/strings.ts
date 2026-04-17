@@ -297,6 +297,10 @@ export const STRINGS = {
     createFailed: "Unable to create snapshot. Save your unsaved changes and try again.",
     deleteFailed: "Unable to delete snapshot. Try again.",
     listFailed: "Unable to load snapshots. Try opening the panel again.",
+    viewFailed: "Unable to open snapshot. Try again.",
+    viewFailedNotFound:
+      "This snapshot no longer exists. Refresh to see the latest snapshot list.",
+    viewFailedCorrupt: "This snapshot is corrupt and can't be displayed.",
     ariaLabel: "Chapter snapshots",
     relativeTime: {
       justNow: "just now",

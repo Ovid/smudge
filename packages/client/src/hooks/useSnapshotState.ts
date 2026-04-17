@@ -23,6 +23,17 @@ export interface RestoreResult {
   staleChapterSwitch?: boolean;
 }
 
+export type ViewFailureReason = "not_found" | "corrupt_snapshot" | "network" | "unknown";
+
+export interface ViewResult {
+  ok: boolean;
+  reason?: ViewFailureReason;
+  // Set when the user switched chapters while the view was in flight.
+  // Callers should show no banner — the response belongs to a chapter
+  // that is no longer active.
+  staleChapterSwitch?: boolean;
+}
+
 export interface UseSnapshotStateReturn {
   snapshotPanelOpen: boolean;
   toggleSnapshotPanel: () => void;
@@ -32,7 +43,7 @@ export interface UseSnapshotStateReturn {
     id: string;
     label: string | null;
     created_at: string;
-  }) => Promise<void>;
+  }) => Promise<ViewResult>;
   exitSnapshotView: () => void;
   restoreSnapshot: (snapshotId: string) => Promise<RestoreResult>;
   /**
@@ -86,7 +97,11 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   }, []);
 
   const viewSnapshot = useCallback(
-    async (snapshot: { id: string; label: string | null; created_at: string }) => {
+    async (snapshot: {
+      id: string;
+      label: string | null;
+      created_at: string;
+    }): Promise<ViewResult> => {
       // Capture before the await so a chapter switch during the fetch
       // doesn't pin a stale snapshot to the wrong chapter. Without this,
       // a subsequent Restore click would silently overwrite the previous
@@ -94,16 +109,26 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       const seq = chapterSeqRef.current;
       try {
         const full = await api.snapshots.get(snapshot.id);
-        if (seq !== chapterSeqRef.current) return;
-        const content = typeof full.content === "string" ? JSON.parse(full.content) : full.content;
+        if (seq !== chapterSeqRef.current) return { ok: true, staleChapterSwitch: true };
+        let content: unknown;
+        try {
+          content = typeof full.content === "string" ? JSON.parse(full.content) : full.content;
+        } catch {
+          return { ok: false, reason: "corrupt_snapshot" };
+        }
         setViewingSnapshot({
           id: snapshot.id,
           label: snapshot.label,
-          content,
+          content: content as Record<string, unknown>,
           created_at: snapshot.created_at,
         });
-      } catch {
-        // Silently fail
+        return { ok: true };
+      } catch (err) {
+        if (err instanceof ApiRequestError) {
+          if (err.status === 404) return { ok: false, reason: "not_found" };
+          return { ok: false, reason: "network" };
+        }
+        return { ok: false, reason: "unknown" };
       }
     },
     [],

@@ -117,6 +117,52 @@ describe("useSnapshotState", () => {
     });
   });
 
+  it("viewSnapshot returns not_found when snapshot is gone (404)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.snapshots.get).mockRejectedValue(
+      new ApiRequestError("missing", 404, "NOT_FOUND"),
+    );
+
+    const { result } = renderHook(() => useSnapshotState("ch-1"));
+    let r: { ok: boolean; reason?: string } = { ok: true };
+    await act(async () => {
+      r = await result.current.viewSnapshot({
+        id: "snap-gone",
+        label: null,
+        created_at: new Date().toISOString(),
+      });
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("not_found");
+    expect(result.current.viewingSnapshot).toBeNull();
+  });
+
+  it("viewSnapshot returns corrupt_snapshot when full.content is malformed JSON", async () => {
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-1",
+      chapter_id: "ch-1",
+      label: null,
+      content: "{not valid json",
+      word_count: 0,
+      is_auto: false,
+      created_at: new Date().toISOString(),
+    });
+
+    const { result } = renderHook(() => useSnapshotState("ch-1"));
+    let r: { ok: boolean; reason?: string } = { ok: true };
+    await act(async () => {
+      r = await result.current.viewSnapshot({
+        id: "snap-1",
+        label: null,
+        created_at: new Date().toISOString(),
+      });
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("corrupt_snapshot");
+  });
+
   it("exitSnapshotView clears the viewing snapshot", async () => {
     const row = makeSnapshotRow();
     vi.mocked(api.snapshots.get).mockResolvedValue(row);

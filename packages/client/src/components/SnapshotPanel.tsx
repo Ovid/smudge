@@ -38,7 +38,7 @@ interface SnapshotPanelProps {
     id: string;
     label: string | null;
     created_at: string;
-  }) => void | Promise<void>;
+  }) => void | Promise<{ ok: boolean; reason?: string } | void>;
   /**
    * Called before snapshot creation. The panel awaits this so the server
    * snapshots the chapter AFTER any pending editor save has landed —
@@ -60,6 +60,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
     const [deleteError, setDeleteError] = useState<string | null>(null);
     const [listError, setListError] = useState<string | null>(null);
+    const [viewError, setViewError] = useState<string | null>(null);
     const panelRef = useRef<HTMLElement>(null);
     const prevIsOpen = useRef(isOpen);
     // Guards async list responses against rapid chapter switches: every
@@ -284,6 +285,13 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
             </p>
           )}
 
+          {/* View error */}
+          {viewError && (
+            <p role="alert" className="text-xs text-red-700 font-sans">
+              {viewError}
+            </p>
+          )}
+
           {/* Empty state */}
           {snapshots.length === 0 && !listError && (
             <p className="text-sm text-text-secondary text-center py-6 font-sans">{S.emptyState}</p>
@@ -353,13 +361,24 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
                     <div className="flex gap-2 mt-1">
                       <button
                         type="button"
-                        onClick={() =>
-                          onView({
+                        onClick={async () => {
+                          setViewError(null);
+                          const res = await onView({
                             id: snap.id,
                             label: snap.label,
                             created_at: snap.created_at,
-                          })
-                        }
+                          });
+                          if (res && "ok" in res && !res.ok) {
+                            if (res.reason === "not_found") {
+                              setViewError(S.viewFailedNotFound);
+                              await fetchSnapshots();
+                            } else if (res.reason === "corrupt_snapshot") {
+                              setViewError(S.viewFailedCorrupt);
+                            } else {
+                              setViewError(S.viewFailed);
+                            }
+                          }
+                        }}
                         className="text-xs font-medium text-accent hover:text-accent/80 transition-colors font-sans"
                       >
                         {S.view}
