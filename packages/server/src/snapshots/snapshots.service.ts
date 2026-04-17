@@ -68,8 +68,20 @@ export async function getSnapshot(id: string): Promise<SnapshotRow | null> {
 
 export async function deleteSnapshot(id: string): Promise<boolean> {
   const store = getProjectStore();
-  const count = await store.deleteSnapshot(id);
-  return count > 0;
+  // Mirror getSnapshot's parent-chapter soft-delete check — CLAUDE.md
+  // requires every query to filter deleted_at IS NULL, and a stale client
+  // should not be able to delete snapshots of a trashed chapter when the
+  // snapshot no longer appears in listings. Wrap both reads + the delete
+  // in a transaction so a concurrent chapter restore/purge can't see a
+  // half-applied state.
+  return store.transaction(async (txStore) => {
+    const snap = await txStore.findSnapshotById(id);
+    if (!snap) return false;
+    const chapter = await txStore.findChapterByIdRaw(snap.chapter_id);
+    if (!chapter) return false;
+    const count = await txStore.deleteSnapshot(id);
+    return count > 0;
+  });
 }
 
 export async function restoreSnapshot(
