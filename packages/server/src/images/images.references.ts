@@ -1,5 +1,7 @@
 import { getProjectStore } from "../stores/project-store.injectable";
+import { logger } from "../logger";
 import { UUID_PATTERN } from "./images.paths";
+import type { ImageRow } from "./images.types";
 
 /**
  * Walks TipTap JSON content tree and extracts image UUIDs from
@@ -53,7 +55,10 @@ export function diffImageReferences(
  * snapshot restore to avoid duplicating the parse → extract → diff → apply pattern.
  */
 export async function applyImageRefDiff(
-  txStore: { incrementImageReferenceCount(id: string, delta: number): Promise<void> },
+  txStore: {
+    incrementImageReferenceCount(id: string, delta: number): Promise<void>;
+    findImageById(id: string): Promise<ImageRow | null>;
+  },
   oldContentJson: string | null,
   newContentJson: string | null,
 ): Promise<void> {
@@ -79,6 +84,17 @@ export async function applyImageRefDiff(
   const diff = diffImageReferences(oldIds, newIds);
 
   for (const id of diff.added) {
+    // An image referenced in restored/replaced content may have been purged
+    // since the snapshot was taken. Warn but do not fail the operation —
+    // the user will see a broken image in the UI.
+    const image = await txStore.findImageById(id);
+    if (!image) {
+      logger.warn(
+        { image_id: id },
+        "Referenced image no longer exists; chapter will render a broken image",
+      );
+      continue;
+    }
     await txStore.incrementImageReferenceCount(id, 1);
   }
   for (const id of diff.removed) {
