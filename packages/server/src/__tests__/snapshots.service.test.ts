@@ -413,6 +413,37 @@ describe("snapshots.service", () => {
       expect(chapter.word_count).toBe(2);
     });
 
+    it("refuses to restore non-TipTap-doc JSON (parses but is not a doc)", async () => {
+      stubVelocity();
+      const { chapterId } = await createProjectAndChapter();
+      const { createSnapshot, restoreSnapshot } = await import("../snapshots/snapshots.service");
+
+      const snap = (await createSnapshot(chapterId, "Normal")) as Exclude<
+        Awaited<ReturnType<typeof createSnapshot>>,
+        null | "duplicate"
+      >;
+
+      // Replace snapshot content with valid JSON that is NOT a TipTap doc.
+      // Each of these would JSON.parse cleanly but render as nothing in TipTap.
+      const invalidShapes = ['{"foo":1}', "[]", "42", '{"type":"doc"}'];
+      const intactContent = JSON.stringify(DOC_JSON_ALT);
+
+      for (const shape of invalidShapes) {
+        await t.db("chapter_snapshots").where({ id: snap.id }).update({ content: shape });
+        await t
+          .db("chapters")
+          .where({ id: chapterId })
+          .update({ content: intactContent, word_count: 2 });
+
+        const result = await restoreSnapshot(snap.id);
+        expect(result).toBe("corrupt_snapshot");
+
+        const chapter = await t.db("chapters").where({ id: chapterId }).first();
+        expect(chapter.content).toBe(intactContent);
+        expect(chapter.word_count).toBe(2);
+      }
+    });
+
     it("returns null if chapter not found (snapshot's chapter was purged)", async () => {
       stubVelocity();
       const { chapterId } = await createProjectAndChapter();

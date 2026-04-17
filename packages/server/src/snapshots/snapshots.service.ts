@@ -70,10 +70,22 @@ export async function restoreSnapshot(
 
   // Refuse to restore corrupt snapshot content into a chapter — doing so
   // would silently replace valid content with an unparseable blob and
-  // word_count=0, leaving the chapter unrenderable.
+  // word_count=0, leaving the chapter unrenderable. JSON.parse alone is
+  // insufficient: `42`, `[]`, `{"foo":1}` all parse but are not TipTap
+  // documents and would render as nothing.
   let newParsed: Record<string, unknown>;
   try {
-    newParsed = JSON.parse(snapshot.content);
+    const parsed: unknown = JSON.parse(snapshot.content);
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed) ||
+      (parsed as { type?: unknown }).type !== "doc" ||
+      !Array.isArray((parsed as { content?: unknown }).content)
+    ) {
+      return "corrupt_snapshot";
+    }
+    newParsed = parsed as Record<string, unknown>;
   } catch {
     return "corrupt_snapshot";
   }
