@@ -189,6 +189,10 @@ export function replaceInDoc(
   const leafBlocks = collectLeafBlocks(cloned);
   let totalCount = 0;
 
+  // In literal (non-regex) mode, escape `$` so `String.prototype.replace`
+  // does not interpret `$&`, `$1`, `$$`, etc. as replacement patterns.
+  const effectiveReplacement = opts.regex ? replacement : replacement.replace(/\$/g, "$$$$");
+
   for (const block of leafBlocks) {
     const { flat, segments } = flattenBlock(block);
     if (!flat || segments.length === 0) continue;
@@ -218,7 +222,7 @@ export function replaceInDoc(
     while ((mm = re3.exec(flat)) !== null) {
       const matchStr = mm[0];
       // Apply the replacement pattern to just this match
-      const replaced = matchStr.replace(buildRegex(query, opts), replacement);
+      const replaced = matchStr.replace(buildRegex(query, opts), effectiveReplacement);
       repTexts.push(replaced);
       if (mm[0].length === 0) re3.lastIndex++;
     }

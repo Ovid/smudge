@@ -254,6 +254,24 @@ describe("replaceInDoc", () => {
     expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("quick and sudden");
   });
 
+  it("treats $ in replacement as literal text when regex mode is off", () => {
+    const d = doc(paragraph(text("price is USD")));
+    const result = replaceInDoc(d, "USD", "$100");
+    expect(result.count).toBe(1);
+    const para = contentOf(result.doc)[0];
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("price is $100");
+  });
+
+  it("does not expand $& / $1 / $$ in literal replacement", () => {
+    const d = doc(paragraph(text("foo bar baz")));
+    const result = replaceInDoc(d, "bar", "$& and $1 and $$");
+    expect(result.count).toBe(1);
+    const para = contentOf(result.doc)[0];
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe(
+      "foo $& and $1 and $$ baz",
+    );
+  });
+
   it("replaces with empty string (deletion)", () => {
     const d = doc(paragraph(text("remove this word")));
     const result = replaceInDoc(d, " this", "");
