@@ -311,6 +311,7 @@ export const STRINGS = {
     wholeWord: "Whole word",
     regex: "Regular expression",
     replaceFailed: "Replace failed. Try again.",
+    replaceScopeNotFound: "The chapter for this replace is no longer available.",
     noMatches: "No matches found",
     matchCount: (count: number, chapters: number) =>
       `Found ${count} occurrence${count === 1 ? "" : "s"} in ${chapters} chapter${chapters === 1 ? "" : "s"}`,

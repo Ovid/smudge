@@ -238,15 +238,25 @@ export function EditorPage() {
           );
         }
       } catch (err) {
-        if (err instanceof ApiRequestError && err.status === 400) {
-          if (err.code === "MATCH_CAP_EXCEEDED") {
-            setActionError(STRINGS.findReplace.tooManyMatches);
-          } else if (err.code === "REGEX_TIMEOUT") {
-            setActionError(STRINGS.findReplace.searchTimedOut);
-          } else if (err.code === "CONTENT_TOO_LARGE") {
-            setActionError(STRINGS.findReplace.contentTooLarge);
+        if (err instanceof ApiRequestError) {
+          // User navigated away or we cancelled — no banner.
+          if (err.code === "ABORTED") return;
+          if (err.status === 400) {
+            if (err.code === "MATCH_CAP_EXCEEDED") {
+              setActionError(STRINGS.findReplace.tooManyMatches);
+            } else if (err.code === "REGEX_TIMEOUT") {
+              setActionError(STRINGS.findReplace.searchTimedOut);
+            } else if (err.code === "CONTENT_TOO_LARGE") {
+              setActionError(STRINGS.findReplace.contentTooLarge);
+            } else if (err.code === "INVALID_REGEX") {
+              setActionError(STRINGS.findReplace.invalidRegex);
+            } else {
+              setActionError(err.message);
+            }
+          } else if (err.status === 404 && err.code === "SCOPE_NOT_FOUND") {
+            setActionError(STRINGS.findReplace.replaceScopeNotFound);
           } else {
-            setActionError(STRINGS.findReplace.invalidRegex);
+            setActionError(err.message || STRINGS.findReplace.replaceFailed);
           }
         } else {
           setActionError(STRINGS.findReplace.replaceFailed);
@@ -351,8 +361,32 @@ export function EditorPage() {
         }
         await findReplace.search(slug);
         snapshotPanelRef.current?.refreshSnapshots();
-      } catch {
-        setActionError(STRINGS.findReplace.replaceFailed);
+      } catch (err) {
+        // Mirror executeReplace's discriminated handling so the user sees
+        // accurate copy for code-specific failures (too many matches,
+        // timeout, oversize replacement, scope missing, abort).
+        if (err instanceof ApiRequestError) {
+          if (err.code === "ABORTED") return;
+          if (err.status === 400) {
+            if (err.code === "MATCH_CAP_EXCEEDED") {
+              setActionError(STRINGS.findReplace.tooManyMatches);
+            } else if (err.code === "REGEX_TIMEOUT") {
+              setActionError(STRINGS.findReplace.searchTimedOut);
+            } else if (err.code === "CONTENT_TOO_LARGE") {
+              setActionError(STRINGS.findReplace.contentTooLarge);
+            } else if (err.code === "INVALID_REGEX") {
+              setActionError(STRINGS.findReplace.invalidRegex);
+            } else {
+              setActionError(err.message);
+            }
+          } else if (err.status === 404 && err.code === "SCOPE_NOT_FOUND") {
+            setActionError(STRINGS.findReplace.replaceScopeNotFound);
+          } else {
+            setActionError(err.message || STRINGS.findReplace.replaceFailed);
+          }
+        } else {
+          setActionError(STRINGS.findReplace.replaceFailed);
+        }
       }
     },
     [
