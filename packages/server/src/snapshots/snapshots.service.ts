@@ -14,34 +14,37 @@ export async function createSnapshot(
   isAuto = false,
 ): Promise<SnapshotRow | null | "duplicate"> {
   const store = getProjectStore();
-  // findChapterByIdRaw filters deleted_at IS NULL the same as findChapterById;
-  // it just returns raw JSON content (needed for hashing) instead of parsed.
-  const chapter = await store.findChapterByIdRaw(chapterId);
-  if (!chapter) return null;
+  // Wrap the chapter read, dedup check, and insert in a single transaction.
+  // Without this, two concurrent POSTs could both pass the dedup check and
+  // produce duplicate manual snapshots.
+  return store.transaction(async (txStore) => {
+    // findChapterByIdRaw filters deleted_at IS NULL the same as findChapterById;
+    // it just returns raw JSON content (needed for hashing) instead of parsed.
+    const chapter = await txStore.findChapterByIdRaw(chapterId);
+    if (!chapter) return null;
 
-  const content = chapter.content ?? JSON.stringify({ type: "doc", content: [] });
+    const content = chapter.content ?? JSON.stringify({ type: "doc", content: [] });
 
-  // Dedup guard: skip if content matches latest snapshot (manual snapshots only).
-  // Canonicalizing key order so dedup survives re-serialization (TipTap
-  // round-trips, replaceInDoc rebuilds, etc).
-  if (!isAuto) {
-    const contentHash = canonicalContentHash(content);
-    const latestHash = await store.getLatestSnapshotContentHash(chapterId);
-    if (latestHash === contentHash) return "duplicate";
-  }
+    // Dedup guard: skip if content matches latest snapshot (manual snapshots only).
+    if (!isAuto) {
+      const contentHash = canonicalContentHash(content);
+      const latestHash = await txStore.getLatestSnapshotContentHash(chapterId);
+      if (latestHash === contentHash) return "duplicate";
+    }
 
-  const now = new Date().toISOString();
-  const snapshot = await store.insertSnapshot({
-    id: uuidv4(),
-    chapter_id: chapterId,
-    label: label?.trim() || null,
-    content,
-    word_count: chapter.word_count,
-    is_auto: isAuto,
-    created_at: now,
+    const now = new Date().toISOString();
+    const snapshot = await txStore.insertSnapshot({
+      id: uuidv4(),
+      chapter_id: chapterId,
+      label: label?.trim() || null,
+      content,
+      word_count: chapter.word_count,
+      is_auto: isAuto,
+      created_at: now,
+    });
+
+    return snapshot;
   });
-
-  return snapshot;
 }
 
 export async function listSnapshots(chapterId: string): Promise<SnapshotListItem[] | null> {
@@ -53,7 +56,14 @@ export async function listSnapshots(chapterId: string): Promise<SnapshotListItem
 
 export async function getSnapshot(id: string): Promise<SnapshotRow | null> {
   const store = getProjectStore();
-  return store.findSnapshotById(id);
+  const snap = await store.findSnapshotById(id);
+  if (!snap) return null;
+  // Treat snapshots whose parent chapter is soft-deleted as 404. CLAUDE.md
+  // requires every query to filter deleted_at IS NULL; the raw snapshot
+  // read bypasses the join, so enforce it here.
+  const chapter = await store.findChapterByIdRaw(snap.chapter_id);
+  if (!chapter) return null;
+  return snap;
 }
 
 export async function deleteSnapshot(id: string): Promise<boolean> {

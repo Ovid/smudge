@@ -127,14 +127,20 @@ function escapeRegex(s: string): string {
  */
 function expandReplacement(template: string, match: RegExpExecArray, regex: boolean): string {
   if (!regex) return template;
-  return template.replace(/\$([&'`$]|\d{1,2})/g, (_, key: string) => {
+  return template.replace(/\$([&'`$]|\d{1,2})/g, (full, key: string) => {
     if (key === "$") return "$";
     if (key === "&") return match[0];
     if (key === "`") return match.input.slice(0, match.index);
     if (key === "'") return match.input.slice(match.index + match[0].length);
     const idx = parseInt(key, 10);
-    if (Number.isFinite(idx) && idx >= 1 && idx <= 99) return match[idx] ?? "";
-    return "";
+    // Out-of-range backref: preserve the literal `$NN` to match the native
+    // String.prototype.replace contract. Users who write `$99` when there
+    // are only 2 groups usually want the literal text, not silent deletion.
+    if (Number.isFinite(idx) && idx >= 1 && idx <= 99) {
+      if (idx >= match.length) return full;
+      return match[idx] ?? "";
+    }
+    return full;
   });
 }
 
@@ -336,6 +342,9 @@ export function searchInDoc(
   const leafBlocks = collectLeafBlocks(root);
   const matches: SearchMatch[] = [];
   let matchIndex = 0;
+  // Hoist: the compiled regex is identical across every run. Re-creating
+  // it per-run allocates and wastes time on large docs.
+  const re = buildRegex(query, opts);
 
   for (let blockIndex = 0; blockIndex < leafBlocks.length; blockIndex++) {
     const block = leafBlocks[blockIndex];
@@ -344,7 +353,7 @@ export function searchInDoc(
 
     for (const run of runs) {
       if (!run.flat) continue;
-      const re = buildRegex(query, opts);
+      re.lastIndex = 0;
       let m: RegExpExecArray | null;
       while ((m = re.exec(run.flat)) !== null) {
         if (matches.length >= MAX_MATCHES_PER_REQUEST) {
@@ -390,6 +399,9 @@ export function replaceInDoc(
   // Tracks the global match index across blocks so match_index can select
   // a single occurrence.
   let globalMatchCursor = 0;
+  // Hoist: the compiled regex is identical across every run. Re-creating
+  // it per-run allocates and wastes time on large docs.
+  const re = buildRegex(query, opts);
   const isMatchIndexMode = typeof opts.match_index === "number";
   // Once the match_index target is replaced, later runs/blocks must not
   // enumerate further matches or the match-cap could fire for a single-
@@ -422,7 +434,7 @@ export function replaceInDoc(
         continue;
       }
 
-      const re = buildRegex(query, opts);
+      re.lastIndex = 0;
       const localTarget = isMatchIndexMode
         ? (opts.match_index as number) - globalMatchCursor
         : -1;

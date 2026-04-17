@@ -165,7 +165,9 @@ export async function replaceInProject(
   search: string,
   replace: string,
   options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
-  scope?: { type: "project" } | { type: "chapter"; chapter_id: string; match_index?: number },
+  // Scope is required at the HTTP boundary (Zod); match the service to it
+  // so both layers agree on what "no scope" means (there is no such state).
+  scope: { type: "project" } | { type: "chapter"; chapter_id: string; match_index?: number },
 ): Promise<
   | {
       replaced_count: number;

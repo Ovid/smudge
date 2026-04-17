@@ -110,6 +110,24 @@ export const UpdateSettingsSchema = z.object({
     .min(1, "At least one setting must be provided"),
 });
 
+/**
+ * Strip characters that would let a label spoof display in the snapshot
+ * list:
+ *   - C0/C1 control chars (except tab) — corrupt UI logs and terminals
+ *   - Bidi overrides (U+202A..U+202E, U+2066..U+2069) — Trojan-Source-style
+ *   - Line/paragraph separators (U+2028, U+2029) — break list row layout
+ */
+function sanitizeSnapshotLabel(raw: string): string {
+  return raw
+    // eslint-disable-next-line no-control-regex -- intentionally strips control chars
+    .replace(/[\u0000-\u0008\u000A-\u001F\u007F]/g, "")
+    .replace(/[\u202A-\u202E\u2066-\u2069\u2028\u2029]/g, "");
+}
+
 export const CreateSnapshotSchema = z.object({
-  label: z.string().trim().max(500, "Label is too long").optional(),
+  label: z
+    .string()
+    .transform(sanitizeSnapshotLabel)
+    .pipe(z.string().trim().max(500, "Label is too long"))
+    .optional(),
 });
