@@ -322,7 +322,7 @@ export async function replaceInProject(
         });
 
         // Adjust image reference counts
-        await applyImageRefDiff(txStore, chapter.content, newContentJson);
+        await applyImageRefDiff(txStore, chapter.content, newContentJson, projectId);
       }
 
       // Bump the project's updated_at once per replace, not once per chapter

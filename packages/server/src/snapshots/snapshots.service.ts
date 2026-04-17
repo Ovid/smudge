@@ -135,7 +135,7 @@ export async function restoreSnapshot(
     // Adjust image reference counts — use the same coalesced content used
     // for the pre-restore auto-snapshot so a never-saved chapter (NULL
     // content) is treated as the empty doc here too.
-    await applyImageRefDiff(txStore, currentContent, snapshot.content);
+    await applyImageRefDiff(txStore, currentContent, snapshot.content, chapter.project_id);
 
     // Re-read inside the transaction so a concurrent autosave landing
     // between commit and a post-tx read cannot overwrite the response

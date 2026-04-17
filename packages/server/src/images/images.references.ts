@@ -61,6 +61,7 @@ export async function applyImageRefDiff(
   },
   oldContentJson: string | null,
   newContentJson: string | null,
+  projectId: string,
 ): Promise<void> {
   let oldContent: Record<string, unknown> | null = null;
   if (oldContentJson) {
@@ -84,20 +85,28 @@ export async function applyImageRefDiff(
   const diff = diffImageReferences(oldIds, newIds);
 
   for (const id of diff.added) {
-    // An image referenced in restored/replaced content may have been purged
-    // since the snapshot was taken. Warn but do not fail the operation —
-    // the user will see a broken image in the UI.
     const image = await txStore.findImageById(id);
-    if (!image) {
+    // An image referenced in restored/replaced content may have been purged
+    // since the snapshot was taken, or the chapter may reference an image
+    // that belongs to a different project (stale URL, manual paste). Warn
+    // but do not fail; skip the ref-count update so cross-project image
+    // state cannot be touched via a crafted content payload.
+    if (!image || image.project_id !== projectId) {
       logger.warn(
-        { image_id: id },
-        "Referenced image no longer exists; chapter will render a broken image",
+        { image_id: id, project_id: projectId, found_in_project: image?.project_id ?? null },
+        "Referenced image missing or in different project; skipping reference-count update",
       );
       continue;
     }
     await txStore.incrementImageReferenceCount(id, 1);
   }
   for (const id of diff.removed) {
+    // Decrement only if the image actually belongs to this project — same
+    // cross-project guard as the add path.
+    const image = await txStore.findImageById(id);
+    if (!image || image.project_id !== projectId) {
+      continue;
+    }
     await txStore.incrementImageReferenceCount(id, -1);
   }
 }

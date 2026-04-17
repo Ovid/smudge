@@ -13,6 +13,7 @@ import {
 } from "../images/images.references";
 import { logger } from "../logger";
 import * as imagesService from "../images/images.service";
+import type { ImageRow } from "../images/images.types";
 
 const TEST_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
@@ -236,6 +237,7 @@ describe("applyImageRefDiff()", () => {
     const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
     const incrementCalls: Array<[string, number]> = [];
     const missingId = "00000000-0000-0000-0000-000000000000";
+    const projectId = "11111111-1111-1111-1111-111111111111";
 
     await applyImageRefDiff(
       {
@@ -249,12 +251,48 @@ describe("applyImageRefDiff()", () => {
         type: "doc",
         content: [{ type: "image", attrs: { src: `/api/images/${missingId}` } }],
       }),
+      projectId,
     );
 
     expect(incrementCalls).toEqual([]);
     expect(warnSpy).toHaveBeenCalledWith(
-      { image_id: missingId },
-      "Referenced image no longer exists; chapter will render a broken image",
+      { image_id: missingId, project_id: projectId, found_in_project: null },
+      "Referenced image missing or in different project; skipping reference-count update",
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("skips increment and warns when the referenced image belongs to a different project", async () => {
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const incrementCalls: Array<[string, number]> = [];
+    const imageId = "22222222-2222-2222-2222-222222222222";
+    const projectA = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const projectB = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+
+    await applyImageRefDiff(
+      {
+        findImageById: async () =>
+          ({
+            id: imageId,
+            project_id: projectB,
+            reference_count: 0,
+          }) as unknown as ImageRow,
+        incrementImageReferenceCount: async (id, delta) => {
+          incrementCalls.push([id, delta]);
+        },
+      },
+      null,
+      JSON.stringify({
+        type: "doc",
+        content: [{ type: "image", attrs: { src: `/api/images/${imageId}` } }],
+      }),
+      projectA,
+    );
+
+    expect(incrementCalls).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      { image_id: imageId, project_id: projectA, found_in_project: projectB },
+      "Referenced image missing or in different project; skipping reference-count update",
     );
     warnSpy.mockRestore();
   });

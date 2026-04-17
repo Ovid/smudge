@@ -2,7 +2,7 @@ import { UpdateChapterSchema, countWords, generateSlug } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
-import { extractImageIds, applyImageRefDiff } from "../images/images.references";
+import { applyImageRefDiff } from "../images/images.references";
 import {
   isCorruptChapter,
   enrichChapterWithLabel,
@@ -89,7 +89,12 @@ export async function updateChapter(
 
     // Update image reference counts inside the same transaction
     if (parsed.data.content !== undefined) {
-      await applyImageRefDiff(txStore, chapter.content, JSON.stringify(parsed.data.content));
+      await applyImageRefDiff(
+        txStore,
+        chapter.content,
+        JSON.stringify(parsed.data.content),
+        chapter.project_id,
+      );
     }
 
     return { project_id: chapter.project_id };
@@ -141,23 +146,12 @@ export async function deleteChapter(id: string): Promise<boolean> {
     const chapter = await txStore.findChapterByIdRaw(id);
     if (!chapter) return null;
 
-    let imageIds: string[] = [];
-    if (chapter.content) {
-      try {
-        const content = JSON.parse(chapter.content);
-        imageIds = extractImageIds(content);
-      } catch {
-        // Corrupt content — no image IDs to decrement
-      }
-    }
-
     await txStore.softDeleteChapter(id, now);
     await txStore.updateProjectTimestamp(chapter.project_id, now);
 
-    // Decrement reference counts atomically with the soft-delete
-    for (const imageId of imageIds) {
-      await txStore.incrementImageReferenceCount(imageId, -1);
-    }
+    // Decrement image reference counts atomically with the soft-delete, routed
+    // through the shared helper so the cross-project + existence guards apply.
+    await applyImageRefDiff(txStore, chapter.content, null, chapter.project_id);
 
     return chapter.project_id;
   });
@@ -227,7 +221,7 @@ export async function restoreChapter(
       // restoreSnapshot rather than diverging here.
       const restoredRow = await txStore.findChapterByIdRaw(id);
       if (restoredRow?.content) {
-        await applyImageRefDiff(txStore, null, restoredRow.content);
+        await applyImageRefDiff(txStore, null, restoredRow.content, restoredRow.project_id);
       }
     });
   } catch (err: unknown) {
