@@ -229,8 +229,17 @@ export function assertSafeRegexPattern(pattern: string): void {
 }
 
 export class RegExpTimeoutError extends Error {
-  constructor(ms: number) {
-    super(`Search timed out after ${ms}ms; refine your pattern.`);
+  /**
+   * The budget that was exceeded, in milliseconds, when known. Walker-level
+   * throws (which only see an absolute deadline) omit this so the message
+   * doesn't claim "0ms"; the service layer re-throws with the real budget.
+   */
+  constructor(ms?: number) {
+    super(
+      typeof ms === "number"
+        ? `Search timed out after ${ms}ms; refine your pattern.`
+        : "Search timed out; refine your pattern.",
+    );
     this.name = "RegExpTimeoutError";
   }
 }
@@ -364,7 +373,7 @@ export function searchInDoc(
           throw new MatchCapExceededError(MAX_MATCHES_PER_REQUEST);
         }
         if (opts.deadline !== undefined && Date.now() > opts.deadline) {
-          throw new RegExpTimeoutError(0);
+          throw new RegExpTimeoutError();
         }
         matches.push({
           index: matchIndex++,
@@ -453,7 +462,7 @@ export function replaceInDoc(
           throw new MatchCapExceededError(MAX_MATCHES_PER_REQUEST);
         }
         if (opts.deadline !== undefined && Date.now() > opts.deadline) {
-          throw new RegExpTimeoutError(0);
+          throw new RegExpTimeoutError();
         }
         allMatches.push({ start: m.index, end: m.index + m[0].length, m });
         if (m[0].length === 0) advancePastZeroLengthMatch(re, flat);
