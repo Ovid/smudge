@@ -133,12 +133,16 @@ function expandReplacement(template: string, match: RegExpExecArray, regex: bool
     if (key === "`") return match.input.slice(0, match.index);
     if (key === "'") return match.input.slice(match.index + match[0].length);
     const idx = parseInt(key, 10);
-    // Out-of-range backref: preserve the literal `$NN` to match the native
-    // String.prototype.replace contract. Users who write `$99` when there
-    // are only 2 groups usually want the literal text, not silent deletion.
-    if (Number.isFinite(idx) && idx >= 1 && idx <= 99) {
-      if (idx >= match.length) return full;
-      return match[idx] ?? "";
+    if (!Number.isFinite(idx) || idx < 1) return full;
+    if (idx < match.length) return match[idx] ?? "";
+    // Two-digit index out of range: mirror native String.prototype.replace,
+    // which falls back to the single-digit group + remaining digit as
+    // literal text (`$12` with 1 group → <group1>"2", not literal "$12").
+    if (key.length === 2) {
+      const single = parseInt(key[0]!, 10);
+      if (single >= 1 && single < match.length) {
+        return (match[single] ?? "") + key[1]!;
+      }
     }
     return full;
   });

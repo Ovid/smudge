@@ -304,6 +304,25 @@ describe("replaceInDoc", () => {
     expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("world hello hello world");
   });
 
+  it("$NN out-of-range backref falls back to $N + literal digit (native semantics)", () => {
+    // Native String.prototype.replace: "foo".replace(/(f)oo/, "$12") === "f2"
+    // because $12 parses as $1 (valid) + literal "2" when there is no group 12.
+    const d = doc(paragraph(text("abc")));
+    const result = replaceInDoc(d, "(a)", "$12", { regex: true });
+    expect(result.count).toBe(1);
+    const para = contentOf(result.doc)[0];
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("a2bc");
+  });
+
+  it("$NN where both digits are out of range stays literal", () => {
+    // $99 with no groups: preserve literal per native replace ("abc".replace(/a/, "$99") === "$99bc").
+    const d = doc(paragraph(text("abc")));
+    const result = replaceInDoc(d, "a", "$99", { regex: true });
+    expect(result.count).toBe(1);
+    const para = contentOf(result.doc)[0];
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("$99bc");
+  });
+
   it("regex-mode lookbehind matches and replaces (no sliced re-execution)", () => {
     const d = doc(paragraph(text("foobar foobaz")));
     const result = replaceInDoc(d, "(?<=foo)bar", "qux", { regex: true });
