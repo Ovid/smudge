@@ -153,6 +153,17 @@ export function FindReplacePanel({
             placeholder={S.replacePlaceholder}
             value={replacement}
             onChange={(e) => onReplacementChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                results !== null &&
+                results.total_count > 0
+              ) {
+                e.preventDefault();
+                onReplaceAllInManuscript();
+              }
+            }}
             className="text-sm border border-border/40 rounded px-2 py-1.5 bg-white text-text-primary placeholder:text-text-secondary/60 font-sans focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
