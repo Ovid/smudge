@@ -66,7 +66,7 @@ export function validateTipTapDepth(node: unknown, depth: number = 0): boolean {
   return true;
 }
 
-const TipTapDocSchema = z
+export const TipTapDocSchema = z
   .object({
     type: z.literal("doc"),
     content: z.array(z.record(z.unknown())).optional(),

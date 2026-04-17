@@ -463,7 +463,16 @@ describe("snapshots.service", () => {
 
       // Replace snapshot content with valid JSON that is NOT a TipTap doc.
       // Each of these would JSON.parse cleanly but render as nothing in TipTap.
-      const invalidShapes = ['{"foo":1}', "[]", "42", '{"type":"doc"}'];
+      // The last entry is a doc whose content array contains a non-object —
+      // previously the ad-hoc Array.isArray check would accept it; now the
+      // TipTapDocSchema-backed check rejects it.
+      const invalidShapes = [
+        '{"foo":1}',
+        "[]",
+        "42",
+        '{"type":"doc"}',
+        '{"type":"doc","content":[42]}',
+      ];
       const intactContent = JSON.stringify(DOC_JSON_ALT);
 
       for (const shape of invalidShapes) {

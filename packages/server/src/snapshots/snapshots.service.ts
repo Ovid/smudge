@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
-import { countWords, sanitizeSnapshotLabel, validateTipTapDepth } from "@smudge/shared";
+import { countWords, sanitizeSnapshotLabel, TipTapDocSchema } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
@@ -107,16 +107,15 @@ export async function restoreSnapshot(
   let newParsed: Record<string, unknown>;
   try {
     const parsed: unknown = JSON.parse(snapshot.content);
-    if (
-      !parsed ||
-      typeof parsed !== "object" ||
-      Array.isArray(parsed) ||
-      (parsed as { type?: unknown }).type !== "doc" ||
-      !Array.isArray((parsed as { content?: unknown }).content)
-    ) {
-      return "corrupt_snapshot";
-    }
-    if (!validateTipTapDepth(parsed)) {
+    // Gate on the same TipTap schema we apply to chapter PATCH writes so a
+    // legacy/hand-edited snapshot with malformed nodes (numbers in content,
+    // etc.) can't be restored into a chapter that every subsequent save
+    // would reject. The schema also enforces the shared depth cap.
+    const safe = TipTapDocSchema.safeParse(parsed);
+    if (!safe.success) return "corrupt_snapshot";
+    // Extra belt-and-braces: schema allows content to be optional, but the
+    // restore path always expects an array so downstream walkers run.
+    if (!Array.isArray((parsed as { content?: unknown }).content)) {
       return "corrupt_snapshot";
     }
     newParsed = parsed as Record<string, unknown>;

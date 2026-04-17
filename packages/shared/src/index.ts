@@ -16,6 +16,7 @@ export {
   sanitizeSnapshotLabel,
   validateTipTapDepth,
   MAX_TIPTAP_DEPTH,
+  TipTapDocSchema,
 } from "./schemas";
 export type { ExportFormatType } from "./schemas";
 export { countWords } from "./wordcount";
