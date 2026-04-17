@@ -435,9 +435,7 @@ export function replaceInDoc(
       }
 
       re.lastIndex = 0;
-      const localTarget = isMatchIndexMode
-        ? (opts.match_index as number) - globalMatchCursor
-        : -1;
+      const localTarget = isMatchIndexMode ? (opts.match_index as number) - globalMatchCursor : -1;
 
       // Capture each match's full RegExpExecArray so we can expand the
       // replacement template against the captures later — re-running the

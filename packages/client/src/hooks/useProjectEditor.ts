@@ -78,11 +78,7 @@ export function useProjectEditor(slug: string | undefined) {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (seq !== saveSeqRef.current) return false; // chapter changed, abort retries
       try {
-        const updated = await api.chapters.update(
-          savingChapterId,
-          { content },
-          controller.signal,
-        );
+        const updated = await api.chapters.update(savingChapterId, { content }, controller.signal);
         if (seq !== saveSeqRef.current) return false; // chapter changed during request
         // Keep activeChapter in sync so that re-mounting the editor
         // (e.g. after toggling Preview → Editor) uses the latest content.

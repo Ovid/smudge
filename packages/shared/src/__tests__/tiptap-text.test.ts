@@ -561,7 +561,7 @@ describe("replaceInDoc match_index bypasses match cap (I3)", () => {
     expect(result.count).toBe(1);
     // Only the first character replaced.
     const para = (result.doc as unknown as TipTapDoc).content[0] as TipTapBlock;
-    const flat = (para.content!.map((n) => (n as TipTapTextNode).text ?? "").join(""));
+    const flat = para.content!.map((n) => (n as TipTapTextNode).text ?? "").join("");
     expect(flat[0]).toBe("b");
     expect(flat[1]).toBe("a");
   });

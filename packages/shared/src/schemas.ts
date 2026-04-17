@@ -118,10 +118,12 @@ export const UpdateSettingsSchema = z.object({
  *   - Line/paragraph separators (U+2028, U+2029) — break list row layout
  */
 function sanitizeSnapshotLabel(raw: string): string {
-  return raw
-    // eslint-disable-next-line no-control-regex -- intentionally strips control chars
-    .replace(/[\u0000-\u0008\u000A-\u001F\u007F]/g, "")
-    .replace(/[\u202A-\u202E\u2066-\u2069\u2028\u2029]/g, "");
+  return (
+    raw
+      // eslint-disable-next-line no-control-regex -- intentionally strips control chars
+      .replace(/[\u0000-\u0008\u000A-\u001F\u007F]/g, "")
+      .replace(/[\u202A-\u202E\u2066-\u2069\u2028\u2029]/g, "")
+  );
 }
 
 export const CreateSnapshotSchema = z.object({
