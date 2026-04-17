@@ -83,6 +83,10 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
     setResultsQuery(null);
     setResultsOptions(null);
     setError(null);
+    // Any still-in-flight response must not write state back; its
+    // seq-guarded finally will also not be reached to clear `loading`,
+    // so reset it here or reopening the panel shows a stuck "Searching…".
+    setLoading(false);
     // Invalidate any still-in-flight response so a late reply can't
     // write results back after the panel was explicitly closed.
     searchSeqRef.current++;
@@ -131,6 +135,7 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
           if (err.code === "MATCH_CAP_EXCEEDED") setError(S.tooManyMatches);
           else if (err.code === "REGEX_TIMEOUT") setError(S.searchTimedOut);
           else if (err.code === "INVALID_REGEX") setError(S.invalidRegex);
+          else if (err.code === "CONTENT_TOO_LARGE") setError(S.contentTooLarge);
           else setError(err.message);
         } else if (err instanceof ApiRequestError && err.code === "ABORTED") {
           // User navigated away or we cancelled. No banner; the seq guard
