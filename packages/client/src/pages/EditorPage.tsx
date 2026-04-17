@@ -71,6 +71,7 @@ export function EditorPage() {
     handleRenameChapter,
     handleStatusChange,
     getActiveChapter,
+    cancelPendingSaves,
   } = useProjectEditor(slug);
 
   const { sidebarWidth, sidebarOpen, handleSidebarResize, toggleSidebar } = useSidebarState();
@@ -716,7 +717,15 @@ export function EditorPage() {
             chapterId={activeChapter.id}
             isOpen={snapshotPanelOpen}
             onClose={() => setSnapshotPanelOpen(false)}
-            onView={viewSnapshot}
+            onView={async (snap) => {
+              // Before switching to the read-only snapshot view, flush
+              // any pending save and cancel in-flight save retries so
+              // the server never receives a write while the user
+              // believes they are just inspecting history.
+              await editorRef.current?.flushSave();
+              cancelPendingSaves();
+              await viewSnapshot(snap);
+            }}
             onBeforeCreate={async () => (await editorRef.current?.flushSave()) ?? true}
             triggerRef={snapshotsTriggerRef}
           />

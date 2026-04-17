@@ -34,7 +34,9 @@ interface SnapshotPanelProps {
   chapterId: string | null;
   isOpen: boolean;
   onClose: () => void;
-  onView: (snapshot: { id: string; label: string | null; created_at: string }) => void;
+  onView: (
+    snapshot: { id: string; label: string | null; created_at: string },
+  ) => void | Promise<void>;
   /**
    * Called before snapshot creation. The panel awaits this so the server
    * snapshots the chapter AFTER any pending editor save has landed —

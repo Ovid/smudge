@@ -396,5 +396,11 @@ export function useProjectEditor(slug: string | undefined) {
     // Getter for reading the current active chapter from inside async
     // callbacks whose closure would otherwise see a stale value.
     getActiveChapter: () => activeChapterRef.current,
+    // Cancel any in-flight save retries. Used before entering snapshot
+    // view mode so a retry from earlier typing cannot write to the server
+    // while the editor is supposed to be read-only.
+    cancelPendingSaves: () => {
+      ++saveSeqRef.current;
+    },
   };
 }
