@@ -524,6 +524,17 @@ describe("assertSafeRegexPattern", () => {
     expect(() => assertSafeRegexPattern("((a|b)+)+c")).toThrow(/nested quantifier/i);
   });
 
+  it("rejects adjacent unbounded quantifiers (polynomial backtracking)", () => {
+    expect(() => assertSafeRegexPattern("a+a+b")).toThrow(/adjacent unbounded quantifier/i);
+    expect(() => assertSafeRegexPattern("\\w*\\w*x")).toThrow(/adjacent unbounded quantifier/i);
+    expect(() => assertSafeRegexPattern(".*.*y")).toThrow(/adjacent unbounded quantifier/i);
+  });
+
+  it("does not reject quantifiers inside character classes", () => {
+    expect(() => assertSafeRegexPattern("[a+]")).not.toThrow();
+    expect(() => assertSafeRegexPattern("[a+b*]")).not.toThrow();
+  });
+
   it("rejects overlapping alternation under quantifier", () => {
     expect(() => assertSafeRegexPattern("(a|a)+b")).toThrow(/overlapping alternation/i);
     expect(() => assertSafeRegexPattern("(?:x|x)*y")).toThrow(/overlapping alternation/i);

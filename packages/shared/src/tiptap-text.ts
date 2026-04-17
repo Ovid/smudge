@@ -26,6 +26,13 @@ export interface SearchOptions {
   case_sensitive?: boolean;
   whole_word?: boolean;
   regex?: boolean;
+  /**
+   * Absolute Date.now() value at which the operation must abort with
+   * RegExpTimeoutError. Defense-in-depth against patterns that sail
+   * through assertSafeRegexPattern but still cause exponential
+   * backtracking on specific inputs.
+   */
+  deadline?: number;
 }
 
 export interface ReplaceOptions extends SearchOptions {
@@ -157,8 +164,10 @@ function advancePastZeroLengthMatch(re: RegExp, str: string): void {
 /**
  * Reject patterns with shapes known to cause catastrophic backtracking
  * (ReDoS) in V8's regex engine. This is a best-effort heuristic, not a
- * complete analysis — it catches common cases like `(a+)+`, `(a*)*`, and
- * `(a|a)+`. Linear-time engines would make this unnecessary.
+ * complete analysis — a complete check would require a real regex parser
+ * or a linear-time engine (node-re2). Combined with a per-request wall-
+ * clock budget on the exec loop (REGEX_DEADLINE_MS in the caller), the
+ * heuristic is defense-in-depth, not the sole line of defense.
  */
 export function assertSafeRegexPattern(pattern: string): void {
   // Normalize `?:` (non-capturing marker) so the `?` inside it doesn't
@@ -190,6 +199,33 @@ export function assertSafeRegexPattern(pattern: string): void {
   const nestedQuantifierWithSubgroup = /\([^()]*\([^()]*\)[^()]*\)\s*[+*?{]/;
   if (nestedQuantifierWithSubgroup.test(pattern)) {
     throw new RegExpSafetyError("Pattern contains nested quantifiers that can cause slowdowns.");
+  }
+
+  // (4) Adjacent unbounded quantifiers on overlapping atoms outside a
+  // character class: `a*a*`, `\w+\w+`, `.*.+`. The engine can distribute
+  // a run of "a"s across the two atoms in ~n ways per additional quantifier,
+  // causing polynomial backtracking when a later anchor fails. Detect by
+  // scanning for two quantifiers (+, *, {n,}) outside square brackets,
+  // separated only by a single-char atom / class / group.
+  //
+  // We strip character-class contents first so quantifiers inside `[...]`
+  // (which are literal) don't trip the scan.
+  const withoutCharClasses = pattern.replace(/\[[^\]]*\]/g, "[]");
+  // Matches: atom-then-quant, another-atom-then-quant, in sequence.
+  // atom = escaped char | . | \w | \s | \d | (...) | [] | bare char
+  const adjacentUnboundedQuantifier =
+    /(?:\\.|\[\]|\([^()]*\)|[^\\(){}|])(?:[+*]|\{\d+,\d*\})(?:\\.|\[\]|\([^()]*\)|[^\\(){}|])(?:[+*]|\{\d+,\d*\})/;
+  if (adjacentUnboundedQuantifier.test(withoutCharClasses)) {
+    throw new RegExpSafetyError(
+      "Pattern contains adjacent unbounded quantifiers that can cause slowdowns.",
+    );
+  }
+}
+
+export class RegExpTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`Search timed out after ${ms}ms; refine your pattern.`);
+    this.name = "RegExpTimeoutError";
   }
 }
 
@@ -317,6 +353,9 @@ export function searchInDoc(
           // service-level total check fires.
           throw new MatchCapExceededError(MAX_MATCHES_PER_REQUEST);
         }
+        if (opts.deadline !== undefined && Date.now() > opts.deadline) {
+          throw new RegExpTimeoutError(0);
+        }
         matches.push({
           index: matchIndex++,
           context: extractContext(run.flat, m.index, m[0].length),
@@ -401,6 +440,9 @@ export function replaceInDoc(
         // early break below.
         if (!isMatchIndexMode && totalCount + allMatches.length >= MAX_MATCHES_PER_REQUEST) {
           throw new MatchCapExceededError(MAX_MATCHES_PER_REQUEST);
+        }
+        if (opts.deadline !== undefined && Date.now() > opts.deadline) {
+          throw new RegExpTimeoutError(0);
         }
         allMatches.push({ start: m.index, end: m.index + m[0].length, m });
         if (m[0].length === 0) advancePastZeroLengthMatch(re, flat);

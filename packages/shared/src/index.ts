@@ -22,6 +22,7 @@ export {
   buildRegex,
   assertSafeRegexPattern,
   RegExpSafetyError,
+  RegExpTimeoutError,
   MatchCapExceededError,
   MAX_MATCHES_PER_REQUEST,
   CONTEXT_RADIUS,

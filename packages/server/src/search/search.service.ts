@@ -6,6 +6,7 @@ import {
   countWords,
   assertSafeRegexPattern,
   RegExpSafetyError,
+  RegExpTimeoutError,
   MatchCapExceededError,
   MAX_MATCHES_PER_REQUEST,
 } from "@smudge/shared";
@@ -15,10 +16,19 @@ import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
 import type { SearchResult } from "./search.types";
 
+/**
+ * Hard wall-clock budget for a single search/replace request. Bounds the
+ * event-loop time a single pathological pattern can consume, even if
+ * assertSafeRegexPattern lets a ReDoS shape through. Chosen conservatively
+ * — legitimate project-wide searches on large books finish well under this.
+ */
+const REGEX_DEADLINE_MS = 2_000;
+
 /** Distinct codes for 400 responses so the client can show specific copy. */
 export const SEARCH_ERROR_CODES = {
   INVALID_REGEX: "INVALID_REGEX",
   MATCH_CAP_EXCEEDED: "MATCH_CAP_EXCEEDED",
+  REGEX_TIMEOUT: "REGEX_TIMEOUT",
 } as const;
 export type SearchErrorCode = (typeof SEARCH_ERROR_CODES)[keyof typeof SEARCH_ERROR_CODES];
 
@@ -85,6 +95,13 @@ function matchCapValidationError(): SearchValidationError {
   };
 }
 
+function regexTimeoutValidationError(): SearchValidationError {
+  return {
+    validationError: `Search timed out after ${REGEX_DEADLINE_MS}ms; refine your pattern.`,
+    code: SEARCH_ERROR_CODES.REGEX_TIMEOUT,
+  };
+}
+
 export async function searchProject(
   projectId: string,
   query: string,
@@ -100,9 +117,11 @@ export async function searchProject(
   const chapters = await store.listChapterContentByProject(projectId);
   const skippedIds: string[] = [];
   const result: SearchResult = { total_count: 0, chapters: [] };
+  const deadline = Date.now() + REGEX_DEADLINE_MS;
 
   for (const chapter of chapters) {
     if (!chapter.content) continue;
+    if (Date.now() > deadline) return regexTimeoutValidationError();
 
     let parsed: Record<string, unknown>;
     try {
@@ -118,9 +137,10 @@ export async function searchProject(
 
     let matches;
     try {
-      matches = searchInDoc(parsed, query, options);
+      matches = searchInDoc(parsed, query, { ...options, deadline });
     } catch (err) {
       if (err instanceof MatchCapExceededError) return matchCapValidationError();
+      if (err instanceof RegExpTimeoutError) return regexTimeoutValidationError();
       throw err;
     }
     if (matches.length > 0) {
@@ -193,9 +213,13 @@ export async function replaceInProject(
       let totalReplaced = 0;
       const affectedIds: string[] = [];
       const skippedIds: string[] = [];
+      const deadline = Date.now() + REGEX_DEADLINE_MS;
 
       for (const chapter of chapters) {
         if (!chapter.content) continue;
+        if (Date.now() > deadline) {
+          throw new RegExpTimeoutError(REGEX_DEADLINE_MS);
+        }
 
         let parsed: Record<string, unknown>;
         try {
@@ -209,10 +233,12 @@ export async function replaceInProject(
           continue;
         }
 
-        const replaceOptions =
-          scope?.type === "chapter" && typeof scope.match_index === "number"
+        const replaceOptions = {
+          ...(scope?.type === "chapter" && typeof scope.match_index === "number"
             ? { ...options, match_index: scope.match_index }
-            : options;
+            : options),
+          deadline,
+        };
         const { doc: newDoc, count } = replaceInDoc(parsed, search, replace, replaceOptions);
         if (count === 0) continue;
 
@@ -264,6 +290,9 @@ export async function replaceInProject(
     .catch((err): SearchValidationError | never => {
       if (err instanceof MatchCapExceededError) {
         return matchCapValidationError();
+      }
+      if (err instanceof RegExpTimeoutError) {
+        return regexTimeoutValidationError();
       }
       throw err;
     });
