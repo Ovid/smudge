@@ -113,10 +113,11 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
       } catch (err) {
         if (seq !== searchSeqRef.current) return;
         if (err instanceof ApiRequestError && err.status === 400) {
-          // The server uses dedicated codes for the two 400 cases so the
-          // user gets actionable copy rather than a misleading "invalid
-          // regex" for what is actually a too-broad match.
+          // The server uses dedicated codes so the user gets actionable
+          // copy rather than a misleading "invalid regex" for what is
+          // actually a too-broad match or a slow-pattern timeout.
           if (err.code === "MATCH_CAP_EXCEEDED") setError(S.tooManyMatches);
+          else if (err.code === "REGEX_TIMEOUT") setError(S.searchTimedOut);
           else setError(S.invalidRegex);
         } else {
           setError(err instanceof Error ? err.message : "Search failed");

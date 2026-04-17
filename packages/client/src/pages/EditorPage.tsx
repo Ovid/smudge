@@ -30,7 +30,7 @@ import { useChapterTitleEditing } from "../hooks/useChapterTitleEditing";
 import { useProjectTitleEditing } from "../hooks/useProjectTitleEditing";
 import { useTrashManager } from "../hooks/useTrashManager";
 import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcuts";
-import { api } from "../api/client";
+import { api, ApiRequestError } from "../api/client";
 import { clearAllCachedContent, clearCachedContent } from "../hooks/useContentCache";
 import { Logo } from "../components/Logo";
 import { generateHTML } from "@tiptap/html";
@@ -224,8 +224,27 @@ export function EditorPage() {
         }
         await findReplace.search(slug);
         snapshotPanelRef.current?.refreshSnapshots();
-      } catch {
-        setActionError(STRINGS.findReplace.replaceFailed);
+        // Surface any chapters the server skipped (corrupt JSON) so the
+        // user isn't left believing every occurrence was replaced.
+        if (result.skipped_chapter_ids && result.skipped_chapter_ids.length > 0) {
+          setActionError(
+            STRINGS.findReplace.skippedAfterReplace(result.skipped_chapter_ids.length),
+          );
+        }
+      } catch (err) {
+        if (err instanceof ApiRequestError && err.status === 400) {
+          if (err.code === "MATCH_CAP_EXCEEDED") {
+            setActionError(STRINGS.findReplace.tooManyMatches);
+          } else if (err.code === "REGEX_TIMEOUT") {
+            setActionError(STRINGS.findReplace.searchTimedOut);
+          } else if (err.code === "CONTENT_TOO_LARGE") {
+            setActionError(STRINGS.findReplace.contentTooLarge);
+          } else {
+            setActionError(STRINGS.findReplace.invalidRegex);
+          }
+        } else {
+          setActionError(STRINGS.findReplace.replaceFailed);
+        }
       }
     },
     [

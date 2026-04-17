@@ -289,6 +289,8 @@ export const STRINGS = {
       `${manual + auto} snapshots (${manual} manual, ${auto} auto)`,
     duplicateSkipped: "Content unchanged since last snapshot.",
     createFailed: "Unable to create snapshot. Save your unsaved changes and try again.",
+    deleteFailed: "Unable to delete snapshot. Try again.",
+    listFailed: "Unable to load snapshots. Try opening the panel again.",
     ariaLabel: "Chapter snapshots",
     relativeTime: {
       justNow: "just now",
@@ -326,8 +328,13 @@ export const STRINGS = {
     matchNotFound: "Match no longer found — try searching again.",
     invalidRegex: "Invalid regular expression",
     tooManyMatches: "Too many matches — refine your search and try again.",
+    searchTimedOut: "Search timed out — refine your pattern and try again.",
+    contentTooLarge:
+      "Replacement would produce chapter content over the size limit; refine your replacement.",
     skippedChapters: (count: number) =>
       `${count} chapter${count === 1 ? " was" : "s were"} skipped due to corrupt content.`,
+    skippedAfterReplace: (count: number) =>
+      `Replace completed, but ${count} chapter${count === 1 ? " was" : "s were"} skipped due to corrupt content.`,
     chapterMatches: (title: string, count: number) =>
       `${title} (${count} match${count === 1 ? "" : "es"})`,
     ariaLabel: "Find and replace",

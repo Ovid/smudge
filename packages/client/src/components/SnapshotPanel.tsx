@@ -58,6 +58,8 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
     const [duplicateMessage, setDuplicateMessage] = useState(false);
     const [createError, setCreateError] = useState<string | null>(null);
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
+    const [listError, setListError] = useState<string | null>(null);
     const panelRef = useRef<HTMLElement>(null);
     const prevIsOpen = useRef(isOpen);
     // Guards async list responses against rapid chapter switches: every
@@ -73,8 +75,13 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         const data = await api.snapshots.list(chapterId);
         if (seq !== chapterSeqRef.current) return;
         setSnapshots(data);
+        setListError(null);
       } catch {
-        // Silently fail — panel shows empty state
+        if (seq !== chapterSeqRef.current) return;
+        // Surface the failure instead of silently showing an empty panel;
+        // otherwise a network blip makes the user think a chapter with
+        // snapshots has none.
+        setListError(S.listFailed);
       }
     }, [chapterId]);
 
@@ -92,9 +99,11 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         .then((data) => {
           if (seq !== chapterSeqRef.current) return;
           setSnapshots(data);
+          setListError(null);
         })
         .catch(() => {
-          // Silently fail — panel shows empty state
+          if (seq !== chapterSeqRef.current) return;
+          setListError(S.listFailed);
         });
     }, [isOpen, chapterId]);
 
@@ -143,6 +152,8 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
       setDuplicateMessage(false);
       setCreateError(null);
       setConfirmDeleteId(null);
+      setDeleteError(null);
+      setListError(null);
     }
 
     const handleCreate = async () => {
@@ -175,12 +186,16 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
     };
 
     const handleDelete = async (id: string) => {
+      setDeleteError(null);
       try {
         await api.snapshots.delete(id);
         setConfirmDeleteId(null);
         await fetchSnapshots();
       } catch {
-        // Silently fail
+        // Keep the confirm dialog open and surface an error so the user
+        // knows the delete didn't land — silently swallowing it makes
+        // users believe a destructive action succeeded when it hadn't.
+        setDeleteError(S.deleteFailed);
       }
     };
 
@@ -262,8 +277,15 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
             </div>
           )}
 
+          {/* List error */}
+          {listError && (
+            <p role="alert" className="text-xs text-red-700 font-sans">
+              {listError}
+            </p>
+          )}
+
           {/* Empty state */}
-          {snapshots.length === 0 && (
+          {snapshots.length === 0 && !listError && (
             <p className="text-sm text-text-secondary text-center py-6 font-sans">{S.emptyState}</p>
           )}
 
@@ -302,6 +324,11 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
                   {confirmDeleteId === snap.id ? (
                     <div className="flex flex-col gap-1.5 mt-1">
                       <p className="text-xs text-red-700 font-sans">{S.deleteConfirm}</p>
+                      {deleteError && (
+                        <p role="alert" className="text-xs text-red-700 font-sans">
+                          {deleteError}
+                        </p>
+                      )}
                       <div className="flex gap-2">
                         <button
                           type="button"
@@ -312,7 +339,10 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
                         </button>
                         <button
                           type="button"
-                          onClick={() => setConfirmDeleteId(null)}
+                          onClick={() => {
+                            setConfirmDeleteId(null);
+                            setDeleteError(null);
+                          }}
                           className="text-xs text-text-secondary hover:text-text-primary transition-colors font-sans"
                         >
                           {S.deleteCancel}
