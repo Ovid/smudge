@@ -154,9 +154,17 @@ export const UpdateSettingsSchema = z.object({
 export function sanitizeSnapshotLabel(raw: string): string {
   return (
     raw
+      // Strip ALL C0 (including TAB U+0009) and C1 control characters. TAB
+      // was previously preserved but disrupts list-row column alignment
+      // and can be used for crude display spoofing.
       // eslint-disable-next-line no-control-regex -- intentionally strips control chars
-      .replace(/[\u0000-\u0008\u000A-\u001F\u007F-\u009F]/g, "")
+      .replace(/[\u0000-\u001F\u007F-\u009F]/g, "")
+      // Strip bidi overrides + line/paragraph separators.
       .replace(/[\u202A-\u202E\u2066-\u2069\u2028\u2029]/g, "")
+      // Strip zero-width chars (ZWSP, ZWNJ, ZWJ, word joiner, BOM).
+      // Left intact these render as nothing but compare/search differently,
+      // enabling snapshot-label spoofing in the list view.
+      .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
   );
 }
 

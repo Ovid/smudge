@@ -292,7 +292,15 @@ export async function replaceInProject(
         }
         affectedIds.push(chapter.id);
 
-        const label = `Before find-and-replace: '${truncateForLabel(search)}' → '${truncateForLabel(replace)}'`;
+        // Run the auto-label through the same sanitize + 500-char clamp
+        // pipeline that CreateSnapshotSchema applies to manual labels. The
+        // truncateForLabel helper already sanitizes its argument, but the
+        // surrounding template text is authored here; a future change to
+        // the template could silently exceed the column cap without this
+        // backstop.
+        const rawLabel = `Before find-and-replace: '${truncateForLabel(search)}' → '${truncateForLabel(replace)}'`;
+        const sanitizedLabel = sanitizeSnapshotLabel(rawLabel).slice(0, 500);
+        const label = sanitizedLabel;
 
         // Auto-snapshot before replacement (using DB-committed word_count)
         await txStore.insertSnapshot({
