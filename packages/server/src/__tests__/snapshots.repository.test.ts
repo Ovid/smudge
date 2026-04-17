@@ -65,7 +65,7 @@ describe("snapshots repository", () => {
       expect(found!.label).toBe("Manual save");
       expect(found!.content).toBe('{"type":"doc","content":[]}');
       expect(found!.word_count).toBe(42);
-      expect(found!.is_auto).toBe(0); // SQLite stores booleans as 0/1
+      expect(found!.is_auto).toBe(false);
       expect(found!.created_at).toBe(now);
     });
 
