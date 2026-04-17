@@ -7,4 +7,6 @@ export interface SearchResult {
     chapter_title: string;
     matches: SearchMatch[];
   }>;
+  /** Chapter IDs skipped due to corrupt JSON content. Omitted when empty. */
+  skipped_chapter_ids?: string[];
 }

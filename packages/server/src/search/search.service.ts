@@ -1,30 +1,54 @@
 import { v4 as uuidv4 } from "uuid";
-import { searchInDoc, replaceInDoc, countWords } from "@smudge/shared";
+import {
+  searchInDoc,
+  replaceInDoc,
+  countWords,
+  assertSafeRegexPattern,
+  RegExpSafetyError,
+  MAX_MATCHES_PER_REQUEST,
+} from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
 import type { SearchResult } from "./search.types";
 
+class MatchCapExceeded extends Error {
+  constructor() {
+    super(`Too many matches (>${MAX_MATCHES_PER_REQUEST}); refine your search.`);
+    this.name = "MatchCapExceeded";
+  }
+}
+
+function validatePattern(
+  pattern: string,
+  regexMode: boolean | undefined,
+): { validationError: string } | null {
+  if (!regexMode) return null;
+  try {
+    assertSafeRegexPattern(pattern);
+    new RegExp(pattern);
+  } catch (e) {
+    if (e instanceof RegExpSafetyError) return { validationError: e.message };
+    return { validationError: (e as Error).message };
+  }
+  return null;
+}
+
 export async function searchProject(
   projectId: string,
   query: string,
   options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
 ): Promise<SearchResult | null | { validationError: string }> {
-  if (options?.regex) {
-    try {
-      new RegExp(query);
-    } catch (e) {
-      return { validationError: (e as Error).message };
-    }
-  }
+  const regexError = validatePattern(query, options?.regex);
+  if (regexError) return regexError;
 
   const store = getProjectStore();
   const project = await store.findProjectById(projectId);
   if (!project) return null;
 
   const chapters = await store.listChapterContentByProject(projectId);
-  const result: SearchResult = { total_count: 0, chapters: [] };
+  const result: SearchResult = { total_count: 0, chapters: [], skipped_chapter_ids: [] };
 
   for (const chapter of chapters) {
     if (!chapter.content) continue;
@@ -33,13 +57,22 @@ export async function searchProject(
     try {
       parsed = JSON.parse(chapter.content);
     } catch {
-      // Corrupt JSON — skip
+      logger.warn(
+        { chapter_id: chapter.id, project_id: projectId },
+        "Skipping chapter with corrupt JSON during search",
+      );
+      result.skipped_chapter_ids!.push(chapter.id);
       continue;
     }
 
     const matches = searchInDoc(parsed, query, options);
     if (matches.length > 0) {
       result.total_count += matches.length;
+      if (result.total_count > MAX_MATCHES_PER_REQUEST) {
+        return {
+          validationError: `Too many matches (>${MAX_MATCHES_PER_REQUEST}); refine your search.`,
+        };
+      }
       result.chapters.push({
         chapter_id: chapter.id,
         chapter_title: chapter.title,
@@ -48,6 +81,9 @@ export async function searchProject(
     }
   }
 
+  if (result.skipped_chapter_ids!.length === 0) {
+    delete result.skipped_chapter_ids;
+  }
   return result;
 }
 
@@ -58,16 +94,17 @@ export async function replaceInProject(
   options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
   scope?: { type: "project" } | { type: "chapter"; chapter_id: string; match_index?: number },
 ): Promise<
-  { replaced_count: number; affected_chapter_ids: string[] } | null | { validationError: string }
+  | {
+      replaced_count: number;
+      affected_chapter_ids: string[];
+      skipped_chapter_ids?: string[];
+    }
+  | null
+  | { validationError: string }
 > {
   // Validate regex up front
-  if (options?.regex) {
-    try {
-      new RegExp(search);
-    } catch (e) {
-      return { validationError: (e as Error).message };
-    }
-  }
+  const regexError = validatePattern(search, options?.regex);
+  if (regexError) return regexError;
 
   const store = getProjectStore();
   const project = await store.findProjectById(projectId);
@@ -96,6 +133,7 @@ export async function replaceInProject(
 
     let totalReplaced = 0;
     const affectedIds: string[] = [];
+    const skippedIds: string[] = [];
 
     for (const chapter of chapters) {
       if (!chapter.content) continue;
@@ -104,6 +142,11 @@ export async function replaceInProject(
       try {
         parsed = JSON.parse(chapter.content);
       } catch {
+        logger.warn(
+          { chapter_id: chapter.id, project_id: projectId },
+          "Skipping chapter with corrupt JSON during replace",
+        );
+        skippedIds.push(chapter.id);
         continue;
       }
 
@@ -115,6 +158,9 @@ export async function replaceInProject(
       if (count === 0) continue;
 
       totalReplaced += count;
+      if (totalReplaced > MAX_MATCHES_PER_REQUEST) {
+        throw new MatchCapExceeded();
+      }
       affectedIds.push(chapter.id);
 
       // Truncate label parts to keep it readable
@@ -153,8 +199,19 @@ export async function replaceInProject(
       await txStore.updateProjectTimestamp(projectId, new Date().toISOString());
     }
 
-    return { replaced_count: totalReplaced, affected_chapter_ids: affectedIds };
+    return {
+      replaced_count: totalReplaced,
+      affected_chapter_ids: affectedIds,
+      skipped_chapter_ids: skippedIds,
+    };
+  }).catch((err) => {
+    if (err instanceof MatchCapExceeded) {
+      return { validationError: err.message } as const;
+    }
+    throw err;
   });
+
+  if ("validationError" in txResult) return txResult;
 
   // Fire velocity side-effects after the transaction commits
   if (txResult.affected_chapter_ids.length > 0) {
@@ -169,5 +226,12 @@ export async function replaceInProject(
     }
   }
 
-  return txResult;
+  const final = {
+    replaced_count: txResult.replaced_count,
+    affected_chapter_ids: txResult.affected_chapter_ids,
+    ...(txResult.skipped_chapter_ids && txResult.skipped_chapter_ids.length > 0
+      ? { skipped_chapter_ids: txResult.skipped_chapter_ids }
+      : {}),
+  };
+  return final;
 }

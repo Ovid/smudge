@@ -38,6 +38,9 @@ export interface ReplaceOptions extends SearchOptions {
 
 // --- Internal helpers ---
 
+/** Maximum matches allowed in a single search/replace request. */
+export const MAX_MATCHES_PER_REQUEST = 10_000;
+
 const LEAF_BLOCKS = new Set(["paragraph", "heading", "codeBlock"]);
 
 /** Collect leaf block nodes that directly contain text/inline nodes. */
@@ -113,6 +116,36 @@ function buildRegex(query: string, opts: SearchOptions): RegExp {
   if (opts.whole_word) pattern = `\\b${pattern}\\b`;
   const flags = opts.case_sensitive ? "g" : "gi";
   return new RegExp(pattern, flags);
+}
+
+/**
+ * Reject patterns with shapes known to cause catastrophic backtracking
+ * (ReDoS) in V8's regex engine. This is a best-effort heuristic, not a
+ * complete analysis — it catches common cases like `(a+)+`, `(a*)*`, and
+ * `(a|a)+`. Linear-time engines would make this unnecessary.
+ */
+export function assertSafeRegexPattern(pattern: string): void {
+  // Nested quantifier: a group that contains + * ? or {n,m} and is itself
+  // followed by one of those quantifiers.
+  // This conservatively matches `( ... [+*?] ... ) [+*?{]`.
+  const nestedQuantifier = /\([^()]*[+*?][^()]*\)\s*[+*?{]/;
+  if (nestedQuantifier.test(pattern)) {
+    throw new RegExpSafetyError("Pattern contains nested quantifiers that can cause slowdowns.");
+  }
+}
+
+export class RegExpSafetyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RegExpSafetyError";
+  }
+}
+
+export class MatchCapExceededError extends Error {
+  constructor(cap: number) {
+    super(`Too many matches (>${cap}); refine your search.`);
+    this.name = "MatchCapExceededError";
+  }
 }
 
 function extractContext(flat: string, offset: number, length: number): string {

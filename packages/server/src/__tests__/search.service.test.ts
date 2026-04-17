@@ -181,12 +181,13 @@ describe("search.service", () => {
       expect(result).toBeNull();
     });
 
-    it("skips chapters with corrupt JSON content", async () => {
+    it("skips chapters with corrupt JSON content and reports skipped_chapter_ids", async () => {
       const { searchProject } = await import("../search/search.service");
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const { logger } = await import("../logger");
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
       const projectId = await createProject();
       await createChapter(projectId, "Good", JSON.stringify(makeDoc("hello world")), 0);
-      await createChapter(projectId, "Corrupt", "{not valid json!!!", 1);
+      const corruptId = await createChapter(projectId, "Corrupt", "{not valid json!!!", 1);
 
       const result = await searchProject(projectId, "hello");
 
@@ -194,6 +195,8 @@ describe("search.service", () => {
       expect(r.total_count).toBe(1);
       expect(r.chapters).toHaveLength(1);
       expect(r.chapters[0]!.chapter_title).toBe("Good");
+      expect(r.skipped_chapter_ids).toEqual([corruptId]);
+      expect(warnSpy).toHaveBeenCalled();
       warnSpy.mockRestore();
     });
 
@@ -381,6 +384,19 @@ describe("search.service", () => {
       expect(r.validationError).toBeTruthy();
     });
 
+    it("rejects regex patterns with nested quantifiers (ReDoS guard)", async () => {
+      const { replaceInProject } = await import("../search/search.service");
+      const projectId = await createProject();
+      await createChapter(projectId, "Ch 1", JSON.stringify(makeDoc("hello")), 0);
+
+      const result = await replaceInProject(projectId, "(a+)+", "x", { regex: true });
+
+      expect(result).not.toBeNull();
+      expect("validationError" in result!).toBe(true);
+      const r = result as { validationError: string };
+      expect(r.validationError).toMatch(/nested quantifier/i);
+    });
+
     it("replace with empty string works (deletion)", async () => {
       const { replaceInProject } = await import("../search/search.service");
       const projectId = await createProject();
@@ -416,15 +432,24 @@ describe("search.service", () => {
 
     it("skips chapters with corrupt JSON content during replace", async () => {
       const { replaceInProject } = await import("../search/search.service");
+      const { logger } = await import("../logger");
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
       const projectId = await createProject();
       const ch1 = await createChapter(projectId, "Good", JSON.stringify(makeDoc("hello world")), 0);
-      await createChapter(projectId, "Corrupt", "{not valid json!!!", 1);
+      const corruptId = await createChapter(projectId, "Corrupt", "{not valid json!!!", 1);
 
       const result = await replaceInProject(projectId, "hello", "goodbye");
 
-      const r = result as { replaced_count: number; affected_chapter_ids: string[] };
+      const r = result as {
+        replaced_count: number;
+        affected_chapter_ids: string[];
+        skipped_chapter_ids?: string[];
+      };
       expect(r.replaced_count).toBe(1);
       expect(r.affected_chapter_ids).toEqual([ch1]);
+      expect(r.skipped_chapter_ids).toEqual([corruptId]);
+      expect(warnSpy).toHaveBeenCalled();
+      warnSpy.mockRestore();
     });
 
     it("image reference counts adjusted via applyImageRefDiff", async () => {
