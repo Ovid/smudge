@@ -21,6 +21,11 @@ export interface RestoreResult {
   // would pull in the wrong content — callers should skip reloadActiveChapter
   // in this branch.
   staleChapterSwitch?: boolean;
+  // The chapter id whose content was restored. Callers can compare this to
+  // the currently-active chapter id (which may differ from the one the
+  // restore was initiated on after an A→B→A round trip) to decide whether
+  // to reload the editor.
+  restoredChapterId?: string;
 }
 
 export type ViewFailureReason = "not_found" | "corrupt_snapshot" | "network" | "unknown";
@@ -63,6 +68,12 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   const snapshotPanelRef = useRef<SnapshotPanelHandle>(null);
   // Monotonic counter to discard stale list responses after a chapter switch.
   const chapterSeqRef = useRef(0);
+  // Mirror the current chapterId so async handlers can check the live value
+  // against their captured one (needed for A→B→A restore detection).
+  const currentChapterIdRef = useRef<string | null>(chapterId);
+  useEffect(() => {
+    currentChapterIdRef.current = chapterId;
+  }, [chapterId]);
 
   // Reset per-chapter state when chapterId changes. Without clearing
   // viewingSnapshot here, the snapshot banner & view from chapter A
@@ -148,23 +159,41 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       const restoringChapterId = chapterId;
       try {
         await api.snapshots.restore(snapshotId);
-        if (seq !== chapterSeqRef.current) {
-          // Chapter switched mid-restore. The server did rewrite the
-          // previously-active chapter; clear its cached draft so next
-          // navigation loads the restored content rather than stale edits.
+        // A→B→A round-trip: seq moved but the current chapter is once
+        // again the one we restored. Treat that as a NOT-stale completion
+        // — the caller should reload the editor because the restore
+        // landed on what the user is viewing now.
+        const seqMoved = seq !== chapterSeqRef.current;
+        const stillOnRestoredChapter = currentChapterIdRef.current === restoringChapterId;
+        if (seqMoved && !stillOnRestoredChapter) {
+          // True stale switch: user navigated away and stayed away. Clear
+          // the restoring chapter's cached draft so next navigation loads
+          // restored content rather than stale edits, but don't reload.
           if (restoringChapterId) clearCachedContent(restoringChapterId);
-          return { ok: true, staleChapterSwitch: true };
+          return {
+            ok: true,
+            staleChapterSwitch: true,
+            ...(restoringChapterId ? { restoredChapterId: restoringChapterId } : {}),
+          };
         }
         setViewingSnapshot(null);
         if (restoringChapterId) {
+          // Use the CURRENT ref seq for the follow-up list, since the
+          // old seq is stale after an A→B→A round-trip. The list still
+          // needs to be keyed to the current chapterSeq so a later
+          // switch can discard it.
+          const freshSeq = chapterSeqRef.current;
           api.snapshots
             .list(restoringChapterId)
             .then((data) => {
-              if (seq === chapterSeqRef.current) setSnapshotCount(data.length);
+              if (freshSeq === chapterSeqRef.current) setSnapshotCount(data.length);
             })
             .catch(() => {});
         }
-        return { ok: true };
+        return {
+          ok: true,
+          ...(restoringChapterId ? { restoredChapterId: restoringChapterId } : {}),
+        };
       } catch (err) {
         if (err instanceof ApiRequestError) {
           if (err.code === "CORRUPT_SNAPSHOT") {

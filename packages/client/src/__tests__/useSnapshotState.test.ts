@@ -244,6 +244,51 @@ describe("useSnapshotState", () => {
     expect(clearCachedContent).toHaveBeenCalledWith("ch-1");
   });
 
+  it("restoreSnapshot does NOT flag stale on A→B→A round-trip (current chapter IS the restored one)", async () => {
+    // User starts restore on ch-1, switches to ch-2 mid-flight, then back to
+    // ch-1 before the server responds. seq has moved twice, but the current
+    // active chapter equals the restored chapter — caller should reload
+    // the editor, NOT skip the reload.
+    let resolveRestore: (v: Chapter) => void = () => {};
+    vi.mocked(api.snapshots.restore).mockImplementationOnce(
+      () =>
+        new Promise<Chapter>((resolve) => {
+          resolveRestore = resolve;
+        }),
+    );
+    vi.mocked(api.snapshots.list).mockResolvedValue([]);
+
+    const { result, rerender } = renderHook(({ id }) => useSnapshotState(id), {
+      initialProps: { id: "ch-1" as string | null },
+    });
+
+    let restorePromise: Promise<{
+      ok: boolean;
+      staleChapterSwitch?: boolean;
+      restoredChapterId?: string;
+    }> = Promise.resolve({ ok: false });
+    act(() => {
+      restorePromise = result.current.restoreSnapshot("snap-1");
+    });
+
+    // A → B → A
+    rerender({ id: "ch-2" });
+    rerender({ id: "ch-1" });
+
+    let r: { ok: boolean; staleChapterSwitch?: boolean; restoredChapterId?: string } = {
+      ok: false,
+    };
+    await act(async () => {
+      resolveRestore({} as Chapter);
+      r = await restorePromise;
+    });
+
+    expect(r.ok).toBe(true);
+    // Key assertion: seq moved but current chapter === restoring chapter.
+    expect(r.staleChapterSwitch).toBeFalsy();
+    expect(r.restoredChapterId).toBe("ch-1");
+  });
+
   it("restoreSnapshot returns ok=false on generic failure", async () => {
     vi.mocked(api.snapshots.restore).mockRejectedValue(new Error("fail"));
 
