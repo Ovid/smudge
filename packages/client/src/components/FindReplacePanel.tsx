@@ -257,8 +257,9 @@ export function FindReplacePanel({
                     </span>
                     <button
                       type="button"
+                      disabled={!hasReplacement}
                       onClick={() => onReplaceOne(chapter.chapter_id, match.index)}
-                      className="text-xs font-medium text-accent hover:text-accent/80 transition-colors font-sans flex-shrink-0"
+                      className="text-xs font-medium text-accent hover:text-accent/80 transition-colors font-sans flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {S.replaceOne}
                     </button>
