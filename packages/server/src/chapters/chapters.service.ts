@@ -222,17 +222,12 @@ export async function restoreChapter(
 
       // Read content inside the transaction to get the committed state
       // and increment image reference counts atomically with the restore.
+      // Route through applyImageRefDiff so the existence-check + missing-
+      // image warning is shared with updateChapter / replaceInProject /
+      // restoreSnapshot rather than diverging here.
       const restoredRow = await txStore.findChapterByIdRaw(id);
       if (restoredRow?.content) {
-        try {
-          const content = JSON.parse(restoredRow.content);
-          const imageIds = extractImageIds(content);
-          for (const imgId of imageIds) {
-            await txStore.incrementImageReferenceCount(imgId, 1);
-          }
-        } catch {
-          // Corrupt content — no image IDs to increment
-        }
+        await applyImageRefDiff(txStore, null, restoredRow.content);
       }
     });
   } catch (err: unknown) {
