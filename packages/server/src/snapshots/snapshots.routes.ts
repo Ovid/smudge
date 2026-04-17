@@ -119,11 +119,20 @@ export function snapshotDirectRouter(): Router {
       const id = validateUuidParam(req, res);
       if (!id) return;
       const result = await SnapshotService.restoreSnapshot(id);
-      if (!result) {
+      if (result === null) {
         res.status(404).json({
           error: {
             code: "NOT_FOUND",
             message: "Snapshot or chapter not found.",
+          },
+        });
+        return;
+      }
+      if (result === "corrupt_snapshot") {
+        res.status(422).json({
+          error: {
+            code: "CORRUPT_SNAPSHOT",
+            message: "Snapshot content is corrupt and cannot be restored.",
           },
         });
         return;

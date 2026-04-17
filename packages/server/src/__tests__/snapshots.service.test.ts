@@ -2,7 +2,6 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { v4 as uuid } from "uuid";
 import { setupTestDb } from "./test-helpers";
 import { setVelocityService, resetVelocityService } from "../velocity/velocity.injectable";
-import { logger } from "../logger";
 
 const t = setupTestDb();
 
@@ -256,9 +255,10 @@ describe("snapshots.service", () => {
 
       // Restore
       const result = await restoreSnapshot(snap.id);
-      expect(result).not.toBeNull();
-      const restored = result!;
-      expect(restored.chapter).toBeDefined();
+      if (result === null || result === "corrupt_snapshot") {
+        throw new Error("expected restoreSnapshot to succeed");
+      }
+      expect(result.chapter).toBeDefined();
 
       // Verify chapter content was restored
       const chapter = await t.db("chapters").where({ id: chapterId }).first();
@@ -380,8 +380,7 @@ describe("snapshots.service", () => {
       expect(autoSnap).toBeDefined();
     });
 
-    it("handles corrupt snapshot content gracefully (word count defaults to 0)", async () => {
-      const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    it("refuses to restore a corrupt snapshot and leaves chapter untouched", async () => {
       stubVelocity();
       const { chapterId } = await createProjectAndChapter();
       const { createSnapshot, restoreSnapshot } = await import("../snapshots/snapshots.service");
@@ -398,20 +397,20 @@ describe("snapshots.service", () => {
         .where({ id: snap.id })
         .update({ content: "{corrupt json!!!" });
 
-      // Change chapter content so restore attempts
+      // Change chapter content; restore must leave this untouched
+      const intactContent = JSON.stringify(DOC_JSON_ALT);
       await t
         .db("chapters")
         .where({ id: chapterId })
-        .update({ content: JSON.stringify(DOC_JSON_ALT), word_count: 2 });
+        .update({ content: intactContent, word_count: 2 });
 
       const result = await restoreSnapshot(snap.id);
-      expect(result).not.toBeNull();
+      expect(result).toBe("corrupt_snapshot");
 
-      // The chapter should have the corrupt content and word_count = 0
+      // The chapter content must be unchanged from before the failed restore
       const chapter = await t.db("chapters").where({ id: chapterId }).first();
-      expect(chapter.content).toBe("{corrupt json!!!");
-      expect(chapter.word_count).toBe(0);
-      logSpy.mockRestore();
+      expect(chapter.content).toBe(intactContent);
+      expect(chapter.word_count).toBe(2);
     });
 
     it("returns null if chapter not found (snapshot's chapter was purged)", async () => {

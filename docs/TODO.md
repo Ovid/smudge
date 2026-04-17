@@ -1,10 +1,14 @@
-# NOW!!!
+
+- This is a single user app. Coauthors want to collaborate. How can we do
+  this? Can we import an .smg file? That seems problematic because I might
+  have updated my version and I can't cleanly apply diffs.
+- Subtitles needed (BCG -> AI Is not the problem)
+- Projects can have multiple authors. Smudge might want a "default" author.
 
 - Need to resize images in editor, left align, right align, captions, etc.
   Maybe part of wider "formatting" spec?
 - Need to check to see if we mark chapters as "dirty" so that we only save
   dirty and not all (or is this really a problem?)
-- Projects can have multiple authors. Smudge might want a "default" author.
 
 - Need to show size of each project in MB.
 

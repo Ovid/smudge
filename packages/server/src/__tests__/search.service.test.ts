@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { v4 as uuid } from "uuid";
 import { setupTestDb } from "./test-helpers";
+import type { SearchResult } from "../search/search.types";
+
+function assertSearchResult(
+  result: SearchResult | null | { validationError: string },
+): SearchResult {
+  if (result === null) throw new Error("expected SearchResult, got null");
+  if ("validationError" in result)
+    throw new Error(`expected SearchResult, got validationError: ${result.validationError}`);
+  return result;
+}
 
 const t = setupTestDb();
 
@@ -79,13 +89,13 @@ describe("search.service", () => {
 
       const result = await searchProject(projectId, "cat");
 
-      expect(result).not.toBeNull();
-      expect(result!.total_count).toBe(2);
-      expect(result!.chapters).toHaveLength(2);
-      expect(result!.chapters[0]!.chapter_title).toBe("Chapter 1");
-      expect(result!.chapters[0]!.matches).toHaveLength(1);
-      expect(result!.chapters[1]!.chapter_title).toBe("Chapter 2");
-      expect(result!.chapters[1]!.matches).toHaveLength(1);
+      const r = assertSearchResult(result);
+      expect(r.total_count).toBe(2);
+      expect(r.chapters).toHaveLength(2);
+      expect(r.chapters[0]!.chapter_title).toBe("Chapter 1");
+      expect(r.chapters[0]!.matches).toHaveLength(1);
+      expect(r.chapters[1]!.chapter_title).toBe("Chapter 2");
+      expect(r.chapters[1]!.matches).toHaveLength(1);
     });
 
     it("returns total count and per-chapter counts", async () => {
@@ -101,10 +111,10 @@ describe("search.service", () => {
 
       const result = await searchProject(projectId, "the");
 
-      expect(result).not.toBeNull();
-      expect(result!.total_count).toBe(5);
-      expect(result!.chapters[0]!.matches).toHaveLength(4);
-      expect(result!.chapters[1]!.matches).toHaveLength(1);
+      const r = assertSearchResult(result);
+      expect(r.total_count).toBe(5);
+      expect(r.chapters[0]!.matches).toHaveLength(4);
+      expect(r.chapters[1]!.matches).toHaveLength(1);
     });
 
     it("is case-insensitive by default", async () => {
@@ -114,8 +124,8 @@ describe("search.service", () => {
 
       const result = await searchProject(projectId, "hello");
 
-      expect(result).not.toBeNull();
-      expect(result!.total_count).toBe(3);
+      const r = assertSearchResult(result);
+      expect(r.total_count).toBe(3);
     });
 
     it("respects case_sensitive: true", async () => {
@@ -125,8 +135,8 @@ describe("search.service", () => {
 
       const result = await searchProject(projectId, "Hello", { case_sensitive: true });
 
-      expect(result).not.toBeNull();
-      expect(result!.total_count).toBe(1);
+      const r = assertSearchResult(result);
+      expect(r.total_count).toBe(1);
     });
 
     it("respects whole_word: true", async () => {
@@ -136,8 +146,8 @@ describe("search.service", () => {
 
       const result = await searchProject(projectId, "cat", { whole_word: true });
 
-      expect(result).not.toBeNull();
-      expect(result!.total_count).toBe(1);
+      const r = assertSearchResult(result);
+      expect(r.total_count).toBe(1);
     });
 
     it("respects regex: true", async () => {
@@ -147,8 +157,8 @@ describe("search.service", () => {
 
       const result = await searchProject(projectId, "[cbh]at", { regex: true });
 
-      expect(result).not.toBeNull();
-      expect(result!.total_count).toBe(3);
+      const r = assertSearchResult(result);
+      expect(r.total_count).toBe(3);
     });
 
     it("returns empty results for no matches", async () => {
@@ -158,9 +168,9 @@ describe("search.service", () => {
 
       const result = await searchProject(projectId, "xyz");
 
-      expect(result).not.toBeNull();
-      expect(result!.total_count).toBe(0);
-      expect(result!.chapters).toHaveLength(0);
+      const r = assertSearchResult(result);
+      expect(r.total_count).toBe(0);
+      expect(r.chapters).toHaveLength(0);
     });
 
     it("returns null for non-existent project", async () => {
@@ -180,10 +190,10 @@ describe("search.service", () => {
 
       const result = await searchProject(projectId, "hello");
 
-      expect(result).not.toBeNull();
-      expect(result!.total_count).toBe(1);
-      expect(result!.chapters).toHaveLength(1);
-      expect(result!.chapters[0]!.chapter_title).toBe("Good");
+      const r = assertSearchResult(result);
+      expect(r.total_count).toBe(1);
+      expect(r.chapters).toHaveLength(1);
+      expect(r.chapters[0]!.chapter_title).toBe("Good");
       warnSpy.mockRestore();
     });
 
@@ -195,9 +205,9 @@ describe("search.service", () => {
 
       const result = await searchProject(projectId, "hello");
 
-      expect(result).not.toBeNull();
-      expect(result!.total_count).toBe(1);
-      expect(result!.chapters).toHaveLength(1);
+      const r = assertSearchResult(result);
+      expect(r.total_count).toBe(1);
+      expect(r.chapters).toHaveLength(1);
     });
   });
 

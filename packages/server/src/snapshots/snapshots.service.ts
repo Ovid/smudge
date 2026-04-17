@@ -2,6 +2,8 @@ import { v4 as uuidv4 } from "uuid";
 import { createHash } from "crypto";
 import { countWords } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
+import { getVelocityService } from "../velocity/velocity.injectable";
+import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
 import type { SnapshotRow, SnapshotListItem } from "./snapshots.types";
 
@@ -12,7 +14,7 @@ export async function createSnapshot(
 ): Promise<SnapshotRow | null | "duplicate"> {
   const store = getProjectStore();
   const chapter = await store.findChapterByIdRaw(chapterId);
-  if (!chapter || chapter.deleted_at) return null;
+  if (!chapter) return null;
 
   const content = chapter.content ?? JSON.stringify({ type: "doc", content: [] });
 
@@ -57,14 +59,24 @@ export async function deleteSnapshot(id: string): Promise<boolean> {
 
 export async function restoreSnapshot(
   snapshotId: string,
-): Promise<{ chapter: Record<string, unknown> } | null> {
+): Promise<{ chapter: Record<string, unknown> } | null | "corrupt_snapshot"> {
   const store = getProjectStore();
   const snapshot = await store.findSnapshotById(snapshotId);
   if (!snapshot) return null;
 
+  // Refuse to restore corrupt snapshot content into a chapter — doing so
+  // would silently replace valid content with an unparseable blob and
+  // word_count=0, leaving the chapter unrenderable.
+  let newParsed: Record<string, unknown>;
+  try {
+    newParsed = JSON.parse(snapshot.content);
+  } catch {
+    return "corrupt_snapshot";
+  }
+
   const result = await store.transaction(async (txStore) => {
     const chapter = await txStore.findChapterByIdRaw(snapshot.chapter_id);
-    if (!chapter || chapter.deleted_at) return null;
+    if (!chapter) return null;
 
     // Auto-snapshot current content before restore
     const currentContent = chapter.content ?? JSON.stringify({ type: "doc", content: [] });
@@ -83,14 +95,8 @@ export async function restoreSnapshot(
       created_at: new Date().toISOString(),
     });
 
-    // Replace content and recalculate word count
-    let newParsed: Record<string, unknown> | null = null;
-    try {
-      newParsed = JSON.parse(snapshot.content);
-    } catch {
-      /* corrupt */
-    }
-    const newWordCount = newParsed ? countWords(newParsed) : 0;
+    // Replace content using the validated, parsed snapshot content.
+    const newWordCount = countWords(newParsed);
     const now = new Date().toISOString();
     await txStore.updateChapter(chapter.id, {
       content: snapshot.content,
@@ -102,10 +108,21 @@ export async function restoreSnapshot(
     // Adjust image reference counts
     await applyImageRefDiff(txStore, chapter.content, snapshot.content);
 
-    return { chapter_id: chapter.id };
+    return { chapter_id: chapter.id, project_id: chapter.project_id };
   });
 
   if (!result) return null;
+
+  // Fire velocity side-effects after the transaction commits
+  try {
+    const svc = getVelocityService();
+    await svc.recordSave(result.project_id);
+  } catch (err: unknown) {
+    logger.error(
+      { err, project_id: result.project_id, chapter_id: result.chapter_id },
+      "Velocity recordSave failed after restore (best-effort)",
+    );
+  }
 
   // Re-read the updated chapter
   const updated = await store.findChapterById(result.chapter_id);
