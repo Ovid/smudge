@@ -19,6 +19,7 @@ export { countWords } from "./wordcount";
 export {
   searchInDoc,
   replaceInDoc,
+  buildRegex,
   assertSafeRegexPattern,
   RegExpSafetyError,
   MatchCapExceededError,

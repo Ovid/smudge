@@ -85,7 +85,7 @@ describe("search routes", () => {
         .send({ query: "[invalid", options: { regex: true } });
 
       expect(res.status).toBe(400);
-      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+      expect(res.body.error.code).toBe("INVALID_REGEX");
     });
 
     it("re-throws non-regex errors from searchProject", async () => {
@@ -156,10 +156,11 @@ describe("search routes", () => {
           search: "[invalid",
           replace: "test",
           options: { regex: true },
+          scope: { type: "project" },
         });
 
       expect(res.status).toBe(400);
-      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+      expect(res.body.error.code).toBe("INVALID_REGEX");
     });
 
     it("returns 404 when replaceInProject returns null (project vanished between slug lookup and service)", async () => {

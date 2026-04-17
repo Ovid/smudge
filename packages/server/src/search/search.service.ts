@@ -2,9 +2,11 @@ import { v4 as uuidv4 } from "uuid";
 import {
   searchInDoc,
   replaceInDoc,
+  buildRegex,
   countWords,
   assertSafeRegexPattern,
   RegExpSafetyError,
+  MatchCapExceededError,
   MAX_MATCHES_PER_REQUEST,
 } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
@@ -12,6 +14,18 @@ import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
 import type { SearchResult } from "./search.types";
+
+/** Distinct codes for 400 responses so the client can show specific copy. */
+export const SEARCH_ERROR_CODES = {
+  INVALID_REGEX: "INVALID_REGEX",
+  MATCH_CAP_EXCEEDED: "MATCH_CAP_EXCEEDED",
+} as const;
+export type SearchErrorCode = (typeof SEARCH_ERROR_CODES)[keyof typeof SEARCH_ERROR_CODES];
+
+export interface SearchValidationError {
+  validationError: string;
+  code: SearchErrorCode;
+}
 
 /**
  * Truncate a user-supplied string for display in a snapshot label:
@@ -40,34 +54,43 @@ function truncateForLabel(s: string, max = 30): string {
   return cleaned;
 }
 
-class MatchCapExceeded extends Error {
-  constructor() {
-    super(`Too many matches (>${MAX_MATCHES_PER_REQUEST}); refine your search.`);
-    this.name = "MatchCapExceeded";
-  }
-}
-
 function validatePattern(
   pattern: string,
-  regexMode: boolean | undefined,
-): { validationError: string } | null {
-  if (!regexMode) return null;
+  options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
+): SearchValidationError | null {
+  if (!options?.regex) return null;
   try {
     assertSafeRegexPattern(pattern);
-    new RegExp(pattern);
+    // Compile with the SAME flags / wrapper that runtime will use, so a
+    // pattern that is valid sans-`u` but invalid with `u` (e.g. `\p{L}`,
+    // `\u{...}`, identity escapes) is caught here as a 400 rather than
+    // surfacing later as a 500 from inside the search loop.
+    buildRegex(pattern, options);
   } catch (e) {
-    if (e instanceof RegExpSafetyError) return { validationError: e.message };
-    return { validationError: (e as Error).message };
+    if (e instanceof RegExpSafetyError) {
+      return { validationError: e.message, code: SEARCH_ERROR_CODES.INVALID_REGEX };
+    }
+    return {
+      validationError: (e as Error).message,
+      code: SEARCH_ERROR_CODES.INVALID_REGEX,
+    };
   }
   return null;
+}
+
+function matchCapValidationError(): SearchValidationError {
+  return {
+    validationError: `Too many matches (>${MAX_MATCHES_PER_REQUEST}); refine your search.`,
+    code: SEARCH_ERROR_CODES.MATCH_CAP_EXCEEDED,
+  };
 }
 
 export async function searchProject(
   projectId: string,
   query: string,
   options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
-): Promise<SearchResult | null | { validationError: string }> {
-  const regexError = validatePattern(query, options?.regex);
+): Promise<SearchResult | null | SearchValidationError> {
+  const regexError = validatePattern(query, options);
   if (regexError) return regexError;
 
   const store = getProjectStore();
@@ -93,13 +116,17 @@ export async function searchProject(
       continue;
     }
 
-    const matches = searchInDoc(parsed, query, options);
+    let matches;
+    try {
+      matches = searchInDoc(parsed, query, options);
+    } catch (err) {
+      if (err instanceof MatchCapExceededError) return matchCapValidationError();
+      throw err;
+    }
     if (matches.length > 0) {
       result.total_count += matches.length;
       if (result.total_count > MAX_MATCHES_PER_REQUEST) {
-        return {
-          validationError: `Too many matches (>${MAX_MATCHES_PER_REQUEST}); refine your search.`,
-        };
+        return matchCapValidationError();
       }
       result.chapters.push({
         chapter_id: chapter.id,
@@ -126,10 +153,10 @@ export async function replaceInProject(
       skipped_chapter_ids?: string[];
     }
   | null
-  | { validationError: string }
+  | SearchValidationError
 > {
   // Validate regex up front
-  const regexError = validatePattern(search, options?.regex);
+  const regexError = validatePattern(search, options);
   if (regexError) return regexError;
 
   const store = getProjectStore();
@@ -191,7 +218,7 @@ export async function replaceInProject(
 
         totalReplaced += count;
         if (totalReplaced > MAX_MATCHES_PER_REQUEST) {
-          throw new MatchCapExceeded();
+          throw new MatchCapExceededError(MAX_MATCHES_PER_REQUEST);
         }
         affectedIds.push(chapter.id);
 
@@ -234,9 +261,9 @@ export async function replaceInProject(
         skipped_chapter_ids: skippedIds,
       };
     })
-    .catch((err) => {
-      if (err instanceof MatchCapExceeded) {
-        return { validationError: err.message } as const;
+    .catch((err): SearchValidationError | never => {
+      if (err instanceof MatchCapExceededError) {
+        return matchCapValidationError();
       }
       throw err;
     });

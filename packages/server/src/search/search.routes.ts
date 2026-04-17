@@ -80,7 +80,7 @@ export function searchRouter(): Router {
       }
       if ("validationError" in result) {
         res.status(400).json({
-          error: { code: "VALIDATION_ERROR", message: result.validationError },
+          error: { code: result.code, message: result.validationError },
         });
         return;
       }
@@ -133,7 +133,7 @@ export function searchRouter(): Router {
 
       if ("validationError" in result) {
         res.status(400).json({
-          error: { code: "VALIDATION_ERROR", message: result.validationError },
+          error: { code: result.code, message: result.validationError },
         });
         return;
       }

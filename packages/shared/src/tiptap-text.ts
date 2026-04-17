@@ -111,7 +111,7 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function buildRegex(query: string, opts: SearchOptions): RegExp {
+export function buildRegex(query: string, opts: SearchOptions): RegExp {
   let pattern = opts.regex ? query : escapeRegex(query);
   if (opts.whole_word) {
     // Unicode-aware word boundary. JS's \b is ASCII-only, so CJK and
@@ -245,6 +245,12 @@ export function searchInDoc(
       const re = buildRegex(query, opts);
       let m: RegExpExecArray | null;
       while ((m = re.exec(run.flat)) !== null) {
+        if (matches.length >= MAX_MATCHES_PER_REQUEST) {
+          // Bound memory & event-loop time. Without an internal cap, a
+          // pathological pattern can balloon the matches array before the
+          // service-level total check fires.
+          throw new MatchCapExceededError(MAX_MATCHES_PER_REQUEST);
+        }
         matches.push({
           index: matchIndex++,
           context: extractContext(run.flat, m.index, m[0].length),
@@ -305,6 +311,9 @@ export function replaceInDoc(
       const allPositions: { start: number; end: number }[] = [];
       let m: RegExpExecArray | null;
       while ((m = re.exec(flat)) !== null) {
+        if (totalCount + allPositions.length >= MAX_MATCHES_PER_REQUEST) {
+          throw new MatchCapExceededError(MAX_MATCHES_PER_REQUEST);
+        }
         allPositions.push({ start: m.index, end: m.index + m[0].length });
         if (m[0].length === 0) advancePastZeroLengthMatch(re, flat);
       }

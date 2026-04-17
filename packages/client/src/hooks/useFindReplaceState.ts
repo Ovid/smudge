@@ -116,10 +116,11 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
       } catch (err) {
         if (seq !== searchSeqRef.current) return;
         if (err instanceof ApiRequestError && err.status === 400) {
-          // The server uses 400 for both invalid regex and match-cap-exceeded;
-          // surface the server's human message when present, falling back to
-          // the generic invalid-regex string.
-          setError(err.message || S.invalidRegex);
+          // The server uses dedicated codes for the two 400 cases so the
+          // user gets actionable copy rather than a misleading "invalid
+          // regex" for what is actually a too-broad match.
+          if (err.code === "MATCH_CAP_EXCEEDED") setError(S.tooManyMatches);
+          else setError(S.invalidRegex);
         } else {
           setError(err instanceof Error ? err.message : "Search failed");
         }

@@ -324,6 +324,9 @@ export const STRINGS = {
     replaceCancelButton: "Cancel",
     matchNotFound: "Match no longer found — try searching again.",
     invalidRegex: "Invalid regular expression",
+    tooManyMatches: "Too many matches — refine your search and try again.",
+    skippedChapters: (count: number) =>
+      `${count} chapter${count === 1 ? " was" : "s were"} skipped due to corrupt content.`,
     chapterMatches: (title: string, count: number) =>
       `${title} (${count} match${count === 1 ? "" : "es"})`,
     ariaLabel: "Find and replace",
