@@ -10,7 +10,11 @@ function coerceRow<T extends { is_auto: boolean | number }>(row: T): T {
 
 export async function insert(db: Knex, data: CreateSnapshotData): Promise<SnapshotRow> {
   await db(TABLE).insert(data);
-  return data as SnapshotRow;
+  // Route the returned shape through coerceRow for symmetry with findById
+  // and listByChapter — otherwise a future change that reads the DB
+  // default (e.g. integer is_auto) would silently diverge from the insert
+  // return type.
+  return coerceRow(data as SnapshotRow);
 }
 
 export async function findById(db: Knex, id: string): Promise<SnapshotRow | null> {
