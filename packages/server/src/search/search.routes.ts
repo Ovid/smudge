@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { MAX_MATCHES_PER_REQUEST } from "@smudge/shared";
 import { asyncHandler } from "../app";
 import { getProjectStore } from "../stores/project-store.injectable";
 import * as SearchService from "./search.service";
@@ -40,7 +41,15 @@ const ReplaceSchema = z
         .object({
           type: z.literal("chapter"),
           chapter_id: z.string().uuid(),
-          match_index: z.number().int().min(0).optional(),
+          // Capped at MAX_MATCHES_PER_REQUEST so a client can't pass a huge
+          // value that would force the walker to enumerate unboundedly in
+          // match_index mode (the cap inside replaceInDoc is skipped there).
+          match_index: z
+            .number()
+            .int()
+            .min(0)
+            .max(MAX_MATCHES_PER_REQUEST - 1)
+            .optional(),
         })
         .strict(),
     ]),

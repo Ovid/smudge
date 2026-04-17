@@ -221,6 +221,21 @@ describe("search routes", () => {
       expect(res.body.error.code).toBe("VALIDATION_ERROR");
     });
 
+    it("rejects match_index above MAX_MATCHES_PER_REQUEST with 400", async () => {
+      const { projectSlug, chapterId } = await createProjectWithChapters();
+
+      const res = await request(t.app)
+        .post(`/api/projects/${projectSlug}/replace`)
+        .send({
+          search: "quick",
+          replace: "slow",
+          scope: { type: "chapter", chapter_id: chapterId, match_index: 1_000_000 },
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
     it("replace with empty string works", async () => {
       const { projectSlug } = await createProjectWithChapters();
 
