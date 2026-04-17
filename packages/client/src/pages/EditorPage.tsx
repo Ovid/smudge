@@ -353,6 +353,9 @@ export function EditorPage() {
         );
         if (result.replaced_count === 0) {
           setActionError(STRINGS.findReplace.matchNotFound);
+          // Refresh results so the stale match is removed; otherwise clicking
+          // it again produces the same error in a loop.
+          await findReplace.search(slug);
           return;
         }
         const current = getActiveChapter();
