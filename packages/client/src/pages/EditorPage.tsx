@@ -224,6 +224,18 @@ export function EditorPage() {
       }
       cancelPendingSaves();
       setActionInfo(null);
+      // Purge the localStorage draft cache BEFORE issuing the replace
+      // request. Without this, a chapter switch during the in-flight
+      // replace would read a pre-replace draft from localStorage and
+      // autosave it over the server's replaced content. The small cost
+      // of a superfluous clear on replace failure is acceptable — the
+      // server won't have mutated anything and the user can retype
+      // any in-progress edits from the displayed content.
+      if (frozen.scope.type === "project") {
+        clearAllCachedContent();
+      } else {
+        clearCachedContent(frozen.scope.chapter_id);
+      }
       try {
         const result = await api.search.replace(
           slug,
@@ -232,17 +244,6 @@ export function EditorPage() {
           frozen.options,
           frozen.scope,
         );
-        // Purge the localStorage draft cache for non-active chapters before
-        // they get re-selected. Without this, getCachedContent() would
-        // silently overlay the pre-replace content on top of the server's
-        // replaced content, un-doing the replacement on navigation.
-        // For a chapter-scoped replace the active chapter was flushed above,
-        // so per-chapter clear is enough; for project scope we nuke the lot.
-        if (frozen.scope.type === "project") {
-          clearAllCachedContent();
-        } else {
-          clearCachedContent(frozen.scope.chapter_id);
-        }
         // Read the CURRENT active chapter (not the closure value) so a
         // chapter switch between click and response still reloads when the
         // now-active chapter was affected.

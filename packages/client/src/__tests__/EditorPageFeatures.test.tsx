@@ -10,6 +10,7 @@ vi.mock("../hooks/useContentCache", () => ({
   getCachedContent: vi.fn().mockReturnValue(null),
   setCachedContent: vi.fn().mockReturnValue(true),
   clearCachedContent: vi.fn(),
+  clearAllCachedContent: vi.fn(),
 }));
 
 vi.mock("../api/client", () => ({
