@@ -139,9 +139,13 @@ function expandReplacement(template: string, match: RegExpExecArray, regex: bool
     // which falls back to the single-digit group + remaining digit as
     // literal text (`$12` with 1 group → <group1>"2", not literal "$12").
     if (key.length === 2) {
-      const single = parseInt(key[0]!, 10);
-      if (single >= 1 && single < match.length) {
-        return (match[single] ?? "") + key[1]!;
+      const firstChar = key[0];
+      const secondChar = key[1];
+      if (firstChar !== undefined && secondChar !== undefined) {
+        const single = parseInt(firstChar, 10);
+        if (single >= 1 && single < match.length) {
+          return (match[single] ?? "") + secondChar;
+        }
       }
     }
     return full;

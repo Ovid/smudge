@@ -38,7 +38,7 @@ interface SnapshotPanelProps {
     id: string;
     label: string | null;
     created_at: string;
-  }) => void | Promise<{ ok: boolean; reason?: string } | void>;
+  }) => Promise<{ ok: boolean; reason?: string } | undefined> | undefined;
   /**
    * Called before snapshot creation. The panel awaits this so the server
    * snapshots the chapter AFTER any pending editor save has landed —
