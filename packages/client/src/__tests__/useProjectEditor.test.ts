@@ -785,6 +785,38 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("cancelPendingSaves resets saving status and error message", async () => {
+    // A long-running update simulates the "Saving…" window; cancelPendingSaves
+    // should flip the UI out of that stuck state.
+    let resolveUpdate: (v: typeof mockChapter1) => void = () => {};
+    vi.mocked(api.chapters.update).mockImplementationOnce(
+      () =>
+        new Promise<typeof mockChapter1>((resolve) => {
+          resolveUpdate = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    act(() => {
+      void result.current.handleSave({ type: "doc", content: [] });
+    });
+    await waitFor(() => expect(result.current.saveStatus).toBe("saving"));
+
+    act(() => {
+      result.current.cancelPendingSaves();
+    });
+    expect(result.current.saveStatus).toBe("idle");
+    expect(result.current.saveErrorMessage).toBeNull();
+
+    // Resolve the pending promise so the abort path completes cleanly.
+    await act(async () => {
+      resolveUpdate({ ...mockChapter1, word_count: 0 });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  });
+
   it("handleSave breaks immediately on 4xx ApiRequestError without retrying", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("Bad Request", 400));

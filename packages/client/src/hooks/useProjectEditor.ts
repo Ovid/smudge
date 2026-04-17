@@ -449,6 +449,12 @@ export function useProjectEditor(slug: string | undefined) {
         saveAbortRef.current.abort();
         saveAbortRef.current = null;
       }
+      // Reset status to idle so the header doesn't stay on "Saving…".
+      // The aborted save's own status-write is guarded by the chapter/seq
+      // check and short-circuits, so without this reset the UI would
+      // remain stuck until another save cycle completes.
+      setSaveStatus((prev) => (prev === "saving" ? "idle" : prev));
+      setSaveErrorMessage(null);
     },
   };
 }
