@@ -8,6 +8,13 @@ import type { SearchResult } from "@smudge/shared";
 const S = STRINGS.findReplace;
 
 function makeResults(overrides: Partial<SearchResult> = {}): SearchResult {
+  // Contexts here mirror what `extractContext` produces: a slice of the
+  // block's flat text. The match offset is the match's position within
+  // that flat text, which — for short contexts that start at the
+  // beginning of the block — equals its index within `context`.
+  const context1 = "the dark forest was quiet";
+  const context2 = "into the dark night";
+  const context3 = "a dark cloud loomed";
   return {
     total_count: 3,
     chapters: [
@@ -17,19 +24,31 @@ function makeResults(overrides: Partial<SearchResult> = {}): SearchResult {
         matches: [
           {
             index: 0,
-            context: "...the dark forest was quiet...",
+            context: context1,
             blockIndex: 0,
-            offset: 8,
+            offset: context1.indexOf("dark"),
             length: 4,
           },
-          { index: 1, context: "...into the dark night...", blockIndex: 1, offset: 9, length: 4 },
+          {
+            index: 1,
+            context: context2,
+            blockIndex: 1,
+            offset: context2.indexOf("dark"),
+            length: 4,
+          },
         ],
       },
       {
         chapter_id: "ch-2",
         chapter_title: "Chapter 2: The Journey",
         matches: [
-          { index: 0, context: "...a dark cloud loomed...", blockIndex: 0, offset: 3, length: 4 },
+          {
+            index: 0,
+            context: context3,
+            blockIndex: 0,
+            offset: context3.indexOf("dark"),
+            length: 4,
+          },
         ],
       },
     ],

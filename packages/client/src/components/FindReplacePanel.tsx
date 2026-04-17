@@ -22,29 +22,28 @@ export interface FindReplacePanelProps {
   triggerRef?: React.RefObject<HTMLButtonElement>;
 }
 
-function highlightMatch(context: string, query: string): React.ReactNode {
-  // Find the match within context text. The context already contains the matched text.
-  // We try to find the query in the context to highlight it.
-  if (!query) return context;
+// Context is `flat.slice(offset - R, offset + length + R)` where R = 40.
+// That means the match starts at `min(R, offset)` within the context,
+// regardless of search options — so we highlight by known position rather
+// than re-searching (which would mis-highlight for case-sensitive or regex).
+const CONTEXT_RADIUS = 40;
 
-  try {
-    const idx = context.toLowerCase().indexOf(query.toLowerCase());
-    if (idx === -1) return context;
-
-    const before = context.slice(0, idx);
-    const match = context.slice(idx, idx + query.length);
-    const after = context.slice(idx + query.length);
-
-    return (
-      <>
-        {before}
-        <mark className="bg-amber-200/60 text-text-primary rounded-sm px-0.5">{match}</mark>
-        {after}
-      </>
-    );
-  } catch {
-    return context;
-  }
+function highlightMatch(
+  context: string,
+  match: { offset: number; length: number },
+): React.ReactNode {
+  const start = Math.min(CONTEXT_RADIUS, match.offset);
+  const end = start + match.length;
+  if (start < 0 || end > context.length || start >= end) return context;
+  return (
+    <>
+      {context.slice(0, start)}
+      <mark className="bg-amber-200/60 text-text-primary rounded-sm px-0.5">
+        {context.slice(start, end)}
+      </mark>
+      {context.slice(end)}
+    </>
+  );
 }
 
 export function FindReplacePanel({
@@ -232,7 +231,7 @@ export function FindReplacePanel({
                     className="flex items-start gap-2 text-xs border border-border/30 rounded p-2"
                   >
                     <span className="flex-1 text-text-secondary font-sans break-words">
-                      {highlightMatch(match.context, query)}
+                      {highlightMatch(match.context, match)}
                     </span>
                     <button
                       type="button"
