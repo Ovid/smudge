@@ -254,6 +254,32 @@ describe("replaceInDoc", () => {
     expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("quick and sudden");
   });
 
+  it("replaces only the Nth match when match_index is set (single block)", () => {
+    const d = doc(paragraph(text("cat cat cat")));
+    const result = replaceInDoc(d, "cat", "dog", { match_index: 1 });
+    expect(result.count).toBe(1);
+    const para = contentOf(result.doc)[0];
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("cat dog cat");
+  });
+
+  it("replaces only the Nth match when match_index spans blocks", () => {
+    const d = doc(paragraph(text("cat cat")), paragraph(text("cat dog")));
+    // global indexes: [0]cat [1]cat [2]cat
+    const result = replaceInDoc(d, "cat", "fox", { match_index: 2 });
+    expect(result.count).toBe(1);
+    const paras = contentOf(result.doc);
+    expect(flatTextOf(paras[0] as unknown as Record<string, unknown>)).toBe("cat cat");
+    expect(flatTextOf(paras[1] as unknown as Record<string, unknown>)).toBe("fox dog");
+  });
+
+  it("does nothing when match_index is out of range", () => {
+    const d = doc(paragraph(text("cat cat")));
+    const result = replaceInDoc(d, "cat", "dog", { match_index: 5 });
+    expect(result.count).toBe(0);
+    const para = contentOf(result.doc)[0];
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("cat cat");
+  });
+
   it("treats $ in replacement as literal text when regex mode is off", () => {
     const d = doc(paragraph(text("price is USD")));
     const result = replaceInDoc(d, "USD", "$100");

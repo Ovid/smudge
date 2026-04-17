@@ -33,7 +33,11 @@ const ReplaceSchema = z.object({
   scope: z
     .union([
       z.object({ type: z.literal("project") }),
-      z.object({ type: z.literal("chapter"), chapter_id: z.string().uuid() }),
+      z.object({
+        type: z.literal("chapter"),
+        chapter_id: z.string().uuid(),
+        match_index: z.number().int().min(0).optional(),
+      }),
     ])
     .optional()
     .default({ type: "project" }),

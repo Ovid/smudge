@@ -56,7 +56,9 @@ export async function replaceInProject(
   search: string,
   replace: string,
   options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
-  scope?: { type: "project" } | { type: "chapter"; chapter_id: string },
+  scope?:
+    | { type: "project" }
+    | { type: "chapter"; chapter_id: string; match_index?: number },
 ): Promise<
   { replaced_count: number; affected_chapter_ids: string[] } | null | { validationError: string }
 > {
@@ -107,7 +109,11 @@ export async function replaceInProject(
         continue;
       }
 
-      const { doc: newDoc, count } = replaceInDoc(parsed, search, replace, options);
+      const replaceOptions =
+        scope?.type === "chapter" && typeof scope.match_index === "number"
+          ? { ...options, match_index: scope.match_index }
+          : options;
+      const { doc: newDoc, count } = replaceInDoc(parsed, search, replace, replaceOptions);
       if (count === 0) continue;
 
       totalReplaced += count;

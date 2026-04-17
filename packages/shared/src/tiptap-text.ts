@@ -28,6 +28,14 @@ export interface SearchOptions {
   regex?: boolean;
 }
 
+export interface ReplaceOptions extends SearchOptions {
+  /**
+   * When set, replace only the Nth match (0-based, counting across all
+   * blocks in the document). When undefined, replace every match.
+   */
+  match_index?: number;
+}
+
 // --- Internal helpers ---
 
 const LEAF_BLOCKS = new Set(["paragraph", "heading", "codeBlock"]);
@@ -176,9 +184,9 @@ export function replaceInDoc(
   doc: Record<string, unknown>,
   query: string,
   replacement: string,
-  options?: SearchOptions,
+  options?: ReplaceOptions,
 ): { doc: Record<string, unknown>; count: number } {
-  const opts: SearchOptions = {
+  const opts: ReplaceOptions = {
     case_sensitive: false,
     whole_word: false,
     regex: false,
@@ -188,6 +196,9 @@ export function replaceInDoc(
   const cloned = JSON.parse(JSON.stringify(doc)) as TipTapNode;
   const leafBlocks = collectLeafBlocks(cloned);
   let totalCount = 0;
+  // Tracks the global match index across blocks so match_index can select
+  // a single occurrence.
+  let globalMatchCursor = 0;
 
   // In literal (non-regex) mode, escape `$` so `String.prototype.replace`
   // does not interpret `$&`, `$1`, `$$`, etc. as replacement patterns.
@@ -200,32 +211,33 @@ export function replaceInDoc(
     const re = buildRegex(query, opts);
 
     // Count matches
-    const matchPositions: { start: number; end: number }[] = [];
+    const allPositions: { start: number; end: number }[] = [];
     let m: RegExpExecArray | null;
     while ((m = re.exec(flat)) !== null) {
-      matchPositions.push({ start: m.index, end: m.index + m[0].length });
+      allPositions.push({ start: m.index, end: m.index + m[0].length });
       if (m[0].length === 0) re.lastIndex++;
     }
 
-    if (matchPositions.length === 0) continue;
+    if (allPositions.length === 0) continue;
+
+    // Filter to the single requested match if match_index is set.
+    let matchPositions = allPositions;
+    if (typeof opts.match_index === "number") {
+      const localIndex = opts.match_index - globalMatchCursor;
+      if (localIndex < 0 || localIndex >= allPositions.length) {
+        globalMatchCursor += allPositions.length;
+        continue;
+      }
+      matchPositions = [allPositions[localIndex]!];
+    }
+    globalMatchCursor += allPositions.length;
     totalCount += matchPositions.length;
 
-    // Build a mapping from new string positions to original offsets.
-    // Strategy: walk through old and new strings in parallel using match positions.
-    // For non-replaced regions, mapping is 1:1.
-    // For replaced regions, all chars map to the start of the original match.
-
-    // First compute replacement text lengths by doing per-match replacements
-    const repTexts: string[] = [];
-    const re3 = buildRegex(query, opts);
-    let mm: RegExpExecArray | null;
-    while ((mm = re3.exec(flat)) !== null) {
-      const matchStr = mm[0];
-      // Apply the replacement pattern to just this match
-      const replaced = matchStr.replace(buildRegex(query, opts), effectiveReplacement);
-      repTexts.push(replaced);
-      if (mm[0].length === 0) re3.lastIndex++;
-    }
+    // Compute per-match replacement text (honors regex capture groups).
+    const repTexts = matchPositions.map((mp) => {
+      const matchStr = flat.slice(mp.start, mp.end);
+      return matchStr.replace(buildRegex(query, opts), effectiveReplacement);
+    });
 
     // Now build the new text nodes by walking through the new string
     // and determining marks for each character.

@@ -160,21 +160,25 @@ export function EditorPage() {
   }, []);
 
   const handleReplaceOne = useCallback(
-    async (chapterId: string, _matchIndex: number) => {
+    async (chapterId: string, matchIndex: number) => {
       if (!project || !slug) return;
       await editorRef.current?.flushSave();
-      const result = await api.search.replace(
-        slug,
-        findReplace.query,
-        findReplace.replacement,
-        findReplace.options,
-        { type: "chapter", chapter_id: chapterId },
-      );
-      if (activeChapter && result.affected_chapter_ids.includes(activeChapter.id)) {
-        await reloadActiveChapter();
+      try {
+        const result = await api.search.replace(
+          slug,
+          findReplace.query,
+          findReplace.replacement,
+          findReplace.options,
+          { type: "chapter", chapter_id: chapterId, match_index: matchIndex },
+        );
+        if (activeChapter && result.affected_chapter_ids.includes(activeChapter.id)) {
+          await reloadActiveChapter();
+        }
+        await findReplace.search(slug);
+        snapshotPanelRef.current?.refreshSnapshots();
+      } catch {
+        setActionError(STRINGS.findReplace.replaceFailed);
       }
-      await findReplace.search(slug);
-      snapshotPanelRef.current?.refreshSnapshots();
     },
     [project, slug, findReplace, activeChapter, reloadActiveChapter, snapshotPanelRef],
   );
