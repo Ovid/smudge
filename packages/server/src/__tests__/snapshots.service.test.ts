@@ -491,6 +491,64 @@ describe("snapshots.service", () => {
       }
     });
 
+    it("refuses to restore when snapshot content references an image from another project", async () => {
+      stubVelocity();
+      const { chapterId, projectId } = await createProjectAndChapter();
+      const { createSnapshot, restoreSnapshot } = await import("../snapshots/snapshots.service");
+
+      // Create an image belonging to a DIFFERENT project
+      const otherProjectId = uuid();
+      const otherImageId = uuid();
+      const now = new Date().toISOString();
+      await t.db("projects").insert({
+        id: otherProjectId,
+        title: "Other Project",
+        slug: `other-${otherProjectId.slice(0, 8)}`,
+        mode: "fiction",
+        created_at: now,
+        updated_at: now,
+      });
+      await t.db("images").insert({
+        id: otherImageId,
+        project_id: otherProjectId,
+        filename: "x.png",
+        mime_type: "image/png",
+        size_bytes: 1,
+        reference_count: 1,
+        created_at: now,
+      });
+
+      // Create a snapshot on OUR chapter with content that references the
+      // other project's image id.
+      const snap = (await createSnapshot(chapterId, "has-foreign-img")) as Exclude<
+        Awaited<ReturnType<typeof createSnapshot>>,
+        null | "duplicate"
+      >;
+      const crossProjectContent = JSON.stringify({
+        type: "doc",
+        content: [{ type: "image", attrs: { src: `/api/images/${otherImageId}` } }],
+      });
+      await t
+        .db("chapter_snapshots")
+        .where({ id: snap.id })
+        .update({ content: crossProjectContent });
+
+      // Pre-restore chapter content — must remain intact after the rejection
+      const intact = JSON.stringify(DOC_JSON_ALT);
+      await t.db("chapters").where({ id: chapterId }).update({ content: intact, word_count: 2 });
+
+      const result = await restoreSnapshot(snap.id);
+      expect(result).toBe("corrupt_snapshot");
+
+      const chapter = await t.db("chapters").where({ id: chapterId }).first();
+      expect(chapter.content).toBe(intact);
+      // Foreign image's ref_count must not have been touched
+      const otherImage = await t.db("images").where({ id: otherImageId }).first();
+      expect(otherImage.reference_count).toBe(1);
+      // Sanity: our project isn't used here, just prove ids differ
+      expect(projectId).not.toBe(otherProjectId);
+    });
+
     it("returns null if chapter not found (snapshot's chapter was purged)", async () => {
       stubVelocity();
       const { chapterId } = await createProjectAndChapter();

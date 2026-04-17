@@ -3,7 +3,7 @@ import { countWords, sanitizeSnapshotLabel, TipTapDocSchema } from "@smudge/shar
 import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
-import { applyImageRefDiff } from "../images/images.references";
+import { applyImageRefDiff, extractImageIds } from "../images/images.references";
 import { enrichChapterWithLabel } from "../chapters/chapters.types";
 import { canonicalContentHash } from "./content-hash";
 import { MAX_CHAPTER_CONTENT_BYTES } from "../search/search.service";
@@ -130,6 +130,21 @@ export async function restoreSnapshot(
     const chapter = await txStore.findChapterByIdRaw(snapshot.chapter_id);
     if (!chapter) return null;
 
+    // Reject restore if the snapshot content references images owned by a
+    // different project (or missing entirely). Without this the foreign
+    // image URL is silently written into the chapter; when the other
+    // project is purged the image 404s with no user-visible warning at
+    // restore time. applyImageRefDiff already refuses to adjust cross-
+    // project ref counts, but that only protects ref-count integrity —
+    // the broken src still ends up persisted.
+    const restoredIds = extractImageIds(newParsed);
+    for (const id of restoredIds) {
+      const image = await txStore.findImageById(id);
+      if (!image || image.project_id !== chapter.project_id) {
+        return "corrupt_snapshot" as const;
+      }
+    }
+
     // Auto-snapshot current content before restore
     const currentContent = chapter.content ?? JSON.stringify({ type: "doc", content: [] });
     // Run the auto-label through the same sanitize + 500-char clamp pipeline
@@ -175,6 +190,7 @@ export async function restoreSnapshot(
     return { chapter: updated, project_id: chapter.project_id, chapter_id: chapter.id };
   });
 
+  if (result === "corrupt_snapshot") return "corrupt_snapshot";
   if (!result) return null;
 
   // Fire velocity side-effects after the transaction commits
