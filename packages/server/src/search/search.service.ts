@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from "uuid";
 import { searchInDoc, replaceInDoc, countWords } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
+import { getVelocityService } from "../velocity/velocity.injectable";
+import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
 import type { SearchResult } from "./search.types";
 
@@ -71,16 +73,23 @@ export async function replaceInProject(
   const project = await store.findProjectById(projectId);
   if (!project) return null;
 
-  return store.transaction(async (txStore) => {
+  const txResult = await store.transaction(async (txStore) => {
     // Get chapters to process
-    let chapters: Array<{ id: string; title: string; content: string | null }>;
+    let chapters: Array<{ id: string; title: string; content: string | null; word_count: number }>;
 
     if (scope?.type === "chapter") {
       const chapter = await txStore.findChapterByIdRaw(scope.chapter_id);
-      if (!chapter || chapter.deleted_at) {
+      if (!chapter || chapter.project_id !== projectId) {
         return { replaced_count: 0, affected_chapter_ids: [] };
       }
-      chapters = [{ id: chapter.id, title: chapter.title, content: chapter.content }];
+      chapters = [
+        {
+          id: chapter.id,
+          title: chapter.title,
+          content: chapter.content,
+          word_count: chapter.word_count,
+        },
+      ];
     } else {
       chapters = await txStore.listChapterContentByProject(projectId);
     }
@@ -109,13 +118,13 @@ export async function replaceInProject(
       const truncReplace = replace.length > 30 ? replace.slice(0, 30) + "..." : replace;
       const label = `Before find-and-replace: '${truncSearch}' → '${truncReplace}'`;
 
-      // Auto-snapshot before replacement
+      // Auto-snapshot before replacement (using DB-committed word_count)
       await txStore.insertSnapshot({
         id: uuidv4(),
         chapter_id: chapter.id,
         label,
         content: chapter.content,
-        word_count: countWords(parsed),
+        word_count: chapter.word_count,
         is_auto: true,
         created_at: new Date().toISOString(),
       });
@@ -131,12 +140,30 @@ export async function replaceInProject(
         updated_at: now,
       });
 
-      await txStore.updateProjectTimestamp(projectId, now);
-
       // Adjust image reference counts
       await applyImageRefDiff(txStore, chapter.content, newContentJson);
     }
 
+    // Bump the project's updated_at once per replace, not once per chapter
+    if (affectedIds.length > 0) {
+      await txStore.updateProjectTimestamp(projectId, new Date().toISOString());
+    }
+
     return { replaced_count: totalReplaced, affected_chapter_ids: affectedIds };
   });
+
+  // Fire velocity side-effects after the transaction commits
+  if (txResult.affected_chapter_ids.length > 0) {
+    try {
+      const svc = getVelocityService();
+      await svc.recordSave(projectId);
+    } catch (err: unknown) {
+      logger.error(
+        { err, project_id: projectId },
+        "Velocity recordSave failed after replace (best-effort)",
+      );
+    }
+  }
+
+  return txResult;
 }

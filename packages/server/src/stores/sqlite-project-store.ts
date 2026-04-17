@@ -240,7 +240,7 @@ export class SqliteProjectStore implements ProjectStore {
 
   listChapterContentByProject(
     projectId: string,
-  ): Promise<Array<{ id: string; title: string; content: string | null }>> {
+  ): Promise<Array<{ id: string; title: string; content: string | null; word_count: number }>> {
     return chaptersRepo.listContentByProject(this.db, projectId);
   }
 

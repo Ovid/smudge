@@ -313,6 +313,37 @@ describe("search.service", () => {
       expect(result).toBeNull();
     });
 
+    it("refuses to replace a chapter that belongs to a different project", async () => {
+      const { replaceInProject } = await import("../search/search.service");
+      const projectA = await createProject("Project A");
+      const projectB = await createProject("Project B");
+      const chB = await createChapter(
+        projectB,
+        "Ch B1",
+        JSON.stringify(makeDoc("hello from B")),
+        0,
+      );
+
+      const result = await replaceInProject(projectA, "hello", "goodbye", undefined, {
+        type: "chapter",
+        chapter_id: chB,
+      });
+
+      const r = result as { replaced_count: number; affected_chapter_ids: string[] };
+      expect(r.replaced_count).toBe(0);
+      expect(r.affected_chapter_ids).toEqual([]);
+
+      // chB content must be unchanged
+      const rowB = await t.db("chapters").where({ id: chB }).first();
+      expect(JSON.parse(rowB.content).content[0].content[0].text).toBe("hello from B");
+
+      // Project A's updated_at must NOT have been bumped
+      const projA = await t.db("projects").where({ id: projectA }).first();
+      const projB = await t.db("projects").where({ id: projectB }).first();
+      expect(projA.updated_at).toBe(projA.created_at);
+      expect(projB.updated_at).toBe(projB.created_at);
+    });
+
     it("returns 0 replacements when no matches", async () => {
       const { replaceInProject } = await import("../search/search.service");
       const projectId = await createProject();

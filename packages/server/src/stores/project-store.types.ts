@@ -86,7 +86,7 @@ export interface ProjectStore {
   setImageReferenceCount(id: string, count: number): Promise<void>;
   listChapterContentByProject(
     projectId: string,
-  ): Promise<Array<{ id: string; title: string; content: string | null }>>;
+  ): Promise<Array<{ id: string; title: string; content: string | null; word_count: number }>>;
   listAllChapterContentByProject(
     projectId: string,
   ): Promise<
