@@ -121,13 +121,13 @@ Search across all chapters in a project.
 
 Replace across chapters. In a single transaction: find all affected chapters, auto-snapshot each, perform replacements in TipTap JSON text nodes (using the same flattened-text-per-block approach as search, with results mapped back onto the original node structure preserving marks), recalculate word counts. Also adjusts image reference counts for any affected chapters (same pattern as `updateChapter`).
 
-- **Body:** `{ "search": string, "replace": string, "options"?: { "case_sensitive"?: boolean, "whole_word"?: boolean, "regex"?: boolean }, "scope": { "type": "project" } | { "type": "chapter", "chapter_id": string } }`
-- **Returns:** `{ "replaced_count": 17, "affected_chapter_ids": ["...", "..."] }`
-- **Errors:** 404 if project not found, 400 if regex is invalid or search is empty
+- **Body:** `{ "search": string, "replace": string, "options"?: { "case_sensitive"?: boolean, "whole_word"?: boolean, "regex"?: boolean }, "scope": { "type": "project" } | { "type": "chapter", "chapter_id": string, "match_index"?: number } }`
+- **Returns:** `{ "replaced_count": 17, "affected_chapter_ids": ["...", "..."], "skipped_chapter_ids"?: ["..."] }`
+- **Errors:** 404 if project not found, 400 if regex is invalid, if search is empty, if the match cap is exceeded (`MATCH_CAP_EXCEEDED`), or if the request exceeds the wall-clock budget (`REGEX_TIMEOUT`)
 
 ### Replace-one
 
-Handled client-side: when the writer clicks "Replace" on a match, the client locates the match in the live editor content (using the search term and surrounding context, not stored offsets) and applies the replacement there. If the match can't be found because the content has changed since the search, the client shows "Match no longer found — try searching again." The replacement is then saved via the normal auto-save PATCH path. No special API needed.
+Handled server-side via the same replace endpoint with `scope.type = "chapter"` and `match_index` set to the zero-based index of the target match (counted across all blocks in the chapter). The server replaces only that occurrence, auto-snapshots before the change, and returns `{ replaced_count: 1, affected_chapter_ids: [chapter_id] }`. If the match_index is out of range (content changed since the search populated the index), the server returns `{ replaced_count: 0 }` and the client shows "Match no longer found — try searching again." Taking the server path keeps authoritative text extraction / replacement logic in one place (`@smudge/shared/tiptap-text`) and ensures the word count and image-reference bookkeeping match the path used by replace-all.
 
 ---
 
