@@ -301,9 +301,7 @@ describe("replaceInDoc", () => {
     const result = replaceInDoc(d, "(hello) (world)", "$2 $1 $&", { regex: true });
     expect(result.count).toBe(1);
     const para = contentOf(result.doc)[0];
-    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe(
-      "world hello hello world",
-    );
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("world hello hello world");
   });
 
   it("regex-mode lookbehind matches and replaces (no sliced re-execution)", () => {

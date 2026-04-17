@@ -49,7 +49,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
     const seq = ++chapterSeqRef.current;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: must reset before fetch resolves
     setSnapshotCount(0);
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: must reset before fetch resolves
+
     setViewingSnapshot(null);
     if (!chapterId) return;
     api.snapshots

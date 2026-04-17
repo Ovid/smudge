@@ -127,16 +127,23 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
       return () => document.removeEventListener("keydown", handleKeyDown);
     }, [isOpen, onClose]);
 
-    // Reset form state when panel closes or chapter changes. Triggers an
-    // extra render but is safer than the prior setState-in-render pattern
-    // (which Copilot flagged for risk under StrictMode/concurrent mode).
-    useEffect(() => {
+    // Reset form state when panel closes or chapter changes. Uses the
+    // "store previous value" pattern from the React docs
+    // (https://react.dev/reference/react/useState#storing-information-from-previous-renders)
+    // because the project's `react-hooks/set-state-in-effect` lint rule
+    // forbids resetting state from inside a useEffect. The conditional
+    // setState during render fires once per resetKey change and is safe
+    // under StrictMode / concurrent mode.
+    const resetKey = `${chapterId}:${isOpen}`;
+    const [prevResetKey, setPrevResetKey] = useState(resetKey);
+    if (prevResetKey !== resetKey) {
+      setPrevResetKey(resetKey);
       setShowCreateForm(false);
       setCreateLabel("");
       setDuplicateMessage(false);
       setCreateError(null);
       setConfirmDeleteId(null);
-    }, [chapterId, isOpen]);
+    }
 
     const handleCreate = async () => {
       if (!chapterId) return;
