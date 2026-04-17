@@ -13,6 +13,7 @@ export {
   EXPORT_CONTENT_TYPES,
   UpdateImageSchema,
   CreateSnapshotSchema,
+  sanitizeSnapshotLabel,
 } from "./schemas";
 export type { ExportFormatType } from "./schemas";
 export { countWords } from "./wordcount";

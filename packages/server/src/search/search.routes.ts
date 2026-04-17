@@ -10,35 +10,42 @@ const SearchOptionsSchema = z
     whole_word: z.boolean().optional(),
     regex: z.boolean().optional(),
   })
+  .strict()
   .optional();
 
 const MAX_QUERY_LENGTH = 1000;
 const MAX_REPLACE_LENGTH = 10_000;
 
-const SearchSchema = z.object({
-  query: z
-    .string()
-    .min(1, "Search query is required")
-    .max(MAX_QUERY_LENGTH, "Search query is too long"),
-  options: SearchOptionsSchema,
-});
+const SearchSchema = z
+  .object({
+    query: z
+      .string()
+      .min(1, "Search query is required")
+      .max(MAX_QUERY_LENGTH, "Search query is too long"),
+    options: SearchOptionsSchema,
+  })
+  .strict();
 
-const ReplaceSchema = z.object({
-  search: z
-    .string()
-    .min(1, "Search term is required")
-    .max(MAX_QUERY_LENGTH, "Search term is too long"),
-  replace: z.string().max(MAX_REPLACE_LENGTH, "Replacement is too long"),
-  options: SearchOptionsSchema,
-  scope: z.union([
-    z.object({ type: z.literal("project") }),
-    z.object({
-      type: z.literal("chapter"),
-      chapter_id: z.string().uuid(),
-      match_index: z.number().int().min(0).optional(),
-    }),
-  ]),
-});
+const ReplaceSchema = z
+  .object({
+    search: z
+      .string()
+      .min(1, "Search term is required")
+      .max(MAX_QUERY_LENGTH, "Search term is too long"),
+    replace: z.string().max(MAX_REPLACE_LENGTH, "Replacement is too long"),
+    options: SearchOptionsSchema,
+    scope: z.union([
+      z.object({ type: z.literal("project") }).strict(),
+      z
+        .object({
+          type: z.literal("chapter"),
+          chapter_id: z.string().uuid(),
+          match_index: z.number().int().min(0).optional(),
+        })
+        .strict(),
+    ]),
+  })
+  .strict();
 
 export function searchRouter(): Router {
   const router = Router();

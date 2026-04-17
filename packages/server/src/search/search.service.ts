@@ -9,6 +9,7 @@ import {
   RegExpTimeoutError,
   MatchCapExceededError,
   MAX_MATCHES_PER_REQUEST,
+  sanitizeSnapshotLabel,
 } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
@@ -39,13 +40,14 @@ export interface SearchValidationError {
 
 /**
  * Truncate a user-supplied string for display in a snapshot label:
- *   - strip control chars (other than tab) which corrupt logs and UI;
+ *   - strip via the shared sanitizer (C0/C1 controls, DEL, bidi overrides,
+ *     line/paragraph separators) so auto-snapshot labels cannot spoof
+ *     display in the snapshot list;
  *   - truncate by grapheme (not code unit) to avoid splitting surrogate
  *     pairs or combining sequences.
  */
 function truncateForLabel(s: string, max = 30): string {
-  // eslint-disable-next-line no-control-regex -- intentionally strips control chars
-  const cleaned = s.replace(/[\u0000-\u0008\u000A-\u001F\u007F]/g, "");
+  const cleaned = sanitizeSnapshotLabel(s);
   const segmenter =
     typeof Intl !== "undefined" && "Segmenter" in Intl
       ? new Intl.Segmenter(undefined, { granularity: "grapheme" })

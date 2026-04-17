@@ -113,15 +113,19 @@ export const UpdateSettingsSchema = z.object({
 /**
  * Strip characters that would let a label spoof display in the snapshot
  * list:
- *   - C0/C1 control chars (except tab) — corrupt UI logs and terminals
+ *   - C0 control chars except tab (U+0000..U+0008, U+000A..U+001F), DEL (U+007F)
+ *   - C1 control chars (U+0080..U+009F) — non-printing
  *   - Bidi overrides (U+202A..U+202E, U+2066..U+2069) — Trojan-Source-style
  *   - Line/paragraph separators (U+2028, U+2029) — break list row layout
+ *
+ * Exported so server auto-snapshot labels (built from user search/replace
+ * strings) share the same sanitization surface as manual snapshots.
  */
-function sanitizeSnapshotLabel(raw: string): string {
+export function sanitizeSnapshotLabel(raw: string): string {
   return (
     raw
       // eslint-disable-next-line no-control-regex -- intentionally strips control chars
-      .replace(/[\u0000-\u0008\u000A-\u001F\u007F]/g, "")
+      .replace(/[\u0000-\u0008\u000A-\u001F\u007F-\u009F]/g, "")
       .replace(/[\u202A-\u202E\u2066-\u2069\u2028\u2029]/g, "")
   );
 }
