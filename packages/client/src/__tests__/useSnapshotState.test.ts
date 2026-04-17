@@ -211,10 +211,10 @@ describe("useSnapshotState", () => {
     expect(r.reason).toBe("unknown");
   });
 
-  it("restoreSnapshot surfaces corrupt_snapshot reason on 422", async () => {
+  it("restoreSnapshot surfaces corrupt_snapshot reason on 400 CORRUPT_SNAPSHOT", async () => {
     const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.snapshots.restore).mockRejectedValue(
-      new ApiRequestError("Corrupt", 422, "CORRUPT_SNAPSHOT"),
+      new ApiRequestError("Corrupt", 400, "CORRUPT_SNAPSHOT"),
     );
 
     const { result } = renderHook(() => useSnapshotState("ch-1"));

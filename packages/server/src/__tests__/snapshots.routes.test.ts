@@ -230,7 +230,7 @@ describe("snapshot routes", () => {
       expect(res.body.error.code).toBe("VALIDATION_ERROR");
     });
 
-    it("returns 422 when the snapshot content is corrupt", async () => {
+    it("returns 400 when the snapshot content is corrupt", async () => {
       const { chapterId } = await createTestProject();
 
       // Insert a snapshot with intentionally-corrupt content via the raw db.
@@ -245,7 +245,7 @@ describe("snapshot routes", () => {
 
       const res = await request(t.app).post(`/api/snapshots/${snapshotId}/restore`);
 
-      expect(res.status).toBe(422);
+      expect(res.status).toBe(400);
       expect(res.body.error.code).toBe("CORRUPT_SNAPSHOT");
 
       // Chapter must remain unchanged.

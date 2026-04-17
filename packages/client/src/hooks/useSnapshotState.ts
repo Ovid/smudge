@@ -142,7 +142,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         return { ok: true };
       } catch (err) {
         if (err instanceof ApiRequestError) {
-          if (err.status === 422 && err.code === "CORRUPT_SNAPSHOT") {
+          if (err.code === "CORRUPT_SNAPSHOT") {
             return { ok: false, reason: "corrupt_snapshot", message: err.message };
           }
           // Distinguish "snapshot (or its chapter) is gone" from generic

@@ -137,7 +137,10 @@ export function snapshotDirectRouter(): Router {
         return;
       }
       if (result === "corrupt_snapshot") {
-        res.status(422).json({
+        // CLAUDE.md restricts status codes to 200/201/400/404/500; treat
+        // corrupt content as a 400 validation error. Client distinguishes
+        // via code === "CORRUPT_SNAPSHOT".
+        res.status(400).json({
           error: {
             code: "CORRUPT_SNAPSHOT",
             message: "Snapshot content is corrupt and cannot be restored.",
