@@ -200,6 +200,7 @@ export async function listContentByProject(
   return db("chapters")
     .where("project_id", projectId)
     .whereNull("deleted_at")
+    .orderBy("sort_order", "asc")
     .select("id", "title", "content", "word_count");
 }
 
