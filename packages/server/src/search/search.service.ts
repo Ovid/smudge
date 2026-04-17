@@ -15,7 +15,7 @@ import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
-import type { SearchResult } from "./search.types";
+import type { SearchResult } from "@smudge/shared";
 
 /**
  * Hard wall-clock budget for a single search/replace request. Bounds the

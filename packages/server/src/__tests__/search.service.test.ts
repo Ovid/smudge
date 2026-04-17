@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { v4 as uuid } from "uuid";
 import { setupTestDb } from "./test-helpers";
-import type { SearchResult } from "../search/search.types";
+import type { SearchResult } from "@smudge/shared";
 
 function assertSearchResult(
   result: SearchResult | null | { validationError: string },
