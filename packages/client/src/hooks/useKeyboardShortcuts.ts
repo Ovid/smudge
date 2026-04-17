@@ -108,19 +108,27 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
         return;
       }
 
-      // Don't process shortcuts when a dialog is open (focus trap)
+      // Don't process shortcuts when a dialog is open (focus trap). The
+      // Replace-All confirmation is explicitly listed — otherwise Ctrl+H
+      // could toggle the find-replace panel behind the dialog and Ctrl+Shift+N
+      // could create a chapter the user can't see.
       if (
         shortcutHelpOpenRef.current ||
         deleteTargetRef.current ||
         projectSettingsOpenRef.current ||
-        exportDialogOpenRef.current
+        exportDialogOpenRef.current ||
+        replaceConfirmOpenRef.current
       )
         return;
 
       // Toggle find-and-replace panel (Ctrl/Cmd+H).
       // Placed after the modal-open guard so the panel can't be toggled
-      // underneath a confirmation dialog.
+      // underneath a confirmation dialog. Also skip when the user is
+      // typing in an input or textarea — muscle-memory Ctrl+H while editing
+      // the search input shouldn't wipe their query + results state.
       if (ctrl && e.code === "KeyH") {
+        const tag = (document.activeElement as HTMLElement)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA") return;
         e.preventDefault();
         toggleFindReplaceRef.current?.();
         return;
