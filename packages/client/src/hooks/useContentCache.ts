@@ -28,3 +28,22 @@ export function clearCachedContent(chapterId: string): void {
     console.warn("[useContentCache] clearCachedContent failed:", err);
   }
 }
+
+/**
+ * Clear cached draft content for every chapter. Used after a project-wide
+ * find-and-replace: any chapter with unsaved client cache would otherwise
+ * silently overlay the pre-replace content on top of the server's replaced
+ * content when the user navigates to it, un-doing the replacement.
+ */
+export function clearAllCachedContent(): void {
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(CACHE_PREFIX)) keys.push(k);
+    }
+    for (const k of keys) localStorage.removeItem(k);
+  } catch (err) {
+    console.warn("[useContentCache] clearAllCachedContent failed:", err);
+  }
+}
