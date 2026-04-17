@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from "react";
-import { api } from "../api/client";
+import { api, ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
 import type { SnapshotListItem } from "@smudge/shared";
 
@@ -192,7 +192,16 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         await api.snapshots.delete(id);
         setConfirmDeleteId(null);
         await fetchSnapshots();
-      } catch {
+      } catch (err) {
+        // 404 means the snapshot is already gone (deleted in another tab,
+        // or the parent chapter was soft-deleted). The server already
+        // agrees with the user's intent; refresh the list and close the
+        // dialog rather than looping on the same 404.
+        if (err instanceof ApiRequestError && err.status === 404) {
+          setConfirmDeleteId(null);
+          await fetchSnapshots();
+          return;
+        }
         // Keep the confirm dialog open and surface an error so the user
         // knows the delete didn't land — silently swallowing it makes
         // users believe a destructive action succeeded when it hadn't.

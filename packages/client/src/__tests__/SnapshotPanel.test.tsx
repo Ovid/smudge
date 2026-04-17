@@ -6,15 +6,27 @@ import { api } from "../api/client";
 import { STRINGS } from "../strings";
 import type { SnapshotListItem } from "@smudge/shared";
 
-vi.mock("../api/client", () => ({
-  api: {
-    snapshots: {
-      list: vi.fn(),
-      create: vi.fn(),
-      delete: vi.fn(),
+vi.mock("../api/client", () => {
+  class ApiRequestError extends Error {
+    status: number;
+    code?: string;
+    constructor(message: string, status: number, code?: string) {
+      super(message);
+      this.status = status;
+      this.code = code;
+    }
+  }
+  return {
+    api: {
+      snapshots: {
+        list: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+      },
     },
-  },
-}));
+    ApiRequestError,
+  };
+});
 
 const S = STRINGS.snapshots;
 
@@ -283,6 +295,31 @@ describe("SnapshotPanel", () => {
 
       await user.click(screen.getByText(S.deleteCancel));
       expect(screen.queryByText(S.deleteConfirm)).not.toBeInTheDocument();
+    });
+
+    it("treats a 404 delete as success — refreshes list and closes dialog", async () => {
+      const user = userEvent.setup();
+      const { ApiRequestError } = await import("../api/client");
+      const snap = makeSnapshot({ id: "snap-gone" });
+      // Initial list shows the snapshot; after the 404, list returns empty.
+      vi.mocked(api.snapshots.list).mockResolvedValueOnce([snap]).mockResolvedValueOnce([]);
+      vi.mocked(api.snapshots.delete).mockRejectedValueOnce(
+        new ApiRequestError("not found", 404, "NOT_FOUND"),
+      );
+
+      render(<SnapshotPanel {...defaultProps} />);
+      await waitFor(() => {
+        expect(screen.getByText(S.delete)).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.delete));
+      await user.click(screen.getByText(S.deleteConfirmButton));
+
+      await waitFor(() => {
+        expect(screen.queryByText(S.deleteConfirm)).not.toBeInTheDocument();
+      });
+      expect(screen.queryByText(S.deleteFailed)).not.toBeInTheDocument();
+      expect(api.snapshots.list).toHaveBeenCalledTimes(2);
     });
   });
 
