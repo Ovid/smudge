@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { STRINGS } from "../strings";
-import type { SearchResult } from "@smudge/shared";
+import { CONTEXT_RADIUS, type SearchResult } from "@smudge/shared";
 
 const S = STRINGS.findReplace;
 
@@ -22,11 +22,10 @@ export interface FindReplacePanelProps {
   triggerRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
-// Context is `flat.slice(offset - R, offset + length + R)` where R = 40.
-// That means the match starts at `min(R, offset)` within the context,
-// regardless of search options — so we highlight by known position rather
-// than re-searching (which would mis-highlight for case-sensitive or regex).
-const CONTEXT_RADIUS = 40;
+// Context is `flat.slice(offset - R, offset + length + R)` where R is the
+// shared CONTEXT_RADIUS. Match starts at `min(R, offset)` within the
+// context, so we highlight by known position rather than re-searching
+// (which would mis-highlight for case-sensitive or regex).
 
 function highlightMatch(
   context: string,

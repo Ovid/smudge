@@ -41,13 +41,16 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   // Monotonic counter to discard stale list responses after a chapter switch.
   const chapterSeqRef = useRef(0);
 
-  // Fetch snapshot count when chapterId changes. Reset to 0 first so the
-  // badge never briefly shows the previous chapter's count while the
-  // list request is in flight.
+  // Reset per-chapter state when chapterId changes. Without clearing
+  // viewingSnapshot here, the snapshot banner & view from chapter A
+  // would persist after the user selected chapter B in the sidebar,
+  // and a Restore click would silently overwrite chapter A's content.
   useEffect(() => {
     const seq = ++chapterSeqRef.current;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: must reset before fetch resolves
     setSnapshotCount(0);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: must reset before fetch resolves
+    setViewingSnapshot(null);
     if (!chapterId) return;
     api.snapshots
       .list(chapterId)

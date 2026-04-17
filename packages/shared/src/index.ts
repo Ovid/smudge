@@ -24,6 +24,7 @@ export {
   RegExpSafetyError,
   MatchCapExceededError,
   MAX_MATCHES_PER_REQUEST,
+  CONTEXT_RADIUS,
 } from "./tiptap-text";
 export type { SearchMatch, SearchOptions } from "./tiptap-text";
 export { generateSlug } from "./slugify";

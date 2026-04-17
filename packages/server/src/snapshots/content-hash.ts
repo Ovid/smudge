@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { logger } from "../logger";
 
 /**
  * Recursively sort object keys so that semantically equivalent TipTap
@@ -26,6 +27,12 @@ export function canonicalContentHash(content: string): string {
   try {
     canonicalJson = JSON.stringify(canonicalize(JSON.parse(content)));
   } catch {
+    // Falling back to raw bytes silently dedups corrupt-but-byte-identical
+    // content across attempts. Log so operators can spot it.
+    logger.warn(
+      { content_length: content.length },
+      "canonicalContentHash: content is not valid JSON; hashing raw bytes",
+    );
     canonicalJson = content;
   }
   return createHash("sha256").update(canonicalJson).digest("hex");

@@ -207,10 +207,16 @@ export class MatchCapExceededError extends Error {
   }
 }
 
+/**
+ * Number of code units of context returned on either side of a match.
+ * Exported so the client highlighter can compute the same offset
+ * relationship without re-deriving (drift would mis-align highlights).
+ */
+export const CONTEXT_RADIUS = 40;
+
 function extractContext(flat: string, offset: number, length: number): string {
-  const r = 40;
-  const start = Math.max(0, offset - r);
-  const end = Math.min(flat.length, offset + length + r);
+  const start = Math.max(0, offset - CONTEXT_RADIUS);
+  const end = Math.min(flat.length, offset + length + CONTEXT_RADIUS);
   return flat.slice(start, end);
 }
 
