@@ -5,6 +5,12 @@ import type { SearchResult } from "@smudge/shared";
 
 const S = STRINGS.findReplace;
 
+export interface SearchOptionsShape {
+  case_sensitive: boolean;
+  whole_word: boolean;
+  regex: boolean;
+}
+
 export interface UseFindReplaceStateReturn {
   panelOpen: boolean;
   togglePanel: () => void;
@@ -13,9 +19,13 @@ export interface UseFindReplaceStateReturn {
   setQuery: (q: string) => void;
   replacement: string;
   setReplacement: (r: string) => void;
-  options: { case_sensitive: boolean; whole_word: boolean; regex: boolean };
+  options: SearchOptionsShape;
   toggleOption: (opt: "case_sensitive" | "whole_word" | "regex") => void;
   results: SearchResult | null;
+  /** The query string that produced the current results (frozen at fetch time). */
+  resultsQuery: string | null;
+  /** The options that produced the current results (frozen at fetch time). */
+  resultsOptions: SearchOptionsShape | null;
   loading: boolean;
   error: string | null;
   search: (projectSlug: string) => Promise<void>;
@@ -31,6 +41,8 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
     regex: false,
   });
   const [results, setResults] = useState<SearchResult | null>(null);
+  const [resultsQuery, setResultsQuery] = useState<string | null>(null);
+  const [resultsOptions, setResultsOptions] = useState<SearchOptionsShape | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,6 +61,8 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
       setQuery("");
       setReplacement("");
       setResults(null);
+      setResultsQuery(null);
+      setResultsOptions(null);
       setError(null);
       searchSeqRef.current++;
     }
@@ -68,18 +82,30 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
 
   const search = useCallback(
     async (slug: string) => {
+      // Always bump the seq so any still-in-flight response for a prior
+      // query is discarded rather than overwriting cleared state.
+      const seq = ++searchSeqRef.current;
       if (!query) {
         setResults(null);
+        setResultsQuery(null);
+        setResultsOptions(null);
         setError(null);
+        setLoading(false);
         return;
       }
-      const seq = ++searchSeqRef.current;
+      // Snapshot the query/options as-of the request so replace-one can
+      // use the exact search context that produced the current results
+      // (the user may be typing while waiting for the response).
+      const frozenQuery = query;
+      const frozenOptions: SearchOptionsShape = { ...options };
       setLoading(true);
       setError(null);
       try {
-        const result = await api.search.find(slug, query, options);
+        const result = await api.search.find(slug, frozenQuery, frozenOptions);
         if (seq !== searchSeqRef.current) return;
         setResults(result);
+        setResultsQuery(frozenQuery);
+        setResultsOptions(frozenOptions);
       } catch (err) {
         if (seq !== searchSeqRef.current) return;
         if (err instanceof ApiRequestError && err.status === 400) {
@@ -88,6 +114,8 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
           setError(err instanceof Error ? err.message : "Search failed");
         }
         setResults(null);
+        setResultsQuery(null);
+        setResultsOptions(null);
       } finally {
         if (seq === searchSeqRef.current) setLoading(false);
       }
@@ -125,6 +153,8 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
     options,
     toggleOption,
     results,
+    resultsQuery,
+    resultsOptions,
     loading,
     error,
     search: useCallback(

@@ -264,6 +264,12 @@ export function EditorPage() {
   const handleReplaceOne = useCallback(
     async (chapterId: string, matchIndex: number) => {
       if (!project || !slug) return;
+      // Use the query/options that produced the current results — not the
+      // current input state — so replace-one targets the match the user
+      // actually sees, even if they've started typing a new query.
+      const frozenQuery = findReplace.resultsQuery;
+      const frozenOptions = findReplace.resultsOptions;
+      if (!frozenQuery || !frozenOptions) return;
       const flushed = (await editorRef.current?.flushSave()) ?? true;
       if (!flushed) {
         setActionError(STRINGS.findReplace.replaceFailed);
@@ -273,11 +279,15 @@ export function EditorPage() {
       try {
         const result = await api.search.replace(
           slug,
-          findReplace.query,
+          frozenQuery,
           findReplace.replacement,
-          findReplace.options,
+          frozenOptions,
           { type: "chapter", chapter_id: chapterId, match_index: matchIndex },
         );
+        if (result.replaced_count === 0) {
+          setActionError(STRINGS.findReplace.matchNotFound);
+          return;
+        }
         const current = getActiveChapter();
         if (current && result.affected_chapter_ids.includes(current.id)) {
           await reloadActiveChapter();
