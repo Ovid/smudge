@@ -111,6 +111,18 @@ export function EditorPage() {
   const snapshotsTriggerRef = useRef<HTMLButtonElement>(null);
   const findReplaceTriggerRef = useRef<HTMLButtonElement>(null);
 
+  // Separate from actionError so a partial-success replace (some chapters
+  // replaced, some skipped due to corruption) can surface both a positive
+  // "replaced N occurrences" banner and a warning about skipped chapters
+  // without conflating success with failure.
+  const [actionInfo, setActionInfo] = useState<string | null>(null);
+
+  // Snapshot-view ref used by handleRestoreSnapshot to re-check intent after
+  // awaiting flushSave — the user may have clicked "Back to editing" during
+  // the flush, in which case the restore should not proceed.
+  const viewingSnapshotRef = useRef(viewingSnapshot);
+  viewingSnapshotRef.current = viewingSnapshot;
+
   // Frozen snapshot of state at the moment the user clicked "Replace All".
   // This prevents the confirmation copy from drifting if the user edits the
   // panel while the dialog is open.
@@ -157,9 +169,14 @@ export function EditorPage() {
     // client-side unsaved-content cache, losing the user's unsaved edits.
     const flushed = (await editorRef.current?.flushSave()) ?? true;
     if (!flushed) {
-      setActionError(STRINGS.snapshots.restoreFailed);
+      // The fault is the save, not the restore — attribute it correctly.
+      setActionError(STRINGS.snapshots.restoreFailedSaveFirst);
       return;
     }
+    // After awaiting flushSave, re-check whether the user still wants the
+    // restore. If they clicked "Back to editing" during the flush, the
+    // closure-captured viewingSnapshot is stale and we must not proceed.
+    if (!viewingSnapshotRef.current) return;
     // Cancel any pending retry saves; their stale content would clobber
     // the restored snapshot once the server-side restore completes.
     cancelPendingSaves();
@@ -175,6 +192,8 @@ export function EditorPage() {
       }
     } else if (result.reason === "corrupt_snapshot") {
       setActionError(STRINGS.snapshots.restoreFailedCorrupt);
+    } else if (result.reason === "not_found") {
+      setActionError(STRINGS.snapshots.restoreFailedNotFound);
     } else {
       setActionError(STRINGS.snapshots.restoreFailed);
     }
@@ -198,10 +217,12 @@ export function EditorPage() {
       if (!project || !slug) return;
       const flushed = (await editorRef.current?.flushSave()) ?? true;
       if (!flushed) {
-        setActionError(STRINGS.findReplace.replaceFailed);
+        // Attribute the failure to the save, not the replace.
+        setActionError(STRINGS.findReplace.replaceFailedSaveFirst);
         return;
       }
       cancelPendingSaves();
+      setActionInfo(null);
       try {
         const result = await api.search.replace(
           slug,
@@ -230,8 +251,13 @@ export function EditorPage() {
         }
         await findReplace.search(slug);
         snapshotPanelRef.current?.refreshSnapshots();
-        // Surface any chapters the server skipped (corrupt JSON) so the
-        // user isn't left believing every occurrence was replaced.
+        // Always surface a positive success banner so the user can
+        // distinguish "did nothing because something went wrong" from
+        // "finished with no user-visible change". When chapters were
+        // skipped due to corrupt content, show the warning through the
+        // error banner as well — success and warning are distinct
+        // regions, not competing for the same slot.
+        setActionInfo(STRINGS.findReplace.replaceSuccess(result.replaced_count));
         if (result.skipped_chapter_ids && result.skipped_chapter_ids.length > 0) {
           setActionError(
             STRINGS.findReplace.skippedAfterReplace(result.skipped_chapter_ids.length),
@@ -339,7 +365,7 @@ export function EditorPage() {
       if (!frozenQuery || !frozenOptions) return;
       const flushed = (await editorRef.current?.flushSave()) ?? true;
       if (!flushed) {
-        setActionError(STRINGS.findReplace.replaceFailed);
+        setActionError(STRINGS.findReplace.replaceFailedSaveFirst);
         return;
       }
       cancelPendingSaves();
@@ -364,6 +390,7 @@ export function EditorPage() {
         }
         await findReplace.search(slug);
         snapshotPanelRef.current?.refreshSnapshots();
+        setActionInfo(STRINGS.findReplace.replaceSuccess(result.replaced_count));
       } catch (err) {
         // Mirror executeReplace's discriminated handling so the user sees
         // accurate copy for code-specific failures (too many matches,
@@ -713,6 +740,22 @@ export function EditorPage() {
         <div className="flex-1 flex flex-col overflow-hidden">
           {actionError && (
             <ActionErrorBanner error={actionError} onDismiss={() => setActionError(null)} />
+          )}
+          {actionInfo && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="px-6 py-2 bg-accent/10 text-accent text-sm flex items-center justify-between border-b border-accent/20"
+            >
+              <span>{actionInfo}</span>
+              <button
+                onClick={() => setActionInfo(null)}
+                className="text-accent hover:text-text-primary text-xs ml-4 focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
+                aria-label={STRINGS.a11y.dismissError}
+              >
+                ✕
+              </button>
+            </div>
           )}
 
           {trashOpen ? (

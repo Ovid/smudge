@@ -281,6 +281,10 @@ export const STRINGS = {
     restoreFailed: "Unable to restore snapshot. Try again.",
     restoreFailedCorrupt:
       "This snapshot is corrupt and can't be restored. It will remain in the list; create a new snapshot or restore a different one.",
+    restoreFailedNotFound:
+      "This snapshot no longer exists. Refresh to see the latest snapshot list.",
+    restoreFailedSaveFirst:
+      "Unable to save pending changes. Try again once your connection recovers before restoring.",
     renderError: "Unable to render snapshot content",
     backToEditing: "Back to editing",
     viewingBanner: (label: string, date: string) => `Viewing snapshot: ${label} — ${date}`,
@@ -311,7 +315,11 @@ export const STRINGS = {
     wholeWord: "Whole word",
     regex: "Regular expression",
     replaceFailed: "Replace failed. Try again.",
+    replaceFailedSaveFirst:
+      "Unable to save pending changes. Try again once your connection recovers before replacing.",
     replaceScopeNotFound: "The chapter for this replace is no longer available.",
+    replaceSuccess: (count: number) =>
+      `Replaced ${count} occurrence${count === 1 ? "" : "s"}.`,
     noMatches: "No matches found",
     matchCount: (count: number, chapters: number) =>
       `Found ${count} occurrence${count === 1 ? "" : "s"} in ${chapters} chapter${chapters === 1 ? "" : "s"}`,

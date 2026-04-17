@@ -10,7 +10,7 @@ interface ViewingSnapshot {
   created_at: string;
 }
 
-export type RestoreFailureReason = "corrupt_snapshot" | "network" | "unknown";
+export type RestoreFailureReason = "corrupt_snapshot" | "not_found" | "network" | "unknown";
 
 export interface RestoreResult {
   ok: boolean;
@@ -144,6 +144,11 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         if (err instanceof ApiRequestError) {
           if (err.status === 422 && err.code === "CORRUPT_SNAPSHOT") {
             return { ok: false, reason: "corrupt_snapshot", message: err.message };
+          }
+          // Distinguish "snapshot (or its chapter) is gone" from generic
+          // network failure — retrying the former will always 404.
+          if (err.status === 404) {
+            return { ok: false, reason: "not_found", message: err.message };
           }
           return { ok: false, reason: "network", message: err.message };
         }
