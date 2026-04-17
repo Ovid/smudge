@@ -113,9 +113,25 @@ function escapeRegex(s: string): string {
 
 function buildRegex(query: string, opts: SearchOptions): RegExp {
   let pattern = opts.regex ? query : escapeRegex(query);
-  if (opts.whole_word) pattern = `\\b${pattern}\\b`;
-  const flags = opts.case_sensitive ? "g" : "gi";
+  if (opts.whole_word) {
+    // Unicode-aware word boundary. JS's \b is ASCII-only, so CJK and
+    // accented-Latin "whole word" searches would never match user-visible
+    // words. Require that the character adjacent to the match is NOT a
+    // Unicode letter, number, or underscore.
+    pattern = `(?<![\\p{L}\\p{N}_])${pattern}(?![\\p{L}\\p{N}_])`;
+  }
+  const flags = (opts.case_sensitive ? "g" : "gi") + "u";
   return new RegExp(pattern, flags);
+}
+
+/**
+ * Step the regex cursor past a zero-length match without splitting
+ * surrogate pairs. With the /u flag a zero-length step can land mid-
+ * surrogate, corrupting subsequent matches.
+ */
+function advancePastZeroLengthMatch(re: RegExp, str: string): void {
+  const code = str.codePointAt(re.lastIndex) ?? 0;
+  re.lastIndex += code > 0xffff ? 2 : 1;
 }
 
 /**
@@ -236,7 +252,7 @@ export function searchInDoc(
           offset: m.index,
           length: m[0].length,
         });
-        if (m[0].length === 0) re.lastIndex++;
+        if (m[0].length === 0) advancePastZeroLengthMatch(re, run.flat);
       }
     }
   }
@@ -290,7 +306,7 @@ export function replaceInDoc(
       let m: RegExpExecArray | null;
       while ((m = re.exec(flat)) !== null) {
         allPositions.push({ start: m.index, end: m.index + m[0].length });
-        if (m[0].length === 0) re.lastIndex++;
+        if (m[0].length === 0) advancePastZeroLengthMatch(re, flat);
       }
 
       if (allPositions.length === 0) {

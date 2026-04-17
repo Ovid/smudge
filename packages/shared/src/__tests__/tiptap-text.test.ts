@@ -454,6 +454,15 @@ describe("replaceInDoc", () => {
     expect(result.count).toBe(0);
   });
 
+  it("whole-word respects Unicode letter boundaries", () => {
+    // "café" inside "cafés" must not match whole-word, but "café." should.
+    const d1 = doc(paragraph(text("I saw cafés here")));
+    expect(searchInDoc(d1, "café", { whole_word: true })).toHaveLength(0);
+
+    const d2 = doc(paragraph(text("I saw café. Here.")));
+    expect(searchInDoc(d2, "café", { whole_word: true })).toHaveLength(1);
+  });
+
   it("searchInDoc does not match across a hardBreak boundary", () => {
     const hardBreak = { type: "hardBreak" } as unknown as TipTapTextNode;
     const d = doc(paragraph(text("foo"), hardBreak, text("bar")));
