@@ -41,13 +41,16 @@ describe("SnapshotPanel", () => {
   beforeEach(() => {
     vi.mocked(api.snapshots.list).mockResolvedValue([]);
     vi.mocked(api.snapshots.create).mockResolvedValue({
-      id: "snap-new",
-      chapter_id: "ch-1",
-      label: null,
-      content: "{}",
-      word_count: 100,
-      is_auto: false,
-      created_at: new Date().toISOString(),
+      duplicate: false,
+      snapshot: {
+        id: "snap-new",
+        chapter_id: "ch-1",
+        label: null,
+        content: "{}",
+        word_count: 100,
+        is_auto: false,
+        created_at: new Date().toISOString(),
+      },
     });
     vi.mocked(api.snapshots.delete).mockResolvedValue(undefined);
   });
@@ -176,7 +179,10 @@ describe("SnapshotPanel", () => {
 
     it("shows duplicate message when content unchanged", async () => {
       const user = userEvent.setup();
-      vi.mocked(api.snapshots.create).mockResolvedValue({ message: "duplicate" } as never);
+      vi.mocked(api.snapshots.create).mockResolvedValue({
+        duplicate: true,
+        message: "Snapshot skipped",
+      });
       render(<SnapshotPanel {...defaultProps} />);
 
       await waitFor(() => {

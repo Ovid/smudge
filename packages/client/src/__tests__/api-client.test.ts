@@ -422,10 +422,10 @@ describe("api.images", () => {
 describe("api.snapshots", () => {
   it("create(chapterId, label) sends POST /api/chapters/:id/snapshots with label", async () => {
     const snap = { id: "snap-1", chapter_id: "ch-1", label: "My Snapshot" };
-    mockFetch.mockResolvedValue(jsonResponse(snap, 201));
+    mockFetch.mockResolvedValue(jsonResponse({ duplicate: false, snapshot: snap }, 201));
 
     const result = await api.snapshots.create("ch-1", "My Snapshot");
-    expect(result).toEqual(snap);
+    expect(result).toEqual({ duplicate: false, snapshot: snap });
     expect(mockFetch).toHaveBeenCalledWith("/api/chapters/ch-1/snapshots", {
       headers: { "Content-Type": "application/json" },
       method: "POST",
@@ -435,15 +435,24 @@ describe("api.snapshots", () => {
 
   it("create(chapterId) sends POST without label when not provided", async () => {
     const snap = { id: "snap-2", chapter_id: "ch-1" };
-    mockFetch.mockResolvedValue(jsonResponse(snap, 201));
+    mockFetch.mockResolvedValue(jsonResponse({ duplicate: false, snapshot: snap }, 201));
 
     const result = await api.snapshots.create("ch-1");
-    expect(result).toEqual(snap);
+    expect(result).toEqual({ duplicate: false, snapshot: snap });
     expect(mockFetch).toHaveBeenCalledWith("/api/chapters/ch-1/snapshots", {
       headers: { "Content-Type": "application/json" },
       method: "POST",
       body: JSON.stringify({}),
     });
+  });
+
+  it("create(chapterId) returns duplicate=true when server replies 200 with duplicate body", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ duplicate: true, message: "Snapshot skipped — content unchanged." }, 200),
+    );
+
+    const result = await api.snapshots.create("ch-1");
+    expect(result.duplicate).toBe(true);
   });
 
   it("get(id) fetches GET /api/snapshots/:id", async () => {

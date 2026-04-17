@@ -47,11 +47,12 @@ export function snapshotChapterRouter(): Router {
       }
       if (result === "duplicate") {
         res.status(200).json({
+          duplicate: true,
           message: "Snapshot skipped — content unchanged since last snapshot.",
         });
         return;
       }
-      res.status(201).json(result);
+      res.status(201).json({ duplicate: false, snapshot: result });
     }),
   );
 

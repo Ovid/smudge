@@ -262,7 +262,9 @@ export const api = {
     list: (chapterId: string) => apiFetch<SnapshotListItem[]>(`/chapters/${chapterId}/snapshots`),
 
     create: (chapterId: string, label?: string) =>
-      apiFetch<SnapshotRow | { message: string }>(`/chapters/${chapterId}/snapshots`, {
+      apiFetch<
+        { duplicate: false; snapshot: SnapshotRow } | { duplicate: true; message: string }
+      >(`/chapters/${chapterId}/snapshots`, {
         method: "POST",
         body: JSON.stringify(label ? { label } : {}),
       }),

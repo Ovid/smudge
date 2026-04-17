@@ -36,13 +36,15 @@ describe("snapshot routes", () => {
       const res = await request(t.app).post(`/api/chapters/${chapterId}/snapshots`).send({});
 
       expect(res.status).toBe(201);
-      expect(res.body.id).toBeDefined();
-      expect(res.body.chapter_id).toBe(chapterId);
-      expect(res.body.label).toBeNull();
-      expect(res.body.content).toBeDefined();
-      expect(res.body.word_count).toBe(2);
-      expect(res.body.is_auto).toBe(false);
-      expect(res.body.created_at).toBeDefined();
+      expect(res.body.duplicate).toBe(false);
+      const snap = res.body.snapshot;
+      expect(snap.id).toBeDefined();
+      expect(snap.chapter_id).toBe(chapterId);
+      expect(snap.label).toBeNull();
+      expect(snap.content).toBeDefined();
+      expect(snap.word_count).toBe(2);
+      expect(snap.is_auto).toBe(false);
+      expect(snap.created_at).toBeDefined();
     });
 
     it("returns 201 with label when provided", async () => {
@@ -53,7 +55,8 @@ describe("snapshot routes", () => {
         .send({ label: "Draft 1" });
 
       expect(res.status).toBe(201);
-      expect(res.body.label).toBe("Draft 1");
+      expect(res.body.duplicate).toBe(false);
+      expect(res.body.snapshot.label).toBe("Draft 1");
     });
 
     it("returns 404 for non-existent chapter", async () => {
@@ -75,6 +78,7 @@ describe("snapshot routes", () => {
       // Second snapshot with same content
       const second = await request(t.app).post(`/api/chapters/${chapterId}/snapshots`).send({});
       expect(second.status).toBe(200);
+      expect(second.body.duplicate).toBe(true);
       expect(second.body.message).toBeDefined();
     });
 
@@ -131,7 +135,7 @@ describe("snapshot routes", () => {
       const createRes = await request(t.app)
         .post(`/api/chapters/${chapterId}/snapshots`)
         .send({ label: "full" });
-      const snapshotId = createRes.body.id;
+      const snapshotId = createRes.body.snapshot.id;
 
       const res = await request(t.app).get(`/api/snapshots/${snapshotId}`);
 
@@ -154,7 +158,7 @@ describe("snapshot routes", () => {
       const { chapterId } = await createTestProject();
 
       const createRes = await request(t.app).post(`/api/chapters/${chapterId}/snapshots`).send({});
-      const snapshotId = createRes.body.id;
+      const snapshotId = createRes.body.snapshot.id;
 
       const res = await request(t.app).delete(`/api/snapshots/${snapshotId}`);
       expect(res.status).toBe(204);
@@ -182,7 +186,7 @@ describe("snapshot routes", () => {
       const createRes = await request(t.app)
         .post(`/api/chapters/${chapterId}/snapshots`)
         .send({ label: "before edit" });
-      const snapshotId = createRes.body.id;
+      const snapshotId = createRes.body.snapshot.id;
 
       // Change the chapter content
       await request(t.app)
@@ -233,7 +237,7 @@ describe("snapshot routes", () => {
       const createRes = await request(t.app)
         .post(`/api/chapters/${chapterId}/snapshots`)
         .send({ label: "corrupt-me" });
-      const snapshotId = createRes.body.id;
+      const snapshotId = createRes.body.snapshot.id;
       await t
         .db("chapter_snapshots")
         .where({ id: snapshotId })

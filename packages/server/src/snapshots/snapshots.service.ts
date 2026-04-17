@@ -13,6 +13,8 @@ export async function createSnapshot(
   isAuto = false,
 ): Promise<SnapshotRow | null | "duplicate"> {
   const store = getProjectStore();
+  // findChapterByIdRaw filters deleted_at IS NULL the same as findChapterById;
+  // it just returns raw JSON content (needed for hashing) instead of parsed.
   const chapter = await store.findChapterByIdRaw(chapterId);
   if (!chapter) return null;
 

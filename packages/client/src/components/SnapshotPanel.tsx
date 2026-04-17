@@ -141,7 +141,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
       }
       try {
         const result = await api.snapshots.create(chapterId, createLabel.trim() || undefined);
-        if ("message" in result) {
+        if (result.duplicate) {
           setDuplicateMessage(true);
           return;
         }
