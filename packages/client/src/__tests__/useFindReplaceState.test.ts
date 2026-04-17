@@ -12,10 +12,12 @@ vi.mock("../api/client", () => ({
   },
   ApiRequestError: class ApiRequestError extends Error {
     status: number;
-    constructor(message: string, status: number) {
+    code?: string;
+    constructor(message: string, status: number, code?: string) {
       super(message);
       this.name = "ApiRequestError";
       this.status = status;
+      this.code = code;
     }
   },
 }));
@@ -165,6 +167,81 @@ describe("useFindReplaceState", () => {
     });
 
     expect(result.current.error).toBeTruthy();
+    expect(result.current.results).toBeNull();
+  });
+
+  it("search() maps MATCH_CAP_EXCEEDED to tooManyMatches copy", async () => {
+    const { ApiRequestError: MockApiError } = await import("../api/client");
+    const { STRINGS } = await import("../strings");
+    mockFind.mockRejectedValueOnce(new MockApiError("too many", 400, "MATCH_CAP_EXCEEDED"));
+
+    const { result } = renderHook(() => useFindReplaceState("my-project"));
+    act(() => {
+      result.current.setQuery("x");
+    });
+    await act(async () => {
+      await result.current.search("my-project");
+    });
+    expect(result.current.error).toBe(STRINGS.findReplace.tooManyMatches);
+  });
+
+  it("search() maps REGEX_TIMEOUT to searchTimedOut copy", async () => {
+    const { ApiRequestError: MockApiError } = await import("../api/client");
+    const { STRINGS } = await import("../strings");
+    mockFind.mockRejectedValueOnce(new MockApiError("timeout", 400, "REGEX_TIMEOUT"));
+
+    const { result } = renderHook(() => useFindReplaceState("my-project"));
+    act(() => {
+      result.current.setQuery("x");
+    });
+    await act(async () => {
+      await result.current.search("my-project");
+    });
+    expect(result.current.error).toBe(STRINGS.findReplace.searchTimedOut);
+  });
+
+  it("search() maps INVALID_REGEX to invalidRegex copy", async () => {
+    const { ApiRequestError: MockApiError } = await import("../api/client");
+    const { STRINGS } = await import("../strings");
+    mockFind.mockRejectedValueOnce(new MockApiError("bad", 400, "INVALID_REGEX"));
+
+    const { result } = renderHook(() => useFindReplaceState("my-project"));
+    act(() => {
+      result.current.setQuery("x");
+    });
+    await act(async () => {
+      await result.current.search("my-project");
+    });
+    expect(result.current.error).toBe(STRINGS.findReplace.invalidRegex);
+  });
+
+  it("search() surfaces server message for unknown 400 codes", async () => {
+    const { ApiRequestError: MockApiError } = await import("../api/client");
+    mockFind.mockRejectedValueOnce(new MockApiError("Query is too long", 400, "VALIDATION_ERROR"));
+
+    const { result } = renderHook(() => useFindReplaceState("my-project"));
+    act(() => {
+      result.current.setQuery("x");
+    });
+    await act(async () => {
+      await result.current.search("my-project");
+    });
+    expect(result.current.error).toBe("Query is too long");
+  });
+
+  it("search() silently swallows ABORTED errors", async () => {
+    const { ApiRequestError: MockApiError } = await import("../api/client");
+    mockFind.mockRejectedValueOnce(new MockApiError("Request aborted", 0, "ABORTED"));
+
+    const { result } = renderHook(() => useFindReplaceState("my-project"));
+    act(() => {
+      result.current.setQuery("x");
+    });
+    await act(async () => {
+      await result.current.search("my-project");
+    });
+    // No banner for aborts.
+    expect(result.current.error).toBeNull();
     expect(result.current.results).toBeNull();
   });
 

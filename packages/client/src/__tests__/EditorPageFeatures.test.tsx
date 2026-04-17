@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { EditorPage } from "../pages/EditorPage";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api/client";
+import { STRINGS } from "../strings";
 
 vi.mock("../hooks/useContentCache", () => ({
   getCachedContent: vi.fn().mockReturnValue(null),
@@ -16,6 +17,7 @@ vi.mock("../api/client", () => ({
     constructor(
       message: string,
       public readonly status: number,
+      public readonly code?: string,
     ) {
       super(message);
       this.name = "ApiRequestError";
@@ -1171,6 +1173,144 @@ describe("EditorPage find-and-replace confirmation", () => {
 
     // The replace API should not have been called
     expect(api.search.replace).not.toHaveBeenCalled();
+  });
+
+  it("swallows ABORTED errors from executeReplace without showing a banner", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Request aborted", 0, "ABORTED"),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    // Dialog closes, no action error banner for abort
+    await waitFor(() => {
+      expect(screen.queryByRole("alertdialog", { name: "Replace across manuscript?" })).toBeNull();
+    });
+    expect(screen.queryByText(STRINGS.findReplace.replaceFailed)).toBeNull();
+  });
+
+  it("surfaces SCOPE_NOT_FOUND 404 with replaceScopeNotFound copy", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Scope missing", 404, "SCOPE_NOT_FOUND"),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(STRINGS.findReplace.replaceScopeNotFound)).toBeInTheDocument();
+    });
+  });
+
+  it("surfaces MATCH_CAP_EXCEEDED with tooManyMatches copy", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Too many", 400, "MATCH_CAP_EXCEEDED"),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(STRINGS.findReplace.tooManyMatches)).toBeInTheDocument();
+    });
+  });
+
+  it("surfaces REGEX_TIMEOUT with searchTimedOut copy", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Timeout", 400, "REGEX_TIMEOUT"),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(STRINGS.findReplace.searchTimedOut)).toBeInTheDocument();
+    });
+  });
+
+  it("surfaces 5xx with server message rather than generic copy", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Something specific broke", 500, "INTERNAL_ERROR"),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Something specific broke/)).toBeInTheDocument();
+    });
+  });
+
+  it("handleReplaceOne surfaces MATCH_CAP_EXCEEDED with tooManyMatches copy", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("too many", 400, "MATCH_CAP_EXCEEDED"),
+    );
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
+    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+
+    // The per-match "Replace" buttons appear once results render.
+    const replaceOne = await screen.findAllByRole(
+      "button",
+      { name: "Replace" },
+      { timeout: 3000 },
+    );
+    await userEvent.click(replaceOne[0]!);
+
+    await waitFor(() => {
+      expect(screen.getByText(STRINGS.findReplace.tooManyMatches)).toBeInTheDocument();
+    });
+  });
+
+  it("handleReplaceOne swallows ABORTED errors silently", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("aborted", 0, "ABORTED"),
+    );
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
+    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+
+    const replaceOne = await screen.findAllByRole(
+      "button",
+      { name: "Replace" },
+      { timeout: 3000 },
+    );
+    await userEvent.click(replaceOne[0]!);
+
+    // No error banner should appear for an aborted request.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(STRINGS.findReplace.replaceFailed)).toBeNull();
   });
 
   it("shows chapter-scope confirmation when Replace All in Chapter is clicked", async () => {
