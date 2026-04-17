@@ -111,6 +111,26 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * Manually expand `String.prototype.replace`-style backreferences
+ * ($&, $1..$99, $`, $', $$) against a captured match. Used so we don't
+ * have to re-execute the regex on a sliced match string — re-execution
+ * loses lookbehind/lookahead context and would silently produce a
+ * no-op replacement for patterns like `(?<=foo)bar`.
+ */
+function expandReplacement(template: string, match: RegExpExecArray, regex: boolean): string {
+  if (!regex) return template;
+  return template.replace(/\$([&'`$]|\d{1,2})/g, (_, key: string) => {
+    if (key === "$") return "$";
+    if (key === "&") return match[0];
+    if (key === "`") return match.input.slice(0, match.index);
+    if (key === "'") return match.input.slice(match.index + match[0].length);
+    const idx = parseInt(key, 10);
+    if (Number.isFinite(idx) && idx >= 1 && idx <= 99) return match[idx] ?? "";
+    return "";
+  });
+}
+
 export function buildRegex(query: string, opts: SearchOptions): RegExp {
   let pattern = opts.regex ? query : escapeRegex(query);
   if (opts.whole_word) {
@@ -141,11 +161,34 @@ function advancePastZeroLengthMatch(re: RegExp, str: string): void {
  * `(a|a)+`. Linear-time engines would make this unnecessary.
  */
 export function assertSafeRegexPattern(pattern: string): void {
-  // Nested quantifier: a group that contains + * ? or {n,m} and is itself
-  // followed by one of those quantifiers.
-  // This conservatively matches `( ... [+*?] ... ) [+*?{]`.
-  const nestedQuantifier = /\([^()]*[+*?][^()]*\)\s*[+*?{]/;
-  if (nestedQuantifier.test(pattern)) {
+  // Normalize `?:` (non-capturing marker) so the `?` inside it doesn't
+  // trip the nested-quantifier heuristic for benign `(?:...)` groups.
+  const normalized = pattern.replace(/\?:/g, "");
+
+  // (1) Alternation-with-overlap inside a quantified group: `(x|x)+`,
+  // `(x|x)*`. The two branches are textually identical, making the engine
+  // try both for every position. Best-effort: parsing properly would
+  // require a real regex parser. Run before (2) so the more specific
+  // message wins.
+  const alternationOverlap = /\(\s*([^()|]+?)\s*\|\s*\1\s*\)\s*[+*?{]/;
+  if (alternationOverlap.test(normalized)) {
+    throw new RegExpSafetyError(
+      "Pattern contains overlapping alternation that can cause slowdowns.",
+    );
+  }
+
+  // (2) Nested quantifier with no inner parens: `(...[+*?]...)[+*?{]` —
+  // catches `(a+)+`, `(a*)*`, `(.?)*`, etc.
+  const nestedQuantifierFlat = /\([^()]*[+*?][^()]*\)\s*[+*?{]/;
+  if (nestedQuantifierFlat.test(normalized)) {
+    throw new RegExpSafetyError("Pattern contains nested quantifiers that can cause slowdowns.");
+  }
+
+  // (3) Outer-quantified group containing any nested group: `(...(...)...)[+*?{]`.
+  // Catches `((a+))+`, `(?:(a+))+`, `((a|b)+)+` — shapes the flat check
+  // can't see because `[^()]*` cannot span nested parens.
+  const nestedQuantifierWithSubgroup = /\([^()]*\([^()]*\)[^()]*\)\s*[+*?{]/;
+  if (nestedQuantifierWithSubgroup.test(pattern)) {
     throw new RegExpSafetyError("Pattern contains nested quantifiers that can cause slowdowns.");
   }
 }
@@ -286,9 +329,9 @@ export function replaceInDoc(
   // a single occurrence.
   let globalMatchCursor = 0;
 
-  // In literal (non-regex) mode, escape `$` so `String.prototype.replace`
-  // does not interpret `$&`, `$1`, `$$`, etc. as replacement patterns.
-  const effectiveReplacement = opts.regex ? replacement : replacement.replace(/\$/g, "$$$$");
+  // expandReplacement interprets `$&`/`$1`/etc. only in regex mode, so the
+  // raw replacement is passed through verbatim in literal mode.
+  const effectiveReplacement = replacement;
 
   for (const block of leafBlocks) {
     const { runs, separators } = splitBlockRuns(block);
@@ -308,55 +351,52 @@ export function replaceInDoc(
 
       const re = buildRegex(query, opts);
 
-      const allPositions: { start: number; end: number }[] = [];
+      // Capture each match's full RegExpExecArray so we can expand the
+      // replacement template against the captures later — re-running the
+      // regex on a sliced match string loses lookbehind/lookahead context
+      // and silently produces no-op replacements.
+      const allMatches: { start: number; end: number; m: RegExpExecArray }[] = [];
       let m: RegExpExecArray | null;
       while ((m = re.exec(flat)) !== null) {
-        if (totalCount + allPositions.length >= MAX_MATCHES_PER_REQUEST) {
+        if (totalCount + allMatches.length >= MAX_MATCHES_PER_REQUEST) {
           throw new MatchCapExceededError(MAX_MATCHES_PER_REQUEST);
         }
-        allPositions.push({ start: m.index, end: m.index + m[0].length });
+        allMatches.push({ start: m.index, end: m.index + m[0].length, m });
         if (m[0].length === 0) advancePastZeroLengthMatch(re, flat);
       }
 
-      if (allPositions.length === 0) {
+      if (allMatches.length === 0) {
         rebuiltRuns.push(cloneTextNodes(segments, flat));
         continue;
       }
 
-      let matchPositions = allPositions;
+      let matches = allMatches;
       if (typeof opts.match_index === "number") {
         const localIndex = opts.match_index - globalMatchCursor;
-        const selected = allPositions[localIndex];
+        const selected = allMatches[localIndex];
         if (!selected) {
-          globalMatchCursor += allPositions.length;
+          globalMatchCursor += allMatches.length;
           rebuiltRuns.push(cloneTextNodes(segments, flat));
           continue;
         }
-        matchPositions = [selected];
+        matches = [selected];
       }
-      globalMatchCursor += allPositions.length;
-      totalCount += matchPositions.length;
+      globalMatchCursor += allMatches.length;
+      totalCount += matches.length;
       blockChanged = true;
-
-      const repTexts = matchPositions.map((mp) => {
-        const matchStr = flat.slice(mp.start, mp.end);
-        return matchStr.replace(buildRegex(query, opts), effectiveReplacement);
-      });
 
       const newNodes: TipTapNode[] = [];
       let oldCursor = 0;
-      for (let i = 0; i < matchPositions.length; i++) {
-        const mp = matchPositions[i];
-        const repText = repTexts[i];
-        if (!mp || repText === undefined) continue;
-        if (oldCursor < mp.start) {
-          appendWithMarks(newNodes, flat.slice(oldCursor, mp.start), segments, oldCursor);
+      for (const match of matches) {
+        if (oldCursor < match.start) {
+          appendWithMarks(newNodes, flat.slice(oldCursor, match.start), segments, oldCursor);
         }
+        const repText = expandReplacement(effectiveReplacement, match.m, !!opts.regex);
         if (repText.length > 0) {
-          const marks = marksAtOffset(segments, mp.start);
+          const marks = marksAtOffset(segments, match.start);
           newNodes.push(makeTextNode(repText, marks));
         }
-        oldCursor = mp.end;
+        oldCursor = match.end;
       }
       if (oldCursor < flat.length) {
         appendWithMarks(newNodes, flat.slice(oldCursor), segments, oldCursor);

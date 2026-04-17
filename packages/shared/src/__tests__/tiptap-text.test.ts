@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { searchInDoc, replaceInDoc } from "../tiptap-text";
+import { searchInDoc, replaceInDoc, assertSafeRegexPattern } from "../tiptap-text";
 
 // --- Typed helpers for building TipTap doc fixtures ---
 
@@ -296,6 +296,33 @@ describe("replaceInDoc", () => {
     expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("foo $& and $1 and $$ baz");
   });
 
+  it("expands $1 / $& / $$ backreferences in regex mode", () => {
+    const d = doc(paragraph(text("hello world")));
+    const result = replaceInDoc(d, "(hello) (world)", "$2 $1 $&", { regex: true });
+    expect(result.count).toBe(1);
+    const para = contentOf(result.doc)[0];
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe(
+      "world hello hello world",
+    );
+  });
+
+  it("regex-mode lookbehind matches and replaces (no sliced re-execution)", () => {
+    const d = doc(paragraph(text("foobar foobaz")));
+    const result = replaceInDoc(d, "(?<=foo)bar", "qux", { regex: true });
+    // Should replace 'bar' (preceded by foo) with 'qux'.
+    expect(result.count).toBe(1);
+    const para = contentOf(result.doc)[0];
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("fooqux foobaz");
+  });
+
+  it("regex-mode lookahead matches and replaces (no sliced re-execution)", () => {
+    const d = doc(paragraph(text("ab ac ad")));
+    const result = replaceInDoc(d, "a(?=c)", "X", { regex: true });
+    expect(result.count).toBe(1);
+    const para = contentOf(result.doc)[0];
+    expect(flatTextOf(para as unknown as Record<string, unknown>)).toBe("ab Xc ad");
+  });
+
   it("replaces with empty string (deletion)", () => {
     const d = doc(paragraph(text("remove this word")));
     const result = replaceInDoc(d, " this", "");
@@ -483,5 +510,32 @@ describe("replaceInDoc", () => {
     expect(searchInDoc(d, "foobar")).toHaveLength(0);
     expect(searchInDoc(d, "foo")).toHaveLength(1);
     expect(searchInDoc(d, "bar")).toHaveLength(1);
+  });
+});
+
+describe("assertSafeRegexPattern", () => {
+  it("rejects flat nested quantifiers", () => {
+    expect(() => assertSafeRegexPattern("(a+)+b")).toThrow(/nested quantifier/i);
+    expect(() => assertSafeRegexPattern("(a*)*b")).toThrow(/nested quantifier/i);
+    expect(() => assertSafeRegexPattern("(.?)+x")).toThrow(/nested quantifier/i);
+  });
+
+  it("rejects nested groups under outer quantifier", () => {
+    expect(() => assertSafeRegexPattern("((a+))+b")).toThrow(/nested quantifier/i);
+    expect(() => assertSafeRegexPattern("(?:(a+))+b")).toThrow(/nested quantifier/i);
+    expect(() => assertSafeRegexPattern("((a|b)+)+c")).toThrow(/nested quantifier/i);
+  });
+
+  it("rejects overlapping alternation under quantifier", () => {
+    expect(() => assertSafeRegexPattern("(a|a)+b")).toThrow(/overlapping alternation/i);
+    expect(() => assertSafeRegexPattern("(?:x|x)*y")).toThrow(/overlapping alternation/i);
+  });
+
+  it("accepts safe patterns", () => {
+    expect(() => assertSafeRegexPattern("hello")).not.toThrow();
+    expect(() => assertSafeRegexPattern("\\d+")).not.toThrow();
+    expect(() => assertSafeRegexPattern("[abc]+")).not.toThrow();
+    expect(() => assertSafeRegexPattern("(foo|bar)")).not.toThrow();
+    expect(() => assertSafeRegexPattern("a{1,5}")).not.toThrow();
   });
 });
