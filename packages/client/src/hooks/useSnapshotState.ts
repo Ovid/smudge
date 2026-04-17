@@ -72,8 +72,14 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
 
   const viewSnapshot = useCallback(
     async (snapshot: { id: string; label: string | null; created_at: string }) => {
+      // Capture before the await so a chapter switch during the fetch
+      // doesn't pin a stale snapshot to the wrong chapter. Without this,
+      // a subsequent Restore click would silently overwrite the previous
+      // chapter using viewingSnapshot.id.
+      const seq = chapterSeqRef.current;
       try {
         const full = await api.snapshots.get(snapshot.id);
+        if (seq !== chapterSeqRef.current) return;
         const content = typeof full.content === "string" ? JSON.parse(full.content) : full.content;
         setViewingSnapshot({
           id: snapshot.id,
@@ -94,13 +100,19 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
 
   const restoreSnapshot = useCallback(
     async (snapshotId: string): Promise<RestoreResult> => {
+      // Capture seq before the restore await. If the user switches chapters
+      // during the restore, we must not apply the follow-up list response
+      // to the new chapter's state (wrong count) and must not reset
+      // viewingSnapshot for the new chapter.
+      const seq = chapterSeqRef.current;
+      const restoringChapterId = chapterId;
       try {
         await api.snapshots.restore(snapshotId);
+        if (seq !== chapterSeqRef.current) return { ok: true };
         setViewingSnapshot(null);
-        if (chapterId) {
-          const seq = chapterSeqRef.current;
+        if (restoringChapterId) {
           api.snapshots
-            .list(chapterId)
+            .list(restoringChapterId)
             .then((data) => {
               if (seq === chapterSeqRef.current) setSnapshotCount(data.length);
             })
