@@ -4,6 +4,13 @@ import { useSnapshotState } from "../hooks/useSnapshotState";
 import { api } from "../api/client";
 import type { SnapshotListItem, SnapshotRow } from "@smudge/shared";
 
+vi.mock("../hooks/useContentCache", () => ({
+  getCachedContent: vi.fn().mockReturnValue(null),
+  setCachedContent: vi.fn().mockReturnValue(true),
+  clearCachedContent: vi.fn(),
+  clearAllCachedContent: vi.fn(),
+}));
+
 vi.mock("../api/client", async () => {
   const actual = await vi.importActual<typeof import("../api/client")>("../api/client");
   return {
@@ -149,6 +156,46 @@ describe("useSnapshotState", () => {
     expect(r.ok).toBe(true);
     expect(api.snapshots.restore).toHaveBeenCalledWith("snap-1");
     expect(result.current.viewingSnapshot).toBeNull();
+  });
+
+  it("restoreSnapshot flags staleChapterSwitch when chapter changes mid-flight", async () => {
+    // Server-side restore succeeds, but the user switched chapters before the
+    // promise resolved. We must signal staleChapterSwitch so the caller
+    // doesn't reload the now-active (different) chapter.
+    let resolveRestore: (v: unknown) => void = () => {};
+    vi.mocked(api.snapshots.restore).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRestore = resolve;
+        }),
+    );
+
+    const { result, rerender } = renderHook(({ id }) => useSnapshotState(id), {
+      initialProps: { id: "ch-1" as string | null },
+    });
+
+    let restorePromise: Promise<{ ok: boolean; staleChapterSwitch?: boolean }> = Promise.resolve({
+      ok: false,
+    });
+    act(() => {
+      restorePromise = result.current.restoreSnapshot("snap-1");
+    });
+
+    // Switch chapters mid-flight. The chapterId effect bumps chapterSeqRef.
+    rerender({ id: "ch-2" });
+
+    let r: { ok: boolean; staleChapterSwitch?: boolean } = { ok: false };
+    await act(async () => {
+      resolveRestore({});
+      r = await restorePromise;
+    });
+
+    expect(r.ok).toBe(true);
+    expect(r.staleChapterSwitch).toBe(true);
+    // Cache for the restoring chapter must be cleared so next navigation
+    // loads the server's restored content rather than stale drafts.
+    const { clearCachedContent } = await import("../hooks/useContentCache");
+    expect(clearCachedContent).toHaveBeenCalledWith("ch-1");
   });
 
   it("restoreSnapshot returns ok=false on generic failure", async () => {

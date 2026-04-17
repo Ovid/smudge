@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { api, ApiRequestError } from "../api/client";
+import { clearCachedContent } from "./useContentCache";
 import type { SnapshotPanelHandle } from "../components/SnapshotPanel";
 
 interface ViewingSnapshot {
@@ -15,6 +16,11 @@ export interface RestoreResult {
   ok: boolean;
   reason?: RestoreFailureReason;
   message?: string;
+  // Set when the user switched chapters while the restore was in flight. The
+  // restore did land on the server, but reloading the now-active chapter
+  // would pull in the wrong content — callers should skip reloadActiveChapter
+  // in this branch.
+  staleChapterSwitch?: boolean;
 }
 
 export interface UseSnapshotStateReturn {
@@ -108,7 +114,13 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       const restoringChapterId = chapterId;
       try {
         await api.snapshots.restore(snapshotId);
-        if (seq !== chapterSeqRef.current) return { ok: true };
+        if (seq !== chapterSeqRef.current) {
+          // Chapter switched mid-restore. The server did rewrite the
+          // previously-active chapter; clear its cached draft so next
+          // navigation loads the restored content rather than stale edits.
+          if (restoringChapterId) clearCachedContent(restoringChapterId);
+          return { ok: true, staleChapterSwitch: true };
+        }
         setViewingSnapshot(null);
         if (restoringChapterId) {
           api.snapshots

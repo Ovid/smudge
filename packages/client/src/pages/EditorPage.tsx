@@ -165,8 +165,14 @@ export function EditorPage() {
     cancelPendingSaves();
     const result = await restoreSnapshot(viewingSnapshot.id);
     if (result.ok) {
-      await reloadActiveChapter();
-      snapshotPanelRef.current?.refreshSnapshots();
+      // If the user switched chapters mid-flight, reloading the now-active
+      // chapter would pull in a different chapter's server state. Skip the
+      // reload and the panel refresh — both are keyed to the current active
+      // chapter, not the one that was restored.
+      if (!result.staleChapterSwitch) {
+        await reloadActiveChapter();
+        snapshotPanelRef.current?.refreshSnapshots();
+      }
     } else if (result.reason === "corrupt_snapshot") {
       setActionError(STRINGS.snapshots.restoreFailedCorrupt);
     } else {
