@@ -159,6 +159,9 @@ export function EditorPage() {
       setActionError(STRINGS.snapshots.restoreFailed);
       return;
     }
+    // Cancel any pending retry saves; their stale content would clobber
+    // the restored snapshot once the server-side restore completes.
+    cancelPendingSaves();
     const result = await restoreSnapshot(viewingSnapshot.id);
     if (result.ok) {
       await reloadActiveChapter();
@@ -175,6 +178,7 @@ export function EditorPage() {
     reloadActiveChapter,
     snapshotPanelRef,
     setActionError,
+    cancelPendingSaves,
   ]);
 
   const executeReplace = useCallback(
@@ -190,6 +194,7 @@ export function EditorPage() {
         setActionError(STRINGS.findReplace.replaceFailed);
         return;
       }
+      cancelPendingSaves();
       try {
         const result = await api.search.replace(
           slug,
@@ -219,6 +224,7 @@ export function EditorPage() {
       snapshotPanelRef,
       getActiveChapter,
       setActionError,
+      cancelPendingSaves,
     ],
   );
 
@@ -263,6 +269,7 @@ export function EditorPage() {
         setActionError(STRINGS.findReplace.replaceFailed);
         return;
       }
+      cancelPendingSaves();
       try {
         const result = await api.search.replace(
           slug,
@@ -289,6 +296,7 @@ export function EditorPage() {
       snapshotPanelRef,
       getActiveChapter,
       setActionError,
+      cancelPendingSaves,
     ],
   );
 
@@ -751,7 +759,11 @@ export function EditorPage() {
               cancelPendingSaves();
               await viewSnapshot(snap);
             }}
-            onBeforeCreate={async () => (await editorRef.current?.flushSave()) ?? true}
+            onBeforeCreate={async () => {
+              const flushed = (await editorRef.current?.flushSave()) ?? true;
+              if (flushed) cancelPendingSaves();
+              return flushed;
+            }}
             triggerRef={snapshotsTriggerRef}
           />
         )}
