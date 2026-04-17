@@ -582,6 +582,32 @@ describe("replaceInDoc match_index bypasses match cap (I3)", () => {
   });
 });
 
+describe("match cap and misc edges", () => {
+  it("searchInDoc throws MatchCapExceededError when run is dense", async () => {
+    const { searchInDoc, MAX_MATCHES_PER_REQUEST, MatchCapExceededError } = await import(
+      "../tiptap-text"
+    );
+    const d = doc(paragraph(text("a".repeat(MAX_MATCHES_PER_REQUEST + 5))));
+    expect(() => searchInDoc(d, "a")).toThrow(MatchCapExceededError);
+  });
+});
+
+describe("deadline / RegExpTimeoutError (I9/I10)", () => {
+  it("searchInDoc aborts when deadline has passed", async () => {
+    const { searchInDoc, RegExpTimeoutError } = await import("../tiptap-text");
+    const d = doc(paragraph(text("aaa aaa aaa")));
+    expect(() => searchInDoc(d, "a", { deadline: Date.now() - 1 })).toThrow(RegExpTimeoutError);
+  });
+
+  it("replaceInDoc aborts when deadline has passed", async () => {
+    const { replaceInDoc, RegExpTimeoutError } = await import("../tiptap-text");
+    const d = doc(paragraph(text("aaa aaa aaa")));
+    expect(() => replaceInDoc(d, "a", "b", { deadline: Date.now() - 1 })).toThrow(
+      RegExpTimeoutError,
+    );
+  });
+});
+
 describe("replaceInDoc mark canonicalization (I2)", () => {
   it("merges adjacent text nodes when marks have the same attrs in different key order", () => {
     // Two link marks with same attrs but different key insertion order —

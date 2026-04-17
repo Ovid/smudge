@@ -294,17 +294,17 @@ function makeTextNode(text: string, marks?: Mark[]): TipTapNode {
   return node;
 }
 
-/** Remove empty text nodes and merge adjacent nodes with identical marks. */
+/**
+ * Remove empty text nodes and merge adjacent nodes with identical marks.
+ * Callers only ever pass lists of text nodes (from appendWithMarks /
+ * makeTextNode), so we don't need to handle non-text entries here.
+ */
 function cleanupTextNodes(nodes: TipTapNode[]): TipTapNode[] {
-  const nonEmpty = nodes.filter((n) => n.type !== "text" || (n.text != null && n.text !== ""));
+  const nonEmpty = nodes.filter((n) => n.text != null && n.text !== "");
   const merged: TipTapNode[] = [];
   for (const node of nonEmpty) {
-    if (node.type !== "text") {
-      merged.push(node);
-      continue;
-    }
     const prev = merged[merged.length - 1];
-    if (prev && prev.type === "text" && marksEqual(prev.marks, node.marks)) {
+    if (prev && marksEqual(prev.marks, node.marks)) {
       prev.text = (prev.text ?? "") + (node.text ?? "");
     } else {
       merged.push({ ...node, marks: node.marks ? [...node.marks] : undefined });
@@ -313,14 +313,15 @@ function cleanupTextNodes(nodes: TipTapNode[]): TipTapNode[] {
   return merged;
 }
 
-/** Get marks for a given offset in the original flat string. */
+/**
+ * Get marks for a given offset in the original flat string. Callers only
+ * pass offsets within [0, flat.length), which is covered by segments, so
+ * the fallback cases past segments.end aren't needed.
+ */
 function marksAtOffset(segments: TextSegment[], offset: number): Mark[] | undefined {
   for (const seg of segments) {
     if (offset >= seg.start && offset < seg.end) return seg.marks;
   }
-  // Past end — use last segment
-  const last = segments[segments.length - 1];
-  if (last) return last.marks;
   return undefined;
 }
 

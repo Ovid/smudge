@@ -501,4 +501,43 @@ describe("search.service", () => {
       expect(image.reference_count).toBe(1); // unchanged — image still there
     });
   });
+
+  // I9/I10 — wall-clock budget. Stub the shared helpers to throw
+  // RegExpTimeoutError so we exercise the service's error-mapping paths
+  // without needing the 2s wall clock to actually elapse.
+  describe("regex timeout budget (I9/I10)", () => {
+    it("searchProject returns REGEX_TIMEOUT when shared throws RegExpTimeoutError", async () => {
+      const shared = await import("@smudge/shared");
+      const { searchProject } = await import("../search/search.service");
+      const projectId = await createProject();
+      await createChapter(projectId, "Ch", JSON.stringify(makeDoc("hello there")), 0);
+
+      const spy = vi.spyOn(shared, "searchInDoc").mockImplementation(() => {
+        throw new shared.RegExpTimeoutError(0);
+      });
+
+      const result = await searchProject(projectId, "hello");
+      spy.mockRestore();
+
+      expect(result && "validationError" in result).toBe(true);
+      expect((result as { code: string }).code).toBe("REGEX_TIMEOUT");
+    });
+
+    it("replaceInProject returns REGEX_TIMEOUT when shared throws RegExpTimeoutError", async () => {
+      const shared = await import("@smudge/shared");
+      const { replaceInProject } = await import("../search/search.service");
+      const projectId = await createProject();
+      await createChapter(projectId, "Ch", JSON.stringify(makeDoc("hello there")), 0);
+
+      const spy = vi.spyOn(shared, "replaceInDoc").mockImplementation(() => {
+        throw new shared.RegExpTimeoutError(0);
+      });
+
+      const result = await replaceInProject(projectId, "hello", "bye");
+      spy.mockRestore();
+
+      expect(result && "validationError" in result).toBe(true);
+      expect((result as { code: string }).code).toBe("REGEX_TIMEOUT");
+    });
+  });
 });
