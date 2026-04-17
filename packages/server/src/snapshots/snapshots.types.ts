@@ -1,28 +1,7 @@
-export interface SnapshotRow {
-  id: string;
-  chapter_id: string;
-  label: string | null;
-  content: string;
-  word_count: number;
-  is_auto: boolean;
-  created_at: string;
-}
+// Wire-shape types live in @smudge/shared so client and server agree.
+// Only server-internal types remain here.
+export type { SnapshotRow, SnapshotListItem } from "@smudge/shared";
+import type { SnapshotRow } from "@smudge/shared";
 
-export interface SnapshotListItem {
-  id: string;
-  chapter_id: string;
-  label: string | null;
-  word_count: number;
-  is_auto: boolean;
-  created_at: string;
-}
-
-export interface CreateSnapshotData {
-  id: string;
-  chapter_id: string;
-  label: string | null;
-  content: string;
-  word_count: number;
-  is_auto: boolean;
-  created_at: string;
-}
+/** Server-internal insertion shape for the chapter_snapshots row. */
+export type CreateSnapshotData = SnapshotRow;

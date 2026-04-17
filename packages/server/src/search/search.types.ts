@@ -1,12 +1,10 @@
-import type { SearchMatch } from "@smudge/shared";
+import type { SearchResult as SharedSearchResult } from "@smudge/shared";
 
-export interface SearchResult {
-  total_count: number;
-  chapters: Array<{
-    chapter_id: string;
-    chapter_title: string;
-    matches: SearchMatch[];
-  }>;
-  /** Chapter IDs skipped due to corrupt JSON content. Omitted when empty. */
+/**
+ * Server-extended SearchResult: adds skipped_chapter_ids for chapters
+ * that couldn't be parsed. The public wire shape in @smudge/shared
+ * already marks this field optional.
+ */
+export type SearchResult = SharedSearchResult & {
   skipped_chapter_ids?: string[];
-}
+};
