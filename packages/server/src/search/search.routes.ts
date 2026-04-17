@@ -12,14 +12,23 @@ const SearchOptionsSchema = z
   })
   .optional();
 
+const MAX_QUERY_LENGTH = 1000;
+const MAX_REPLACE_LENGTH = 10_000;
+
 const SearchSchema = z.object({
-  query: z.string().min(1, "Search query is required"),
+  query: z
+    .string()
+    .min(1, "Search query is required")
+    .max(MAX_QUERY_LENGTH, "Search query is too long"),
   options: SearchOptionsSchema,
 });
 
 const ReplaceSchema = z.object({
-  search: z.string().min(1, "Search term is required"),
-  replace: z.string(),
+  search: z
+    .string()
+    .min(1, "Search term is required")
+    .max(MAX_QUERY_LENGTH, "Search term is too long"),
+  replace: z.string().max(MAX_REPLACE_LENGTH, "Replacement is too long"),
   options: SearchOptionsSchema,
   scope: z
     .union([
@@ -61,27 +70,20 @@ export function searchRouter(): Router {
         return;
       }
 
-      try {
-        const result = await SearchService.searchProject(project.id, query, options);
-        // searchProject returns null only when project not found,
-        // which we've already handled above
-        res.json(result);
-      } catch (err) {
-        // Invalid regex throws from searchInDoc
-        if (
-          err instanceof SyntaxError ||
-          (err as Error).message?.includes("Invalid regular expression")
-        ) {
-          res.status(400).json({
-            error: {
-              code: "VALIDATION_ERROR",
-              message: (err as Error).message,
-            },
-          });
-          return;
-        }
-        throw err;
+      const result = await SearchService.searchProject(project.id, query, options);
+      if (result === null) {
+        res.status(404).json({
+          error: { code: "NOT_FOUND", message: "Project not found." },
+        });
+        return;
       }
+      if ("validationError" in result) {
+        res.status(400).json({
+          error: { code: "VALIDATION_ERROR", message: result.validationError },
+        });
+        return;
+      }
+      res.json(result);
     }),
   );
 

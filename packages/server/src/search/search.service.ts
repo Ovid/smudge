@@ -8,7 +8,15 @@ export async function searchProject(
   projectId: string,
   query: string,
   options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
-): Promise<SearchResult | null> {
+): Promise<SearchResult | null | { validationError: string }> {
+  if (options?.regex) {
+    try {
+      new RegExp(query);
+    } catch (e) {
+      return { validationError: (e as Error).message };
+    }
+  }
+
   const store = getProjectStore();
   const project = await store.findProjectById(projectId);
   if (!project) return null;
