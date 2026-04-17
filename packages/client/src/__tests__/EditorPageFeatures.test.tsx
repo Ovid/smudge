@@ -1271,11 +1271,7 @@ describe("EditorPage find-and-replace confirmation", () => {
     fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
 
     // The per-match "Replace" buttons appear once results render.
-    const replaceOne = await screen.findAllByRole(
-      "button",
-      { name: "Replace" },
-      { timeout: 3000 },
-    );
+    const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
     await userEvent.click(replaceOne[0]!);
 
     await waitFor(() => {
@@ -1301,11 +1297,7 @@ describe("EditorPage find-and-replace confirmation", () => {
     fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
     fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
 
-    const replaceOne = await screen.findAllByRole(
-      "button",
-      { name: "Replace" },
-      { timeout: 3000 },
-    );
+    const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
     await userEvent.click(replaceOne[0]!);
 
     // No error banner should appear for an aborted request.
