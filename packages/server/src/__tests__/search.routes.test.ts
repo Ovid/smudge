@@ -66,6 +66,21 @@ describe("search routes", () => {
       expect(res.body.error.code).toBe("NOT_FOUND");
     });
 
+    it("returns 404 when searchProject returns null (project vanished between slug lookup and service)", async () => {
+      const { projectSlug } = await createProjectWithChapters();
+
+      const SearchService = await import("../search/search.service");
+      const spy = vi.spyOn(SearchService, "searchProject").mockResolvedValueOnce(null);
+
+      const res = await request(t.app)
+        .post(`/api/projects/${projectSlug}/search`)
+        .send({ query: "test" });
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("NOT_FOUND");
+      spy.mockRestore();
+    });
+
     it("returns 400 for empty query", async () => {
       const { projectSlug } = await createProjectWithChapters();
 

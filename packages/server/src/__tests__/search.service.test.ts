@@ -418,6 +418,23 @@ describe("search.service", () => {
       expect(r.code).toBe("CONTENT_TOO_LARGE");
     });
 
+    it("returns MATCH_CAP_EXCEEDED when totals across multiple chapters exceed the cap", async () => {
+      // Individual chapters stay under the 10k match cap; the sum exceeds
+      // it — exercises the per-iteration outer cap check rather than the
+      // inner replaceInDoc cap.
+      const { replaceInProject } = await import("../search/search.service");
+      const projectId = await createProject();
+      const perChapter = "a".repeat(6_000);
+      await createChapter(projectId, "Ch A", JSON.stringify(makeDoc(perChapter)), 0);
+      await createChapter(projectId, "Ch B", JSON.stringify(makeDoc(perChapter)), 1);
+
+      const result = await replaceInProject(projectId, "a", "b");
+      expect(result).not.toBeNull();
+      expect("validationError" in result!).toBe(true);
+      const r = result as { code: string };
+      expect(r.code).toBe("MATCH_CAP_EXCEEDED");
+    });
+
     it("rejects regex patterns with nested quantifiers (ReDoS guard)", async () => {
       const { replaceInProject } = await import("../search/search.service");
       const projectId = await createProject();
@@ -484,6 +501,31 @@ describe("search.service", () => {
       expect(r.skipped_chapter_ids).toEqual([corruptId]);
       expect(warnSpy).toHaveBeenCalled();
       warnSpy.mockRestore();
+    });
+
+    it("logs and recovers when velocity recordSave throws after replace", async () => {
+      const { replaceInProject } = await import("../search/search.service");
+      const { logger } = await import("../logger");
+      const velocityModule = await import("../velocity/velocity.injectable");
+      const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+      const velocitySpy = vi.spyOn(velocityModule, "getVelocityService").mockReturnValueOnce({
+        recordSave: vi.fn().mockRejectedValue(new Error("velocity is down")),
+      } as unknown as ReturnType<typeof velocityModule.getVelocityService>);
+
+      const projectId = await createProject();
+      await createChapter(projectId, "Ch", JSON.stringify(makeDoc("hello world")), 0);
+
+      const result = await replaceInProject(projectId, "hello", "goodbye");
+
+      const r = result as { replaced_count: number };
+      expect(r.replaced_count).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ err: expect.any(Error) }),
+        expect.stringContaining("Velocity recordSave failed"),
+      );
+
+      errorSpy.mockRestore();
+      velocitySpy.mockRestore();
     });
 
     it("image reference counts adjusted via applyImageRefDiff", async () => {
