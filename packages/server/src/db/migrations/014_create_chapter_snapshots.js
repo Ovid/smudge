@@ -1,7 +1,12 @@
 export async function up(knex) {
   await knex.schema.createTable("chapter_snapshots", (table) => {
     table.text("id").primary();
-    table.text("chapter_id").notNullable().references("id").inTable("chapters");
+    table
+      .text("chapter_id")
+      .notNullable()
+      .references("id")
+      .inTable("chapters")
+      .onDelete("CASCADE");
     table.text("label");
     table.text("content").notNullable();
     table.integer("word_count").notNullable();

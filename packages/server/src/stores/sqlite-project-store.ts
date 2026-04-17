@@ -274,10 +274,6 @@ export class SqliteProjectStore implements ProjectStore {
     return snapshotsRepo.getLatestContentHash(this.db, chapterId);
   }
 
-  deleteSnapshotsByChapter(chapterId: string): Promise<number> {
-    return snapshotsRepo.deleteByChapter(this.db, chapterId);
-  }
-
   // --- Transactions ---
 
   async transaction<T>(fn: (txStore: ProjectStore) => Promise<T>): Promise<T> {

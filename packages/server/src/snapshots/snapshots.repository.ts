@@ -40,6 +40,3 @@ export async function getLatestContentHash(db: Knex, chapterId: string): Promise
   return createHash("sha256").update(row.content).digest("hex");
 }
 
-export async function deleteByChapter(db: Knex, chapterId: string): Promise<number> {
-  return db(TABLE).where({ chapter_id: chapterId }).del();
-}

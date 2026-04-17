@@ -99,7 +99,6 @@ export interface ProjectStore {
   listSnapshotsByChapter(chapterId: string): Promise<SnapshotListItem[]>;
   deleteSnapshot(id: string): Promise<number>;
   getLatestSnapshotContentHash(chapterId: string): Promise<string | null>;
-  deleteSnapshotsByChapter(chapterId: string): Promise<number>;
 
   // --- Transactions ---
 

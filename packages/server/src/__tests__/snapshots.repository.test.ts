@@ -194,8 +194,8 @@ describe("snapshots repository", () => {
     });
   });
 
-  describe("deleteByChapter()", () => {
-    it("removes all snapshots for a chapter and returns count", async () => {
+  describe("FK cascade on chapter delete", () => {
+    it("deletes snapshots automatically when parent chapter is hard-deleted", async () => {
       const projectId = await createProject();
       const chapterId = await createChapter(projectId);
 
@@ -218,19 +218,11 @@ describe("snapshots repository", () => {
         created_at: "2026-04-02T00:00:00.000Z",
       });
 
-      const count = await SnapshotsRepo.deleteByChapter(t.db, chapterId);
-      expect(count).toBe(2);
+      // Hard-delete the parent chapter; cascade should remove the snapshots.
+      await t.db("chapters").where({ id: chapterId }).delete();
 
       const list = await SnapshotsRepo.listByChapter(t.db, chapterId);
       expect(list).toEqual([]);
-    });
-
-    it("returns 0 when no snapshots exist", async () => {
-      const projectId = await createProject();
-      const chapterId = await createChapter(projectId);
-
-      const count = await SnapshotsRepo.deleteByChapter(t.db, chapterId);
-      expect(count).toBe(0);
     });
   });
 });
