@@ -138,6 +138,16 @@ export function searchRouter(): Router {
         return;
       }
 
+      if (result === "scope_not_found") {
+        res.status(404).json({
+          error: {
+            code: "SCOPE_NOT_FOUND",
+            message: "Replace scope not found: chapter is missing or belongs to another project.",
+          },
+        });
+        return;
+      }
+
       if ("validationError" in result) {
         res.status(400).json({
           error: { code: result.code, message: result.validationError },

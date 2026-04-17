@@ -208,6 +208,7 @@ export async function replaceInProject(
       skipped_chapter_ids?: string[];
     }
   | null
+  | "scope_not_found"
   | SearchValidationError
 > {
   // Validate regex up front
@@ -350,9 +351,9 @@ export async function replaceInProject(
 
   if (typeof txResult === "string") {
     // "scope_not_found" — chapter scope points at a different project or
-    // is soft-deleted. Surface as 404 so the client doesn't interpret it
-    // as a silent "no matches" success.
-    return null;
+    // is soft-deleted. Distinct from a missing project so the route can
+    // surface a chapter-specific 404 rather than "Project not found."
+    return "scope_not_found";
   }
   if ("validationError" in txResult) return txResult;
 

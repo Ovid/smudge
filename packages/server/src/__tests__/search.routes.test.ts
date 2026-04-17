@@ -178,6 +178,23 @@ describe("search routes", () => {
       expect(res.body.error.code).toBe("INVALID_REGEX");
     });
 
+    it("returns 404 with SCOPE_NOT_FOUND when scope chapter is in a different project", async () => {
+      const { projectSlug: slugA } = await createProjectWithChapters();
+      const { chapterId: chapterInB } = await createProjectWithChapters();
+
+      const res = await request(t.app)
+        .post(`/api/projects/${slugA}/replace`)
+        .send({
+          search: "quick",
+          replace: "slow",
+          scope: { type: "chapter", chapter_id: chapterInB },
+        });
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe("SCOPE_NOT_FOUND");
+      expect(res.body.error.message).toMatch(/scope/i);
+    });
+
     it("returns 404 when replaceInProject returns null (project vanished between slug lookup and service)", async () => {
       const { projectSlug } = await createProjectWithChapters();
 

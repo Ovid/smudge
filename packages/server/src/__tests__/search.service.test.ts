@@ -326,7 +326,7 @@ describe("search.service", () => {
       expect(result).toBeNull();
     });
 
-    it("returns null (→ 404) when scope chapter belongs to a different project", async () => {
+    it("returns scope_not_found (→ 404) when scope chapter belongs to a different project", async () => {
       const { replaceInProject } = await import("../search/search.service");
       const projectA = await createProject("Project A");
       const projectB = await createProject("Project B");
@@ -342,9 +342,10 @@ describe("search.service", () => {
         chapter_id: chB,
       });
 
-      // null signals 404 — the client can distinguish "wrong project" from
-      // a genuine 0-match success.
-      expect(result).toBeNull();
+      // "scope_not_found" signals 404 specifically for the scope chapter;
+      // the route translates it to SCOPE_NOT_FOUND so a chapter-scope bug
+      // is distinguishable from a missing project.
+      expect(result).toBe("scope_not_found");
 
       // chB content must be unchanged
       const rowB = await t.db("chapters").where({ id: chB }).first();
@@ -469,8 +470,8 @@ describe("search.service", () => {
       const ch1 = await createChapter(projectId, "Ch 1", JSON.stringify(makeDoc("hello world")), 0);
 
       // Soft-delete the chapter — findChapterByIdRaw filters deleted_at,
-      // so the replace service sees it as "not in this project" and
-      // returns null for 404.
+      // so the replace service sees the scope chapter as missing and
+      // returns "scope_not_found" for a chapter-specific 404.
       await t.db("chapters").where({ id: ch1 }).update({ deleted_at: new Date().toISOString() });
 
       const result = await replaceInProject(projectId, "hello", "goodbye", undefined, {
@@ -478,7 +479,7 @@ describe("search.service", () => {
         chapter_id: ch1,
       });
 
-      expect(result).toBeNull();
+      expect(result).toBe("scope_not_found");
     });
 
     it("skips chapters with corrupt JSON content during replace", async () => {
