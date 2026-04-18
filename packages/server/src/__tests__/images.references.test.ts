@@ -241,7 +241,7 @@ describe("applyImageRefDiff()", () => {
 
     await applyImageRefDiff(
       {
-        findImageById: async () => null,
+        findImagesByIds: async () => [],
         incrementImageReferenceCount: async (id, delta) => {
           incrementCalls.push([id, delta]);
         },
@@ -277,8 +277,9 @@ describe("applyImageRefDiff()", () => {
     });
     await applyImageRefDiff(
       {
-        findImageById: async () =>
-          ({ id: imageId, project_id: projectId, reference_count: 3 }) as unknown as ImageRow,
+        findImagesByIds: async () => [
+          { id: imageId, project_id: projectId, reference_count: 3 } as unknown as ImageRow,
+        ],
         incrementImageReferenceCount: async (id, delta) => {
           incrementCalls.push([id, delta]);
         },
@@ -305,12 +306,13 @@ describe("applyImageRefDiff()", () => {
 
     await applyImageRefDiff(
       {
-        findImageById: async () =>
-          ({
+        findImagesByIds: async () => [
+          {
             id: imageId,
             project_id: projectB,
             reference_count: 0,
-          }) as unknown as ImageRow,
+          } as unknown as ImageRow,
+        ],
         incrementImageReferenceCount: async (id, delta) => {
           incrementCalls.push([id, delta]);
         },

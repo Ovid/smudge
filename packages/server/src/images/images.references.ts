@@ -63,7 +63,7 @@ export function diffImageReferences(
 export async function applyImageRefDiff(
   txStore: {
     incrementImageReferenceCount(id: string, delta: number): Promise<void>;
-    findImageById(id: string): Promise<ImageRow | null>;
+    findImagesByIds(ids: string[]): Promise<ImageRow[]>;
   },
   oldContentJson: string | null,
   newContentJson: string | null,
@@ -102,8 +102,16 @@ export async function applyImageRefDiff(
   const newIds = extractImageIds(newContent);
   const diff = diffImageReferences(oldIds, newIds);
 
+  // Batch-fetch every image we need in a single whereIn query rather than
+  // issuing N serial SELECTs. This matters when a chapter references many
+  // images and applyImageRefDiff is called once per affected chapter inside
+  // a project-wide replace-all transaction.
+  const needed = [...new Set([...diff.added, ...diff.removed])];
+  const rows = await txStore.findImagesByIds(needed);
+  const byId = new Map(rows.map((r) => [r.id, r]));
+
   for (const id of diff.added) {
-    const image = await txStore.findImageById(id);
+    const image = byId.get(id);
     // An image referenced in restored/replaced content may have been purged
     // since the snapshot was taken, or the chapter may reference an image
     // that belongs to a different project (stale URL, manual paste). Warn
@@ -121,7 +129,7 @@ export async function applyImageRefDiff(
   for (const id of diff.removed) {
     // Decrement only if the image actually belongs to this project — same
     // cross-project guard as the add path.
-    const image = await txStore.findImageById(id);
+    const image = byId.get(id);
     if (!image || image.project_id !== projectId) {
       continue;
     }

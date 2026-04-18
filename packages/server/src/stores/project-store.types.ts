@@ -78,6 +78,12 @@ export interface ProjectStore {
   // --- Images ---
   insertImage(data: CreateImageRow): Promise<ImageRow>;
   findImageById(id: string): Promise<ImageRow | null>;
+  /**
+   * Batched id lookup used by applyImageRefDiff during replace-all and
+   * snapshot restore. A single query instead of N round-trips when a
+   * chapter references many images.
+   */
+  findImagesByIds(ids: string[]): Promise<ImageRow[]>;
   listImagesByProject(projectId: string): Promise<ImageRow[]>;
   updateImage(id: string, data: UpdateImageData): Promise<number>;
   removeImage(id: string): Promise<number>;

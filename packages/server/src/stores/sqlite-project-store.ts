@@ -214,6 +214,10 @@ export class SqliteProjectStore implements ProjectStore {
     return imagesRepo.findById(this.db, id);
   }
 
+  findImagesByIds(ids: string[]): Promise<ImageRow[]> {
+    return imagesRepo.findByIds(this.db, ids);
+  }
+
   listImagesByProject(projectId: string): Promise<ImageRow[]> {
     return imagesRepo.listByProject(this.db, projectId);
   }

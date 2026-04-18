@@ -138,10 +138,14 @@ export async function restoreSnapshot(
     // project ref counts, but that only protects ref-count integrity —
     // the broken src still ends up persisted.
     const restoredIds = extractImageIds(newParsed);
-    for (const id of restoredIds) {
-      const image = await txStore.findImageById(id);
-      if (!image || image.project_id !== chapter.project_id) {
-        return "corrupt_snapshot" as const;
+    if (restoredIds.length > 0) {
+      const rows = await txStore.findImagesByIds(restoredIds);
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      for (const id of restoredIds) {
+        const image = byId.get(id);
+        if (!image || image.project_id !== chapter.project_id) {
+          return "corrupt_snapshot" as const;
+        }
       }
     }
 
