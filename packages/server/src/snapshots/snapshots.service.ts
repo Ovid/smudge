@@ -119,12 +119,12 @@ export async function restoreSnapshot(
     // would reject. The schema also enforces the shared depth cap.
     const safe = TipTapDocSchema.safeParse(parsed);
     if (!safe.success) return "corrupt_snapshot";
-    // Extra belt-and-braces: schema allows content to be optional, but the
-    // restore path always expects an array so downstream walkers run.
-    if (!Array.isArray((parsed as { content?: unknown }).content)) {
-      return "corrupt_snapshot";
-    }
-    newParsed = parsed as Record<string, unknown>;
+    // Schema allows `content` to be optional (matches chapter PATCH). A doc
+    // like `{"type":"doc"}` is a valid empty manuscript, not corrupt — coerce
+    // to `content: []` so downstream walkers see a consistent shape.
+    const docObj = parsed as Record<string, unknown>;
+    if (!Array.isArray(docObj.content)) docObj.content = [];
+    newParsed = docObj;
   } catch {
     return "corrupt_snapshot";
   }

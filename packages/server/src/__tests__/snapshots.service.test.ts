@@ -464,15 +464,10 @@ describe("snapshots.service", () => {
       // Replace snapshot content with valid JSON that is NOT a TipTap doc.
       // Each of these would JSON.parse cleanly but render as nothing in TipTap.
       // The last entry is a doc whose content array contains a non-object —
-      // previously the ad-hoc Array.isArray check would accept it; now the
-      // TipTapDocSchema-backed check rejects it.
-      const invalidShapes = [
-        '{"foo":1}',
-        "[]",
-        "42",
-        '{"type":"doc"}',
-        '{"type":"doc","content":[42]}',
-      ];
+      // rejected by the TipTapDocSchema record-of-unknown element type.
+      // Note: `{"type":"doc"}` (no content) is VALID per the schema — an empty
+      // manuscript — and is covered by a separate positive test.
+      const invalidShapes = ['{"foo":1}', "[]", "42", '{"type":"doc","content":[42]}'];
       const intactContent = JSON.stringify(DOC_JSON_ALT);
 
       for (const shape of invalidShapes) {
@@ -489,6 +484,31 @@ describe("snapshots.service", () => {
         expect(chapter.content).toBe(intactContent);
         expect(chapter.word_count).toBe(2);
       }
+    });
+
+    it("restores an empty TipTap doc (content omitted) as a valid empty manuscript", async () => {
+      stubVelocity();
+      const { chapterId } = await createProjectAndChapter();
+      const { createSnapshot, restoreSnapshot } = await import("../snapshots/snapshots.service");
+
+      const snap = (await createSnapshot(chapterId, "Normal")) as Exclude<
+        Awaited<ReturnType<typeof createSnapshot>>,
+        null | "duplicate"
+      >;
+
+      await t.db("chapter_snapshots").where({ id: snap.id }).update({ content: '{"type":"doc"}' });
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ content: JSON.stringify(DOC_JSON_ALT), word_count: 2 });
+
+      const result = await restoreSnapshot(snap.id);
+      expect(result).not.toBe("corrupt_snapshot");
+      expect(result).not.toBeNull();
+
+      const chapter = await t.db("chapters").where({ id: chapterId }).first();
+      expect(chapter.content).toBe('{"type":"doc"}');
+      expect(chapter.word_count).toBe(0);
     });
 
     it("refuses to restore when snapshot content references an image from another project", async () => {
