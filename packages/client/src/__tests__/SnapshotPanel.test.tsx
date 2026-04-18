@@ -245,6 +245,24 @@ describe("SnapshotPanel", () => {
         created_at: snap.created_at,
       });
     });
+
+    it("surfaces save_failed view-result with the save-first copy (I3)", async () => {
+      const user = userEvent.setup();
+      const snap = makeSnapshot({ id: "snap-77", label: "Pre-view" });
+      vi.mocked(api.snapshots.list).mockResolvedValue([snap]);
+      const onView = vi.fn().mockResolvedValue({ ok: false, reason: "save_failed" });
+      render(<SnapshotPanel {...defaultProps} onView={onView} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Pre-view")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.view));
+
+      await waitFor(() => {
+        expect(screen.getByText(S.viewFailedSaveFirst)).toBeInTheDocument();
+      });
+    });
   });
 
   describe("delete snapshot", () => {

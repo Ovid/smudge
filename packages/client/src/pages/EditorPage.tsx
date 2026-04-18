@@ -890,8 +890,13 @@ export function EditorPage() {
               // Before switching to the read-only snapshot view, flush
               // any pending save and cancel in-flight save retries so
               // the server never receives a write while the user
-              // believes they are just inspecting history.
-              await editorRef.current?.flushSave();
+              // believes they are just inspecting history. If the flush
+              // failed (server error, lost connection), refuse to enter
+              // view mode — the Editor would unmount with dirty state and
+              // either drop recent edits or race a retry against a later
+              // restore.
+              const flushed = (await editorRef.current?.flushSave()) ?? true;
+              if (!flushed) return { ok: false, reason: "save_failed" };
               cancelPendingSaves();
               return viewSnapshot(snap);
             }}

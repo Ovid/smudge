@@ -383,6 +383,8 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
                               await fetchSnapshots();
                             } else if (res.reason === "corrupt_snapshot") {
                               setViewError(S.viewFailedCorrupt);
+                            } else if (res.reason === "save_failed") {
+                              setViewError(S.viewFailedSaveFirst);
                             } else {
                               setViewError(S.viewFailed);
                             }
