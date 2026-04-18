@@ -206,7 +206,7 @@ export async function restoreSnapshot(
     return { chapter: updated, project_id: chapter.project_id, chapter_id: chapter.id };
   });
 
-  if (result === "corrupt_snapshot" || result === "cross_project_image") return result;
+  if (result === "cross_project_image") return result;
   if (!result) return null;
 
   // Fire velocity side-effects after the transaction commits
@@ -238,11 +238,13 @@ export async function restoreSnapshot(
       { err, project_id: result.project_id, chapter_id: result.chapter_id },
       "enrichChapterWithLabel failed after restore; returning status as label",
     );
-    const { content_corrupt: _c, ...clean } = result.chapter as Record<string, unknown> & {
+    const chapterRow = result.chapter as unknown as Record<string, unknown> & {
       content_corrupt?: unknown;
+      status: string;
     };
+    const { content_corrupt: _c, ...clean } = chapterRow;
     return {
-      chapter: { ...clean, status_label: (result.chapter as { status: string }).status },
+      chapter: { ...clean, status_label: chapterRow.status },
     };
   }
 }

@@ -1,10 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { api, ApiRequestError } from "../api/client";
-import { STRINGS } from "../strings";
 import { type SearchResult } from "@smudge/shared";
 import { mapSearchErrorToMessage } from "../utils/findReplaceErrors";
-
-const S = STRINGS.findReplace;
 
 export interface SearchOptionsShape {
   case_sensitive: boolean;

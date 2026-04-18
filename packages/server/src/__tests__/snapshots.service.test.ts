@@ -255,7 +255,7 @@ describe("snapshots.service", () => {
 
       // Restore
       const result = await restoreSnapshot(snap.id);
-      if (result === null || result === "corrupt_snapshot") {
+      if (result === null || result === "corrupt_snapshot" || result === "cross_project_image") {
         throw new Error("expected restoreSnapshot to succeed");
       }
       expect(result.chapter).toBeDefined();

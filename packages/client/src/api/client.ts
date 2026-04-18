@@ -281,8 +281,7 @@ export const api = {
 
     create: (chapterId: string, label?: string) =>
       apiFetch<
-        | { status: "created"; snapshot: SnapshotRow }
-        | { status: "duplicate"; message: string }
+        { status: "created"; snapshot: SnapshotRow } | { status: "duplicate"; message: string }
       >(`/chapters/${chapterId}/snapshots`, {
         method: "POST",
         body: JSON.stringify(label ? { label } : {}),

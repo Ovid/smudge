@@ -448,10 +448,7 @@ describe("api.snapshots", () => {
 
   it("create(chapterId) returns status='duplicate' when server replies 200 with duplicate body", async () => {
     mockFetch.mockResolvedValue(
-      jsonResponse(
-        { status: "duplicate", message: "Snapshot skipped — content unchanged." },
-        200,
-      ),
+      jsonResponse({ status: "duplicate", message: "Snapshot skipped — content unchanged." }, 200),
     );
 
     const result = await api.snapshots.create("ch-1");
