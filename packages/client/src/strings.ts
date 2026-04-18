@@ -283,6 +283,8 @@ export const STRINGS = {
     restoreFailed: "Unable to restore snapshot. Try again.",
     restoreFailedCorrupt:
       "This snapshot is corrupt and can't be restored. It will remain in the list; create a new snapshot or restore a different one.",
+    restoreFailedCrossProjectImage:
+      "This snapshot references images that no longer belong to this project. It can't be restored safely.",
     restoreFailedNotFound:
       "This snapshot no longer exists. Refresh to see the latest snapshot list.",
     restoreFailedSaveFirst:

@@ -148,6 +148,16 @@ export function snapshotDirectRouter(): Router {
         });
         return;
       }
+      if (result === "cross_project_image") {
+        res.status(400).json({
+          error: {
+            code: SNAPSHOT_ERROR_CODES.CROSS_PROJECT_IMAGE_REF,
+            message:
+              "Snapshot references an image from a different project and cannot be restored.",
+          },
+        });
+        return;
+      }
       res.json(result.chapter);
     }),
   );

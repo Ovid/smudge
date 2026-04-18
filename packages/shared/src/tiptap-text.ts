@@ -50,13 +50,33 @@ export const MAX_MATCHES_PER_REQUEST = 10_000;
 
 const LEAF_BLOCKS = new Set(["paragraph", "heading", "codeBlock"]);
 
-/** Collect leaf block nodes that directly contain text/inline nodes. */
-function collectLeafBlocks(node: TipTapNode): TipTapNode[] {
+/**
+ * Depth cap for walkers — matches MAX_TIPTAP_DEPTH in schemas.ts. Kept
+ * as a local const rather than an import to avoid a circular dependency
+ * through the shared index barrel (schemas.ts already re-exports from
+ * constants via schema-side imports).
+ */
+const MAX_WALK_DEPTH = 64;
+
+/**
+ * Collect leaf block nodes that directly contain text/inline nodes.
+ * Defensively guards against:
+ *   - primitive/null children slipped into stored content (walkers
+ *     can't rely on the TipTap schema because chapters read from the
+ *     DB bypass Zod; see images.references.ts for the same pattern);
+ *   - pathologically-nested content exceeding the shared depth cap,
+ *     which would otherwise stack-overflow this recursive walker on
+ *     a legacy row that predates MAX_TIPTAP_DEPTH enforcement.
+ */
+function collectLeafBlocks(node: TipTapNode, depth: number = 0): TipTapNode[] {
+  if (depth > MAX_WALK_DEPTH) return [];
+  if (!node || typeof node !== "object") return [];
   if (LEAF_BLOCKS.has(node.type)) return [node];
-  if (!node.content) return [];
+  if (!Array.isArray(node.content)) return [];
   const result: TipTapNode[] = [];
   for (const child of node.content) {
-    result.push(...collectLeafBlocks(child));
+    if (!child || typeof child !== "object") continue;
+    result.push(...collectLeafBlocks(child, depth + 1));
   }
   return result;
 }
@@ -97,8 +117,9 @@ function splitBlockRuns(block: TipTapNode): { runs: TextRun[]; separators: TipTa
     offset = 0;
   };
 
-  if (block.content) {
+  if (Array.isArray(block.content)) {
     for (const child of block.content) {
+      if (!child || typeof child !== "object") continue;
       if (child.type === "text" && child.text != null) {
         const len = child.text.length;
         currentSegments.push({ start: offset, end: offset + len, marks: child.marks });
@@ -186,9 +207,17 @@ function advancePastZeroLengthMatch(re: RegExp, str: string): void {
  * heuristic is defense-in-depth, not the sole line of defense.
  */
 export function assertSafeRegexPattern(pattern: string): void {
-  // Normalize `?:` (non-capturing marker) so the `?` inside it doesn't
-  // trip the nested-quantifier heuristic for benign `(?:...)` groups.
-  const normalized = pattern.replace(/\?:/g, "");
+  // Normalize group introducers so the `?` inside them doesn't trip the
+  // nested-quantifier heuristic for benign non-capturing / lookaround /
+  // named-group constructs. Covers: `(?:...)`, `(?=...)`, `(?!...)`,
+  // `(?<=...)`, `(?<!...)`, and `(?<name>...)`.
+  const normalized = pattern
+    .replace(/\?:/g, "")
+    .replace(/\?=/g, "")
+    .replace(/\?!/g, "")
+    .replace(/\?<=/g, "")
+    .replace(/\?<!/g, "")
+    .replace(/\?<[a-zA-Z_][a-zA-Z0-9_]*>/g, "");
 
   // (1) Alternation-with-overlap inside a quantified group: `(x|x)+`,
   // `(x|x)*`. The two branches are textually identical, making the engine

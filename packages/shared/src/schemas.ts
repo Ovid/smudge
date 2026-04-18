@@ -166,6 +166,22 @@ export function sanitizeSnapshotLabel(raw: string): string {
       // Left intact these render as nothing but compare/search differently,
       // enabling snapshot-label spoofing in the list view.
       .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
+      // Strip unpaired surrogates. A well-formed JSON string CAN contain
+      // lone surrogate code units (RFC 8259 § 8.2), but they don't form a
+      // valid UTF-16 code point — stored as-is they render as U+FFFD and
+      // break grapheme-aware length clamps downstream.
+      .replace(/[\uD800-\uDFFF]/g, (ch, offset, full) => {
+        const code = ch.charCodeAt(0);
+        if (code >= 0xd800 && code <= 0xdbff) {
+          const next = full.charCodeAt(offset + 1);
+          if (next >= 0xdc00 && next <= 0xdfff) return ch; // valid high surrogate
+          return "";
+        }
+        // Low surrogate: valid only if preceded by a high surrogate.
+        const prev = full.charCodeAt(offset - 1);
+        if (prev >= 0xd800 && prev <= 0xdbff) return ch;
+        return "";
+      })
   );
 }
 

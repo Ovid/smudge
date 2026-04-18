@@ -19,6 +19,7 @@ import { MAX_CHAPTER_CONTENT_BYTES } from "../constants";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
+import { buildAutoSnapshotLabel } from "../snapshots/labels";
 import type { SearchResult } from "@smudge/shared";
 
 /**
@@ -288,7 +289,7 @@ export async function replaceInProject(
         // surrogate-pair emoji inside the embedded search/replace strings is
         // never split mid-grapheme.
         const rawLabel = `Before find-and-replace: '${truncateForLabel(search)}' → '${truncateForLabel(replace)}'`;
-        const label = truncateGraphemes(sanitizeSnapshotLabel(rawLabel), 500);
+        const label = buildAutoSnapshotLabel(rawLabel);
 
         // Auto-snapshot before replacement (using DB-committed word_count)
         await txStore.insertSnapshot({

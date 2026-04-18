@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
-import { countWords, sanitizeSnapshotLabel, TipTapDocSchema } from "@smudge/shared";
+import { countWords, TipTapDocSchema } from "@smudge/shared";
 import { truncateGraphemes } from "../utils/grapheme";
+import { buildAutoSnapshotLabel } from "./labels";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
@@ -86,9 +87,11 @@ export async function deleteSnapshot(id: string): Promise<boolean> {
   });
 }
 
+export type RestoreFailure = "corrupt_snapshot" | "cross_project_image";
+
 export async function restoreSnapshot(
   snapshotId: string,
-): Promise<{ chapter: Record<string, unknown> } | null | "corrupt_snapshot"> {
+): Promise<{ chapter: Record<string, unknown> } | null | RestoreFailure> {
   const store = getProjectStore();
   const snapshot = await store.findSnapshotById(snapshotId);
   if (!snapshot) return null;
@@ -147,7 +150,7 @@ export async function restoreSnapshot(
       for (const id of restoredIds) {
         const image = byId.get(id);
         if (!image || image.project_id !== chapter.project_id) {
-          return "corrupt_snapshot" as const;
+          return "cross_project_image" as const;
         }
       }
     }
@@ -167,7 +170,7 @@ export async function restoreSnapshot(
     const rawLabel = embedded
       ? `Before restore to '${embedded}'`
       : `Before restore to snapshot from ${snapshot.created_at}`;
-    const snapshotLabel = truncateGraphemes(sanitizeSnapshotLabel(rawLabel), 500);
+    const snapshotLabel = buildAutoSnapshotLabel(rawLabel);
 
     // Always create auto-restore snapshot (no dedup)
     await txStore.insertSnapshot({
@@ -203,7 +206,7 @@ export async function restoreSnapshot(
     return { chapter: updated, project_id: chapter.project_id, chapter_id: chapter.id };
   });
 
-  if (result === "corrupt_snapshot") return "corrupt_snapshot";
+  if (result === "corrupt_snapshot" || result === "cross_project_image") return result;
   if (!result) return null;
 
   // Fire velocity side-effects after the transaction commits

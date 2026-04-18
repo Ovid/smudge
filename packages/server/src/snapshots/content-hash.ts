@@ -15,14 +15,25 @@ class CanonicalizeDepthError extends Error {}
  * valid) JSON — the write paths already cap depth via TipTapDocSchema,
  * but this runs on stored rows whose depth was never verified.
  */
+/**
+ * Keys that would mutate the scratch object's prototype chain when set
+ * via bracket access. TipTapDocSchema uses .passthrough(), so content
+ * read from the DB can legitimately carry any key — skip these so a
+ * crafted `{"__proto__": {...}}` attrs value can't poison canonicalize.
+ * Hashing proceeds with the key absent (dedup still works, the "poison"
+ * attrs just doesn't contribute to the hash).
+ */
+const UNSAFE_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+
 function canonicalize(value: unknown, depth: number = 0): unknown {
   if (depth > MAX_TIPTAP_DEPTH) throw new CanonicalizeDepthError();
   if (value === null || typeof value !== "object") return value;
   if (Array.isArray(value)) return value.map((v) => canonicalize(v, depth + 1));
   const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([k]) => !UNSAFE_KEYS.has(k))
     .map(([k, v]) => [k, canonicalize(v, depth + 1)] as const)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  const out: Record<string, unknown> = {};
+  const out: Record<string, unknown> = Object.create(null);
   for (const [k, v] of entries) out[k] = v;
   return out;
 }

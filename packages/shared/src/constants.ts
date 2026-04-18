@@ -28,8 +28,15 @@ export type SearchErrorCode = (typeof SEARCH_ERROR_CODES)[keyof typeof SEARCH_ER
  * Error codes emitted by the server for 400/404 responses from snapshot
  * endpoints (restoreSnapshot in particular). Shared so the client can
  * discriminate without string-literal drift.
+ *
+ * CROSS_PROJECT_IMAGE_REF distinguishes "snapshot refuses restore because
+ * it references images from a different project" from generic content
+ * corruption: the JSON is fine, it just points at resources we won't
+ * silently adopt. Callers can surface a specific message so users don't
+ * interpret it as data loss.
  */
 export const SNAPSHOT_ERROR_CODES = {
   CORRUPT_SNAPSHOT: "CORRUPT_SNAPSHOT",
+  CROSS_PROJECT_IMAGE_REF: "CROSS_PROJECT_IMAGE_REF",
 } as const;
 export type SnapshotErrorCode = (typeof SNAPSHOT_ERROR_CODES)[keyof typeof SNAPSHOT_ERROR_CODES];

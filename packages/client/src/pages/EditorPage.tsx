@@ -208,6 +208,8 @@ export function EditorPage() {
       }
     } else if (result.reason === "corrupt_snapshot") {
       setActionError(STRINGS.snapshots.restoreFailedCorrupt);
+    } else if (result.reason === "cross_project_image") {
+      setActionError(STRINGS.snapshots.restoreFailedCrossProjectImage);
     } else if (result.reason === "not_found") {
       setActionError(STRINGS.snapshots.restoreFailedNotFound);
     } else {

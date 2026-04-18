@@ -558,7 +558,7 @@ describe("snapshots.service", () => {
       await t.db("chapters").where({ id: chapterId }).update({ content: intact, word_count: 2 });
 
       const result = await restoreSnapshot(snap.id);
-      expect(result).toBe("corrupt_snapshot");
+      expect(result).toBe("cross_project_image");
 
       const chapter = await t.db("chapters").where({ id: chapterId }).first();
       expect(chapter.content).toBe(intact);
