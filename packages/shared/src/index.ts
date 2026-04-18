@@ -39,6 +39,8 @@ export {
   TRASH_RETENTION_MS,
   SEARCH_ERROR_CODES,
   SNAPSHOT_ERROR_CODES,
+  MAX_QUERY_LENGTH,
+  MAX_REPLACE_LENGTH,
 } from "./constants";
 export type { SearchErrorCode, SnapshotErrorCode } from "./constants";
 export type {

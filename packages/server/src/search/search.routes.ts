@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { z } from "zod";
-import { MAX_MATCHES_PER_REQUEST } from "@smudge/shared";
+import {
+  MAX_MATCHES_PER_REQUEST,
+  MAX_QUERY_LENGTH,
+  MAX_REPLACE_LENGTH,
+} from "@smudge/shared";
 import { asyncHandler } from "../app";
 import { getProjectStore } from "../stores/project-store.injectable";
 import * as SearchService from "./search.service";
@@ -13,9 +17,6 @@ const SearchOptionsSchema = z
   })
   .strict()
   .optional();
-
-const MAX_QUERY_LENGTH = 1000;
-const MAX_REPLACE_LENGTH = 10_000;
 
 const SearchSchema = z
   .object({

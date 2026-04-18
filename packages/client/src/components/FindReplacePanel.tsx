@@ -1,6 +1,11 @@
 import { useEffect, useRef } from "react";
 import { STRINGS } from "../strings";
-import { CONTEXT_RADIUS, type SearchResult } from "@smudge/shared";
+import {
+  CONTEXT_RADIUS,
+  MAX_QUERY_LENGTH,
+  MAX_REPLACE_LENGTH,
+  type SearchResult,
+} from "@smudge/shared";
 
 const S = STRINGS.findReplace;
 
@@ -133,6 +138,7 @@ export function FindReplacePanel({
             type="text"
             placeholder={S.searchPlaceholder}
             value={query}
+            maxLength={MAX_QUERY_LENGTH}
             onChange={(e) => onQueryChange(e.target.value)}
             className="text-sm border border-border/40 rounded px-2 py-1.5 bg-white text-text-primary placeholder:text-text-secondary/60 font-sans focus:outline-none focus:ring-1 focus:ring-accent"
           />
@@ -151,6 +157,7 @@ export function FindReplacePanel({
             type="text"
             placeholder={S.replacePlaceholder}
             value={replacement}
+            maxLength={MAX_REPLACE_LENGTH}
             onChange={(e) => onReplacementChange(e.target.value)}
             onKeyDown={(e) => {
               // Match the footer button's disabled condition: Enter only

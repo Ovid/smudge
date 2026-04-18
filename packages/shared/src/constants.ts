@@ -3,6 +3,15 @@ export const TRASH_RETENTION_DAYS = 30;
 export const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 /**
+ * Upper bounds on search-query and replacement strings accepted by
+ * /api/projects/:slug/search and /replace. Shared so the client can
+ * pre-flight validate and show an inline error rather than round-tripping
+ * to the server for a generic VALIDATION_ERROR.
+ */
+export const MAX_QUERY_LENGTH = 1000;
+export const MAX_REPLACE_LENGTH = 10_000;
+
+/**
  * Error codes emitted by the server in the { error: { code, message } }
  * envelope for 400 responses from search/replace endpoints. Shared so the
  * client can discriminate on these without string-literal drift.
