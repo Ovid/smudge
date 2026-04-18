@@ -1510,7 +1510,7 @@ describe("EditorPage snapshot panel", () => {
     (api.snapshots as unknown as { create: ReturnType<typeof vi.fn> }).create = vi
       .fn()
       .mockResolvedValue({
-        duplicate: false,
+        status: "created",
         snapshot: {
           id: "snap-new",
           chapter_id: "ch-1",

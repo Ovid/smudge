@@ -280,13 +280,13 @@ export const api = {
     list: (chapterId: string) => apiFetch<SnapshotListItem[]>(`/chapters/${chapterId}/snapshots`),
 
     create: (chapterId: string, label?: string) =>
-      apiFetch<{ duplicate: false; snapshot: SnapshotRow } | { duplicate: true; message: string }>(
-        `/chapters/${chapterId}/snapshots`,
-        {
-          method: "POST",
-          body: JSON.stringify(label ? { label } : {}),
-        },
-      ),
+      apiFetch<
+        | { status: "created"; snapshot: SnapshotRow }
+        | { status: "duplicate"; message: string }
+      >(`/chapters/${chapterId}/snapshots`, {
+        method: "POST",
+        body: JSON.stringify(label ? { label } : {}),
+      }),
 
     get: (id: string) => apiFetch<SnapshotRow>(`/snapshots/${id}`),
 

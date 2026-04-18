@@ -36,7 +36,7 @@ describe("snapshot routes", () => {
       const res = await request(t.app).post(`/api/chapters/${chapterId}/snapshots`).send({});
 
       expect(res.status).toBe(201);
-      expect(res.body.duplicate).toBe(false);
+      expect(res.body.status).toBe("created");
       const snap = res.body.snapshot;
       expect(snap.id).toBeDefined();
       expect(snap.chapter_id).toBe(chapterId);
@@ -55,7 +55,7 @@ describe("snapshot routes", () => {
         .send({ label: "Draft 1" });
 
       expect(res.status).toBe(201);
-      expect(res.body.duplicate).toBe(false);
+      expect(res.body.status).toBe("created");
       expect(res.body.snapshot.label).toBe("Draft 1");
     });
 
@@ -78,7 +78,7 @@ describe("snapshot routes", () => {
       // Second snapshot with same content
       const second = await request(t.app).post(`/api/chapters/${chapterId}/snapshots`).send({});
       expect(second.status).toBe(200);
-      expect(second.body.duplicate).toBe(true);
+      expect(second.body.status).toBe("duplicate");
       expect(second.body.message).toBeDefined();
     });
 
