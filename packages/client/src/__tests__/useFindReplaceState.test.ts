@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, cleanup } from "@testing-library/react";
 import { useFindReplaceState } from "../hooks/useFindReplaceState";
 import { api } from "../api/client";
+import { STRINGS } from "../strings";
 
 vi.mock("../api/client", () => ({
   api: {
@@ -215,7 +216,7 @@ describe("useFindReplaceState", () => {
     expect(result.current.error).toBe(STRINGS.findReplace.invalidRegex);
   });
 
-  it("search() surfaces server message for unknown 400 codes", async () => {
+  it("search() maps unknown 400 codes to externalized invalidSearchRequest (no raw server message leak)", async () => {
     const { ApiRequestError: MockApiError } = await import("../api/client");
     mockFind.mockRejectedValueOnce(new MockApiError("Query is too long", 400, "VALIDATION_ERROR"));
 
@@ -226,7 +227,7 @@ describe("useFindReplaceState", () => {
     await act(async () => {
       await result.current.search("my-project");
     });
-    expect(result.current.error).toBe("Query is too long");
+    expect(result.current.error).toBe(STRINGS.findReplace.invalidSearchRequest);
   });
 
   it("search() silently swallows ABORTED errors", async () => {
@@ -245,7 +246,7 @@ describe("useFindReplaceState", () => {
     expect(result.current.results).toBeNull();
   });
 
-  it("search() sets generic error message on non-400 error", async () => {
+  it("search() sets externalized searchFailed message on non-400 error", async () => {
     mockFind.mockRejectedValueOnce(new Error("Network error"));
 
     const { result } = renderHook(() => useFindReplaceState("my-project"));
@@ -258,11 +259,12 @@ describe("useFindReplaceState", () => {
       await result.current.search("my-project");
     });
 
-    expect(result.current.error).toBe("Network error");
+    // Raw server messages must not leak into UI (string externalization).
+    expect(result.current.error).toBe("Search failed. Try again.");
     expect(result.current.results).toBeNull();
   });
 
-  it("search() sets fallback error message for non-Error throws", async () => {
+  it("search() sets externalized searchFailed message for non-Error throws", async () => {
     mockFind.mockRejectedValueOnce("string error");
 
     const { result } = renderHook(() => useFindReplaceState("my-project"));
@@ -275,7 +277,27 @@ describe("useFindReplaceState", () => {
       await result.current.search("my-project");
     });
 
-    expect(result.current.error).toBe("Search failed");
+    expect(result.current.error).toBe("Search failed. Try again.");
+    expect(result.current.results).toBeNull();
+  });
+
+  it("search() maps unknown 400 code to externalized invalidSearchRequest (not raw message)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFind.mockRejectedValueOnce(
+      new ApiRequestError("Search query is too long", 400, "VALIDATION_ERROR"),
+    );
+
+    const { result } = renderHook(() => useFindReplaceState("my-project"));
+
+    act(() => {
+      result.current.setQuery("test");
+    });
+
+    await act(async () => {
+      await result.current.search("my-project");
+    });
+
+    expect(result.current.error).toBe("Search request was rejected. Check your search input.");
     expect(result.current.results).toBeNull();
   });
 

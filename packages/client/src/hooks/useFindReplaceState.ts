@@ -130,18 +130,19 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
         if (seq !== searchSeqRef.current) return;
         if (err instanceof ApiRequestError && err.status === 400) {
           // Discriminate on the server's error code so users see accurate
-          // copy. Falling back to "Invalid regex" for every 400 hid real
-          // validation errors like "query too long".
+          // copy. Raw err.message leaks untranslated server English into
+          // the UI (CLAUDE.md string externalization); unknown 400 codes
+          // must fall back to an externalized string.
           if (err.code === "MATCH_CAP_EXCEEDED") setError(S.tooManyMatches);
           else if (err.code === "REGEX_TIMEOUT") setError(S.searchTimedOut);
           else if (err.code === "INVALID_REGEX") setError(S.invalidRegex);
           else if (err.code === "CONTENT_TOO_LARGE") setError(S.contentTooLarge);
-          else setError(err.message);
+          else setError(S.invalidSearchRequest);
         } else if (err instanceof ApiRequestError && err.code === "ABORTED") {
           // User navigated away or we cancelled. No banner; the seq guard
           // above already short-circuited state updates.
         } else {
-          setError(err instanceof Error ? err.message : "Search failed");
+          setError(S.searchFailed);
         }
         setResults(null);
         setResultsQuery(null);
