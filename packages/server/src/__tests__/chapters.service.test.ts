@@ -372,6 +372,10 @@ describe("chapters.service", () => {
 
     it("handles corrupt content gracefully during image ref increment on restore", async () => {
       const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+      // applyImageRefDiff logs a warn when it can't parse the corrupt
+      // content before aborting the diff. Spy + assert rather than
+      // letting it pollute test stderr.
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
       const { chapterId } = await createProjectAndChapter();
 
       // Set content to corrupt JSON
@@ -385,7 +389,12 @@ describe("chapters.service", () => {
       const result = await restoreChapter(chapterId);
       expect(result).not.toBeNull();
       expect(typeof result).toBe("object");
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ project_id: expect.any(String) }),
+        "applyImageRefDiff: newContent JSON.parse failed; aborting diff to avoid mass decrement",
+      );
       logSpy.mockRestore();
+      warnSpy.mockRestore();
     });
   });
 
