@@ -507,6 +507,17 @@ describe("replaceInDoc", () => {
     expect(searchInDoc(d2, "café", { whole_word: true })).toHaveLength(1);
   });
 
+  it("whole-word + regex respects boundaries across top-level alternation", () => {
+    // Regex `foo|bar` with whole_word must NOT match `xbar` or `fooy` — the
+    // boundary wrappers must apply to every alternative. Without grouping,
+    // `(?<!W)foo|bar(?!W)` silently matches `bar` after `x`.
+    const d = doc(paragraph(text("xbar fooy foo bar")));
+    const results = searchInDoc(d, "foo|bar", { regex: true, whole_word: true });
+    expect(results).toHaveLength(2);
+    expect(results[0]!.offset).toBe(10); // "foo" standalone
+    expect(results[1]!.offset).toBe(14); // "bar" standalone
+  });
+
   it("replace leaves empty runs around hardBreak untouched", () => {
     // First run empty, second run has the match. Exercises the empty-run
     // branch in splitBlockRuns.

@@ -159,7 +159,9 @@ export function buildRegex(query: string, opts: SearchOptions): RegExp {
     // accented-Latin "whole word" searches would never match user-visible
     // words. Require that the character adjacent to the match is NOT a
     // Unicode letter, number, or underscore.
-    pattern = `(?<![\\p{L}\\p{N}_])${pattern}(?![\\p{L}\\p{N}_])`;
+    // Wrap in a non-capturing group so top-level alternation in the user's
+    // regex (e.g. `foo|bar`) doesn't split the boundary wrappers.
+    pattern = `(?<![\\p{L}\\p{N}_])(?:${pattern})(?![\\p{L}\\p{N}_])`;
   }
   const flags = (opts.case_sensitive ? "g" : "gi") + "u";
   return new RegExp(pattern, flags);
