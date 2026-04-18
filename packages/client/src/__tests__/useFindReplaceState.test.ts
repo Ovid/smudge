@@ -398,4 +398,42 @@ describe("useFindReplaceState", () => {
     });
     expect(result.current.replacement).toBe("replace term");
   });
+
+  it("preserves query/replacement across a project rename (slug changes, id stable) (I1)", () => {
+    const { result, rerender } = renderHook(
+      ({ slug, id }: { slug: string; id: string }) => useFindReplaceState(slug, id),
+      { initialProps: { slug: "old-title", id: "proj-1" } },
+    );
+
+    act(() => {
+      result.current.setQuery("find me");
+      result.current.setReplacement("replace me");
+    });
+    expect(result.current.query).toBe("find me");
+    expect(result.current.replacement).toBe("replace me");
+
+    // Rename: slug changes, project id unchanged
+    rerender({ slug: "new-title", id: "proj-1" });
+
+    expect(result.current.query).toBe("find me");
+    expect(result.current.replacement).toBe("replace me");
+  });
+
+  it("resets query/replacement on genuine project change (id changes)", () => {
+    const { result, rerender } = renderHook(
+      ({ slug, id }: { slug: string; id: string }) => useFindReplaceState(slug, id),
+      { initialProps: { slug: "first", id: "proj-1" } },
+    );
+
+    act(() => {
+      result.current.setQuery("find me");
+      result.current.setReplacement("replace me");
+    });
+
+    rerender({ slug: "second", id: "proj-2" });
+
+    expect(result.current.query).toBe("");
+    expect(result.current.replacement).toBe("");
+    expect(result.current.results).toBeNull();
+  });
 });

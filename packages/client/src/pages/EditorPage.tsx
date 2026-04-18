@@ -93,7 +93,7 @@ export function EditorPage() {
     refreshCount: refreshSnapshotCount,
   } = useSnapshotState(activeChapter?.id ?? null);
 
-  const findReplace = useFindReplaceState(slug);
+  const findReplace = useFindReplaceState(slug, project?.id);
 
   const {
     trashOpen,

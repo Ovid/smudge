@@ -32,7 +32,10 @@ export interface UseFindReplaceStateReturn {
   search: (projectSlug: string) => Promise<void>;
 }
 
-export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateReturn {
+export function useFindReplaceState(
+  projectSlug?: string,
+  projectId?: string,
+): UseFindReplaceStateReturn {
   const [panelOpen, setPanelOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [replacement, setReplacement] = useState("");
@@ -49,16 +52,25 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestSlugRef = useRef<string | null>(projectSlug ?? null);
+  // Key state reset on project identity, not slug. A project rename
+  // changes the slug without changing the project — preserving the
+  // user's in-progress query/replacement across a rename is the
+  // expected UX; wiping it is surprising data loss.
+  const latestProjectIdRef = useRef<string | null>(projectId ?? null);
   // Monotonic counter used to discard stale in-flight search responses.
   const searchSeqRef = useRef(0);
 
-  // Keep latestSlugRef in sync with projectSlug prop, and reset search state
-  // when the project changes so a previous project's results never leak into
-  // a new project's panel.
+  // Keep latestSlugRef in sync with the current slug so search() always
+  // POSTs to the live URL. Resets are gated on project id below.
   useEffect(() => {
-    if (!projectSlug) return;
-    if (latestSlugRef.current !== projectSlug) {
-      latestSlugRef.current = projectSlug;
+    if (projectSlug) latestSlugRef.current = projectSlug;
+  }, [projectSlug]);
+
+  // Reset search state only on genuine project change, not on rename.
+  useEffect(() => {
+    if (!projectId) return;
+    if (latestProjectIdRef.current !== projectId) {
+      latestProjectIdRef.current = projectId;
       setQuery("");
       setReplacement("");
       setResults(null);
@@ -67,7 +79,7 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
       setError(null);
       searchSeqRef.current++;
     }
-  }, [projectSlug]);
+  }, [projectId]);
 
   const togglePanel = useCallback(() => {
     setPanelOpen((prev) => !prev);
