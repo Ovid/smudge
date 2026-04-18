@@ -91,6 +91,7 @@ export function EditorPage() {
     snapshotCount,
     snapshotPanelRef,
     refreshCount: refreshSnapshotCount,
+    onSnapshotsChange,
   } = useSnapshotState(activeChapter?.id ?? null);
 
   const findReplace = useFindReplaceState(slug, project?.id);
@@ -953,6 +954,7 @@ export function EditorPage() {
               if (flushed) cancelPendingSaves();
               return flushed;
             }}
+            onSnapshotsChange={onSnapshotsChange}
             triggerRef={snapshotsTriggerRef}
           />
         )}

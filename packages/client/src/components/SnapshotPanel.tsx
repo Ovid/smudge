@@ -47,11 +47,20 @@ interface SnapshotPanelProps {
    * and false when it failed, in which case snapshot creation is skipped.
    */
   onBeforeCreate?: () => Promise<boolean>;
+  /**
+   * Fired every time the panel's list fetch succeeds, with the current
+   * snapshot count. Lets the parent hook drive the toolbar badge from
+   * the panel's single source of truth instead of issuing its own GET.
+   */
+  onSnapshotsChange?: (count: number) => void;
   triggerRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
 export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>(
-  function SnapshotPanel({ chapterId, isOpen, onClose, onView, onBeforeCreate, triggerRef }, ref) {
+  function SnapshotPanel(
+    { chapterId, isOpen, onClose, onView, onBeforeCreate, onSnapshotsChange, triggerRef },
+    ref,
+  ) {
     const [snapshots, setSnapshots] = useState<SnapshotListItem[]>([]);
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [createLabel, setCreateLabel] = useState("");
@@ -77,6 +86,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         if (seq !== chapterSeqRef.current) return;
         setSnapshots(data);
         setListError(null);
+        onSnapshotsChange?.(data.length);
       } catch {
         if (seq !== chapterSeqRef.current) return;
         // Surface the failure instead of silently showing an empty panel;
@@ -84,7 +94,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         // snapshots has none.
         setListError(S.listFailed);
       }
-    }, [chapterId]);
+    }, [chapterId, onSnapshotsChange]);
 
     useImperativeHandle(ref, () => ({ refreshSnapshots: fetchSnapshots }), [fetchSnapshots]);
 
@@ -101,12 +111,13 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
           if (seq !== chapterSeqRef.current) return;
           setSnapshots(data);
           setListError(null);
+          onSnapshotsChange?.(data.length);
         })
         .catch(() => {
           if (seq !== chapterSeqRef.current) return;
           setListError(S.listFailed);
         });
-    }, [isOpen, chapterId]);
+    }, [isOpen, chapterId, onSnapshotsChange]);
 
     // Focus management
     useEffect(() => {

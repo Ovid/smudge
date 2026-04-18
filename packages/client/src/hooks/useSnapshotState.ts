@@ -67,6 +67,12 @@ export interface UseSnapshotStateReturn {
    * is a no-op when the panel is unmounted.
    */
   refreshCount: () => void;
+  /**
+   * Callback passed to SnapshotPanel so its list fetches feed the count
+   * badge without triggering a second GET on chapter change. Pass this
+   * to SnapshotPanel as `onSnapshotsChange`.
+   */
+  onSnapshotsChange: (count: number) => void;
 }
 
 export function useSnapshotState(chapterId: string | null): UseSnapshotStateReturn {
@@ -79,9 +85,16 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   // Mirror the current chapterId so async handlers can check the live value
   // against their captured one (needed for A→B→A restore detection).
   const currentChapterIdRef = useRef<string | null>(chapterId);
+  // When the panel is open it owns the list fetch and feeds the count back
+  // via onSnapshotsChange — the hook skips its own fetch to avoid two GETs
+  // per chapter switch.
+  const panelOpenRef = useRef(snapshotPanelOpen);
   useEffect(() => {
     currentChapterIdRef.current = chapterId;
   }, [chapterId]);
+  useEffect(() => {
+    panelOpenRef.current = snapshotPanelOpen;
+  }, [snapshotPanelOpen]);
 
   // Reset per-chapter state when chapterId changes. Without clearing
   // viewingSnapshot here, the snapshot banner & view from chapter A
@@ -96,6 +109,10 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
 
     setViewingSnapshot(null);
     if (!chapterId) return;
+    // When the panel is open its own effect is about to fetch the list —
+    // delegate the count update to its onSnapshotsChange callback rather
+    // than firing a parallel GET.
+    if (panelOpenRef.current) return;
     api.snapshots
       .list(chapterId)
       .then((data) => {
@@ -235,6 +252,12 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       .catch(() => {});
   }, [chapterId]);
 
+  // Feeds the hook's count from the panel's own list fetch so the toolbar
+  // badge stays in sync without duplicating the GET.
+  const onSnapshotsChange = useCallback((count: number) => {
+    setSnapshotCount(count);
+  }, []);
+
   // Refresh count on the open→closed transition (user may have created or
   // deleted snapshots while the panel was open). Tracking the previous
   // state in a ref prevents the mount-time `false` → `false` no-op from
@@ -258,5 +281,6 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
     snapshotCount,
     snapshotPanelRef,
     refreshCount,
+    onSnapshotsChange,
   };
 }
