@@ -128,9 +128,10 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       try {
         const full = await api.snapshots.get(snapshot.id);
         if (seq !== chapterSeqRef.current) return { ok: true, staleChapterSwitch: true };
+        // SnapshotRow.content is typed as a JSON string on the wire.
         let content: unknown;
         try {
-          content = typeof full.content === "string" ? JSON.parse(full.content) : full.content;
+          content = JSON.parse(full.content);
         } catch {
           return { ok: false, reason: "corrupt_snapshot" };
         }
@@ -143,6 +144,9 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         return { ok: true };
       } catch (err) {
         if (err instanceof ApiRequestError) {
+          // ABORTED is not a user-visible error — treat it like a stale
+          // chapter-switch: silent no-op.
+          if (err.code === "ABORTED") return { ok: true, staleChapterSwitch: true };
           if (err.status === 404) return { ok: false, reason: "not_found" };
           return { ok: false, reason: "network" };
         }

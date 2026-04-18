@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { countWords, sanitizeSnapshotLabel, TipTapDocSchema } from "@smudge/shared";
+import { truncateGraphemes } from "../utils/grapheme";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
@@ -155,8 +156,13 @@ export async function restoreSnapshot(
     // CreateSnapshotSchema applies to manual labels. A legacy manual label
     // containing control/bidi chars or near the 500-char limit would otherwise
     // produce an unsanitized or oversized restore-auto-snapshot label.
-    const rawLabel = snapshot.label
-      ? `Before restore to '${snapshot.label}'`
+    // Truncate the embedded user label with a grapheme-aware helper so
+    // a surrogate-pair emoji or combining sequence near the 500-char cap
+    // is never split mid-grapheme. The template wrapper is ASCII, so a
+    // final code-unit slice(0,500) on the sanitized result is safe.
+    const embedded = snapshot.label ? truncateGraphemes(snapshot.label, 450) : null;
+    const rawLabel = embedded
+      ? `Before restore to '${embedded}'`
       : `Before restore to snapshot from ${snapshot.created_at}`;
     const snapshotLabel = sanitizeSnapshotLabel(rawLabel).slice(0, 500);
 
@@ -210,17 +216,15 @@ export async function restoreSnapshot(
 
   // Enrich with status_label to match every other chapter-returning endpoint
   // (updateChapter, restoreChapter, etc). The client types the response as
-  // Chapter so consumers expect status_label to be present.
+  // Chapter so consumers expect status_label to be present. Enrichment
+  // failure means the chapter_statuses lookup failed (DB fault), not that
+  // the restore itself failed — surface that so the operator can diagnose
+  // and the client falls through to a 500 rather than a subtly-malformed
+  // 200 with status as the display label.
   const store2 = store;
-  let enriched: Record<string, unknown>;
-  try {
-    enriched = (await enrichChapterWithLabel(store2, result.chapter)) as unknown as Record<
-      string,
-      unknown
-    >;
-  } catch {
-    const { content_corrupt: _ignored, ...clean } = result.chapter;
-    enriched = { ...clean, status_label: result.chapter.status } as Record<string, unknown>;
-  }
+  const enriched = (await enrichChapterWithLabel(store2, result.chapter)) as unknown as Record<
+    string,
+    unknown
+  >;
   return { chapter: enriched };
 }

@@ -45,6 +45,11 @@ describe("mapReplaceErrorToMessage", () => {
     expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceScopeNotFound);
   });
 
+  it("maps 404 NOT_FOUND (project gone) to replaceScopeNotFound (not generic retry) (S2)", () => {
+    const err = new ApiRequestError("project gone", 404, "NOT_FOUND");
+    expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceScopeNotFound);
+  });
+
   it("returns replaceFailed for other statuses (no raw server copy)", () => {
     const err = new ApiRequestError("server boom", 500);
     expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceFailed);

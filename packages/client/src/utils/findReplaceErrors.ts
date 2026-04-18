@@ -21,7 +21,11 @@ export function mapReplaceErrorToMessage(err: unknown): string | null {
     // server copy into the UI (CLAUDE.md: all strings via strings.ts).
     return STRINGS.findReplace.invalidReplaceRequest;
   }
-  if (err.status === 404 && err.code === "SCOPE_NOT_FOUND") {
+  if (err.status === 404) {
+    // Two distinct 404 causes share the same client message for now
+    // (SCOPE_NOT_FOUND: chapter gone; NOT_FOUND: project gone). Both mean
+    // retrying won't help — surfacing the scope-specific copy keeps users
+    // off the generic "try again" message that implies a transient fault.
     return STRINGS.findReplace.replaceScopeNotFound;
   }
   return STRINGS.findReplace.replaceFailed;

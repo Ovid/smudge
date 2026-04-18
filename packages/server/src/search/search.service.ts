@@ -12,6 +12,7 @@ import {
   sanitizeSnapshotLabel,
 } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
+import { truncateGraphemes } from "../utils/grapheme";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
@@ -60,22 +61,8 @@ export interface SearchValidationError {
  */
 function truncateForLabel(s: string, max = 30): string {
   const cleaned = sanitizeSnapshotLabel(s);
-  const segmenter =
-    typeof Intl !== "undefined" && "Segmenter" in Intl
-      ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
-      : null;
-  if (!segmenter) {
-    return cleaned.length > max ? cleaned.slice(0, max) + "..." : cleaned;
-  }
-  const graphemes: string[] = [];
-  for (const { segment } of segmenter.segment(cleaned)) {
-    graphemes.push(segment);
-    if (graphemes.length > max) break;
-  }
-  if (graphemes.length > max) {
-    return graphemes.slice(0, max).join("") + "...";
-  }
-  return cleaned;
+  const truncated = truncateGraphemes(cleaned, max);
+  return truncated.length < cleaned.length ? truncated + "..." : cleaned;
 }
 
 function validatePattern(
