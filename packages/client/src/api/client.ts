@@ -300,10 +300,12 @@ export const api = {
       projectSlug: string,
       query: string,
       options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
+      signal?: AbortSignal,
     ) =>
       apiFetch<SearchResult>(`/projects/${projectSlug}/search`, {
         method: "POST",
         body: JSON.stringify({ query, options }),
+        ...(signal ? { signal } : {}),
       }),
 
     replace: (
@@ -312,6 +314,7 @@ export const api = {
       replace: string,
       options: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean } | undefined,
       scope: { type: "project" } | { type: "chapter"; chapter_id: string; match_index?: number },
+      signal?: AbortSignal,
     ) =>
       apiFetch<{
         replaced_count: number;
@@ -320,6 +323,7 @@ export const api = {
       }>(`/projects/${projectSlug}/replace`, {
         method: "POST",
         body: JSON.stringify({ search, replace, options, scope }),
+        ...(signal ? { signal } : {}),
       }),
   },
 

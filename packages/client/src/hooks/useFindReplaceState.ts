@@ -59,12 +59,25 @@ export function useFindReplaceState(
   const latestProjectIdRef = useRef<string | null>(projectId ?? null);
   // Monotonic counter used to discard stale in-flight search responses.
   const searchSeqRef = useRef(0);
+  // Owned by the latest in-flight search() call. Aborting releases the
+  // HTTP connection and stops the server-side regex walk; the seq-based
+  // guard still protects us from late resolutions writing state back.
+  const searchAbortRef = useRef<AbortController | null>(null);
 
   // Keep latestSlugRef in sync with the current slug so search() always
   // POSTs to the live URL. Resets are gated on project id below.
   useEffect(() => {
     if (projectSlug) latestSlugRef.current = projectSlug;
   }, [projectSlug]);
+
+  // On unmount, abort any in-flight search so the server stops walking
+  // chapters for a caller that no longer exists.
+  useEffect(() => {
+    return () => {
+      searchAbortRef.current?.abort();
+      searchAbortRef.current = null;
+    };
+  }, []);
 
   // Reset search state only on genuine project change, not on rename.
   useEffect(() => {
@@ -103,6 +116,10 @@ export function useFindReplaceState(
     // Invalidate any still-in-flight response so a late reply can't
     // write results back after the panel was explicitly closed.
     searchSeqRef.current++;
+    // Abort the underlying fetch too so the server stops walking chapters
+    // for a search the user has clearly moved on from.
+    searchAbortRef.current?.abort();
+    searchAbortRef.current = null;
   }, []);
 
   const toggleOption = useCallback((opt: "case_sensitive" | "whole_word" | "regex") => {
@@ -114,7 +131,12 @@ export function useFindReplaceState(
       // Always bump the seq so any still-in-flight response for a prior
       // query is discarded rather than overwriting cleared state.
       const seq = ++searchSeqRef.current;
+      // Abort any prior in-flight search so a rapid-typing stream doesn't
+      // leave N regex walks running server-side for queries the user has
+      // already moved past.
+      searchAbortRef.current?.abort();
       if (!query) {
+        searchAbortRef.current = null;
         setResults(null);
         setResultsQuery(null);
         setResultsOptions(null);
@@ -131,10 +153,12 @@ export function useFindReplaceState(
       // what the user sees.
       const frozenQuery = query;
       const frozenOptions: SearchOptionsShape = { ...options };
+      const controller = new AbortController();
+      searchAbortRef.current = controller;
       setLoading(true);
       setError(null);
       try {
-        const result = await api.search.find(slug, frozenQuery, frozenOptions);
+        const result = await api.search.find(slug, frozenQuery, frozenOptions, controller.signal);
         if (seq !== searchSeqRef.current) return;
         setResults(result);
         setResultsQuery(frozenQuery);

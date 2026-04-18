@@ -368,7 +368,12 @@ describe("useFindReplaceState", () => {
       vi.advanceTimersByTime(350);
     });
 
-    expect(mockFind).toHaveBeenCalledWith("my-project", "hello", expect.any(Object));
+    expect(mockFind).toHaveBeenCalledWith(
+      "my-project",
+      "hello",
+      expect.any(Object),
+      expect.any(AbortSignal),
+    );
   });
 
   it("does not auto-search when panel is closed", async () => {
