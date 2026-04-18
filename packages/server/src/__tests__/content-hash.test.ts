@@ -31,8 +31,30 @@ describe("canonicalContentHash", () => {
       expect(canonicalContentHash("{not json")).toBe(canonicalContentHash("{not json"));
       expect(canonicalContentHash("{not json")).not.toBe(canonicalContentHash("other"));
       expect(debugSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ content_length: expect.any(Number) }),
-        expect.stringContaining("not valid JSON"),
+        expect.objectContaining({ content_length: expect.any(Number), reason: "parse" }),
+        expect.stringContaining("could not be canonicalized"),
+      );
+    } finally {
+      debugSpy.mockRestore();
+    }
+  });
+
+  it("falls back to raw bytes when JSON nesting exceeds MAX_TIPTAP_DEPTH (CP2)", () => {
+    // Pathologically deep (but syntactically valid) JSON must not
+    // stack-overflow the process during dedup. Build a structure with
+    // depth well beyond MAX_TIPTAP_DEPTH (64) so the guard fires.
+    let deep: unknown = 1;
+    for (let i = 0; i < 200; i++) deep = [deep];
+    const json = JSON.stringify(deep);
+
+    const debugSpy = vi.spyOn(logger, "debug").mockImplementation(() => {});
+    try {
+      // Must not throw — it should fall back to raw-bytes hash.
+      const hash = canonicalContentHash(json);
+      expect(hash).toHaveLength(64);
+      expect(debugSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: "depth" }),
+        expect.any(String),
       );
     } finally {
       debugSpy.mockRestore();
