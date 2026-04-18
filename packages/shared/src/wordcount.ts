@@ -1,3 +1,5 @@
+import { MAX_TIPTAP_DEPTH } from "./schemas";
+
 type TipTapNode = {
   type: string;
   text?: string;
@@ -11,8 +13,14 @@ type TipTapNode = {
  * flattens runs for find-and-replace. Non-text children (block boundaries,
  * hardBreak, image, etc.) act as word separators so paragraphs and line breaks
  * don't silently merge adjacent words.
+ *
+ * Depth is capped at MAX_TIPTAP_DEPTH to match the schema's write-side
+ * invariant. Every current caller feeds schema-validated content, so the cap
+ * is defensive — protects against legacy rows or test fixtures that bypass
+ * validation from stack-overflowing the walker.
  */
-function extractText(node: TipTapNode): string {
+function extractText(node: TipTapNode, depth: number = 0): string {
+  if (depth > MAX_TIPTAP_DEPTH) return "";
   if (node.text) return node.text;
   if (!node.content) return "";
   const parts: string[] = [];
@@ -22,7 +30,7 @@ function extractText(node: TipTapNode): string {
       parts.push(" ");
       endsWithWhitespace = true;
     }
-    const piece = extractText(child);
+    const piece = extractText(child, depth + 1);
     if (!piece) continue;
     parts.push(piece);
     endsWithWhitespace = /\s$/.test(piece);

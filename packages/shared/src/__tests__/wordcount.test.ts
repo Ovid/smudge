@@ -105,4 +105,16 @@ describe("countWords", () => {
     const count = countWords(doc);
     expect(count).toBeGreaterThanOrEqual(2);
   });
+
+  it("does not stack-overflow on pathologically nested content", () => {
+    // Build a doc nested past MAX_TIPTAP_DEPTH. Schema validation would
+    // reject this on write, but the walker must degrade gracefully in
+    // case legacy rows or test fixtures bypass that invariant.
+    let node: Record<string, unknown> = { type: "text", text: "deep" };
+    for (let i = 0; i < 500; i++) {
+      node = { type: "paragraph", content: [node] };
+    }
+    const doc = { type: "doc", content: [node] };
+    expect(() => countWords(doc)).not.toThrow();
+  });
 });
