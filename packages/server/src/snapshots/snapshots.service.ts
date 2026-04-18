@@ -105,6 +105,11 @@ export async function restoreSnapshot(
   //    autosave request-body limit. Without this, a legacy oversize
   //    snapshot could be restored into a chapter that every subsequent
   //    save would reject with 413.
+  // Cheap size check first so a massive legacy row doesn't pay for
+  // JSON.parse + full recursive schema walk before being rejected.
+  if (Buffer.byteLength(snapshot.content, "utf8") > MAX_CHAPTER_CONTENT_BYTES) {
+    return "corrupt_snapshot";
+  }
   let newParsed: Record<string, unknown>;
   try {
     const parsed: unknown = JSON.parse(snapshot.content);
@@ -121,9 +126,6 @@ export async function restoreSnapshot(
     }
     newParsed = parsed as Record<string, unknown>;
   } catch {
-    return "corrupt_snapshot";
-  }
-  if (Buffer.byteLength(snapshot.content, "utf8") > MAX_CHAPTER_CONTENT_BYTES) {
     return "corrupt_snapshot";
   }
 
