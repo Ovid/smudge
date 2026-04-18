@@ -44,7 +44,10 @@ export function canonicalContentHash(content: string): string {
     // polluting test output and masking real warnings (CLAUDE.md zero-
     // warnings policy).
     logger.debug(
-      { content_length: content.length, reason: err instanceof CanonicalizeDepthError ? "depth" : "parse" },
+      {
+        content_length: content.length,
+        reason: err instanceof CanonicalizeDepthError ? "depth" : "parse",
+      },
       "canonicalContentHash: content could not be canonicalized; hashing raw bytes",
     );
     canonicalJson = content;

@@ -13,10 +13,7 @@ export async function findById(db: Knex | Knex.Transaction, id: string): Promise
   return row ?? null;
 }
 
-export async function findByIds(
-  db: Knex | Knex.Transaction,
-  ids: string[],
-): Promise<ImageRow[]> {
+export async function findByIds(db: Knex | Knex.Transaction, ids: string[]): Promise<ImageRow[]> {
   if (ids.length === 0) return [];
   return db("images").whereIn("id", ids);
 }
