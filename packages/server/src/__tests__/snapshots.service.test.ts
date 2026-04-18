@@ -646,7 +646,7 @@ describe("snapshots.service", () => {
         .orderBy("created_at", "desc")
         .select("label")) as Array<{ label: string | null }>;
       expect(autos.length).toBeGreaterThan(0);
-      const label = autos[0].label ?? "";
+      const label = autos[0]?.label ?? "";
       // No lone surrogate: every high surrogate must be followed by a low
       // surrogate, and vice versa.
       for (let i = 0; i < label.length; i++) {

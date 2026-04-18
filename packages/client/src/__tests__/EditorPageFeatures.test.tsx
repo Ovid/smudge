@@ -1315,7 +1315,10 @@ describe("EditorPage find-and-replace confirmation", () => {
     // api.search.replace returns a deferred promise we can hold open to
     // simulate a slow round trip; the second click must be ignored while
     // the first is still in flight.
-    let resolveReplace: ((v: { replaced_count: number; affected_chapter_ids: string[] }) => void)!;
+    let resolveReplace: (v: {
+      replaced_count: number;
+      affected_chapter_ids: string[];
+    }) => void = () => {};
     const pending = new Promise<{ replaced_count: number; affected_chapter_ids: string[] }>(
       (resolve) => {
         resolveReplace = resolve;
