@@ -284,10 +284,11 @@ export async function replaceInProject(
         // truncateForLabel helper already sanitizes its argument, but the
         // surrounding template text is authored here; a future change to
         // the template could silently exceed the column cap without this
-        // backstop.
+        // backstop. Use grapheme-aware truncation for the final clamp so a
+        // surrogate-pair emoji inside the embedded search/replace strings is
+        // never split mid-grapheme.
         const rawLabel = `Before find-and-replace: '${truncateForLabel(search)}' → '${truncateForLabel(replace)}'`;
-        const sanitizedLabel = sanitizeSnapshotLabel(rawLabel).slice(0, 500);
-        const label = sanitizedLabel;
+        const label = truncateGraphemes(sanitizeSnapshotLabel(rawLabel), 500);
 
         // Auto-snapshot before replacement (using DB-committed word_count)
         await txStore.insertSnapshot({

@@ -158,15 +158,16 @@ export async function restoreSnapshot(
     // CreateSnapshotSchema applies to manual labels. A legacy manual label
     // containing control/bidi chars or near the 500-char limit would otherwise
     // produce an unsanitized or oversized restore-auto-snapshot label.
-    // Truncate the embedded user label with a grapheme-aware helper so
-    // a surrogate-pair emoji or combining sequence near the 500-char cap
-    // is never split mid-grapheme. The template wrapper is ASCII, so a
-    // final code-unit slice(0,500) on the sanitized result is safe.
+    // Grapheme-truncate the embedded user label *and* the final clamp so a
+    // surrogate-pair emoji or combining sequence near the 500-char cap is
+    // never split mid-grapheme — 450 graphemes can exceed 500 UTF-16 code
+    // units on emoji-heavy labels, and a code-unit slice(0,500) would then
+    // split a surrogate and store a lone-surrogate label.
     const embedded = snapshot.label ? truncateGraphemes(snapshot.label, 450) : null;
     const rawLabel = embedded
       ? `Before restore to '${embedded}'`
       : `Before restore to snapshot from ${snapshot.created_at}`;
-    const snapshotLabel = sanitizeSnapshotLabel(rawLabel).slice(0, 500);
+    const snapshotLabel = truncateGraphemes(sanitizeSnapshotLabel(rawLabel), 500);
 
     // Always create auto-restore snapshot (no dedup)
     await txStore.insertSnapshot({

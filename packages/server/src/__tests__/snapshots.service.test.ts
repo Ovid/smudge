@@ -616,5 +616,52 @@ describe("snapshots.service", () => {
       );
       logSpy.mockRestore();
     });
+
+    it("auto-restore snapshot label never splits a surrogate pair for emoji-heavy labels", async () => {
+      stubVelocity();
+      const { chapterId } = await createProjectAndChapter();
+      const { createSnapshot, restoreSnapshot } = await import("../snapshots/snapshots.service");
+
+      // 500 complex emoji ≈ 1000+ UTF-16 code units; a naive .slice(0,500) on
+      // the sanitized label would land inside a surrogate pair.
+      const emojiLabel = "👨‍👩‍👧‍👦".repeat(200);
+      const snap = (await createSnapshot(chapterId, emojiLabel)) as Exclude<
+        Awaited<ReturnType<typeof createSnapshot>>,
+        null | "duplicate"
+      >;
+
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ content: JSON.stringify(DOC_JSON_ALT), word_count: 2 });
+
+      const result = await restoreSnapshot(snap.id);
+      expect(result).not.toBeNull();
+      expect(result).not.toBe("corrupt_snapshot");
+
+      // Find the auto-pre-restore snapshot and assert its label is UTF-16-safe
+      const autos = (await t
+        .db("chapter_snapshots")
+        .where({ chapter_id: chapterId, is_auto: true })
+        .orderBy("created_at", "desc")
+        .select("label")) as Array<{ label: string | null }>;
+      expect(autos.length).toBeGreaterThan(0);
+      const label = autos[0].label ?? "";
+      // No lone surrogate: every high surrogate must be followed by a low
+      // surrogate, and vice versa.
+      for (let i = 0; i < label.length; i++) {
+        const code = label.charCodeAt(i);
+        if (code >= 0xd800 && code <= 0xdbff) {
+          const next = label.charCodeAt(i + 1);
+          expect(next >= 0xdc00 && next <= 0xdfff).toBe(true);
+          i++;
+        } else {
+          expect(code >= 0xdc00 && code <= 0xdfff).toBe(false);
+        }
+      }
+      // Grapheme-safe clamp should not exceed the 500-grapheme budget, and in
+      // code units should be ≤ 500 × 4 (rough upper bound for ZWJ sequences).
+      expect(label.length).toBeLessThanOrEqual(500 * 4);
+    });
   });
 });
