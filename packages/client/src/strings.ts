@@ -295,6 +295,7 @@ export const STRINGS = {
     emptyState: "No snapshots yet. Create one to save a checkpoint of your work.",
     count: (manual: number, auto: number) =>
       `${manual + auto} snapshots (${manual} manual, ${auto} auto)`,
+    wordCount: (count: number) => `${count.toLocaleString()} words`,
     duplicateSkipped: "Content unchanged since last snapshot.",
     createFailed: "Unable to create snapshot. Save your unsaved changes and try again.",
     deleteFailed: "Unable to delete snapshot. Try again.",

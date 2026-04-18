@@ -346,7 +346,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
                   <div className="flex items-center gap-2 text-xs text-text-secondary font-sans">
                     <span title={fullDate(snap.created_at)}>{relativeDate(snap.created_at)}</span>
                     <span aria-hidden="true">&middot;</span>
-                    <span>{snap.word_count.toLocaleString()} words</span>
+                    <span>{S.wordCount(snap.word_count)}</span>
                   </div>
 
                   {/* Actions */}
