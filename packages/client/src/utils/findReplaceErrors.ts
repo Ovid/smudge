@@ -33,3 +33,30 @@ export function mapReplaceErrorToMessage(err: unknown): string | null {
   }
   return STRINGS.findReplace.replaceFailed;
 }
+
+/**
+ * Twin of `mapReplaceErrorToMessage` for the search (GET-like) path. The
+ * 400-code ladder is shared with replace (same SEARCH_ERROR_CODES) but the
+ * fallback copy and 404-handling differ: search has no scope/404 branch,
+ * and the transient-failure message is `searchFailed`.
+ *
+ * Both mappers live here so that adding a new SearchErrorCode is a
+ * one-file change; `useFindReplaceState` and `EditorPage` used to each
+ * carry their own ladder and silently drifted.
+ */
+export function mapSearchErrorToMessage(err: unknown): string | null {
+  if (!(err instanceof ApiRequestError)) {
+    return STRINGS.findReplace.searchFailed;
+  }
+  if (err.code === "ABORTED") return null;
+  if (err.status === 400) {
+    if (err.code === SEARCH_ERROR_CODES.MATCH_CAP_EXCEEDED)
+      return STRINGS.findReplace.tooManyMatches;
+    if (err.code === SEARCH_ERROR_CODES.REGEX_TIMEOUT) return STRINGS.findReplace.searchTimedOut;
+    if (err.code === SEARCH_ERROR_CODES.CONTENT_TOO_LARGE)
+      return STRINGS.findReplace.contentTooLarge;
+    if (err.code === SEARCH_ERROR_CODES.INVALID_REGEX) return STRINGS.findReplace.invalidRegex;
+    return STRINGS.findReplace.invalidSearchRequest;
+  }
+  return STRINGS.findReplace.searchFailed;
+}
