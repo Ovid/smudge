@@ -219,15 +219,27 @@ export async function restoreSnapshot(
 
   // Enrich with status_label to match every other chapter-returning endpoint
   // (updateChapter, restoreChapter, etc). The client types the response as
-  // Chapter so consumers expect status_label to be present. Enrichment
-  // failure means the chapter_statuses lookup failed (DB fault), not that
-  // the restore itself failed — surface that so the operator can diagnose
-  // and the client falls through to a 500 rather than a subtly-malformed
-  // 200 with status as the display label.
+  // Chapter so consumers expect status_label to be present. The transaction
+  // has already committed, so a status-lookup failure doesn't unmake the
+  // restore — fall back to `status` as the label so the client sees a
+  // successful restore, matching the pattern in chapters.service.updateChapter.
   const store2 = store;
-  const enriched = (await enrichChapterWithLabel(store2, result.chapter)) as unknown as Record<
-    string,
-    unknown
-  >;
-  return { chapter: enriched };
+  try {
+    const enriched = (await enrichChapterWithLabel(store2, result.chapter)) as unknown as Record<
+      string,
+      unknown
+    >;
+    return { chapter: enriched };
+  } catch (err: unknown) {
+    logger.error(
+      { err, project_id: result.project_id, chapter_id: result.chapter_id },
+      "enrichChapterWithLabel failed after restore; returning status as label",
+    );
+    const { content_corrupt: _c, ...clean } = result.chapter as Record<string, unknown> & {
+      content_corrupt?: unknown;
+    };
+    return {
+      chapter: { ...clean, status_label: (result.chapter as { status: string }).status },
+    };
+  }
 }
