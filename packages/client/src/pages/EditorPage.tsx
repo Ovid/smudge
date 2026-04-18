@@ -90,6 +90,7 @@ export function EditorPage() {
     restoreSnapshot,
     snapshotCount,
     snapshotPanelRef,
+    refreshCount: refreshSnapshotCount,
   } = useSnapshotState(activeChapter?.id ?? null);
 
   const findReplace = useFindReplaceState(slug);
@@ -263,6 +264,10 @@ export function EditorPage() {
         }
         await findReplace.search(slug);
         snapshotPanelRef.current?.refreshSnapshots();
+        // Panel-handle refresh is a no-op when the snapshot panel is
+        // closed (ref is null). Replace-all just created N auto-snapshots,
+        // so drive the toolbar count directly via the hook.
+        refreshSnapshotCount();
         // Always surface a positive success banner so the user can
         // distinguish "did nothing because something went wrong" from
         // "finished with no user-visible change". When chapters were
@@ -286,6 +291,7 @@ export function EditorPage() {
       findReplace,
       reloadActiveChapter,
       snapshotPanelRef,
+      refreshSnapshotCount,
       getActiveChapter,
       setActionError,
       cancelPendingSaves,
@@ -390,6 +396,10 @@ export function EditorPage() {
         }
         await findReplace.search(slug);
         snapshotPanelRef.current?.refreshSnapshots();
+        // Panel-handle refresh is a no-op when the snapshot panel is
+        // closed (ref is null). Replace-one created an auto-snapshot, so
+        // drive the toolbar count directly via the hook.
+        refreshSnapshotCount();
         setActionInfo(STRINGS.findReplace.replaceSuccess(result.replaced_count));
       } catch (err) {
         const msg = mapReplaceErrorToMessage(err);
@@ -402,6 +412,7 @@ export function EditorPage() {
       findReplace,
       reloadActiveChapter,
       snapshotPanelRef,
+      refreshSnapshotCount,
       getActiveChapter,
       setActionError,
       cancelPendingSaves,

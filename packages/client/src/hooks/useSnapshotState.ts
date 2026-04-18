@@ -59,6 +59,13 @@ export interface UseSnapshotStateReturn {
    */
   snapshotCount: number | null;
   snapshotPanelRef: React.RefObject<SnapshotPanelHandle | null>;
+  /**
+   * Imperatively re-fetch the snapshot count for the active chapter.
+   * Used by flows that create auto-snapshots while the panel is closed
+   * (replace-all, replace-one), since SnapshotPanelHandle.refreshSnapshots
+   * is a no-op when the panel is unmounted.
+   */
+  refreshCount: () => void;
 }
 
 export function useSnapshotState(chapterId: string | null): UseSnapshotStateReturn {
@@ -223,11 +230,16 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       .catch(() => {});
   }, [chapterId]);
 
-  // Refresh count when panel closes (user may have created/deleted snapshots)
+  // Refresh count on the open→closed transition (user may have created or
+  // deleted snapshots while the panel was open). Tracking the previous
+  // state in a ref prevents the mount-time `false` → `false` no-op from
+  // firing a redundant list request alongside the chapterId-driven fetch.
+  const prevPanelOpenRef = useRef(snapshotPanelOpen);
   useEffect(() => {
-    if (!snapshotPanelOpen) {
+    if (prevPanelOpenRef.current && !snapshotPanelOpen) {
       refreshCount();
     }
+    prevPanelOpenRef.current = snapshotPanelOpen;
   }, [snapshotPanelOpen, refreshCount]);
 
   return {
@@ -240,5 +252,6 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
     restoreSnapshot,
     snapshotCount,
     snapshotPanelRef,
+    refreshCount,
   };
 }
