@@ -183,7 +183,13 @@ export function useFindReplaceState(
           setError(message);
         }
       } finally {
-        if (seq === searchSeqRef.current) setLoading(false);
+        if (seq === searchSeqRef.current) {
+          setLoading(false);
+          // Release this request's controller — a stale (overwritten) ref
+          // would already have been replaced by the next search, so only
+          // the current-seq branch owns the cleanup.
+          if (searchAbortRef.current === controller) searchAbortRef.current = null;
+        }
       }
     },
     [query, options],
