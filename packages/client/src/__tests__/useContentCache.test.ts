@@ -113,26 +113,35 @@ describe("useContentCache", () => {
   });
 
   describe("clearAllCachedContent", () => {
-    it("removes every smudge:draft:* key and leaves unrelated keys in place", () => {
+    it("removes only the supplied chapter IDs and leaves other drafts untouched (I2)", () => {
       store.set("smudge:draft:ch-a", "{}");
       store.set("smudge:draft:ch-b", "{}");
+      store.set("smudge:draft:ch-other-project", "{}");
       store.set("smudge:other", "keep-me");
 
-      clearAllCachedContent();
+      clearAllCachedContent(["ch-a", "ch-b"]);
 
       expect(store.has("smudge:draft:ch-a")).toBe(false);
       expect(store.has("smudge:draft:ch-b")).toBe(false);
+      // Cross-project draft survives — previous flat-namespace implementation
+      // would wipe it.
+      expect(store.has("smudge:draft:ch-other-project")).toBe(true);
       expect(store.has("smudge:other")).toBe(true);
     });
 
-    it("warns when localStorage throws during iteration", () => {
-      mockLocalStorage.key.mockImplementation(() => {
+    it("is a no-op for an empty list", () => {
+      store.set("smudge:draft:ch-a", "{}");
+      clearAllCachedContent([]);
+      expect(store.has("smudge:draft:ch-a")).toBe(true);
+    });
+
+    it("warns when localStorage throws during removal", () => {
+      mockLocalStorage.removeItem.mockImplementation(() => {
         throw new Error("unavailable");
       });
-      store.set("smudge:draft:ch-a", "{}");
 
       expect(() => {
-        clearAllCachedContent();
+        clearAllCachedContent(["ch-a"]);
       }).not.toThrow();
       expect(warnSpy).toHaveBeenCalledWith(
         "[useContentCache] clearAllCachedContent failed:",

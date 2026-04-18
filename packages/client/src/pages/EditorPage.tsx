@@ -263,7 +263,9 @@ export function EditorPage() {
         // server won't have mutated anything and the user can retype
         // any in-progress edits from the displayed content.
         if (frozen.scope.type === "project") {
-          clearAllCachedContent();
+          // Only clear this project's chapter cache keys — don't nuke
+          // drafts for other projects open in other tabs.
+          clearAllCachedContent((project.chapters ?? []).map((c) => c.id));
         } else {
           clearCachedContent(frozen.scope.chapter_id);
         }
