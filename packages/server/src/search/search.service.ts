@@ -9,10 +9,13 @@ import {
   RegExpTimeoutError,
   MatchCapExceededError,
   MAX_MATCHES_PER_REQUEST,
+  SEARCH_ERROR_CODES,
   sanitizeSnapshotLabel,
 } from "@smudge/shared";
+import type { SearchErrorCode } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { truncateGraphemes } from "../utils/grapheme";
+import { MAX_CHAPTER_CONTENT_BYTES } from "../constants";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
@@ -28,23 +31,20 @@ const REGEX_DEADLINE_MS = 2_000;
 
 /**
  * Upper bound on the serialized TipTap JSON a single chapter may reach
- * after a replacement pass. Matches the Express request body limit so
- * that content produced by replace-all stays autosave-writable. Guards
- * against amplification via `$'` / `` $` `` in regex replacements: these
- * splice the entire right/left side of each match into the output, so a
- * short template can blow up stored content by orders of magnitude even
- * when the raw replacement string is well under MAX_REPLACE_LENGTH.
+ * after a replacement pass. Re-exported from ../constants so search and
+ * snapshots share the same source of truth as the Express body limit.
+ * Guards against amplification via `$'` / `` $` `` in regex replacements:
+ * these splice the entire right/left side of each match into the output,
+ * so a short template can blow up stored content by orders of magnitude
+ * even when the raw replacement string is well under MAX_REPLACE_LENGTH.
  */
-export const MAX_CHAPTER_CONTENT_BYTES = 5 * 1024 * 1024;
+export { MAX_CHAPTER_CONTENT_BYTES };
 
-/** Distinct codes for 400 responses so the client can show specific copy. */
-export const SEARCH_ERROR_CODES = {
-  INVALID_REGEX: "INVALID_REGEX",
-  MATCH_CAP_EXCEEDED: "MATCH_CAP_EXCEEDED",
-  REGEX_TIMEOUT: "REGEX_TIMEOUT",
-  CONTENT_TOO_LARGE: "CONTENT_TOO_LARGE",
-} as const;
-export type SearchErrorCode = (typeof SEARCH_ERROR_CODES)[keyof typeof SEARCH_ERROR_CODES];
+// Re-export from @smudge/shared so existing `import { SEARCH_ERROR_CODES }
+// from "..../search.service"` call sites continue to work while the canonical
+// definition lives in shared.
+export { SEARCH_ERROR_CODES };
+export type { SearchErrorCode };
 
 export interface SearchValidationError {
   validationError: string;

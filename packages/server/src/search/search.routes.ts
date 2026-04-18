@@ -151,7 +151,11 @@ export function searchRouter(): Router {
         res.status(404).json({
           error: {
             code: "SCOPE_NOT_FOUND",
-            message: "Replace scope not found: chapter is missing or belongs to another project.",
+            // The route is slug-scoped, so the chapter_id can only be
+            // "missing" or "soft-deleted" from the resolved project.
+            // A cross-project chapter_id would already 404 at project
+            // resolution, not here.
+            message: "Replace scope not found: chapter is missing or has been deleted.",
           },
         });
         return;

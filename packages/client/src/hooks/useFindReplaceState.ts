@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { api, ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
-import type { SearchResult } from "@smudge/shared";
+import { SEARCH_ERROR_CODES, type SearchResult } from "@smudge/shared";
 
 const S = STRINGS.findReplace;
 
@@ -128,25 +128,30 @@ export function useFindReplaceState(projectSlug?: string): UseFindReplaceStateRe
         setResultsOptions(frozenOptions);
       } catch (err) {
         if (seq !== searchSeqRef.current) return;
+        if (err instanceof ApiRequestError && err.code === "ABORTED") {
+          // User navigated away or we cancelled. No banner, no state
+          // changes — the seq guard above already short-circuited.
+          return;
+        }
         if (err instanceof ApiRequestError && err.status === 400) {
-          // Discriminate on the server's error code so users see accurate
-          // copy. Raw err.message leaks untranslated server English into
-          // the UI (CLAUDE.md string externalization); unknown 400 codes
-          // must fall back to an externalized string.
-          if (err.code === "MATCH_CAP_EXCEEDED") setError(S.tooManyMatches);
-          else if (err.code === "REGEX_TIMEOUT") setError(S.searchTimedOut);
-          else if (err.code === "INVALID_REGEX") setError(S.invalidRegex);
-          else if (err.code === "CONTENT_TOO_LARGE") setError(S.contentTooLarge);
+          // 400s mean the CURRENT query is invalid; stale results no
+          // longer correspond to anything the user typed. Clear so the
+          // panel is consistent with the error.
+          if (err.code === SEARCH_ERROR_CODES.MATCH_CAP_EXCEEDED) setError(S.tooManyMatches);
+          else if (err.code === SEARCH_ERROR_CODES.REGEX_TIMEOUT) setError(S.searchTimedOut);
+          else if (err.code === SEARCH_ERROR_CODES.INVALID_REGEX) setError(S.invalidRegex);
+          else if (err.code === SEARCH_ERROR_CODES.CONTENT_TOO_LARGE) setError(S.contentTooLarge);
           else setError(S.invalidSearchRequest);
-        } else if (err instanceof ApiRequestError && err.code === "ABORTED") {
-          // User navigated away or we cancelled. No banner; the seq guard
-          // above already short-circuited state updates.
+          setResults(null);
+          setResultsQuery(null);
+          setResultsOptions(null);
         } else {
+          // Network / 5xx / unknown: the prior successful results are
+          // still valid for resultsQuery. Show the error banner but
+          // preserve the result set so a transient blip doesn't wipe
+          // content the user is actively reading.
           setError(S.searchFailed);
         }
-        setResults(null);
-        setResultsQuery(null);
-        setResultsOptions(null);
       } finally {
         if (seq === searchSeqRef.current) setLoading(false);
       }

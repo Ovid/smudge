@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../app";
-import { CreateSnapshotSchema } from "@smudge/shared";
+import { CreateSnapshotSchema, SNAPSHOT_ERROR_CODES } from "@smudge/shared";
 import * as SnapshotService from "./snapshots.service";
 
 const UuidSchema = z.string().uuid();
@@ -142,7 +142,7 @@ export function snapshotDirectRouter(): Router {
         // via code === "CORRUPT_SNAPSHOT".
         res.status(400).json({
           error: {
-            code: "CORRUPT_SNAPSHOT",
+            code: SNAPSHOT_ERROR_CODES.CORRUPT_SNAPSHOT,
             message: "Snapshot content is corrupt and cannot be restored.",
           },
         });

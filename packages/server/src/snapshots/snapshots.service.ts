@@ -7,7 +7,7 @@ import { logger } from "../logger";
 import { applyImageRefDiff, extractImageIds } from "../images/images.references";
 import { enrichChapterWithLabel } from "../chapters/chapters.types";
 import { canonicalContentHash } from "./content-hash";
-import { MAX_CHAPTER_CONTENT_BYTES } from "../search/search.service";
+import { MAX_CHAPTER_CONTENT_BYTES } from "../constants";
 import type { SnapshotRow, SnapshotListItem } from "./snapshots.types";
 
 export async function createSnapshot(

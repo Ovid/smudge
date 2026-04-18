@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { SNAPSHOT_ERROR_CODES } from "@smudge/shared";
 import { api, ApiRequestError } from "../api/client";
 import { clearCachedContent } from "./useContentCache";
 import type { SnapshotPanelHandle } from "../components/SnapshotPanel";
@@ -207,7 +208,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         };
       } catch (err) {
         if (err instanceof ApiRequestError) {
-          if (err.code === "CORRUPT_SNAPSHOT") {
+          if (err.code === SNAPSHOT_ERROR_CODES.CORRUPT_SNAPSHOT) {
             return { ok: false, reason: "corrupt_snapshot", message: err.message };
           }
           // Distinguish "snapshot (or its chapter) is gone" from generic

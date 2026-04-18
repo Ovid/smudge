@@ -301,6 +301,52 @@ describe("useFindReplaceState", () => {
     expect(result.current.results).toBeNull();
   });
 
+  it("search() preserves prior successful results on network/5xx blip (S8)", async () => {
+    const priorResults = { total_count: 1, chapters: [{ id: "c1", title: "Ch 1", matches: [] }] };
+    mockFind.mockResolvedValueOnce(priorResults);
+
+    const { result } = renderHook(() => useFindReplaceState("my-project"));
+    act(() => {
+      result.current.setQuery("test");
+    });
+    await act(async () => {
+      await result.current.search("my-project");
+    });
+    expect(result.current.results).toEqual(priorResults);
+
+    // Now a transient network failure — results the user is reading
+    // must not be wiped.
+    mockFind.mockRejectedValueOnce(new Error("Network down"));
+    await act(async () => {
+      await result.current.search("my-project");
+    });
+    expect(result.current.error).toBe(STRINGS.findReplace.searchFailed);
+    expect(result.current.results).toEqual(priorResults);
+  });
+
+  it("search() DOES clear results on 400 (query itself is invalid) (S8)", async () => {
+    const priorResults = { total_count: 1, chapters: [{ id: "c1", title: "Ch 1", matches: [] }] };
+    mockFind.mockResolvedValueOnce(priorResults);
+
+    const { result } = renderHook(() => useFindReplaceState("my-project"));
+    act(() => {
+      result.current.setQuery("test");
+    });
+    await act(async () => {
+      await result.current.search("my-project");
+    });
+    expect(result.current.results).toEqual(priorResults);
+
+    // 400 means the current query is invalid — old results no longer
+    // reflect anything the user typed; clear them.
+    const { ApiRequestError } = await import("../api/client");
+    mockFind.mockRejectedValueOnce(new ApiRequestError("bad", 400, "INVALID_REGEX"));
+    await act(async () => {
+      await result.current.search("my-project");
+    });
+    expect(result.current.results).toBeNull();
+  });
+
   it("debounced auto-search triggers after typing when panel is open", async () => {
     const searchResult = { total_count: 1, chapters: [] };
     mockFind.mockResolvedValue(searchResult);

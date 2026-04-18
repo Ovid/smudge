@@ -33,7 +33,14 @@ export {
 } from "./tiptap-text";
 export type { SearchMatch, SearchOptions } from "./tiptap-text";
 export { generateSlug } from "./slugify";
-export { UNTITLED_CHAPTER, TRASH_RETENTION_DAYS, TRASH_RETENTION_MS } from "./constants";
+export {
+  UNTITLED_CHAPTER,
+  TRASH_RETENTION_DAYS,
+  TRASH_RETENTION_MS,
+  SEARCH_ERROR_CODES,
+  SNAPSHOT_ERROR_CODES,
+} from "./constants";
+export type { SearchErrorCode, SnapshotErrorCode } from "./constants";
 export type {
   Project,
   Chapter,

@@ -1,5 +1,6 @@
 import { ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
+import { SEARCH_ERROR_CODES } from "@smudge/shared";
 
 /**
  * Returns the user-facing copy for a replace/search error, or null if the
@@ -13,10 +14,12 @@ export function mapReplaceErrorToMessage(err: unknown): string | null {
   }
   if (err.code === "ABORTED") return null;
   if (err.status === 400) {
-    if (err.code === "MATCH_CAP_EXCEEDED") return STRINGS.findReplace.tooManyMatches;
-    if (err.code === "REGEX_TIMEOUT") return STRINGS.findReplace.searchTimedOut;
-    if (err.code === "CONTENT_TOO_LARGE") return STRINGS.findReplace.contentTooLarge;
-    if (err.code === "INVALID_REGEX") return STRINGS.findReplace.invalidRegex;
+    if (err.code === SEARCH_ERROR_CODES.MATCH_CAP_EXCEEDED)
+      return STRINGS.findReplace.tooManyMatches;
+    if (err.code === SEARCH_ERROR_CODES.REGEX_TIMEOUT) return STRINGS.findReplace.searchTimedOut;
+    if (err.code === SEARCH_ERROR_CODES.CONTENT_TOO_LARGE)
+      return STRINGS.findReplace.contentTooLarge;
+    if (err.code === SEARCH_ERROR_CODES.INVALID_REGEX) return STRINGS.findReplace.invalidRegex;
     // Unhandled 400 codes (e.g. VALIDATION_ERROR) — don't leak raw English
     // server copy into the UI (CLAUDE.md: all strings via strings.ts).
     return STRINGS.findReplace.invalidReplaceRequest;
