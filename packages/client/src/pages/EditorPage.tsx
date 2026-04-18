@@ -235,6 +235,12 @@ export function EditorPage() {
       // each creating an auto-snapshot and remounting the editor.
       if (replaceInFlightRef.current) return;
       replaceInFlightRef.current = true;
+      // Disable the editor for the full round trip so typing during the
+      // in-flight replace cannot dirty it. Without this, a keystroke
+      // between markClean and the response would set dirtyRef=true, and
+      // the unmount cleanup fired by reloadActiveChapter would PATCH
+      // pre-replace content over the server's replaced content.
+      editorRef.current?.setEditable(false);
       try {
         const flushed = (await editorRef.current?.flushSave()) ?? true;
         if (!flushed) {
@@ -299,6 +305,12 @@ export function EditorPage() {
           if (msg) setActionError(msg);
         }
       } finally {
+        // Re-enable editing. If reloadActiveChapter caused a remount,
+        // the old editor instance is destroyed; the handle now points at
+        // a fresh editable editor and this is a no-op. If no remount
+        // occurred (replace did not affect the active chapter), we need
+        // to re-enable so the user can continue typing.
+        editorRef.current?.setEditable(true);
         replaceInFlightRef.current = false;
       }
     },
@@ -376,6 +388,11 @@ export function EditorPage() {
       // parallel POSTs, each creating its own auto-snapshot and remount.
       if (replaceInFlightRef.current) return;
       replaceInFlightRef.current = true;
+      // Disable the editor for the duration of the round trip — same
+      // reasoning as executeReplace: typing during the request would
+      // dirty the editor and the unmount cleanup would PATCH pre-replace
+      // content over the server's replaced content.
+      editorRef.current?.setEditable(false);
       try {
         // Use the query/options that produced the current results — not the
         // current input state — so replace-one targets the match the user
@@ -431,6 +448,7 @@ export function EditorPage() {
           if (msg) setActionError(msg);
         }
       } finally {
+        editorRef.current?.setEditable(true);
         replaceInFlightRef.current = false;
       }
     },

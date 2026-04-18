@@ -19,6 +19,15 @@ export interface EditorHandle {
    * fire-and-forget save that would clobber the just-committed content.
    */
   markClean: () => void;
+  /**
+   * Toggle the editor's editable state. Orchestration paths that mutate
+   * chapter content server-side (project-wide replace) disable editing
+   * for the duration of the round trip so typing during the request
+   * can't dirty the editor and cause the unmount cleanup to PATCH
+   * pre-replace content over the server's replaced content. Safe to
+   * call on a destroyed editor (no-op).
+   */
+  setEditable: (editable: boolean) => void;
 }
 
 interface EditorProps {
@@ -264,6 +273,14 @@ export function Editor({
             clearTimeout(debounceTimerRef.current);
             debounceTimerRef.current = null;
           }
+        },
+        setEditable: (editable: boolean) => {
+          // Pass emitUpdate=false — TipTap's default behaviour is to fire
+          // onUpdate even though setEditable does not change the doc,
+          // which would set dirtyRef=true and trigger a save with the
+          // current (pre-replace) content. That is exactly the race we
+          // are trying to prevent.
+          if (editor && !editor.isDestroyed) editor.setEditable(editable, false);
         },
       };
     }

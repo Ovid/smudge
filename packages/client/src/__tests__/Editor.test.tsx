@@ -299,6 +299,40 @@ describe("Editor", () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }));
   });
 
+  it("setEditable(false) does not emit onUpdate or dirty the editor (C1)", async () => {
+    const onSave = vi.fn().mockResolvedValue(true);
+    const onContentChange = vi.fn();
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+
+    render(
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={onSave}
+        onContentChange={onContentChange}
+        editorRef={editorRef}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(editorRef.current).not.toBeNull();
+    });
+
+    onContentChange.mockClear();
+    onSave.mockClear();
+
+    editorRef.current?.setEditable(false);
+    editorRef.current?.setEditable(true);
+
+    // No content change and no save scheduled — the guard must not flip
+    // dirtyRef because the unmount cleanup would then PATCH pre-replace
+    // content and undo the replace.
+    await act(async () => {});
+    expect(onContentChange).not.toHaveBeenCalled();
+    await editorRef.current?.flushSave();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it("flushSave is a no-op when not dirty", async () => {
     const onSave = vi.fn().mockResolvedValue(true);
     const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
