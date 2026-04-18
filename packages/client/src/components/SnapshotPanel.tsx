@@ -155,6 +155,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
       setConfirmDeleteId(null);
       setDeleteError(null);
       setListError(null);
+      setViewError(null);
     }
 
     const handleCreate = async () => {

@@ -263,6 +263,36 @@ describe("SnapshotPanel", () => {
         expect(screen.getByText(S.viewFailedSaveFirst)).toBeInTheDocument();
       });
     });
+
+    it("clears a stale viewError when the panel reopens for a different chapter (I3)", async () => {
+      const user = userEvent.setup();
+      const snap = makeSnapshot({ id: "snap-77", label: "Pre-view" });
+      vi.mocked(api.snapshots.list).mockResolvedValue([snap]);
+      const onView = vi.fn().mockResolvedValue({ ok: false, reason: "save_failed" });
+
+      const { rerender } = render(
+        <SnapshotPanel {...defaultProps} chapterId="ch-1" onView={onView} />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText("Pre-view")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.view));
+
+      await waitFor(() => {
+        expect(screen.getByText(S.viewFailedSaveFirst)).toBeInTheDocument();
+      });
+
+      // Close panel, reopen for a different chapter. The previous
+      // view-failure banner must not persist.
+      rerender(<SnapshotPanel {...defaultProps} chapterId="ch-1" isOpen={false} onView={onView} />);
+      rerender(<SnapshotPanel {...defaultProps} chapterId="ch-2" isOpen={true} onView={onView} />);
+
+      await waitFor(() => {
+        expect(screen.queryByText(S.viewFailedSaveFirst)).not.toBeInTheDocument();
+      });
+    });
   });
 
   describe("delete snapshot", () => {
