@@ -15,16 +15,19 @@ type TipTapNode = {
 function extractText(node: TipTapNode): string {
   if (node.text) return node.text;
   if (!node.content) return "";
-  let out = "";
+  const parts: string[] = [];
+  let endsWithWhitespace = true;
   for (const child of node.content) {
-    if (child.type === "text") {
-      out += extractText(child);
-    } else {
-      if (out && !/\s$/.test(out)) out += " ";
-      out += extractText(child);
+    if (child.type !== "text" && !endsWithWhitespace) {
+      parts.push(" ");
+      endsWithWhitespace = true;
     }
+    const piece = extractText(child);
+    if (!piece) continue;
+    parts.push(piece);
+    endsWithWhitespace = /\s$/.test(piece);
   }
-  return out;
+  return parts.join("");
 }
 
 export function countWords(doc: Record<string, unknown> | null): number {
