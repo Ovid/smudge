@@ -369,6 +369,14 @@ export function EditorPage() {
       // Mark editor clean so if a reloadActiveChapter remount follows,
       // the unmount cleanup does not PATCH pre-replace content.
       editorRef.current?.markClean();
+      // Purge the localStorage draft cache for the targeted chapter BEFORE
+      // issuing the request — matching the executeReplace pattern. Without
+      // this, a sidebar chapter switch during the in-flight replace would
+      // read the pre-replace draft from localStorage and autosave it over
+      // the server's replaced content. The active chapter was flushed above;
+      // this matters for chapter-scoped replace when the target is a
+      // different chapter than the active one.
+      clearCachedContent(chapterId);
       try {
         const result = await api.search.replace(
           slug,
@@ -384,12 +392,6 @@ export function EditorPage() {
           await findReplace.search(slug);
           return;
         }
-        // Purge the localStorage draft cache for the targeted chapter so a
-        // pre-replace draft for a non-active chapter isn't overlayed on the
-        // server's replaced content when the user navigates back. The active
-        // chapter was flushed above; this matters for chapter-scoped replace
-        // when the target is a different chapter than the active one.
-        clearCachedContent(chapterId);
         const current = getActiveChapter();
         if (current && result.affected_chapter_ids.includes(current.id)) {
           await reloadActiveChapter();

@@ -1311,6 +1311,43 @@ describe("EditorPage find-and-replace confirmation", () => {
     });
   });
 
+  it("handleReplaceOne clears the target chapter's cache BEFORE the replace request (I1)", async () => {
+    const { clearCachedContent } = await import("../hooks/useContentCache");
+    vi.mocked(clearCachedContent).mockClear();
+
+    // Record the call order: clear must land before api.search.replace is
+    // invoked so a chapter-switch mid-flight can't overlay a stale draft
+    // on top of the server's replaced content.
+    const order: string[] = [];
+    vi.mocked(clearCachedContent).mockImplementation((id: string) => {
+      order.push(`clear:${id}`);
+    });
+    vi.mocked(api.search.replace).mockImplementationOnce(async () => {
+      order.push("replace");
+      return { replaced_count: 1, affected_chapter_ids: ["ch-1"] };
+    });
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
+    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+
+    const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
+    await userEvent.click(replaceOne[0]!);
+
+    await waitFor(() => {
+      expect(order).toContain("replace");
+    });
+    expect(order.indexOf("clear:ch-1")).toBeLessThan(order.indexOf("replace"));
+  });
+
   it("handleReplaceOne swallows ABORTED errors silently", async () => {
     const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
