@@ -125,6 +125,14 @@ export function EditorPage() {
   const viewingSnapshotRef = useRef(viewingSnapshot);
   viewingSnapshotRef.current = viewingSnapshot;
 
+  // Guards against overlapping replace requests. Rapid double-clicks on a
+  // per-match Replace button (no confirm dialog) or the Replace-All button
+  // (re-confirmed quickly) would otherwise kick off parallel POSTs — each
+  // creates its own auto-snapshot on the server and triggers independent
+  // reloadActiveChapter remounts, magnifying the in-flight-edit data-loss
+  // race surface.
+  const replaceInFlightRef = useRef(false);
+
   // Frozen snapshot of state at the moment the user clicked "Replace All".
   // This prevents the confirmation copy from drifting if the user edits the
   // panel while the dialog is open.
@@ -222,67 +230,76 @@ export function EditorPage() {
       options: { case_sensitive: boolean; whole_word: boolean; regex: boolean };
     }) => {
       if (!project || !slug) return;
-      const flushed = (await editorRef.current?.flushSave()) ?? true;
-      if (!flushed) {
-        // Attribute the failure to the save, not the replace.
-        setActionError(STRINGS.findReplace.replaceFailedSaveFirst);
-        return;
-      }
-      cancelPendingSaves();
-      // Mark the editor clean so the upcoming remount (from
-      // reloadActiveChapter after a successful replace) does not fire
-      // an unmount PATCH with pre-replace content that would clobber
-      // the just-committed replacement.
-      editorRef.current?.markClean();
-      setActionInfo(null);
-      // Purge the localStorage draft cache BEFORE issuing the replace
-      // request. Without this, a chapter switch during the in-flight
-      // replace would read a pre-replace draft from localStorage and
-      // autosave it over the server's replaced content. The small cost
-      // of a superfluous clear on replace failure is acceptable — the
-      // server won't have mutated anything and the user can retype
-      // any in-progress edits from the displayed content.
-      if (frozen.scope.type === "project") {
-        clearAllCachedContent();
-      } else {
-        clearCachedContent(frozen.scope.chapter_id);
-      }
+      // Guard against overlapping replaces — a double-confirm or racing
+      // clicks from another path would otherwise launch parallel POSTs,
+      // each creating an auto-snapshot and remounting the editor.
+      if (replaceInFlightRef.current) return;
+      replaceInFlightRef.current = true;
       try {
-        const result = await api.search.replace(
-          slug,
-          frozen.query,
-          frozen.replacement,
-          frozen.options,
-          frozen.scope,
-        );
-        // Read the CURRENT active chapter (not the closure value) so a
-        // chapter switch between click and response still reloads when the
-        // now-active chapter was affected.
-        const current = getActiveChapter();
-        if (current && result.affected_chapter_ids.includes(current.id)) {
-          await reloadActiveChapter();
+        const flushed = (await editorRef.current?.flushSave()) ?? true;
+        if (!flushed) {
+          // Attribute the failure to the save, not the replace.
+          setActionError(STRINGS.findReplace.replaceFailedSaveFirst);
+          return;
         }
-        await findReplace.search(slug);
-        snapshotPanelRef.current?.refreshSnapshots();
-        // Panel-handle refresh is a no-op when the snapshot panel is
-        // closed (ref is null). Replace-all just created N auto-snapshots,
-        // so drive the toolbar count directly via the hook.
-        refreshSnapshotCount();
-        // Always surface a positive success banner so the user can
-        // distinguish "did nothing because something went wrong" from
-        // "finished with no user-visible change". When chapters were
-        // skipped due to corrupt content, show the warning through the
-        // error banner as well — success and warning are distinct
-        // regions, not competing for the same slot.
-        setActionInfo(STRINGS.findReplace.replaceSuccess(result.replaced_count));
-        if (result.skipped_chapter_ids && result.skipped_chapter_ids.length > 0) {
-          setActionError(
-            STRINGS.findReplace.skippedAfterReplace(result.skipped_chapter_ids.length),
+        cancelPendingSaves();
+        // Mark the editor clean so the upcoming remount (from
+        // reloadActiveChapter after a successful replace) does not fire
+        // an unmount PATCH with pre-replace content that would clobber
+        // the just-committed replacement.
+        editorRef.current?.markClean();
+        setActionInfo(null);
+        // Purge the localStorage draft cache BEFORE issuing the replace
+        // request. Without this, a chapter switch during the in-flight
+        // replace would read a pre-replace draft from localStorage and
+        // autosave it over the server's replaced content. The small cost
+        // of a superfluous clear on replace failure is acceptable — the
+        // server won't have mutated anything and the user can retype
+        // any in-progress edits from the displayed content.
+        if (frozen.scope.type === "project") {
+          clearAllCachedContent();
+        } else {
+          clearCachedContent(frozen.scope.chapter_id);
+        }
+        try {
+          const result = await api.search.replace(
+            slug,
+            frozen.query,
+            frozen.replacement,
+            frozen.options,
+            frozen.scope,
           );
+          // Read the CURRENT active chapter (not the closure value) so a
+          // chapter switch between click and response still reloads when the
+          // now-active chapter was affected.
+          const current = getActiveChapter();
+          if (current && result.affected_chapter_ids.includes(current.id)) {
+            await reloadActiveChapter();
+          }
+          await findReplace.search(slug);
+          snapshotPanelRef.current?.refreshSnapshots();
+          // Panel-handle refresh is a no-op when the snapshot panel is
+          // closed (ref is null). Replace-all just created N auto-snapshots,
+          // so drive the toolbar count directly via the hook.
+          refreshSnapshotCount();
+          // Always surface a positive success banner so the user can
+          // distinguish "did nothing because something went wrong" from
+          // "finished with no user-visible change". When chapters were
+          // skipped due to corrupt content, show the warning through the
+          // error banner as well — success and warning are distinct
+          // regions, not competing for the same slot.
+          setActionInfo(STRINGS.findReplace.replaceSuccess(result.replaced_count));
+          if (result.skipped_chapter_ids && result.skipped_chapter_ids.length > 0) {
+            setActionError(
+              STRINGS.findReplace.skippedAfterReplace(result.skipped_chapter_ids.length),
+            );
+          }
+        } catch (err) {
+          const msg = mapReplaceErrorToMessage(err);
+          if (msg) setActionError(msg);
         }
-      } catch (err) {
-        const msg = mapReplaceErrorToMessage(err);
-        if (msg) setActionError(msg);
+      } finally {
+        replaceInFlightRef.current = false;
       }
     },
     [
@@ -354,58 +371,67 @@ export function EditorPage() {
   const handleReplaceOne = useCallback(
     async (chapterId: string, matchIndex: number) => {
       if (!project || !slug) return;
-      // Use the query/options that produced the current results — not the
-      // current input state — so replace-one targets the match the user
-      // actually sees, even if they've started typing a new query.
-      const frozenQuery = findReplace.resultsQuery;
-      const frozenOptions = findReplace.resultsOptions;
-      if (!frozenQuery || !frozenOptions) return;
-      const flushed = (await editorRef.current?.flushSave()) ?? true;
-      if (!flushed) {
-        setActionError(STRINGS.findReplace.replaceFailedSaveFirst);
-        return;
-      }
-      cancelPendingSaves();
-      // Mark editor clean so if a reloadActiveChapter remount follows,
-      // the unmount cleanup does not PATCH pre-replace content.
-      editorRef.current?.markClean();
-      // Purge the localStorage draft cache for the targeted chapter BEFORE
-      // issuing the request — matching the executeReplace pattern. Without
-      // this, a sidebar chapter switch during the in-flight replace would
-      // read the pre-replace draft from localStorage and autosave it over
-      // the server's replaced content. The active chapter was flushed above;
-      // this matters for chapter-scoped replace when the target is a
-      // different chapter than the active one.
-      clearCachedContent(chapterId);
+      // Guard against overlapping replaces — per-match Replace has no
+      // confirm dialog, so a rapid double-click would otherwise launch
+      // parallel POSTs, each creating its own auto-snapshot and remount.
+      if (replaceInFlightRef.current) return;
+      replaceInFlightRef.current = true;
       try {
-        const result = await api.search.replace(
-          slug,
-          frozenQuery,
-          findReplace.replacement,
-          frozenOptions,
-          { type: "chapter", chapter_id: chapterId, match_index: matchIndex },
-        );
-        if (result.replaced_count === 0) {
-          setActionError(STRINGS.findReplace.matchNotFound);
-          // Refresh results so the stale match is removed; otherwise clicking
-          // it again produces the same error in a loop.
-          await findReplace.search(slug);
+        // Use the query/options that produced the current results — not the
+        // current input state — so replace-one targets the match the user
+        // actually sees, even if they've started typing a new query.
+        const frozenQuery = findReplace.resultsQuery;
+        const frozenOptions = findReplace.resultsOptions;
+        if (!frozenQuery || !frozenOptions) return;
+        const flushed = (await editorRef.current?.flushSave()) ?? true;
+        if (!flushed) {
+          setActionError(STRINGS.findReplace.replaceFailedSaveFirst);
           return;
         }
-        const current = getActiveChapter();
-        if (current && result.affected_chapter_ids.includes(current.id)) {
-          await reloadActiveChapter();
+        cancelPendingSaves();
+        // Mark editor clean so if a reloadActiveChapter remount follows,
+        // the unmount cleanup does not PATCH pre-replace content.
+        editorRef.current?.markClean();
+        // Purge the localStorage draft cache for the targeted chapter BEFORE
+        // issuing the request — matching the executeReplace pattern. Without
+        // this, a sidebar chapter switch during the in-flight replace would
+        // read the pre-replace draft from localStorage and autosave it over
+        // the server's replaced content. The active chapter was flushed above;
+        // this matters for chapter-scoped replace when the target is a
+        // different chapter than the active one.
+        clearCachedContent(chapterId);
+        try {
+          const result = await api.search.replace(
+            slug,
+            frozenQuery,
+            findReplace.replacement,
+            frozenOptions,
+            { type: "chapter", chapter_id: chapterId, match_index: matchIndex },
+          );
+          if (result.replaced_count === 0) {
+            setActionError(STRINGS.findReplace.matchNotFound);
+            // Refresh results so the stale match is removed; otherwise clicking
+            // it again produces the same error in a loop.
+            await findReplace.search(slug);
+            return;
+          }
+          const current = getActiveChapter();
+          if (current && result.affected_chapter_ids.includes(current.id)) {
+            await reloadActiveChapter();
+          }
+          await findReplace.search(slug);
+          snapshotPanelRef.current?.refreshSnapshots();
+          // Panel-handle refresh is a no-op when the snapshot panel is
+          // closed (ref is null). Replace-one created an auto-snapshot, so
+          // drive the toolbar count directly via the hook.
+          refreshSnapshotCount();
+          setActionInfo(STRINGS.findReplace.replaceSuccess(result.replaced_count));
+        } catch (err) {
+          const msg = mapReplaceErrorToMessage(err);
+          if (msg) setActionError(msg);
         }
-        await findReplace.search(slug);
-        snapshotPanelRef.current?.refreshSnapshots();
-        // Panel-handle refresh is a no-op when the snapshot panel is
-        // closed (ref is null). Replace-one created an auto-snapshot, so
-        // drive the toolbar count directly via the hook.
-        refreshSnapshotCount();
-        setActionInfo(STRINGS.findReplace.replaceSuccess(result.replaced_count));
-      } catch (err) {
-        const msg = mapReplaceErrorToMessage(err);
-        if (msg) setActionError(msg);
+      } finally {
+        replaceInFlightRef.current = false;
       }
     },
     [

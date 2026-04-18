@@ -1311,6 +1311,46 @@ describe("EditorPage find-and-replace confirmation", () => {
     });
   });
 
+  it("rapid double-clicks on Replace do not launch overlapping requests (I5)", async () => {
+    // api.search.replace returns a deferred promise we can hold open to
+    // simulate a slow round trip; the second click must be ignored while
+    // the first is still in flight.
+    let resolveReplace: ((v: { replaced_count: number; affected_chapter_ids: string[] }) => void)!;
+    const pending = new Promise<{ replaced_count: number; affected_chapter_ids: string[] }>(
+      (resolve) => {
+        resolveReplace = resolve;
+      },
+    );
+    vi.mocked(api.search.replace).mockReturnValueOnce(pending);
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
+    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+
+    const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
+
+    // Two clicks while the first request is in flight.
+    await userEvent.click(replaceOne[0]!);
+    await userEvent.click(replaceOne[0]!);
+
+    // Only one request issued — the second click is swallowed by the guard.
+    expect(api.search.replace).toHaveBeenCalledTimes(1);
+
+    // Release the first request so the handler finishes cleanly.
+    resolveReplace({ replaced_count: 1, affected_chapter_ids: ["ch-1"] });
+    await act(async () => {
+      await pending;
+    });
+  });
+
   it("handleReplaceOne clears the target chapter's cache BEFORE the replace request (I1)", async () => {
     const { clearCachedContent } = await import("../hooks/useContentCache");
     vi.mocked(clearCachedContent).mockClear();
