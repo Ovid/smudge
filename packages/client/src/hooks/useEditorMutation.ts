@@ -13,8 +13,9 @@ export type MutationDirective<T = void> = {
 
 export type MutationResult<T = void> =
   | { ok: true; data: T }
-  | { ok: false; stage: "reload"; data: T; error?: unknown }
-  | { ok: false; stage: "flush" | "mutate" | "busy"; error?: unknown };
+  | { ok: false; stage: "reload"; data: T; error?: string }
+  | { ok: false; stage: "flush" | "mutate"; error: unknown }
+  | { ok: false; stage: "busy" };
 
 export type UseEditorMutationArgs = {
   editorRef: MutableRefObject<EditorHandle | null>;
