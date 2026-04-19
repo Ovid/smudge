@@ -409,6 +409,7 @@ export function EditorPage() {
     [
       project,
       slug,
+      findReplace,
       finalizeReplaceSuccess,
       getActiveChapter,
       setActionError,
