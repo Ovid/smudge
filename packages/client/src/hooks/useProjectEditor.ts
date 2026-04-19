@@ -61,28 +61,36 @@ export function useProjectEditor(slug: string | undefined) {
     }
   }, []);
 
+  // Bump the select-chapter seq. Extends the same short-circuit
+  // discipline cancelInFlightSave provides for saves (I5):
+  // reloadActiveChapter and handleSelectChapter both gate their
+  // post-await setState on seq === selectChapterSeqRef.current, so a
+  // late-resolving GET after unmount becomes a cheap no-op instead of
+  // setActiveChapter on a gone component.
+  //
+  // Wrapped in useCallback (matching cancelInFlightSave) so the ref
+  // access happens inside a stable function identity rather than
+  // directly in the cleanup closure — the react-hooks/exhaustive-deps
+  // rule would otherwise flag the inline ref read as potentially stale,
+  // even though a monotonic seq counter is exactly the kind of ref that
+  // wants the latest value at cleanup time.
+  const cancelInFlightSelect = useCallback(() => {
+    ++selectChapterSeqRef.current;
+  }, []);
+
   // Unmount cleanup: the retry loop inside handleSave runs outside React's
   // render phase, so without this teardown an in-flight save-backoff sleep
   // would wake after EditorPage unmounted, call api.chapters.update, and
   // schedule state writes on a gone component (and in dev it would log the
   // "state update on unmounted component" warning). cancelInFlightSave
   // covers the side-effect-free portion of cancelPendingSaves (no setState
-  // on unmount).
-  //
-  // The selectChapterSeqRef bump here extends the same discipline to
-  // reloadActiveChapter and handleSelectChapter (I5): both gate their
-  // post-await setState on seq === selectChapterSeqRef.current, so
-  // bumping on unmount makes those calls short-circuit cleanly instead
-  // of resolving into setActiveChapter/setChapterWordCount on a gone
-  // component. Without this, a reload GET in flight during unmount
-  // would resolve and setState, triggering React's "state update on
-  // unmounted component" warning.
+  // on unmount); cancelInFlightSelect does the same for reloads/selects.
   useEffect(() => {
     return () => {
       cancelInFlightSave();
-      ++selectChapterSeqRef.current;
+      cancelInFlightSelect();
     };
-  }, [cancelInFlightSave]);
+  }, [cancelInFlightSave, cancelInFlightSelect]);
 
   useEffect(() => {
     let cancelled = false;
@@ -260,11 +268,7 @@ export function useProjectEditor(slug: string | undefined) {
       // chapters between the rejected PATCH being sent and its 4xx
       // landing, a different path (handleSelectChapter) now owns this
       // chapter's cache and we must not stomp on it (I2).
-      if (
-        rejected4xx &&
-        rejected4xx.code === "VALIDATION_ERROR" &&
-        seq === saveSeqRef.current
-      ) {
+      if (rejected4xx && rejected4xx.code === "VALIDATION_ERROR" && seq === saveSeqRef.current) {
         clearCachedContent(savingChapterId);
         if (latestContentRef.current?.id === savingChapterId) {
           latestContentRef.current = null;
