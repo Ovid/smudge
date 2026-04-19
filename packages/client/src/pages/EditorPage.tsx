@@ -305,7 +305,7 @@ export function EditorPage() {
         return {
           clearCacheFor: resp.affected_chapter_ids,
           reloadActiveChapter: reload,
-          reloadChapterId: reload ? current!.id : undefined,
+          reloadChapterId: reload && current ? current.id : undefined,
           data: resp,
         };
       });
@@ -460,7 +460,7 @@ export function EditorPage() {
         return {
           clearCacheFor: resp.replaced_count > 0 ? resp.affected_chapter_ids : [],
           reloadActiveChapter: reload,
-          reloadChapterId: reload ? current!.id : undefined,
+          reloadChapterId: reload && current ? current.id : undefined,
           data: resp,
         };
       });

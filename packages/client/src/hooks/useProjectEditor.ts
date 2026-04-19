@@ -51,6 +51,10 @@ export function useProjectEditor(slug: string | undefined) {
   // makes the loop short-circuit on its next iteration.
   useEffect(() => {
     return () => {
+      // These refs intentionally hold the LIVE state at unmount time —
+      // they are not React-rendered nodes, so the exhaustive-deps lint
+      // warning about stale ref reads in cleanup does not apply here.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       ++saveSeqRef.current;
       saveAbortRef.current?.abort();
       saveAbortRef.current = null;
@@ -291,10 +295,7 @@ export function useProjectEditor(slug: string | undefined) {
   }, []);
 
   const reloadActiveChapter = useCallback(
-    async (
-      onError?: (message: string) => void,
-      expectedChapterId?: string,
-    ): Promise<boolean> => {
+    async (onError?: (message: string) => void, expectedChapterId?: string): Promise<boolean> => {
       const current = activeChapterRef.current;
       if (!current) return false;
       // If the caller passed an expected chapter id and the active chapter

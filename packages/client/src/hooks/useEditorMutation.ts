@@ -87,12 +87,9 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         }
         if (directive.reloadActiveChapter) {
           let reloadMessage: string | undefined;
-          const ok = await projectEditorRef.current.reloadActiveChapter(
-            (msg) => {
-              reloadMessage = msg;
-            },
-            directive.reloadChapterId,
-          );
+          const ok = await projectEditorRef.current.reloadActiveChapter((msg) => {
+            reloadMessage = msg;
+          }, directive.reloadChapterId);
           if (!ok) {
             reloadFailed = true;
             return {
