@@ -60,8 +60,7 @@ export function useProjectEditor(slug: string | undefined) {
         // the newly-loaded chapter set.
         const currentChapterId = activeChapterRef.current?.id;
         const stillInProject =
-          currentChapterId !== undefined &&
-          data.chapters.some((c) => c.id === currentChapterId);
+          currentChapterId !== undefined && data.chapters.some((c) => c.id === currentChapterId);
         if (!stillInProject) {
           setActiveChapter(null);
           activeChapterRef.current = null;
