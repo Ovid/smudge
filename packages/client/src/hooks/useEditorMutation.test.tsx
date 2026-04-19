@@ -213,7 +213,12 @@ describe("useEditorMutation — reload failure", () => {
       data: { replaced: 3 },
       error: "reload-failed-msg",
     });
-    expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(true);
+    // Editor must stay read-only on reload failure: markClean + cache-clear
+    // have already happened, but the TipTap doc still holds pre-mutation
+    // content. Re-enabling would let the user type over stale content and
+    // the next auto-save would silently revert the server-committed replace.
+    expect(editorRef.current!.setEditable).toHaveBeenCalledTimes(1);
+    expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(false);
     // cache-clear still happened — server committed the mutation
     expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["c1"]);
   });
@@ -236,6 +241,15 @@ describe("useEditorMutation — reload failure", () => {
         expect(res.data).toEqual({ affected: ["c9"] });
       }
     }
+    // inFlightRef must still be released so a user-triggered refresh works.
+    // Verify by firing another run and confirming it is not rejected as busy.
+    projectEditor.reloadActiveChapter = vi.fn(async () => true);
+    const res2 = await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: true,
+      data: undefined,
+    }));
+    expect(res2.ok).toBe(true);
   });
 });
 

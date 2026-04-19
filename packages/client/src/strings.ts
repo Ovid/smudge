@@ -292,7 +292,7 @@ export const STRINGS = {
     restoreFailedSaveFirst:
       "Unable to save pending changes. Try again once your connection recovers before restoring.",
     restoreSucceededReloadFailed:
-      "Snapshot restored, but reloading the chapter failed. Refresh the page to see the restored content.",
+      "Snapshot restored, but reloading the chapter failed. Refresh the page before editing — editing now would overwrite the restore.",
     renderError: "Unable to render snapshot content",
     backToEditing: "Back to editing",
     viewingBanner: (label: string, date: string) => `Viewing snapshot: ${label} — ${date}`,
@@ -333,7 +333,7 @@ export const STRINGS = {
     replaceFailedSaveFirst:
       "Unable to save pending changes. Try again once your connection recovers before replacing.",
     replaceSucceededReloadFailed:
-      "Replace succeeded. Reload the chapter to see the updated content.",
+      "Replace succeeded, but reloading the chapter failed. Refresh the page before editing — editing now would overwrite the replacement.",
     replaceScopeNotFound: "The chapter for this replace is no longer available.",
     replaceProjectNotFound: "This project is no longer available.",
     searchScopeNotFound: "This project is no longer available.",

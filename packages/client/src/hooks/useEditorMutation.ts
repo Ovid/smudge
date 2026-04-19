@@ -47,6 +47,14 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
       inFlightRef.current = true;
       const editor = args.editorRef.current;
       editor?.setEditable(false);
+      // Track the reload-failure path explicitly: we must NOT re-enable the
+      // editor in that case. By the time reload fails, markClean() has run
+      // and the cache has been cleared, but the TipTap document still shows
+      // the pre-mutation content. Re-enabling would let the user type over
+      // stale content, whose auto-save PATCH would silently revert the
+      // server-side replace/restore. Keep the editor read-only and surface
+      // a banner directing the user to refresh.
+      let reloadFailed = false;
       try {
         try {
           const flushed = await editor?.flushSave();
@@ -77,6 +85,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             reloadMessage = msg;
           });
           if (!ok) {
+            reloadFailed = true;
             return {
               ok: false,
               stage: "reload",
@@ -87,7 +96,9 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         }
         return { ok: true, data: directive.data };
       } finally {
-        editor?.setEditable(true);
+        if (!reloadFailed) {
+          editor?.setEditable(true);
+        }
         inFlightRef.current = false;
       }
     },
