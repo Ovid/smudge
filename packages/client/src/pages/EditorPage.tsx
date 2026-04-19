@@ -32,7 +32,7 @@ import { useTrashManager } from "../hooks/useTrashManager";
 import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcuts";
 import { api, ApiRequestError } from "../api/client";
 import { mapReplaceErrorToMessage } from "../utils/findReplaceErrors";
-import { clearAllCachedContent, clearCachedContent } from "../hooks/useContentCache";
+import { clearAllCachedContent } from "../hooks/useContentCache";
 import { Logo } from "../components/Logo";
 import { generateHTML } from "@tiptap/html";
 import DOMPurify from "dompurify";
@@ -270,20 +270,6 @@ export function EditorPage() {
         // the just-committed replacement.
         editorRef.current?.markClean();
         setActionInfo(null);
-        // Purge the localStorage draft cache BEFORE issuing the replace
-        // request. Without this, a chapter switch during the in-flight
-        // replace would read a pre-replace draft from localStorage and
-        // autosave it over the server's replaced content. The small cost
-        // of a superfluous clear on replace failure is acceptable — the
-        // server won't have mutated anything and the user can retype
-        // any in-progress edits from the displayed content.
-        if (frozen.scope.type === "project") {
-          // Only clear this project's chapter cache keys — don't nuke
-          // drafts for other projects open in other tabs.
-          clearAllCachedContent((project.chapters ?? []).map((c) => c.id));
-        } else {
-          clearCachedContent(frozen.scope.chapter_id);
-        }
         try {
           const result = await api.search.replace(
             slug,
@@ -292,6 +278,18 @@ export function EditorPage() {
             frozen.options,
             frozen.scope,
           );
+          // Purge the localStorage draft cache AFTER the server confirms the
+          // replace, scoped to the chapters the server actually mutated.
+          // Clearing pre-flight would wipe every draft in the project on a
+          // network blip; scoping to affected_chapter_ids protects unrelated
+          // chapters' drafts and still prevents a later chapter switch from
+          // overlaying pre-replace content on top of the server's replaced
+          // content. The editor is setEditable(false) for the full round
+          // trip, so the active chapter cannot accrue new cache writes in
+          // the interim.
+          if (result.affected_chapter_ids.length > 0) {
+            clearAllCachedContent(result.affected_chapter_ids);
+          }
           // Read the CURRENT active chapter (not the closure value) so a
           // chapter switch between click and response still reloads when the
           // now-active chapter was affected.
@@ -430,14 +428,6 @@ export function EditorPage() {
         // replace so an error on this one doesn't co-display with the old
         // "Replaced N occurrences" message.
         setActionInfo(null);
-        // Purge the localStorage draft cache for the targeted chapter BEFORE
-        // issuing the request — matching the executeReplace pattern. Without
-        // this, a sidebar chapter switch during the in-flight replace would
-        // read the pre-replace draft from localStorage and autosave it over
-        // the server's replaced content. The active chapter was flushed above;
-        // this matters for chapter-scoped replace when the target is a
-        // different chapter than the active one.
-        clearCachedContent(chapterId);
         try {
           const result = await api.search.replace(
             slug,
@@ -452,6 +442,12 @@ export function EditorPage() {
             // it again produces the same error in a loop.
             await findReplace.search(slug);
             return;
+          }
+          // Purge the localStorage draft cache AFTER the server confirms
+          // the replace, scoped to the mutated chapter. Clearing pre-flight
+          // would destroy a non-active chapter's draft on a network blip.
+          if (result.affected_chapter_ids.length > 0) {
+            clearAllCachedContent(result.affected_chapter_ids);
           }
           const current = getActiveChapter();
           if (current && result.affected_chapter_ids.includes(current.id)) {
