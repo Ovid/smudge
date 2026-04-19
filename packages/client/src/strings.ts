@@ -337,13 +337,21 @@ export const STRINGS = {
     replaceOne: "Replace",
     replaceAllInChapter: "Replace All in Chapter",
     replaceAllInManuscript: "Replace All in Manuscript",
+    replaceAllInManuscriptDelete: "Delete All in Manuscript",
     replaceConfirmTitle: "Replace across manuscript?",
     replaceChapterConfirmTitle: "Replace in chapter?",
+    replaceDeleteConfirmTitle: "Delete across manuscript?",
+    replaceDeleteChapterConfirmTitle: "Delete in chapter?",
     replaceConfirm: (count: number, search: string, replace: string, chapters: number) =>
       `Replace ${count} occurrence${count === 1 ? "" : "s"} of '${search}' with '${replace}' across ${chapters} chapter${chapters === 1 ? "" : "s"}? Snapshots of all affected chapters will be created automatically.`,
     replaceChapterConfirm: (count: number, search: string, replace: string) =>
       `Replace ${count} occurrence${count === 1 ? "" : "s"} of '${search}' with '${replace}' in this chapter? A snapshot will be created automatically.`,
+    replaceDeleteConfirm: (count: number, search: string, chapters: number) =>
+      `Delete ${count} occurrence${count === 1 ? "" : "s"} of '${search}' across ${chapters} chapter${chapters === 1 ? "" : "s"}? The replacement is empty, so every match will be removed. Snapshots of all affected chapters will be created automatically.`,
+    replaceDeleteChapterConfirm: (count: number, search: string) =>
+      `Delete ${count} occurrence${count === 1 ? "" : "s"} of '${search}' in this chapter? The replacement is empty, so every match will be removed. A snapshot will be created automatically.`,
     replaceConfirmButton: "Replace All",
+    replaceDeleteConfirmButton: "Delete All",
     replaceCancelButton: "Cancel",
     matchNotFound: "Match no longer found — try searching again.",
     invalidRegex: "Invalid regular expression",

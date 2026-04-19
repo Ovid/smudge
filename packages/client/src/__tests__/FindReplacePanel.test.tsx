@@ -206,13 +206,27 @@ describe("FindReplacePanel", () => {
       expect(onReplaceOne).toHaveBeenCalledWith("ch-2", 0);
     });
 
-    it("per-match 'Replace' button is disabled when replacement is empty", () => {
+    it("per-match 'Replace' button stays enabled with empty replacement (delete mode)", async () => {
+      const user = userEvent.setup();
+      const onReplaceOne = vi.fn();
       const results = makeResults();
-      render(<FindReplacePanel {...defaultProps} query="dark" replacement="" results={results} />);
+      render(
+        <FindReplacePanel
+          {...defaultProps}
+          query="dark"
+          replacement=""
+          results={results}
+          onReplaceOne={onReplaceOne}
+        />,
+      );
+      // Empty replacement is a valid "delete this match" — clicking must
+      // still fire the callback so the user can delete individual matches.
       const replaceButtons = screen.getAllByRole("button", { name: S.replaceOne });
       for (const btn of replaceButtons) {
-        expect(btn).toBeDisabled();
+        expect(btn).not.toBeDisabled();
       }
+      await user.click(replaceButtons[0]!);
+      expect(onReplaceOne).toHaveBeenCalledWith("ch-1", 0);
     });
 
     it("'Replace All in Chapter' button calls onReplaceAllInChapter", async () => {
@@ -240,14 +254,27 @@ describe("FindReplacePanel", () => {
       expect(onReplaceAllInChapter).toHaveBeenCalledWith("ch-2");
     });
 
-    it("'Replace All in Chapter' button is disabled when no replacement text", () => {
+    it("'Replace All in Chapter' stays enabled with empty replacement (delete mode)", async () => {
+      const user = userEvent.setup();
+      const onReplaceAllInChapter = vi.fn();
       const results = makeResults();
-      render(<FindReplacePanel {...defaultProps} query="dark" replacement="" results={results} />);
-
+      render(
+        <FindReplacePanel
+          {...defaultProps}
+          query="dark"
+          replacement=""
+          results={results}
+          onReplaceAllInChapter={onReplaceAllInChapter}
+        />,
+      );
+      // Empty replacement is a valid "delete all in chapter" — the downstream
+      // confirmation dialog uses explicit delete copy before committing.
       const chapterButtons = screen.getAllByRole("button", { name: S.replaceAllInChapter });
       for (const btn of chapterButtons) {
-        expect(btn).toBeDisabled();
+        expect(btn).not.toBeDisabled();
       }
+      await user.click(chapterButtons[0]!);
+      expect(onReplaceAllInChapter).toHaveBeenCalledWith("ch-1");
     });
 
     it("'Replace All in Manuscript' button calls onReplaceAllInManuscript", async () => {
@@ -273,14 +300,28 @@ describe("FindReplacePanel", () => {
       expect(onReplaceAllInManuscript).toHaveBeenCalled();
     });
 
-    it("'Replace All in Manuscript' button is disabled when no replacement text", () => {
+    it("'Replace All in Manuscript' switches to delete-mode label and stays enabled with empty replacement", async () => {
+      const user = userEvent.setup();
+      const onReplaceAllInManuscript = vi.fn();
       const results = makeResults();
-      render(<FindReplacePanel {...defaultProps} query="dark" replacement="" results={results} />);
-
-      const manuscriptButton = screen.getByRole("button", {
-        name: S.replaceAllInManuscript,
+      render(
+        <FindReplacePanel
+          {...defaultProps}
+          query="dark"
+          replacement=""
+          results={results}
+          onReplaceAllInManuscript={onReplaceAllInManuscript}
+        />,
+      );
+      // The button copy flips to "Delete All in Manuscript" so the user
+      // sees the destructive intent on the button itself. The downstream
+      // confirmation dialog uses delete copy as well.
+      const deleteButton = screen.getByRole("button", {
+        name: S.replaceAllInManuscriptDelete,
       });
-      expect(manuscriptButton).toBeDisabled();
+      expect(deleteButton).not.toBeDisabled();
+      await user.click(deleteButton);
+      expect(onReplaceAllInManuscript).toHaveBeenCalled();
     });
   });
 

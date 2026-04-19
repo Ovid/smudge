@@ -1038,42 +1038,70 @@ export function EditorPage() {
         />
       )}
 
-      {replaceConfirmation && (
-        <ConfirmDialog
-          title={
-            replaceConfirmation.scope.type === "project"
-              ? STRINGS.findReplace.replaceConfirmTitle
-              : STRINGS.findReplace.replaceChapterConfirmTitle
-          }
-          body={
-            replaceConfirmation.scope.type === "project"
-              ? STRINGS.findReplace.replaceConfirm(
-                  replaceConfirmation.totalCount,
-                  replaceConfirmation.query,
-                  replaceConfirmation.replacement,
-                  replaceConfirmation.chapterCount,
-                )
-              : STRINGS.findReplace.replaceChapterConfirm(
-                  replaceConfirmation.perChapterCount,
-                  replaceConfirmation.query,
-                  replaceConfirmation.replacement,
-                )
-          }
-          confirmLabel={STRINGS.findReplace.replaceConfirmButton}
-          cancelLabel={STRINGS.findReplace.replaceCancelButton}
-          onConfirm={() => {
-            const frozen = replaceConfirmation;
-            setReplaceConfirmation(null);
-            void executeReplace({
-              scope: frozen.scope,
-              query: frozen.query,
-              replacement: frozen.replacement,
-              options: frozen.options,
-            });
-          }}
-          onCancel={() => setReplaceConfirmation(null)}
-        />
-      )}
+      {replaceConfirmation &&
+        (() => {
+          // Empty replacement is a valid "delete all matches" operation. Use
+          // distinct delete-copy in the dialog so the user can't confuse it
+          // with a Replace that would substitute an empty string — the
+          // destructive intent must be explicit before the user commits.
+          const isDelete = replaceConfirmation.replacement.length === 0;
+          const isProjectScope = replaceConfirmation.scope.type === "project";
+          return (
+            <ConfirmDialog
+              title={
+                isDelete
+                  ? isProjectScope
+                    ? STRINGS.findReplace.replaceDeleteConfirmTitle
+                    : STRINGS.findReplace.replaceDeleteChapterConfirmTitle
+                  : isProjectScope
+                    ? STRINGS.findReplace.replaceConfirmTitle
+                    : STRINGS.findReplace.replaceChapterConfirmTitle
+              }
+              body={
+                isDelete
+                  ? isProjectScope
+                    ? STRINGS.findReplace.replaceDeleteConfirm(
+                        replaceConfirmation.totalCount,
+                        replaceConfirmation.query,
+                        replaceConfirmation.chapterCount,
+                      )
+                    : STRINGS.findReplace.replaceDeleteChapterConfirm(
+                        replaceConfirmation.perChapterCount,
+                        replaceConfirmation.query,
+                      )
+                  : isProjectScope
+                    ? STRINGS.findReplace.replaceConfirm(
+                        replaceConfirmation.totalCount,
+                        replaceConfirmation.query,
+                        replaceConfirmation.replacement,
+                        replaceConfirmation.chapterCount,
+                      )
+                    : STRINGS.findReplace.replaceChapterConfirm(
+                        replaceConfirmation.perChapterCount,
+                        replaceConfirmation.query,
+                        replaceConfirmation.replacement,
+                      )
+              }
+              confirmLabel={
+                isDelete
+                  ? STRINGS.findReplace.replaceDeleteConfirmButton
+                  : STRINGS.findReplace.replaceConfirmButton
+              }
+              cancelLabel={STRINGS.findReplace.replaceCancelButton}
+              onConfirm={() => {
+                const frozen = replaceConfirmation;
+                setReplaceConfirmation(null);
+                void executeReplace({
+                  scope: frozen.scope,
+                  query: frozen.query,
+                  replacement: frozen.replacement,
+                  options: frozen.options,
+                });
+              }}
+              onCancel={() => setReplaceConfirmation(null)}
+            />
+          );
+        })()}
 
       <div aria-live="polite" className="sr-only" data-testid="nav-announcement">
         {navAnnouncement}

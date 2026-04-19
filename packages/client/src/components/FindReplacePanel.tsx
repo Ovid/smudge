@@ -102,7 +102,6 @@ export function FindReplacePanel({
   if (!isOpen) return null;
 
   const hasResults = results !== null && results.total_count > 0;
-  const hasReplacement = replacement.length > 0;
 
   return (
     <aside
@@ -160,14 +159,16 @@ export function FindReplacePanel({
             maxLength={MAX_REPLACE_LENGTH}
             onChange={(e) => onReplacementChange(e.target.value)}
             onKeyDown={(e) => {
-              // Match the footer button's disabled condition: Enter only
-              // fires Replace All when there are results AND a replacement.
+              // Enter fires Replace All whenever there are results. An
+              // empty replacement is a valid "delete all matches" operation
+              // — the confirmation dialog downstream uses explicit delete
+              // copy so the user understands the consequences before
+              // committing.
               if (
                 e.key === "Enter" &&
                 !e.shiftKey &&
                 results !== null &&
-                results.total_count > 0 &&
-                replacement.length > 0
+                results.total_count > 0
               ) {
                 e.preventDefault();
                 onReplaceAllInManuscript();
@@ -264,9 +265,8 @@ export function FindReplacePanel({
                     </span>
                     <button
                       type="button"
-                      disabled={!hasReplacement}
                       onClick={() => onReplaceOne(chapter.chapter_id, match.index)}
-                      className="text-xs font-medium text-accent hover:text-accent/80 transition-colors font-sans flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="text-xs font-medium text-accent hover:text-accent/80 transition-colors font-sans flex-shrink-0"
                     >
                       {S.replaceOne}
                     </button>
@@ -277,9 +277,8 @@ export function FindReplacePanel({
               {/* Replace all in chapter */}
               <button
                 type="button"
-                disabled={!hasReplacement}
                 onClick={() => onReplaceAllInChapter(chapter.chapter_id)}
-                className="mt-2 text-xs font-medium text-accent border border-accent/40 rounded px-2 py-1 hover:bg-accent/10 transition-colors font-sans w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                className="mt-2 text-xs font-medium text-accent border border-accent/40 rounded px-2 py-1 hover:bg-accent/10 transition-colors font-sans w-full"
               >
                 {S.replaceAllInChapter}
               </button>
@@ -292,11 +291,10 @@ export function FindReplacePanel({
         <div className="border-t border-border/40 px-4 py-3">
           <button
             type="button"
-            disabled={!hasReplacement}
             onClick={onReplaceAllInManuscript}
-            className="w-full text-sm font-semibold text-white bg-red-700 rounded px-3 py-1.5 hover:bg-red-800 transition-colors font-sans disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full text-sm font-semibold text-white bg-red-700 rounded px-3 py-1.5 hover:bg-red-800 transition-colors font-sans"
           >
-            {S.replaceAllInManuscript}
+            {replacement.length === 0 ? S.replaceAllInManuscriptDelete : S.replaceAllInManuscript}
           </button>
         </div>
       )}

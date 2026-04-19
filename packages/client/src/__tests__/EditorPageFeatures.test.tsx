@@ -1284,8 +1284,8 @@ describe("EditorPage find-and-replace confirmation", () => {
   });
 
   it("handleReplaceOne clears the target chapter's cached draft on success", async () => {
-    const { clearCachedContent } = await import("../hooks/useContentCache");
-    vi.mocked(clearCachedContent).mockClear();
+    const { clearAllCachedContent } = await import("../hooks/useContentCache");
+    vi.mocked(clearAllCachedContent).mockClear();
     vi.mocked(api.search.replace).mockResolvedValueOnce({
       replaced_count: 1,
       affected_chapter_ids: ["ch-1"],
@@ -1307,7 +1307,7 @@ describe("EditorPage find-and-replace confirmation", () => {
     await userEvent.click(replaceOne[0]!);
 
     await waitFor(() => {
-      expect(clearCachedContent).toHaveBeenCalledWith("ch-1");
+      expect(clearAllCachedContent).toHaveBeenCalledWith(["ch-1"]);
     });
   });
 
@@ -1354,16 +1354,17 @@ describe("EditorPage find-and-replace confirmation", () => {
     });
   });
 
-  it("handleReplaceOne clears the target chapter's cache BEFORE the replace request (I1)", async () => {
-    const { clearCachedContent } = await import("../hooks/useContentCache");
-    vi.mocked(clearCachedContent).mockClear();
+  it("handleReplaceOne clears the target chapter's cache AFTER the replace response succeeds", async () => {
+    const { clearAllCachedContent } = await import("../hooks/useContentCache");
+    vi.mocked(clearAllCachedContent).mockClear();
 
-    // Record the call order: clear must land before api.search.replace is
-    // invoked so a chapter-switch mid-flight can't overlay a stale draft
-    // on top of the server's replaced content.
+    // Record the call order: clear must land AFTER api.search.replace
+    // resolves. A pre-flight clear on a failed replace would destroy the
+    // draft even though the server never mutated anything; scoping the
+    // clear to result.affected_chapter_ids keeps it correctness-preserving.
     const order: string[] = [];
-    vi.mocked(clearCachedContent).mockImplementation((id: string) => {
-      order.push(`clear:${id}`);
+    vi.mocked(clearAllCachedContent).mockImplementation((ids: string[]) => {
+      order.push(`clear:${ids.join(",")}`);
     });
     vi.mocked(api.search.replace).mockImplementationOnce(async () => {
       order.push("replace");
@@ -1386,9 +1387,9 @@ describe("EditorPage find-and-replace confirmation", () => {
     await userEvent.click(replaceOne[0]!);
 
     await waitFor(() => {
-      expect(order).toContain("replace");
+      expect(order).toContain("clear:ch-1");
     });
-    expect(order.indexOf("clear:ch-1")).toBeLessThan(order.indexOf("replace"));
+    expect(order.indexOf("replace")).toBeLessThan(order.indexOf("clear:ch-1"));
   });
 
   it("handleReplaceOne swallows ABORTED errors silently", async () => {
