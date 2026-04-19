@@ -254,6 +254,56 @@ describe("snapshot routes", () => {
       expect(parsed.content[0].content[0].text).toBe("Hello world");
     });
 
+    it("returns 409 CROSS_PROJECT_IMAGE_REF when snapshot references a foreign image", async () => {
+      // CLAUDE.md: 409 is the status for a well-formed request that
+      // violates a resource-state constraint the client needs to resolve
+      // (move/re-upload the image, or pick a different snapshot). The
+      // CORRUPT_SNAPSHOT path stays at 400 — that is a validation error.
+      const { chapterId } = await createTestProject();
+
+      // Seed a foreign project + image that doesn't belong to our project.
+      const foreignProjectId = "00000000-0000-0000-0000-000000000fff";
+      const foreignImageId = "00000000-0000-0000-0000-000000000eee";
+      const now = new Date().toISOString();
+      await t.db("projects").insert({
+        id: foreignProjectId,
+        title: "Foreign",
+        slug: "foreign",
+        mode: "fiction",
+        created_at: now,
+        updated_at: now,
+      });
+      await t.db("images").insert({
+        id: foreignImageId,
+        project_id: foreignProjectId,
+        filename: "x.png",
+        mime_type: "image/png",
+        size_bytes: 1,
+        reference_count: 1,
+        created_at: now,
+      });
+
+      // Snapshot our chapter, then rewrite its content to point at the
+      // foreign image — the restore path must refuse to apply it.
+      const createRes = await request(t.app)
+        .post(`/api/chapters/${chapterId}/snapshots`)
+        .send({ label: "foreign-ref" });
+      const snapshotId = createRes.body.snapshot.id;
+      const crossProjectContent = JSON.stringify({
+        type: "doc",
+        content: [{ type: "image", attrs: { src: `/api/images/${foreignImageId}` } }],
+      });
+      await t
+        .db("chapter_snapshots")
+        .where({ id: snapshotId })
+        .update({ content: crossProjectContent });
+
+      const res = await request(t.app).post(`/api/snapshots/${snapshotId}/restore`);
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe("CROSS_PROJECT_IMAGE_REF");
+    });
+
     it("returns 400 for non-UUID snapshot id on GET", async () => {
       const res = await request(t.app).get("/api/snapshots/not-a-uuid");
       expect(res.status).toBe(400);

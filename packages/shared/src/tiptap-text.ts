@@ -418,14 +418,14 @@ function atomToCharSet(atom: string): Set<number> | null {
   if (atom.startsWith("[") && atom.endsWith("]")) {
     return charClassToCharSet(atom.slice(1, -1));
   }
-  if (atom.startsWith("(")) return null;
-  if (atom === ".") return null;
-  if (atom.length === 1) {
-    const code = atom.charCodeAt(0);
-    if (code >= ASCII_MAX) return null;
-    return new Set([code]);
-  }
-  return null;
+  // Any remaining multi-char or metacharacter form (groups `(...)`, `.`)
+  // is unbounded or unsupported — treat as unknown. Single-char atoms
+  // (the bare-char branch of the atom regex) are the only analyzable
+  // case left.
+  if (atom.length !== 1 || atom === ".") return null;
+  const code = atom.charCodeAt(0);
+  if (code >= ASCII_MAX) return null;
+  return new Set([code]);
 }
 
 export class RegExpTimeoutError extends Error {
