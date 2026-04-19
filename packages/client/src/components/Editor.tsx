@@ -168,6 +168,13 @@ export function Editor({
 
   // Flush pending save on unmount
   useEffect(() => {
+    // Capture the chapter id here at mount so the cleanup closure holds a
+    // stable value. The ref never changes during the Editor's lifetime
+    // (the component is keyed per chapter), but the react-hooks lint
+    // rule flags reading `.current` in cleanup — legitimately in general,
+    // since a ref assigned during render wouldn't reflect the mount-time
+    // value at cleanup.
+    const mountChapterId = chapterIdRef.current;
     return () => {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
@@ -175,13 +182,13 @@ export function Editor({
       if (dirtyRef.current && editorInstanceRef.current) {
         // Fire-and-forget: don't set dirtyRef=false here since the save is async.
         // The content cache persists the data until save succeeds.
-        // chapterIdRef was captured at mount — pass it explicitly so this
-        // cleanup targets THIS chapter, not whatever chapter is active by
-        // the time the save fires.
+        // mountChapterId is captured above so this cleanup targets THIS
+        // chapter, not whatever chapter is active by the time the save
+        // fires (C1).
         onSaveRef
           .current(
             editorInstanceRef.current.getJSON() as Record<string, unknown>,
-            chapterIdRef.current,
+            mountChapterId,
           )
           .catch(() => {});
       }
