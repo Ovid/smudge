@@ -11,6 +11,7 @@ vi.mock("../api/client", () => ({
     constructor(
       message: string,
       public readonly status: number,
+      public readonly code?: string,
     ) {
       super(message);
       this.name = "ApiRequestError";
@@ -931,10 +932,13 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
-  it("handleSave exposes server error message on 4xx failure", async () => {
+  it("handleSave maps 4xx VALIDATION_ERROR to externalized strings copy (I3)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // Raw server-authored English must NOT reach the UI — the mapper in
+    // useProjectEditor routes err.code to strings.ts the same way
+    // findReplaceErrors does. Regression guard for I3.
     vi.mocked(api.chapters.update).mockRejectedValue(
-      new ApiRequestError("Invalid status: xyz", 400),
+      new ApiRequestError("Invalid status: xyz", 400, "VALIDATION_ERROR"),
     );
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -945,11 +949,30 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.saveStatus).toBe("error");
-    expect(result.current.saveErrorMessage).toBe("Invalid status: xyz");
+    expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedInvalid);
+    expect(result.current.saveErrorMessage).not.toContain("Invalid status: xyz");
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("Save failed with 4xx:"),
       expect.any(ApiRequestError),
     );
+    warnSpy.mockRestore();
+  });
+
+  it("handleSave maps 413 PAYLOAD_TOO_LARGE to externalized strings copy (I3)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("Request body too large.", 413, "PAYLOAD_TOO_LARGE"),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(result.current.saveStatus).toBe("error");
+    expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedTooLarge);
     warnSpy.mockRestore();
   });
 
@@ -983,7 +1006,10 @@ describe("useProjectEditor", () => {
     await act(async () => {
       await result.current.handleSave({ type: "doc", content: [] });
     });
-    expect(result.current.saveErrorMessage).toBe("Bad Request");
+    // Generic 400 without a known code falls back to the default
+    // "Unable to save — check connection" copy rather than surfacing the
+    // raw server message (I3).
+    expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailed);
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("Save failed with 4xx:"),
       expect.any(ApiRequestError),

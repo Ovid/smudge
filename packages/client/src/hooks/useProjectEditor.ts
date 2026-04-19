@@ -138,6 +138,15 @@ export function useProjectEditor(slug: string | undefined) {
 
       setSaveStatus("saving");
       setSaveErrorMessage(null);
+      // Map server 4xx error code/status to a strings.ts entry. Never
+      // surface the raw err.message — that's server-authored English that
+      // bypasses the i18n-ready externalization (CLAUDE.md). Mirrors the
+      // discipline in utils/findReplaceErrors.ts.
+      const mapSaveError = (err: ApiRequestError): string => {
+        if (err.status === 413) return STRINGS.editor.saveFailedTooLarge;
+        if (err.code === "VALIDATION_ERROR") return STRINGS.editor.saveFailedInvalid;
+        return STRINGS.editor.saveFailed;
+      };
       let rejected4xx: { message: string } | null = null;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (seq !== saveSeqRef.current) return false; // chapter changed, abort retries
@@ -194,9 +203,9 @@ export function useProjectEditor(slug: string | undefined) {
           }
           if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
             console.warn("Save failed with 4xx:", err);
-            // Capture the server's specific message (e.g. INVALID_CONTENT)
-            // so the UI can surface it instead of the generic retry copy.
-            rejected4xx = { message: err.message || STRINGS.editor.saveFailed };
+            // Map to strings.ts copy rather than forwarding the raw
+            // server-authored message — see mapSaveError above.
+            rejected4xx = { message: mapSaveError(err) };
             break;
           }
           if (attempt < MAX_RETRIES) {
