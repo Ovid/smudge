@@ -28,6 +28,7 @@ export {
   RegExpSafetyError,
   RegExpTimeoutError,
   MatchCapExceededError,
+  ReplacementTooLargeError,
   MAX_MATCHES_PER_REQUEST,
   CONTEXT_RADIUS,
 } from "./tiptap-text";

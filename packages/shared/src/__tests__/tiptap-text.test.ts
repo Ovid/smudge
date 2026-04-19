@@ -637,6 +637,27 @@ describe("deadline / RegExpTimeoutError (I9/I10)", () => {
   });
 });
 
+describe("replaceInDoc running output-size cap (I2 amplification)", () => {
+  it("throws ReplacementTooLargeError when $' expansion exceeds max_output_chars", async () => {
+    const { replaceInDoc, ReplacementTooLargeError } = await import("../tiptap-text");
+    // Replacement "$'" splices the right-of-match into each output, so output
+    // chars grow quadratically. A short input with moderate matches blows well
+    // past a tight budget before JSON.stringify even starts.
+    const d = doc(paragraph(text("a".repeat(500))));
+    expect(() =>
+      replaceInDoc(d, "a", "$'", { regex: true, max_output_chars: 10_000 }),
+    ).toThrow(ReplacementTooLargeError);
+  });
+
+  it("does not throw when output stays within max_output_chars", async () => {
+    const { replaceInDoc } = await import("../tiptap-text");
+    const d = doc(paragraph(text("abc def")));
+    expect(() =>
+      replaceInDoc(d, "abc", "ABC", { max_output_chars: 10_000 }),
+    ).not.toThrow();
+  });
+});
+
 describe("replaceInDoc mark canonicalization (I2)", () => {
   it("merges adjacent text nodes when marks have the same attrs in different key order", () => {
     // Two link marks with same attrs but different key insertion order —

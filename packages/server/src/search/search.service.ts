@@ -8,6 +8,7 @@ import {
   RegExpSafetyError,
   RegExpTimeoutError,
   MatchCapExceededError,
+  ReplacementTooLargeError,
   MAX_MATCHES_PER_REQUEST,
   SEARCH_ERROR_CODES,
   sanitizeSnapshotLabel,
@@ -270,6 +271,11 @@ export async function replaceInProject(
             ? { ...options, match_index: scope.match_index }
             : options),
           deadline,
+          // UTF-16 code units ≤ UTF-8 byte count, so a cap in chars ≤ the
+          // byte cap holds. This trips during per-match expansion before the
+          // walker builds the full tree, so pathological `$'` amplification
+          // can't allocate gigabytes of intermediate strings.
+          max_output_chars: MAX_CHAPTER_CONTENT_BYTES,
         };
         const { doc: newDoc, count } = replaceInDoc(parsed, search, replace, replaceOptions);
         if (count === 0) continue;
@@ -341,6 +347,9 @@ export async function replaceInProject(
         return regexTimeoutValidationError();
       }
       if (err instanceof ContentTooLargeError) {
+        return contentTooLargeValidationError();
+      }
+      if (err instanceof ReplacementTooLargeError) {
         return contentTooLargeValidationError();
       }
       throw err;

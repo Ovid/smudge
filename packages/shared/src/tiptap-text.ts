@@ -41,6 +41,14 @@ export interface ReplaceOptions extends SearchOptions {
    * blocks in the document). When undefined, replace every match.
    */
   match_index?: number;
+  /**
+   * Upper bound on total output text characters across all replacement
+   * expansions. Enforced incrementally so a pathological `$'` / `` $` `` /
+   * `$&` template that splices the match context cannot balloon to
+   * gigabytes before the post-hoc JSON byte-length check fires. Throws
+   * ReplacementTooLargeError on exceed.
+   */
+  max_output_chars?: number;
 }
 
 // --- Internal helpers ---
@@ -298,6 +306,20 @@ export class MatchCapExceededError extends Error {
 }
 
 /**
+ * Thrown when the running sum of expanded replacement characters exceeds
+ * ReplaceOptions.max_output_chars. Guards against amplification by `$'` /
+ * `` $` `` / `$&` in regex-mode templates that splice the full match
+ * context on every match — without the running check, peak memory can
+ * reach many gigabytes before the post-hoc JSON size check rejects.
+ */
+export class ReplacementTooLargeError extends Error {
+  constructor() {
+    super("Replacement would produce output over the size limit.");
+    this.name = "ReplacementTooLargeError";
+  }
+}
+
+/**
  * Number of code units of context returned on either side of a match.
  * Exported so the client highlighter can compute the same offset
  * relationship without re-deriving (drift would mis-align highlights).
@@ -448,6 +470,12 @@ export function replaceInDoc(
   // Tracks the global match index across blocks so match_index can select
   // a single occurrence.
   let globalMatchCursor = 0;
+  // Running sum of characters emitted by every expanded replacement. Checked
+  // against opts.max_output_chars after each match so pathological templates
+  // (`$'`, `` $` ``, `$&`) that splice the match context can't balloon to GBs
+  // before the post-hoc JSON size guard rejects.
+  let outputChars = 0;
+  const outputCap = opts.max_output_chars;
   // Hoist: the compiled regex is identical across every run. Re-creating
   // it per-run allocates and wastes time on large docs.
   const re = buildRegex(query, opts);
@@ -541,6 +569,10 @@ export function replaceInDoc(
         if (repText.length > 0) {
           const marks = marksAtOffset(segments, match.start);
           newNodes.push(makeTextNode(repText, marks));
+        }
+        if (outputCap !== undefined) {
+          outputChars += repText.length;
+          if (outputChars > outputCap) throw new ReplacementTooLargeError();
         }
         oldCursor = match.end;
       }
