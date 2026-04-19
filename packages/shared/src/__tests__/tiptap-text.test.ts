@@ -597,6 +597,15 @@ describe("assertSafeRegexPattern", () => {
     expect(() => assertSafeRegexPattern("\\s+\\D+")).toThrow(/adjacent unbounded quantifier/i);
   });
 
+  it("accepts adjacent quantifiers on provably-disjoint escaped-literal atoms", () => {
+    // Cover the \\<simple-escape> and \\<literal> branches of atomToCharSet:
+    // \n is a simple escape (maps to 0x0A), \. is an escaped literal
+    // (maps to 0x2E). Both are disjoint with \w / \s.
+    expect(() => assertSafeRegexPattern("\\.+\\w+")).not.toThrow();
+    expect(() => assertSafeRegexPattern("\\n+\\w+")).not.toThrow();
+    expect(() => assertSafeRegexPattern("\\.+\\s+")).not.toThrow();
+  });
+
   it("accepts adjacent quantifiers on provably-disjoint custom character classes", () => {
     // Previously these were stripped to `[]` by the pre-scan and rejected
     // with a spurious "adjacent unbounded quantifiers" error. Users running
