@@ -358,7 +358,43 @@ describe("FindReplacePanel", () => {
       expect(screen.getByPlaceholderText(S.searchPlaceholder)).toHaveFocus();
     });
 
-    it("returns focus to triggerRef on close", () => {
+    it("returns focus to triggerRef when the user closes via Escape", async () => {
+      vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(0);
+        return 0;
+      });
+
+      const triggerButton = document.createElement("button");
+      document.body.appendChild(triggerButton);
+      const triggerRef = { current: triggerButton };
+      const focusSpy = vi.spyOn(triggerButton, "focus");
+      const onClose = vi.fn();
+      const user = userEvent.setup();
+
+      const { rerender } = render(
+        <FindReplacePanel
+          {...defaultProps}
+          isOpen={true}
+          onClose={onClose}
+          triggerRef={triggerRef}
+        />,
+      );
+      await user.keyboard("{Escape}");
+      // Simulate the parent reacting to onClose() by dropping isOpen.
+      rerender(
+        <FindReplacePanel
+          {...defaultProps}
+          isOpen={false}
+          onClose={onClose}
+          triggerRef={triggerRef}
+        />,
+      );
+
+      expect(focusSpy).toHaveBeenCalled();
+      document.body.removeChild(triggerButton);
+    });
+
+    it("does NOT return focus on panel-exclusivity close (parent-driven isOpen drop)", () => {
       vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
         cb(0);
         return 0;
@@ -372,9 +408,12 @@ describe("FindReplacePanel", () => {
       const { rerender } = render(
         <FindReplacePanel {...defaultProps} isOpen={true} triggerRef={triggerRef} />,
       );
+      // Parent closes us because another panel opened — no Escape, no
+      // Close-button click. The soon-to-open sibling should own focus,
+      // so we must NOT refocus the trigger here.
       rerender(<FindReplacePanel {...defaultProps} isOpen={false} triggerRef={triggerRef} />);
 
-      expect(focusSpy).toHaveBeenCalled();
+      expect(focusSpy).not.toHaveBeenCalled();
       document.body.removeChild(triggerButton);
     });
   });
