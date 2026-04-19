@@ -43,8 +43,30 @@ function canonicalize(value: unknown, depth: number = 0): unknown {
  * for canonicalize fallback. Emitting a warn every snapshot-create for
  * the same corrupt chapter would flood logs and mask unrelated warnings,
  * so warn once per unique content (by byte-digest), debug for the rest.
+ *
+ * Bounded via FIFO eviction: an adversarial / long-running server that
+ * sees a wide stream of distinct corrupt contents would otherwise grow
+ * the set without bound. 256 entries is large enough that a handful of
+ * real corrupt chapters still dedupe, small enough to cap memory.
  */
+const WARNED_FALLBACK_LIMIT = 256;
 const warnedFallbackDigests = new Set<string>();
+
+function noteWarnedDigest(digest: string): void {
+  // Set iteration order is insertion order; delete the oldest entry to
+  // keep the cap. Re-insert if already present so recent digests stay
+  // warm (LRU-ish — re-add bumps to the end).
+  if (warnedFallbackDigests.has(digest)) {
+    warnedFallbackDigests.delete(digest);
+    warnedFallbackDigests.add(digest);
+    return;
+  }
+  if (warnedFallbackDigests.size >= WARNED_FALLBACK_LIMIT) {
+    const oldest = warnedFallbackDigests.values().next().value;
+    if (oldest !== undefined) warnedFallbackDigests.delete(oldest);
+  }
+  warnedFallbackDigests.add(digest);
+}
 
 /**
  * Hash a JSON content string canonically (stable key order) so dedup
@@ -64,8 +86,9 @@ export function canonicalContentHash(content: string): string {
     canonicalJson = content;
     const rawDigest = createHash("sha256").update(content).digest("hex");
     const reason = err instanceof CanonicalizeDepthError ? "depth" : "parse";
-    if (!warnedFallbackDigests.has(rawDigest)) {
-      warnedFallbackDigests.add(rawDigest);
+    const alreadyWarned = warnedFallbackDigests.has(rawDigest);
+    noteWarnedDigest(rawDigest);
+    if (!alreadyWarned) {
       logger.warn(
         { content_length: content.length, reason, digest: rawDigest },
         "canonicalContentHash: content could not be canonicalized; hashing raw bytes",

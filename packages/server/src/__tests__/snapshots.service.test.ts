@@ -350,7 +350,9 @@ describe("snapshots.service", () => {
       const snapshots = await listSnapshots(chapterId);
       const autoSnap = snapshots!.find((s) => s.is_auto && s.label?.includes("My Named Snapshot"));
       expect(autoSnap).toBeDefined();
-      expect(autoSnap!.label).toBe("Before restore to 'My Named Snapshot'");
+      // Typographic quotes (\u2018/\u2019) prevent ambiguous boundaries
+      // when an embedded label itself contains straight apostrophes.
+      expect(autoSnap!.label).toBe("Before restore to \u2018My Named Snapshot\u2019");
     });
 
     it("sanitizes and caps the auto-backup label to 500 chars", async () => {

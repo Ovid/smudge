@@ -8,7 +8,19 @@ import type { ImageRow } from "./images.types";
 // no `g` flag so `.exec` has no per-call state to worry about; reusing the
 // compiled instance avoids measurable GC pressure during project-wide
 // replace-all operations that walk many image nodes in succession.
-const IMAGE_SRC_RE = new RegExp(`/api/images/(${UUID_PATTERN})`, "i");
+//
+// Anchored at the start so a pasted URL that happens to contain the
+// `/api/images/<uuid>` substring inside a query fragment (e.g.
+// `https://evil.example/?ref=/api/images/<uuid>/x`) cannot inflate the
+// refcount of an image the user did not intentionally reference. A
+// legitimate <img> src is either absolute (http(s)://host/api/images/<uuid>)
+// or root-relative (/api/images/<uuid>) — accept both via a host-prefix
+// alternation, and require that the UUID be immediately followed by a path
+// terminator so a UUID inside a query-string can't match.
+const IMAGE_SRC_RE = new RegExp(
+  `^(?:https?://[^/]+)?/api/images/(${UUID_PATTERN})(?:[/?#]|$)`,
+  "i",
+);
 
 /**
  * Walks TipTap JSON content tree and extracts image UUIDs from

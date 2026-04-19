@@ -58,13 +58,11 @@ export const MAX_MATCHES_PER_REQUEST = 10_000;
 
 const LEAF_BLOCKS = new Set(["paragraph", "heading", "codeBlock"]);
 
-/**
- * Depth cap for walkers — matches MAX_TIPTAP_DEPTH in schemas.ts. Kept
- * as a local const rather than an import to avoid a circular dependency
- * through the shared index barrel (schemas.ts already re-exports from
- * constants via schema-side imports).
- */
-const MAX_WALK_DEPTH = 64;
+// Depth cap for walkers — pulled from the zero-dependency tiptap-depth
+// module directly (NOT via the shared barrel) so a future edit to the
+// cap propagates automatically instead of silently drifting from the
+// schema-side value.
+import { MAX_TIPTAP_DEPTH as MAX_WALK_DEPTH } from "./tiptap-depth";
 
 /**
  * Collect leaf block nodes that directly contain text/inline nodes.
@@ -388,14 +386,28 @@ function extractContext(flat: string, offset: number, length: number): string {
 /**
  * Recursively serialize a value with sorted object keys so two objects
  * with the same content but different key insertion order compare equal.
- * Used for marks comparison below.
+ * Used for marks comparison below. Mirrors the UNSAFE_KEYS filter and
+ * depth cap from content-hash.ts so prototype-pollution keys in
+ * user-supplied mark attrs can't surprise this path, and a pathologically
+ * nested attrs structure cannot stack-overflow the walker.
  */
-function canonicalJSON(value: unknown): string {
+const CANONICAL_UNSAFE_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+
+function canonicalJSON(value: unknown, depth: number = 0): string {
+  if (depth > MAX_WALK_DEPTH) return "null";
   if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return "[" + value.map(canonicalJSON).join(",") + "]";
+  if (Array.isArray(value)) {
+    return "[" + value.map((v) => canonicalJSON(v, depth + 1)).join(",") + "]";
+  }
   const obj = value as Record<string, unknown>;
-  const keys = Object.keys(obj).sort();
-  return "{" + keys.map((k) => JSON.stringify(k) + ":" + canonicalJSON(obj[k])).join(",") + "}";
+  const keys = Object.keys(obj)
+    .filter((k) => !CANONICAL_UNSAFE_KEYS.has(k))
+    .sort();
+  return (
+    "{" +
+    keys.map((k) => JSON.stringify(k) + ":" + canonicalJSON(obj[k], depth + 1)).join(",") +
+    "}"
+  );
 }
 
 function marksEqual(a: Mark[] | undefined, b: Mark[] | undefined): boolean {

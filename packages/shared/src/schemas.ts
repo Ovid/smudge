@@ -182,8 +182,14 @@ export function sanitizeSnapshotLabel(raw: string): string {
 
 export const CreateSnapshotSchema = z
   .object({
+    // Cap pre-sanitize at 5000 code units as defense-in-depth: without this,
+    // a 1 MB payload walks through the sanitizer before being rejected by
+    // the post-pipe .max(500). 5000 is ~10x the final cap — room for
+    // sanitizer-stripped bidi/control chars without gatekeeping legitimate
+    // long labels that would fit once cleaned.
     label: z
       .string()
+      .max(5000, "Label is too long")
       .transform(sanitizeSnapshotLabel)
       .pipe(z.string().trim().max(500, "Label is too long"))
       .optional(),

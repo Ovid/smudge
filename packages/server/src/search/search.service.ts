@@ -280,7 +280,11 @@ export async function replaceInProject(
         // backstop. Use grapheme-aware truncation for the final clamp so a
         // surrogate-pair emoji inside the embedded search/replace strings is
         // never split mid-grapheme.
-        const rawLabel = `Before find-and-replace: '${truncateForLabel(search)}' → '${truncateForLabel(replace)}'`;
+        // Use typographic quotes (\u2018/\u2019) around the user strings so
+        // an embedded apostrophe in the search or replace text doesn't
+        // collide with the surrounding delimiters — a straight-quote
+        // wrapper would render `'foo's' → 'bar's'` with ambiguous boundaries.
+        const rawLabel = `Before find-and-replace: \u2018${truncateForLabel(search)}\u2019 \u2192 \u2018${truncateForLabel(replace)}\u2019`;
         const label = buildAutoSnapshotLabel(rawLabel);
 
         // Auto-snapshot before replacement (using DB-committed word_count)

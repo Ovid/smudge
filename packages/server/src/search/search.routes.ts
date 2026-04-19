@@ -1,6 +1,11 @@
 import { Router } from "express";
 import { z } from "zod";
-import { MAX_MATCHES_PER_REQUEST, MAX_QUERY_LENGTH, MAX_REPLACE_LENGTH } from "@smudge/shared";
+import {
+  MAX_MATCHES_PER_REQUEST,
+  MAX_QUERY_LENGTH,
+  MAX_REPLACE_LENGTH,
+  SEARCH_ERROR_CODES,
+} from "@smudge/shared";
 import { asyncHandler } from "../app";
 import { getProjectStore } from "../stores/project-store.injectable";
 import * as SearchService from "./search.service";
@@ -147,7 +152,7 @@ export function searchRouter(): Router {
       if (result === "scope_not_found") {
         res.status(404).json({
           error: {
-            code: "SCOPE_NOT_FOUND",
+            code: SEARCH_ERROR_CODES.SCOPE_NOT_FOUND,
             // The route is slug-scoped, so the chapter_id can only be
             // "missing" or "soft-deleted" from the resolved project.
             // A cross-project chapter_id would already 404 at project

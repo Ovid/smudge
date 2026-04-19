@@ -1,13 +1,16 @@
 import { v4 as uuidv4 } from "uuid";
-import { countWords, TipTapDocSchema } from "@smudge/shared";
+import { countWords, TipTapDocSchema, sanitizeSnapshotLabel } from "@smudge/shared";
 import { truncateGraphemes } from "../utils/grapheme";
 import { buildAutoSnapshotLabel } from "./labels";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import { applyImageRefDiff, extractImageIds } from "../images/images.references";
-import { enrichChapterWithLabel, stripCorruptFlag } from "../chapters/chapters.types";
-import type { ChapterRow } from "../chapters/chapters.types";
+import {
+  enrichChapterWithLabel,
+  stripCorruptFlag,
+  type ChapterWithLabel,
+} from "../chapters/chapters.types";
 import { canonicalContentHash } from "./content-hash";
 import { MAX_CHAPTER_CONTENT_BYTES } from "../constants";
 import type { SnapshotRow, SnapshotListItem } from "./snapshots.types";
@@ -92,7 +95,7 @@ export type RestoreFailure = "corrupt_snapshot" | "cross_project_image";
 
 export async function restoreSnapshot(
   snapshotId: string,
-): Promise<{ chapter: Record<string, unknown> } | null | RestoreFailure> {
+): Promise<{ chapter: ChapterWithLabel } | null | RestoreFailure> {
   const store = getProjectStore();
   const snapshot = await store.findSnapshotById(snapshotId);
   if (!snapshot) return null;
@@ -162,14 +165,18 @@ export async function restoreSnapshot(
     // CreateSnapshotSchema applies to manual labels. A legacy manual label
     // containing control/bidi chars or near the 500-char limit would otherwise
     // produce an unsanitized or oversized restore-auto-snapshot label.
-    // Grapheme-truncate the embedded user label *and* the final clamp so a
-    // surrogate-pair emoji or combining sequence near the 500-char cap is
-    // never split mid-grapheme — 450 graphemes can exceed 500 UTF-16 code
-    // units on emoji-heavy labels, and a code-unit slice(0,500) would then
-    // split a surrogate and store a lone-surrogate label.
-    const embedded = snapshot.label ? truncateGraphemes(snapshot.label, 450) : null;
+    //
+    // Sanitize BEFORE grapheme-truncating the embedded label: otherwise
+    // invisible control/bidi chars count toward the 450-grapheme budget and
+    // get stripped downstream, yielding an oddly-short (or empty-looking)
+    // embedded fragment. The final `buildAutoSnapshotLabel` call sanitizes
+    // again — that's an idempotent no-op on already-clean input and keeps
+    // the guarantee that the stored label is sanitized even if the embed
+    // template ever adds bidi chars literally.
+    const sanitizedEmbed = snapshot.label ? sanitizeSnapshotLabel(snapshot.label) : null;
+    const embedded = sanitizedEmbed ? truncateGraphemes(sanitizedEmbed, 450) : null;
     const rawLabel = embedded
-      ? `Before restore to '${embedded}'`
+      ? `Before restore to \u2018${embedded}\u2019`
       : `Before restore to snapshot from ${snapshot.created_at}`;
     const snapshotLabel = buildAutoSnapshotLabel(rawLabel);
 
@@ -227,12 +234,8 @@ export async function restoreSnapshot(
   // has already committed, so a status-lookup failure doesn't unmake the
   // restore — fall back to `status` as the label so the client sees a
   // successful restore, matching the pattern in chapters.service.updateChapter.
-  const store2 = store;
   try {
-    const enriched = (await enrichChapterWithLabel(store2, result.chapter)) as unknown as Record<
-      string,
-      unknown
-    >;
+    const enriched = await enrichChapterWithLabel(store, result.chapter);
     return { chapter: enriched };
   } catch (err: unknown) {
     logger.error(
@@ -242,10 +245,9 @@ export async function restoreSnapshot(
     // Route through the shared helper rather than destructuring inline so
     // any future additions to the corrupt-flag surface (e.g.
     // content_corrupt_reason) stay in sync with the success path.
-    const chapterRow = result.chapter as unknown as ChapterRow;
-    const clean = stripCorruptFlag(chapterRow);
+    const clean = stripCorruptFlag(result.chapter);
     return {
-      chapter: { ...clean, status_label: chapterRow.status },
+      chapter: { ...clean, status_label: result.chapter.status },
     };
   }
 }
