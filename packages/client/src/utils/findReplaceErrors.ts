@@ -24,6 +24,13 @@ export function mapReplaceErrorToMessage(err: unknown): string | null {
     // server copy into the UI (CLAUDE.md: all strings via strings.ts).
     return STRINGS.findReplace.invalidReplaceRequest;
   }
+  if (err.status === 413) {
+    // Body-size guard (CLAUDE.md: 413 signals content would exceed the
+    // per-row limit). The request is doomed on retry, so route to the
+    // "too large" copy rather than letting it fall through to
+    // replaceFailed which invites a pointless retry.
+    return STRINGS.findReplace.contentTooLarge;
+  }
   if (err.status === 404) {
     // Two distinct 404 causes:
     //   SCOPE_NOT_FOUND — chapter is missing/soft-deleted inside the project
@@ -62,6 +69,11 @@ export function mapSearchErrorToMessage(err: unknown): string | null {
       return STRINGS.findReplace.contentTooLarge;
     if (err.code === SEARCH_ERROR_CODES.INVALID_REGEX) return STRINGS.findReplace.invalidRegex;
     return STRINGS.findReplace.invalidSearchRequest;
+  }
+  if (err.status === 413) {
+    // Body-size guard trips on the request itself — not search-specific
+    // but possible if the query/options payload exceeds the global cap.
+    return STRINGS.findReplace.contentTooLarge;
   }
   if (err.status === 404) {
     // Project (or scoped chapter) is gone — retrying will 404 forever.

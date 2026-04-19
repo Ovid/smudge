@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mapReplaceErrorToMessage } from "../utils/findReplaceErrors";
+import { mapReplaceErrorToMessage, mapSearchErrorToMessage } from "../utils/findReplaceErrors";
 import { ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
 
@@ -50,6 +50,14 @@ describe("mapReplaceErrorToMessage", () => {
     expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceProjectNotFound);
   });
 
+  it("maps 413 PAYLOAD_TOO_LARGE to contentTooLarge", () => {
+    // Body-size guard (CLAUDE.md: 413). Retrying the same payload is
+    // doomed, so the mapper must not fall through to replaceFailed which
+    // invites a retry.
+    const err = new ApiRequestError("too big", 413, "PAYLOAD_TOO_LARGE");
+    expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.contentTooLarge);
+  });
+
   it("returns replaceFailed for other statuses (no raw server copy)", () => {
     const err = new ApiRequestError("server boom", 500);
     expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceFailed);
@@ -58,5 +66,22 @@ describe("mapReplaceErrorToMessage", () => {
   it("falls back to replaceFailed when err.message is empty", () => {
     const err = new ApiRequestError("", 500);
     expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceFailed);
+  });
+});
+
+describe("mapSearchErrorToMessage", () => {
+  it("maps 413 PAYLOAD_TOO_LARGE to contentTooLarge", () => {
+    const err = new ApiRequestError("too big", 413, "PAYLOAD_TOO_LARGE");
+    expect(mapSearchErrorToMessage(err)).toBe(STRINGS.findReplace.contentTooLarge);
+  });
+
+  it("maps 404 to searchScopeNotFound", () => {
+    const err = new ApiRequestError("gone", 404);
+    expect(mapSearchErrorToMessage(err)).toBe(STRINGS.findReplace.searchScopeNotFound);
+  });
+
+  it("returns null for ABORTED", () => {
+    const err = new ApiRequestError("aborted", 0, "ABORTED");
+    expect(mapSearchErrorToMessage(err)).toBeNull();
   });
 });
