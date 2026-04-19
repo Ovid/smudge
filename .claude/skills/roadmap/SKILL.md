@@ -55,6 +55,8 @@ Invoke the `superpowers:brainstorming` skill. When the brainstorming skill asks 
 
 Follow the brainstorming skill's process completely. It will explore requirements, ask the user questions, and produce a design document. Also, think of the design from the standpoint of a writer. Is it truly useful for them? If you think it could be more useful, discuss this with the user.
 
+When brainstorming, apply the PR scope rules in CLAUDE.md (§Pull Request Scope) — flag to the user if this phase bundles more than one feature or refactor and should be split before a plan is written.
+
 ## 5. Record the Plan Filename
 
 After brainstorming produces a document in `docs/plans/`, update `docs/roadmap.md` in **two places**:

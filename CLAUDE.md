@@ -79,6 +79,14 @@ make help                            # Show all available make targets
 
 **Auto-save with retry.** 1.5s debounce, 3 retries with exponential backoff (2s/4s/8s), persistent "Unable to save" warning on total failure, `beforeunload` guard, client-side cache holds unsaved content until server confirms. On chapter switch, immediate save bypasses debounce.
 
+**Save-pipeline invariants.** The following rules are load-bearing — the snapshots/find-and-replace branch required 16 rounds of review because they were applied inconsistently. Any code that triggers a server mutation affecting editor content must obey them:
+
+1. **`markClean()` before any server call that invalidates editor state.** If you call the server *and* the response will overwrite what's on screen (restore, replace, reload), mark the editor clean first so the unmount/auto-save cleanup cannot fire a stale PATCH afterwards.
+2. **`setEditable(false)` around any mutation that can fail mid-typing.** The user must not be able to type into content that is about to be overwritten or is in an error state. Restore this *after* success or failure.
+3. **Cache-clear happens after server success, never before.** The client-side draft cache is the last line of defense against data loss. Clearing it before the server confirms violates the contract that unsaved content is held until persistence succeeds.
+4. **Bump the sequence ref before the request, not after.** Any in-flight response for an older sequence is discarded on return. Bumping after creates a window where stale responses land.
+5. **Error codes stay inside the allowlist.** HTTP status codes are 200, 201, 400, 404, 409, 413, 500 (see §API Design). New conditions get an existing code plus a discriminating `error.code` string — never a new status.
+
 **String externalization.** All UI strings in `packages/client/src/strings.ts` as constants, never raw literals in components. Prepares for future i18n without architectural changes.
 
 ## API Design
@@ -130,6 +138,16 @@ The save pipeline gets the most rigorous coverage — it's the core trust promis
 **Coverage thresholds are enforced in `vitest.config.ts` (95% statements, 85% branches, 90% functions, 95% lines).** If coverage drops below these thresholds, the goal is always to increase coverage as much as possible by writing meaningful tests for the uncovered code — never simply adjust the thresholds downward or write minimal/trivial tests just to meet the minimum. Aim to push coverage higher, not coast at the floor.
 
 **Zero warnings in test output.** Tests must not produce noisy `console.warn`, `console.error`, or logger output in stderr. When a test deliberately triggers an error path that logs a warning, spy on the output, suppress it, and assert the expected message — e.g. `const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {}); ... expect(warnSpy).toHaveBeenCalledWith(...); warnSpy.mockRestore();`. Noisy test output masks real problems; if every test run has 30 "expected" warnings, developers stop reading them and miss the 31st that signals a real bug.
+
+## Pull Request Scope
+
+The `ovid/snapshots-find-and-replace` branch (merged 2026-04-19) bundled two features across 17,000 insertions and required 16 rounds of review. To prevent recurrence, PRs must obey two rules:
+
+**One-feature rule.** A PR delivers a single feature *or* a single refactor — never both, and never two features. A bug fix alongside the feature it affects is fine; a second unrelated bug fix is not. When in doubt, split.
+
+**Phase-boundary rule.** Each roadmap phase (`docs/roadmap.md`) is a PR. Splitting a phase into multiple PRs is allowed and often preferable; merging phases into one PR is not. Every PR must reference the roadmap phase(s) it implements in its description. A PR that implements more than one phase must be closed and split — update the roadmap to split the bundled phase first, then open separate PRs.
+
+Line count is not a hard limit — a 3,000-line migration can be fine, a 500-line cross-cutting refactor may not be. The shape of the change matters more than the size.
 
 ## Dependency Licenses
 
