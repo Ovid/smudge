@@ -38,10 +38,16 @@ export function useEditorMutation(
     projectEditorRef.current = args.projectEditor;
   });
 
+  const inFlightRef = useRef(false);
+
   const run = useCallback(
     async <T,>(
       mutate: () => Promise<MutationDirective<T>>,
     ): Promise<MutationResult<T>> => {
+      if (inFlightRef.current) {
+        return { ok: false, stage: "busy" };
+      }
+      inFlightRef.current = true;
       const editor = args.editorRef.current;
       editor?.setEditable(false);
       try {
@@ -80,6 +86,7 @@ export function useEditorMutation(
         return { ok: true, data: directive.data };
       } finally {
         editor?.setEditable(true);
+        inFlightRef.current = false;
       }
     },
     [args.editorRef],

@@ -239,3 +239,53 @@ describe("useEditorMutation — reload failure", () => {
     }
   });
 });
+
+describe("useEditorMutation — busy guard", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("rejects overlapping run with stage 'busy' and no side effects", async () => {
+    const { editorRef, projectEditor } = buildHandles();
+    const { clearAllCachedContent } = await import("./useContentCache");
+
+    let resolveMutate: () => void = () => {};
+    const blockingMutate = () =>
+      new Promise<{
+        clearCacheFor: string[];
+        reloadActiveChapter: boolean;
+        data: void;
+      }>((resolve) => {
+        resolveMutate = () =>
+          resolve({
+            clearCacheFor: [],
+            reloadActiveChapter: false,
+            data: undefined,
+          });
+      });
+
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor }),
+    );
+
+    const firstPromise = result.current.run(blockingMutate);
+    // Yield to allow the first run to enter the in-flight region
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const secondResult = await result.current.run(async () => ({
+      clearCacheFor: ["x"],
+      reloadActiveChapter: true,
+      data: undefined,
+    }));
+
+    expect(secondResult).toEqual({ ok: false, stage: "busy" });
+    // Second call must have zero side effects
+    expect(vi.mocked(clearAllCachedContent)).not.toHaveBeenCalledWith(["x"]);
+    // editor handle methods called for second run? Should not have additional calls.
+    expect(editorRef.current!.setEditable).toHaveBeenCalledTimes(1); // only the first run's (false)
+
+    resolveMutate();
+    await firstPromise;
+  });
+});
