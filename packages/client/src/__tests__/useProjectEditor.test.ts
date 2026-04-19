@@ -857,6 +857,67 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("handleSelectChapter unblocks a backoff sleep without waiting for the timer (S3)", async () => {
+    // Before S3, selecting a new chapter only bumped the seq and aborted
+    // the in-flight PATCH — it did NOT unblock the retry backoff. A loop
+    // already asleep in setTimeout would sit for up to 8s before the next
+    // iteration's seq check ran. Not a correctness bug (the abort/seq
+    // stops the network call) but wasteful and kept a timer pinned to a
+    // stale chapter id. Assert the handleSave promise resolves promptly
+    // after handleSelectChapter, without advancing timers.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(new Error("network error"));
+    const mockChapter2 = {
+      id: "ch2",
+      project_id: "p1",
+      title: "Two",
+      content: { type: "doc", content: [] },
+      sort_order: 1,
+      word_count: 0,
+      status: "outline" as const,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+      deleted_at: null,
+    };
+    vi.mocked(api.chapters.get)
+      .mockResolvedValueOnce(mockChapter1)
+      .mockResolvedValueOnce(mockChapter2);
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    // Use fake timers so we can prove the wait DIDN'T depend on timers.
+    vi.useFakeTimers();
+    try {
+      let savePromise!: Promise<boolean>;
+      act(() => {
+        savePromise = result.current.handleSave({ type: "doc", content: [] });
+      });
+      // Let the first PATCH reject and the retry loop enter the backoff sleep.
+      await vi.advanceTimersByTimeAsync(0);
+      expect(api.chapters.update).toHaveBeenCalledTimes(1);
+
+      // Select a new chapter. The backoff must be unblocked so the loop
+      // reaches its seq check and returns false — without advancing
+      // timers to BACKOFF_MS[0]=2000ms.
+      await act(async () => {
+        await result.current.handleSelectChapter("ch2");
+      });
+
+      // Resolve the save promise WITHOUT advancing timers further. If S3
+      // were unfixed, savePromise would still be pending.
+      await expect(
+        Promise.race([
+          savePromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error("timed out")), 10)),
+        ]),
+      ).resolves.toBe(false);
+    } finally {
+      vi.useRealTimers();
+      warnSpy.mockRestore();
+    }
+  });
+
   it("cancelPendingSaves resets saving status and error message", async () => {
     // A long-running update simulates the "Saving…" window; cancelPendingSaves
     // should flip the UI out of that stuck state.

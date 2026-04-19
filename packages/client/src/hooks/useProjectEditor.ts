@@ -42,29 +42,37 @@ export function useProjectEditor(slug: string | undefined) {
   } | null>(null);
   const statusChangeSeqRef = useRef(0);
 
+  // Shared cancel-in-flight-save helper. Bumps the save seq (so the retry
+  // loop short-circuits on its next iteration), aborts the fetch, and
+  // unblocks any backoff sleep. handleSelectChapter, handleDeleteChapter,
+  // cancelPendingSaves, and unmount cleanup all go through this — before
+  // S3, the select/delete paths omitted the backoff-unblock step, leaving
+  // the retry loop asleep for up to 8s after a chapter switch/delete.
+  const cancelInFlightSave = useCallback(() => {
+    ++saveSeqRef.current;
+    if (saveAbortRef.current) {
+      saveAbortRef.current.abort();
+      saveAbortRef.current = null;
+    }
+    if (saveBackoffRef.current) {
+      clearTimeout(saveBackoffRef.current.timer);
+      saveBackoffRef.current.resolve();
+      saveBackoffRef.current = null;
+    }
+  }, []);
+
   // Unmount cleanup: the retry loop inside handleSave runs outside React's
   // render phase, so without this teardown an in-flight save-backoff sleep
   // would wake after EditorPage unmounted, call api.chapters.update, and
   // schedule state writes on a gone component (and in dev it would log the
-  // "state update on unmounted component" warning). Mirror the body of
-  // cancelPendingSaves sans the setState calls — bumping saveSeqRef is what
-  // makes the loop short-circuit on its next iteration.
+  // "state update on unmounted component" warning). cancelInFlightSave
+  // covers the side-effect-free portion of cancelPendingSaves (no setState
+  // on unmount).
   useEffect(() => {
     return () => {
-      // These refs intentionally hold the LIVE state at unmount time —
-      // they are not React-rendered nodes, so the exhaustive-deps lint
-      // warning about stale ref reads in cleanup does not apply here.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      ++saveSeqRef.current;
-      saveAbortRef.current?.abort();
-      saveAbortRef.current = null;
-      if (saveBackoffRef.current) {
-        clearTimeout(saveBackoffRef.current.timer);
-        saveBackoffRef.current.resolve();
-        saveBackoffRef.current = null;
-      }
+      cancelInFlightSave();
     };
-  }, []);
+  }, [cancelInFlightSave]);
 
   useEffect(() => {
     let cancelled = false;
@@ -211,12 +219,19 @@ export function useProjectEditor(slug: string | undefined) {
           if (attempt < MAX_RETRIES) {
             await new Promise<void>((resolve) => {
               const timer = setTimeout(() => {
-                saveBackoffRef.current = null;
+                // Only null the shared ref if it still points to OUR handle.
+                // If a concurrent save or cancellation has replaced it with
+                // a newer timer/resolve pair, clearing would drop the
+                // newer attempt's ability to be unblocked by
+                // cancelInFlightSave (S4).
+                if (saveBackoffRef.current?.timer === timer) {
+                  saveBackoffRef.current = null;
+                }
                 resolve();
               }, BACKOFF_MS[attempt]);
               saveBackoffRef.current = { timer, resolve };
             });
-            // If cancelPendingSaves cleared the timer and resolved early,
+            // If cancelInFlightSave cleared the timer and resolved early,
             // the seq check at the top of the next loop iteration exits
             // cleanly.
           }
@@ -272,15 +287,13 @@ export function useProjectEditor(slug: string | undefined) {
     }
   }, []);
 
-  const handleSelectChapter = useCallback(async (chapterId: string) => {
+  const handleSelectChapter = useCallback(
+    async (chapterId: string) => {
     if (activeChapterRef.current && chapterId === activeChapterRef.current.id) return;
-    ++saveSeqRef.current; // cancel any in-flight save retries for the old chapter
-    // Abort the in-flight PATCH too — the seq bump alone stops the retry
-    // loop and state writes, but the server-side write keeps running. An
-    // abort ensures no wasted work and no pre-existing PATCH completing
-    // against the switched-away chapter.
-    saveAbortRef.current?.abort();
-    saveAbortRef.current = null;
+    // Seq bump + abort + backoff-unblock. Before S3 this path only bumped
+    // the seq and aborted — if a retry was asleep in backoff, it would
+    // sit for up to 8s before the next iteration's seq check fired.
+    cancelInFlightSave();
     setSaveStatus("idle");
     // Mirror handleCreateChapter: the previous chapter's persistent save
     // failure message must not follow the user into the newly-selected
@@ -301,7 +314,9 @@ export function useProjectEditor(slug: string | undefined) {
       if (seq !== selectChapterSeqRef.current) return;
       setError(STRINGS.error.loadChapterFailed);
     }
-  }, []);
+    },
+    [cancelInFlightSave],
+  );
 
   const reloadActiveChapter = useCallback(
     async (onError?: (message: string) => void, expectedChapterId?: string): Promise<boolean> => {
@@ -355,12 +370,12 @@ export function useProjectEditor(slug: string | undefined) {
 
   const handleDeleteChapter = useCallback(
     async (chapter: Chapter, onError?: (message: string) => void): Promise<boolean> => {
-      ++saveSeqRef.current; // cancel any in-flight save retries for the deleted chapter
-      // Abort the in-flight PATCH as well — the server-side `deleted_at IS
-      // NULL` filter neuters the race, but aborting still saves the wasted
-      // round trip.
-      saveAbortRef.current?.abort();
-      saveAbortRef.current = null;
+      // Seq bump + abort + backoff-unblock. Before S3 this path omitted
+      // the backoff-unblock, so a retry asleep in backoff could wake up
+      // after the chapter was gone. The seq check still short-circuits
+      // the resume, but the wakeup wasted a setTimeout slot and held a
+      // reference to the deleted chapter id until the timer fired.
+      cancelInFlightSave();
       // Mirror handleSelectChapter: the deleted chapter's save-status must
       // not leak into the empty-state or next-selected chapter. Without
       // this, deleting mid-save leaves the footer stuck on "Saving…" until
@@ -403,7 +418,7 @@ export function useProjectEditor(slug: string | undefined) {
         return false;
       }
     },
-    [],
+    [cancelInFlightSave],
   );
 
   const handleReorderChapters = useCallback(async (orderedIds: string[]) => {
@@ -577,20 +592,7 @@ export function useProjectEditor(slug: string | undefined) {
     // view mode so a retry from earlier typing cannot write to the server
     // while the editor is supposed to be read-only.
     cancelPendingSaves: () => {
-      ++saveSeqRef.current;
-      // Abort the in-flight PATCH if any so a stale retry cannot land on
-      // the server after a subsequent snapshot restore.
-      if (saveAbortRef.current) {
-        saveAbortRef.current.abort();
-        saveAbortRef.current = null;
-      }
-      // Unblock any retry backoff sleep so the loop reaches its seq check
-      // and exits without waiting up to 8s for the timer to fire naturally.
-      if (saveBackoffRef.current) {
-        clearTimeout(saveBackoffRef.current.timer);
-        saveBackoffRef.current.resolve();
-        saveBackoffRef.current = null;
-      }
+      cancelInFlightSave();
       // Reset status to idle so the header doesn't stay on "Saving…".
       // The aborted save's own status-write is guarded by the chapter/seq
       // check and short-circuits, so without this reset the UI would
