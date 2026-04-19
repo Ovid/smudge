@@ -13,12 +13,16 @@ export function mapReplaceErrorToMessage(err: unknown): string | null {
     return STRINGS.findReplace.replaceFailed;
   }
   if (err.code === "ABORTED") return null;
-  // BAD_JSON on a 2xx response means the server likely committed the
-  // replace (and the auto-snapshot) but the body was unparseable
-  // mid-stream. Falling through to the generic "replace failed" copy
-  // would invite a retry that double-replaces. Tell the user to refresh
-  // and verify state before retrying. Only the 2xx case is ambiguous;
-  // a non-2xx body parse failure means the request truly failed.
+  // BAD_JSON is only assigned by apiFetch() on a 2xx response whose body
+  // failed to parse (see packages/client/src/api/client.ts) — non-2xx
+  // parse failures fall through to undefined `code`, so this branch
+  // cannot fire for them. A 2xx BAD_JSON means the server likely
+  // committed the replace (and the auto-snapshot) but the body was
+  // unreadable mid-stream. Falling through to the generic "replace
+  // failed" copy would invite a retry that double-replaces; tell the
+  // user to refresh and verify state before retrying. The status-range
+  // check is defensive — if apiFetch ever broadens BAD_JSON, keep this
+  // "possibly committed" copy scoped to the genuinely ambiguous 2xx case.
   if (err.code === "BAD_JSON" && err.status >= 200 && err.status < 300) {
     return STRINGS.findReplace.replaceResponseUnreadable;
   }
