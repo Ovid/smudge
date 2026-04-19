@@ -51,6 +51,22 @@ export function useProjectEditor(slug: string | undefined) {
         const data = await api.projects.get(slug);
         if (cancelled) return;
         setProject(data);
+        // If the cached activeChapter belongs to a different project (e.g.
+        // in-place slug change that isn't a rename), the `!activeChapterRef`
+        // guard would skip loading the new project's first chapter, and the
+        // editor would render project A's content under project B's shell.
+        // Project rename preserves chapter ids so the cached chapter still
+        // belongs to the project — only reset when the id is no longer in
+        // the newly-loaded chapter set.
+        const currentChapterId = activeChapterRef.current?.id;
+        const stillInProject =
+          currentChapterId !== undefined &&
+          data.chapters.some((c) => c.id === currentChapterId);
+        if (!stillInProject) {
+          setActiveChapter(null);
+          activeChapterRef.current = null;
+          setChapterWordCount(0);
+        }
         const firstChapter = data.chapters[0];
         if (firstChapter && !activeChapterRef.current) {
           const chapter = await api.chapters.get(firstChapter.id);
