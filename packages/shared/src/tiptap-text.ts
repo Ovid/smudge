@@ -259,20 +259,73 @@ export function assertSafeRegexPattern(pattern: string): void {
   // a run of "a"s across the two atoms in ~n ways per additional quantifier,
   // causing polynomial backtracking when a later anchor fails. Detect by
   // scanning for two quantifiers (+, *, {n,}) outside square brackets,
-  // separated only by a single-char atom / class / group.
+  // separated only by a single-char atom / class / group — then skip the
+  // warning when the two atoms are *provably disjoint* character classes
+  // (e.g. `\w+\s+\w+`, `\d+\s+`). Disjoint atoms cannot both consume the
+  // same char, so the polynomial-backtracking path is unreachable.
   //
   // We strip character-class contents first so quantifiers inside `[...]`
   // (which are literal) don't trip the scan.
   const withoutCharClasses = pattern.replace(/\[[^\]]*\]/g, "[]");
-  // Matches: atom-then-quant, another-atom-then-quant, in sequence.
+  // Matches: atom-then-quant, another-atom-then-quant, in sequence. Capture
+  // each atom so we can test for provable disjointness below.
   // atom = escaped char | . | \w | \s | \d | (...) | [] | bare char
   const adjacentUnboundedQuantifier =
-    /(?:\\.|\[\]|\([^()]*\)|[^\\(){}|])(?:[+*]|\{\d+,\d*\})(?:\\.|\[\]|\([^()]*\)|[^\\(){}|])(?:[+*]|\{\d+,\d*\})/;
-  if (adjacentUnboundedQuantifier.test(withoutCharClasses)) {
-    throw new RegExpSafetyError(
-      "Pattern contains adjacent unbounded quantifiers that can cause slowdowns.",
-    );
+    /(\\.|\[\]|\([^()]*\)|[^\\(){}|])(?:[+*]|\{\d+,\d*\})(\\.|\[\]|\([^()]*\)|[^\\(){}|])(?:[+*]|\{\d+,\d*\})/g;
+  for (const m of withoutCharClasses.matchAll(adjacentUnboundedQuantifier)) {
+    const [, a1, a2] = m;
+    if (a1 === undefined || a2 === undefined) continue;
+    if (!areAtomsProvablyDisjoint(a1, a2)) {
+      throw new RegExpSafetyError(
+        "Pattern contains adjacent unbounded quantifiers that can cause slowdowns.",
+      );
+    }
   }
+}
+
+/**
+ * Returns true when two regex atoms match disjoint character sets — i.e.,
+ * no single character can be consumed by both. When this holds, adjacent
+ * unbounded quantifiers on the two atoms cannot produce the exponential
+ * distribution path that the safety check guards against. False is
+ * conservative: unknown atoms fall through to the "potentially unsafe"
+ * branch.
+ *
+ * Handles the shorthand character classes `\d`, `\D`, `\w`, `\W`, `\s`,
+ * `\S`. Literal character-class ranges (e.g. `[A-Z]+[a-z]+`) are stripped
+ * to `[]` by the caller and thus treated as unknown — a documented
+ * follow-up limitation.
+ */
+function areAtomsProvablyDisjoint(atomA: string, atomB: string): boolean {
+  const ca = shorthandClass(atomA);
+  const cb = shorthandClass(atomB);
+  if (ca === null || cb === null) return false;
+  // Complement pairs and the provably-disjoint cross-family pairs.
+  const key = [ca, cb].sort().join(",");
+  // Complements: d/D, w/W, s/S.
+  // Cross-family: \d is disjoint with \s and \W (digits ⊂ \w, so digits ∩ non-word = ∅).
+  //               \w is disjoint with \s (word chars are [A-Za-z0-9_], no whitespace).
+  //               \s is disjoint with \d and \w (mirror of the above).
+  // Deliberately NOT listed (not disjoint): \w ∩ \D = letters+underscore ≠ ∅,
+  // \s ∩ \D = \s, \s ∩ \W = \s.
+  return (
+    key === "D,d" ||
+    key === "W,w" ||
+    key === "S,s" ||
+    key === "d,s" ||
+    key === "W,d" ||
+    key === "s,w"
+  );
+}
+
+function shorthandClass(atom: string): "d" | "D" | "w" | "W" | "s" | "S" | null {
+  if (atom === "\\d") return "d";
+  if (atom === "\\D") return "D";
+  if (atom === "\\w") return "w";
+  if (atom === "\\W") return "W";
+  if (atom === "\\s") return "s";
+  if (atom === "\\S") return "S";
+  return null;
 }
 
 export class RegExpTimeoutError extends Error {

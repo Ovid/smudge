@@ -577,6 +577,25 @@ describe("assertSafeRegexPattern", () => {
     expect(() => assertSafeRegexPattern("(foo|bar)")).not.toThrow();
     expect(() => assertSafeRegexPattern("a{1,5}")).not.toThrow();
   });
+
+  it("accepts adjacent quantifiers on provably-disjoint shorthand classes", () => {
+    // Common tokenization patterns — the atoms cannot both consume the
+    // same character, so polynomial backtracking cannot occur.
+    expect(() => assertSafeRegexPattern("\\w+\\s+\\w+")).not.toThrow();
+    expect(() => assertSafeRegexPattern("\\d+\\s+")).not.toThrow();
+    expect(() => assertSafeRegexPattern("\\s+\\w+")).not.toThrow();
+    expect(() => assertSafeRegexPattern("\\d+\\W+")).not.toThrow();
+    expect(() => assertSafeRegexPattern("\\d+\\D+")).not.toThrow();
+    expect(() => assertSafeRegexPattern("\\w+\\W+")).not.toThrow();
+    expect(() => assertSafeRegexPattern("\\s+\\S+")).not.toThrow();
+  });
+
+  it("still rejects adjacent quantifiers on overlapping shorthand classes", () => {
+    // \d ⊂ \w, so \d+\w+ can redistribute digits across both atoms.
+    expect(() => assertSafeRegexPattern("\\d+\\w+")).toThrow(/adjacent unbounded quantifier/i);
+    // \s ⊂ \D (whitespace is non-digit), so not disjoint.
+    expect(() => assertSafeRegexPattern("\\s+\\D+")).toThrow(/adjacent unbounded quantifier/i);
+  });
 });
 
 describe("replaceInDoc match_index bypasses match cap (I3)", () => {
