@@ -186,10 +186,7 @@ export function Editor({
         // chapter, not whatever chapter is active by the time the save
         // fires (C1).
         onSaveRef
-          .current(
-            editorInstanceRef.current.getJSON() as Record<string, unknown>,
-            mountChapterId,
-          )
+          .current(editorInstanceRef.current.getJSON() as Record<string, unknown>, mountChapterId)
           .catch(() => {});
       }
     };
