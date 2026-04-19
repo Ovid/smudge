@@ -26,6 +26,13 @@ export interface UseFindReplaceStateReturn {
   resultsOptions: SearchOptionsShape | null;
   loading: boolean;
   error: string | null;
+  /**
+   * Reset the panel-local error so a stale prior-search failure cannot
+   * co-display with a fresh mutation outcome (S3). Used by replace
+   * callers on entry alongside the parent's actionError/actionInfo
+   * clears.
+   */
+  clearError: () => void;
   search: (projectSlug: string) => Promise<void>;
 }
 
@@ -246,6 +253,7 @@ export function useFindReplaceState(
     resultsOptions,
     loading,
     error,
+    clearError: useCallback(() => setError(null), []),
     search: useCallback(
       async (_slug: string) => {
         // Callers (EditorPage executeReplace/handleReplaceOne) capture

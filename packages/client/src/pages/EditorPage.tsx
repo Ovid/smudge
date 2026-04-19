@@ -207,9 +207,12 @@ export function EditorPage() {
 
     // Clear stale action banners on entry: a previous failure or success
     // banner must not co-display with whatever this restore produces. The
-    // two find-replace callers below also do this.
+    // two find-replace callers below also do this. Mirror them in clearing
+    // findReplace.error (S3) so an old panel-local search-failed message
+    // doesn't linger next to the restore outcome.
     setActionError(null);
     setActionInfo(null);
+    findReplace.clearError();
 
     type RestoreData = { staleChapterSwitch: boolean };
 
@@ -281,7 +284,15 @@ export function EditorPage() {
       return;
     }
     setActionError(STRINGS.snapshots.restoreFailed);
-  }, [viewingSnapshot, activeChapter, restoreSnapshot, snapshotPanelRef, setActionError, mutation]);
+  }, [
+    viewingSnapshot,
+    activeChapter,
+    restoreSnapshot,
+    snapshotPanelRef,
+    setActionError,
+    mutation,
+    findReplace,
+  ]);
 
   // Shared post-replace bookkeeping for executeReplace and handleReplaceOne,
   // covering both ok and stage:"reload" branches. Without this, four nearly
@@ -314,9 +325,13 @@ export function EditorPage() {
       if (!project || !slug) return;
 
       // Clear any stale banners so a prior op's error/success cannot
-      // co-display with this op's outcome.
+      // co-display with this op's outcome — including the panel-local
+      // findReplace.error (S3), which would otherwise leave a failed
+      // search's message inside the panel next to a fresh success
+      // banner above it.
       setActionInfo(null);
       setActionError(null);
+      findReplace.clearError();
 
       type ReplaceData = Awaited<ReturnType<typeof api.search.replace>>;
 
@@ -464,9 +479,11 @@ export function EditorPage() {
 
       // Mirror executeReplace: clear any stale banners from a prior op so
       // the new replace's outcome does not co-display with an unrelated
-      // success or error message.
+      // success or error message — including the panel-local
+      // findReplace.error (S3).
       setActionInfo(null);
       setActionError(null);
+      findReplace.clearError();
 
       type ReplaceData = Awaited<ReturnType<typeof api.search.replace>>;
 
