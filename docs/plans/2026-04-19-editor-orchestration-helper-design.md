@@ -65,6 +65,12 @@ export type MutationDirective<T = void> = {
   clearCacheFor: string[];
   /** Whether to re-fetch the currently-active chapter after server success. */
   reloadActiveChapter: boolean;
+  /**
+   * Optional: the chapter id the caller expects to reload. If the user
+   * switched chapters between the mutate callback returning and the hook
+   * invoking reloadActiveChapter, the reload is skipped (I2).
+   */
+  reloadChapterId?: string;
   /** Server response data to thread through to the post-success branch. */
   data: T;
 };
@@ -74,15 +80,28 @@ export type MutationResult<T = void> =
   // Reload-stage failure is a partial success: the server committed, the
   // directive was produced, so `data` is still available. Callers use it to
   // show "N replacements done, but reload failed" without a closure smuggle.
-  | { ok: false; stage: "reload"; data: T; error?: unknown }
-  | { ok: false; stage: "flush" | "mutate" | "busy"; error?: unknown };
+  // No `error` field — callers hardcode their banner copy (S1).
+  | { ok: false; stage: "reload"; data: T }
+  // flush / mutate carry the raw thrown error so callers can discriminate
+  // (e.g. RestoreAbortedError vs ApiRequestError 4xx). `busy` has no error
+  // payload because it is not a failure, just a refusal.
+  | { ok: false; stage: "flush" | "mutate"; error: unknown }
+  | { ok: false; stage: "busy" };
 
 export type UseEditorMutationArgs = {
   editorRef: MutableRefObject<EditorHandle | null>;
   projectEditor: Pick<
-    ReturnType<typeof useProjectEditor>,
+    UseProjectEditorReturn,
     "cancelPendingSaves" | "reloadActiveChapter"
   >;
+  /**
+   * Optional predicate the hook consults in finally before re-enabling the
+   * editor. When a prior run ended in stage:"reload", EditorPage shows a
+   * persistent "refresh the page" banner; a later successful run must not
+   * silently setEditable(true) while the lock banner still claims read-only
+   * (I1). Return true to keep the editor read-only.
+   */
+  isLocked?: () => boolean;
 };
 
 // Cache-clear functions are imported directly from `./useContentCache`, not
@@ -94,6 +113,13 @@ export type UseEditorMutationReturn = {
   run: <T>(
     mutate: () => Promise<MutationDirective<T>>,
   ) => Promise<MutationResult<T>>;
+  /**
+   * Read-only synchronous probe. External flushSave entry points
+   * (chapter switch, snapshot view, snapshot create) consult this to
+   * refuse hand-composed sequences while a mutation is mid-flight.
+   * Without it, the busy guard only protects run()-routed callers.
+   */
+  isBusy: () => boolean;
 };
 
 export function useEditorMutation(

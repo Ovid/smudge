@@ -289,31 +289,31 @@ export function useProjectEditor(slug: string | undefined) {
 
   const handleSelectChapter = useCallback(
     async (chapterId: string) => {
-    if (activeChapterRef.current && chapterId === activeChapterRef.current.id) return;
-    // Seq bump + abort + backoff-unblock. Before S3 this path only bumped
-    // the seq and aborted — if a retry was asleep in backoff, it would
-    // sit for up to 8s before the next iteration's seq check fired.
-    cancelInFlightSave();
-    setSaveStatus("idle");
-    // Mirror handleCreateChapter: the previous chapter's persistent save
-    // failure message must not follow the user into the newly-selected
-    // chapter. The status reset alone hides the footer indicator, but
-    // saveErrorMessage is a separate state and would otherwise linger.
-    setSaveErrorMessage(null);
-    setCacheWarning(false);
-    const seq = ++selectChapterSeqRef.current;
-    try {
-      const chapter = await api.chapters.get(chapterId);
-      if (seq !== selectChapterSeqRef.current) return; // superseded by a newer selection
-      const cached = getCachedContent(chapterId);
-      const effectiveChapter = cached ? { ...chapter, content: cached } : chapter;
-      setActiveChapter(effectiveChapter);
-      setChapterWordCount(countWords(effectiveChapter.content));
-    } catch (err) {
-      console.warn("Failed to load chapter:", err);
-      if (seq !== selectChapterSeqRef.current) return;
-      setError(STRINGS.error.loadChapterFailed);
-    }
+      if (activeChapterRef.current && chapterId === activeChapterRef.current.id) return;
+      // Seq bump + abort + backoff-unblock. Before S3 this path only bumped
+      // the seq and aborted — if a retry was asleep in backoff, it would
+      // sit for up to 8s before the next iteration's seq check fired.
+      cancelInFlightSave();
+      setSaveStatus("idle");
+      // Mirror handleCreateChapter: the previous chapter's persistent save
+      // failure message must not follow the user into the newly-selected
+      // chapter. The status reset alone hides the footer indicator, but
+      // saveErrorMessage is a separate state and would otherwise linger.
+      setSaveErrorMessage(null);
+      setCacheWarning(false);
+      const seq = ++selectChapterSeqRef.current;
+      try {
+        const chapter = await api.chapters.get(chapterId);
+        if (seq !== selectChapterSeqRef.current) return; // superseded by a newer selection
+        const cached = getCachedContent(chapterId);
+        const effectiveChapter = cached ? { ...chapter, content: cached } : chapter;
+        setActiveChapter(effectiveChapter);
+        setChapterWordCount(countWords(effectiveChapter.content));
+      } catch (err) {
+        console.warn("Failed to load chapter:", err);
+        if (seq !== selectChapterSeqRef.current) return;
+        setError(STRINGS.error.loadChapterFailed);
+      }
     },
     [cancelInFlightSave],
   );

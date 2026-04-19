@@ -498,9 +498,7 @@ describe("useEditorMutation — isLocked predicate (I1)", () => {
     // server-committed change on the next auto-save.
     const { editorRef, projectEditor } = buildHandles();
     const isLocked = vi.fn(() => true);
-    const { result } = renderHook(() =>
-      useEditorMutation({ editorRef, projectEditor, isLocked }),
-    );
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor, isLocked }));
 
     const res = await result.current.run(async () => ({
       clearCacheFor: [],
@@ -517,9 +515,7 @@ describe("useEditorMutation — isLocked predicate (I1)", () => {
   it("re-enables setEditable(true) when isLocked() returns false", async () => {
     const { editorRef, projectEditor } = buildHandles();
     const isLocked = vi.fn(() => false);
-    const { result } = renderHook(() =>
-      useEditorMutation({ editorRef, projectEditor, isLocked }),
-    );
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor, isLocked }));
 
     await result.current.run(async () => ({
       clearCacheFor: [],
@@ -537,9 +533,7 @@ describe("useEditorMutation — isLocked predicate (I1)", () => {
     const { editorRef, projectEditor } = buildHandles();
     let locked = false;
     const isLocked = () => locked;
-    const { result } = renderHook(() =>
-      useEditorMutation({ editorRef, projectEditor, isLocked }),
-    );
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor, isLocked }));
 
     await result.current.run(async () => {
       locked = true;
