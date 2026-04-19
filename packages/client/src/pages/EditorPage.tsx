@@ -535,9 +535,13 @@ export function EditorPage() {
         const resp = result.data;
         if (resp.replaced_count === 0) {
           // Stale match: refresh results so the row disappears and the user
-          // can't click it again to loop the same error.
+          // can't click it again to loop the same error. The action banner
+          // (matchNotFound) is the authoritative description of this click;
+          // suppress any panel-local error the refresh may stamp (I1) so we
+          // don't show two banners with competing wordings for one outcome.
           setActionError(STRINGS.findReplace.matchNotFound);
           await findReplace.search(slug);
+          findReplace.clearError();
           return;
         }
         await finalizeReplaceSuccess({
@@ -580,6 +584,10 @@ export function EditorPage() {
         err.code === SEARCH_ERROR_CODES.SCOPE_NOT_FOUND
       ) {
         await findReplace.search(slug);
+        // Suppress any panel-local error the refresh may stamp so the
+        // action banner set below (replaceScopeNotFound) is the single
+        // source of truth for this click (I1).
+        findReplace.clearError();
       }
       const msg = mapReplaceErrorToMessage(err);
       if (msg) setActionError(msg);
