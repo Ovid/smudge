@@ -283,6 +283,27 @@ export function EditorPage() {
     setActionError(STRINGS.snapshots.restoreFailed);
   }, [viewingSnapshot, activeChapter, restoreSnapshot, snapshotPanelRef, setActionError, mutation]);
 
+  // Shared post-replace bookkeeping for executeReplace and handleReplaceOne,
+  // covering both ok and stage:"reload" branches. Without this, four nearly
+  // identical sequences (search refetch + snapshot refresh + count bump +
+  // success banner + optional lock banner) drift independently.
+  const finalizeReplaceSuccess = useCallback(
+    async ({ replacedCount, reloadFailed }: { replacedCount: number; reloadFailed: boolean }) => {
+      if (!slug) return;
+      await findReplace.search(slug);
+      snapshotPanelRef.current?.refreshSnapshots();
+      // Panel-handle refresh is a no-op when the snapshot panel is closed
+      // (ref is null). Replace just created N auto-snapshots, so drive the
+      // toolbar count directly via the hook.
+      refreshSnapshotCount();
+      setActionInfo(STRINGS.findReplace.replaceSuccess(replacedCount));
+      if (reloadFailed) {
+        setEditorLockedMessage(STRINGS.findReplace.replaceSucceededReloadFailed);
+      }
+    },
+    [slug, findReplace, snapshotPanelRef, refreshSnapshotCount],
+  );
+
   const executeReplace = useCallback(
     async (frozen: {
       scope: { type: "project" } | { type: "chapter"; chapter_id: string };
@@ -322,19 +343,16 @@ export function EditorPage() {
 
       if (result.ok) {
         const resp = result.data;
-        await findReplace.search(slug);
-        snapshotPanelRef.current?.refreshSnapshots();
-        // Panel-handle refresh is a no-op when the snapshot panel is closed
-        // (ref is null). Replace-all just created N auto-snapshots, so drive
-        // the toolbar count directly via the hook.
-        refreshSnapshotCount();
         // Always surface a positive success banner so the user can
         // distinguish "did nothing because something went wrong" from
         // "finished with no user-visible change". When chapters were
         // skipped due to corrupt content, show the warning through the
         // error banner as well — success and warning are distinct
         // regions, not competing for the same slot.
-        setActionInfo(STRINGS.findReplace.replaceSuccess(resp.replaced_count));
+        await finalizeReplaceSuccess({
+          replacedCount: resp.replaced_count,
+          reloadFailed: false,
+        });
         if (resp.skipped_chapter_ids && resp.skipped_chapter_ids.length > 0) {
           setActionError(STRINGS.findReplace.skippedAfterReplace(resp.skipped_chapter_ids.length));
         }
@@ -354,11 +372,10 @@ export function EditorPage() {
         // Server-side replace succeeded; only the follow-up GET failed.
         // result.data carries the ReplaceResponse so we can show the real
         // replaced_count alongside the persistent lock banner (I1).
-        await findReplace.search(slug);
-        snapshotPanelRef.current?.refreshSnapshots();
-        refreshSnapshotCount();
-        setActionInfo(STRINGS.findReplace.replaceSuccess(result.data.replaced_count));
-        setEditorLockedMessage(STRINGS.findReplace.replaceSucceededReloadFailed);
+        await finalizeReplaceSuccess({
+          replacedCount: result.data.replaced_count,
+          reloadFailed: true,
+        });
         return;
       }
       // stage === "mutate"
@@ -368,9 +385,7 @@ export function EditorPage() {
     [
       project,
       slug,
-      findReplace,
-      snapshotPanelRef,
-      refreshSnapshotCount,
+      finalizeReplaceSuccess,
       getActiveChapter,
       setActionError,
       mutation,
@@ -484,13 +499,10 @@ export function EditorPage() {
           await findReplace.search(slug);
           return;
         }
-        await findReplace.search(slug);
-        snapshotPanelRef.current?.refreshSnapshots();
-        // Panel-handle refresh is a no-op when the snapshot panel is
-        // closed (ref is null). Replace-one created an auto-snapshot, so
-        // drive the toolbar count directly via the hook.
-        refreshSnapshotCount();
-        setActionInfo(STRINGS.findReplace.replaceSuccess(resp.replaced_count));
+        await finalizeReplaceSuccess({
+          replacedCount: resp.replaced_count,
+          reloadFailed: false,
+        });
         return;
       }
 
@@ -506,11 +518,10 @@ export function EditorPage() {
         // Server-side replace succeeded; only the follow-up GET failed.
         // Persistent lock banner (I1) — the editor stays read-only until
         // the page is refreshed.
-        await findReplace.search(slug);
-        snapshotPanelRef.current?.refreshSnapshots();
-        refreshSnapshotCount();
-        setActionInfo(STRINGS.findReplace.replaceSuccess(result.data.replaced_count));
-        setEditorLockedMessage(STRINGS.findReplace.replaceSucceededReloadFailed);
+        await finalizeReplaceSuccess({
+          replacedCount: result.data.replaced_count,
+          reloadFailed: true,
+        });
         return;
       }
       // stage === "mutate"
@@ -536,8 +547,7 @@ export function EditorPage() {
       project,
       slug,
       findReplace,
-      snapshotPanelRef,
-      refreshSnapshotCount,
+      finalizeReplaceSuccess,
       getActiveChapter,
       setActionError,
       mutation,
