@@ -467,8 +467,18 @@ export function replaceInDoc(
   const cloned = JSON.parse(JSON.stringify(doc)) as TipTapNode;
   const leafBlocks = collectLeafBlocks(cloned);
   let totalCount = 0;
-  // Tracks the global match index across blocks so match_index can select
-  // a single occurrence.
+  // Tracks how many matches have been *enumerated* across prior runs, so
+  // match_index can select a single occurrence without re-scanning.
+  //
+  // Note on semantics: in match_index mode, we break out of the inner
+  // enumeration loop as soon as allMatches.length > localTarget — so in
+  // the run containing the target, this cursor advances by
+  // (localTarget + 1), not by the true total matches in the run. After
+  // targetFound flips true, every subsequent run/block short-circuits and
+  // does not read the cursor, so the imprecision is not observable today.
+  // Treat this as "total enumerated up to and including the found match",
+  // not "true running match index" — any future reader that needs the
+  // real count in match_index mode must enumerate without the early break.
   let globalMatchCursor = 0;
   // Running sum of characters emitted by every expanded replacement. Checked
   // against opts.max_output_chars after each match so pathological templates
