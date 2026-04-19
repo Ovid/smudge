@@ -78,10 +78,17 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   }
 
   if (res.status === 204) return undefined as T;
-  // Wrap the body-read here too: a caller abort after a 2xx response and
-  // before json() resolves would otherwise bubble a raw DOMException.
+  // A caller abort after a 2xx response and before json() resolves would
+  // otherwise bubble a raw DOMException — map to ABORTED so callers can
+  // key on err.code. For other body-read failures (non-JSON 2xx bodies
+  // from a reverse proxy, truncated responses), preserve the real HTTP
+  // status so the error isn't mistaken for a network fault.
   return (res.json() as Promise<T>).catch((err: unknown) => {
-    throw classifyFetchError(err);
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw classifyFetchError(err);
+    }
+    const message = err instanceof Error ? err.message : "Malformed response body";
+    throw new ApiRequestError(message, res.status, "BAD_JSON");
   });
 }
 

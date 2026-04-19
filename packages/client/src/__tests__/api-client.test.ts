@@ -619,4 +619,44 @@ describe("error handling", () => {
     const result = await api.projects.delete("p1");
     expect(result).toBeUndefined();
   });
+
+  it("maps 2xx AbortError body-read failure to ABORTED with status 0", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    const abort = new DOMException("aborted", "AbortError");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(abort),
+    });
+
+    let caught: unknown;
+    try {
+      await api.projects.list();
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("ABORTED");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
+  it("maps 2xx non-abort body-read failure to BAD_JSON with real status", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(new SyntaxError("Unexpected token < in JSON at position 0")),
+    });
+
+    let caught: unknown;
+    try {
+      await api.projects.list();
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("BAD_JSON");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(200);
+    expect((caught as Error).message).toMatch(/Unexpected token/);
+  });
 });
