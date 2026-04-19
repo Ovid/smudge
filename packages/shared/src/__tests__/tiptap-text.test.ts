@@ -606,6 +606,13 @@ describe("assertSafeRegexPattern", () => {
     expect(() => assertSafeRegexPattern("\\.+\\s+")).not.toThrow();
   });
 
+  it("accepts disjoint character classes built from literal chars (not ranges)", () => {
+    // Exercises the single-literal-char branch of charClassToCharSet
+    // (no `-`, no `\\`): `[a+]` parses char-by-char, yielding {a, +}.
+    expect(() => assertSafeRegexPattern("[a+]+[b]+")).not.toThrow();
+    expect(() => assertSafeRegexPattern("[abc]+[xyz]+")).not.toThrow();
+  });
+
   it("accepts adjacent quantifiers on provably-disjoint custom character classes", () => {
     // Previously these were stripped to `[]` by the pre-scan and rejected
     // with a spurious "adjacent unbounded quantifiers" error. Users running
