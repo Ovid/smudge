@@ -183,3 +183,59 @@ describe("useEditorMutation — mutate failure", () => {
     expect(editorRef.current!.markClean).toHaveBeenCalled(); // markClean runs before mutate
   });
 });
+
+describe("useEditorMutation — reload failure", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns stage 'reload' when reloadActiveChapter invokes onError", async () => {
+    const { editorRef, projectEditor } = buildHandles();
+    projectEditor.reloadActiveChapter = vi.fn(async (onError) => {
+      onError?.("reload-failed-msg");
+      return false;
+    });
+
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor }),
+    );
+    const res = await result.current.run<{ replaced: number }>(async () => ({
+      clearCacheFor: ["c1"],
+      reloadActiveChapter: true,
+      data: { replaced: 3 },
+    }));
+
+    expect(res).toEqual({
+      ok: false,
+      stage: "reload",
+      data: { replaced: 3 },
+      error: "reload-failed-msg",
+    });
+    expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(true);
+    // cache-clear still happened — server committed the mutation
+    const { clearAllCachedContent } = await import("./useContentCache");
+    expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["c1"]);
+  });
+
+  it("returns stage 'reload' with data when reloadActiveChapter returns false without onError", async () => {
+    const { editorRef, projectEditor } = buildHandles();
+    projectEditor.reloadActiveChapter = vi.fn(async () => false);
+
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor }),
+    );
+    const res = await result.current.run<{ affected: string[] }>(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: true,
+      data: { affected: ["c9"] },
+    }));
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.stage).toBe("reload");
+      if (res.stage === "reload") {
+        expect(res.data).toEqual({ affected: ["c9"] });
+      }
+    }
+  });
+});

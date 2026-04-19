@@ -62,7 +62,20 @@ export function useEditorMutation(
           clearAllCachedContent(directive.clearCacheFor);
         }
         if (directive.reloadActiveChapter) {
-          await projectEditorRef.current.reloadActiveChapter();
+          let reloadMessage: string | undefined;
+          const ok = await projectEditorRef.current.reloadActiveChapter(
+            (msg) => {
+              reloadMessage = msg;
+            },
+          );
+          if (!ok) {
+            return {
+              ok: false,
+              stage: "reload",
+              data: directive.data,
+              error: reloadMessage,
+            };
+          }
         }
         return { ok: true, data: directive.data };
       } finally {
