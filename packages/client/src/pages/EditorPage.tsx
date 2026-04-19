@@ -17,6 +17,7 @@ import { ViewModeNav } from "../components/ViewModeNav";
 import { EditorFooter } from "../components/EditorFooter";
 import { STRINGS } from "../strings";
 import { useProjectEditor } from "../hooks/useProjectEditor";
+import { useEditorMutation } from "../hooks/useEditorMutation";
 import { useSidebarState } from "../hooks/useSidebarState";
 import { useReferencePanelState } from "../hooks/useReferencePanelState";
 import { useSnapshotState } from "../hooks/useSnapshotState";
@@ -37,6 +38,19 @@ import { Logo } from "../components/Logo";
 import { generateHTML } from "@tiptap/html";
 import DOMPurify from "dompurify";
 import { editorExtensions } from "../editorExtensions";
+
+// Sentinel errors used by the handleRestoreSnapshot mutate callback so the
+// useEditorMutation hook surfaces a `stage: "mutate"` result that the caller
+// can route to reason-specific copy. `RestoreAbortedError` signals the user
+// clicked "Back to editing" during the flush — treat as a silent no-op.
+class RestoreAbortedError extends Error {}
+class RestoreFailedError extends Error {
+  constructor(
+    public readonly reason: "corrupt_snapshot" | "cross_project_image" | "not_found" | "other",
+  ) {
+    super(`restore failed: ${reason}`);
+  }
+}
 
 function renderSnapshotContent(content: Record<string, unknown>): string {
   try {
@@ -132,7 +146,25 @@ export function EditorPage() {
   // creates its own auto-snapshot on the server and triggers independent
   // reloadActiveChapter remounts, magnifying the in-flight-edit data-loss
   // race surface.
+  // NOTE: this ref is removed in Task 12 once executeReplace/handleReplaceOne
+  // migrate to useEditorMutation (whose busy guard replaces it).
   const replaceInFlightRef = useRef(false);
+
+  // Editor handle is declared here (above useEditorMutation + the migrated
+  // mutation callbacks) so the hook can capture the ref and the callbacks
+  // below can read editorRef.current safely.
+  const editorRef = useRef<EditorHandle | null>(null);
+
+  // Single useEditorMutation instance shared by handleRestoreSnapshot,
+  // executeReplace, and handleReplaceOne. The cross-caller busy-guard
+  // depends on a single invocation — do NOT add a second call.
+  const mutation = useEditorMutation({
+    editorRef,
+    projectEditor: {
+      cancelPendingSaves,
+      reloadActiveChapter,
+    },
+  });
 
   // Frozen snapshot of state at the moment the user clicked "Replace All".
   // This prevents the confirmation copy from drifting if the user edits the
@@ -176,71 +208,74 @@ export function EditorPage() {
 
   const handleRestoreSnapshot = useCallback(async () => {
     if (!viewingSnapshot || !activeChapter) return;
-    // Disable the editor for the full round trip so typing between markClean
-    // and the restore response cannot re-dirty it. Without this, the unmount
-    // PATCH fired by reloadActiveChapter's remount would land after the
-    // restore and silently overwrite the restored content.
-    editorRef.current?.setEditable(false);
-    try {
-      // If the pending save failed, do not reload — reload would clear the
-      // client-side unsaved-content cache, losing the user's unsaved edits.
-      const flushed = (await editorRef.current?.flushSave()) ?? true;
-      if (!flushed) {
-        // The fault is the save, not the restore — attribute it correctly.
-        setActionError(STRINGS.snapshots.restoreFailedSaveFirst);
-        return;
+
+    type RestoreData = { staleChapterSwitch: boolean };
+
+    const result = await mutation.run<RestoreData>(async () => {
+      // Re-check intent AFTER the hook's flush/markClean: if the user
+      // clicked "Back to editing" during the flush window, abort before
+      // issuing the server restore. Throwing a sentinel surfaces as
+      // stage: "mutate" with a RestoreAbortedError the caller swallows.
+      if (!viewingSnapshotRef.current) throw new RestoreAbortedError();
+      const restore = await restoreSnapshot(viewingSnapshot.id);
+      if (!restore.ok) {
+        throw new RestoreFailedError(
+          (restore.reason as RestoreFailedError["reason"]) ?? "other",
+        );
       }
-      // After awaiting flushSave, re-check whether the user still wants the
-      // restore. If they clicked "Back to editing" during the flush, the
-      // closure-captured viewingSnapshot is stale and we must not proceed.
-      if (!viewingSnapshotRef.current) return;
-      // Cancel any pending retry saves; their stale content would clobber
-      // the restored snapshot once the server-side restore completes.
-      cancelPendingSaves();
-      // Mark the editor clean so the unmount triggered by the upcoming
-      // reloadActiveChapter remount does NOT fire a fire-and-forget save of
-      // pre-restore content that would land after the server-side restore
-      // and silently undo it.
-      editorRef.current?.markClean();
-      const result = await restoreSnapshot(viewingSnapshot.id);
-      if (result.ok) {
-        // If the user switched chapters mid-flight, reloading the now-active
-        // chapter would pull in a different chapter's server state. Skip the
-        // reload and the panel refresh — both are keyed to the current active
-        // chapter, not the one that was restored.
-        if (!result.staleChapterSwitch) {
-          // Route reload failure to the dismissible action-error banner
-          // instead of the full-page error branch. The server-side restore
-          // has already succeeded; a transient GET failure at this point
-          // should not nuke the editor — the user can refresh to recover.
-          await reloadActiveChapter(() => {
-            setActionError(STRINGS.snapshots.restoreSucceededReloadFailed);
-          });
-          snapshotPanelRef.current?.refreshSnapshots();
-        }
-      } else if (result.reason === "corrupt_snapshot") {
+      const stale = Boolean(restore.staleChapterSwitch);
+      // On stale-chapter-switch the restore landed on a now-background
+      // chapter — skip both the cache clear (useSnapshotState already
+      // cleared the restoring chapter's cache) and the active-chapter
+      // reload (it would pull the wrong chapter's server state).
+      return {
+        clearCacheFor: stale ? [] : [activeChapter.id],
+        reloadActiveChapter: !stale,
+        data: { staleChapterSwitch: stale },
+      };
+    });
+
+    if (result.ok) {
+      if (!result.data.staleChapterSwitch) {
+        snapshotPanelRef.current?.refreshSnapshots();
+      }
+      return;
+    }
+    if (result.stage === "busy") return;
+    if (result.stage === "flush") {
+      // The fault is the save, not the restore — attribute it correctly.
+      setActionError(STRINGS.snapshots.restoreFailedSaveFirst);
+      return;
+    }
+    if (result.stage === "reload") {
+      // Server-side restore succeeded; only the follow-up GET failed. Route
+      // to the dismissible banner, not the full-page error branch.
+      setActionError(STRINGS.snapshots.restoreSucceededReloadFailed);
+      snapshotPanelRef.current?.refreshSnapshots();
+      return;
+    }
+    // stage === "mutate"
+    if (result.error instanceof RestoreAbortedError) return;
+    if (result.error instanceof RestoreFailedError) {
+      if (result.error.reason === "corrupt_snapshot") {
         setActionError(STRINGS.snapshots.restoreFailedCorrupt);
-      } else if (result.reason === "cross_project_image") {
+      } else if (result.error.reason === "cross_project_image") {
         setActionError(STRINGS.snapshots.restoreFailedCrossProjectImage);
-      } else if (result.reason === "not_found") {
+      } else if (result.error.reason === "not_found") {
         setActionError(STRINGS.snapshots.restoreFailedNotFound);
       } else {
         setActionError(STRINGS.snapshots.restoreFailed);
       }
-    } finally {
-      // Re-enable editing. If reloadActiveChapter caused a remount, the old
-      // editor handle is destroyed and this is a no-op on a fresh editable
-      // editor; otherwise we need to re-enable so the user can continue.
-      editorRef.current?.setEditable(true);
+      return;
     }
+    setActionError(STRINGS.snapshots.restoreFailed);
   }, [
     viewingSnapshot,
     activeChapter,
     restoreSnapshot,
-    reloadActiveChapter,
     snapshotPanelRef,
     setActionError,
-    cancelPendingSaves,
+    mutation,
   ]);
 
   const executeReplace = useCallback(
@@ -555,7 +590,6 @@ export function EditorPage() {
   const [wordCountAnnouncement, setWordCountAnnouncement] = useState("");
   const [imageAnnouncement, setImageAnnouncement] = useState("");
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
-  const editorRef = useRef<EditorHandle | null>(null);
   const imageAnnouncementTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [toolbarEditor, setToolbarEditor] = useState<TipTapEditor | null>(null);
 
