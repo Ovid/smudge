@@ -231,6 +231,15 @@ export function EditorPage() {
       // chapter — skip both the cache clear (useSnapshotState already
       // cleared the restoring chapter's cache) and the active-chapter
       // reload (it would pull the wrong chapter's server state).
+      //
+      // NOTE: This branch deliberately uses the CLOSURE activeChapter.id
+      // (not getActiveChapter() like executeReplace/handleReplaceOne).
+      // The restore was initiated against a specific snapshot of a
+      // specific chapter — its cache-clear and reloadChapterId must
+      // target that chapter, not whichever chapter is active when the
+      // server response lands. useSnapshotState's stale-detection at
+      // useSnapshotState.ts only clears the cache for the chapter the
+      // restore targeted; mirroring that here keeps the contract aligned.
       return {
         clearCacheFor: stale ? [] : [activeChapter.id],
         reloadActiveChapter: !stale,
