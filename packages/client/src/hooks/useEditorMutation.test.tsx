@@ -332,6 +332,36 @@ describe("useEditorMutation — synchronous setEditable throw (C1)", () => {
   });
 });
 
+describe("useEditorMutation — isBusy probe (I2)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns true while a run() is mid-flight and false after it resolves", async () => {
+    const { editorRef, projectEditor } = buildHandles();
+
+    let resolveMutate: () => void = () => {};
+    const blockingMutate = () =>
+      new Promise<MutationDirective>((resolve) => {
+        resolveMutate = () =>
+          resolve({ clearCacheFor: [], reloadActiveChapter: false, data: undefined });
+      });
+
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+
+    expect(result.current.isBusy()).toBe(false);
+
+    const promise = result.current.run(blockingMutate);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(result.current.isBusy()).toBe(true);
+
+    resolveMutate();
+    await promise;
+    expect(result.current.isBusy()).toBe(false);
+  });
+});
+
 describe("useEditorMutation — null editor ref", () => {
   beforeEach(() => {
     vi.clearAllMocks();

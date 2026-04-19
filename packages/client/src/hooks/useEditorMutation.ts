@@ -33,6 +33,13 @@ export type UseEditorMutationArgs = {
 
 export type UseEditorMutationReturn = {
   run: <T>(mutate: () => Promise<MutationDirective<T>>) => Promise<MutationResult<T>>;
+  // Read-only synchronous probe used by external flushSave entry points
+  // (chapter switch, snapshot view, snapshot create) to refuse hand-composed
+  // setEditable/flushSave/cancelPendingSaves sequences while a mutation is
+  // mid-flight (I2). Without this, the hook's busy guard only protects
+  // run()-routed callers — external callers could still race the in-flight
+  // mutation by aborting its save controller or re-enabling the editor.
+  isBusy: () => boolean;
 };
 
 export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutationReturn {
@@ -115,5 +122,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
     [args.editorRef],
   );
 
-  return useMemo(() => ({ run }), [run]);
+  const isBusy = useCallback(() => inFlightRef.current, []);
+
+  return useMemo(() => ({ run, isBusy }), [run, isBusy]);
 }

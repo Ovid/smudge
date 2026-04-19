@@ -647,6 +647,16 @@ export function EditorPage() {
 
   const switchToView = useCallback(
     async (mode: ViewMode): Promise<boolean> => {
+      // Refuse view switches while a useEditorMutation.run() is in-flight
+      // (I2): switchToView's flushSave would abort the mutation's save
+      // controller and the user could click away mid-replace, racing the
+      // hook's awaited flush against this hand-composed flush. Surface the
+      // same busy banner the run-routed callers use so the click is not
+      // silently dropped.
+      if (mutation.isBusy()) {
+        setActionInfo(STRINGS.editor.mutationBusy);
+        return false;
+      }
       // flushSave returns false when the save pipeline gave up (4xx or
       // all retries exhausted). Preview/Dashboard would then render the
       // LAST server-confirmed content, not what the user just typed —
@@ -669,7 +679,7 @@ export function EditorPage() {
       }
       return true;
     },
-    [setTrashOpen, setActionError],
+    [setTrashOpen, setActionError, mutation],
   );
 
   const handleSelectChapterWithFlush = useCallback(
@@ -1065,6 +1075,16 @@ export function EditorPage() {
             isOpen={snapshotPanelOpen}
             onClose={() => setSnapshotPanelOpen(false)}
             onView={async (snap) => {
+              // Refuse snapshot view while a useEditorMutation.run() is
+              // in-flight (I2): the hand-composed flushSave/cancelPendingSaves
+              // below would abort the in-flight mutation's save controller
+              // and the subsequent setEditable(true) error branch could
+              // re-enable the editor mid-mutation. Surface the busy banner
+              // and bail before touching the editor.
+              if (mutation.isBusy()) {
+                setActionInfo(STRINGS.editor.mutationBusy);
+                return undefined;
+              }
               // Before switching to the read-only snapshot view, flush
               // any pending save and cancel in-flight save retries so
               // the server never receives a write while the user
@@ -1106,6 +1126,12 @@ export function EditorPage() {
               }
             }}
             onBeforeCreate={async () => {
+              // Same I2 guard as onView — refuse snapshot creation while
+              // a mutation is in-flight rather than racing its save.
+              if (mutation.isBusy()) {
+                setActionInfo(STRINGS.editor.mutationBusy);
+                return false;
+              }
               const flushed = (await editorRef.current?.flushSave()) ?? true;
               if (flushed) cancelPendingSaves();
               return flushed;
