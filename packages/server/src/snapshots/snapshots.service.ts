@@ -6,7 +6,8 @@ import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import { applyImageRefDiff, extractImageIds } from "../images/images.references";
-import { enrichChapterWithLabel } from "../chapters/chapters.types";
+import { enrichChapterWithLabel, stripCorruptFlag } from "../chapters/chapters.types";
+import type { ChapterRow } from "../chapters/chapters.types";
 import { canonicalContentHash } from "./content-hash";
 import { MAX_CHAPTER_CONTENT_BYTES } from "../constants";
 import type { SnapshotRow, SnapshotListItem } from "./snapshots.types";
@@ -238,11 +239,11 @@ export async function restoreSnapshot(
       { err, project_id: result.project_id, chapter_id: result.chapter_id },
       "enrichChapterWithLabel failed after restore; returning status as label",
     );
-    const chapterRow = result.chapter as unknown as Record<string, unknown> & {
-      content_corrupt?: unknown;
-      status: string;
-    };
-    const { content_corrupt: _c, ...clean } = chapterRow;
+    // Route through the shared helper rather than destructuring inline so
+    // any future additions to the corrupt-flag surface (e.g.
+    // content_corrupt_reason) stay in sync with the success path.
+    const chapterRow = result.chapter as unknown as ChapterRow;
+    const clean = stripCorruptFlag(chapterRow);
     return {
       chapter: { ...clean, status_label: chapterRow.status },
     };
