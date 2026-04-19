@@ -176,11 +176,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         // gates on TipTapDocSchema.safeParse for the same reason; surface
         // a clean corrupt_snapshot here rather than letting the editor
         // throw.
-        if (
-          content === null ||
-          typeof content !== "object" ||
-          Array.isArray(content)
-        ) {
+        if (content === null || typeof content !== "object" || Array.isArray(content)) {
           return { ok: false, reason: "corrupt_snapshot" };
         }
         setViewingSnapshot({

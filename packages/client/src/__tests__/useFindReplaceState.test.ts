@@ -209,7 +209,12 @@ describe("useFindReplaceState", () => {
     });
 
     expect(mockFind).toHaveBeenCalled();
-    expect(mockFind).toHaveBeenLastCalledWith("new-slug", "word", expect.any(Object), expect.anything());
+    expect(mockFind).toHaveBeenLastCalledWith(
+      "new-slug",
+      "word",
+      expect.any(Object),
+      expect.anything(),
+    );
   });
 
   it("search() sets error on ApiRequestError with status 400 (invalid regex)", async () => {

@@ -358,26 +358,30 @@ function charClassToCharSet(contents: string): Set<number> | null {
   }
   const set = new Set<number>();
   while (i < contents.length) {
-    const c = contents[i]!;
+    const c = contents[i];
+    if (c === undefined) break;
     if (c === "\\") {
       const esc = contents[i + 1];
       if (esc === undefined) return null;
       const shorthand = shorthandCharSet(esc);
       if (shorthand) {
         for (const k of shorthand) set.add(k);
-      } else if (esc in SIMPLE_ESCAPE_CODES) {
-        set.add(SIMPLE_ESCAPE_CODES[esc]!);
       } else {
-        const code = esc.charCodeAt(0);
-        if (code >= ASCII_MAX) return null;
-        set.add(code);
+        const simple = SIMPLE_ESCAPE_CODES[esc];
+        if (simple !== undefined) {
+          set.add(simple);
+        } else {
+          const code = esc.charCodeAt(0);
+          if (code >= ASCII_MAX) return null;
+          set.add(code);
+        }
       }
       i += 2;
       continue;
     }
-    if (i + 2 < contents.length && contents[i + 1] === "-" && contents[i + 2] !== "]") {
+    const next = contents[i + 2];
+    if (contents[i + 1] === "-" && next !== undefined && next !== "]") {
       // Range. `\X-Y` or `X-\Y` are rare and not supported by this heuristic.
-      const next = contents[i + 2]!;
       if (next === "\\") return null;
       const startCode = c.charCodeAt(0);
       const endCode = next.charCodeAt(0);
@@ -401,10 +405,12 @@ function charClassToCharSet(contents: string): Set<number> | null {
 
 function atomToCharSet(atom: string): Set<number> | null {
   if (atom.length === 2 && atom[0] === "\\") {
-    const esc = atom[1]!;
+    const esc = atom[1];
+    if (esc === undefined) return null;
     const shorthand = shorthandCharSet(esc);
     if (shorthand) return shorthand;
-    if (esc in SIMPLE_ESCAPE_CODES) return new Set([SIMPLE_ESCAPE_CODES[esc]!]);
+    const simple = SIMPLE_ESCAPE_CODES[esc];
+    if (simple !== undefined) return new Set([simple]);
     const code = esc.charCodeAt(0);
     if (code >= ASCII_MAX) return null;
     return new Set([code]);
