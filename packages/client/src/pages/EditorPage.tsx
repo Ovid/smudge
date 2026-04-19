@@ -33,6 +33,7 @@ import { useTrashManager } from "../hooks/useTrashManager";
 import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcuts";
 import { api, ApiRequestError } from "../api/client";
 import { mapReplaceErrorToMessage } from "../utils/findReplaceErrors";
+import { SEARCH_ERROR_CODES } from "@smudge/shared";
 import { Logo } from "../components/Logo";
 import { generateHTML } from "@tiptap/html";
 import DOMPurify from "dompurify";
@@ -490,8 +491,16 @@ export function EditorPage() {
       const err = result.error;
       // On 404 SCOPE_NOT_FOUND (chapter soft-deleted since the last search),
       // drop the stale match group BEFORE showing the banner — otherwise the
-      // user clicks the same row and loops the same error.
-      if (err instanceof ApiRequestError && err.status === 404) {
+      // user clicks the same row and loops the same error. Gate on the
+      // SCOPE_NOT_FOUND code specifically: a bare 404 can also mean the
+      // whole project is gone (NOT_FOUND), in which case re-searching will
+      // 404 again and stamp a second banner over the mapped project-gone
+      // copy.
+      if (
+        err instanceof ApiRequestError &&
+        err.status === 404 &&
+        err.code === SEARCH_ERROR_CODES.SCOPE_NOT_FOUND
+      ) {
         await findReplace.search(slug);
       }
       const msg = mapReplaceErrorToMessage(err);
