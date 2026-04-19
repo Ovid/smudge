@@ -289,3 +289,28 @@ describe("useEditorMutation — busy guard", () => {
     await firstPromise;
   });
 });
+
+describe("useEditorMutation — null editor ref", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("runs mutate, cache-clear, and reload when editorRef.current is null", async () => {
+    const { projectEditor } = buildHandles();
+    const editorRef: MutableRefObject<EditorHandle | null> = { current: null };
+    const { clearAllCachedContent } = await import("./useContentCache");
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor }),
+    );
+
+    const res = await result.current.run(async () => ({
+      clearCacheFor: ["c1"],
+      reloadActiveChapter: true,
+      data: undefined,
+    }));
+
+    expect(res).toEqual({ ok: true, data: undefined });
+    expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["c1"]);
+    expect(projectEditor.reloadActiveChapter).toHaveBeenCalled();
+  });
+});
