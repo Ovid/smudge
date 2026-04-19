@@ -123,12 +123,18 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
 
       // Toggle find-and-replace panel (Ctrl/Cmd+H).
       // Placed after the modal-open guard so the panel can't be toggled
-      // underneath a confirmation dialog. Also skip when the user is
-      // typing in an input or textarea — muscle-memory Ctrl+H while editing
-      // the search input shouldn't wipe their query + results state.
+      // underneath a confirmation dialog. Skip when the user is typing
+      // in an unrelated input or textarea — muscle-memory Ctrl+H while
+      // editing some other field shouldn't open/close the panel. Ctrl+H
+      // while focused on the panel's own find/replace inputs is NOT
+      // guarded: the panel just focused its search input on open, and
+      // the user's clear intent for "Ctrl+H again" is to toggle closed.
       if (ctrl && e.code === "KeyH") {
-        const tag = (document.activeElement as HTMLElement)?.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA") return;
+        const active = document.activeElement as HTMLElement | null;
+        const tag = active?.tagName;
+        const id = active?.id;
+        const isFindReplaceInput = id === "find-replace-search" || id === "find-replace-replace";
+        if ((tag === "INPUT" || tag === "TEXTAREA") && !isFindReplaceInput) return;
         e.preventDefault();
         toggleFindReplaceRef.current?.();
         return;
