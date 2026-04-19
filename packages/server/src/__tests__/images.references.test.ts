@@ -113,6 +113,25 @@ describe("extractImageIds()", () => {
     };
     expect(extractImageIds(content)).toEqual([]);
   });
+
+  it("stops walking past MAX_TIPTAP_DEPTH (I1 guard)", () => {
+    // Build nested content[] 200 levels deep with an image buried inside.
+    // Without a depth cap, unbalanced legacy rows could stack-overflow
+    // inside applyImageRefDiff during chapter PATCH / snapshot restore.
+    let node: Record<string, unknown> = {
+      type: "image",
+      attrs: { src: "/api/images/11111111-1111-1111-1111-111111111111" },
+    };
+    for (let i = 0; i < 200; i++) {
+      node = { type: "paragraph", content: [node] };
+    }
+    const content = { type: "doc", content: [node] };
+    // The walker must return without throwing; the deep image is not
+    // collected (exceeds depth cap), which is acceptable since the schema
+    // would reject it on write — we're guarding legacy/corrupt reads.
+    expect(() => extractImageIds(content)).not.toThrow();
+    expect(extractImageIds(content)).toEqual([]);
+  });
 });
 
 describe("diffImageReferences()", () => {

@@ -1,3 +1,4 @@
+import { MAX_TIPTAP_DEPTH } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { logger } from "../logger";
 import { UUID_PATTERN } from "./images.paths";
@@ -18,7 +19,12 @@ export function extractImageIds(content: Record<string, unknown> | null): string
   if (!content) return [];
   const ids = new Set<string>();
 
-  function walk(node: Record<string, unknown>) {
+  // Depth cap matches collectLeafBlocks / extractText / canonicalize. Runs
+  // on both old (DB-read, never revalidated) and new content inside
+  // applyImageRefDiff — a legacy row written before the current write-side
+  // cap could otherwise stack-overflow the walker.
+  function walk(node: Record<string, unknown>, depth: number) {
+    if (depth > MAX_TIPTAP_DEPTH) return;
     if (node.type === "image" && typeof node.attrs === "object" && node.attrs !== null) {
       const attrs = node.attrs as Record<string, unknown>;
       if (typeof attrs.src === "string") {
@@ -29,13 +35,13 @@ export function extractImageIds(content: Record<string, unknown> | null): string
     if (Array.isArray(node.content)) {
       for (const child of node.content) {
         if (typeof child === "object" && child !== null) {
-          walk(child as Record<string, unknown>);
+          walk(child as Record<string, unknown>, depth + 1);
         }
       }
     }
   }
 
-  walk(content);
+  walk(content, 0);
   return [...ids];
 }
 
