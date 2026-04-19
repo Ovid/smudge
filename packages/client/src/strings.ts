@@ -65,6 +65,7 @@ export const STRINGS = {
     viewSwitchSaveFailed:
       "Unable to save pending changes. Try again once your connection recovers before switching views.",
     mutationBusy: "Another operation is in progress — please wait.",
+    refreshButton: "Refresh page",
   },
   shortcuts: {
     dialogTitle: "Keyboard Shortcuts",

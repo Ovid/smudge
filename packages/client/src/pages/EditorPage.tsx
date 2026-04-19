@@ -132,6 +132,14 @@ export function EditorPage() {
   // without conflating success with failure.
   const [actionInfo, setActionInfo] = useState<string | null>(null);
 
+  // Read-only lock surfaced when a mutation succeeded server-side but the
+  // follow-up reload failed (I1). The Editor is intentionally left
+  // setEditable(false) in that case to prevent the user from typing over
+  // stale content; this banner is the only persistent user-visible signal
+  // of that state, so it must NOT be dismissible. It clears automatically
+  // when the Editor is replaced (chapter switch or reload-key bump).
+  const [editorLockedMessage, setEditorLockedMessage] = useState<string | null>(null);
+
   // Snapshot-view ref used by handleRestoreSnapshot to re-check intent after
   // awaiting flushSave — the user may have clicked "Back to editing" during
   // the flush, in which case the restore should not proceed.
@@ -250,9 +258,11 @@ export function EditorPage() {
       return;
     }
     if (result.stage === "reload") {
-      // Server-side restore succeeded; only the follow-up GET failed. Route
-      // to the dismissible banner, not the full-page error branch.
-      setActionError(STRINGS.snapshots.restoreSucceededReloadFailed);
+      // Server-side restore succeeded; only the follow-up GET failed. The
+      // editor stays setEditable(false) (see useEditorMutation reloadFailed
+      // path) — surface a persistent, non-dismissible lock banner so the
+      // user-visible signal of the read-only state cannot be hidden (I1).
+      setEditorLockedMessage(STRINGS.snapshots.restoreSucceededReloadFailed);
       snapshotPanelRef.current?.refreshSnapshots();
       return;
     }
@@ -343,12 +353,12 @@ export function EditorPage() {
       if (result.stage === "reload") {
         // Server-side replace succeeded; only the follow-up GET failed.
         // result.data carries the ReplaceResponse so we can show the real
-        // replaced_count alongside the "reload failed" banner.
+        // replaced_count alongside the persistent lock banner (I1).
         await findReplace.search(slug);
         snapshotPanelRef.current?.refreshSnapshots();
         refreshSnapshotCount();
         setActionInfo(STRINGS.findReplace.replaceSuccess(result.data.replaced_count));
-        setActionError(STRINGS.findReplace.replaceSucceededReloadFailed);
+        setEditorLockedMessage(STRINGS.findReplace.replaceSucceededReloadFailed);
         return;
       }
       // stage === "mutate"
@@ -494,11 +504,13 @@ export function EditorPage() {
       }
       if (result.stage === "reload") {
         // Server-side replace succeeded; only the follow-up GET failed.
+        // Persistent lock banner (I1) — the editor stays read-only until
+        // the page is refreshed.
         await findReplace.search(slug);
         snapshotPanelRef.current?.refreshSnapshots();
         refreshSnapshotCount();
         setActionInfo(STRINGS.findReplace.replaceSuccess(result.data.replaced_count));
-        setActionError(STRINGS.findReplace.replaceSucceededReloadFailed);
+        setEditorLockedMessage(STRINGS.findReplace.replaceSucceededReloadFailed);
         return;
       }
       // stage === "mutate"
@@ -579,6 +591,14 @@ export function EditorPage() {
       }
     };
   }, []);
+
+  // Clear the editor-locked banner whenever the active Editor instance
+  // changes — chapter switch creates a new Editor with default editable=true,
+  // and a chapterReloadKey bump remounts with fresh server content. In both
+  // cases the read-only state from the failed reload no longer applies.
+  useEffect(() => {
+    setEditorLockedMessage(null);
+  }, [activeChapter?.id, chapterReloadKey]);
 
   // Fetch chapter statuses with retry
   useEffect(() => {
@@ -868,6 +888,21 @@ export function EditorPage() {
         )}
 
         <div className="flex-1 flex flex-col overflow-hidden">
+          {editorLockedMessage && (
+            <div
+              role="alert"
+              className="px-6 py-2 bg-status-error/8 text-status-error text-sm flex items-center justify-between border-b border-status-error/15"
+            >
+              <span>{editorLockedMessage}</span>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="ml-4 rounded-md bg-status-error/15 px-2.5 py-1 text-xs font-medium text-status-error hover:bg-status-error/25 focus:outline-none focus:ring-2 focus:ring-focus-ring"
+              >
+                {STRINGS.editor.refreshButton}
+              </button>
+            </div>
+          )}
           {actionError && (
             <ActionErrorBanner error={actionError} onDismiss={() => setActionError(null)} />
           )}
