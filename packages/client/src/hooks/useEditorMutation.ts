@@ -38,13 +38,27 @@ export function useEditorMutation(
     projectEditorRef.current = args.projectEditor;
   });
 
-  const run = useCallback(async <T,>(): Promise<MutationResult<T>> => {
-    throw new Error("not implemented");
-  }, []);
-
-  // Suppress unused variable until later tasks wire it in.
-  void args.editorRef;
-  void clearAllCachedContent;
+  const run = useCallback(
+    async <T,>(
+      mutate: () => Promise<MutationDirective<T>>,
+    ): Promise<MutationResult<T>> => {
+      const editor = args.editorRef.current;
+      editor?.setEditable(false);
+      await editor?.flushSave();
+      projectEditorRef.current.cancelPendingSaves();
+      editor?.markClean();
+      const directive = await mutate();
+      if (directive.clearCacheFor.length > 0) {
+        clearAllCachedContent(directive.clearCacheFor);
+      }
+      if (directive.reloadActiveChapter) {
+        await projectEditorRef.current.reloadActiveChapter();
+      }
+      editor?.setEditable(true);
+      return { ok: true, data: directive.data };
+    },
+    [args.editorRef],
+  );
 
   return { run };
 }

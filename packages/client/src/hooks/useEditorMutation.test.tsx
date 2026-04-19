@@ -1,8 +1,78 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { renderHook } from "@testing-library/react";
+import type { MutableRefObject } from "react";
+import type { EditorHandle } from "../components/Editor";
 import { useEditorMutation } from "../hooks/useEditorMutation";
+
+vi.mock("./useContentCache", () => ({
+  clearAllCachedContent: vi.fn(),
+}));
+
+function buildHandles() {
+  const calls: string[] = [];
+  const editor: EditorHandle = {
+    flushSave: vi.fn(async () => {
+      calls.push("flushSave");
+      return true;
+    }),
+    editor: null,
+    insertImage: vi.fn(),
+    markClean: vi.fn(() => {
+      calls.push("markClean");
+    }),
+    setEditable: vi.fn((editable: boolean) => {
+      calls.push(`setEditable(${editable})`);
+    }),
+  };
+  const editorRef: MutableRefObject<EditorHandle | null> = { current: editor };
+  const projectEditor = {
+    cancelPendingSaves: vi.fn(() => {
+      calls.push("cancelPendingSaves");
+    }),
+    reloadActiveChapter: vi.fn(async () => {
+      calls.push("reloadActiveChapter");
+      return true;
+    }),
+  };
+  return { calls, editor, editorRef, projectEditor };
+}
 
 describe("useEditorMutation", () => {
   it("exports a hook", () => {
     expect(typeof useEditorMutation).toBe("function");
+  });
+});
+
+describe("useEditorMutation — happy path", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("runs steps in the required order", async () => {
+    const { calls, editorRef, projectEditor } = buildHandles();
+    const { clearAllCachedContent } = await import("./useContentCache");
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor }),
+    );
+
+    const res = await result.current.run(async () => {
+      calls.push("mutate");
+      return { clearCacheFor: ["c1"], reloadActiveChapter: true, data: undefined };
+    });
+
+    expect(res).toEqual({ ok: true, data: undefined });
+    expect(calls).toEqual([
+      "setEditable(false)",
+      "flushSave",
+      "cancelPendingSaves",
+      "markClean",
+      "mutate",
+      "reloadActiveChapter",
+      "setEditable(true)",
+    ]);
+    expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["c1"]);
+    expect(vi.mocked(clearAllCachedContent).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(projectEditor.reloadActiveChapter).mock.invocationCallOrder[0],
+    );
   });
 });
