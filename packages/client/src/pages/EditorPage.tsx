@@ -209,7 +209,13 @@ export function EditorPage() {
         // reload and the panel refresh — both are keyed to the current active
         // chapter, not the one that was restored.
         if (!result.staleChapterSwitch) {
-          await reloadActiveChapter();
+          // Route reload failure to the dismissible action-error banner
+          // instead of the full-page error branch. The server-side restore
+          // has already succeeded; a transient GET failure at this point
+          // should not nuke the editor — the user can refresh to recover.
+          await reloadActiveChapter(() => {
+            setActionError(STRINGS.snapshots.restoreSucceededReloadFailed);
+          });
           snapshotPanelRef.current?.refreshSnapshots();
         }
       } else if (result.reason === "corrupt_snapshot") {
