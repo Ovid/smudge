@@ -30,7 +30,7 @@ import { useChapterTitleEditing } from "../hooks/useChapterTitleEditing";
 import { useProjectTitleEditing } from "../hooks/useProjectTitleEditing";
 import { useTrashManager } from "../hooks/useTrashManager";
 import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcuts";
-import { api } from "../api/client";
+import { api, ApiRequestError } from "../api/client";
 import { mapReplaceErrorToMessage } from "../utils/findReplaceErrors";
 import { clearAllCachedContent, clearCachedContent } from "../hooks/useContentCache";
 import { Logo } from "../components/Logo";
@@ -414,6 +414,10 @@ export function EditorPage() {
         // Mark editor clean so if a reloadActiveChapter remount follows,
         // the unmount cleanup does not PATCH pre-replace content.
         editorRef.current?.markClean();
+        // Mirror executeReplace: clear any stale success banner from a prior
+        // replace so an error on this one doesn't co-display with the old
+        // "Replaced N occurrences" message.
+        setActionInfo(null);
         // Purge the localStorage draft cache for the targeted chapter BEFORE
         // issuing the request — matching the executeReplace pattern. Without
         // this, a sidebar chapter switch during the in-flight replace would
@@ -451,6 +455,12 @@ export function EditorPage() {
         } catch (err) {
           const msg = mapReplaceErrorToMessage(err);
           if (msg) setActionError(msg);
+          // On 404 SCOPE_NOT_FOUND (chapter soft-deleted since the last
+          // search), drop the stale match group; otherwise the user clicks
+          // the same row and loops the same error.
+          if (err instanceof ApiRequestError && err.status === 404) {
+            await findReplace.search(slug);
+          }
         }
       } finally {
         editorRef.current?.setEditable(true);
