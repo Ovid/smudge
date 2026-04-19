@@ -602,14 +602,23 @@ export function EditorPage() {
 
   const switchToView = useCallback(
     async (mode: ViewMode) => {
-      await editorRef.current?.flushSave();
+      // flushSave returns false when the save pipeline gave up (4xx or
+      // all retries exhausted). Preview/Dashboard would then render the
+      // LAST server-confirmed content, not what the user just typed —
+      // matching the discipline of handleRestoreSnapshot/executeReplace/
+      // onView, refuse the switch and surface a save-first banner.
+      const flushed = (await editorRef.current?.flushSave()) ?? true;
+      if (!flushed) {
+        setActionError(STRINGS.editor.viewSwitchSaveFailed);
+        return;
+      }
       setTrashOpen(false);
       setViewMode(mode);
       if (mode === "dashboard") {
         setDashboardRefreshKey((k) => k + 1);
       }
     },
-    [setTrashOpen],
+    [setTrashOpen, setActionError],
   );
 
   const handleSelectChapterWithFlush = useCallback(

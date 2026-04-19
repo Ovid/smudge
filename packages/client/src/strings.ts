@@ -62,6 +62,8 @@ export const STRINGS = {
     unsaved: "Unsaved changes",
     saveFailed: "Unable to save \u2014 check connection",
     cacheUnavailable: "Local backup unavailable",
+    viewSwitchSaveFailed:
+      "Unable to save pending changes. Try again once your connection recovers before switching views.",
   },
   shortcuts: {
     dialogTitle: "Keyboard Shortcuts",
