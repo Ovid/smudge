@@ -32,7 +32,14 @@ export interface EditorHandle {
 
 interface EditorProps {
   content: Record<string, unknown> | null;
-  onSave: (content: Record<string, unknown>) => Promise<boolean>;
+  /**
+   * chapterId is captured at mount and threaded through every save so that the
+   * unmount cleanup targets the chapter this Editor was created for — not
+   * whichever chapter is active at the moment cleanup fires. Without this,
+   * unmount-after-failed-flush would clobber the new chapter with old content.
+   */
+  chapterId?: string;
+  onSave: (content: Record<string, unknown>, chapterId?: string) => Promise<boolean>;
   onContentChange?: (content: Record<string, unknown>) => void;
   editorRef?: React.MutableRefObject<EditorHandle | null>;
   onEditorReady?: (editor: TipTapEditor | null) => void;
@@ -92,6 +99,7 @@ const imagePasteExtension = Extension.create({
 
 export function Editor({
   content,
+  chapterId,
   onSave,
   onContentChange,
   editorRef,
@@ -104,6 +112,11 @@ export function Editor({
   const projectIdRef = useRef(projectId);
   const onImageAnnouncementRef = useRef(onImageAnnouncement);
   const editorIdRef = useRef(nextEditorId++);
+  // Captured at mount. The Editor is keyed on chapter id so the prop never
+  // changes during the instance's lifetime; this ref is the canonical target
+  // for every save fired by this Editor, including fire-and-forget unmount
+  // cleanup where activeChapterRef has already moved to a different chapter.
+  const chapterIdRef = useRef(chapterId);
 
   useEffect(() => {
     onSaveRef.current = onSave;
@@ -131,7 +144,10 @@ export function Editor({
       }
       debounceTimerRef.current = setTimeout(async () => {
         debounceTimerRef.current = null; // Clear before async work so flushSave knows the timer fired
-        const ok = await onSaveRef.current(editorInstance.getJSON() as Record<string, unknown>);
+        const ok = await onSaveRef.current(
+          editorInstance.getJSON() as Record<string, unknown>,
+          chapterIdRef.current,
+        );
         dirtyRef.current = !ok;
       }, AUTO_SAVE_DEBOUNCE_MS);
     },
@@ -159,8 +175,14 @@ export function Editor({
       if (dirtyRef.current && editorInstanceRef.current) {
         // Fire-and-forget: don't set dirtyRef=false here since the save is async.
         // The content cache persists the data until save succeeds.
+        // chapterIdRef was captured at mount — pass it explicitly so this
+        // cleanup targets THIS chapter, not whatever chapter is active by
+        // the time the save fires.
         onSaveRef
-          .current(editorInstanceRef.current.getJSON() as Record<string, unknown>)
+          .current(
+            editorInstanceRef.current.getJSON() as Record<string, unknown>,
+            chapterIdRef.current,
+          )
           .catch(() => {});
       }
     };
@@ -188,7 +210,7 @@ export function Editor({
         debounceTimerRef.current = null;
       }
       onSaveRef
-        .current(ed.getJSON() as Record<string, unknown>)
+        .current(ed.getJSON() as Record<string, unknown>, chapterIdRef.current)
         .then((ok) => {
           dirtyRef.current = !ok;
         })
@@ -251,7 +273,7 @@ export function Editor({
             debounceTimerRef.current = null;
           }
           return onSaveRef
-            .current(editor.getJSON() as Record<string, unknown>)
+            .current(editor.getJSON() as Record<string, unknown>, chapterIdRef.current)
             .then((ok) => {
               dirtyRef.current = !ok;
               return ok;

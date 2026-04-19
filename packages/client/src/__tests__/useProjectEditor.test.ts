@@ -283,6 +283,47 @@ describe("useProjectEditor", () => {
     expect(result.current.saveStatus).toBe("unsaved");
   });
 
+  it("uses explicit chapterId over activeChapterRef to prevent cross-chapter clobber", async () => {
+    // Regression: Editor unmount cleanup fires onSave after setActiveChapter
+    // has already advanced activeChapterRef to the new chapter. Without an
+    // explicit chapterId, handleSave would PATCH the NEW chapter with the OLD
+    // chapter's content.
+    vi.mocked(api.chapters.get)
+      .mockResolvedValueOnce(mockChapter1)
+      .mockResolvedValueOnce(mockChapter2);
+    vi.mocked(api.chapters.update).mockResolvedValue({ ...mockChapter1, word_count: 2 });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    // Switch to ch2 so activeChapterRef now points at ch2
+    await act(async () => {
+      await result.current.handleSelectChapter("ch2");
+    });
+    expect(result.current.activeChapter?.id).toBe("ch2");
+
+    const oldContent = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "A" }] }],
+    };
+    // Save with explicit chapterId=ch1 (simulates Editor unmount cleanup)
+    await act(async () => {
+      await result.current.handleSave(oldContent, "ch1");
+    });
+
+    // Must target ch1, not ch2
+    expect(api.chapters.update).toHaveBeenCalledWith(
+      "ch1",
+      { content: oldContent },
+      expect.any(AbortSignal),
+    );
+    expect(api.chapters.update).not.toHaveBeenCalledWith(
+      "ch2",
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
   it("succeeds on retry after transient failure", async () => {
     vi.mocked(api.chapters.update)
       .mockRejectedValueOnce(new Error("network error"))

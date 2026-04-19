@@ -885,6 +885,7 @@ export function EditorPage() {
                     )}
                     <Editor
                       key={`${activeChapter.id}:${chapterReloadKey}`}
+                      chapterId={activeChapter.id}
                       content={activeChapter.content}
                       onSave={handleSave}
                       onContentChange={handleContentChange}

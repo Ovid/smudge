@@ -112,7 +112,7 @@ describe("Editor", () => {
     // Wait for debounce (1500ms) + buffer
     await waitFor(
       () => {
-        expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }));
+        expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }), undefined);
       },
       { timeout: 3000 },
     );
@@ -172,7 +172,7 @@ describe("Editor", () => {
     fireEvent.blur(editorEl);
 
     await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }));
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }), undefined);
     });
   });
 
@@ -296,7 +296,7 @@ describe("Editor", () => {
 
     // Flush should trigger immediate save
     await editorRef.current?.flushSave();
-    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }), undefined);
   });
 
   it("setEditable(false) does not emit onUpdate or dirty the editor (C1)", async () => {
@@ -420,7 +420,7 @@ describe("Editor", () => {
     unmount();
 
     await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }));
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }), undefined);
     });
   });
 

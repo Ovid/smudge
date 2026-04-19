@@ -65,97 +65,102 @@ export function useProjectEditor(slug: string | undefined) {
     };
   }, [slug]);
 
-  const handleSave = useCallback(async (content: Record<string, unknown>): Promise<boolean> => {
-    const current = activeChapterRef.current;
-    if (!current) return false;
-    const savingChapterId = current.id;
-    // Seed the latest-content ref so the first attempt posts the caller's content.
-    // Subsequent keystrokes during backoff replace this via handleContentChange.
-    latestContentRef.current = { id: savingChapterId, content };
-    const seq = ++saveSeqRef.current;
-    // AbortController lets cancelPendingSaves actually abort an in-flight
-    // PATCH — without this, a retry could land on the server after a
-    // subsequent snapshot restore and overwrite it.
-    // Also: abort any prior in-flight save before issuing a new one. Debounce
-    // and onBlur can fire overlapping saves; without this, two PATCHes can
-    // commit out-of-order, regressing persisted content to the older version.
-    saveAbortRef.current?.abort();
-    const controller = new AbortController();
-    saveAbortRef.current = controller;
-    const BACKOFF_MS = [2000, 4000, 8000];
-    const MAX_RETRIES = BACKOFF_MS.length;
+  const handleSave = useCallback(
+    async (content: Record<string, unknown>, chapterId?: string): Promise<boolean> => {
+      // chapterId is passed explicitly by the Editor so that unmount cleanup
+      // after a chapter switch targets the OLD chapter — activeChapterRef has
+      // already advanced to the new one by the time cleanup fires.
+      const savingChapterId = chapterId ?? activeChapterRef.current?.id;
+      if (!savingChapterId) return false;
+      // Seed the latest-content ref so the first attempt posts the caller's content.
+      // Subsequent keystrokes during backoff replace this via handleContentChange.
+      latestContentRef.current = { id: savingChapterId, content };
+      const seq = ++saveSeqRef.current;
+      // AbortController lets cancelPendingSaves actually abort an in-flight
+      // PATCH — without this, a retry could land on the server after a
+      // subsequent snapshot restore and overwrite it.
+      // Also: abort any prior in-flight save before issuing a new one. Debounce
+      // and onBlur can fire overlapping saves; without this, two PATCHes can
+      // commit out-of-order, regressing persisted content to the older version.
+      saveAbortRef.current?.abort();
+      const controller = new AbortController();
+      saveAbortRef.current = controller;
+      const BACKOFF_MS = [2000, 4000, 8000];
+      const MAX_RETRIES = BACKOFF_MS.length;
 
-    setSaveStatus("saving");
-    setSaveErrorMessage(null);
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      if (seq !== saveSeqRef.current) return false; // chapter changed, abort retries
-      // Re-read latest content each attempt so backoff retries post keystrokes
-      // that arrived after the initial call.
-      const latest = latestContentRef.current;
-      const postedContent = latest && latest.id === savingChapterId ? latest.content : content;
-      try {
-        const updated = await api.chapters.update(
-          savingChapterId,
-          { content: postedContent },
-          controller.signal,
-        );
-        if (seq !== saveSeqRef.current) return false; // chapter changed during request
-        // Keep activeChapter in sync so that re-mounting the editor
-        // (e.g. after toggling Preview → Editor) uses the latest content.
-        if (activeChapterRef.current?.id === savingChapterId) {
-          setActiveChapter((prev) =>
-            prev ? { ...prev, content: postedContent, word_count: updated.word_count } : prev,
+      setSaveStatus("saving");
+      setSaveErrorMessage(null);
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (seq !== saveSeqRef.current) return false; // chapter changed, abort retries
+        // Re-read latest content each attempt so backoff retries post keystrokes
+        // that arrived after the initial call.
+        const latest = latestContentRef.current;
+        const postedContent = latest && latest.id === savingChapterId ? latest.content : content;
+        try {
+          const updated = await api.chapters.update(
+            savingChapterId,
+            { content: postedContent },
+            controller.signal,
           );
-        }
-        setProject((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            chapters: prev.chapters.map((c) =>
-              c.id === savingChapterId
-                ? { ...c, word_count: updated.word_count, content: postedContent }
-                : c,
-            ),
-          };
-        });
-        // Only clear the localStorage cache if no newer content has arrived
-        // since we started this attempt. Otherwise the pending typing would
-        // be dropped.
-        const stillLatest =
-          latestContentRef.current?.id === savingChapterId &&
-          latestContentRef.current.content === postedContent;
-        if (stillLatest) {
-          clearCachedContent(savingChapterId);
-          setCacheWarning(false);
-        }
-        if (activeChapterRef.current?.id === savingChapterId) {
-          setSaveStatus(stillLatest ? "saved" : "unsaved");
-        }
-        if (saveAbortRef.current === controller) saveAbortRef.current = null;
-        return true;
-      } catch (err) {
-        // Aborted: cancelPendingSaves intentionally cancelled this save
-        // (e.g. before a snapshot restore). Exit cleanly without flagging
-        // an error to the user.
-        if (err instanceof ApiRequestError && err.code === "ABORTED") {
-          return false;
-        }
-        if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
-          console.warn("Save failed with 4xx:", err);
-          break;
-        }
-        if (attempt < MAX_RETRIES) {
-          await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
+          if (seq !== saveSeqRef.current) return false; // chapter changed during request
+          // Keep activeChapter in sync so that re-mounting the editor
+          // (e.g. after toggling Preview → Editor) uses the latest content.
+          if (activeChapterRef.current?.id === savingChapterId) {
+            setActiveChapter((prev) =>
+              prev ? { ...prev, content: postedContent, word_count: updated.word_count } : prev,
+            );
+          }
+          setProject((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              chapters: prev.chapters.map((c) =>
+                c.id === savingChapterId
+                  ? { ...c, word_count: updated.word_count, content: postedContent }
+                  : c,
+              ),
+            };
+          });
+          // Only clear the localStorage cache if no newer content has arrived
+          // since we started this attempt. Otherwise the pending typing would
+          // be dropped.
+          const stillLatest =
+            latestContentRef.current?.id === savingChapterId &&
+            latestContentRef.current.content === postedContent;
+          if (stillLatest) {
+            clearCachedContent(savingChapterId);
+            setCacheWarning(false);
+          }
+          if (activeChapterRef.current?.id === savingChapterId) {
+            setSaveStatus(stillLatest ? "saved" : "unsaved");
+          }
+          if (saveAbortRef.current === controller) saveAbortRef.current = null;
+          return true;
+        } catch (err) {
+          // Aborted: cancelPendingSaves intentionally cancelled this save
+          // (e.g. before a snapshot restore). Exit cleanly without flagging
+          // an error to the user.
+          if (err instanceof ApiRequestError && err.code === "ABORTED") {
+            return false;
+          }
+          if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
+            console.warn("Save failed with 4xx:", err);
+            break;
+          }
+          if (attempt < MAX_RETRIES) {
+            await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
+          }
         }
       }
-    }
-    if (saveAbortRef.current === controller) saveAbortRef.current = null;
-    if (activeChapterRef.current?.id === savingChapterId) {
-      setSaveStatus("error");
-      setSaveErrorMessage(STRINGS.editor.saveFailed);
-    }
-    return false;
-  }, []);
+      if (saveAbortRef.current === controller) saveAbortRef.current = null;
+      if (activeChapterRef.current?.id === savingChapterId) {
+        setSaveStatus("error");
+        setSaveErrorMessage(STRINGS.editor.saveFailed);
+      }
+      return false;
+    },
+    [],
+  );
 
   const handleContentChange = useCallback((content: Record<string, unknown>) => {
     setChapterWordCount(countWords(content));
