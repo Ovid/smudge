@@ -150,11 +150,16 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         if (!reloadFailed && !lockedByCaller) {
           try {
             editor?.setEditable(true);
-          } catch {
+          } catch (err) {
             // Swallowing here keeps run()'s happy-path return value intact
             // for the caller. The editor being non-editable after a
             // successful mutation is a degraded but recoverable state —
-            // the next remount resets editable=true.
+            // the next remount resets editable=true. Emit a warn so the
+            // silent failure leaves at least one signal behind for
+            // devtools inspection (I4) — previously the catch was silent
+            // and a TipTap mid-remount throw here would leave the editor
+            // stuck read-only with no indication anything had happened.
+            console.warn("useEditorMutation: failed to re-enable editor", err);
           }
         }
       }

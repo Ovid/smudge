@@ -357,6 +357,10 @@ describe("useEditorMutation — synchronous setEditable throw (C1)", () => {
   });
 
   it("releases inFlightRef when setEditable(true) in finally throws synchronously", async () => {
+    // CLAUDE.md zero-warnings policy: the warn is deliberate (I4), so
+    // spy-suppress and assert rather than letting it leak into test
+    // output where real problems would be drowned.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { editorRef, projectEditor } = buildHandles();
     const editor = editorRef.current!;
     // setEditable(false) on entry is fine; setEditable(true) in finally throws
@@ -379,6 +383,14 @@ describe("useEditorMutation — synchronous setEditable throw (C1)", () => {
     }));
     expect(first).toEqual({ ok: true, data: undefined });
 
+    // I4: the silent catch would otherwise leave no trace of a
+    // degraded-editor state. Assert the warn fired so the dev signal
+    // is preserved.
+    expect(warnSpy).toHaveBeenCalledWith(
+      "useEditorMutation: failed to re-enable editor",
+      expect.any(Error),
+    );
+
     // The latch must have cleared so a follow-up run is not rejected as busy.
     const second = await result.current.run(async () => ({
       clearCacheFor: [],
@@ -386,6 +398,8 @@ describe("useEditorMutation — synchronous setEditable throw (C1)", () => {
       data: undefined,
     }));
     expect(second).toEqual({ ok: true, data: undefined });
+
+    warnSpy.mockRestore();
   });
 });
 
