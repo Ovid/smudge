@@ -71,7 +71,11 @@ export type MutationDirective<T = void> = {
 
 export type MutationResult<T = void> =
   | { ok: true; data: T }
-  | { ok: false; stage: MutationStage; error?: unknown };
+  // Reload-stage failure is a partial success: the server committed, the
+  // directive was produced, so `data` is still available. Callers use it to
+  // show "N replacements done, but reload failed" without a closure smuggle.
+  | { ok: false; stage: "reload"; data: T; error?: unknown }
+  | { ok: false; stage: "flush" | "mutate" | "busy"; error?: unknown };
 
 export type UseEditorMutationArgs = {
   editorRef: MutableRefObject<EditorHandle | null>;
@@ -106,7 +110,7 @@ export function useEditorMutation(
 5. `editorRef.current?.markClean()` — CLAUDE.md invariant 1: closes the unmount-clobber window before the server call that will overwrite editor content.
 6. `await mutate()` to get the `MutationDirective`. On throw → restore editable, clear in-flight, return `{ ok: false, stage: "mutate", error }`.
 7. `clearAllCachedContent(directive.clearCacheFor)` — CLAUDE.md invariant 3: cache clear happens only after server success. Imported from `./useContentCache`.
-8. If `directive.reloadActiveChapter` is true → `await projectEditor.reloadActiveChapter()`. On reject → restore editable, clear in-flight, return `{ ok: false, stage: "reload", error }`.
+8. If `directive.reloadActiveChapter` is true → `await projectEditor.reloadActiveChapter()`. On reject → restore editable, clear in-flight, return `{ ok: false, stage: "reload", data: directive.data, error }`. The directive's `data` is carried through so the caller can surface a "server committed but reload failed" banner with the correct response data (replaced count, affected chapters, etc.) without a closure smuggle.
 9. Restore editable, clear in-flight, return `{ ok: true }`.
 
 ### Design rationale by invariant
@@ -150,23 +154,51 @@ All three call sites in `EditorPage.tsx` migrate. Sketches use the new `mutation
 
 ### `handleRestoreSnapshot` (currently lines 177–244)
 
+`restoreSnapshot()` (from `useSnapshotState`) returns `{ ok, reason?, staleChapterSwitch? }` and does **not** throw. The mutate callback has to translate this into the hook's contract: throw a sentinel for the failure branches so the hook reports `stage: "mutate"`, and return a directive with `reloadActiveChapter: false` for the `staleChapterSwitch` case. The user-intent re-check (`viewingSnapshotRef.current`) also moves inside the mutate callback, where a stale intent becomes an `AbortedError` throw.
+
 ```ts
-const handleRestoreSnapshot = async (snapshotId: string) => {
-  const result = await mutation.run(async () => {
-    await api.snapshots.restore(snapshotId);
+class RestoreAbortedError extends Error {}
+class RestoreFailedError extends Error {
+  constructor(
+    public readonly reason:
+      | "corrupt_snapshot"
+      | "cross_project_image"
+      | "not_found"
+      | "other",
+  ) {
+    super(`restore failed: ${reason}`);
+  }
+}
+
+const handleRestoreSnapshot = async () => {
+  if (!viewingSnapshot || !activeChapter) return;
+
+  type RestoreData = { staleChapterSwitch: boolean };
+
+  const result = await mutation.run<RestoreData>(async () => {
+    if (!viewingSnapshotRef.current) throw new RestoreAbortedError();
+    const restore = await restoreSnapshot(viewingSnapshot.id);
+    if (!restore.ok) {
+      throw new RestoreFailedError(
+        (restore.reason as RestoreFailedError["reason"]) ?? "other",
+      );
+    }
+    const stale = Boolean(restore.staleChapterSwitch);
     return {
-      clearCacheFor: [activeChapterId],
-      reloadActiveChapter: true,
-      data: undefined,
+      clearCacheFor: stale ? [] : [activeChapter.id],
+      reloadActiveChapter: !stale,
+      data: { staleChapterSwitch: stale },
     };
   });
 
-  if (!result.ok) {
-    if (result.stage === "busy") return;
-    setBanner(mapRestoreError(result.stage, result.error));
-  }
+  // Caller routes each stage per the stage-to-UI routing contract.
+  // On stage: "mutate", the sentinel error type disambiguates aborted-intent
+  // (silent) from real failure (error banner with reason-specific copy).
+  // Error-mapping details live in the plan.
 };
 ```
+
+Why a defensive `markClean` on the aborted-intent path is harmless: the editor is `setEditable(false)` from the hook's step 2, so no typing could have dirtied it during the flush; the editor was already clean from the last save.
 
 ### `executeReplace` (currently lines 246–358)
 
@@ -216,7 +248,7 @@ Every migrated call site must preserve today's behavioral distinctions between f
 |----------------|---------|---------------------|
 | `"flush"` | Pre-mutation `flushSave` rejected. Server state unchanged; editor still dirty. | Save-failure UI (same treatment as a normal failed auto-save). The existing retry loop continues in the background. |
 | `"mutate"` | The server call itself failed. Server state unchanged. | Full error banner with caller-specific copy (snapshot-not-found, replace-conflict, 413 too-large, etc.). |
-| `"reload"` | Server committed successfully but re-fetching the active chapter failed. Server state is **correct**; only the display is stale. | Dismissible banner (matches commit `9de0923`). Never a full error — the write succeeded. |
+| `"reload"` | Server committed successfully but re-fetching the active chapter failed. Server state is **correct**; only the display is stale. `result.data` carries the mutation response for caller-specific banner copy. | Dismissible banner (matches commit `9de0923`). Never a full error — the write succeeded. |
 | `"busy"` | A prior `mutation.run()` is still in flight. No side effects occurred. | Silent early-return. Matches today's `replaceInFlightRef` behavior. |
 
 Migration checklist — verify each call site preserves its pre-refactor routing:

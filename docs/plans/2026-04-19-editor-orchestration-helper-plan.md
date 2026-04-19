@@ -64,7 +64,8 @@ export type MutationDirective<T = void> = {
 
 export type MutationResult<T = void> =
   | { ok: true; data: T }
-  | { ok: false; stage: MutationStage; error?: unknown };
+  | { ok: false; stage: "reload"; data: T; error?: unknown }
+  | { ok: false; stage: "flush" | "mutate" | "busy"; error?: unknown };
 
 export type UseEditorMutationArgs = {
   editorRef: MutableRefObject<EditorHandle | null>;
@@ -512,15 +513,16 @@ describe("useEditorMutation — reload failure", () => {
     const { result } = renderHook(() =>
       useEditorMutation({ editorRef, projectEditor }),
     );
-    const res = await result.current.run(async () => ({
+    const res = await result.current.run<{ replaced: number }>(async () => ({
       clearCacheFor: ["c1"],
       reloadActiveChapter: true,
-      data: undefined,
+      data: { replaced: 3 },
     }));
 
     expect(res).toEqual({
       ok: false,
       stage: "reload",
+      data: { replaced: 3 },
       error: "reload-failed-msg",
     });
     expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(true);
@@ -529,21 +531,26 @@ describe("useEditorMutation — reload failure", () => {
     expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["c1"]);
   });
 
-  it("returns stage 'reload' when reloadActiveChapter returns false without onError", async () => {
+  it("returns stage 'reload' with data when reloadActiveChapter returns false without onError", async () => {
     const { editorRef, projectEditor } = buildHandles();
     projectEditor.reloadActiveChapter = vi.fn(async () => false);
 
     const { result } = renderHook(() =>
       useEditorMutation({ editorRef, projectEditor }),
     );
-    const res = await result.current.run(async () => ({
+    const res = await result.current.run<{ affected: string[] }>(async () => ({
       clearCacheFor: [],
       reloadActiveChapter: true,
-      data: undefined,
+      data: { affected: ["c9"] },
     }));
 
     expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.stage).toBe("reload");
+    if (!res.ok) {
+      expect(res.stage).toBe("reload");
+      if (res.stage === "reload") {
+        expect(res.data).toEqual({ affected: ["c9"] });
+      }
+    }
   });
 });
 ```
@@ -561,7 +568,12 @@ if (directive.reloadActiveChapter) {
     reloadMessage = msg;
   });
   if (!ok) {
-    return { ok: false, stage: "reload", error: reloadMessage };
+    return {
+      ok: false,
+      stage: "reload",
+      data: directive.data,
+      error: reloadMessage,
+    };
   }
 }
 ```
@@ -785,6 +797,20 @@ git commit -m "test(client): verify useEditorMutation latest-ref pattern"
 
 **Context:** `restoreSnapshot()` (from `useSnapshotState`) returns `{ ok, reason?, staleChapterSwitch? }` and does **not** throw. The mutate callback must inspect this and either throw a sentinel for failure, or return a directive with `reloadActiveChapter: false` for the `staleChapterSwitch` case. The user-intent re-check (`viewingSnapshotRef.current`) moves inside the mutate callback (after markClean is safe — no harm in a defensive clean).
 
+**TDD discipline for refactors:** The RED phase is already written — `EditorPageFeatures.test.tsx` covers all the snapshot-restore behaviors today. The task is to make it continue to pass under the new hook. A migration that needs a test change is a behavior change and violates the "no user-visible behavior change" Deliverable.
+
+### RED — existing tests define the behavior
+
+Before touching code, run the existing tests and capture the baseline:
+
+```
+npm test -w packages/client -- EditorPageFeatures
+```
+
+Expected: all tests PASS against the current (pre-migration) `handleRestoreSnapshot`. Note which tests exercise the snapshot-restore path (search for `restore`/`snapshot` in the test names). These are the tests that must continue passing after the migration.
+
+### GREEN — migrate the call site, keep the tests passing
+
 **Step 1: Prepare the sentinel and install the hook**
 
 In `EditorPage.tsx`, near the top where other hooks are called, add:
@@ -898,6 +924,15 @@ npm test -w packages/client
 ```
 Expected: PASS.
 
+### REFACTOR — look for cleanup opportunities
+
+With the migration in place:
+
+- Are there imports no longer used in `EditorPage.tsx`? (`clearCachedContent` may be dead if `handleRestoreSnapshot` was the only user in this file.) Remove them.
+- Is `viewingSnapshotRef` still declared and synced in a `useEffect`? If the intent re-check moved inside the mutate callback, the ref is still needed — keep it. If not used elsewhere, flag for removal in Tasks 12/13 and revisit in Task 16.
+- Did `cancelPendingSaves` become redundant at this call site? (It shouldn't — it's still read through `projectEditorRef` inside the hook, but verify.)
+- No new extractions warranted — the task is a single refactor; resist the urge to add helpers.
+
 **Step 5: Commit**
 
 ```
@@ -913,6 +948,16 @@ git commit -m "refactor(client): migrate handleRestoreSnapshot to useEditorMutat
 - Modify: `packages/client/src/pages/EditorPage.tsx` (lines 246–358)
 
 **Context:** `api.search.replace` throws on HTTP error. The mutate callback inspects the response and computes the directive. The `replaceInFlightRef` module-level ref is deleted because the hook's busy guard replaces it.
+
+### RED — existing replace-all tests define the behavior
+
+```
+npm test -w packages/client -- EditorPageFeatures FindReplacePanel
+```
+
+Expected: PASS against pre-migration `executeReplace`. Note the replace-all / replace-in-chapter test cases — these are the behavior contract.
+
+### GREEN — migrate the call site
 
 **Step 1: Rewrite `executeReplace`**
 
@@ -970,10 +1015,12 @@ const executeReplace = useCallback(
       return;
     }
     if (result.stage === "reload") {
+      // result.data carries the ReplaceResponse so we can show the real
+      // replaced_count alongside the "reload failed" banner. No closure.
       await findReplace.search(slug);
       snapshotPanelRef.current?.refreshSnapshots();
       refreshSnapshotCount();
-      setActionInfo(STRINGS.findReplace.replaceSuccess(/* count unknown */ 0));
+      setActionInfo(STRINGS.findReplace.replaceSuccess(result.data.replaced_count));
       setActionError(STRINGS.findReplace.replaceSucceededReloadFailed);
       return;
     }
@@ -995,24 +1042,7 @@ const executeReplace = useCallback(
 );
 ```
 
-**Important nuance:** the reload-stage branch above loses the `replaced_count` because the data is only available on `ok: true`. Today's code shows success + reload-failed in the same run. To preserve this, thread the response through by capturing it in an outer `let` scoped to the `executeReplace` call, or widen `MutationResult` to always carry `data` on non-busy failures. **For this plan, use the closure approach** (single `let` inside `executeReplace`):
-
-```ts
-let capturedResp: ReplaceData | null = null;
-const result = await mutation.run<ReplaceData>(async () => {
-  const resp = await api.search.replace(...);
-  capturedResp = resp;
-  // ... directive ...
-});
-// then in the reload branch:
-if (result.stage === "reload" && capturedResp) {
-  setActionInfo(STRINGS.findReplace.replaceSuccess(capturedResp.replaced_count));
-  setActionError(STRINGS.findReplace.replaceSucceededReloadFailed);
-  // ... the rest
-}
-```
-
-This is the one place a closure is legitimate — the response is also needed on the reload-failure path, which the discriminated result doesn't carry.
+**Nuance:** the `stage: "reload"` variant of `MutationResult<T>` carries `data: T` (it's a partial success — the server committed, we just can't re-fetch). The sketch above reads `result.data.replaced_count` on the reload branch without any closure smuggling. If you find yourself reaching for a `let capturedResp` inside this function, stop — the hook's types already hand you the data on both success and reload failure.
 
 **Step 2: Delete `replaceInFlightRef`**
 
@@ -1029,6 +1059,12 @@ Expected: PASS.
 
 Expected: PASS.
 
+### REFACTOR — look for cleanup opportunities
+
+- `replaceInFlightRef` declaration and all its read/write sites must be gone. Grep to confirm: `grep -n "replaceInFlightRef" packages/client/src/pages/EditorPage.tsx` should return zero hits.
+- `mapReplaceErrorToMessage` import is still used for the `stage: "mutate"` branch — keep it.
+- Verify this task's `useEditorMutation` call reuses the single `mutation` instance created in Task 11 — do not add a second `useEditorMutation()` invocation. The cross-caller busy-guard invariant depends on this.
+
 **Step 5: Commit**
 
 ```
@@ -1043,15 +1079,31 @@ git commit -m "refactor(client): migrate executeReplace to useEditorMutation"
 **Files:**
 - Modify: `packages/client/src/pages/EditorPage.tsx` (lines 413–520)
 
-**Context:** Same shape as `executeReplace` with an additional wrinkle: on 404 / match-not-found, the caller re-runs the search to refresh stale results. Same closure-for-response pattern applies.
+**Context:** Same shape as `executeReplace` with an additional wrinkle: on 404 / match-not-found, the caller re-runs the search to refresh stale results. No closure needed — `MutationResult<T>` carries `data` on both success and reload-failure variants.
+
+### RED — existing replace-one tests define the behavior
+
+```
+npm test -w packages/client -- FindReplacePanel
+```
+
+Expected: PASS. Note the single-match replace test cases and the "match not found" recovery cases.
+
+### GREEN — migrate the call site
 
 **Step 1: Rewrite `handleReplaceOne`**
 
 Follow the same pattern as Task 12:
 
-1. Capture the response via a local `let` for the reload-failure path.
-2. Replace the manual `replaceInFlightRef` / `setEditable` / `flushSave` / `markClean` scaffolding with `mutation.run<...>(...)`.
-3. On `result.stage === "mutate"` with a 404 or match-not-found error code, call `findReplace.search(slug)` to refresh before rendering the banner (preserve today's behavior exactly — grep for `handleReplaceOne` in the existing file for the exact branches).
+1. Replace the manual `replaceInFlightRef` / `setEditable` / `flushSave` / `markClean` scaffolding with `mutation.run<ReplaceResponse>(...)`.
+2. On `result.ok === true` or `result.stage === "reload"`, read `result.data.replaced_count` directly — no closure capture needed.
+3. On `result.stage === "mutate"` with a 404 or match-not-found error, call `findReplace.search(slug)` to refresh before rendering the banner. Preserve today's routing exactly.
+
+The three divergences from `executeReplace` to preserve (read them from the current `handleReplaceOne` implementation in `EditorPage.tsx` — do NOT infer):
+
+- **Match-scope argument:** the API call uses a `match_index` scope, not the full-query scope.
+- **404 / match-not-found re-search:** on mutate-stage 404, re-run `findReplace.search(slug)` before showing the banner. The match the user clicked is gone; the search results need a refresh so the UI doesn't show a "Replace" button for a match that no longer exists.
+- **Success messaging:** singular "Replaced one match" copy (or whatever the STRINGS key is — read the current implementation), not the plural count-based success string.
 
 Do not invent new UI behavior — match existing strings and routing verbatim. The migration is a refactor, not a redesign.
 
@@ -1062,6 +1114,14 @@ npm test -w packages/client -- EditorPageFeatures FindReplacePanel
 npm test -w packages/client
 ```
 Expected: PASS.
+
+### REFACTOR — confirm full migration
+
+With all three migrations complete:
+
+- `grep -n "editorRef.current?.flushSave\|editorRef.current?.markClean\|editorRef.current?.setEditable" packages/client/src/pages/EditorPage.tsx` should only hit call sites that are intentionally out of scope (none today — verify).
+- `grep -n "replaceInFlightRef" packages/client/src/` must return zero hits across the package.
+- `grep -c "useEditorMutation(" packages/client/src/pages/EditorPage.tsx` must return `1` — a second invocation breaks the cross-caller busy-guard contract.
 
 **Step 3: Commit**
 
@@ -1147,7 +1207,74 @@ git commit -m "docs(claude): point mutation flows at useEditorMutation"
 
 ---
 
-## Task 16: Full verification + coverage
+## Task 16: Structural invariant verification
+
+Before the final `make all` pass, explicitly verify the structural invariants called out as risks in the design. These checks are fast (most are grep) and catch the class of mistakes that only show up in production.
+
+### Check 1 — No direct `editorRef.current` pokes in tests
+
+The design flagged this as a risk: tests that reach into the editor ref directly would break under the hook's indirection.
+
+```
+grep -rn "editorRef.current" packages/client/src/__tests__/
+```
+
+Expected: zero hits. If there are hits, inspect each — a test that asserts against `editorRef.current` is likely asserting implementation details that the hook now owns. Rework to assert user-visible behavior through `EditorHandle` spies instead.
+
+### Check 2 — `useEditorMutation` called exactly once in `EditorPage`
+
+The cross-caller busy-guard contract depends on all three migrated call sites sharing one hook instance.
+
+```
+grep -c "useEditorMutation(" packages/client/src/pages/EditorPage.tsx
+```
+
+Expected: `1`. If 2+, consolidate into a single call.
+
+### Check 3 — `replaceInFlightRef` is gone
+
+The hook's busy guard replaces the ad-hoc ref. If it survives, both guards fire and the semantics diverge.
+
+```
+grep -rn "replaceInFlightRef" packages/client/src/
+```
+
+Expected: zero hits.
+
+### Check 4 — Invariant 4 (seq-ref bump) still works
+
+The design asserts the hook adds no new seq-refs and relies on `reloadActiveChapter`'s existing bump. The existing `useProjectEditor.test.ts` suite covers this. Run it explicitly:
+
+```
+npm test -w packages/client -- useProjectEditor
+```
+
+Expected: PASS. No changes expected in this test file.
+
+### Check 5 — `handleSave` untouched
+
+The save pipeline is explicitly out of scope.
+
+```
+git diff main -- packages/client/src/hooks/useProjectEditor.ts
+```
+
+Expected: no changes in `handleSave` (lines ~92–210). The only `useProjectEditor.ts` diff allowed in this PR is the non-behavioral kind (e.g., a single `// ` comment change), if any. If there are material changes, stop and explain.
+
+### Commit (only if changes were needed)
+
+If checks 1–3 revealed stale references and you cleaned them up:
+
+```
+git add -u
+git commit -m "refactor(client): remove stale editor-ref and replace-inflight references"
+```
+
+If every check passes cleanly, no commit — just proceed to the next task.
+
+---
+
+## Task 17: Full verification + coverage
 
 **Step 1: Run the full CI pass**
 
@@ -1185,7 +1312,10 @@ If the full pass is green without changes, nothing to commit — you are done.
 - [ ] `useEditorMutation.ts` exists and covers happy path, all failure stages, busy guard, null-ref safety, and latest-ref pattern.
 - [ ] `useEditorMutation.test.tsx` exercises the above with zero test-output warnings.
 - [ ] `handleRestoreSnapshot`, `executeReplace`, and `handleReplaceOne` all route through `mutation.run(...)`.
+- [ ] `useEditorMutation()` is called exactly once in `EditorPage.tsx`.
 - [ ] `replaceInFlightRef` is gone from `EditorPage.tsx`.
+- [ ] No test in `packages/client/src/__tests__/` pokes `editorRef.current` directly.
+- [ ] `handleSave` in `useProjectEditor.ts` is untouched (no behavior change in the save pipeline).
 - [ ] `EditorPage.unmount-clobber.test.tsx` passes AND fails without `markClean`.
 - [ ] `EditorPageFeatures.test.tsx` passes unmodified.
 - [ ] CLAUDE.md §Save-pipeline invariants references `useEditorMutation`.
