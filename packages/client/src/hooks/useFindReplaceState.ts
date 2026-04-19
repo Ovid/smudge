@@ -247,9 +247,17 @@ export function useFindReplaceState(
     loading,
     error,
     search: useCallback(
-      async (slug: string) => {
-        latestSlugRef.current = slug;
-        await search(slug);
+      async (_slug: string) => {
+        // Callers (EditorPage executeReplace/handleReplaceOne) capture
+        // slug in a closure at call time, so after a server-side rename
+        // the closure value is stale. Ignore the argument and use the
+        // projectSlug-synced ref — the useEffect above keeps it current.
+        // Without this, debounced searches triggered from here would
+        // target the dead slug until the user manually closed and
+        // reopened the panel (which resyncs the ref from the prop).
+        const current = latestSlugRef.current;
+        if (!current) return;
+        await search(current);
       },
       [search],
     ),

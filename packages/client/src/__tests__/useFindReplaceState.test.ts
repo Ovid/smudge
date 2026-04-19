@@ -184,6 +184,34 @@ describe("useFindReplaceState", () => {
     expect(result.current.error).toBeNull();
   });
 
+  it("search() uses the current projectSlug even if caller passes a stale one (rename race)", async () => {
+    // EditorPage closures capture slug at call time. After a rename the
+    // captured value is stale; the wrapper must read from the
+    // projectSlug-synced ref so the POST targets the live URL.
+    const searchResult = { total_count: 1, chapters: [] };
+    mockFind.mockResolvedValue(searchResult);
+
+    const { result, rerender } = renderHook(
+      ({ slug }: { slug: string }) => useFindReplaceState(slug),
+      { initialProps: { slug: "old-slug" } },
+    );
+
+    act(() => {
+      result.current.setQuery("word");
+    });
+
+    // Simulate a rename: the projectSlug prop changes.
+    rerender({ slug: "new-slug" });
+
+    // Caller still holds the stale closure value.
+    await act(async () => {
+      await result.current.search("old-slug");
+    });
+
+    expect(mockFind).toHaveBeenCalled();
+    expect(mockFind).toHaveBeenLastCalledWith("new-slug", "word", expect.any(Object), expect.anything());
+  });
+
   it("search() sets error on ApiRequestError with status 400 (invalid regex)", async () => {
     const { ApiRequestError: MockApiError } = await import("../api/client");
     mockFind.mockRejectedValueOnce(new MockApiError("Invalid regex", 400));
