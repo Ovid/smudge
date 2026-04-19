@@ -139,6 +139,16 @@ The save pipeline gets the most rigorous coverage — it's the core trust promis
 
 **Zero warnings in test output.** Tests must not produce noisy `console.warn`, `console.error`, or logger output in stderr. When a test deliberately triggers an error path that logs a warning, spy on the output, suppress it, and assert the expected message — e.g. `const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {}); ... expect(warnSpy).toHaveBeenCalledWith(...); warnSpy.mockRestore();`. Noisy test output masks real problems; if every test run has 30 "expected" warnings, developers stop reading them and miss the 31st that signals a real bug.
 
+## Pull Request Scope
+
+The `ovid/snapshots-find-and-replace` branch (merged 2026-04-19) bundled two features across 17,000 insertions and required 16 rounds of review. To prevent recurrence, PRs must obey two rules:
+
+**One-feature rule.** A PR delivers a single feature *or* a single refactor — never both, and never two features. A bug fix alongside the feature it affects is fine; a second unrelated bug fix is not. When in doubt, split.
+
+**Phase-boundary rule.** Each roadmap phase (`docs/roadmap.md`) is a PR. Splitting a phase into multiple PRs is allowed and often preferable; merging phases into one PR is not. Every PR must reference the roadmap phase(s) it implements in its description. A PR that implements more than one phase must be closed and split — update the roadmap to split the bundled phase first, then open separate PRs.
+
+Line count is not a hard limit — a 3,000-line migration can be fine, a 500-line cross-cutting refactor may not be. The shape of the change matters more than the size.
+
 ## Dependency Licenses
 
 **All dependencies must be compatible with commercial use.** A full audit lives in `docs/dependency-licenses.md`. When adding a new dependency or updating an existing one:
