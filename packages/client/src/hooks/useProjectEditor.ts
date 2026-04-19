@@ -42,6 +42,26 @@ export function useProjectEditor(slug: string | undefined) {
   } | null>(null);
   const statusChangeSeqRef = useRef(0);
 
+  // Unmount cleanup: the retry loop inside handleSave runs outside React's
+  // render phase, so without this teardown an in-flight save-backoff sleep
+  // would wake after EditorPage unmounted, call api.chapters.update, and
+  // schedule state writes on a gone component (and in dev it would log the
+  // "state update on unmounted component" warning). Mirror the body of
+  // cancelPendingSaves sans the setState calls — bumping saveSeqRef is what
+  // makes the loop short-circuit on its next iteration.
+  useEffect(() => {
+    return () => {
+      ++saveSeqRef.current;
+      saveAbortRef.current?.abort();
+      saveAbortRef.current = null;
+      if (saveBackoffRef.current) {
+        clearTimeout(saveBackoffRef.current.timer);
+        saveBackoffRef.current.resolve();
+        saveBackoffRef.current = null;
+      }
+    };
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 

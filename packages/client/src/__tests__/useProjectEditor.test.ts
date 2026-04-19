@@ -199,6 +199,36 @@ describe("useProjectEditor", () => {
     }
   });
 
+  it("unmount during save-backoff aborts the retry loop and does not fire a further PATCH", async () => {
+    // Regression for a pre-existing leak: the retry loop inside handleSave
+    // runs outside React's render cycle. Without unmount cleanup, a backoff
+    // sleep started before unmount would wake, call api.chapters.update a
+    // second time, and attempt state writes on a gone component.
+    vi.mocked(api.chapters.update).mockRejectedValue(new Error("network error"));
+
+    const { result, unmount } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    vi.useFakeTimers();
+    try {
+      // Kick off a save whose first attempt rejects and enters backoff.
+      void result.current.handleSave({ type: "doc", content: [] });
+      // Yield the microtask so the first PATCH rejects and enters the sleep.
+      await vi.advanceTimersByTimeAsync(0);
+      expect(api.chapters.update).toHaveBeenCalledTimes(1);
+
+      // Unmount mid-backoff; the cleanup must abort the loop and clear the
+      // timer before it fires.
+      unmount();
+
+      // Fast-forward well past the longest backoff. No further PATCH.
+      await vi.advanceTimersByTimeAsync(20000);
+      expect(api.chapters.update).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("retry after backoff posts keystrokes typed during the backoff and preserves cache", async () => {
     // Regression: the retry loop used to capture the initial content closure
     // and silently drop keystrokes typed during backoff when the retry
