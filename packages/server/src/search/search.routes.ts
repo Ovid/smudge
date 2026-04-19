@@ -153,10 +153,13 @@ export function searchRouter(): Router {
         res.status(404).json({
           error: {
             code: SEARCH_ERROR_CODES.SCOPE_NOT_FOUND,
-            // The route is slug-scoped, so the chapter_id can only be
-            // "missing" or "soft-deleted" from the resolved project.
-            // A cross-project chapter_id would already 404 at project
-            // resolution, not here.
+            // The cross-project chapter_id guard lives inside
+            // SearchService.replaceInProject (search.service.ts around the
+            // "scope_not_found" return) — project slug resolution above
+            // only proves the SLUG exists, not that the chapter belongs
+            // to that project. "scope_not_found" covers both
+            // "missing/soft-deleted inside this project" and
+            // "chapter_id belongs to a different project".
             message: "Replace scope not found: chapter is missing or has been deleted.",
           },
         });

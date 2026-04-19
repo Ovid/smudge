@@ -63,6 +63,12 @@ export interface SearchValidationError {
  */
 function truncateForLabel(s: string, max = 30): string {
   const cleaned = sanitizeSnapshotLabel(s);
+  // If sanitize strips the entire fragment (e.g. the user searched for
+  // control chars only, or replace is empty), fall back to an explicit
+  // "(empty)" marker so the rendered label isn't the ambiguous "''" —
+  // a user scanning the snapshot list would otherwise read
+  // `Before find-and-replace: '' → ''` and have no idea what changed.
+  if (cleaned.length === 0) return "(empty)";
   const truncated = truncateGraphemes(cleaned, max);
   return truncated.length < cleaned.length ? truncated + "..." : cleaned;
 }

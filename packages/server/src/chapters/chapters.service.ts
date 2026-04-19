@@ -77,8 +77,12 @@ export async function updateChapter(
     updates.status = parsed.data.status;
   }
 
-  // Read chapter, compute image diff, and apply updates in a single
-  // transaction so the diff is based on the committed content state.
+  // Read chapter, compute image diff, apply updates, and re-read the
+  // committed row in a single transaction so the response body reflects
+  // exactly what this request wrote — without this, a concurrent writer
+  // landing between commit and a post-tx findChapterById would let the
+  // other writer's content ride back in this response. Mirrors the
+  // pattern already used by snapshots.service.restoreSnapshot.
   const txResult = await store.transaction(async (txStore) => {
     const chapter = await txStore.findChapterByIdRaw(id);
     if (!chapter) return null;
@@ -97,11 +101,14 @@ export async function updateChapter(
       );
     }
 
-    return { project_id: chapter.project_id };
+    const updatedRow = await txStore.findChapterById(id);
+    if (!updatedRow) return "read_failure" as const;
+    return { project_id: chapter.project_id, updated: updatedRow };
   });
 
   if (!txResult) return null;
-  const { project_id: projectId } = txResult;
+  if (txResult === "read_failure") return "read_after_update_failure";
+  const { project_id: projectId, updated } = txResult;
 
   // Fire velocity side-effects (best-effort — must not break the save)
   if (parsed.data.content !== undefined) {
@@ -115,9 +122,6 @@ export async function updateChapter(
       );
     }
   }
-
-  const updated = await store.findChapterById(id);
-  if (!updated) return "read_after_update_failure";
 
   // Only check corruption when content was part of the update
   if (parsed.data.content !== undefined && isCorruptChapter(updated)) {
