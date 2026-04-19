@@ -27,7 +27,7 @@ interface KeyboardShortcutDeps {
   handleSelectChapterWithFlush: (id: string) => Promise<void>;
   setWordCountAnnouncement: React.Dispatch<React.SetStateAction<string>>;
   setNavAnnouncement: React.Dispatch<React.SetStateAction<string>>;
-  switchToView: (mode: ViewMode) => Promise<void>;
+  switchToView: (mode: ViewMode) => Promise<boolean>;
   togglePanel: () => void;
   toggleFindReplace?: () => void;
 }

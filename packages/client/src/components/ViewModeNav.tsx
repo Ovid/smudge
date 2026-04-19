@@ -3,7 +3,7 @@ import { STRINGS } from "../strings";
 
 interface ViewModeNavProps {
   viewMode: ViewMode;
-  onSwitchToView: (mode: ViewMode) => Promise<void>;
+  onSwitchToView: (mode: ViewMode) => Promise<boolean>;
 }
 
 export function ViewModeNav({ viewMode, onSwitchToView }: ViewModeNavProps) {

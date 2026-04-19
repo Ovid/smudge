@@ -608,29 +608,40 @@ export function EditorPage() {
   );
 
   const switchToView = useCallback(
-    async (mode: ViewMode) => {
+    async (mode: ViewMode): Promise<boolean> => {
       // flushSave returns false when the save pipeline gave up (4xx or
       // all retries exhausted). Preview/Dashboard would then render the
       // LAST server-confirmed content, not what the user just typed —
       // matching the discipline of handleRestoreSnapshot/executeReplace/
       // onView, refuse the switch and surface a save-first banner.
+      //
+      // Returns true when the switch went through, false when we refused.
+      // Callers that chain additional navigation (e.g. chapter select)
+      // must gate on the return value — otherwise the refusal banner and
+      // the follow-up navigation contradict each other.
       const flushed = (await editorRef.current?.flushSave()) ?? true;
       if (!flushed) {
         setActionError(STRINGS.editor.viewSwitchSaveFailed);
-        return;
+        return false;
       }
       setTrashOpen(false);
       setViewMode(mode);
       if (mode === "dashboard") {
         setDashboardRefreshKey((k) => k + 1);
       }
+      return true;
     },
     [setTrashOpen, setActionError],
   );
 
   const handleSelectChapterWithFlush = useCallback(
     async (chapterId: string) => {
-      await switchToView("editor");
+      // Chapter-select side-effects (seq bump, in-flight save abort, load
+      // next chapter) must not run when switchToView refused — otherwise
+      // we silently abandon an unsaved chapter while simultaneously
+      // showing a banner that implies navigation was blocked.
+      const switched = await switchToView("editor");
+      if (!switched) return;
       await handleSelectChapter(chapterId);
     },
     [handleSelectChapter, switchToView],
