@@ -155,7 +155,7 @@ export function useProjectEditor(slug: string | undefined) {
         if (err.code === "VALIDATION_ERROR") return STRINGS.editor.saveFailedInvalid;
         return STRINGS.editor.saveFailed;
       };
-      let rejected4xx: { message: string } | null = null;
+      let rejected4xx: { message: string; code?: string } | null = null;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (seq !== saveSeqRef.current) return false; // chapter changed, abort retries
         // Re-read latest content each attempt so backoff retries post keystrokes
@@ -213,7 +213,7 @@ export function useProjectEditor(slug: string | undefined) {
             console.warn("Save failed with 4xx:", err);
             // Map to strings.ts copy rather than forwarding the raw
             // server-authored message — see mapSaveError above.
-            rejected4xx = { message: mapSaveError(err) };
+            rejected4xx = { message: mapSaveError(err), code: err.code };
             break;
           }
           if (attempt < MAX_RETRIES) {
@@ -238,11 +238,23 @@ export function useProjectEditor(slug: string | undefined) {
         }
       }
       if (saveAbortRef.current === controller) saveAbortRef.current = null;
-      // On a 4xx rejection the server preserves the previous good content
-      // and will reject the same payload on every retry. Clear the local
-      // draft so the next load pulls the server's preserved content rather
-      // than rehydrating the rejected payload into a persistent error loop.
-      if (rejected4xx) {
+      // Only wipe the local draft when the server's intent is unambiguous:
+      // VALIDATION_ERROR means the payload is malformed and will be
+      // rejected on every retry, so the cache would otherwise feed an
+      // infinite error loop. Everything else (413 PAYLOAD_TOO_LARGE, bare
+      // 4xx without a known code) is preserved — invariant #3 says the
+      // cache is the last line of defense against data loss, and 413 in
+      // particular is rejected at the Express body-size guard BEFORE the
+      // chapter handler runs, so the server never held the typed content
+      // in the first place. Also guard by seq: if the user switched
+      // chapters between the rejected PATCH being sent and its 4xx
+      // landing, a different path (handleSelectChapter) now owns this
+      // chapter's cache and we must not stomp on it (I2).
+      if (
+        rejected4xx &&
+        rejected4xx.code === "VALIDATION_ERROR" &&
+        seq === saveSeqRef.current
+      ) {
         clearCachedContent(savingChapterId);
         if (latestContentRef.current?.id === savingChapterId) {
           latestContentRef.current = null;

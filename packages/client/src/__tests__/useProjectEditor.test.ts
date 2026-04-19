@@ -1037,10 +1037,42 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
-  it("handleSave clears cached draft on 4xx so next load gets server's preserved content", async () => {
+  it("handleSave preserves cached draft on 413 so the user can trim and retry (C1)", async () => {
+    // 413 is emitted by the Express body-size guard BEFORE the chapter
+    // handler runs — the server never sees the content, let alone stores
+    // it. Wiping the local draft here would be the only place the typed
+    // content was destroyed, leaving nothing to recover from after the
+    // user trims the chapter and retries. Invariant #3: cache-clear only
+    // after server success.
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { clearCachedContent } = await import("../hooks/useContentCache");
-    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("Invalid content", 400));
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("Request body too large.", 413, "PAYLOAD_TOO_LARGE"),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+    vi.mocked(clearCachedContent).mockClear();
+
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(result.current.saveStatus).toBe("error");
+    expect(vi.mocked(clearCachedContent)).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("handleSave clears cached draft on VALIDATION_ERROR so retries don't loop forever", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { clearCachedContent } = await import("../hooks/useContentCache");
+    // Server rejected the payload as malformed — it truly cannot store
+    // this content, so the client-side draft would feed a retry loop.
+    // Only VALIDATION_ERROR earns the cache-wipe (narrowed from "any 4xx"
+    // to fix C1: 413 et al. preserve the draft).
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("Invalid content", 400, "VALIDATION_ERROR"),
+    );
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
@@ -1052,6 +1084,29 @@ describe("useProjectEditor", () => {
 
     expect(result.current.saveStatus).toBe("error");
     expect(vi.mocked(clearCachedContent)).toHaveBeenCalledWith("ch1");
+    warnSpy.mockRestore();
+  });
+
+  it("handleSave preserves cached draft on generic 4xx without a known code", async () => {
+    // Unknown 4xx codes (e.g. a future server-side condition we haven't
+    // taught the client about) are treated conservatively: the server's
+    // intent is ambiguous, so preserving the draft is the safer default.
+    // Only VALIDATION_ERROR is an explicit "this content can never be
+    // stored" signal that warrants wiping.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { clearCachedContent } = await import("../hooks/useContentCache");
+    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("Bad Request", 400));
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+    vi.mocked(clearCachedContent).mockClear();
+
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(result.current.saveStatus).toBe("error");
+    expect(vi.mocked(clearCachedContent)).not.toHaveBeenCalled();
     warnSpy.mockRestore();
   });
 
