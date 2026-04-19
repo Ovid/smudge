@@ -333,6 +333,7 @@ export const STRINGS = {
     replaceSucceededReloadFailed:
       "Replace succeeded. Reload the chapter to see the updated content.",
     replaceScopeNotFound: "The chapter for this replace is no longer available.",
+    replaceProjectNotFound: "This project is no longer available.",
     searchScopeNotFound: "This project is no longer available.",
     replaceSuccess: (count: number) => `Replaced ${count} occurrence${count === 1 ? "" : "s"}.`,
     noMatches: "No matches found",

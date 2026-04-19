@@ -25,11 +25,16 @@ export function mapReplaceErrorToMessage(err: unknown): string | null {
     return STRINGS.findReplace.invalidReplaceRequest;
   }
   if (err.status === 404) {
-    // Two distinct 404 causes share the same client message for now
-    // (SCOPE_NOT_FOUND: chapter gone; NOT_FOUND: project gone). Both mean
-    // retrying won't help — surfacing the scope-specific copy keeps users
-    // off the generic "try again" message that implies a transient fault.
-    return STRINGS.findReplace.replaceScopeNotFound;
+    // Two distinct 404 causes:
+    //   SCOPE_NOT_FOUND — chapter is missing/soft-deleted inside the project
+    //   NOT_FOUND       — the project itself is gone (slug resolution failed)
+    // Both are terminal (retrying won't help), but conflating them under
+    // "chapter unavailable" copy misleads the user when the project went
+    // away — branch on the code so the panel tells the truth.
+    if (err.code === SEARCH_ERROR_CODES.SCOPE_NOT_FOUND) {
+      return STRINGS.findReplace.replaceScopeNotFound;
+    }
+    return STRINGS.findReplace.replaceProjectNotFound;
   }
   return STRINGS.findReplace.replaceFailed;
 }

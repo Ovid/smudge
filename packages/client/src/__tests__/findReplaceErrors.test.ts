@@ -45,9 +45,9 @@ describe("mapReplaceErrorToMessage", () => {
     expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceScopeNotFound);
   });
 
-  it("maps 404 NOT_FOUND (project gone) to replaceScopeNotFound (not generic retry) (S2)", () => {
+  it("maps 404 NOT_FOUND (project gone) to replaceProjectNotFound (distinct from chapter copy)", () => {
     const err = new ApiRequestError("project gone", 404, "NOT_FOUND");
-    expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceScopeNotFound);
+    expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceProjectNotFound);
   });
 
   it("returns replaceFailed for other statuses (no raw server copy)", () => {
