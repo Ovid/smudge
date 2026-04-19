@@ -413,8 +413,16 @@ export function useProjectEditor(slug: string | undefined) {
               const ch = await api.chapters.get(first.id);
               setActiveChapter(ch);
               setChapterWordCount(countWords(ch.content));
-            } catch {
-              // Secondary fetch failed — fall through to empty state
+            } catch (err) {
+              // Secondary fetch failed — fall through to the empty state
+              // rather than setting activeChapter to the list-level row
+              // (which has content=null). Surface the failure via the
+              // onError callback and a console.warn so the user and the
+              // dev console both learn something went wrong (I3); before
+              // I3 the catch was silent and the user saw "Add chapter"
+              // as if the project had no chapters left.
+              console.warn("Failed to load chapter after delete:", err);
+              onError?.(STRINGS.error.loadChapterFailed);
               setActiveChapter(null);
               setChapterWordCount(0);
             }

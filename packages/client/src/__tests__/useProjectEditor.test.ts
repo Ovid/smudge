@@ -1181,22 +1181,39 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
-  it("handleDeleteChapter falls through to empty state when secondary chapter fetch fails", async () => {
+  it("handleDeleteChapter surfaces secondary chapter fetch failure via onError (I3)", async () => {
+    // Before I3 the post-delete `api.chapters.get(first.id)` failure was
+    // swallowed with catch {} and the hook silently fell through to the
+    // empty-state UI — the user saw "Add chapter" as if the project had no
+    // chapters, even though `remaining` still held other chapters. Surface
+    // the failure via the onError callback so the page can show a banner,
+    // and warn to the console so the dev signal isn't lost.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
     vi.mocked(api.chapters.get)
       .mockResolvedValueOnce(mockChapter1) // initial load
       .mockRejectedValueOnce(new Error("fetch failed")); // secondary fetch after delete
+    const onError = vi.fn();
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
     await act(async () => {
-      await result.current.handleDeleteChapter(mockChapter1);
+      await result.current.handleDeleteChapter(mockChapter1, onError);
     });
 
-    // Secondary fetch for ch2 failed, so should fall through to null/0
+    // Fall-through to the empty state remains: the list-level chapter row
+    // has content=null, so setting activeChapter to it would give the
+    // editor nothing to render. What changed is that the failure is no
+    // longer invisible.
     expect(result.current.activeChapter).toBeNull();
     expect(result.current.chapterWordCount).toBe(0);
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.loadChapterFailed);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to load chapter after delete:"),
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
   });
 
   it("handleStatusChange discards stale revert when superseded by a newer call", async () => {
