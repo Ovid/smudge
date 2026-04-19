@@ -33,7 +33,6 @@ import { useTrashManager } from "../hooks/useTrashManager";
 import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcuts";
 import { api, ApiRequestError } from "../api/client";
 import { mapReplaceErrorToMessage } from "../utils/findReplaceErrors";
-import { clearAllCachedContent } from "../hooks/useContentCache";
 import { Logo } from "../components/Logo";
 import { generateHTML } from "@tiptap/html";
 import DOMPurify from "dompurify";
@@ -139,16 +138,6 @@ export function EditorPage() {
   // the flush, in which case the restore should not proceed.
   const viewingSnapshotRef = useRef(viewingSnapshot);
   viewingSnapshotRef.current = viewingSnapshot;
-
-  // Guards against overlapping replace requests. Rapid double-clicks on a
-  // per-match Replace button (no confirm dialog) or the Replace-All button
-  // (re-confirmed quickly) would otherwise kick off parallel POSTs — each
-  // creates its own auto-snapshot on the server and triggers independent
-  // reloadActiveChapter remounts, magnifying the in-flight-edit data-loss
-  // race surface.
-  // NOTE: this ref is removed in Task 12 once executeReplace/handleReplaceOne
-  // migrate to useEditorMutation (whose busy guard replaces it).
-  const replaceInFlightRef = useRef(false);
 
   // Editor handle is declared here (above useEditorMutation + the migrated
   // mutation callbacks) so the hook can capture the ref and the callbacks
@@ -423,109 +412,103 @@ export function EditorPage() {
   const handleReplaceOne = useCallback(
     async (chapterId: string, matchIndex: number) => {
       if (!project || !slug) return;
-      // Guard against overlapping replaces — per-match Replace has no
-      // confirm dialog, so a rapid double-click would otherwise launch
-      // parallel POSTs, each creating its own auto-snapshot and remount.
-      if (replaceInFlightRef.current) return;
-      replaceInFlightRef.current = true;
-      // Disable the editor for the duration of the round trip — same
-      // reasoning as executeReplace: typing during the request would
-      // dirty the editor and the unmount cleanup would PATCH pre-replace
-      // content over the server's replaced content.
-      editorRef.current?.setEditable(false);
-      try {
-        // Use the query/options that produced the current results — not the
-        // current input state — so replace-one targets the match the user
-        // actually sees, even if they've started typing a new query.
-        // Capture `replacement` here too (unlike the Replace-All paths that
-        // dialog-confirm before this runs): per-match Replace has no confirm
-        // step, so a slow flushSave (seconds during save backoff) would
-        // otherwise let the user type over the replacement input between
-        // click and POST — silently sending a different value than the one
-        // visible at the moment of the click, with no UI to catch it.
-        const frozenQuery = findReplace.resultsQuery;
-        const frozenOptions = findReplace.resultsOptions;
-        const frozenReplacement = findReplace.replacement;
-        if (!frozenQuery || !frozenOptions) return;
-        const flushed = (await editorRef.current?.flushSave()) ?? true;
-        if (!flushed) {
-          setActionError(STRINGS.findReplace.replaceFailedSaveFirst);
+      // Use the query/options that produced the current results — not the
+      // current input state — so replace-one targets the match the user
+      // actually sees, even if they've started typing a new query.
+      // Capture `replacement` here too (unlike the Replace-All paths that
+      // dialog-confirm before this runs): per-match Replace has no confirm
+      // step, so a slow flushSave (seconds during save backoff) would
+      // otherwise let the user type over the replacement input between
+      // click and POST — silently sending a different value than the one
+      // visible at the moment of the click, with no UI to catch it.
+      const frozenQuery = findReplace.resultsQuery;
+      const frozenOptions = findReplace.resultsOptions;
+      const frozenReplacement = findReplace.replacement;
+      if (!frozenQuery || !frozenOptions) return;
+
+      // Mirror executeReplace: clear any stale success banner from a prior
+      // replace so an error on this one doesn't co-display with the old
+      // "Replaced N occurrences" message.
+      setActionInfo(null);
+
+      type ReplaceData = Awaited<ReturnType<typeof api.search.replace>>;
+
+      const result = await mutation.run<ReplaceData>(async () => {
+        const resp = await api.search.replace(
+          slug,
+          frozenQuery,
+          frozenReplacement,
+          frozenOptions,
+          { type: "chapter", chapter_id: chapterId, match_index: matchIndex },
+        );
+        const current = getActiveChapter();
+        // Replace-one with 0 count means the match was gone on the server —
+        // emit no cache clear / no reload; the ok branch will surface the
+        // matchNotFound banner and re-run the search.
+        const reload =
+          resp.replaced_count > 0 &&
+          !!current &&
+          resp.affected_chapter_ids.includes(current.id);
+        return {
+          clearCacheFor: resp.replaced_count > 0 ? resp.affected_chapter_ids : [],
+          reloadActiveChapter: reload,
+          data: resp,
+        };
+      });
+
+      if (result.ok) {
+        const resp = result.data;
+        if (resp.replaced_count === 0) {
+          // Stale match: refresh results so the row disappears and the user
+          // can't click it again to loop the same error.
+          setActionError(STRINGS.findReplace.matchNotFound);
+          await findReplace.search(slug);
           return;
         }
-        cancelPendingSaves();
-        // Mark editor clean so if a reloadActiveChapter remount follows,
-        // the unmount cleanup does not PATCH pre-replace content.
-        editorRef.current?.markClean();
-        // Mirror executeReplace: clear any stale success banner from a prior
-        // replace so an error on this one doesn't co-display with the old
-        // "Replaced N occurrences" message.
-        setActionInfo(null);
-        try {
-          const result = await api.search.replace(
-            slug,
-            frozenQuery,
-            frozenReplacement,
-            frozenOptions,
-            { type: "chapter", chapter_id: chapterId, match_index: matchIndex },
-          );
-          if (result.replaced_count === 0) {
-            setActionError(STRINGS.findReplace.matchNotFound);
-            // Refresh results so the stale match is removed; otherwise clicking
-            // it again produces the same error in a loop.
-            await findReplace.search(slug);
-            return;
-          }
-          // Purge the localStorage draft cache AFTER the server confirms
-          // the replace, scoped to the mutated chapter. Clearing pre-flight
-          // would destroy a non-active chapter's draft on a network blip.
-          if (result.affected_chapter_ids.length > 0) {
-            clearAllCachedContent(result.affected_chapter_ids);
-          }
-          const current = getActiveChapter();
-          let reloadFailed = false;
-          if (current && result.affected_chapter_ids.includes(current.id)) {
-            // Same rationale as executeReplace: the replace landed; a
-            // transient reload miss should not promote to full-page error.
-            const ok = await reloadActiveChapter(() => {
-              reloadFailed = true;
-            });
-            if (!ok) reloadFailed = true;
-          }
-          await findReplace.search(slug);
-          snapshotPanelRef.current?.refreshSnapshots();
-          // Panel-handle refresh is a no-op when the snapshot panel is
-          // closed (ref is null). Replace-one created an auto-snapshot, so
-          // drive the toolbar count directly via the hook.
-          refreshSnapshotCount();
-          setActionInfo(STRINGS.findReplace.replaceSuccess(result.replaced_count));
-          if (reloadFailed) {
-            setActionError(STRINGS.findReplace.replaceSucceededReloadFailed);
-          }
-        } catch (err) {
-          const msg = mapReplaceErrorToMessage(err);
-          if (msg) setActionError(msg);
-          // On 404 SCOPE_NOT_FOUND (chapter soft-deleted since the last
-          // search), drop the stale match group; otherwise the user clicks
-          // the same row and loops the same error.
-          if (err instanceof ApiRequestError && err.status === 404) {
-            await findReplace.search(slug);
-          }
-        }
-      } finally {
-        editorRef.current?.setEditable(true);
-        replaceInFlightRef.current = false;
+        await findReplace.search(slug);
+        snapshotPanelRef.current?.refreshSnapshots();
+        // Panel-handle refresh is a no-op when the snapshot panel is
+        // closed (ref is null). Replace-one created an auto-snapshot, so
+        // drive the toolbar count directly via the hook.
+        refreshSnapshotCount();
+        setActionInfo(STRINGS.findReplace.replaceSuccess(resp.replaced_count));
+        return;
       }
+
+      if (result.stage === "busy") return;
+      if (result.stage === "flush") {
+        setActionError(STRINGS.findReplace.replaceFailedSaveFirst);
+        return;
+      }
+      if (result.stage === "reload") {
+        // Server-side replace succeeded; only the follow-up GET failed.
+        await findReplace.search(slug);
+        snapshotPanelRef.current?.refreshSnapshots();
+        refreshSnapshotCount();
+        setActionInfo(STRINGS.findReplace.replaceSuccess(result.data.replaced_count));
+        setActionError(STRINGS.findReplace.replaceSucceededReloadFailed);
+        return;
+      }
+      // stage === "mutate"
+      const err = result.error;
+      // On 404 SCOPE_NOT_FOUND (chapter soft-deleted since the last search),
+      // drop the stale match group BEFORE showing the banner — otherwise the
+      // user clicks the same row and loops the same error.
+      if (err instanceof ApiRequestError && err.status === 404) {
+        await findReplace.search(slug);
+      }
+      const msg = mapReplaceErrorToMessage(err);
+      if (msg) setActionError(msg);
     },
     [
       project,
       slug,
       findReplace,
-      reloadActiveChapter,
       snapshotPanelRef,
       refreshSnapshotCount,
       getActiveChapter,
       setActionError,
-      cancelPendingSaves,
+      mutation,
     ],
   );
 
