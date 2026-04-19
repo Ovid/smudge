@@ -1100,4 +1100,82 @@ describe("useProjectEditor", () => {
     expect(result.current.project?.chapters[0]!.status).toBe("outline");
     expect(result.current.activeChapter?.status).toBe("outline");
   });
+
+  it("reloadActiveChapter routes errors to onError callback without setting full-page error (I1)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // Defensive reset: Vitest's clearAllMocks() in beforeEach does not
+    // drain mockResolvedValueOnce/mockRejectedValueOnce queues, so a
+    // prior test's leftover queued rejection can poison this load.
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    // Only the follow-up reload fails. The initial load uses the baseline
+    // resolved value set in beforeEach.
+    vi.mocked(api.chapters.get).mockRejectedValueOnce(new Error("reload boom"));
+
+    const onError = vi.fn();
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await result.current.reloadActiveChapter(onError);
+    });
+
+    expect(ok).toBe(false);
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.loadChapterFailed);
+    // Must NOT have set the full-page error — the replace already succeeded
+    // on the server, callers must stay in the editor to retry.
+    expect(result.current.error).toBeNull();
+    warnSpy.mockRestore();
+  });
+
+  it("reloadActiveChapter without onError falls back to setError (legacy callers)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    vi.mocked(api.chapters.get).mockRejectedValueOnce(new Error("reload boom"));
+
+    await act(async () => {
+      await result.current.reloadActiveChapter();
+    });
+
+    expect(result.current.error).toBe(STRINGS.error.loadChapterFailed);
+    warnSpy.mockRestore();
+  });
+
+  it("cross-project slug change resets activeChapter when cached id is absent from new project (I4)", async () => {
+    const otherChapter = { ...mockChapter1, id: "other-1", project_id: "p2" };
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [otherChapter],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.activeChapter?.id).toBe("ch1"));
+
+    // Now swap the mocks so that the second project load returns a
+    // different project and chapters.get returns the other project's
+    // first chapter.
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    vi.mocked(api.chapters.get).mockResolvedValueOnce(otherChapter);
+
+    rerender({ slug: "other-project" });
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+    // After the slug change, the effect should have observed that "ch1"
+    // is no longer in the newly-loaded project's chapter set and loaded
+    // project B's first chapter instead.
+    await waitFor(() => expect(result.current.activeChapter?.id).toBe("other-1"));
+  });
 });
