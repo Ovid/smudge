@@ -75,4 +75,35 @@ describe("useEditorMutation — happy path", () => {
       vi.mocked(projectEditor.reloadActiveChapter).mock.invocationCallOrder[0],
     );
   });
+
+  it("skips reloadActiveChapter when directive says false", async () => {
+    const { editorRef, projectEditor } = buildHandles();
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor }),
+    );
+
+    await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: false,
+      data: undefined,
+    }));
+
+    expect(projectEditor.reloadActiveChapter).not.toHaveBeenCalled();
+  });
+
+  it("skips clearAllCachedContent when directive.clearCacheFor is empty", async () => {
+    const { editorRef, projectEditor } = buildHandles();
+    const { clearAllCachedContent } = await import("./useContentCache");
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor }),
+    );
+
+    await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: true,
+      data: undefined,
+    }));
+
+    expect(vi.mocked(clearAllCachedContent)).not.toHaveBeenCalled();
+  });
 });
