@@ -324,6 +324,23 @@ describe("useFindReplaceState", () => {
     expect(result.current.results).toEqual(priorResults);
   });
 
+  it("search() surfaces terminal 'scope not found' copy on 404 (not retry copy)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFind.mockRejectedValueOnce(new ApiRequestError("project gone", 404));
+
+    const { result } = renderHook(() => useFindReplaceState("my-project"));
+    act(() => {
+      result.current.setQuery("test");
+    });
+    await act(async () => {
+      await result.current.search("my-project");
+    });
+    // 404 is terminal — must not reuse the generic "Search failed. Try again."
+    // copy that invites a retry loop.
+    expect(result.current.error).toBe(STRINGS.findReplace.searchScopeNotFound);
+    expect(result.current.results).toBeNull();
+  });
+
   it("search() DOES clear results on 400 (query itself is invalid) (S8)", async () => {
     const priorResults = { total_count: 1, chapters: [{ id: "c1", title: "Ch 1", matches: [] }] };
     mockFind.mockResolvedValueOnce(priorResults);

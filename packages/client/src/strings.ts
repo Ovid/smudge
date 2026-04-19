@@ -329,6 +329,7 @@ export const STRINGS = {
     replaceFailedSaveFirst:
       "Unable to save pending changes. Try again once your connection recovers before replacing.",
     replaceScopeNotFound: "The chapter for this replace is no longer available.",
+    searchScopeNotFound: "This project is no longer available.",
     replaceSuccess: (count: number) => `Replaced ${count} occurrence${count === 1 ? "" : "s"}.`,
     noMatches: "No matches found",
     matchCount: (count: number, chapters: number) =>

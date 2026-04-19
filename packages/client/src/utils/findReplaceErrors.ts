@@ -58,5 +58,11 @@ export function mapSearchErrorToMessage(err: unknown): string | null {
     if (err.code === SEARCH_ERROR_CODES.INVALID_REGEX) return STRINGS.findReplace.invalidRegex;
     return STRINGS.findReplace.invalidSearchRequest;
   }
+  if (err.status === 404) {
+    // Project (or scoped chapter) is gone — retrying will 404 forever.
+    // Return terminal copy so the panel doesn't invite a retry loop.
+    // Mirrors the replace-side handling via `replaceScopeNotFound`.
+    return STRINGS.findReplace.searchScopeNotFound;
+  }
   return STRINGS.findReplace.searchFailed;
 }
