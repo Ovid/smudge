@@ -56,6 +56,15 @@ export function mapReplaceErrorToMessage(err: unknown): string | null {
     }
     return STRINGS.findReplace.replaceProjectNotFound;
   }
+  // apiFetch maps offline / DNS / CSP failures to status=0 with
+  // code="NETWORK" (see api/client.ts classifyFetchError). Surfacing the
+  // generic "Replace failed" copy for those conflates a transient-5xx
+  // retry with a connectivity problem the user can fix; branch on the
+  // NETWORK code so the UI invites the user to check the connection
+  // rather than hammer retry (S4).
+  if (err.status === 0 && err.code === "NETWORK") {
+    return STRINGS.findReplace.replaceNetworkFailed;
+  }
   return STRINGS.findReplace.replaceFailed;
 }
 
@@ -93,6 +102,12 @@ export function mapSearchErrorToMessage(err: unknown): string | null {
     // Return terminal copy so the panel doesn't invite a retry loop.
     // Mirrors the replace-side handling via `replaceScopeNotFound`.
     return STRINGS.findReplace.searchScopeNotFound;
+  }
+  // Mirror the replace-side NETWORK branch (S4) so offline/DNS/CSP
+  // failures route to connection-specific copy instead of the generic
+  // "Search failed" bucket that 5xx and unknowns share.
+  if (err.status === 0 && err.code === "NETWORK") {
+    return STRINGS.findReplace.searchNetworkFailed;
   }
   return STRINGS.findReplace.searchFailed;
 }

@@ -82,6 +82,14 @@ describe("mapReplaceErrorToMessage", () => {
     const err = new ApiRequestError("", 500);
     expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceFailed);
   });
+
+  it("maps NETWORK (status 0) to replaceNetworkFailed so users can self-diagnose (S4)", () => {
+    // apiFetch classifies offline / DNS / CSP failures as status=0 with
+    // code="NETWORK". "Replace failed. Try again." is the wrong prompt
+    // here — the user needs to check their connection, not mash retry.
+    const err = new ApiRequestError("fetch failed", 0, "NETWORK");
+    expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceNetworkFailed);
+  });
 });
 
 describe("mapSearchErrorToMessage", () => {
@@ -98,5 +106,10 @@ describe("mapSearchErrorToMessage", () => {
   it("returns null for ABORTED", () => {
     const err = new ApiRequestError("aborted", 0, "ABORTED");
     expect(mapSearchErrorToMessage(err)).toBeNull();
+  });
+
+  it("maps NETWORK (status 0) to searchNetworkFailed so users can self-diagnose (S4)", () => {
+    const err = new ApiRequestError("fetch failed", 0, "NETWORK");
+    expect(mapSearchErrorToMessage(err)).toBe(STRINGS.findReplace.searchNetworkFailed);
   });
 });

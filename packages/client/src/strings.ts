@@ -336,6 +336,7 @@ export const STRINGS = {
     wholeWord: "Whole word",
     regex: "Regular expression",
     replaceFailed: "Replace failed. Try again.",
+    replaceNetworkFailed: "Replace failed — check your connection and try again.",
     replaceFailedSaveFirst:
       "Unable to save pending changes. Try again once your connection recovers before replacing.",
     replaceSucceededReloadFailed:
@@ -377,6 +378,7 @@ export const STRINGS = {
     invalidReplaceRequest: "Replace request was rejected. Check your search and replace inputs.",
     invalidSearchRequest: "Search request was rejected. Check your search input.",
     searchFailed: "Search failed. Try again.",
+    searchNetworkFailed: "Search failed — check your connection and try again.",
     skippedChapters: (count: number) =>
       `${count} chapter${count === 1 ? " was" : "s were"} skipped due to corrupt content.`,
     skippedAfterReplace: (count: number) =>
