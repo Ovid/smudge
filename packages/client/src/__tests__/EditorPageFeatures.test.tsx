@@ -1140,6 +1140,25 @@ describe("EditorPage find-and-replace confirmation", () => {
     });
   });
 
+  it("surfaces replaceSuccess banner and skippedAfterReplace after replace-all ok path", async () => {
+    vi.mocked(api.search.replace).mockResolvedValue({
+      replaced_count: 3,
+      affected_chapter_ids: [],
+      skipped_chapter_ids: ["ch-skipped"],
+    } as unknown as { replaced_count: number; affected_chapter_ids: string[] });
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    // result.ok branch: positive success banner with the real count.
+    await waitFor(() => {
+      expect(screen.getByText("Replaced 3 occurrences.")).toBeInTheDocument();
+    });
+    // And a skipped-chapter warning co-displays in the error region.
+    expect(screen.getByText(STRINGS.findReplace.skippedAfterReplace(1))).toBeInTheDocument();
+  });
+
   it("Ctrl+H is blocked while the replace-confirm dialog is open", async () => {
     await openPanelAndClickReplaceAll();
 
@@ -1504,6 +1523,65 @@ describe("EditorPage snapshot panel", () => {
 
     await waitFor(() => {
       expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+    });
+  });
+
+  it("restores a viewed snapshot via Restore button (happy path through useEditorMutation)", async () => {
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-1",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+    ]);
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-1",
+      chapter_id: "ch-1",
+      label: "v1",
+      content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+      word_count: 5,
+      is_auto: false,
+      created_at: "2026-04-17T10:00:00Z",
+    });
+    (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
+      .fn()
+      .mockResolvedValue({ status: "ok" });
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    // Open panel and enter snapshot-view mode.
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "View" }));
+    await waitFor(() => {
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+    });
+
+    // SnapshotBanner renders inside the editor's region with a "Restore"
+    // button. Clicking it opens a ConfirmDialog; confirm to run the
+    // useEditorMutation happy path (flush → markClean → server restore →
+    // cache clear → reloadActiveChapter → setEditable(true)).
+    const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
+    await userEvent.click(restoreButtons[0]!);
+    const dialog = await screen.findByRole("alertdialog", { name: "Restore" });
+    // The dialog has "Restore" as both title and confirmLabel; scope the
+    // button query to within the dialog so the banner's Restore button
+    // doesn't match.
+    const confirmButton = Array.from(dialog.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Restore",
+    );
+    expect(confirmButton).toBeDefined();
+    await userEvent.click(confirmButton!);
+
+    await waitFor(() => {
+      expect(
+        (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore,
+      ).toHaveBeenCalledWith("snap-1");
     });
   });
 
