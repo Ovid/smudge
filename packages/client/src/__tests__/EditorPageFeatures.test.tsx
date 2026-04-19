@@ -1159,6 +1159,39 @@ describe("EditorPage find-and-replace confirmation", () => {
     expect(screen.getByText(STRINGS.findReplace.skippedAfterReplace(1))).toBeInTheDocument();
   });
 
+  it("surfaces persistent locked-editor banner when reload fails after replace (I1)", async () => {
+    // useProjectEditor.reloadActiveChapter logs a console.warn on the
+    // intentional failure path. Spy + suppress so the test deliberately
+    // exercises the error branch without leaking noise into stderr.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    vi.mocked(api.search.replace).mockResolvedValueOnce({
+      replaced_count: 2,
+      affected_chapter_ids: ["ch-1"],
+    });
+    // Initial load succeeds (mockChapter via beforeEach), then the reload
+    // triggered by the post-replace flow fails — the editor stays
+    // setEditable(false) and the persistent lock banner must appear.
+    vi.mocked(api.chapters.get)
+      .mockResolvedValueOnce(mockChapter)
+      .mockRejectedValueOnce(new Error("reload failed"));
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    expect(
+      await screen.findByText(STRINGS.findReplace.replaceSucceededReloadFailed),
+    ).toBeInTheDocument();
+    // The banner must surface a Refresh page button — without it, the user
+    // has no signposted recovery action while keystrokes are silently
+    // swallowed by the read-only editor.
+    expect(screen.getByRole("button", { name: STRINGS.editor.refreshButton })).toBeInTheDocument();
+
+    expect(warnSpy).toHaveBeenCalledWith("Failed to reload chapter:", expect.any(Error));
+    warnSpy.mockRestore();
+  });
+
   it("Ctrl+H is blocked while the replace-confirm dialog is open", async () => {
     await openPanelAndClickReplaceAll();
 
