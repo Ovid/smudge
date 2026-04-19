@@ -250,6 +250,11 @@ export function useProjectEditor(slug: string | undefined) {
     saveAbortRef.current?.abort();
     saveAbortRef.current = null;
     setSaveStatus("idle");
+    // Mirror handleCreateChapter: the previous chapter's persistent save
+    // failure message must not follow the user into the newly-selected
+    // chapter. The status reset alone hides the footer indicator, but
+    // saveErrorMessage is a separate state and would otherwise linger.
+    setSaveErrorMessage(null);
     setCacheWarning(false);
     const seq = ++selectChapterSeqRef.current;
     try {
@@ -314,6 +319,13 @@ export function useProjectEditor(slug: string | undefined) {
       // round trip.
       saveAbortRef.current?.abort();
       saveAbortRef.current = null;
+      // Mirror handleSelectChapter: the deleted chapter's save-status must
+      // not leak into the empty-state or next-selected chapter. Without
+      // this, deleting mid-save leaves the footer stuck on "Saving…" until
+      // a new save cycle completes.
+      setSaveStatus("idle");
+      setSaveErrorMessage(null);
+      setCacheWarning(false);
       try {
         await api.chapters.delete(chapter.id);
         clearCachedContent(chapter.id);

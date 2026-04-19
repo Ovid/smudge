@@ -177,6 +177,13 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         });
         return { ok: true };
       } catch (err) {
+        // Mirror the success-path stale-seq guards: a chapter switch (or a
+        // newer View click on the same chapter) during the in-flight GET
+        // should not surface the response's error on the now-active panel.
+        // Without this, a 404 from the old chapter's snapshot lands as a
+        // "snapshot no longer exists" banner attributed to the new chapter.
+        if (seq !== chapterSeqRef.current) return { ok: true, staleChapterSwitch: true };
+        if (vseq !== viewSeqRef.current) return { ok: true, staleChapterSwitch: true };
         if (err instanceof ApiRequestError) {
           // ABORTED is not a user-visible error — treat it like a stale
           // chapter-switch: silent no-op.
