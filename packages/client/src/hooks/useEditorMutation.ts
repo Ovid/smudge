@@ -26,14 +26,10 @@ export type UseEditorMutationArgs = {
 };
 
 export type UseEditorMutationReturn = {
-  run: <T>(
-    mutate: () => Promise<MutationDirective<T>>,
-  ) => Promise<MutationResult<T>>;
+  run: <T>(mutate: () => Promise<MutationDirective<T>>) => Promise<MutationResult<T>>;
 };
 
-export function useEditorMutation(
-  args: UseEditorMutationArgs,
-): UseEditorMutationReturn {
+export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutationReturn {
   const projectEditorRef = useRef(args.projectEditor);
   useEffect(() => {
     projectEditorRef.current = args.projectEditor;
@@ -42,9 +38,7 @@ export function useEditorMutation(
   const inFlightRef = useRef(false);
 
   const run = useCallback(
-    async <T,>(
-      mutate: () => Promise<MutationDirective<T>>,
-    ): Promise<MutationResult<T>> => {
+    async <T>(mutate: () => Promise<MutationDirective<T>>): Promise<MutationResult<T>> => {
       if (inFlightRef.current) {
         return { ok: false, stage: "busy" };
       }
@@ -77,11 +71,9 @@ export function useEditorMutation(
         }
         if (directive.reloadActiveChapter) {
           let reloadMessage: string | undefined;
-          const ok = await projectEditorRef.current.reloadActiveChapter(
-            (msg) => {
-              reloadMessage = msg;
-            },
-          );
+          const ok = await projectEditorRef.current.reloadActiveChapter((msg) => {
+            reloadMessage = msg;
+          });
           if (!ok) {
             return {
               ok: false,

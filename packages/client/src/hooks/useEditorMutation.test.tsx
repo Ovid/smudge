@@ -2,10 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import type { MutableRefObject } from "react";
 import type { EditorHandle } from "../components/Editor";
-import {
-  useEditorMutation,
-  type MutationDirective,
-} from "../hooks/useEditorMutation";
+import { useEditorMutation, type MutationDirective } from "../hooks/useEditorMutation";
 import { clearAllCachedContent } from "./useContentCache";
 
 vi.mock("./useContentCache", () => ({
@@ -48,9 +45,7 @@ describe("useEditorMutation — happy path", () => {
 
   it("runs steps in the required order", async () => {
     const { calls, editorRef, projectEditor } = buildHandles();
-    const { result } = renderHook(() =>
-      useEditorMutation({ editorRef, projectEditor }),
-    );
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
 
     const res = await result.current.run(async () => {
       calls.push("mutate");
@@ -68,10 +63,8 @@ describe("useEditorMutation — happy path", () => {
       "setEditable(true)",
     ]);
     expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["c1"]);
-    const cacheOrder =
-      vi.mocked(clearAllCachedContent).mock.invocationCallOrder[0];
-    const reloadOrder =
-      vi.mocked(projectEditor.reloadActiveChapter).mock.invocationCallOrder[0];
+    const cacheOrder = vi.mocked(clearAllCachedContent).mock.invocationCallOrder[0];
+    const reloadOrder = vi.mocked(projectEditor.reloadActiveChapter).mock.invocationCallOrder[0];
     expect(cacheOrder).toBeDefined();
     expect(reloadOrder).toBeDefined();
     expect(cacheOrder!).toBeLessThan(reloadOrder!);
@@ -79,9 +72,7 @@ describe("useEditorMutation — happy path", () => {
 
   it("skips reloadActiveChapter when directive says false", async () => {
     const { editorRef, projectEditor } = buildHandles();
-    const { result } = renderHook(() =>
-      useEditorMutation({ editorRef, projectEditor }),
-    );
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
 
     await result.current.run(async () => ({
       clearCacheFor: [],
@@ -94,9 +85,7 @@ describe("useEditorMutation — happy path", () => {
 
   it("skips clearAllCachedContent when directive.clearCacheFor is empty", async () => {
     const { editorRef, projectEditor } = buildHandles();
-    const { result } = renderHook(() =>
-      useEditorMutation({ editorRef, projectEditor }),
-    );
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
 
     await result.current.run(async () => ({
       clearCacheFor: [],
@@ -109,9 +98,7 @@ describe("useEditorMutation — happy path", () => {
 
   it("threads typed data through to the success result", async () => {
     const { editorRef, projectEditor } = buildHandles();
-    const { result } = renderHook(() =>
-      useEditorMutation({ editorRef, projectEditor }),
-    );
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
 
     const res = await result.current.run<{ replaced: number }>(async () => ({
       clearCacheFor: [],
@@ -138,9 +125,7 @@ describe("useEditorMutation — flush failure", () => {
     });
     const mutate = vi.fn<() => Promise<MutationDirective<void>>>();
 
-    const { result } = renderHook(() =>
-      useEditorMutation({ editorRef, projectEditor }),
-    );
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
     const res = await result.current.run(mutate);
 
     expect(res).toEqual({
@@ -159,9 +144,7 @@ describe("useEditorMutation — flush failure", () => {
     editorRef.current!.flushSave = vi.fn(async () => false);
     const mutate = vi.fn<() => Promise<MutationDirective<void>>>();
 
-    const { result } = renderHook(() =>
-      useEditorMutation({ editorRef, projectEditor }),
-    );
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
     const res = await result.current.run(mutate);
 
     expect(res.ok).toBe(false);
@@ -188,9 +171,7 @@ describe("useEditorMutation — mutate failure", () => {
   it("returns stage 'mutate' on throw and skips cache/reload", async () => {
     const { editorRef, projectEditor } = buildHandles();
 
-    const { result } = renderHook(() =>
-      useEditorMutation({ editorRef, projectEditor }),
-    );
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
     const res = await result.current.run(async () => {
       throw new Error("server-no");
     });
@@ -214,16 +195,12 @@ describe("useEditorMutation — reload failure", () => {
 
   it("returns stage 'reload' when reloadActiveChapter invokes onError", async () => {
     const { editorRef, projectEditor } = buildHandles();
-    projectEditor.reloadActiveChapter = vi.fn(
-      async (onError?: (msg: string) => void) => {
-        onError?.("reload-failed-msg");
-        return false;
-      },
-    );
+    projectEditor.reloadActiveChapter = vi.fn(async (onError?: (msg: string) => void) => {
+      onError?.("reload-failed-msg");
+      return false;
+    });
 
-    const { result } = renderHook(() =>
-      useEditorMutation({ editorRef, projectEditor }),
-    );
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
     const res = await result.current.run<{ replaced: number }>(async () => ({
       clearCacheFor: ["c1"],
       reloadActiveChapter: true,
@@ -245,9 +222,7 @@ describe("useEditorMutation — reload failure", () => {
     const { editorRef, projectEditor } = buildHandles();
     projectEditor.reloadActiveChapter = vi.fn(async () => false);
 
-    const { result } = renderHook(() =>
-      useEditorMutation({ editorRef, projectEditor }),
-    );
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
     const res = await result.current.run<{ affected: string[] }>(async () => ({
       clearCacheFor: [],
       reloadActiveChapter: true,
@@ -274,11 +249,7 @@ describe("useEditorMutation — busy guard", () => {
 
     let resolveMutate: () => void = () => {};
     const blockingMutate = () =>
-      new Promise<{
-        clearCacheFor: string[];
-        reloadActiveChapter: boolean;
-        data: void;
-      }>((resolve) => {
+      new Promise<MutationDirective>((resolve) => {
         resolveMutate = () =>
           resolve({
             clearCacheFor: [],
@@ -287,9 +258,7 @@ describe("useEditorMutation — busy guard", () => {
           });
       });
 
-    const { result } = renderHook(() =>
-      useEditorMutation({ editorRef, projectEditor }),
-    );
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
 
     const firstPromise = result.current.run(blockingMutate);
     // Yield to allow the first run to enter the in-flight region
@@ -321,9 +290,7 @@ describe("useEditorMutation — null editor ref", () => {
   it("runs mutate, cache-clear, and reload when editorRef.current is null", async () => {
     const { projectEditor } = buildHandles();
     const editorRef: MutableRefObject<EditorHandle | null> = { current: null };
-    const { result } = renderHook(() =>
-      useEditorMutation({ editorRef, projectEditor }),
-    );
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
 
     const res = await result.current.run(async () => ({
       clearCacheFor: ["c1"],

@@ -254,14 +254,7 @@ export function EditorPage() {
       return;
     }
     setActionError(STRINGS.snapshots.restoreFailed);
-  }, [
-    viewingSnapshot,
-    activeChapter,
-    restoreSnapshot,
-    snapshotPanelRef,
-    setActionError,
-    mutation,
-  ]);
+  }, [viewingSnapshot, activeChapter, restoreSnapshot, snapshotPanelRef, setActionError, mutation]);
 
   const executeReplace = useCallback(
     async (frozen: {
@@ -430,21 +423,17 @@ export function EditorPage() {
       type ReplaceData = Awaited<ReturnType<typeof api.search.replace>>;
 
       const result = await mutation.run<ReplaceData>(async () => {
-        const resp = await api.search.replace(
-          slug,
-          frozenQuery,
-          frozenReplacement,
-          frozenOptions,
-          { type: "chapter", chapter_id: chapterId, match_index: matchIndex },
-        );
+        const resp = await api.search.replace(slug, frozenQuery, frozenReplacement, frozenOptions, {
+          type: "chapter",
+          chapter_id: chapterId,
+          match_index: matchIndex,
+        });
         const current = getActiveChapter();
         // Replace-one with 0 count means the match was gone on the server —
         // emit no cache clear / no reload; the ok branch will surface the
         // matchNotFound banner and re-run the search.
         const reload =
-          resp.replaced_count > 0 &&
-          !!current &&
-          resp.affected_chapter_ids.includes(current.id);
+          resp.replaced_count > 0 && !!current && resp.affected_chapter_ids.includes(current.id);
         return {
           clearCacheFor: resp.replaced_count > 0 ? resp.affected_chapter_ids : [],
           reloadActiveChapter: reload,
