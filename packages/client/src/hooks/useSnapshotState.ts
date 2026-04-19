@@ -87,6 +87,11 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   const snapshotPanelRef = useRef<SnapshotPanelHandle>(null);
   // Monotonic counter to discard stale list responses after a chapter switch.
   const chapterSeqRef = useRef(0);
+  // Per-request sequence for viewSnapshot: guards against rapid successive
+  // View clicks on the SAME chapter (where chapterSeqRef doesn't change)
+  // resolving out of order — an older response would otherwise land after
+  // a newer one and pin the wrong snapshot as the current view.
+  const viewSeqRef = useRef(0);
   // Mirror the current chapterId so async handlers can check the live value
   // against their captured one (needed for A→B→A restore detection).
   const currentChapterIdRef = useRef<string | null>(chapterId);
@@ -148,9 +153,15 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       // a subsequent Restore click would silently overwrite the previous
       // chapter using viewingSnapshot.id.
       const seq = chapterSeqRef.current;
+      // Per-request sequence for same-chapter rapid clicks: two View
+      // clicks on the same chapter share chapterSeqRef but need their
+      // own ordering so the later request "wins" regardless of network
+      // resolve order.
+      const vseq = ++viewSeqRef.current;
       try {
         const full = await api.snapshots.get(snapshot.id);
         if (seq !== chapterSeqRef.current) return { ok: true, staleChapterSwitch: true };
+        if (vseq !== viewSeqRef.current) return { ok: true, staleChapterSwitch: true };
         // SnapshotRow.content is typed as a JSON string on the wire.
         let content: unknown;
         try {

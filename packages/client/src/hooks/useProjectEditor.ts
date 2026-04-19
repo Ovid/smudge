@@ -227,6 +227,12 @@ export function useProjectEditor(slug: string | undefined) {
   const handleSelectChapter = useCallback(async (chapterId: string) => {
     if (activeChapterRef.current && chapterId === activeChapterRef.current.id) return;
     ++saveSeqRef.current; // cancel any in-flight save retries for the old chapter
+    // Abort the in-flight PATCH too — the seq bump alone stops the retry
+    // loop and state writes, but the server-side write keeps running. An
+    // abort ensures no wasted work and no pre-existing PATCH completing
+    // against the switched-away chapter.
+    saveAbortRef.current?.abort();
+    saveAbortRef.current = null;
     setSaveStatus("idle");
     setCacheWarning(false);
     const seq = ++selectChapterSeqRef.current;
@@ -273,6 +279,11 @@ export function useProjectEditor(slug: string | undefined) {
   const handleDeleteChapter = useCallback(
     async (chapter: Chapter, onError?: (message: string) => void): Promise<boolean> => {
       ++saveSeqRef.current; // cancel any in-flight save retries for the deleted chapter
+      // Abort the in-flight PATCH as well — the server-side `deleted_at IS
+      // NULL` filter neuters the race, but aborting still saves the wasted
+      // round trip.
+      saveAbortRef.current?.abort();
+      saveAbortRef.current = null;
       try {
         await api.chapters.delete(chapter.id);
         clearCachedContent(chapter.id);

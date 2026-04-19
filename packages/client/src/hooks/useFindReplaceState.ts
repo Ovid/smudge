@@ -88,6 +88,11 @@ export function useFindReplaceState(
       setResultsOptions(null);
       setError(null);
       searchSeqRef.current++;
+      // Abort any in-flight search so the server stops walking a project
+      // the user has left. The seq bump prevents the response from
+      // writing state back, but without abort the server keeps scanning.
+      searchAbortRef.current?.abort();
+      searchAbortRef.current = null;
     }
   }, [projectId]);
 
