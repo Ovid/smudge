@@ -957,10 +957,28 @@ export function EditorPage() {
               // view mode — the Editor would unmount with dirty state and
               // either drop recent edits or race a retry against a later
               // restore.
-              const flushed = (await editorRef.current?.flushSave()) ?? true;
-              if (!flushed) return { ok: false, reason: "save_failed" };
-              cancelPendingSaves();
-              return viewSnapshot(snap);
+              //
+              // Disable the editor BEFORE awaiting flushSave — same
+              // discipline as executeReplace/handleReplaceOne. Without
+              // this, keystrokes during the flush window (which can be
+              // seconds long if the save is in backoff) re-dirty the
+              // editor and the subsequent unmount cleanup fires a
+              // fire-and-forget PATCH with the typed-during-flush
+              // content.
+              editorRef.current?.setEditable(false);
+              try {
+                const flushed = (await editorRef.current?.flushSave()) ?? true;
+                if (!flushed) {
+                  // Re-enable so the user can retry — view was refused.
+                  editorRef.current?.setEditable(true);
+                  return { ok: false, reason: "save_failed" };
+                }
+                cancelPendingSaves();
+                return await viewSnapshot(snap);
+              } catch (err) {
+                editorRef.current?.setEditable(true);
+                throw err;
+              }
             }}
             onBeforeCreate={async () => {
               const flushed = (await editorRef.current?.flushSave()) ?? true;
