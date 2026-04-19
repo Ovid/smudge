@@ -44,18 +44,25 @@ export function useEditorMutation(
     ): Promise<MutationResult<T>> => {
       const editor = args.editorRef.current;
       editor?.setEditable(false);
-      await editor?.flushSave();
-      projectEditorRef.current.cancelPendingSaves();
-      editor?.markClean();
-      const directive = await mutate();
-      if (directive.clearCacheFor.length > 0) {
-        clearAllCachedContent(directive.clearCacheFor);
+      try {
+        try {
+          await editor?.flushSave();
+        } catch (error) {
+          return { ok: false, stage: "flush", error };
+        }
+        projectEditorRef.current.cancelPendingSaves();
+        editor?.markClean();
+        const directive = await mutate();
+        if (directive.clearCacheFor.length > 0) {
+          clearAllCachedContent(directive.clearCacheFor);
+        }
+        if (directive.reloadActiveChapter) {
+          await projectEditorRef.current.reloadActiveChapter();
+        }
+        return { ok: true, data: directive.data };
+      } finally {
+        editor?.setEditable(true);
       }
-      if (directive.reloadActiveChapter) {
-        await projectEditorRef.current.reloadActiveChapter();
-      }
-      editor?.setEditable(true);
-      return { ok: true, data: directive.data };
     },
     [args.editorRef],
   );

@@ -125,3 +125,33 @@ describe("useEditorMutation — happy path", () => {
     }
   });
 });
+
+describe("useEditorMutation — flush failure", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns stage 'flush' when flushSave rejects and does not proceed", async () => {
+    const { editorRef, projectEditor } = buildHandles();
+    editorRef.current!.flushSave = vi.fn(async () => {
+      throw new Error("boom");
+    });
+    const mutate = vi.fn();
+    const { clearAllCachedContent } = await import("./useContentCache");
+
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor }),
+    );
+    const res = await result.current.run(mutate as never);
+
+    expect(res).toEqual({
+      ok: false,
+      stage: "flush",
+      error: expect.objectContaining({ message: "boom" }),
+    });
+    expect(mutate).not.toHaveBeenCalled();
+    expect(vi.mocked(clearAllCachedContent)).not.toHaveBeenCalled();
+    expect(projectEditor.reloadActiveChapter).not.toHaveBeenCalled();
+    expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(true);
+  });
+});
