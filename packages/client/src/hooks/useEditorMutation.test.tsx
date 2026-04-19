@@ -106,4 +106,22 @@ describe("useEditorMutation — happy path", () => {
 
     expect(vi.mocked(clearAllCachedContent)).not.toHaveBeenCalled();
   });
+
+  it("threads typed data through to the success result", async () => {
+    const { editorRef, projectEditor } = buildHandles();
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor }),
+    );
+
+    const res = await result.current.run<{ replaced: number }>(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: false,
+      data: { replaced: 7 },
+    }));
+
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.data).toEqual({ replaced: 7 });
+    }
+  });
 });
