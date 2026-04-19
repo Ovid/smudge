@@ -197,6 +197,12 @@ export function EditorPage() {
   const handleRestoreSnapshot = useCallback(async () => {
     if (!viewingSnapshot || !activeChapter) return;
 
+    // Clear stale action banners on entry: a previous failure or success
+    // banner must not co-display with whatever this restore produces. The
+    // two find-replace callers below also do this.
+    setActionError(null);
+    setActionInfo(null);
+
     type RestoreData = { staleChapterSwitch: boolean };
 
     const result = await mutation.run<RestoreData>(async () => {
@@ -272,9 +278,10 @@ export function EditorPage() {
     }) => {
       if (!project || !slug) return;
 
-      // Clear any stale success banner from a prior replace so an error on
-      // this one doesn't co-display with the old "Replaced N occurrences".
+      // Clear any stale banners so a prior op's error/success cannot
+      // co-display with this op's outcome.
       setActionInfo(null);
+      setActionError(null);
 
       type ReplaceData = Awaited<ReturnType<typeof api.search.replace>>;
 
@@ -425,10 +432,11 @@ export function EditorPage() {
       const frozenReplacement = findReplace.replacement;
       if (!frozenQuery || !frozenOptions) return;
 
-      // Mirror executeReplace: clear any stale success banner from a prior
-      // replace so an error on this one doesn't co-display with the old
-      // "Replaced N occurrences" message.
+      // Mirror executeReplace: clear any stale banners from a prior op so
+      // the new replace's outcome does not co-display with an unrelated
+      // success or error message.
       setActionInfo(null);
+      setActionError(null);
 
       type ReplaceData = Awaited<ReturnType<typeof api.search.replace>>;
 
