@@ -30,6 +30,18 @@ export class ApiRequestError extends Error {
   }
 }
 
+// Map a fetch/DOM failure to an ApiRequestError with a stable code. An
+// AbortError can surface either from the initial `fetch()` call or from
+// body reads after headers have arrived (res.json/res.blob) — both need
+// the same ABORTED classification so every caller can rely on err.code.
+function classifyFetchError(err: unknown): ApiRequestError {
+  if (err instanceof DOMException && err.name === "AbortError") {
+    return new ApiRequestError("Request aborted", 0, "ABORTED");
+  }
+  const message = err instanceof Error ? err.message : "Network request failed";
+  return new ApiRequestError(message, 0, "NETWORK");
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -37,15 +49,11 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   }).catch((err: unknown) => {
     // Surface AbortController cancellation as a typed error so callers can
     // distinguish "request aborted" from real network failure.
-    if (err instanceof DOMException && err.name === "AbortError") {
-      throw new ApiRequestError("Request aborted", 0, "ABORTED");
-    }
     // Network failures (offline, DNS, CSP) come through as TypeError from
-    // fetch. Wrap so every call site can rely on ApiRequestError with a
-    // NETWORK code rather than seeing a bare TypeError and falling back to
-    // generic copy on exactly the path that most needs clear messaging.
-    const message = err instanceof Error ? err.message : "Network request failed";
-    throw new ApiRequestError(message, 0, "NETWORK");
+    // fetch. Wrap so every call site can rely on ApiRequestError rather
+    // than seeing a bare TypeError and falling back to generic copy on
+    // exactly the path that most needs clear messaging.
+    throw classifyFetchError(err);
   });
 
   if (!res.ok) {
@@ -55,14 +63,26 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
       const body = (await res.json()) as ApiError;
       message = body.error?.message ?? message;
       code = body.error?.code;
-    } catch {
-      // Response body wasn't JSON (e.g., proxy HTML error page)
+    } catch (err: unknown) {
+      // Body read can ALSO abort (e.g. controller cancelled after headers
+      // arrived). Propagate as ABORTED so callers that key on err.code
+      // don't see a generic "Request failed: 4xx" status-only message
+      // and mis-surface it as a retryable network fault. Any other JSON
+      // parse failure (e.g. proxy HTML error page) falls through to the
+      // status-only envelope below.
+      if (err instanceof DOMException && err.name === "AbortError") {
+        throw classifyFetchError(err);
+      }
     }
     throw new ApiRequestError(message, res.status, code);
   }
 
   if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  // Wrap the body-read here too: a caller abort after a 2xx response and
+  // before json() resolves would otherwise bubble a raw DOMException.
+  return (res.json() as Promise<T>).catch((err: unknown) => {
+    throw classifyFetchError(err);
+  });
 }
 
 export const api = {

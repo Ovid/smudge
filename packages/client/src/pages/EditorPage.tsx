@@ -647,11 +647,21 @@ export function EditorPage() {
             return { ...data, chapters: prev.chapters };
           }),
         )
-        .catch(() => {
+        .catch((err: unknown) => {
+          // 404 after a settings update means the project was deleted
+          // (or purged) from another tab/request — refreshing here would
+          // leave the user staring at a stale editor with a retry banner
+          // that can never succeed. Navigate home so the projects list
+          // reflects the new reality. Transient network failures still
+          // land on the dismissible banner.
+          if (err instanceof ApiRequestError && err.status === 404) {
+            navigate("/");
+            return;
+          }
           setActionError(STRINGS.error.loadProjectFailed);
         });
     }
-  }, [slug, setProject, setActionError]);
+  }, [slug, setProject, setActionError, navigate]);
 
   useKeyboardShortcuts({
     shortcutHelpOpen,

@@ -68,7 +68,13 @@ export function SnapshotBanner({ label, date, onRestore, onBack }: SnapshotBanne
           cancelLabel={STRINGS.delete.cancelButton}
           onConfirm={() => {
             setConfirmOpen(false);
-            onRestore();
+            // Explicit void: the prop is typed () => void but callers
+            // pass async handlers whose rejections are handled inside
+            // their own try/finally. Keeping the discard explicit
+            // documents the fire-and-forget intent and signals to
+            // linters/reviewers that we haven't accidentally dropped
+            // an unhandled rejection.
+            void onRestore();
           }}
           onCancel={() => setConfirmOpen(false)}
         />
