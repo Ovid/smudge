@@ -1406,6 +1406,11 @@ describe("EditorPage find-and-replace confirmation", () => {
     // Only one request issued — the second click is swallowed by the guard.
     expect(api.search.replace).toHaveBeenCalledTimes(1);
 
+    // The user-visible signal of the swallowed second click — without
+    // this assertion the busy banner could regress to silent-drop and
+    // tests would still pass on the request-count alone.
+    expect(await screen.findByText(STRINGS.editor.mutationBusy)).toBeInTheDocument();
+
     // Release the first request so the handler finishes cleanly.
     resolveReplace({ replaced_count: 1, affected_chapter_ids: ["ch-1"] });
     await act(async () => {
