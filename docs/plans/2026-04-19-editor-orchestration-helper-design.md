@@ -282,16 +282,11 @@ The DoD in the roadmap specifies "a regression test for the unmount-clobber bug 
 - **Null editor ref** — all editor-handle side effects are safely skipped; cache/reload still run.
 - **Directive honored** — `reloadActiveChapter: false` skips the reload step; empty `clearCacheFor` still marks success.
 
-### Integration test
+### Integration regression (deferred to e2e)
 
-`packages/client/src/pages/EditorPage.unmount-clobber.test.tsx`. Renders `EditorPage` with a real `useProjectEditor`, mocks `fetch`:
+An initial attempt at a jsdom integration test (`packages/client/src/pages/EditorPage.unmount-clobber.test.tsx`) was written and removed. The real `<Editor />` component's `flushSave` and `setEditable` guards already close the unmount-clobber window in production; reproducing the race in jsdom required replacing `<Editor />` with a test double that deliberately weakened those guards, which reduced the test to asserting "`markClean` is the last line of defense in a simulation where everything else fails" — a ceremonial pass, not a true regression anchor.
 
-1. Mount editor on chapter A, type dirty content, let debounce fire.
-2. User triggers restore.
-3. The snapshot-restore fetch is intercepted and held mid-flight.
-4. While held, simulate chapter-switch unmount of the `<Editor />` (key change).
-5. Resolve the restore fetch.
-6. Assert **no `PATCH /api/chapters/A` fires with the pre-restore content** — the original unmount-clobber shape. Asserted by recording every fetch call and filtering.
+The hook unit test already asserts `markClean()` runs before `mutate()` (step 5 ordering check in `useEditorMutation.test.tsx`). The production-shape regression lives in e2e: the existing Playwright snapshot-restore and replace-all scenarios exercise the full pipeline with real TipTap and a real fetch round-trip, and will fail if the unmount-clobber shape returns. If a tighter regression is needed later, add a Playwright case that specifically holds the restore response mid-flight and forces a chapter-switch unmount — the browser environment is the right layer for it.
 
 ### Coverage and noise discipline
 
@@ -312,10 +307,9 @@ The phase is done when all of these land:
 
 1. `packages/client/src/hooks/useEditorMutation.ts` — the hook.
 2. `packages/client/src/hooks/useEditorMutation.test.tsx` — hook unit test.
-3. `packages/client/src/pages/EditorPage.unmount-clobber.test.tsx` — integration regression test.
-4. `packages/client/src/pages/EditorPage.tsx` — three call sites migrated. Net deletion expected (~80–140 lines removed vs. ~45–60 added).
-5. `CLAUDE.md` §Save-pipeline invariants — closing sentence pointing to `useEditorMutation`.
-6. No user-visible behavior change — validated by running the existing `EditorPageFeatures.test.tsx` suite unmodified and passing.
+3. `packages/client/src/pages/EditorPage.tsx` — three call sites migrated. Net deletion expected (~80–140 lines removed vs. ~45–60 added).
+4. `CLAUDE.md` §Save-pipeline invariants — closing sentence pointing to `useEditorMutation`.
+5. No user-visible behavior change — validated by running the existing `EditorPageFeatures.test.tsx` suite unmodified and passing. Production-shape regression for the unmount-clobber bug is owned by e2e (see §Testing strategy).
 
 ## Risks and mitigations
 

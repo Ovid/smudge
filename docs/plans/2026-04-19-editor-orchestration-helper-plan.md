@@ -1132,56 +1132,19 @@ git commit -m "refactor(client): migrate handleReplaceOne to useEditorMutation"
 
 ---
 
-## Task 14: Unmount-clobber integration regression test
+## Task 14: Unmount-clobber regression coverage (e2e, not jsdom)
 
-**Files:**
-- Create: `packages/client/src/pages/EditorPage.unmount-clobber.test.tsx`
+**Decision:** Do NOT write a jsdom integration test for the unmount-clobber bug.
 
-**Step 1: Write the test**
+**Background.** The plan originally called for `packages/client/src/pages/EditorPage.unmount-clobber.test.tsx`. An attempt to write it revealed that the real `<Editor />` component's `flushSave` and `setEditable` guards already close the unmount-clobber window in production. Reproducing the race in jsdom required replacing `<Editor />` with a test double that deliberately weakened those guards, reducing the test to asserting "`markClean` is the last line of defense in a simulation where everything else fails" — a ceremonial pass, not a real regression anchor.
 
-The test renders `EditorPage`, types dirty content, triggers restore, holds the restore fetch mid-flight, simulates an unmount (chapter switch key change), resolves the fetch, and asserts that no stale `PATCH /api/chapters/<A>` fires with pre-restore content.
+**Where the coverage actually lives.**
+- Hook unit test (`useEditorMutation.test.tsx`) — asserts the step-5 ordering: `markClean()` runs before `mutate()`. Catches any regression that reorders or removes the step.
+- Existing Playwright e2e — `snapshot restore` and `find/replace` scenarios round-trip through real TipTap and real fetch. The production-shape bug fires in a browser, not jsdom; e2e is the right layer.
 
-Use the existing `EditorPageFeatures.test.tsx` as a reference for how this repo mocks `fetch` and renders `EditorPage`. Adapt that harness; do not copy more than you need.
+**If a stricter e2e regression is needed later**, add a Playwright case that holds the restore response mid-flight and forces a chapter-switch unmount, then asserts no stale `PATCH /api/chapters/<A>` fires with pre-restore content. Not in scope for Phase 4b.1.
 
-Core assertion:
-
-```tsx
-it("does not PATCH pre-restore content when editor unmounts during restore", async () => {
-  // ... harness setup based on EditorPageFeatures ...
-  // Intercept fetch. Resolve the PATCH auto-saves normally, but hold the
-  // POST /api/snapshots/<id>/restore mid-flight.
-  // Dirty the editor, trigger restore, unmount while restore is pending.
-  // Resolve the restore. Assert the fetch log contains no PATCH against
-  // chapter A with pre-restore content AFTER the restore resolves.
-  const stalePATCHes = fetchLog.filter(
-    (req) =>
-      req.method === "PATCH" &&
-      req.url.includes(`/api/chapters/${chapterAId}`) &&
-      includesPreRestoreContent(req.body),
-  );
-  expect(stalePATCHes).toHaveLength(0);
-});
-```
-
-**Step 2: Run; verify pass**
-
-```
-npm test -w packages/client -- unmount-clobber
-```
-Expected: PASS. The hook's `markClean` call before the mutation is what prevents the bug.
-
-**Step 3: Sanity check — the test would catch the regression**
-
-Temporarily remove the `editor?.markClean();` line from `useEditorMutation.ts`. Run the unmount-clobber test. It must FAIL. Put the line back. Run; must PASS again.
-
-If the test does not fail without `markClean`, it is not actually exercising the bug — rework the harness before claiming done.
-
-**Step 4: Commit**
-
-```
-git add packages/client/src/pages/EditorPage.unmount-clobber.test.tsx
-git commit -m "test(client): regression test for editor unmount-clobber during mutation"
-```
+**No new file, no commit for Task 14.**
 
 ---
 
@@ -1316,7 +1279,7 @@ If the full pass is green without changes, nothing to commit — you are done.
 - [ ] `replaceInFlightRef` is gone from `EditorPage.tsx`.
 - [ ] No test in `packages/client/src/__tests__/` pokes `editorRef.current` directly.
 - [ ] `handleSave` in `useProjectEditor.ts` is untouched (no behavior change in the save pipeline).
-- [ ] `EditorPage.unmount-clobber.test.tsx` passes AND fails without `markClean`.
+- [ ] Unmount-clobber regression coverage documented — hook unit test pins `markClean` ordering; e2e owns the production-shape scenario (see Task 14).
 - [ ] `EditorPageFeatures.test.tsx` passes unmodified.
 - [ ] CLAUDE.md §Save-pipeline invariants references `useEditorMutation`.
 - [ ] `make all` is green.
