@@ -644,17 +644,15 @@ describe("replaceInDoc running output-size cap (I2 amplification)", () => {
     // chars grow quadratically. A short input with moderate matches blows well
     // past a tight budget before JSON.stringify even starts.
     const d = doc(paragraph(text("a".repeat(500))));
-    expect(() =>
-      replaceInDoc(d, "a", "$'", { regex: true, max_output_chars: 10_000 }),
-    ).toThrow(ReplacementTooLargeError);
+    expect(() => replaceInDoc(d, "a", "$'", { regex: true, max_output_chars: 10_000 })).toThrow(
+      ReplacementTooLargeError,
+    );
   });
 
   it("does not throw when output stays within max_output_chars", async () => {
     const { replaceInDoc } = await import("../tiptap-text");
     const d = doc(paragraph(text("abc def")));
-    expect(() =>
-      replaceInDoc(d, "abc", "ABC", { max_output_chars: 10_000 }),
-    ).not.toThrow();
+    expect(() => replaceInDoc(d, "abc", "ABC", { max_output_chars: 10_000 })).not.toThrow();
   });
 });
 

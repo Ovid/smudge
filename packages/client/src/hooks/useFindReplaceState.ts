@@ -167,10 +167,7 @@ export function useFindReplaceState(
           // Aborted: no banner, no state changes.
           return;
         }
-        if (
-          err instanceof ApiRequestError &&
-          (err.status === 400 || err.status === 404)
-        ) {
+        if (err instanceof ApiRequestError && (err.status === 400 || err.status === 404)) {
           // 400s mean the CURRENT query is invalid; stale results no
           // longer correspond to anything the user typed.
           // 404s mean the project (or scope) has gone away — the prior
