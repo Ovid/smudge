@@ -8,6 +8,12 @@ export type MutationStage = "flush" | "mutate" | "reload" | "busy";
 export type MutationDirective<T = void> = {
   clearCacheFor: string[];
   reloadActiveChapter: boolean;
+  // Optional: the chapter id the caller expects to reload. If the user
+  // switched chapters between the mutate callback returning and the hook
+  // invoking reloadActiveChapter, the reload is skipped — otherwise we
+  // would clear the now-active (unrelated) chapter's cache and pull its
+  // server copy, wiping an in-progress draft (I2).
+  reloadChapterId?: string;
   data: T;
 };
 
@@ -81,9 +87,12 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         }
         if (directive.reloadActiveChapter) {
           let reloadMessage: string | undefined;
-          const ok = await projectEditorRef.current.reloadActiveChapter((msg) => {
-            reloadMessage = msg;
-          });
+          const ok = await projectEditorRef.current.reloadActiveChapter(
+            (msg) => {
+              reloadMessage = msg;
+            },
+            directive.reloadChapterId,
+          );
           if (!ok) {
             reloadFailed = true;
             return {

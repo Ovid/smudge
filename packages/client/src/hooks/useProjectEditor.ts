@@ -291,9 +291,22 @@ export function useProjectEditor(slug: string | undefined) {
   }, []);
 
   const reloadActiveChapter = useCallback(
-    async (onError?: (message: string) => void): Promise<boolean> => {
+    async (
+      onError?: (message: string) => void,
+      expectedChapterId?: string,
+    ): Promise<boolean> => {
       const current = activeChapterRef.current;
       if (!current) return false;
+      // If the caller passed an expected chapter id and the active chapter
+      // no longer matches, the user switched between the directive that
+      // requested the reload and this call. Skip the reload entirely —
+      // blindly clearing the new chapter's cache and fetching its server
+      // copy would wipe the user's in-progress draft of an unrelated
+      // chapter (I2). Return true because the skip is intentional, not a
+      // failure the caller should surface.
+      if (expectedChapterId !== undefined && current.id !== expectedChapterId) {
+        return true;
+      }
       // Clear any client-side cached content so the server copy wins after a restore/replace
       clearCachedContent(current.id);
       ++saveSeqRef.current;

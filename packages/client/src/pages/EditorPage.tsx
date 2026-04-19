@@ -223,6 +223,10 @@ export function EditorPage() {
       return {
         clearCacheFor: stale ? [] : [activeChapter.id],
         reloadActiveChapter: !stale,
+        // Scope the reload to the chapter the restore targets. If the user
+        // switches between here and the hook's reload call, the mismatch
+        // skips the reload and preserves the now-active chapter's draft.
+        reloadChapterId: activeChapter.id,
         data: { staleChapterSwitch: stale },
       };
     });
@@ -301,6 +305,7 @@ export function EditorPage() {
         return {
           clearCacheFor: resp.affected_chapter_ids,
           reloadActiveChapter: reload,
+          reloadChapterId: reload ? current!.id : undefined,
           data: resp,
         };
       });
@@ -455,6 +460,7 @@ export function EditorPage() {
         return {
           clearCacheFor: resp.replaced_count > 0 ? resp.affected_chapter_ids : [],
           reloadActiveChapter: reload,
+          reloadChapterId: reload ? current!.id : undefined,
           data: resp,
         };
       });

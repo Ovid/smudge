@@ -1160,6 +1160,35 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("reloadActiveChapter no-ops when expectedChapterId differs from current active (I2)", async () => {
+    // When the caller passes an expected chapter id that no longer matches
+    // the active chapter (e.g. user switched chapters between the directive
+    // and the reload call), the reload must not clear the now-active
+    // chapter's cache or fire api.chapters.get. Returning true advertises
+    // the skip as intentional, not a failure.
+    const { clearCachedContent } = await import("../hooks/useContentCache");
+    vi.mocked(clearCachedContent).mockClear();
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    // Active is ch1. Caller asks the hook to reload ch2 — mismatch.
+    vi.mocked(api.chapters.get).mockClear();
+
+    let ok: boolean | undefined;
+    await act(async () => {
+      ok = await result.current.reloadActiveChapter(undefined, "ch2");
+    });
+
+    // The reload short-circuited: no fetch, no cache clear on the
+    // now-active chapter.
+    expect(ok).toBe(true);
+    expect(api.chapters.get).not.toHaveBeenCalled();
+    expect(vi.mocked(clearCachedContent)).not.toHaveBeenCalled();
+  });
+
   it("reloadActiveChapter without onError falls back to setError (legacy callers)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);

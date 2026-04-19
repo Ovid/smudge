@@ -318,6 +318,50 @@ describe("useEditorMutation — null editor ref", () => {
   });
 });
 
+describe("useEditorMutation — expected chapter id (I2)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("passes reloadChapterId to reloadActiveChapter so the hook can skip on mismatch", async () => {
+    const { editorRef, projectEditor } = buildHandles();
+    const reloadSpy = vi.fn(
+      async (_onError?: (msg: string) => void, _expectedChapterId?: string) => true,
+    );
+    projectEditor.reloadActiveChapter = reloadSpy;
+
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+    await result.current.run(async () => ({
+      clearCacheFor: ["ch-1"],
+      reloadActiveChapter: true,
+      reloadChapterId: "ch-1",
+      data: undefined,
+    }));
+
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
+    // Second arg is the expected chapter id the directive asked to reload.
+    expect(reloadSpy.mock.calls[0]![1]).toBe("ch-1");
+  });
+
+  it("omits the expected chapter id when the directive does not set one (backward compat)", async () => {
+    const { editorRef, projectEditor } = buildHandles();
+    const reloadSpy = vi.fn(
+      async (_onError?: (msg: string) => void, _expectedChapterId?: string) => true,
+    );
+    projectEditor.reloadActiveChapter = reloadSpy;
+
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+    await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: true,
+      data: undefined,
+    }));
+
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
+    expect(reloadSpy.mock.calls[0]![1]).toBeUndefined();
+  });
+});
+
 describe("useEditorMutation — latest-ref pattern", () => {
   beforeEach(() => {
     vi.clearAllMocks();
