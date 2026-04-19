@@ -79,6 +79,14 @@ make help                            # Show all available make targets
 
 **Auto-save with retry.** 1.5s debounce, 3 retries with exponential backoff (2s/4s/8s), persistent "Unable to save" warning on total failure, `beforeunload` guard, client-side cache holds unsaved content until server confirms. On chapter switch, immediate save bypasses debounce.
 
+**Save-pipeline invariants.** The following rules are load-bearing — the snapshots/find-and-replace branch required 16 rounds of review because they were applied inconsistently. Any code that triggers a server mutation affecting editor content must obey them:
+
+1. **`markClean()` before any server call that invalidates editor state.** If you call the server *and* the response will overwrite what's on screen (restore, replace, reload), mark the editor clean first so the unmount/auto-save cleanup cannot fire a stale PATCH afterwards.
+2. **`setEditable(false)` around any mutation that can fail mid-typing.** The user must not be able to type into content that is about to be overwritten or is in an error state. Restore this *after* success or failure.
+3. **Cache-clear happens after server success, never before.** The client-side draft cache is the last line of defense against data loss. Clearing it before the server confirms violates the contract that unsaved content is held until persistence succeeds.
+4. **Bump the sequence ref before the request, not after.** Any in-flight response for an older sequence is discarded on return. Bumping after creates a window where stale responses land.
+5. **Error codes stay inside the allowlist.** HTTP status codes are 200, 201, 400, 404, 409, 413, 500 (see §API Design). New conditions get an existing code plus a discriminating `error.code` string — never a new status.
+
 **String externalization.** All UI strings in `packages/client/src/strings.ts` as constants, never raw literals in components. Prepares for future i18n without architectural changes.
 
 ## API Design
