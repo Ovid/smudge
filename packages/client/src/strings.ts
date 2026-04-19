@@ -64,6 +64,7 @@ export const STRINGS = {
     cacheUnavailable: "Local backup unavailable",
     viewSwitchSaveFailed:
       "Unable to save pending changes. Try again once your connection recovers before switching views.",
+    mutationBusy: "Another operation is in progress — please wait.",
   },
   shortcuts: {
     dialogTitle: "Keyboard Shortcuts",

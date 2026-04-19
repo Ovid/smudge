@@ -226,7 +226,13 @@ export function EditorPage() {
       }
       return;
     }
-    if (result.stage === "busy") return;
+    if (result.stage === "busy") {
+      // Silent returns turned Restore into a dead-button during the up-to-14s
+      // save-retry backoff. Surface a transient info banner so users know
+      // their click was received and another operation is running.
+      setActionInfo(STRINGS.editor.mutationBusy);
+      return;
+    }
     if (result.stage === "flush") {
       // The fault is the save, not the restore — attribute it correctly.
       setActionError(STRINGS.snapshots.restoreFailedSaveFirst);
@@ -312,7 +318,10 @@ export function EditorPage() {
         return;
       }
 
-      if (result.stage === "busy") return;
+      if (result.stage === "busy") {
+        setActionInfo(STRINGS.editor.mutationBusy);
+        return;
+      }
       if (result.stage === "flush") {
         // Attribute the failure to the save, not the replace.
         setActionError(STRINGS.findReplace.replaceFailedSaveFirst);
@@ -460,7 +469,10 @@ export function EditorPage() {
         return;
       }
 
-      if (result.stage === "busy") return;
+      if (result.stage === "busy") {
+        setActionInfo(STRINGS.editor.mutationBusy);
+        return;
+      }
       if (result.stage === "flush") {
         setActionError(STRINGS.findReplace.replaceFailedSaveFirst);
         return;
