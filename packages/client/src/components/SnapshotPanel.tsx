@@ -71,7 +71,12 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
     const [listError, setListError] = useState<string | null>(null);
     const [viewError, setViewError] = useState<string | null>(null);
     const panelRef = useRef<HTMLElement>(null);
-    const prevIsOpen = useRef(isOpen);
+    // Seed to `false` (not `isOpen`): the panel is conditionally mounted
+    // by the parent, so isOpen is always true on first render. Seeding
+    // from isOpen would defeat the `isOpen && !prevIsOpen.current` guard
+    // and the focus RAF would never fire on initial open — breaking
+    // keyboard entry to the panel.
+    const prevIsOpen = useRef(false);
     // Distinguishes "user pressed Escape / clicked Close" from
     // "parent closed us because another panel opened". Panel-exclusivity
     // closes should NOT return focus to this panel's trigger — the sibling
@@ -129,12 +134,14 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
     // Focus management
     useEffect(() => {
       if (isOpen && !prevIsOpen.current) {
-        // Panel just opened — focus it
-        const raf = requestAnimationFrame(() => {
-          panelRef.current?.focus();
-        });
+        // Panel just opened — focus it synchronously. The panel element
+        // exists by the time this effect runs (useEffect fires after
+        // commit), so there's no need to defer via RAF — and deferring
+        // introduced an async focus-steal that could race adjacent user
+        // interactions (e.g. typing into an input on the same render).
+        panelRef.current?.focus();
         prevIsOpen.current = isOpen;
-        return () => cancelAnimationFrame(raf);
+        return;
       }
       if (!isOpen && prevIsOpen.current && triggerRef?.current) {
         // Panel just closed — return focus to trigger ONLY when the

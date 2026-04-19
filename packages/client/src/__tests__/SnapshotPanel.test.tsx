@@ -404,5 +404,24 @@ describe("SnapshotPanel", () => {
         expect(panel).toHaveFocus();
       });
     });
+
+    it("moves focus to panel on first mount when already open", async () => {
+      // The panel is conditionally mounted in EditorPage (only rendered
+      // when open), so on first render isOpen is already true. Previously
+      // the prevIsOpen ref was seeded from isOpen, defeating the
+      // transition guard and leaving focus on <body>.
+      vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(0);
+        return 0;
+      });
+      vi.mocked(api.snapshots.list).mockResolvedValue([]);
+
+      render(<SnapshotPanel {...defaultProps} isOpen={true} />);
+
+      await waitFor(() => {
+        const panel = screen.getByRole("complementary", { name: S.ariaLabel });
+        expect(panel).toHaveFocus();
+      });
+    });
   });
 });

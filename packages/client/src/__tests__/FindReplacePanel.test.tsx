@@ -358,6 +358,20 @@ describe("FindReplacePanel", () => {
       expect(screen.getByPlaceholderText(S.searchPlaceholder)).toHaveFocus();
     });
 
+    it("focuses search input on first mount when already open", () => {
+      // EditorPage conditionally mounts the panel, so on first render
+      // isOpen is already true. Previously the prevIsOpen ref was seeded
+      // from isOpen, defeating the transition guard so focus never fired.
+      vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+        cb(0);
+        return 0;
+      });
+
+      render(<FindReplacePanel {...defaultProps} isOpen={true} />);
+
+      expect(screen.getByPlaceholderText(S.searchPlaceholder)).toHaveFocus();
+    });
+
     it("returns focus to triggerRef when the user closes via Escape", async () => {
       vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
         cb(0);

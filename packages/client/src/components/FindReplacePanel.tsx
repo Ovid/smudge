@@ -68,7 +68,11 @@ export function FindReplacePanel({
   triggerRef,
 }: FindReplacePanelProps) {
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const prevIsOpen = useRef(isOpen);
+  // Seed to `false`: the panel is conditionally mounted by EditorPage, so
+  // isOpen is always true on first render. Seeding from isOpen would
+  // defeat `isOpen && !prevIsOpen.current` and the focus RAF would never
+  // fire on initial open — breaking keyboard entry to the panel.
+  const prevIsOpen = useRef(false);
   // See SnapshotPanel for the identical rationale: panel-exclusivity
   // closes (parent opens a sibling panel) must NOT refocus the trigger,
   // since the sibling is about to acquire focus. Only user-initiated
@@ -82,12 +86,13 @@ export function FindReplacePanel({
   // Focus management
   useEffect(() => {
     if (isOpen && !prevIsOpen.current) {
-      // Panel just opened — focus search input
-      const raf = requestAnimationFrame(() => {
-        searchInputRef.current?.focus();
-      });
+      // Panel just opened — focus search input synchronously. The input
+      // exists by the time this effect runs (useEffect fires after
+      // commit); deferring via RAF introduced an async focus-steal that
+      // could race adjacent user interactions on the same render.
+      searchInputRef.current?.focus();
       prevIsOpen.current = isOpen;
-      return () => cancelAnimationFrame(raf);
+      return;
     }
     if (!isOpen && prevIsOpen.current && triggerRef?.current) {
       if (closedByUserRef.current) {
