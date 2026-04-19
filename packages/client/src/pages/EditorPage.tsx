@@ -176,44 +176,56 @@ export function EditorPage() {
 
   const handleRestoreSnapshot = useCallback(async () => {
     if (!viewingSnapshot || !activeChapter) return;
-    // If the pending save failed, do not reload — reload would clear the
-    // client-side unsaved-content cache, losing the user's unsaved edits.
-    const flushed = (await editorRef.current?.flushSave()) ?? true;
-    if (!flushed) {
-      // The fault is the save, not the restore — attribute it correctly.
-      setActionError(STRINGS.snapshots.restoreFailedSaveFirst);
-      return;
-    }
-    // After awaiting flushSave, re-check whether the user still wants the
-    // restore. If they clicked "Back to editing" during the flush, the
-    // closure-captured viewingSnapshot is stale and we must not proceed.
-    if (!viewingSnapshotRef.current) return;
-    // Cancel any pending retry saves; their stale content would clobber
-    // the restored snapshot once the server-side restore completes.
-    cancelPendingSaves();
-    // Mark the editor clean so the unmount triggered by the upcoming
-    // reloadActiveChapter remount does NOT fire a fire-and-forget save of
-    // pre-restore content that would land after the server-side restore
-    // and silently undo it.
-    editorRef.current?.markClean();
-    const result = await restoreSnapshot(viewingSnapshot.id);
-    if (result.ok) {
-      // If the user switched chapters mid-flight, reloading the now-active
-      // chapter would pull in a different chapter's server state. Skip the
-      // reload and the panel refresh — both are keyed to the current active
-      // chapter, not the one that was restored.
-      if (!result.staleChapterSwitch) {
-        await reloadActiveChapter();
-        snapshotPanelRef.current?.refreshSnapshots();
+    // Disable the editor for the full round trip so typing between markClean
+    // and the restore response cannot re-dirty it. Without this, the unmount
+    // PATCH fired by reloadActiveChapter's remount would land after the
+    // restore and silently overwrite the restored content.
+    editorRef.current?.setEditable(false);
+    try {
+      // If the pending save failed, do not reload — reload would clear the
+      // client-side unsaved-content cache, losing the user's unsaved edits.
+      const flushed = (await editorRef.current?.flushSave()) ?? true;
+      if (!flushed) {
+        // The fault is the save, not the restore — attribute it correctly.
+        setActionError(STRINGS.snapshots.restoreFailedSaveFirst);
+        return;
       }
-    } else if (result.reason === "corrupt_snapshot") {
-      setActionError(STRINGS.snapshots.restoreFailedCorrupt);
-    } else if (result.reason === "cross_project_image") {
-      setActionError(STRINGS.snapshots.restoreFailedCrossProjectImage);
-    } else if (result.reason === "not_found") {
-      setActionError(STRINGS.snapshots.restoreFailedNotFound);
-    } else {
-      setActionError(STRINGS.snapshots.restoreFailed);
+      // After awaiting flushSave, re-check whether the user still wants the
+      // restore. If they clicked "Back to editing" during the flush, the
+      // closure-captured viewingSnapshot is stale and we must not proceed.
+      if (!viewingSnapshotRef.current) return;
+      // Cancel any pending retry saves; their stale content would clobber
+      // the restored snapshot once the server-side restore completes.
+      cancelPendingSaves();
+      // Mark the editor clean so the unmount triggered by the upcoming
+      // reloadActiveChapter remount does NOT fire a fire-and-forget save of
+      // pre-restore content that would land after the server-side restore
+      // and silently undo it.
+      editorRef.current?.markClean();
+      const result = await restoreSnapshot(viewingSnapshot.id);
+      if (result.ok) {
+        // If the user switched chapters mid-flight, reloading the now-active
+        // chapter would pull in a different chapter's server state. Skip the
+        // reload and the panel refresh — both are keyed to the current active
+        // chapter, not the one that was restored.
+        if (!result.staleChapterSwitch) {
+          await reloadActiveChapter();
+          snapshotPanelRef.current?.refreshSnapshots();
+        }
+      } else if (result.reason === "corrupt_snapshot") {
+        setActionError(STRINGS.snapshots.restoreFailedCorrupt);
+      } else if (result.reason === "cross_project_image") {
+        setActionError(STRINGS.snapshots.restoreFailedCrossProjectImage);
+      } else if (result.reason === "not_found") {
+        setActionError(STRINGS.snapshots.restoreFailedNotFound);
+      } else {
+        setActionError(STRINGS.snapshots.restoreFailed);
+      }
+    } finally {
+      // Re-enable editing. If reloadActiveChapter caused a remount, the old
+      // editor handle is destroyed and this is a no-op on a fresh editable
+      // editor; otherwise we need to re-enable so the user can continue.
+      editorRef.current?.setEditable(true);
     }
   }, [
     viewingSnapshot,
