@@ -68,9 +68,13 @@ describe("useEditorMutation — happy path", () => {
       "setEditable(true)",
     ]);
     expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["c1"]);
-    expect(vi.mocked(clearAllCachedContent).mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(projectEditor.reloadActiveChapter).mock.invocationCallOrder[0],
-    );
+    const cacheOrder =
+      vi.mocked(clearAllCachedContent).mock.invocationCallOrder[0];
+    const reloadOrder =
+      vi.mocked(projectEditor.reloadActiveChapter).mock.invocationCallOrder[0];
+    expect(cacheOrder).toBeDefined();
+    expect(reloadOrder).toBeDefined();
+    expect(cacheOrder!).toBeLessThan(reloadOrder!);
   });
 
   it("skips reloadActiveChapter when directive says false", async () => {
@@ -185,10 +189,12 @@ describe("useEditorMutation — reload failure", () => {
 
   it("returns stage 'reload' when reloadActiveChapter invokes onError", async () => {
     const { editorRef, projectEditor } = buildHandles();
-    projectEditor.reloadActiveChapter = vi.fn(async (onError) => {
-      onError?.("reload-failed-msg");
-      return false;
-    });
+    projectEditor.reloadActiveChapter = vi.fn(
+      async (onError?: (msg: string) => void) => {
+        onError?.("reload-failed-msg");
+        return false;
+      },
+    );
 
     const { result } = renderHook(() =>
       useEditorMutation({ editorRef, projectEditor }),
