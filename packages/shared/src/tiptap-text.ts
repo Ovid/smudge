@@ -4,6 +4,12 @@
  * Handles text that spans multiple text nodes with different marks (formatting).
  */
 
+// Depth cap for walkers — pulled from the zero-dependency tiptap-depth
+// module directly (NOT via the shared barrel) so a future edit to the
+// cap propagates automatically instead of silently drifting from the
+// schema-side value.
+import { MAX_TIPTAP_DEPTH as MAX_WALK_DEPTH } from "./tiptap-depth";
+
 type Mark = { type: string; attrs?: Record<string, unknown> };
 
 type TipTapNode = {
@@ -57,12 +63,6 @@ export interface ReplaceOptions extends SearchOptions {
 export const MAX_MATCHES_PER_REQUEST = 10_000;
 
 const LEAF_BLOCKS = new Set(["paragraph", "heading", "codeBlock"]);
-
-// Depth cap for walkers — pulled from the zero-dependency tiptap-depth
-// module directly (NOT via the shared barrel) so a future edit to the
-// cap propagates automatically instead of silently drifting from the
-// schema-side value.
-import { MAX_TIPTAP_DEPTH as MAX_WALK_DEPTH } from "./tiptap-depth";
 
 /**
  * Collect leaf block nodes that directly contain text/inline nodes.

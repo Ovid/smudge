@@ -164,12 +164,7 @@ export function FindReplacePanel({
               // — the confirmation dialog downstream uses explicit delete
               // copy so the user understands the consequences before
               // committing.
-              if (
-                e.key === "Enter" &&
-                !e.shiftKey &&
-                results !== null &&
-                results.total_count > 0
-              ) {
+              if (e.key === "Enter" && !e.shiftKey && results !== null && results.total_count > 0) {
                 e.preventDefault();
                 onReplaceAllInManuscript();
               }

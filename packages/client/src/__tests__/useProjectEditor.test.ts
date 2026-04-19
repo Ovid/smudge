@@ -926,9 +926,7 @@ describe("useProjectEditor", () => {
   it("handleSave clears cached draft on 4xx so next load gets server's preserved content", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { clearCachedContent } = await import("../hooks/useContentCache");
-    vi.mocked(api.chapters.update).mockRejectedValue(
-      new ApiRequestError("Invalid content", 400),
-    );
+    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("Invalid content", 400));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
