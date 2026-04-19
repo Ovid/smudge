@@ -53,7 +53,14 @@ export function useEditorMutation(
       editor?.setEditable(false);
       try {
         try {
-          await editor?.flushSave();
+          const flushed = await editor?.flushSave();
+          if (flushed === false) {
+            return {
+              ok: false,
+              stage: "flush",
+              error: new Error("flushSave returned false"),
+            };
+          }
         } catch (error) {
           return { ok: false, stage: "flush", error };
         }

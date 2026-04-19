@@ -153,6 +153,31 @@ describe("useEditorMutation — flush failure", () => {
     expect(projectEditor.reloadActiveChapter).not.toHaveBeenCalled();
     expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(true);
   });
+
+  it("returns stage 'flush' when flushSave resolves false and does not proceed", async () => {
+    const { editorRef, projectEditor } = buildHandles();
+    editorRef.current!.flushSave = vi.fn(async () => false);
+    const mutate = vi.fn<() => Promise<MutationDirective<void>>>();
+
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor }),
+    );
+    const res = await result.current.run(mutate);
+
+    expect(res.ok).toBe(false);
+    if (!res.ok && res.stage === "flush") {
+      expect(res.error).toBeInstanceOf(Error);
+      expect((res.error as Error).message).toBe("flushSave returned false");
+    } else {
+      throw new Error(`expected stage 'flush', got ${JSON.stringify(res)}`);
+    }
+    expect(mutate).not.toHaveBeenCalled();
+    expect(vi.mocked(clearAllCachedContent)).not.toHaveBeenCalled();
+    expect(projectEditor.reloadActiveChapter).not.toHaveBeenCalled();
+    expect(projectEditor.cancelPendingSaves).not.toHaveBeenCalled();
+    expect(editorRef.current!.markClean).not.toHaveBeenCalled();
+    expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(true);
+  });
 });
 
 describe("useEditorMutation — mutate failure", () => {
