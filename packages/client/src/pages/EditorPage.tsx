@@ -982,7 +982,16 @@ export function EditorPage() {
                   return { ok: false, reason: "save_failed" };
                 }
                 cancelPendingSaves();
-                return await viewSnapshot(snap);
+                const result = await viewSnapshot(snap);
+                // viewSnapshot returns ok:false for network/not_found/
+                // corrupt failures — re-enable the editor so the user
+                // isn't left in an invisibly read-only state. Same for
+                // staleChapterSwitch, where we return to normal editing
+                // without entering snapshot view.
+                if (!result.ok || result.staleChapterSwitch) {
+                  editorRef.current?.setEditable(true);
+                }
+                return result;
               } catch (err) {
                 editorRef.current?.setEditable(true);
                 throw err;
