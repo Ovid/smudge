@@ -214,6 +214,94 @@ describe("purgeOldTrash", () => {
     await db.destroy();
   });
 
+  it("deletes chapter snapshots when a standalone chapter is purged", async () => {
+    const db = knex(createTestKnexConfig());
+    await db.raw("PRAGMA foreign_keys = ON");
+    await db.migrate.latest();
+
+    const now = new Date();
+    const old = new Date(now.getTime() - 31 * 24 * 60 * 60 * 1000).toISOString();
+
+    await db("projects").insert({
+      id: "p-snap",
+      title: "Snapshot Project",
+      mode: "fiction",
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    });
+    await db("chapters").insert({
+      id: "ch-snap",
+      project_id: "p-snap",
+      title: "Snapped Chapter",
+      sort_order: 0,
+      word_count: 10,
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+      deleted_at: old,
+    });
+    await db("chapter_snapshots").insert({
+      id: "snap-1",
+      chapter_id: "ch-snap",
+      content: '{"type":"doc"}',
+      word_count: 10,
+      is_auto: false,
+      created_at: now.toISOString(),
+    });
+
+    const result = await purgeOldTrash(db);
+
+    expect(result.chapters).toBe(1);
+    const remainingSnapshots = await db("chapter_snapshots").select("id");
+    expect(remainingSnapshots).toHaveLength(0);
+
+    await db.destroy();
+  });
+
+  it("deletes chapter snapshots when a project is purged", async () => {
+    const db = knex(createTestKnexConfig());
+    await db.raw("PRAGMA foreign_keys = ON");
+    await db.migrate.latest();
+
+    const now = new Date();
+    const old = new Date(now.getTime() - 31 * 24 * 60 * 60 * 1000).toISOString();
+
+    await db("projects").insert({
+      id: "p-snap-proj",
+      title: "Snapshot Project Purge",
+      mode: "fiction",
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+      deleted_at: old,
+    });
+    await db("chapters").insert({
+      id: "ch-snap-proj",
+      project_id: "p-snap-proj",
+      title: "Chapter In Purged Project",
+      sort_order: 0,
+      word_count: 5,
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+      deleted_at: old,
+    });
+    await db("chapter_snapshots").insert({
+      id: "snap-proj-1",
+      chapter_id: "ch-snap-proj",
+      content: '{"type":"doc"}',
+      word_count: 5,
+      is_auto: true,
+      created_at: now.toISOString(),
+    });
+
+    const result = await purgeOldTrash(db);
+
+    expect(result.projects).toBe(1);
+    expect(result.chapters).toBe(1);
+    const remainingSnapshots = await db("chapter_snapshots").select("id");
+    expect(remainingSnapshots).toHaveLength(0);
+
+    await db.destroy();
+  });
+
   it("does not delete images for non-purged projects", async () => {
     const db = knex(createTestKnexConfig());
     await db.raw("PRAGMA foreign_keys = ON");

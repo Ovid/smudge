@@ -196,11 +196,12 @@ export async function restore(
 export async function listContentByProject(
   db: Knex | Knex.Transaction,
   projectId: string,
-): Promise<Array<{ id: string; title: string; content: string | null }>> {
+): Promise<Array<{ id: string; title: string; content: string | null; word_count: number }>> {
   return db("chapters")
     .where("project_id", projectId)
     .whereNull("deleted_at")
-    .select("id", "title", "content");
+    .orderBy("sort_order", "asc")
+    .select("id", "title", "content", "word_count");
 }
 
 export async function listAllContentByProject(

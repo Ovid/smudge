@@ -61,6 +61,41 @@ describe("countWords", () => {
     expect(countWords(doc)).toBe(3);
   });
 
+  it("treats adjacent marked text nodes as a single word (no phantom separator)", () => {
+    // TipTap splits "foobar" into two text nodes when marks differ
+    // (e.g. bold foo + italic bar). Joining with " " would inflate the count.
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", marks: [{ type: "bold" }], text: "foo" },
+            { type: "text", marks: [{ type: "italic" }], text: "bar" },
+          ],
+        },
+      ],
+    };
+    expect(countWords(doc)).toBe(1);
+  });
+
+  it("treats hardBreak as a word separator", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "foo" },
+            { type: "hardBreak" },
+            { type: "text", text: "bar" },
+          ],
+        },
+      ],
+    };
+    expect(countWords(doc)).toBe(2);
+  });
+
   it("handles hyphenated compounds", () => {
     const doc = {
       type: "doc",
@@ -69,5 +104,17 @@ describe("countWords", () => {
     // Intl.Segmenter treats hyphenated words as separate segments
     const count = countWords(doc);
     expect(count).toBeGreaterThanOrEqual(2);
+  });
+
+  it("does not stack-overflow on pathologically nested content", () => {
+    // Build a doc nested past MAX_TIPTAP_DEPTH. Schema validation would
+    // reject this on write, but the walker must degrade gracefully in
+    // case legacy rows or test fixtures bypass that invariant.
+    let node: Record<string, unknown> = { type: "text", text: "deep" };
+    for (let i = 0; i < 500; i++) {
+      node = { type: "paragraph", content: [node] };
+    }
+    const doc = { type: "doc", content: [node] };
+    expect(() => countWords(doc)).not.toThrow();
   });
 });

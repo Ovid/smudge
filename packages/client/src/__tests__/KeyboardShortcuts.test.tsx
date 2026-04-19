@@ -51,6 +51,15 @@ vi.mock("../api/client", () => ({
     chapterStatuses: {
       list: vi.fn().mockResolvedValue([]),
     },
+    snapshots: {
+      list: vi.fn().mockResolvedValue([]),
+      get: vi.fn(),
+      restore: vi.fn(),
+    },
+    search: {
+      find: vi.fn().mockResolvedValue({ total_count: 0, chapters: [] }),
+      replace: vi.fn().mockResolvedValue({ replaced_count: 0, affected_chapter_ids: [] }),
+    },
     settings: {
       get: vi.fn().mockResolvedValue({}),
       update: vi.fn().mockResolvedValue({ message: "ok" }),
@@ -371,5 +380,216 @@ describe("Ctrl+Shift+Arrow chapter navigation", () => {
 
     // Should not have made any additional chapter.get calls
     expect(vi.mocked(api.chapters.get).mock.calls.length).toBe(getCallCount);
+  });
+});
+
+describe("Ctrl+S flushes auto-save", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.projects.get).mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
+  });
+
+  it("prevents default and calls flushSave on Ctrl+S", async () => {
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    const event = new KeyboardEvent("keydown", {
+      key: "s",
+      code: "KeyS",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    const preventDefaultSpy = vi.spyOn(event, "preventDefault");
+
+    document.dispatchEvent(event);
+
+    expect(preventDefaultSpy).toHaveBeenCalled();
+  });
+
+  it("prevents default on Cmd+S (metaKey)", async () => {
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    const event = new KeyboardEvent("keydown", {
+      key: "s",
+      code: "KeyS",
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    const preventDefaultSpy = vi.spyOn(event, "preventDefault");
+
+    document.dispatchEvent(event);
+
+    expect(preventDefaultSpy).toHaveBeenCalled();
+  });
+
+  it("prevents default even when a dialog is open", async () => {
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    // Open the shortcut help dialog
+    fireEvent.keyDown(document, { key: "/", code: "Slash", ctrlKey: true });
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: /keyboard shortcuts/i })).toBeInTheDocument();
+    });
+
+    const event = new KeyboardEvent("keydown", {
+      key: "s",
+      code: "KeyS",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    const preventDefaultSpy = vi.spyOn(event, "preventDefault");
+
+    document.dispatchEvent(event);
+
+    expect(preventDefaultSpy).toHaveBeenCalled();
+  });
+});
+
+describe("Ctrl+H toggles find-and-replace panel", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.projects.get).mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
+  });
+
+  it("opens find-and-replace panel on Ctrl+H", async () => {
+    renderEditorPage();
+    await waitFor(
+      () => {
+        expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
+
+    const event = new KeyboardEvent("keydown", {
+      key: "h",
+      code: "KeyH",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    const preventDefaultSpy = vi.spyOn(event, "preventDefault");
+    document.dispatchEvent(event);
+
+    expect(preventDefaultSpy).toHaveBeenCalled();
+    await waitFor(
+      () => {
+        expect(
+          screen.getByRole("complementary", { name: /find and replace/i }),
+        ).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  it("toggles find-and-replace panel closed on second Ctrl+H", async () => {
+    renderEditorPage();
+    await waitFor(
+      () => {
+        expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
+
+    // Open
+    fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+    await waitFor(
+      () => {
+        expect(
+          screen.getByRole("complementary", { name: /find and replace/i }),
+        ).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
+
+    // Close
+    fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+    await waitFor(
+      () => {
+        expect(screen.queryByRole("complementary", { name: /find and replace/i })).toBeNull();
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  it("works with Cmd+H (metaKey)", async () => {
+    renderEditorPage();
+    await waitFor(
+      () => {
+        expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
+
+    const event = new KeyboardEvent("keydown", {
+      key: "h",
+      code: "KeyH",
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    const preventDefaultSpy = vi.spyOn(event, "preventDefault");
+    document.dispatchEvent(event);
+
+    expect(preventDefaultSpy).toHaveBeenCalled();
+    await waitFor(
+      () => {
+        expect(
+          screen.getByRole("complementary", { name: /find and replace/i }),
+        ).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  it("does not toggle the panel when a dialog is open", async () => {
+    renderEditorPage();
+    await waitFor(
+      () => {
+        expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
+
+    // Open the shortcut help dialog
+    fireEvent.keyDown(document, { key: "/", code: "Slash", ctrlKey: true });
+    await waitFor(
+      () => {
+        expect(screen.getByRole("dialog", { name: /keyboard shortcuts/i })).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
+
+    const event = new KeyboardEvent("keydown", {
+      key: "h",
+      code: "KeyH",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    const preventDefaultSpy = vi.spyOn(event, "preventDefault");
+    document.dispatchEvent(event);
+
+    // Ctrl+H is ignored while a modal is open to avoid toggling the find
+    // panel behind the dialog. preventDefault is therefore not called.
+    expect(preventDefaultSpy).not.toHaveBeenCalled();
+    // And the find-replace panel must not have opened.
+    expect(screen.queryByRole("complementary", { name: /find/i })).not.toBeInTheDocument();
   });
 });

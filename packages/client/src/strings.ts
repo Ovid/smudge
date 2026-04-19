@@ -62,6 +62,8 @@ export const STRINGS = {
     unsaved: "Unsaved changes",
     saveFailed: "Unable to save \u2014 check connection",
     cacheUnavailable: "Local backup unavailable",
+    viewSwitchSaveFailed:
+      "Unable to save pending changes. Try again once your connection recovers before switching views.",
   },
   shortcuts: {
     dialogTitle: "Keyboard Shortcuts",
@@ -79,8 +81,12 @@ export const STRINGS = {
     keyNextChapter: "Ctrl+Shift+\u2193",
     keyAnnounceWordCount: "Ctrl+Shift+W",
     keyShowShortcuts: "Ctrl+/",
+    save: "Save now",
+    keySave: "Ctrl+S",
     toggleReferencePanel: "Toggle reference panel",
     keyToggleReferencePanel: "Ctrl+.",
+    findReplace: "Find and replace",
+    keyFindReplace: "Ctrl+H",
   },
   sidebar: {
     addChapter: "Add Chapter",
@@ -257,5 +263,119 @@ export const STRINGS = {
     inTrash: "in trash",
     loadFailed: "Failed to load images.",
     retryButton: "Retry",
+  },
+  snapshots: {
+    panelTitle: "Snapshots",
+    toolbarLabel: (count: number | null) =>
+      count != null && count > 0 ? `Snapshots (${count})` : "Snapshots",
+    createButton: "Create Snapshot",
+    labelPlaceholder: "Optional label (e.g., 'before major rewrite')",
+    save: "Save",
+    cancel: "Cancel",
+    untitled: "Untitled snapshot",
+    auto: "auto",
+    view: "View",
+    delete: "Delete",
+    deleteConfirm: "Delete this snapshot? This cannot be undone.",
+    deleteConfirmButton: "Delete",
+    deleteCancel: "Cancel",
+    restoreButton: "Restore",
+    restoreConfirm:
+      "Replace current chapter content with this snapshot? A snapshot of your current content will be saved automatically.",
+    restoreFailed: "Unable to restore snapshot. Try again.",
+    restoreFailedCorrupt:
+      "This snapshot is corrupt and can't be restored. It will remain in the list; create a new snapshot or restore a different one.",
+    restoreFailedCrossProjectImage:
+      "This snapshot references images that no longer belong to this project. It can't be restored safely.",
+    restoreFailedNotFound:
+      "This snapshot no longer exists. Refresh to see the latest snapshot list.",
+    restoreFailedSaveFirst:
+      "Unable to save pending changes. Try again once your connection recovers before restoring.",
+    restoreSucceededReloadFailed:
+      "Snapshot restored, but reloading the chapter failed. Refresh the page to see the restored content.",
+    renderError: "Unable to render snapshot content",
+    backToEditing: "Back to editing",
+    viewingBanner: (label: string, date: string) => `Viewing snapshot: ${label} — ${date}`,
+    viewingRegionLabel: "Snapshot viewing banner",
+    emptyState: "No snapshots yet. Create one to save a checkpoint of your work.",
+    count: (manual: number, auto: number) =>
+      `${manual + auto} snapshots (${manual} manual, ${auto} auto)`,
+    wordCount: (count: number) => `${count.toLocaleString()} words`,
+    duplicateSkipped: "Content unchanged since last snapshot.",
+    createFailed: "Unable to create snapshot. Save your unsaved changes and try again.",
+    deleteFailed: "Unable to delete snapshot. Try again.",
+    listFailed: "Unable to load snapshots. Try opening the panel again.",
+    viewFailed: "Unable to open snapshot. Try again.",
+    viewFailedNotFound: "This snapshot no longer exists. Refresh to see the latest snapshot list.",
+    viewFailedCorrupt: "This snapshot is corrupt and can't be displayed.",
+    viewFailedSaveFirst:
+      "Unable to save pending changes. Try again once your connection recovers before viewing a snapshot.",
+    ariaLabel: "Chapter snapshots",
+    relativeTime: {
+      justNow: "just now",
+      minutes: (n: number) => `${n}m ago`,
+      hours: (n: number) => `${n}h ago`,
+      days: (n: number) => `${n}d ago`,
+    },
+  },
+  findReplace: {
+    panelTitle: "Find and Replace",
+    findLabel: "Find",
+    replaceLabel: "Replace",
+    closeLabel: "Close",
+    searching: "Searching...",
+    searchPlaceholder: "Search...",
+    replacePlaceholder: "Replace with...",
+    matchCase: "Match case",
+    wholeWord: "Whole word",
+    regex: "Regular expression",
+    replaceFailed: "Replace failed. Try again.",
+    replaceFailedSaveFirst:
+      "Unable to save pending changes. Try again once your connection recovers before replacing.",
+    replaceSucceededReloadFailed:
+      "Replace succeeded. Reload the chapter to see the updated content.",
+    replaceScopeNotFound: "The chapter for this replace is no longer available.",
+    replaceProjectNotFound: "This project is no longer available.",
+    searchScopeNotFound: "This project is no longer available.",
+    replaceSuccess: (count: number) => `Replaced ${count} occurrence${count === 1 ? "" : "s"}.`,
+    noMatches: "No matches found",
+    matchCount: (count: number, chapters: number) =>
+      `Found ${count} occurrence${count === 1 ? "" : "s"} in ${chapters} chapter${chapters === 1 ? "" : "s"}`,
+    replaceOne: "Replace",
+    replaceAllInChapter: "Replace All in Chapter",
+    replaceAllInManuscript: "Replace All in Manuscript",
+    replaceAllInManuscriptDelete: "Delete All in Manuscript",
+    replaceConfirmTitle: "Replace across manuscript?",
+    replaceChapterConfirmTitle: "Replace in chapter?",
+    replaceDeleteConfirmTitle: "Delete across manuscript?",
+    replaceDeleteChapterConfirmTitle: "Delete in chapter?",
+    replaceConfirm: (count: number, search: string, replace: string, chapters: number) =>
+      `Replace ${count} occurrence${count === 1 ? "" : "s"} of '${search}' with '${replace}' across ${chapters} chapter${chapters === 1 ? "" : "s"}? Snapshots of all affected chapters will be created automatically.`,
+    replaceChapterConfirm: (count: number, search: string, replace: string) =>
+      `Replace ${count} occurrence${count === 1 ? "" : "s"} of '${search}' with '${replace}' in this chapter? A snapshot will be created automatically.`,
+    replaceDeleteConfirm: (count: number, search: string, chapters: number) =>
+      `Delete ${count} occurrence${count === 1 ? "" : "s"} of '${search}' across ${chapters} chapter${chapters === 1 ? "" : "s"}? The replacement is empty, so every match will be removed. Snapshots of all affected chapters will be created automatically.`,
+    replaceDeleteChapterConfirm: (count: number, search: string) =>
+      `Delete ${count} occurrence${count === 1 ? "" : "s"} of '${search}' in this chapter? The replacement is empty, so every match will be removed. A snapshot will be created automatically.`,
+    replaceConfirmButton: "Replace All",
+    replaceDeleteConfirmButton: "Delete All",
+    replaceCancelButton: "Cancel",
+    matchNotFound: "Match no longer found — try searching again.",
+    invalidRegex: "Invalid regular expression",
+    tooManyMatches: "Too many matches — refine your search and try again.",
+    searchTimedOut: "Search timed out — refine your pattern and try again.",
+    contentTooLarge:
+      "Replacement would produce chapter content over the size limit; refine your replacement.",
+    invalidReplaceRequest: "Replace request was rejected. Check your search and replace inputs.",
+    invalidSearchRequest: "Search request was rejected. Check your search input.",
+    searchFailed: "Search failed. Try again.",
+    skippedChapters: (count: number) =>
+      `${count} chapter${count === 1 ? " was" : "s were"} skipped due to corrupt content.`,
+    skippedAfterReplace: (count: number) =>
+      `Replace completed, but ${count} chapter${count === 1 ? " was" : "s were"} skipped due to corrupt content.`,
+    chapterMatches: (title: string, count: number) =>
+      `${title} (${count} match${count === 1 ? "" : "es"})`,
+    ariaLabel: "Find and replace",
+    toggleTooltip: "Find and replace (Ctrl+H)",
   },
 } as const;

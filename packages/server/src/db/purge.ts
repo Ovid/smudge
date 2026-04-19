@@ -15,7 +15,7 @@ export async function purgeOldTrash(
   const resolvedDataDir = dataDir ?? process.env.DATA_DIR ?? path.join(__dirname, "../../data");
 
   const { chapters, projects, images, purgedProjectIds } = await db.transaction(async (trx) => {
-    // Delete chapters that expired on their own
+    // Chapter snapshots cascade via ON DELETE CASCADE on chapter_snapshots.chapter_id.
     let chapters = await trx("chapters").where("deleted_at", "<", cutoff).delete();
 
     // Find projects eligible for purge
@@ -39,7 +39,6 @@ export async function purgeOldTrash(
 
     let images = 0;
 
-    // Delete image records and remaining chapters only for actually-purged projects
     if (actuallyPurged.length > 0) {
       images = await trx("images").whereIn("project_id", actuallyPurged).delete();
       chapters += await trx("chapters")

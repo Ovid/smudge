@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from "vitest";
-import { getCachedContent, setCachedContent, clearCachedContent } from "../hooks/useContentCache";
+import {
+  getCachedContent,
+  setCachedContent,
+  clearCachedContent,
+  clearAllCachedContent,
+} from "../hooks/useContentCache";
 
 // Vitest jsdom may not provide a fully standard localStorage.
 // Replace it with a mock for predictable behavior.
@@ -8,6 +13,10 @@ const mockLocalStorage = {
   getItem: vi.fn((key: string) => store.get(key) ?? null),
   setItem: vi.fn((key: string, value: string) => store.set(key, value)),
   removeItem: vi.fn((key: string) => store.delete(key)),
+  get length() {
+    return store.size;
+  },
+  key: vi.fn((i: number) => Array.from(store.keys())[i] ?? null),
 };
 
 Object.defineProperty(globalThis, "localStorage", {
@@ -98,6 +107,44 @@ describe("useContentCache", () => {
       expect(result).toBe(false);
       expect(warnSpy).toHaveBeenCalledWith(
         "[useContentCache] setCachedContent failed:",
+        expect.any(Error),
+      );
+    });
+  });
+
+  describe("clearAllCachedContent", () => {
+    it("removes only the supplied chapter IDs and leaves other drafts untouched (I2)", () => {
+      store.set("smudge:draft:ch-a", "{}");
+      store.set("smudge:draft:ch-b", "{}");
+      store.set("smudge:draft:ch-other-project", "{}");
+      store.set("smudge:other", "keep-me");
+
+      clearAllCachedContent(["ch-a", "ch-b"]);
+
+      expect(store.has("smudge:draft:ch-a")).toBe(false);
+      expect(store.has("smudge:draft:ch-b")).toBe(false);
+      // Cross-project draft survives — previous flat-namespace implementation
+      // would wipe it.
+      expect(store.has("smudge:draft:ch-other-project")).toBe(true);
+      expect(store.has("smudge:other")).toBe(true);
+    });
+
+    it("is a no-op for an empty list", () => {
+      store.set("smudge:draft:ch-a", "{}");
+      clearAllCachedContent([]);
+      expect(store.has("smudge:draft:ch-a")).toBe(true);
+    });
+
+    it("warns when localStorage throws during removal", () => {
+      mockLocalStorage.removeItem.mockImplementation(() => {
+        throw new Error("unavailable");
+      });
+
+      expect(() => {
+        clearAllCachedContent(["ch-a"]);
+      }).not.toThrow();
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[useContentCache] clearAllCachedContent failed:",
         expect.any(Error),
       );
     });

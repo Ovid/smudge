@@ -9,6 +9,10 @@ import type {
   VelocityResponse,
   ExportFormatType,
   ImageRow,
+  SnapshotRow,
+  SnapshotListItem,
+  SearchResult,
+  ReplaceResult,
 } from "@smudge/shared";
 
 export type { VelocityResponse };
@@ -19,31 +23,73 @@ export class ApiRequestError extends Error {
   constructor(
     message: string,
     public readonly status: number,
+    public readonly code?: string,
   ) {
     super(message);
     this.name = "ApiRequestError";
   }
 }
 
+// Map a fetch/DOM failure to an ApiRequestError with a stable code. An
+// AbortError can surface either from the initial `fetch()` call or from
+// body reads after headers have arrived (res.json/res.blob) — both need
+// the same ABORTED classification so every caller can rely on err.code.
+function classifyFetchError(err: unknown): ApiRequestError {
+  if (err instanceof DOMException && err.name === "AbortError") {
+    return new ApiRequestError("Request aborted", 0, "ABORTED");
+  }
+  const message = err instanceof Error ? err.message : "Network request failed";
+  return new ApiRequestError(message, 0, "NETWORK");
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...options,
+  }).catch((err: unknown) => {
+    // Surface AbortController cancellation as a typed error so callers can
+    // distinguish "request aborted" from real network failure.
+    // Network failures (offline, DNS, CSP) come through as TypeError from
+    // fetch. Wrap so every call site can rely on ApiRequestError rather
+    // than seeing a bare TypeError and falling back to generic copy on
+    // exactly the path that most needs clear messaging.
+    throw classifyFetchError(err);
   });
 
   if (!res.ok) {
     let message = `Request failed: ${res.status}`;
+    let code: string | undefined;
     try {
       const body = (await res.json()) as ApiError;
       message = body.error?.message ?? message;
-    } catch {
-      // Response body wasn't JSON (e.g., proxy HTML error page)
+      code = body.error?.code;
+    } catch (err: unknown) {
+      // Body read can ALSO abort (e.g. controller cancelled after headers
+      // arrived). Propagate as ABORTED so callers that key on err.code
+      // don't see a generic "Request failed: 4xx" status-only message
+      // and mis-surface it as a retryable network fault. Any other JSON
+      // parse failure (e.g. proxy HTML error page) falls through to the
+      // status-only envelope below.
+      if (err instanceof DOMException && err.name === "AbortError") {
+        throw classifyFetchError(err);
+      }
     }
-    throw new ApiRequestError(message, res.status);
+    throw new ApiRequestError(message, res.status, code);
   }
 
   if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  // A caller abort after a 2xx response and before json() resolves would
+  // otherwise bubble a raw DOMException — map to ABORTED so callers can
+  // key on err.code. For other body-read failures (non-JSON 2xx bodies
+  // from a reverse proxy, truncated responses), preserve the real HTTP
+  // status so the error isn't mistaken for a network fault.
+  return (res.json() as Promise<T>).catch((err: unknown) => {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw classifyFetchError(err);
+    }
+    const message = err instanceof Error ? err.message : "Malformed response body";
+    throw new ApiRequestError(message, res.status, "BAD_JSON");
+  });
 }
 
 export const api = {
@@ -150,10 +196,16 @@ export const api = {
         content?: Record<string, unknown>;
         status?: string;
       },
+      signal?: AbortSignal,
     ) =>
       apiFetch<Chapter>(`/chapters/${id}`, {
         method: "PATCH",
         body: JSON.stringify(data),
+        // Only include `signal` when one was actually provided; otherwise
+        // the fetch options object differs from the no-signal callers in
+        // ways that break tests asserting the options shape (and can
+        // subtly differ in fetch polyfills).
+        ...(signal ? { signal } : {}),
       }),
 
     delete: (id: string) => apiFetch<{ message: string }>(`/chapters/${id}`, { method: "DELETE" }),
@@ -252,6 +304,52 @@ export const api = {
     },
   },
 
+  snapshots: {
+    list: (chapterId: string) => apiFetch<SnapshotListItem[]>(`/chapters/${chapterId}/snapshots`),
+
+    create: (chapterId: string, label?: string) =>
+      apiFetch<
+        { status: "created"; snapshot: SnapshotRow } | { status: "duplicate"; message: string }
+      >(`/chapters/${chapterId}/snapshots`, {
+        method: "POST",
+        body: JSON.stringify(label ? { label } : {}),
+      }),
+
+    get: (id: string) => apiFetch<SnapshotRow>(`/snapshots/${id}`),
+
+    delete: (id: string) => apiFetch<undefined>(`/snapshots/${id}`, { method: "DELETE" }),
+
+    restore: (id: string) => apiFetch<Chapter>(`/snapshots/${id}/restore`, { method: "POST" }),
+  },
+
+  search: {
+    find: (
+      projectSlug: string,
+      query: string,
+      options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
+      signal?: AbortSignal,
+    ) =>
+      apiFetch<SearchResult>(`/projects/${projectSlug}/search`, {
+        method: "POST",
+        body: JSON.stringify({ query, options }),
+        ...(signal ? { signal } : {}),
+      }),
+
+    replace: (
+      projectSlug: string,
+      search: string,
+      replace: string,
+      options: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean } | undefined,
+      scope: { type: "project" } | { type: "chapter"; chapter_id: string; match_index?: number },
+      signal?: AbortSignal,
+    ) =>
+      apiFetch<ReplaceResult>(`/projects/${projectSlug}/replace`, {
+        method: "POST",
+        body: JSON.stringify({ search, replace, options, scope }),
+        ...(signal ? { signal } : {}),
+      }),
+  },
+
   settings: {
     // Server returns Record<string, string>; narrowed here to the fields the client uses.
     // Update this type when new settings are added.
@@ -261,7 +359,7 @@ export const api = {
       apiFetch<{ message: string }>("/settings", {
         method: "PATCH",
         body: JSON.stringify({ settings }),
-        signal,
+        ...(signal ? { signal } : {}),
       }),
   },
 };

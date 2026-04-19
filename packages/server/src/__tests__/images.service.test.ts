@@ -1,10 +1,12 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { mkdtemp, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
 import * as imagesService from "../images/images.service";
+import { logger } from "../logger";
+import { getImagePath, mimeToExt } from "../images/images.paths";
 
 const TEST_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
@@ -197,6 +199,31 @@ describe("images.service", () => {
       const result = await imagesService.serveImage("00000000-0000-0000-0000-000000000000");
       expect(result).toBeNull();
     });
+
+    it("returns null when image file is missing from disk", async () => {
+      const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+      const projectId = await createTestProject();
+      const uploadResult = await imagesService.uploadImage(projectId, {
+        buffer: TEST_PNG,
+        originalname: "test.png",
+        mimetype: "image/png",
+        size: TEST_PNG.length,
+      });
+      const imageId = (uploadResult as { image: { id: string } }).image.id;
+
+      // Delete the file from disk manually
+      const ext = mimeToExt("image/png");
+      const filePath = getImagePath(projectId, imageId, ext!);
+      await unlink(filePath);
+
+      const result = await imagesService.serveImage(imageId);
+      expect(result).toBeNull();
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ imageId: imageId }),
+        "Failed to read image file from disk",
+      );
+      logSpy.mockRestore();
+    });
   });
 
   describe("updateImageMetadata()", () => {
@@ -270,6 +297,55 @@ describe("images.service", () => {
     it("returns notFound for non-existent image", async () => {
       const result = await imagesService.deleteImage("00000000-0000-0000-0000-000000000000");
       expect(result).toHaveProperty("notFound", true);
+    });
+
+    it("handles file already missing from disk during delete (unlink fails gracefully)", async () => {
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+      const projectId = await createTestProject();
+      const uploadResult = await imagesService.uploadImage(projectId, {
+        buffer: TEST_PNG,
+        originalname: "test.png",
+        mimetype: "image/png",
+        size: TEST_PNG.length,
+      });
+      const imageId = (uploadResult as { image: { id: string } }).image.id;
+
+      // Delete the file from disk first
+      const ext = mimeToExt("image/png");
+      const filePath = getImagePath(projectId, imageId, ext!);
+      await unlink(filePath);
+
+      // Now deleteImage — the unlink inside should fail but not throw
+      const result = await imagesService.deleteImage(imageId);
+      expect(result).toEqual({ deleted: true });
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ imageId: imageId }),
+        "Failed to delete image file from disk",
+      );
+      warnSpy.mockRestore();
+    });
+
+    it("warns when image has unknown MIME type and cannot determine extension for cleanup", async () => {
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+      const projectId = await createTestProject();
+      const uploadResult = await imagesService.uploadImage(projectId, {
+        buffer: TEST_PNG,
+        originalname: "test.png",
+        mimetype: "image/png",
+        size: TEST_PNG.length,
+      });
+      const imageId = (uploadResult as { image: { id: string } }).image.id;
+
+      // Corrupt the mime_type in the DB to something mimeToExt won't recognize
+      await t.db("images").where({ id: imageId }).update({ mime_type: "image/tiff" });
+
+      const result = await imagesService.deleteImage(imageId);
+      expect(result).toEqual({ deleted: true });
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ imageId: imageId, mimeType: "image/tiff" }),
+        "Could not determine extension for deleted image; file left on disk",
+      );
+      warnSpy.mockRestore();
     });
 
     it("returns referenced when image is used in a chapter", async () => {

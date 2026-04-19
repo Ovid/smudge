@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { CreateProjectSchema, ProjectMode } from "./schemas";
+import type { SearchMatch } from "./tiptap-text";
 
 export type ProjectMode = z.infer<typeof ProjectMode>;
 
@@ -72,6 +73,25 @@ export interface ImageRow {
   created_at: string;
 }
 
+export interface SnapshotRow {
+  id: string;
+  chapter_id: string;
+  label: string | null;
+  content: string;
+  word_count: number;
+  is_auto: boolean;
+  created_at: string;
+}
+
+export interface SnapshotListItem {
+  id: string;
+  chapter_id: string;
+  label: string | null;
+  word_count: number;
+  is_auto: boolean;
+  created_at: string;
+}
+
 export interface VelocityResponse {
   words_today: number;
   daily_average_7d: number | null;
@@ -84,4 +104,27 @@ export interface VelocityResponse {
   required_pace: number | null;
   projected_completion_date: string | null;
   today: string;
+}
+
+export interface SearchResult {
+  total_count: number;
+  chapters: Array<{
+    chapter_id: string;
+    chapter_title: string;
+    matches: SearchMatch[];
+  }>;
+  /** Chapter IDs skipped due to corrupt JSON content. Omitted when empty. */
+  skipped_chapter_ids?: string[];
+}
+
+/**
+ * Response shape for POST /api/projects/:slug/replace. Shared so client
+ * and server declare the contract in one place; a new field added here
+ * is immediately visible to both sides at type-check time.
+ */
+export interface ReplaceResult {
+  replaced_count: number;
+  affected_chapter_ids: string[];
+  /** Chapter IDs skipped due to corrupt JSON content. Omitted when empty. */
+  skipped_chapter_ids?: string[];
 }

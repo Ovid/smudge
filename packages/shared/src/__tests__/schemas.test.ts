@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   CreateProjectSchema,
+  CreateSnapshotSchema,
   UpdateProjectSchema,
   UpdateChapterSchema,
   UpdateSettingsSchema,
@@ -95,6 +96,61 @@ describe("UpdateChapterSchema", () => {
   it("rejects invalid status value", () => {
     const result = UpdateChapterSchema.safeParse({ status: "published" });
     expect(result.success).toBe(false);
+  });
+
+  it("rejects TipTap content nested beyond the depth cap", () => {
+    // Build a deeply nested structure that exceeds MAX_TIPTAP_DEPTH (64).
+    interface Node {
+      type: string;
+      content?: Node[];
+    }
+    let deep: Node = { type: "paragraph" };
+    for (let i = 0; i < 100; i++) {
+      deep = { type: "blockquote", content: [deep] };
+    }
+    const doc = { type: "doc", content: [deep] };
+    const result = UpdateChapterSchema.safeParse({ content: doc });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("CreateSnapshotSchema", () => {
+  it("accepts a missing label", () => {
+    const result = CreateSnapshotSchema.safeParse({});
+    expect(result.success).toBe(true);
+  });
+
+  it("sanitizes control characters in the label", () => {
+    const result = CreateSnapshotSchema.safeParse({ label: "a\u0000b\u202Ec" });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.label).toBe("abc");
+  });
+
+  it("rejects unknown keys (strict)", () => {
+    const result = CreateSnapshotSchema.safeParse({ label: "x", is_auto: true });
+    expect(result.success).toBe(false);
+  });
+
+  it("strips Unicode non-characters from the label (S5)", () => {
+    // BMP non-characters: U+FDD0..U+FDEF, U+FFFE, U+FFFF.
+    const bmp = CreateSnapshotSchema.safeParse({
+      label: "a\uFDD0b\uFDEFc\uFFFEd\uFFFFe",
+    });
+    expect(bmp.success).toBe(true);
+    expect(bmp.success && bmp.data.label).toBe("abcde");
+
+    // Supplementary non-char U+1FFFE (surrogate pair D83F DFFE) and
+    // U+10FFFF (surrogate pair DBFF DFFF) stripped.
+    const supp = CreateSnapshotSchema.safeParse({
+      label: "x\uD83F\uDFFEy\uDBFF\uDFFFz",
+    });
+    expect(supp.success).toBe(true);
+    expect(supp.success && supp.data.label).toBe("xyz");
+
+    // A valid supplementary-plane code point (U+1F600 😀) is preserved.
+    const emoji = CreateSnapshotSchema.safeParse({ label: "a\uD83D\uDE00b" });
+    expect(emoji.success).toBe(true);
+    expect(emoji.success && emoji.data.label).toBe("a\uD83D\uDE00b");
   });
 });
 

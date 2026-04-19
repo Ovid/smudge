@@ -1,0 +1,181 @@
+import { Router } from "express";
+import { z } from "zod";
+import {
+  MAX_MATCHES_PER_REQUEST,
+  MAX_QUERY_LENGTH,
+  MAX_REPLACE_LENGTH,
+  SEARCH_ERROR_CODES,
+} from "@smudge/shared";
+import { asyncHandler } from "../app";
+import { getProjectStore } from "../stores/project-store.injectable";
+import * as SearchService from "./search.service";
+
+const SearchOptionsSchema = z
+  .object({
+    case_sensitive: z.boolean().optional(),
+    whole_word: z.boolean().optional(),
+    regex: z.boolean().optional(),
+  })
+  .strict()
+  .optional();
+
+const SearchSchema = z
+  .object({
+    query: z
+      .string()
+      .min(1, "Search query is required")
+      .max(MAX_QUERY_LENGTH, "Search query is too long"),
+    options: SearchOptionsSchema,
+  })
+  .strict();
+
+const ReplaceSchema = z
+  .object({
+    search: z
+      .string()
+      .min(1, "Search term is required")
+      .max(MAX_QUERY_LENGTH, "Search term is too long"),
+    replace: z.string().max(MAX_REPLACE_LENGTH, "Replacement is too long"),
+    options: SearchOptionsSchema,
+    scope: z.union([
+      z.object({ type: z.literal("project") }).strict(),
+      z
+        .object({
+          type: z.literal("chapter"),
+          chapter_id: z.string().uuid(),
+          // Capped at MAX_MATCHES_PER_REQUEST so a client can't pass a huge
+          // value that would force the walker to enumerate unboundedly in
+          // match_index mode (the cap inside replaceInDoc is skipped there).
+          match_index: z
+            .number()
+            .int()
+            .min(0)
+            .max(MAX_MATCHES_PER_REQUEST - 1)
+            .optional(),
+        })
+        .strict(),
+    ]),
+  })
+  .strict();
+
+export function searchRouter(): Router {
+  const router = Router();
+
+  // POST /api/projects/:slug/search
+  router.post(
+    "/:slug/search",
+    asyncHandler(async (req, res) => {
+      const parsed = SearchSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: parsed.error.issues[0]?.message ?? "Invalid input",
+          },
+        });
+        return;
+      }
+
+      const { query, options } = parsed.data;
+
+      // Resolve slug to project ID
+      const slug = req.params.slug as string;
+      const store = getProjectStore();
+      const project = await store.findProjectBySlug(slug);
+      if (!project) {
+        res.status(404).json({
+          error: { code: "NOT_FOUND", message: "Project not found." },
+        });
+        return;
+      }
+
+      const result = await SearchService.searchProject(project.id, query, options);
+      if (result === null) {
+        res.status(404).json({
+          error: { code: "NOT_FOUND", message: "Project not found." },
+        });
+        return;
+      }
+      if ("validationError" in result) {
+        res.status(400).json({
+          error: { code: result.code, message: result.validationError },
+        });
+        return;
+      }
+      res.json(result);
+    }),
+  );
+
+  // POST /api/projects/:slug/replace
+  router.post(
+    "/:slug/replace",
+    asyncHandler(async (req, res) => {
+      const parsed = ReplaceSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: parsed.error.issues[0]?.message ?? "Invalid input",
+          },
+        });
+        return;
+      }
+
+      const { search, replace, options, scope } = parsed.data;
+
+      // Resolve slug to project ID
+      const slug = req.params.slug as string;
+      const store = getProjectStore();
+      const project = await store.findProjectBySlug(slug);
+      if (!project) {
+        res.status(404).json({
+          error: { code: "NOT_FOUND", message: "Project not found." },
+        });
+        return;
+      }
+
+      const result = await SearchService.replaceInProject(
+        project.id,
+        search,
+        replace,
+        options,
+        scope,
+      );
+
+      if (result === null) {
+        res.status(404).json({
+          error: { code: "NOT_FOUND", message: "Project not found." },
+        });
+        return;
+      }
+
+      if (result === "scope_not_found") {
+        res.status(404).json({
+          error: {
+            code: SEARCH_ERROR_CODES.SCOPE_NOT_FOUND,
+            // The cross-project chapter_id guard lives inside
+            // SearchService.replaceInProject (search.service.ts around the
+            // "scope_not_found" return) — project slug resolution above
+            // only proves the SLUG exists, not that the chapter belongs
+            // to that project. "scope_not_found" covers both
+            // "missing/soft-deleted inside this project" and
+            // "chapter_id belongs to a different project".
+            message: "Replace scope not found: chapter is missing or has been deleted.",
+          },
+        });
+        return;
+      }
+
+      if ("validationError" in result) {
+        res.status(400).json({
+          error: { code: result.code, message: result.validationError },
+        });
+        return;
+      }
+
+      res.json(result);
+    }),
+  );
+
+  return router;
+}

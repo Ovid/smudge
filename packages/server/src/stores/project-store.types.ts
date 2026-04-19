@@ -15,6 +15,11 @@ import type {
 import type { ChapterStatusRow } from "../chapter-statuses/chapter-statuses.types";
 import type { SettingRow } from "../settings/settings.types";
 import type { ImageRow, CreateImageRow, UpdateImageData } from "../images/images.types";
+import type {
+  SnapshotRow,
+  SnapshotListItem,
+  CreateSnapshotData,
+} from "../snapshots/snapshots.types";
 
 export interface ProjectStore {
   // --- Projects ---
@@ -73,6 +78,12 @@ export interface ProjectStore {
   // --- Images ---
   insertImage(data: CreateImageRow): Promise<ImageRow>;
   findImageById(id: string): Promise<ImageRow | null>;
+  /**
+   * Batched id lookup used by applyImageRefDiff during replace-all and
+   * snapshot restore. A single query instead of N round-trips when a
+   * chapter references many images.
+   */
+  findImagesByIds(ids: string[]): Promise<ImageRow[]>;
   listImagesByProject(projectId: string): Promise<ImageRow[]>;
   updateImage(id: string, data: UpdateImageData): Promise<number>;
   removeImage(id: string): Promise<number>;
@@ -81,12 +92,19 @@ export interface ProjectStore {
   setImageReferenceCount(id: string, count: number): Promise<void>;
   listChapterContentByProject(
     projectId: string,
-  ): Promise<Array<{ id: string; title: string; content: string | null }>>;
+  ): Promise<Array<{ id: string; title: string; content: string | null; word_count: number }>>;
   listAllChapterContentByProject(
     projectId: string,
   ): Promise<
     Array<{ id: string; title: string; content: string | null; deleted_at: string | null }>
   >;
+
+  // --- Snapshots ---
+  insertSnapshot(data: CreateSnapshotData): Promise<SnapshotRow>;
+  findSnapshotById(id: string): Promise<SnapshotRow | null>;
+  listSnapshotsByChapter(chapterId: string): Promise<SnapshotListItem[]>;
+  deleteSnapshot(id: string): Promise<number>;
+  getLatestSnapshotContentHash(chapterId: string): Promise<string | null>;
 
   // --- Transactions ---
 

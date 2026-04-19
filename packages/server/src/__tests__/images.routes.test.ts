@@ -44,6 +44,37 @@ async function uploadTestImage(projectId: string): Promise<string> {
   return res.body.id;
 }
 
+describe("UUID parameter validation", () => {
+  it("returns 400 for non-UUID projectId in upload", async () => {
+    const res = await request(t.app)
+      .post("/api/projects/not-a-uuid/images")
+      .attach("file", TEST_PNG, { filename: "test.png", contentType: "image/png" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    expect(res.body.error.message).toContain("projectId");
+  });
+
+  it("returns 400 for non-UUID image id in GET", async () => {
+    const res = await request(t.app).get("/api/images/not-a-uuid");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    expect(res.body.error.message).toContain("id");
+  });
+});
+
+describe("GET /api/projects/:projectId/images — not found", () => {
+  it("returns 404 for non-existent project", async () => {
+    const res = await request(t.app).get(
+      "/api/projects/00000000-0000-0000-0000-000000000000/images",
+    );
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("NOT_FOUND");
+  });
+});
+
 describe("POST /api/projects/:projectId/images", () => {
   it("uploads a valid PNG and returns 201 with image record", async () => {
     const projectId = await createTestProject();

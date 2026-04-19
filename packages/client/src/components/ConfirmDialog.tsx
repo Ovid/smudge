@@ -32,11 +32,18 @@ export function ConfirmDialog({
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
+        // Stop other document-level keydown listeners (notably the
+        // FindReplacePanel's Escape-to-close) from also firing: a single
+        // Escape should cancel this dialog without wiping the underlying
+        // panel's query + results state.
+        e.stopImmediatePropagation();
         onCancel();
       }
     }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    // Capture phase so we run before other document-level listeners and
+    // can stopImmediatePropagation on them.
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
   }, [onCancel]);
 
   return (

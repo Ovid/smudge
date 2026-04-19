@@ -419,6 +419,130 @@ describe("api.images", () => {
   });
 });
 
+describe("api.snapshots", () => {
+  it("create(chapterId, label) sends POST /api/chapters/:id/snapshots with label", async () => {
+    const snap = { id: "snap-1", chapter_id: "ch-1", label: "My Snapshot" };
+    mockFetch.mockResolvedValue(jsonResponse({ status: "created", snapshot: snap }, 201));
+
+    const result = await api.snapshots.create("ch-1", "My Snapshot");
+    expect(result).toEqual({ status: "created", snapshot: snap });
+    expect(mockFetch).toHaveBeenCalledWith("/api/chapters/ch-1/snapshots", {
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      body: JSON.stringify({ label: "My Snapshot" }),
+    });
+  });
+
+  it("create(chapterId) sends POST without label when not provided", async () => {
+    const snap = { id: "snap-2", chapter_id: "ch-1" };
+    mockFetch.mockResolvedValue(jsonResponse({ status: "created", snapshot: snap }, 201));
+
+    const result = await api.snapshots.create("ch-1");
+    expect(result).toEqual({ status: "created", snapshot: snap });
+    expect(mockFetch).toHaveBeenCalledWith("/api/chapters/ch-1/snapshots", {
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  });
+
+  it("create(chapterId) returns status='duplicate' when server replies 200 with duplicate body", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ status: "duplicate", message: "Snapshot skipped — content unchanged." }, 200),
+    );
+
+    const result = await api.snapshots.create("ch-1");
+    expect(result.status).toBe("duplicate");
+  });
+
+  it("get(id) fetches GET /api/snapshots/:id", async () => {
+    const snap = { id: "snap-1", content: "{}" };
+    mockFetch.mockResolvedValue(jsonResponse(snap));
+
+    const result = await api.snapshots.get("snap-1");
+    expect(result).toEqual(snap);
+    expect(mockFetch).toHaveBeenCalledWith("/api/snapshots/snap-1", {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  it("delete(id) sends DELETE /api/snapshots/:id", async () => {
+    mockFetch.mockResolvedValue(jsonResponse(undefined));
+
+    await api.snapshots.delete("snap-1");
+    expect(mockFetch).toHaveBeenCalledWith("/api/snapshots/snap-1", {
+      headers: { "Content-Type": "application/json" },
+      method: "DELETE",
+    });
+  });
+
+  it("restore(id) sends POST /api/snapshots/:id/restore", async () => {
+    const chapter = { id: "ch-1", title: "Restored" };
+    mockFetch.mockResolvedValue(jsonResponse(chapter));
+
+    const result = await api.snapshots.restore("snap-1");
+    expect(result).toEqual(chapter);
+    expect(mockFetch).toHaveBeenCalledWith("/api/snapshots/snap-1/restore", {
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+  });
+});
+
+describe("api.search", () => {
+  it("find(slug, query, options) sends POST /api/projects/:slug/search", async () => {
+    const searchResult = { total_count: 2, chapters: [] };
+    mockFetch.mockResolvedValue(jsonResponse(searchResult));
+
+    const result = await api.search.find("my-project", "hello", { case_sensitive: true });
+    expect(result).toEqual(searchResult);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/my-project/search", {
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      body: JSON.stringify({ query: "hello", options: { case_sensitive: true } }),
+    });
+  });
+
+  it("find(slug, query) sends POST without options when not provided", async () => {
+    const searchResult = { total_count: 0, chapters: [] };
+    mockFetch.mockResolvedValue(jsonResponse(searchResult));
+
+    await api.search.find("my-project", "test");
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/my-project/search", {
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      body: JSON.stringify({ query: "test", options: undefined }),
+    });
+  });
+
+  it("replace(slug, search, replace, options, scope) sends POST /api/projects/:slug/replace", async () => {
+    const replaceResult = { replaced_count: 3, affected_chapter_ids: ["ch-1"] };
+    mockFetch.mockResolvedValue(jsonResponse(replaceResult));
+
+    const result = await api.search.replace(
+      "my-project",
+      "old",
+      "new",
+      { whole_word: true },
+      {
+        type: "chapter",
+        chapter_id: "ch-1",
+      },
+    );
+    expect(result).toEqual(replaceResult);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/my-project/replace", {
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      body: JSON.stringify({
+        search: "old",
+        replace: "new",
+        options: { whole_word: true },
+        scope: { type: "chapter", chapter_id: "ch-1" },
+      }),
+    });
+  });
+});
+
 describe("api.projects.export (additional)", () => {
   it("passes abort signal to fetch", async () => {
     const mockBlob = new Blob(["content"], { type: "application/epub+zip" });
@@ -469,6 +593,22 @@ describe("error handling", () => {
     await expect(api.projects.list()).rejects.toThrow("Request failed: 502");
   });
 
+  it("wraps fetch TypeError as ApiRequestError(0, NETWORK)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    let caught: unknown;
+    try {
+      await api.projects.list();
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("NETWORK");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+    expect((caught as Error).message).toMatch(/Failed to fetch/);
+  });
+
   it("handles 204 No Content response", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
@@ -478,5 +618,45 @@ describe("error handling", () => {
 
     const result = await api.projects.delete("p1");
     expect(result).toBeUndefined();
+  });
+
+  it("maps 2xx AbortError body-read failure to ABORTED with status 0", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    const abort = new DOMException("aborted", "AbortError");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(abort),
+    });
+
+    let caught: unknown;
+    try {
+      await api.projects.list();
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("ABORTED");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
+  it("maps 2xx non-abort body-read failure to BAD_JSON with real status", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(new SyntaxError("Unexpected token < in JSON at position 0")),
+    });
+
+    let caught: unknown;
+    try {
+      await api.projects.list();
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("BAD_JSON");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(200);
+    expect((caught as Error).message).toMatch(/Unexpected token/);
   });
 });

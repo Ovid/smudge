@@ -8,14 +8,38 @@ import { STRINGS } from "../strings";
 import { api } from "../api/client";
 
 export interface EditorHandle {
-  flushSave: () => Promise<void>;
+  flushSave: () => Promise<boolean>;
   editor: TipTapEditor | null;
   insertImage: (src: string, alt: string) => void;
+  /**
+   * Mark the editor as clean and cancel any pending debounced save.
+   * Orchestration paths that mutate chapter content server-side (snapshot
+   * restore, project-wide replace, chapter switch) call this before
+   * triggering a remount so the unmount cleanup does not fire a stale
+   * fire-and-forget save that would clobber the just-committed content.
+   */
+  markClean: () => void;
+  /**
+   * Toggle the editor's editable state. Orchestration paths that mutate
+   * chapter content server-side (project-wide replace) disable editing
+   * for the duration of the round trip so typing during the request
+   * can't dirty the editor and cause the unmount cleanup to PATCH
+   * pre-replace content over the server's replaced content. Safe to
+   * call on a destroyed editor (no-op).
+   */
+  setEditable: (editable: boolean) => void;
 }
 
 interface EditorProps {
   content: Record<string, unknown> | null;
-  onSave: (content: Record<string, unknown>) => Promise<boolean>;
+  /**
+   * chapterId is captured at mount and threaded through every save so that the
+   * unmount cleanup targets the chapter this Editor was created for — not
+   * whichever chapter is active at the moment cleanup fires. Without this,
+   * unmount-after-failed-flush would clobber the new chapter with old content.
+   */
+  chapterId?: string;
+  onSave: (content: Record<string, unknown>, chapterId?: string) => Promise<boolean>;
   onContentChange?: (content: Record<string, unknown>) => void;
   editorRef?: React.MutableRefObject<EditorHandle | null>;
   onEditorReady?: (editor: TipTapEditor | null) => void;
@@ -75,6 +99,7 @@ const imagePasteExtension = Extension.create({
 
 export function Editor({
   content,
+  chapterId,
   onSave,
   onContentChange,
   editorRef,
@@ -87,6 +112,11 @@ export function Editor({
   const projectIdRef = useRef(projectId);
   const onImageAnnouncementRef = useRef(onImageAnnouncement);
   const editorIdRef = useRef(nextEditorId++);
+  // Captured at mount. The Editor is keyed on chapter id so the prop never
+  // changes during the instance's lifetime; this ref is the canonical target
+  // for every save fired by this Editor, including fire-and-forget unmount
+  // cleanup where activeChapterRef has already moved to a different chapter.
+  const chapterIdRef = useRef(chapterId);
 
   useEffect(() => {
     onSaveRef.current = onSave;
@@ -114,7 +144,10 @@ export function Editor({
       }
       debounceTimerRef.current = setTimeout(async () => {
         debounceTimerRef.current = null; // Clear before async work so flushSave knows the timer fired
-        const ok = await onSaveRef.current(editorInstance.getJSON() as Record<string, unknown>);
+        const ok = await onSaveRef.current(
+          editorInstance.getJSON() as Record<string, unknown>,
+          chapterIdRef.current,
+        );
         dirtyRef.current = !ok;
       }, AUTO_SAVE_DEBOUNCE_MS);
     },
@@ -135,6 +168,13 @@ export function Editor({
 
   // Flush pending save on unmount
   useEffect(() => {
+    // Capture the chapter id here at mount so the cleanup closure holds a
+    // stable value. The ref never changes during the Editor's lifetime
+    // (the component is keyed per chapter), but the react-hooks lint
+    // rule flags reading `.current` in cleanup — legitimately in general,
+    // since a ref assigned during render wouldn't reflect the mount-time
+    // value at cleanup.
+    const mountChapterId = chapterIdRef.current;
     return () => {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
@@ -142,8 +182,11 @@ export function Editor({
       if (dirtyRef.current && editorInstanceRef.current) {
         // Fire-and-forget: don't set dirtyRef=false here since the save is async.
         // The content cache persists the data until save succeeds.
+        // mountChapterId is captured above so this cleanup targets THIS
+        // chapter, not whatever chapter is active by the time the save
+        // fires (C1).
         onSaveRef
-          .current(editorInstanceRef.current.getJSON() as Record<string, unknown>)
+          .current(editorInstanceRef.current.getJSON() as Record<string, unknown>, mountChapterId)
           .catch(() => {});
       }
     };
@@ -171,7 +214,7 @@ export function Editor({
         debounceTimerRef.current = null;
       }
       onSaveRef
-        .current(ed.getJSON() as Record<string, unknown>)
+        .current(ed.getJSON() as Record<string, unknown>, chapterIdRef.current)
         .then((ok) => {
           dirtyRef.current = !ok;
         })
@@ -228,18 +271,20 @@ export function Editor({
     if (editorRef) {
       editorRef.current = {
         flushSave: () => {
-          if (!dirtyRef.current || !editor) return Promise.resolve();
+          if (!dirtyRef.current || !editor) return Promise.resolve(true);
           if (debounceTimerRef.current) {
             clearTimeout(debounceTimerRef.current);
             debounceTimerRef.current = null;
           }
           return onSaveRef
-            .current(editor.getJSON() as Record<string, unknown>)
+            .current(editor.getJSON() as Record<string, unknown>, chapterIdRef.current)
             .then((ok) => {
               dirtyRef.current = !ok;
+              return ok;
             })
             .catch(() => {
               dirtyRef.current = true;
+              return false;
             });
         },
         editor: editor,
@@ -247,6 +292,21 @@ export function Editor({
           if (editor) {
             editor.chain().focus().setImage({ src, alt }).run();
           }
+        },
+        markClean: () => {
+          dirtyRef.current = false;
+          if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
+            debounceTimerRef.current = null;
+          }
+        },
+        setEditable: (editable: boolean) => {
+          // Pass emitUpdate=false — TipTap's default behaviour is to fire
+          // onUpdate even though setEditable does not change the doc,
+          // which would set dirtyRef=true and trigger a save with the
+          // current (pre-replace) content. That is exactly the race we
+          // are trying to prevent.
+          if (editor && !editor.isDestroyed) editor.setEditable(editable, false);
         },
       };
     }

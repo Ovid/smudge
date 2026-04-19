@@ -1,9 +1,69 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import request from "supertest";
 import { UNTITLED_CHAPTER } from "@smudge/shared";
 import { setupTestDb } from "./test-helpers";
+import { logger } from "../logger";
 
 const t = setupTestDb();
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("POST /api/projects/:slug/chapters — read_after_create_failure", () => {
+  it("returns 500 with READ_AFTER_CREATE_FAILURE when chapter cannot be re-read", async () => {
+    const projRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: `Read Fail Test ${Date.now()}`, mode: "fiction" });
+    const projectSlug = projRes.body.slug;
+
+    // Spy on the service to return the failure sentinel
+    const ProjectService = await import("../projects/projects.service");
+    vi.spyOn(ProjectService, "createChapter").mockResolvedValueOnce("read_after_create_failure");
+
+    const res = await request(t.app).post(`/api/projects/${projectSlug}/chapters`);
+
+    expect(res.status).toBe(500);
+    expect(res.body.error.code).toBe("READ_AFTER_CREATE_FAILURE");
+  });
+});
+
+describe("PATCH /api/projects/:slug — non-title-exists error re-throws", () => {
+  it("re-throws non-ProjectTitleExistsError from updateProject", async () => {
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    const projRes = await request(t.app)
+      .post("/api/projects")
+      .send({ title: `Rethrow Test ${Date.now()}`, mode: "fiction" });
+    const projectSlug = projRes.body.slug;
+
+    const ProjectService = await import("../projects/projects.service");
+    vi.spyOn(ProjectService, "updateProject").mockRejectedValueOnce(new Error("unexpected error"));
+
+    const res = await request(t.app)
+      .patch(`/api/projects/${projectSlug}`)
+      .send({ title: "New Name" });
+
+    expect(res.status).toBe(500);
+    expect(logSpy).toHaveBeenCalled();
+    logSpy.mockRestore();
+  });
+});
+
+describe("POST /api/projects — non-title-exists error re-throws", () => {
+  it("re-throws non-ProjectTitleExistsError from createProject", async () => {
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    const ProjectService = await import("../projects/projects.service");
+    vi.spyOn(ProjectService, "createProject").mockRejectedValueOnce(new Error("unexpected error"));
+
+    const res = await request(t.app)
+      .post("/api/projects")
+      .send({ title: "Rethrow Create", mode: "fiction" });
+
+    expect(res.status).toBe(500);
+    expect(logSpy).toHaveBeenCalled();
+    logSpy.mockRestore();
+  });
+});
 
 describe("POST /api/projects", () => {
   it("creates a project and returns 201 with slug", async () => {

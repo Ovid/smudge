@@ -306,6 +306,98 @@ describe("chapters.service", () => {
     });
   });
 
+  describe("restoreChapter() — parent project deleted_at branch", () => {
+    it("restores parent project when it is soft-deleted (sets deleted_at null, updates slug)", async () => {
+      const { chapterId, projectId } = await createProjectAndChapter();
+
+      // Soft-delete both project and chapter
+      const now = new Date().toISOString();
+      await t.db("projects").where({ id: projectId }).update({ deleted_at: now });
+      await t.db("chapters").where({ id: chapterId }).update({ deleted_at: now });
+
+      const result = await restoreChapter(chapterId);
+
+      expect(result).not.toBeNull();
+      expect(result).not.toBe("parent_purged");
+      expect(result).not.toBe("chapter_purged");
+      expect(typeof result).toBe("object");
+
+      // Verify the project was un-deleted
+      const project = await t.db("projects").where({ id: projectId }).first();
+      expect(project.deleted_at).toBeNull();
+    });
+  });
+
+  describe("restoreChapter() — image ref increment on restore", () => {
+    it("increments image reference counts for images in restored chapter content", async () => {
+      const { chapterId, projectId } = await createProjectAndChapter();
+      const imageId = uuid();
+
+      // Insert an image record
+      await t.db("images").insert({
+        id: imageId,
+        project_id: projectId,
+        filename: "test.png",
+        mime_type: "image/png",
+        size_bytes: 100,
+        reference_count: 0,
+        created_at: new Date().toISOString(),
+      });
+
+      // Update chapter content to include an image reference
+      const contentWithImage = {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "hello" }] },
+          { type: "image", attrs: { src: `/api/images/${imageId}` } },
+        ],
+      };
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ content: JSON.stringify(contentWithImage) });
+
+      // Soft-delete the chapter
+      const now = new Date().toISOString();
+      await t.db("chapters").where({ id: chapterId }).update({ deleted_at: now });
+
+      const result = await restoreChapter(chapterId);
+      expect(result).not.toBeNull();
+      expect(typeof result).toBe("object");
+
+      // Check that the image reference count was incremented
+      const image = await t.db("images").where({ id: imageId }).first();
+      expect(image.reference_count).toBe(1);
+    });
+
+    it("handles corrupt content gracefully during image ref increment on restore", async () => {
+      const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+      // applyImageRefDiff logs a warn when it can't parse the corrupt
+      // content before aborting the diff. Spy + assert rather than
+      // letting it pollute test stderr.
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+      const { chapterId } = await createProjectAndChapter();
+
+      // Set content to corrupt JSON
+      await t.db("chapters").where({ id: chapterId }).update({ content: "{not valid json!!!" });
+
+      // Soft-delete the chapter
+      const now = new Date().toISOString();
+      await t.db("chapters").where({ id: chapterId }).update({ deleted_at: now });
+
+      // Should not throw — corrupt content catch block handles it
+      const result = await restoreChapter(chapterId);
+      expect(result).not.toBeNull();
+      expect(typeof result).toBe("object");
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ project_id: expect.any(String) }),
+        "applyImageRefDiff: newContent JSON.parse failed; aborting diff to avoid mass decrement",
+      );
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+    });
+  });
+
   describe("getChapter()", () => {
     it("returns null for a non-existent chapter", async () => {
       const result = await getChapter(uuid());

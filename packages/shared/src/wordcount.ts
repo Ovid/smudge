@@ -1,13 +1,44 @@
+// Imported from the zero-dep tiptap-depth module rather than schemas so
+// countWords callers (notably the client bundle) don't pull in Zod just
+// to compute word counts.
+import { MAX_TIPTAP_DEPTH } from "./tiptap-depth";
+
 type TipTapNode = {
   type: string;
   text?: string;
   content?: TipTapNode[];
 };
 
-function extractText(node: TipTapNode): string {
+/**
+ * Walk TipTap JSON extracting text. Adjacent text siblings (e.g. text nodes
+ * split by differing marks) concatenate without a separator so "<b>foo</b><i>bar</i>"
+ * counts as one word — matching how TipTap renders it and how tiptap-text.ts
+ * flattens runs for find-and-replace. Non-text children (block boundaries,
+ * hardBreak, image, etc.) act as word separators so paragraphs and line breaks
+ * don't silently merge adjacent words.
+ *
+ * Depth is capped at MAX_TIPTAP_DEPTH to match the schema's write-side
+ * invariant. Every current caller feeds schema-validated content, so the cap
+ * is defensive — protects against legacy rows or test fixtures that bypass
+ * validation from stack-overflowing the walker.
+ */
+function extractText(node: TipTapNode, depth: number = 0): string {
+  if (depth > MAX_TIPTAP_DEPTH) return "";
   if (node.text) return node.text;
   if (!node.content) return "";
-  return node.content.map(extractText).join(" ");
+  const parts: string[] = [];
+  let endsWithWhitespace = true;
+  for (const child of node.content) {
+    if (child.type !== "text" && !endsWithWhitespace) {
+      parts.push(" ");
+      endsWithWhitespace = true;
+    }
+    const piece = extractText(child, depth + 1);
+    if (!piece) continue;
+    parts.push(piece);
+    endsWithWhitespace = /\s$/.test(piece);
+  }
+  return parts.join("");
 }
 
 export function countWords(doc: Record<string, unknown> | null): number {

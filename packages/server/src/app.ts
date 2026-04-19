@@ -8,6 +8,9 @@ import { chapterStatusesRouter } from "./chapter-statuses/chapter-statuses.route
 import { settingsRouter } from "./settings/settings.routes";
 import { exportRouter } from "./export/export.routes";
 import { imagesRouter, imagesDirectRouter } from "./images/images.routes";
+import { snapshotChapterRouter, snapshotDirectRouter } from "./snapshots/snapshots.routes";
+import { searchRouter } from "./search/search.routes";
+import { MAX_CHAPTER_CONTENT_LIMIT_STRING } from "./constants";
 
 export function asyncHandler(
   fn: (req: Request, res: Response, next: NextFunction) => Promise<void>,
@@ -35,7 +38,7 @@ export function createApp(): express.Express {
       },
     }),
   );
-  app.use(express.json({ limit: "5mb" }));
+  app.use(express.json({ limit: MAX_CHAPTER_CONTENT_LIMIT_STRING }));
 
   app.use("/api/projects", projectsRouter());
   app.use("/api/chapters", chaptersRouter());
@@ -44,6 +47,9 @@ export function createApp(): express.Express {
   app.use("/api/projects", exportRouter());
   app.use("/api/projects", imagesRouter());
   app.use("/api/images", imagesDirectRouter());
+  app.use("/api/chapters", snapshotChapterRouter());
+  app.use("/api/snapshots", snapshotDirectRouter());
+  app.use("/api/projects", searchRouter());
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok" });

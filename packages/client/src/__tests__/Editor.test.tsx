@@ -112,7 +112,7 @@ describe("Editor", () => {
     // Wait for debounce (1500ms) + buffer
     await waitFor(
       () => {
-        expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }));
+        expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }), undefined);
       },
       { timeout: 3000 },
     );
@@ -172,7 +172,7 @@ describe("Editor", () => {
     fireEvent.blur(editorEl);
 
     await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }));
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }), undefined);
     });
   });
 
@@ -296,7 +296,41 @@ describe("Editor", () => {
 
     // Flush should trigger immediate save
     await editorRef.current?.flushSave();
-    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }), undefined);
+  });
+
+  it("setEditable(false) does not emit onUpdate or dirty the editor (C1)", async () => {
+    const onSave = vi.fn().mockResolvedValue(true);
+    const onContentChange = vi.fn();
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+
+    render(
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={onSave}
+        onContentChange={onContentChange}
+        editorRef={editorRef}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(editorRef.current).not.toBeNull();
+    });
+
+    onContentChange.mockClear();
+    onSave.mockClear();
+
+    editorRef.current?.setEditable(false);
+    editorRef.current?.setEditable(true);
+
+    // No content change and no save scheduled — the guard must not flip
+    // dirtyRef because the unmount cleanup would then PATCH pre-replace
+    // content and undo the replace.
+    await act(async () => {});
+    expect(onContentChange).not.toHaveBeenCalled();
+    await editorRef.current?.flushSave();
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it("flushSave is a no-op when not dirty", async () => {
@@ -386,8 +420,42 @@ describe("Editor", () => {
     unmount();
 
     await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }));
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }), undefined);
     });
+  });
+
+  it("markClean prevents the fire-and-forget unmount save", async () => {
+    const onSave = vi.fn().mockResolvedValue(true);
+    const onContentChange = vi.fn();
+    const editorRef = { current: null } as { current: EditorHandle | null };
+    const { container, unmount } = render(
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={onSave}
+        onContentChange={onContentChange}
+        editorRef={editorRef}
+      />,
+    );
+
+    const editorEl = container.querySelector("[role='textbox']") as HTMLElement;
+    fireEvent.focus(editorEl);
+    editorEl.textContent = "dirty content";
+    fireEvent.input(editorEl);
+
+    await waitFor(() => {
+      expect(onContentChange).toHaveBeenCalled();
+    });
+    onSave.mockClear();
+
+    // Orchestration path (e.g. snapshot restore) marks clean before
+    // triggering the remount — unmount must NOT fire a save that would
+    // clobber the just-committed server state.
+    editorRef.current?.markClean();
+    unmount();
+
+    await act(async () => {});
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it("does not fire save on unmount when not dirty", async () => {

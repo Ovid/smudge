@@ -3,9 +3,22 @@ import { STRINGS } from "../strings";
 
 interface EditorToolbarProps {
   editor: Editor;
+  snapshotCount?: number;
+  onToggleSnapshots?: () => void;
+  onToggleFindReplace?: () => void;
+  snapshotsTriggerRef?: React.Ref<HTMLButtonElement>;
+  findReplaceTriggerRef?: React.Ref<HTMLButtonElement>;
 }
 
-export function EditorToolbar({ editor }: EditorToolbarProps) {
+export function EditorToolbar({
+  editor,
+  snapshotCount,
+  onToggleSnapshots,
+  onToggleFindReplace,
+  snapshotsTriggerRef,
+  findReplaceTriggerRef,
+}: EditorToolbarProps) {
+  const snapshotLabel = STRINGS.snapshots.toolbarLabel(snapshotCount ?? null);
   return (
     <div
       role="toolbar"
@@ -108,6 +121,70 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
       >
         {STRINGS.toolbar.horizontalRule}
       </button>
+      {onToggleSnapshots && (
+        <>
+          <span className="mx-0.5 self-stretch w-px bg-border/40" aria-hidden="true" />
+          <button
+            ref={snapshotsTriggerRef}
+            onClick={onToggleSnapshots}
+            aria-label={snapshotLabel}
+            title={snapshotLabel}
+            className="relative rounded-md px-2.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-focus-ring text-text-muted hover:text-text-secondary hover:bg-bg-hover"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+            {snapshotCount != null && snapshotCount > 0 && (
+              <span
+                className="absolute -top-1 -right-0.5 bg-accent text-white text-[9px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center leading-none px-0.5"
+                aria-hidden="true"
+              >
+                {snapshotCount}
+              </span>
+            )}
+          </button>
+        </>
+      )}
+      {onToggleFindReplace && (
+        <>
+          <span className="mx-0.5 self-stretch w-px bg-border/40" aria-hidden="true" />
+          <button
+            ref={findReplaceTriggerRef}
+            onClick={onToggleFindReplace}
+            aria-label={STRINGS.findReplace.toggleTooltip}
+            title={STRINGS.findReplace.toggleTooltip}
+            className="rounded-md px-2.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-focus-ring text-text-muted hover:text-text-secondary hover:bg-bg-hover"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+          </button>
+        </>
+      )}
     </div>
   );
 }

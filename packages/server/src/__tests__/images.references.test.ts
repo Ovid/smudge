@@ -4,12 +4,16 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
+import { vi } from "vitest";
 import {
   extractImageIds,
   diffImageReferences,
   scanImageReferences,
+  applyImageRefDiff,
 } from "../images/images.references";
+import { logger } from "../logger";
 import * as imagesService from "../images/images.service";
+import type { ImageRow } from "../images/images.types";
 
 const TEST_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
@@ -107,6 +111,25 @@ describe("extractImageIds()", () => {
         { type: "image", attrs: { src: "/uploads/photo.png" } },
       ],
     };
+    expect(extractImageIds(content)).toEqual([]);
+  });
+
+  it("stops walking past MAX_TIPTAP_DEPTH (I1 guard)", () => {
+    // Build nested content[] 200 levels deep with an image buried inside.
+    // Without a depth cap, unbalanced legacy rows could stack-overflow
+    // inside applyImageRefDiff during chapter PATCH / snapshot restore.
+    let node: Record<string, unknown> = {
+      type: "image",
+      attrs: { src: "/api/images/11111111-1111-1111-1111-111111111111" },
+    };
+    for (let i = 0; i < 200; i++) {
+      node = { type: "paragraph", content: [node] };
+    }
+    const content = { type: "doc", content: [node] };
+    // The walker must return without throwing; the deep image is not
+    // collected (exceeds depth cap), which is acceptable since the schema
+    // would reject it on write — we're guarding legacy/corrupt reads.
+    expect(() => extractImageIds(content)).not.toThrow();
     expect(extractImageIds(content)).toEqual([]);
   });
 });
@@ -227,6 +250,108 @@ function makeContentNoImages(): Record<string, unknown> {
     ],
   };
 }
+
+describe("applyImageRefDiff()", () => {
+  it("logs a warning and skips increment when the referenced image is gone", async () => {
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const incrementCalls: Array<[string, number]> = [];
+    const missingId = "00000000-0000-0000-0000-000000000000";
+    const projectId = "11111111-1111-1111-1111-111111111111";
+
+    await applyImageRefDiff(
+      {
+        findImagesByIds: async () => [],
+        incrementImageReferenceCount: async (id, delta) => {
+          incrementCalls.push([id, delta]);
+        },
+      },
+      null,
+      JSON.stringify({
+        type: "doc",
+        content: [{ type: "image", attrs: { src: `/api/images/${missingId}` } }],
+      }),
+      projectId,
+    );
+
+    expect(incrementCalls).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      { image_id: missingId, project_id: projectId, found_in_project: null },
+      "Referenced image missing or in different project; skipping reference-count update",
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("aborts diff (no increments or decrements) when newContent JSON is corrupt", async () => {
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const incrementCalls: Array<[string, number]> = [];
+    const imageId = "33333333-3333-3333-3333-333333333333";
+    const projectId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+
+    // Old content references the image; if newContent were parsed as null
+    // (the prior behavior), the image would be classified as removed and
+    // its ref count decremented silently. We expect NO calls instead.
+    const oldContent = JSON.stringify({
+      type: "doc",
+      content: [{ type: "image", attrs: { src: `/api/images/${imageId}` } }],
+    });
+    await applyImageRefDiff(
+      {
+        findImagesByIds: async () => [
+          { id: imageId, project_id: projectId, reference_count: 3 } as unknown as ImageRow,
+        ],
+        incrementImageReferenceCount: async (id, delta) => {
+          incrementCalls.push([id, delta]);
+        },
+      },
+      oldContent,
+      "{not valid json",
+      projectId,
+    );
+
+    expect(incrementCalls).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      { project_id: projectId },
+      "applyImageRefDiff: newContent JSON.parse failed; aborting diff to avoid mass decrement",
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("skips increment and warns when the referenced image belongs to a different project", async () => {
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const incrementCalls: Array<[string, number]> = [];
+    const imageId = "22222222-2222-2222-2222-222222222222";
+    const projectA = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    const projectB = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+
+    await applyImageRefDiff(
+      {
+        findImagesByIds: async () => [
+          {
+            id: imageId,
+            project_id: projectB,
+            reference_count: 0,
+          } as unknown as ImageRow,
+        ],
+        incrementImageReferenceCount: async (id, delta) => {
+          incrementCalls.push([id, delta]);
+        },
+      },
+      null,
+      JSON.stringify({
+        type: "doc",
+        content: [{ type: "image", attrs: { src: `/api/images/${imageId}` } }],
+      }),
+      projectA,
+    );
+
+    expect(incrementCalls).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      { image_id: imageId, project_id: projectA, found_in_project: projectB },
+      "Referenced image missing or in different project; skipping reference-count update",
+    );
+    warnSpy.mockRestore();
+  });
+});
 
 describe("scanImageReferences()", () => {
   it("returns empty array when image is not referenced", async () => {

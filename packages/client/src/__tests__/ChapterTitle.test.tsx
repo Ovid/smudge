@@ -87,6 +87,11 @@ vi.mock("../api/client", () => ({
     chapterStatuses: {
       list: vi.fn().mockResolvedValue([]),
     },
+    snapshots: {
+      list: vi.fn().mockResolvedValue([]),
+      get: vi.fn(),
+      restore: vi.fn(),
+    },
     settings: {
       get: vi.fn().mockResolvedValue({}),
       update: vi.fn().mockResolvedValue({ message: "ok" }),
@@ -427,14 +432,26 @@ describe("EditorPage save status", () => {
     });
 
     expect(capturedOnSave).toBeTruthy();
-    await act(async () => {
-      await capturedOnSave?.({ type: "doc", content: [{ type: "paragraph" }] });
-    });
+    // Use fake timers so the 2s/4s/8s retry backoff elapses instantly.
+    // With real timers the test burns ~14s per run — exceeds vitest
+    // slowTestThreshold and noises the CI output (per CLAUDE.md).
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        const p = capturedOnSave?.({ type: "doc", content: [{ type: "paragraph" }] });
+        await vi.advanceTimersByTimeAsync(2_000);
+        await vi.advanceTimersByTimeAsync(4_000);
+        await vi.advanceTimersByTimeAsync(8_000);
+        await p;
+      });
+    } finally {
+      vi.useRealTimers();
+    }
 
     await waitFor(() => {
       expect(screen.getByText(STRINGS.editor.saveFailed)).toBeInTheDocument();
     });
-  }, 25000);
+  });
 
   it("displays the back button that navigates home", async () => {
     renderEditorPage();

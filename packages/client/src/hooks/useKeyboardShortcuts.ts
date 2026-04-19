@@ -9,20 +9,27 @@ interface KeyboardShortcutDeps {
   deleteTarget: Chapter | null;
   projectSettingsOpen: boolean;
   exportDialogOpen: boolean;
+  // True while the Replace-All confirmation dialog is up. Without this,
+  // Ctrl+H would toggle the find-replace panel behind the dialog and
+  // Ctrl+Shift+N would create a chapter, both of which operate against
+  // state the user can't see.
+  replaceConfirmOpen?: boolean;
   // Current state
   viewMode: ViewMode;
   activeChapter: Chapter | null;
   project: ProjectWithChapters | null;
   chapterWordCount: number;
   // Actions
+  flushSave?: () => void;
   setShortcutHelpOpen: React.Dispatch<React.SetStateAction<boolean>>;
   toggleSidebar: () => void;
   handleCreateChapter: () => void;
   handleSelectChapterWithFlush: (id: string) => Promise<void>;
   setWordCountAnnouncement: React.Dispatch<React.SetStateAction<string>>;
   setNavAnnouncement: React.Dispatch<React.SetStateAction<string>>;
-  switchToView: (mode: ViewMode) => Promise<void>;
+  switchToView: (mode: ViewMode) => Promise<boolean>;
   togglePanel: () => void;
+  toggleFindReplace?: () => void;
 }
 
 export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
@@ -46,6 +53,10 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
   projectSettingsOpenRef.current = deps.projectSettingsOpen;
   const exportDialogOpenRef = useRef(deps.exportDialogOpen);
   exportDialogOpenRef.current = deps.exportDialogOpen;
+  const replaceConfirmOpenRef = useRef(deps.replaceConfirmOpen ?? false);
+  replaceConfirmOpenRef.current = deps.replaceConfirmOpen ?? false;
+  const flushSaveRef = useRef(deps.flushSave);
+  flushSaveRef.current = deps.flushSave;
   const handleCreateChapterRef = useRef(deps.handleCreateChapter);
   handleCreateChapterRef.current = deps.handleCreateChapter;
   const toggleSidebarRef = useRef(deps.toggleSidebar);
@@ -56,6 +67,8 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
   switchToViewRef.current = deps.switchToView;
   const togglePanelRef = useRef(deps.togglePanel);
   togglePanelRef.current = deps.togglePanel;
+  const toggleFindReplaceRef = useRef(deps.toggleFindReplace);
+  toggleFindReplaceRef.current = deps.toggleFindReplace;
 
   useEffect(() => {
     let navAnnouncementTimer: ReturnType<typeof setTimeout> | null = null;
@@ -77,14 +90,55 @@ export function useKeyboardShortcuts(deps: KeyboardShortcutDeps) {
         return;
       }
 
-      // Don't process shortcuts when a dialog is open (focus trap)
+      // Always intercept Ctrl/Cmd+S so the browser "Save Page" dialog never
+      // opens, even when a modal is up. But don't fire the flush while a
+      // modal is blocking the editor — that would produce a silent
+      // background save the user cannot observe.
+      if (ctrl && e.code === "KeyS") {
+        e.preventDefault();
+        if (
+          shortcutHelpOpenRef.current ||
+          deleteTargetRef.current ||
+          projectSettingsOpenRef.current ||
+          exportDialogOpenRef.current ||
+          replaceConfirmOpenRef.current
+        )
+          return;
+        flushSaveRef.current?.();
+        return;
+      }
+
+      // Don't process shortcuts when a dialog is open (focus trap). The
+      // Replace-All confirmation is explicitly listed — otherwise Ctrl+H
+      // could toggle the find-replace panel behind the dialog and Ctrl+Shift+N
+      // could create a chapter the user can't see.
       if (
         shortcutHelpOpenRef.current ||
         deleteTargetRef.current ||
         projectSettingsOpenRef.current ||
-        exportDialogOpenRef.current
+        exportDialogOpenRef.current ||
+        replaceConfirmOpenRef.current
       )
         return;
+
+      // Toggle find-and-replace panel (Ctrl/Cmd+H).
+      // Placed after the modal-open guard so the panel can't be toggled
+      // underneath a confirmation dialog. Skip when the user is typing
+      // in an unrelated input or textarea — muscle-memory Ctrl+H while
+      // editing some other field shouldn't open/close the panel. Ctrl+H
+      // while focused on the panel's own find/replace inputs is NOT
+      // guarded: the panel just focused its search input on open, and
+      // the user's clear intent for "Ctrl+H again" is to toggle closed.
+      if (ctrl && e.code === "KeyH") {
+        const active = document.activeElement as HTMLElement | null;
+        const tag = active?.tagName;
+        const id = active?.id;
+        const isFindReplaceInput = id === "find-replace-search" || id === "find-replace-replace";
+        if ((tag === "INPUT" || tag === "TEXTAREA") && !isFindReplaceInput) return;
+        e.preventDefault();
+        toggleFindReplaceRef.current?.();
+        return;
+      }
 
       if (ctrl && e.shiftKey && e.code === "KeyN") {
         e.preventDefault();

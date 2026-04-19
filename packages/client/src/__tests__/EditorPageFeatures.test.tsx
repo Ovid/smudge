@@ -4,11 +4,13 @@ import userEvent from "@testing-library/user-event";
 import { EditorPage } from "../pages/EditorPage";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api/client";
+import { STRINGS } from "../strings";
 
 vi.mock("../hooks/useContentCache", () => ({
   getCachedContent: vi.fn().mockReturnValue(null),
   setCachedContent: vi.fn().mockReturnValue(true),
   clearCachedContent: vi.fn(),
+  clearAllCachedContent: vi.fn(),
 }));
 
 vi.mock("../api/client", () => ({
@@ -16,6 +18,7 @@ vi.mock("../api/client", () => ({
     constructor(
       message: string,
       public readonly status: number,
+      public readonly code?: string,
     ) {
       super(message);
       this.name = "ApiRequestError";
@@ -51,6 +54,15 @@ vi.mock("../api/client", () => ({
     },
     chapterStatuses: {
       list: vi.fn().mockResolvedValue([]),
+    },
+    snapshots: {
+      list: vi.fn().mockResolvedValue([]),
+      get: vi.fn(),
+      restore: vi.fn(),
+    },
+    search: {
+      find: vi.fn().mockResolvedValue({ total_count: 0, chapters: [] }),
+      replace: vi.fn().mockResolvedValue({ replaced_count: 0, affected_chapter_ids: [] }),
     },
     settings: {
       get: vi.fn().mockResolvedValue({ timezone: "UTC" }),
@@ -1026,5 +1038,502 @@ describe("EditorPage view mode toggles", () => {
     expect(dashboardButton).toHaveAttribute("aria-current", "page");
     expect(warnSpy).toHaveBeenCalledWith("Failed to load chapter statuses:", expect.any(Error));
     warnSpy.mockRestore();
+  });
+});
+
+describe("EditorPage find-and-replace confirmation", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.projects.get).mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
+    // Reset to default — a previous test sets mockRejectedValue which persists
+    vi.mocked(api.chapterStatuses.list).mockResolvedValue([]);
+    vi.mocked(api.search.find).mockResolvedValue({
+      total_count: 2,
+      chapters: [
+        {
+          chapter_id: "ch-1",
+          chapter_title: "Chapter One",
+          matches: [
+            { index: 0, context: "foo bar", blockIndex: 0, offset: 0, length: 3 },
+            { index: 1, context: "foo baz", blockIndex: 0, offset: 8, length: 3 },
+          ],
+        },
+      ],
+    });
+    vi.mocked(api.search.replace).mockResolvedValue({
+      replaced_count: 2,
+      affected_chapter_ids: [],
+    });
+  });
+
+  /** Opens the find-and-replace panel, types a query and replacement,
+   *  waits for the search results, and clicks "Replace All in Manuscript". */
+  async function openPanelAndClickReplaceAll() {
+    renderEditorPage();
+
+    // Wait for the editor page to load
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    // Open the find-replace panel via Ctrl+H
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+
+    // Wait for the panel to appear
+    const searchInput = await screen.findByLabelText("Find");
+    const replaceInput = screen.getByLabelText("Replace");
+
+    // Fill search and replacement (triggers debounced search)
+    fireEvent.change(searchInput, { target: { value: "foo" } });
+    fireEvent.change(replaceInput, { target: { value: "qux" } });
+
+    // Wait for search results to render — "Replace All in Manuscript" button
+    // is only shown when there are results with total_count > 0.
+    const replaceAllButton = await screen.findByRole(
+      "button",
+      { name: "Replace All in Manuscript" },
+      { timeout: 3000 },
+    );
+    await userEvent.click(replaceAllButton);
+  }
+
+  it("shows confirmation dialog when Replace All in Manuscript is clicked", async () => {
+    await openPanelAndClickReplaceAll();
+
+    const dialog = await screen.findByRole("alertdialog", {
+      name: "Replace across manuscript?",
+    });
+    expect(dialog).toBeInTheDocument();
+  });
+
+  it("executes replace when confirmation is confirmed", async () => {
+    await openPanelAndClickReplaceAll();
+
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+
+    // Click "Replace All" inside the dialog to confirm
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    await waitFor(() => {
+      expect(api.search.replace).toHaveBeenCalledWith(
+        "test-project",
+        "foo",
+        "qux",
+        expect.objectContaining({
+          case_sensitive: expect.any(Boolean),
+          whole_word: expect.any(Boolean),
+          regex: expect.any(Boolean),
+        }),
+        { type: "project" },
+      );
+    });
+
+    // Dialog should close after confirming
+    await waitFor(() => {
+      expect(screen.queryByRole("alertdialog", { name: "Replace across manuscript?" })).toBeNull();
+    });
+  });
+
+  it("Ctrl+H is blocked while the replace-confirm dialog is open", async () => {
+    await openPanelAndClickReplaceAll();
+
+    const dialog = await screen.findByRole("alertdialog", {
+      name: "Replace across manuscript?",
+    });
+    expect(dialog).toBeInTheDocument();
+
+    // Ctrl+H must not execute beneath the dialog. Before the fix the
+    // shortcut toggled the panel/find-replace state under the modal; the
+    // guard should now short-circuit so the dialog persists untouched and
+    // no replace API call fires.
+    fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+    expect(
+      screen.getByRole("alertdialog", { name: "Replace across manuscript?" }),
+    ).toBeInTheDocument();
+    expect(api.search.replace).not.toHaveBeenCalled();
+  });
+
+  it("does not execute replace when confirmation is cancelled", async () => {
+    await openPanelAndClickReplaceAll();
+
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+
+    // Click Cancel in the dialog
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    // Dialog should close
+    await waitFor(() => {
+      expect(screen.queryByRole("alertdialog", { name: "Replace across manuscript?" })).toBeNull();
+    });
+
+    // The replace API should not have been called
+    expect(api.search.replace).not.toHaveBeenCalled();
+  });
+
+  it("swallows ABORTED errors from executeReplace without showing a banner", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Request aborted", 0, "ABORTED"),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    // Dialog closes, no action error banner for abort
+    await waitFor(() => {
+      expect(screen.queryByRole("alertdialog", { name: "Replace across manuscript?" })).toBeNull();
+    });
+    expect(screen.queryByText(STRINGS.findReplace.replaceFailed)).toBeNull();
+  });
+
+  it("surfaces SCOPE_NOT_FOUND 404 with replaceScopeNotFound copy", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Scope missing", 404, "SCOPE_NOT_FOUND"),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(STRINGS.findReplace.replaceScopeNotFound)).toBeInTheDocument();
+    });
+  });
+
+  it("surfaces MATCH_CAP_EXCEEDED with tooManyMatches copy", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Too many", 400, "MATCH_CAP_EXCEEDED"),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(STRINGS.findReplace.tooManyMatches)).toBeInTheDocument();
+    });
+  });
+
+  it("surfaces REGEX_TIMEOUT with searchTimedOut copy", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Timeout", 400, "REGEX_TIMEOUT"),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(STRINGS.findReplace.searchTimedOut)).toBeInTheDocument();
+    });
+  });
+
+  it("surfaces 5xx with generic replaceFailed copy (no raw server message leak)", async () => {
+    // CLAUDE.md: all UI strings must route through strings.ts; raw server
+    // messages must not leak to the UI (blocks i18n).
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Something specific broke", 500, "INTERNAL_ERROR"),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(STRINGS.findReplace.replaceFailed)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Something specific broke/)).toBeNull();
+  });
+
+  it("handleReplaceOne surfaces MATCH_CAP_EXCEEDED with tooManyMatches copy", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("too many", 400, "MATCH_CAP_EXCEEDED"),
+    );
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
+    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+
+    // The per-match "Replace" buttons appear once results render.
+    const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
+    await userEvent.click(replaceOne[0]!);
+
+    await waitFor(() => {
+      expect(screen.getByText(STRINGS.findReplace.tooManyMatches)).toBeInTheDocument();
+    });
+  });
+
+  it("handleReplaceOne clears the target chapter's cached draft on success", async () => {
+    const { clearAllCachedContent } = await import("../hooks/useContentCache");
+    vi.mocked(clearAllCachedContent).mockClear();
+    vi.mocked(api.search.replace).mockResolvedValueOnce({
+      replaced_count: 1,
+      affected_chapter_ids: ["ch-1"],
+    });
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
+    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+
+    const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
+    await userEvent.click(replaceOne[0]!);
+
+    await waitFor(() => {
+      expect(clearAllCachedContent).toHaveBeenCalledWith(["ch-1"]);
+    });
+  });
+
+  it("rapid double-clicks on Replace do not launch overlapping requests (I5)", async () => {
+    // api.search.replace returns a deferred promise we can hold open to
+    // simulate a slow round trip; the second click must be ignored while
+    // the first is still in flight.
+    let resolveReplace: (v: {
+      replaced_count: number;
+      affected_chapter_ids: string[];
+    }) => void = () => {};
+    const pending = new Promise<{ replaced_count: number; affected_chapter_ids: string[] }>(
+      (resolve) => {
+        resolveReplace = resolve;
+      },
+    );
+    vi.mocked(api.search.replace).mockReturnValueOnce(pending);
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
+    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+
+    const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
+
+    // Two clicks while the first request is in flight.
+    await userEvent.click(replaceOne[0]!);
+    await userEvent.click(replaceOne[0]!);
+
+    // Only one request issued — the second click is swallowed by the guard.
+    expect(api.search.replace).toHaveBeenCalledTimes(1);
+
+    // Release the first request so the handler finishes cleanly.
+    resolveReplace({ replaced_count: 1, affected_chapter_ids: ["ch-1"] });
+    await act(async () => {
+      await pending;
+    });
+  });
+
+  it("handleReplaceOne clears the target chapter's cache AFTER the replace response succeeds", async () => {
+    const { clearAllCachedContent } = await import("../hooks/useContentCache");
+    vi.mocked(clearAllCachedContent).mockClear();
+
+    // Record the call order: clear must land AFTER api.search.replace
+    // resolves. A pre-flight clear on a failed replace would destroy the
+    // draft even though the server never mutated anything; scoping the
+    // clear to result.affected_chapter_ids keeps it correctness-preserving.
+    const order: string[] = [];
+    vi.mocked(clearAllCachedContent).mockImplementation((ids: string[]) => {
+      order.push(`clear:${ids.join(",")}`);
+    });
+    vi.mocked(api.search.replace).mockImplementationOnce(async () => {
+      order.push("replace");
+      return { replaced_count: 1, affected_chapter_ids: ["ch-1"] };
+    });
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
+    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+
+    const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
+    await userEvent.click(replaceOne[0]!);
+
+    await waitFor(() => {
+      expect(order).toContain("clear:ch-1");
+    });
+    expect(order.indexOf("replace")).toBeLessThan(order.indexOf("clear:ch-1"));
+  });
+
+  it("handleReplaceOne swallows ABORTED errors silently", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("aborted", 0, "ABORTED"),
+    );
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
+    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+
+    const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
+    await userEvent.click(replaceOne[0]!);
+
+    // No error banner should appear for an aborted request.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(STRINGS.findReplace.replaceFailed)).toBeNull();
+  });
+
+  it("shows chapter-scope confirmation when Replace All in Chapter is clicked", async () => {
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+
+    const searchInput = await screen.findByLabelText("Find");
+    const replaceInput = screen.getByLabelText("Replace");
+    fireEvent.change(searchInput, { target: { value: "foo" } });
+    fireEvent.change(replaceInput, { target: { value: "qux" } });
+
+    const perChapterButton = await screen.findByRole(
+      "button",
+      { name: "Replace All in Chapter" },
+      { timeout: 3000 },
+    );
+    await userEvent.click(perChapterButton);
+
+    const dialog = await screen.findByRole("alertdialog", { name: "Replace in chapter?" });
+    expect(dialog).toBeInTheDocument();
+    // Dialog body uses the chapter-scope confirm copy with per-chapter count.
+    expect(dialog).toHaveTextContent(/2 occurrences of 'foo' with 'qux' in this chapter/);
+  });
+});
+
+describe("EditorPage snapshot panel", () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.projects.get).mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
+    vi.mocked(api.snapshots.list).mockResolvedValue([]);
+  });
+
+  it("opens the snapshot panel via toolbar button and shows the empty state", async () => {
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    // The toolbar button's aria-label is "Snapshots" (no count when empty).
+    const button = await screen.findByRole("button", { name: /^Snapshots$/ });
+    await userEvent.click(button);
+
+    await waitFor(() => {
+      expect(screen.getByRole("complementary", { name: "Chapter snapshots" })).toBeInTheDocument();
+    });
+  });
+
+  it("clicks View on a snapshot (exercises onView flushSave/cancelPendingSaves path)", async () => {
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-1",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+    ]);
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-1",
+      chapter_id: "ch-1",
+      label: "v1",
+      content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+      word_count: 5,
+      is_auto: false,
+      created_at: "2026-04-17T10:00:00Z",
+    });
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    const viewBtn = await screen.findByRole("button", { name: "View" });
+    await userEvent.click(viewBtn);
+
+    await waitFor(() => {
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+    });
+  });
+
+  it("clicks Create Snapshot in the panel (exercises onBeforeCreate)", async () => {
+    (api.snapshots as unknown as { create: ReturnType<typeof vi.fn> }).create = vi
+      .fn()
+      .mockResolvedValue({
+        status: "created",
+        snapshot: {
+          id: "snap-new",
+          chapter_id: "ch-1",
+          label: null,
+          content: "{}",
+          word_count: 10,
+          is_auto: false,
+          created_at: new Date().toISOString(),
+        },
+      });
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    const button = await screen.findByRole("button", { name: /^Snapshots$/ });
+    await userEvent.click(button);
+
+    const create = await screen.findByRole("button", { name: "Create Snapshot" });
+    await userEvent.click(create);
+
+    const save = await screen.findByRole("button", { name: "Save" });
+    await userEvent.click(save);
   });
 });

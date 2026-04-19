@@ -15,8 +15,8 @@
     "test": "npm test -w packages/shared && npm test -w packages/server && npm test -w packages/client",
     "test:watch": "vitest --config vitest.config.ts",
     "typecheck": "tsc -b packages/shared packages/server packages/client",
-    "lint": "eslint --fix packages/",
-    "lint:check": "eslint packages/",
+    "lint": "eslint --fix --max-warnings 0 packages/",
+    "lint:check": "eslint --max-warnings 0 packages/",
     "format": "prettier --write \"packages/**/*.{ts,tsx,json,css}\"",
     "format:check": "prettier --check \"packages/**/*.{ts,tsx,json,css}\""
   },

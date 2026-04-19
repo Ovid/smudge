@@ -2,7 +2,7 @@ import { UpdateChapterSchema, countWords, generateSlug } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
-import { extractImageIds, diffImageReferences } from "../images/images.references";
+import { applyImageRefDiff } from "../images/images.references";
 import {
   isCorruptChapter,
   enrichChapterWithLabel,
@@ -77,47 +77,38 @@ export async function updateChapter(
     updates.status = parsed.data.status;
   }
 
-  // Read chapter, compute image diff, and apply updates in a single
-  // transaction so the diff is based on the committed content state.
+  // Read chapter, compute image diff, apply updates, and re-read the
+  // committed row in a single transaction so the response body reflects
+  // exactly what this request wrote — without this, a concurrent writer
+  // landing between commit and a post-tx findChapterById would let the
+  // other writer's content ride back in this response. Mirrors the
+  // pattern already used by snapshots.service.restoreSnapshot.
   const txResult = await store.transaction(async (txStore) => {
     const chapter = await txStore.findChapterByIdRaw(id);
     if (!chapter) return null;
-
-    let imageRefDiff: { added: string[]; removed: string[] } | null = null;
-    if (parsed.data.content !== undefined) {
-      let oldContent: Record<string, unknown> | null = null;
-      if (chapter.content) {
-        try {
-          oldContent = JSON.parse(chapter.content);
-        } catch {
-          // Stored content is corrupt — treat as no previous images so the save
-          // can overwrite/repair the corrupt content instead of crashing.
-        }
-      }
-      const oldIds = extractImageIds(oldContent);
-      const newIds = extractImageIds(parsed.data.content as Record<string, unknown>);
-      imageRefDiff = diffImageReferences(oldIds, newIds);
-    }
 
     const count = await txStore.updateChapter(id, updates);
     if (count === 0) return null;
     await txStore.updateProjectTimestamp(chapter.project_id, updates.updated_at);
 
     // Update image reference counts inside the same transaction
-    if (imageRefDiff) {
-      for (const imageId of imageRefDiff.added) {
-        await txStore.incrementImageReferenceCount(imageId, 1);
-      }
-      for (const imageId of imageRefDiff.removed) {
-        await txStore.incrementImageReferenceCount(imageId, -1);
-      }
+    if (parsed.data.content !== undefined) {
+      await applyImageRefDiff(
+        txStore,
+        chapter.content,
+        JSON.stringify(parsed.data.content),
+        chapter.project_id,
+      );
     }
 
-    return { project_id: chapter.project_id };
+    const updatedRow = await txStore.findChapterById(id);
+    if (!updatedRow) return "read_failure" as const;
+    return { project_id: chapter.project_id, updated: updatedRow };
   });
 
   if (!txResult) return null;
-  const { project_id: projectId } = txResult;
+  if (txResult === "read_failure") return "read_after_update_failure";
+  const { project_id: projectId, updated } = txResult;
 
   // Fire velocity side-effects (best-effort — must not break the save)
   if (parsed.data.content !== undefined) {
@@ -131,9 +122,6 @@ export async function updateChapter(
       );
     }
   }
-
-  const updated = await store.findChapterById(id);
-  if (!updated) return "read_after_update_failure";
 
   // Only check corruption when content was part of the update
   if (parsed.data.content !== undefined && isCorruptChapter(updated)) {
@@ -162,23 +150,12 @@ export async function deleteChapter(id: string): Promise<boolean> {
     const chapter = await txStore.findChapterByIdRaw(id);
     if (!chapter) return null;
 
-    let imageIds: string[] = [];
-    if (chapter.content) {
-      try {
-        const content = JSON.parse(chapter.content);
-        imageIds = extractImageIds(content);
-      } catch {
-        // Corrupt content — no image IDs to decrement
-      }
-    }
-
     await txStore.softDeleteChapter(id, now);
     await txStore.updateProjectTimestamp(chapter.project_id, now);
 
-    // Decrement reference counts atomically with the soft-delete
-    for (const imageId of imageIds) {
-      await txStore.incrementImageReferenceCount(imageId, -1);
-    }
+    // Decrement image reference counts atomically with the soft-delete, routed
+    // through the shared helper so the cross-project + existence guards apply.
+    await applyImageRefDiff(txStore, chapter.content, null, chapter.project_id);
 
     return chapter.project_id;
   });
@@ -243,17 +220,12 @@ export async function restoreChapter(
 
       // Read content inside the transaction to get the committed state
       // and increment image reference counts atomically with the restore.
+      // Route through applyImageRefDiff so the existence-check + missing-
+      // image warning is shared with updateChapter / replaceInProject /
+      // restoreSnapshot rather than diverging here.
       const restoredRow = await txStore.findChapterByIdRaw(id);
       if (restoredRow?.content) {
-        try {
-          const content = JSON.parse(restoredRow.content);
-          const imageIds = extractImageIds(content);
-          for (const imgId of imageIds) {
-            await txStore.incrementImageReferenceCount(imgId, 1);
-          }
-        } catch {
-          // Corrupt content — no image IDs to increment
-        }
+        await applyImageRefDiff(txStore, null, restoredRow.content, restoredRow.project_id);
       }
     });
   } catch (err: unknown) {

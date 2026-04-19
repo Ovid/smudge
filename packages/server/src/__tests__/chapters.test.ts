@@ -402,6 +402,10 @@ describe("POST /api/chapters/:id/restore", () => {
 
   it("succeeds when restoring a chapter with corrupt JSON content", async () => {
     const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    // applyImageRefDiff logs a warn when it can't parse corrupt content
+    // before aborting the diff. The warn is expected here; suppress and
+    // assert rather than letting it pollute test stderr.
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
     const { chapterId } = await createProjectWithChapter(t.app);
 
     // Soft-delete the chapter
@@ -414,7 +418,12 @@ describe("POST /api/chapters/:id/restore", () => {
     const res = await request(t.app).post(`/api/chapters/${chapterId}/restore`);
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(chapterId);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ project_id: expect.any(String) }),
+      "applyImageRefDiff: newContent JSON.parse failed; aborting diff to avoid mass decrement",
+    );
     errorSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 });
 
