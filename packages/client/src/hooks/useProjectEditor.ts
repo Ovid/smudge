@@ -31,6 +31,15 @@ export function useProjectEditor(slug: string | undefined) {
   const selectChapterSeqRef = useRef(0);
   const saveSeqRef = useRef(0);
   const saveAbortRef = useRef<AbortController | null>(null);
+  // Active retry backoff, if any: the timer id and a resolver so
+  // cancelPendingSaves can both clear the pending timer AND unblock the
+  // awaited sleep — otherwise the loop would hang forever (clearing only
+  // the timer without resolving the promise would leave the await pending
+  // forever and the seq check unreachable).
+  const saveBackoffRef = useRef<{
+    timer: ReturnType<typeof setTimeout>;
+    resolve: () => void;
+  } | null>(null);
   const statusChangeSeqRef = useRef(0);
 
   useEffect(() => {
@@ -148,7 +157,16 @@ export function useProjectEditor(slug: string | undefined) {
             break;
           }
           if (attempt < MAX_RETRIES) {
-            await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
+            await new Promise<void>((resolve) => {
+              const timer = setTimeout(() => {
+                saveBackoffRef.current = null;
+                resolve();
+              }, BACKOFF_MS[attempt]);
+              saveBackoffRef.current = { timer, resolve };
+            });
+            // If cancelPendingSaves cleared the timer and resolved early,
+            // the seq check at the top of the next loop iteration exits
+            // cleanly.
           }
         }
       }
@@ -456,6 +474,13 @@ export function useProjectEditor(slug: string | undefined) {
       if (saveAbortRef.current) {
         saveAbortRef.current.abort();
         saveAbortRef.current = null;
+      }
+      // Unblock any retry backoff sleep so the loop reaches its seq check
+      // and exits without waiting up to 8s for the timer to fire naturally.
+      if (saveBackoffRef.current) {
+        clearTimeout(saveBackoffRef.current.timer);
+        saveBackoffRef.current.resolve();
+        saveBackoffRef.current = null;
       }
       // Reset status to idle so the header doesn't stay on "Saving…".
       // The aborted save's own status-write is guarded by the chapter/seq
