@@ -99,6 +99,7 @@ export function useProjectEditor(slug: string | undefined) {
 
       setSaveStatus("saving");
       setSaveErrorMessage(null);
+      let rejected4xx: { message: string } | null = null;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (seq !== saveSeqRef.current) return false; // chapter changed, abort retries
         // Re-read latest content each attempt so backoff retries post keystrokes
@@ -154,6 +155,9 @@ export function useProjectEditor(slug: string | undefined) {
           }
           if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
             console.warn("Save failed with 4xx:", err);
+            // Capture the server's specific message (e.g. INVALID_CONTENT)
+            // so the UI can surface it instead of the generic retry copy.
+            rejected4xx = { message: err.message || STRINGS.editor.saveFailed };
             break;
           }
           if (attempt < MAX_RETRIES) {
@@ -171,9 +175,19 @@ export function useProjectEditor(slug: string | undefined) {
         }
       }
       if (saveAbortRef.current === controller) saveAbortRef.current = null;
+      // On a 4xx rejection the server preserves the previous good content
+      // and will reject the same payload on every retry. Clear the local
+      // draft so the next load pulls the server's preserved content rather
+      // than rehydrating the rejected payload into a persistent error loop.
+      if (rejected4xx) {
+        clearCachedContent(savingChapterId);
+        if (latestContentRef.current?.id === savingChapterId) {
+          latestContentRef.current = null;
+        }
+      }
       if (activeChapterRef.current?.id === savingChapterId) {
         setSaveStatus("error");
-        setSaveErrorMessage(STRINGS.editor.saveFailed);
+        setSaveErrorMessage(rejected4xx ? rejected4xx.message : STRINGS.editor.saveFailed);
       }
       return false;
     },

@@ -915,11 +915,31 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.saveStatus).toBe("error");
-    expect(result.current.saveErrorMessage).toBe("Unable to save \u2014 check connection");
+    expect(result.current.saveErrorMessage).toBe("Invalid status: xyz");
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("Save failed with 4xx:"),
       expect.any(ApiRequestError),
     );
+    warnSpy.mockRestore();
+  });
+
+  it("handleSave clears cached draft on 4xx so next load gets server's preserved content", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { clearCachedContent } = await import("../hooks/useContentCache");
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("Invalid content", 400),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+    vi.mocked(clearCachedContent).mockClear();
+
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(result.current.saveStatus).toBe("error");
+    expect(vi.mocked(clearCachedContent)).toHaveBeenCalledWith("ch1");
     warnSpy.mockRestore();
   });
 
@@ -935,7 +955,7 @@ describe("useProjectEditor", () => {
     await act(async () => {
       await result.current.handleSave({ type: "doc", content: [] });
     });
-    expect(result.current.saveErrorMessage).toBe("Unable to save \u2014 check connection");
+    expect(result.current.saveErrorMessage).toBe("Bad Request");
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("Save failed with 4xx:"),
       expect.any(ApiRequestError),
