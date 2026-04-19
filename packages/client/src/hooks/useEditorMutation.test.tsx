@@ -193,12 +193,12 @@ describe("useEditorMutation — reload failure", () => {
     vi.clearAllMocks();
   });
 
-  it("returns stage 'reload' when reloadActiveChapter invokes onError", async () => {
+  it("returns stage 'reload' when reloadActiveChapter returns false", async () => {
     const { editorRef, projectEditor } = buildHandles();
-    projectEditor.reloadActiveChapter = vi.fn(async (onError?: (msg: string) => void) => {
-      onError?.("reload-failed-msg");
-      return false;
-    });
+    // The hook passes a no-op onError; reloadActiveChapter's onError
+    // signalling is intentionally suppressed (see useEditorMutation).
+    // What matters is the boolean return: false -> stage:"reload".
+    projectEditor.reloadActiveChapter = vi.fn(async () => false);
 
     const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
     const res = await result.current.run<{ replaced: number }>(async () => ({
@@ -211,7 +211,6 @@ describe("useEditorMutation — reload failure", () => {
       ok: false,
       stage: "reload",
       data: { replaced: 3 },
-      error: "reload-failed-msg",
     });
     // Editor must stay read-only on reload failure: markClean + cache-clear
     // have already happened, but the TipTap doc still holds pre-mutation
@@ -221,6 +220,32 @@ describe("useEditorMutation — reload failure", () => {
     expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(false);
     // cache-clear still happened — server committed the mutation
     expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["c1"]);
+  });
+
+  it("suppresses reloadActiveChapter's onError output (S1)", async () => {
+    // Regression guard: the hook passes a no-op onError so the reload
+    // failure does NOT flip useProjectEditor's fallback setError path,
+    // which would otherwise switch EditorPage into the full-screen
+    // error branch in place of the persistent lock banner.
+    const { editorRef, projectEditor } = buildHandles();
+    const onErrorSpy = vi.fn();
+    projectEditor.reloadActiveChapter = vi.fn(async (onError?: (msg: string) => void) => {
+      onError?.("would-flip-to-full-page-error");
+      onErrorSpy();
+      return false;
+    });
+
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+    const res = await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: true,
+      data: undefined,
+    }));
+
+    // reloadActiveChapter was called (onErrorSpy proves that).
+    expect(onErrorSpy).toHaveBeenCalled();
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.stage).toBe("reload");
   });
 
   it("returns stage 'reload' with data when reloadActiveChapter returns false without onError", async () => {

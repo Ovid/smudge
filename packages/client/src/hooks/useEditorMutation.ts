@@ -19,7 +19,13 @@ export type MutationDirective<T = void> = {
 
 export type MutationResult<T = void> =
   | { ok: true; data: T }
-  | { ok: false; stage: "reload"; data: T; error?: string }
+  // reload: server-side mutation succeeded, but the follow-up GET failed.
+  // No `error` field — callers always render a hardcoded strings.ts banner
+  // ("refresh the page…") whose wording does not depend on the reload
+  // failure's text, and reloadActiveChapter only surfaces
+  // STRINGS.error.loadChapterFailed anyway. Keeping it would invite
+  // drift between the hook's passed-through message and the banner copy.
+  | { ok: false; stage: "reload"; data: T }
   | { ok: false; stage: "flush" | "mutate"; error: unknown }
   | { ok: false; stage: "busy" };
 
@@ -109,17 +115,22 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
           clearAllCachedContent(directive.clearCacheFor);
         }
         if (directive.reloadActiveChapter) {
-          let reloadMessage: string | undefined;
-          const ok = await projectEditorRef.current.reloadActiveChapter((msg) => {
-            reloadMessage = msg;
-          }, directive.reloadChapterId);
+          // Passing a no-op onError is intentional: reloadActiveChapter only
+          // emits STRINGS.error.loadChapterFailed, which would never reach
+          // the UI (callers render their own banner). Suppressing it here
+          // also stops useProjectEditor's fallback-to-setError from firing
+          // and flipping EditorPage into the full-screen error branch when
+          // we just want the persistent lock banner.
+          const ok = await projectEditorRef.current.reloadActiveChapter(
+            () => {},
+            directive.reloadChapterId,
+          );
           if (!ok) {
             reloadFailed = true;
             return {
               ok: false,
               stage: "reload",
               data: directive.data,
-              error: reloadMessage,
             };
           }
         }
