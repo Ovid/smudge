@@ -163,6 +163,44 @@ describe("useSnapshotState", () => {
     expect(r.reason).toBe("corrupt_snapshot");
   });
 
+  it.each([
+    ["null literal", "null"],
+    ["number literal", "42"],
+    ["string literal", '"hello"'],
+    ["array literal", "[1,2,3]"],
+  ])(
+    "viewSnapshot returns corrupt_snapshot when content parses as %s (not a TipTap doc)",
+    async (_label, payload) => {
+      // Server-side restoreSnapshot gates on TipTapDocSchema.safeParse;
+      // the client view path used to accept any valid JSON here, so a
+      // hand-edited or corrupted snapshot whose content was "42" / "null"
+      // / "[1,2,3]" / etc. would parse and then crash the read-only
+      // preview editor when handed to TipTap.
+      vi.mocked(api.snapshots.get).mockResolvedValue({
+        id: "snap-1",
+        chapter_id: "ch-1",
+        label: null,
+        content: payload,
+        word_count: 0,
+        is_auto: false,
+        created_at: new Date().toISOString(),
+      });
+
+      const { result } = renderHook(() => useSnapshotState("ch-1"));
+      let r: { ok: boolean; reason?: string } = { ok: true };
+      await act(async () => {
+        r = await result.current.viewSnapshot({
+          id: "snap-1",
+          label: null,
+          created_at: new Date().toISOString(),
+        });
+      });
+
+      expect(r.ok).toBe(false);
+      expect(r.reason).toBe("corrupt_snapshot");
+    },
+  );
+
   it("exitSnapshotView clears the viewing snapshot", async () => {
     const row = makeSnapshotRow();
     vi.mocked(api.snapshots.get).mockResolvedValue(row);

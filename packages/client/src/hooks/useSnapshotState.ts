@@ -169,6 +169,20 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         } catch {
           return { ok: false, reason: "corrupt_snapshot" };
         }
+        // Reject anything that is not a plain object: valid JSON like
+        // "42", "null", or "[1,2,3]" parses successfully but is not a
+        // TipTap document and would crash the read-only preview editor
+        // when we hand it to TipTap downstream. The server's restore path
+        // gates on TipTapDocSchema.safeParse for the same reason; surface
+        // a clean corrupt_snapshot here rather than letting the editor
+        // throw.
+        if (
+          content === null ||
+          typeof content !== "object" ||
+          Array.isArray(content)
+        ) {
+          return { ok: false, reason: "corrupt_snapshot" };
+        }
         setViewingSnapshot({
           id: snapshot.id,
           label: snapshot.label,
