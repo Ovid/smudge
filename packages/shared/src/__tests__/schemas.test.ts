@@ -130,6 +130,28 @@ describe("CreateSnapshotSchema", () => {
     const result = CreateSnapshotSchema.safeParse({ label: "x", is_auto: true });
     expect(result.success).toBe(false);
   });
+
+  it("strips Unicode non-characters from the label (S5)", () => {
+    // BMP non-characters: U+FDD0..U+FDEF, U+FFFE, U+FFFF.
+    const bmp = CreateSnapshotSchema.safeParse({
+      label: "a\uFDD0b\uFDEFc\uFFFEd\uFFFFe",
+    });
+    expect(bmp.success).toBe(true);
+    expect(bmp.success && bmp.data.label).toBe("abcde");
+
+    // Supplementary non-char U+1FFFE (surrogate pair D83F DFFE) and
+    // U+10FFFF (surrogate pair DBFF DFFF) stripped.
+    const supp = CreateSnapshotSchema.safeParse({
+      label: "x\uD83F\uDFFEy\uDBFF\uDFFFz",
+    });
+    expect(supp.success).toBe(true);
+    expect(supp.success && supp.data.label).toBe("xyz");
+
+    // A valid supplementary-plane code point (U+1F600 😀) is preserved.
+    const emoji = CreateSnapshotSchema.safeParse({ label: "a\uD83D\uDE00b" });
+    expect(emoji.success).toBe(true);
+    expect(emoji.success && emoji.data.label).toBe("a\uD83D\uDE00b");
+  });
 });
 
 describe("ChapterStatus", () => {

@@ -166,6 +166,23 @@ export function sanitizeSnapshotLabel(raw: string): string {
       // Left intact these render as nothing but compare/search differently,
       // enabling snapshot-label spoofing in the list view.
       .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
+      // Strip Unicode non-characters (U+FDD0..U+FDEF, U+FFFE, U+FFFF) from
+      // the BMP. These code points are permanently reserved as
+      // non-characters; fonts render them inconsistently (blank, tofu,
+      // replacement). Letting them into a label produces display that
+      // looks shorter than the stored string — useful for list-view spoof.
+      .replace(/[\uFDD0-\uFDEF\uFFFE\uFFFF]/g, "")
+      // Strip supplementary-plane non-characters (U+nFFFE / U+nFFFF for
+      // every plane n in 1..16). In surrogate encoding, those are pairs
+      // where (high & 0x3F) === 0x3F AND (low & 0x3FF) ∈ {0x3FE, 0x3FF}
+      // — the low 16 bits of the code point equal 0xFFFE / 0xFFFF.
+      .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, (pair) => {
+        const hi = pair.charCodeAt(0);
+        const lo = pair.charCodeAt(1);
+        const lo10 = lo & 0x3ff;
+        const isNonChar = (hi & 0x3f) === 0x3f && (lo10 === 0x3fe || lo10 === 0x3ff);
+        return isNonChar ? "" : pair;
+      })
       // Strip unpaired surrogates. A well-formed JSON string CAN contain
       // lone surrogate code units (RFC 8259 § 8.2), but they don't form a
       // valid UTF-16 code point — stored as-is they render as U+FFFD and
