@@ -12,6 +12,7 @@ import type {
   SnapshotRow,
   SnapshotListItem,
   SearchResult,
+  ReplaceResult,
 } from "@smudge/shared";
 
 export type { VelocityResponse };
@@ -315,11 +316,7 @@ export const api = {
       scope: { type: "project" } | { type: "chapter"; chapter_id: string; match_index?: number },
       signal?: AbortSignal,
     ) =>
-      apiFetch<{
-        replaced_count: number;
-        affected_chapter_ids: string[];
-        skipped_chapter_ids?: string[];
-      }>(`/projects/${projectSlug}/replace`, {
+      apiFetch<ReplaceResult>(`/projects/${projectSlug}/replace`, {
         method: "POST",
         body: JSON.stringify({ search, replace, options, scope }),
         ...(signal ? { signal } : {}),

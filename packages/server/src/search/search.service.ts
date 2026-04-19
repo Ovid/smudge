@@ -21,7 +21,7 @@ import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
 import { buildAutoSnapshotLabel } from "../snapshots/labels";
-import type { SearchResult } from "@smudge/shared";
+import type { SearchResult, ReplaceResult } from "@smudge/shared";
 
 /**
  * Hard wall-clock budget for a single search/replace request. Bounds the
@@ -190,16 +190,7 @@ export async function replaceInProject(
   replace: string,
   options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
   scope?: { type: "project" } | { type: "chapter"; chapter_id: string; match_index?: number },
-): Promise<
-  | {
-      replaced_count: number;
-      affected_chapter_ids: string[];
-      skipped_chapter_ids?: string[];
-    }
-  | null
-  | "scope_not_found"
-  | SearchValidationError
-> {
+): Promise<ReplaceResult | null | "scope_not_found" | SearchValidationError> {
   // Validate regex up front
   const regexError = validatePattern(search, options);
   if (regexError) return regexError;
@@ -208,13 +199,8 @@ export async function replaceInProject(
   const project = await store.findProjectById(projectId);
   if (!project) return null;
 
-  type TxSuccess = {
-    replaced_count: number;
-    affected_chapter_ids: string[];
-    skipped_chapter_ids?: string[];
-  };
   const txResult = await store
-    .transaction<TxSuccess | "scope_not_found">(async (txStore) => {
+    .transaction<ReplaceResult | "scope_not_found">(async (txStore) => {
       // Get chapters to process
       let chapters: Array<{
         id: string;

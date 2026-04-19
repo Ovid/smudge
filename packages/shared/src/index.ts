@@ -58,4 +58,5 @@ export type {
   SnapshotRow,
   SnapshotListItem,
   SearchResult,
+  ReplaceResult,
 } from "./types";

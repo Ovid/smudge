@@ -116,3 +116,15 @@ export interface SearchResult {
   /** Chapter IDs skipped due to corrupt JSON content. Omitted when empty. */
   skipped_chapter_ids?: string[];
 }
+
+/**
+ * Response shape for POST /api/projects/:slug/replace. Shared so client
+ * and server declare the contract in one place; a new field added here
+ * is immediately visible to both sides at type-check time.
+ */
+export interface ReplaceResult {
+  replaced_count: number;
+  affected_chapter_ids: string[];
+  /** Chapter IDs skipped due to corrupt JSON content. Omitted when empty. */
+  skipped_chapter_ids?: string[];
+}
