@@ -101,7 +101,23 @@ Invoke the `paad:pushback` skill against the design document just created in `do
 
 After pushback completes, discuss the findings with the user and update the design document to address any valid concerns before moving on.
 
-## 7. Announce Completion
+## 7. CLAUDE.md Review
+
+Before announcing completion, evaluate whether `CLAUDE.md` needs updating to reflect this phase.
+
+Re-read `CLAUDE.md` with the final design in mind and check each section for drift:
+
+- **§Key Architecture Decisions** — does the phase introduce a new invariant, source-of-truth rule, or cross-cutting pattern that belongs here? (e.g. a new helper that codifies existing invariants should be referenced so future developers route through it.)
+- **§API Design** — new endpoints, new error codes, or a new shape for an error envelope?
+- **§Data Model** — new tables, new columns, or a change to soft-delete/UUID conventions?
+- **§Testing Philosophy** — a new test layer, fixture convention, or coverage requirement?
+- **§Target Project Structure** — a new top-level folder or package?
+- **§Accessibility / §Visual Design** — a new a11y primitive or visual token worth documenting at the root level?
+- **§Pull Request Scope** — does the phase reveal a new PR-scope hazard worth codifying?
+
+If any section needs updating, discuss the proposed change with the user and fold the `CLAUDE.md` edit into the design document as an explicit deliverable of the phase (a task in the plan, not an afterthought). If no section needs updating, state that explicitly so the check is visible.
+
+## 8. Announce Completion
 
 > **Roadmap updated.** Phase N: [Name] brainstormed → `docs/plans/[filename]`.
 > Next unplanned phase: Phase M: [Name] (or "all phases planned").
