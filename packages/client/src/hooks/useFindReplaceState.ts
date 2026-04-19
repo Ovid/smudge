@@ -122,6 +122,15 @@ export function useFindReplaceState(
     // for a search the user has clearly moved on from.
     searchAbortRef.current?.abort();
     searchAbortRef.current = null;
+    // Clear any pending debounced search; if the panel closes inside the
+    // 300ms debounce window, the timer would otherwise fire search(slug)
+    // after the panel was closed — bumping the seq again and writing a
+    // stale result set pinned to the pre-close query/options, visible on
+    // reopen.
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
   }, []);
 
   const toggleOption = useCallback((opt: "case_sensitive" | "whole_word" | "regex") => {

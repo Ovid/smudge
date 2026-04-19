@@ -74,6 +74,37 @@ describe("useFindReplaceState", () => {
     expect(result.current.panelOpen).toBe(false);
   });
 
+  it("closePanel cancels a pending debounce timer", async () => {
+    // If the panel closes inside the 300ms debounce window, the timer
+    // must not fire — otherwise search() runs after close, bumping the
+    // seq again and writing stale results pinned to the pre-close
+    // query/options that reappear when the user reopens the panel.
+    mockFind.mockResolvedValue({ total_count: 1, chapters: [] });
+
+    const { result } = renderHook(() => useFindReplaceState("my-project"));
+
+    act(() => {
+      result.current.togglePanel();
+      result.current.setQuery("foo");
+    });
+    // Advance less than the 300ms debounce — search not fired yet.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(mockFind).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.closePanel();
+    });
+
+    // Let any pending timer expire — it must be cancelled by closePanel.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(mockFind).not.toHaveBeenCalled();
+    expect(result.current.results).toBeNull();
+  });
+
   it("closePanel clears stale result state", async () => {
     mockFind.mockResolvedValue({
       total_count: 2,
