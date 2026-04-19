@@ -41,9 +41,15 @@ export async function getLatestContentHash(db: Knex, chapterId: string): Promise
   // snapshot taken right after an auto-snapshot (e.g. from restore or
   // find-and-replace) would silently return "duplicate" even though
   // the user's explicit intent was to create a new manual marker.
+  // Secondary `id DESC` order breaks ties when two manual snapshots share
+  // the same millisecond ISO timestamp — otherwise dedup would be
+  // nondeterministic under rapid scripted creates or test harness bursts.
   const row = await db(TABLE)
     .where({ chapter_id: chapterId, is_auto: false })
-    .orderBy("created_at", "desc")
+    .orderBy([
+      { column: "created_at", order: "desc" },
+      { column: "id", order: "desc" },
+    ])
     .select("content")
     .first();
   if (!row) return null;
