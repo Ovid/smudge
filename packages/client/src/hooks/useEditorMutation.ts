@@ -113,10 +113,23 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         }
         return { ok: true, data: directive.data };
       } finally {
-        if (!reloadFailed) {
-          editor?.setEditable(true);
-        }
+        // inFlightRef.current = false FIRST, then setEditable(true). If the
+        // TipTap instance is mid-remount, setEditable(true) can throw
+        // synchronously on the exit side just like it can on entry (see C1).
+        // If this throw hit the un-run `inFlightRef.current = false`, the
+        // busy latch would stay set for the session and every subsequent
+        // mutation would short-circuit as stage:"busy". Order matters.
         inFlightRef.current = false;
+        if (!reloadFailed) {
+          try {
+            editor?.setEditable(true);
+          } catch {
+            // Swallowing here keeps run()'s happy-path return value intact
+            // for the caller. The editor being non-editable after a
+            // successful mutation is a degraded but recoverable state —
+            // the next remount resets editable=true.
+          }
+        }
       }
     },
     [args.editorRef],

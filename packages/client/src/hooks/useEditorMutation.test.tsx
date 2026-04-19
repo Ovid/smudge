@@ -330,6 +330,38 @@ describe("useEditorMutation — synchronous setEditable throw (C1)", () => {
     }));
     expect(second).toEqual({ ok: true, data: undefined });
   });
+
+  it("releases inFlightRef when setEditable(true) in finally throws synchronously", async () => {
+    const { editorRef, projectEditor } = buildHandles();
+    const editor = editorRef.current!;
+    // setEditable(false) on entry is fine; setEditable(true) in finally throws
+    // once. Mirrors the TipTap mid-remount window on the exit side of the
+    // mutation — without the fix, inFlightRef latches for the session.
+    let callCount = 0;
+    editor.setEditable = vi.fn((editable: boolean) => {
+      callCount += 1;
+      if (editable && callCount === 2) {
+        throw new Error("editor destroyed on exit");
+      }
+    });
+
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+
+    const first = await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: false,
+      data: undefined,
+    }));
+    expect(first).toEqual({ ok: true, data: undefined });
+
+    // The latch must have cleared so a follow-up run is not rejected as busy.
+    const second = await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: false,
+      data: undefined,
+    }));
+    expect(second).toEqual({ ok: true, data: undefined });
+  });
 });
 
 describe("useEditorMutation — isBusy probe (I2)", () => {
