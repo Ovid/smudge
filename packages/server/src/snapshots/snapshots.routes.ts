@@ -137,9 +137,9 @@ export function snapshotDirectRouter(): Router {
         return;
       }
       if (result === "corrupt_snapshot") {
-        // CLAUDE.md restricts status codes to 200/201/400/404/500; treat
-        // corrupt content as a 400 validation error. Client distinguishes
-        // via code === "CORRUPT_SNAPSHOT".
+        // Malformed content is a 400 validation failure (the snapshot row
+        // itself is invalid, independent of any other resource state).
+        // Client distinguishes via code === "CORRUPT_SNAPSHOT".
         res.status(400).json({
           error: {
             code: SNAPSHOT_ERROR_CODES.CORRUPT_SNAPSHOT,
@@ -149,7 +149,10 @@ export function snapshotDirectRouter(): Router {
         return;
       }
       if (result === "cross_project_image") {
-        res.status(400).json({
+        // 409 per CLAUDE.md: request is well-formed but violates a
+        // constraint the client needs to resolve (move/re-upload the
+        // image, or pick a different snapshot). Not a validation error.
+        res.status(409).json({
           error: {
             code: SNAPSHOT_ERROR_CODES.CROSS_PROJECT_IMAGE_REF,
             message:
