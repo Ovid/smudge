@@ -286,109 +286,84 @@ export function EditorPage() {
       options: { case_sensitive: boolean; whole_word: boolean; regex: boolean };
     }) => {
       if (!project || !slug) return;
-      // Guard against overlapping replaces — a double-confirm or racing
-      // clicks from another path would otherwise launch parallel POSTs,
-      // each creating an auto-snapshot and remounting the editor.
-      if (replaceInFlightRef.current) return;
-      replaceInFlightRef.current = true;
-      // Disable the editor for the full round trip so typing during the
-      // in-flight replace cannot dirty it. Without this, a keystroke
-      // between markClean and the response would set dirtyRef=true, and
-      // the unmount cleanup fired by reloadActiveChapter would PATCH
-      // pre-replace content over the server's replaced content.
-      editorRef.current?.setEditable(false);
-      try {
-        const flushed = (await editorRef.current?.flushSave()) ?? true;
-        if (!flushed) {
-          // Attribute the failure to the save, not the replace.
-          setActionError(STRINGS.findReplace.replaceFailedSaveFirst);
-          return;
+
+      // Clear any stale success banner from a prior replace so an error on
+      // this one doesn't co-display with the old "Replaced N occurrences".
+      setActionInfo(null);
+
+      type ReplaceData = Awaited<ReturnType<typeof api.search.replace>>;
+
+      const result = await mutation.run<ReplaceData>(async () => {
+        const resp = await api.search.replace(
+          slug,
+          frozen.query,
+          frozen.replacement,
+          frozen.options,
+          frozen.scope,
+        );
+        // Read the CURRENT active chapter (not the closure value) so a
+        // chapter switch between click and response still reloads when the
+        // now-active chapter was affected.
+        const current = getActiveChapter();
+        const reload = !!current && resp.affected_chapter_ids.includes(current.id);
+        return {
+          clearCacheFor: resp.affected_chapter_ids,
+          reloadActiveChapter: reload,
+          data: resp,
+        };
+      });
+
+      if (result.ok) {
+        const resp = result.data;
+        await findReplace.search(slug);
+        snapshotPanelRef.current?.refreshSnapshots();
+        // Panel-handle refresh is a no-op when the snapshot panel is closed
+        // (ref is null). Replace-all just created N auto-snapshots, so drive
+        // the toolbar count directly via the hook.
+        refreshSnapshotCount();
+        // Always surface a positive success banner so the user can
+        // distinguish "did nothing because something went wrong" from
+        // "finished with no user-visible change". When chapters were
+        // skipped due to corrupt content, show the warning through the
+        // error banner as well — success and warning are distinct
+        // regions, not competing for the same slot.
+        setActionInfo(STRINGS.findReplace.replaceSuccess(resp.replaced_count));
+        if (resp.skipped_chapter_ids && resp.skipped_chapter_ids.length > 0) {
+          setActionError(STRINGS.findReplace.skippedAfterReplace(resp.skipped_chapter_ids.length));
         }
-        cancelPendingSaves();
-        // Mark the editor clean so the upcoming remount (from
-        // reloadActiveChapter after a successful replace) does not fire
-        // an unmount PATCH with pre-replace content that would clobber
-        // the just-committed replacement.
-        editorRef.current?.markClean();
-        setActionInfo(null);
-        try {
-          const result = await api.search.replace(
-            slug,
-            frozen.query,
-            frozen.replacement,
-            frozen.options,
-            frozen.scope,
-          );
-          // Purge the localStorage draft cache AFTER the server confirms the
-          // replace, scoped to the chapters the server actually mutated.
-          // Clearing pre-flight would wipe every draft in the project on a
-          // network blip; scoping to affected_chapter_ids protects unrelated
-          // chapters' drafts and still prevents a later chapter switch from
-          // overlaying pre-replace content on top of the server's replaced
-          // content. The editor is setEditable(false) for the full round
-          // trip, so the active chapter cannot accrue new cache writes in
-          // the interim.
-          if (result.affected_chapter_ids.length > 0) {
-            clearAllCachedContent(result.affected_chapter_ids);
-          }
-          // Read the CURRENT active chapter (not the closure value) so a
-          // chapter switch between click and response still reloads when the
-          // now-active chapter was affected.
-          const current = getActiveChapter();
-          let reloadFailed = false;
-          if (current && result.affected_chapter_ids.includes(current.id)) {
-            // Pass an onError callback so a transient GET failure here routes
-            // to the dismissible action banner, not the full-page error
-            // overlay — the replace itself already succeeded on the server.
-            const ok = await reloadActiveChapter(() => {
-              reloadFailed = true;
-            });
-            if (!ok) reloadFailed = true;
-          }
-          await findReplace.search(slug);
-          snapshotPanelRef.current?.refreshSnapshots();
-          // Panel-handle refresh is a no-op when the snapshot panel is
-          // closed (ref is null). Replace-all just created N auto-snapshots,
-          // so drive the toolbar count directly via the hook.
-          refreshSnapshotCount();
-          // Always surface a positive success banner so the user can
-          // distinguish "did nothing because something went wrong" from
-          // "finished with no user-visible change". When chapters were
-          // skipped due to corrupt content, show the warning through the
-          // error banner as well — success and warning are distinct
-          // regions, not competing for the same slot.
-          setActionInfo(STRINGS.findReplace.replaceSuccess(result.replaced_count));
-          if (reloadFailed) {
-            setActionError(STRINGS.findReplace.replaceSucceededReloadFailed);
-          } else if (result.skipped_chapter_ids && result.skipped_chapter_ids.length > 0) {
-            setActionError(
-              STRINGS.findReplace.skippedAfterReplace(result.skipped_chapter_ids.length),
-            );
-          }
-        } catch (err) {
-          const msg = mapReplaceErrorToMessage(err);
-          if (msg) setActionError(msg);
-        }
-      } finally {
-        // Re-enable editing. If reloadActiveChapter caused a remount,
-        // the old editor instance is destroyed; the handle now points at
-        // a fresh editable editor and this is a no-op. If no remount
-        // occurred (replace did not affect the active chapter), we need
-        // to re-enable so the user can continue typing.
-        editorRef.current?.setEditable(true);
-        replaceInFlightRef.current = false;
+        return;
       }
+
+      if (result.stage === "busy") return;
+      if (result.stage === "flush") {
+        // Attribute the failure to the save, not the replace.
+        setActionError(STRINGS.findReplace.replaceFailedSaveFirst);
+        return;
+      }
+      if (result.stage === "reload") {
+        // Server-side replace succeeded; only the follow-up GET failed.
+        // result.data carries the ReplaceResponse so we can show the real
+        // replaced_count alongside the "reload failed" banner.
+        await findReplace.search(slug);
+        snapshotPanelRef.current?.refreshSnapshots();
+        refreshSnapshotCount();
+        setActionInfo(STRINGS.findReplace.replaceSuccess(result.data.replaced_count));
+        setActionError(STRINGS.findReplace.replaceSucceededReloadFailed);
+        return;
+      }
+      // stage === "mutate"
+      const msg = mapReplaceErrorToMessage(result.error);
+      if (msg) setActionError(msg);
     },
     [
       project,
       slug,
       findReplace,
-      reloadActiveChapter,
       snapshotPanelRef,
       refreshSnapshotCount,
       getActiveChapter,
       setActionError,
-      cancelPendingSaves,
+      mutation,
     ],
   );
 
