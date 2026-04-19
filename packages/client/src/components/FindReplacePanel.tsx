@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { STRINGS } from "../strings";
 import {
   CONTEXT_RADIUS,
@@ -69,6 +69,15 @@ export function FindReplacePanel({
 }: FindReplacePanelProps) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const prevIsOpen = useRef(isOpen);
+  // See SnapshotPanel for the identical rationale: panel-exclusivity
+  // closes (parent opens a sibling panel) must NOT refocus the trigger,
+  // since the sibling is about to acquire focus. Only user-initiated
+  // closes (Escape / Close button) should restore focus to the trigger.
+  const closedByUserRef = useRef(false);
+  const handleUserClose = useCallback(() => {
+    closedByUserRef.current = true;
+    onClose();
+  }, [onClose]);
 
   // Focus management
   useEffect(() => {
@@ -81,8 +90,10 @@ export function FindReplacePanel({
       return () => cancelAnimationFrame(raf);
     }
     if (!isOpen && prevIsOpen.current && triggerRef?.current) {
-      // Panel just closed — return focus to trigger
-      triggerRef.current.focus();
+      if (closedByUserRef.current) {
+        triggerRef.current.focus();
+      }
+      closedByUserRef.current = false;
     }
     prevIsOpen.current = isOpen;
   }, [isOpen, triggerRef]);
@@ -92,6 +103,7 @@ export function FindReplacePanel({
     if (!isOpen) return;
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
+        closedByUserRef.current = true;
         onClose();
       }
     }
@@ -113,7 +125,7 @@ export function FindReplacePanel({
         <h2 className="text-sm font-semibold text-text-primary font-sans">{S.panelTitle}</h2>
         <button
           type="button"
-          onClick={onClose}
+          onClick={handleUserClose}
           aria-label={S.closeLabel}
           className="text-text-secondary hover:text-text-primary transition-colors font-sans text-lg leading-none"
         >

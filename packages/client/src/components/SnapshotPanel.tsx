@@ -72,6 +72,13 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
     const [viewError, setViewError] = useState<string | null>(null);
     const panelRef = useRef<HTMLElement>(null);
     const prevIsOpen = useRef(isOpen);
+    // Distinguishes "user pressed Escape / clicked Close" from
+    // "parent closed us because another panel opened". Panel-exclusivity
+    // closes should NOT return focus to this panel's trigger — the sibling
+    // panel is about to acquire focus, and racing a focus() call against
+    // its focus-acquire produces visible flicker and can land focus on the
+    // wrong element for keyboard users.
+    const closedByUserRef = useRef(false);
     // Guards async list responses against rapid chapter switches: every
     // chapter change bumps the seq, and stale resolutions check before
     // calling setSnapshots. Without this, the imperative refreshSnapshots()
@@ -130,8 +137,14 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         return () => cancelAnimationFrame(raf);
       }
       if (!isOpen && prevIsOpen.current && triggerRef?.current) {
-        // Panel just closed — return focus to trigger
-        triggerRef.current.focus();
+        // Panel just closed — return focus to trigger ONLY when the
+        // close was a user action (Escape / Close button). When the
+        // parent closed us for panel exclusivity, another panel is
+        // about to take focus and we must not race it.
+        if (closedByUserRef.current) {
+          triggerRef.current.focus();
+        }
+        closedByUserRef.current = false;
       }
       prevIsOpen.current = isOpen;
     }, [isOpen, triggerRef]);
@@ -141,6 +154,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
       if (!isOpen) return;
       function handleKeyDown(e: KeyboardEvent) {
         if (e.key === "Escape") {
+          closedByUserRef.current = true;
           onClose();
         }
       }
