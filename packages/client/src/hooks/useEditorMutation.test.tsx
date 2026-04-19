@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import type { MutableRefObject } from "react";
 import type { EditorHandle } from "../components/Editor";
-import { useEditorMutation } from "../hooks/useEditorMutation";
+import {
+  useEditorMutation,
+  type MutationDirective,
+} from "../hooks/useEditorMutation";
+import { clearAllCachedContent } from "./useContentCache";
 
 vi.mock("./useContentCache", () => ({
   clearAllCachedContent: vi.fn(),
@@ -37,12 +41,6 @@ function buildHandles() {
   return { calls, editor, editorRef, projectEditor };
 }
 
-describe("useEditorMutation", () => {
-  it("exports a hook", () => {
-    expect(typeof useEditorMutation).toBe("function");
-  });
-});
-
 describe("useEditorMutation — happy path", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -50,7 +48,6 @@ describe("useEditorMutation — happy path", () => {
 
   it("runs steps in the required order", async () => {
     const { calls, editorRef, projectEditor } = buildHandles();
-    const { clearAllCachedContent } = await import("./useContentCache");
     const { result } = renderHook(() =>
       useEditorMutation({ editorRef, projectEditor }),
     );
@@ -93,7 +90,6 @@ describe("useEditorMutation — happy path", () => {
 
   it("skips clearAllCachedContent when directive.clearCacheFor is empty", async () => {
     const { editorRef, projectEditor } = buildHandles();
-    const { clearAllCachedContent } = await import("./useContentCache");
     const { result } = renderHook(() =>
       useEditorMutation({ editorRef, projectEditor }),
     );
@@ -136,13 +132,12 @@ describe("useEditorMutation — flush failure", () => {
     editorRef.current!.flushSave = vi.fn(async () => {
       throw new Error("boom");
     });
-    const mutate = vi.fn();
-    const { clearAllCachedContent } = await import("./useContentCache");
+    const mutate = vi.fn<() => Promise<MutationDirective<void>>>();
 
     const { result } = renderHook(() =>
       useEditorMutation({ editorRef, projectEditor }),
     );
-    const res = await result.current.run(mutate as never);
+    const res = await result.current.run(mutate);
 
     expect(res).toEqual({
       ok: false,
@@ -163,7 +158,6 @@ describe("useEditorMutation — mutate failure", () => {
 
   it("returns stage 'mutate' on throw and skips cache/reload", async () => {
     const { editorRef, projectEditor } = buildHandles();
-    const { clearAllCachedContent } = await import("./useContentCache");
 
     const { result } = renderHook(() =>
       useEditorMutation({ editorRef, projectEditor }),
@@ -213,7 +207,6 @@ describe("useEditorMutation — reload failure", () => {
     });
     expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(true);
     // cache-clear still happened — server committed the mutation
-    const { clearAllCachedContent } = await import("./useContentCache");
     expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["c1"]);
   });
 
@@ -247,7 +240,6 @@ describe("useEditorMutation — busy guard", () => {
 
   it("rejects overlapping run with stage 'busy' and no side effects", async () => {
     const { editorRef, projectEditor } = buildHandles();
-    const { clearAllCachedContent } = await import("./useContentCache");
 
     let resolveMutate: () => void = () => {};
     const blockingMutate = () =>
@@ -298,7 +290,6 @@ describe("useEditorMutation — null editor ref", () => {
   it("runs mutate, cache-clear, and reload when editorRef.current is null", async () => {
     const { projectEditor } = buildHandles();
     const editorRef: MutableRefObject<EditorHandle | null> = { current: null };
-    const { clearAllCachedContent } = await import("./useContentCache");
     const { result } = renderHook(() =>
       useEditorMutation({ editorRef, projectEditor }),
     );
