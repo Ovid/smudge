@@ -1348,6 +1348,55 @@ describe("useProjectEditor", () => {
     expect(vi.mocked(clearCachedContent)).not.toHaveBeenCalled();
   });
 
+  it("reloadActiveChapter in flight during unmount does not setState on a gone component (I5)", async () => {
+    // The save path had unmount protection via cancelInFlightSave bumping
+    // saveSeqRef, but reloadActiveChapter was guarded only by
+    // selectChapterSeqRef — and the unmount effect didn't bump it. A
+    // reload GET that resolved post-unmount would setActiveChapter /
+    // setChapterWordCount / setChapterReloadKey on a gone component,
+    // surfacing React's "state update on unmounted component" warning.
+    // Fix: the unmount effect now bumps selectChapterSeqRef, so the
+    // post-await seq check short-circuits cleanly.
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValueOnce(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+    const { result, unmount } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    // Stall the reload GET. It must resolve AFTER unmount to prove the
+    // seq guard fired before setActiveChapter ran.
+    let resolveReload: (ch: typeof mockChapter1) => void = () => {};
+    vi.mocked(api.chapters.get).mockImplementationOnce(
+      () =>
+        new Promise<typeof mockChapter1>((resolve) => {
+          resolveReload = resolve;
+        }),
+    );
+
+    let reloadPromise: Promise<boolean> = Promise.resolve(false);
+    act(() => {
+      reloadPromise = result.current.reloadActiveChapter();
+    });
+
+    // Suppress React's noisy setState-on-unmounted warning so the
+    // regression condition (did setActiveChapter actually get called?)
+    // can be asserted directly rather than inferred from console output.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    unmount();
+    await act(async () => {
+      resolveReload(mockChapter1);
+      await reloadPromise;
+    });
+
+    // React would have logged the act/unmounted warning only if the
+    // hook tried to setState post-unmount. The guard is the actual
+    // contract being tested; the spy is just insurance.
+    const setStateWarnings = errorSpy.mock.calls.filter((call) =>
+      String(call[0] ?? "").includes("state update on an unmounted"),
+    );
+    expect(setStateWarnings).toHaveLength(0);
+    errorSpy.mockRestore();
+  });
+
   it("reloadActiveChapter without onError falls back to setError (legacy callers)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);

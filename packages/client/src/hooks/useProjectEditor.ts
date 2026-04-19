@@ -68,9 +68,19 @@ export function useProjectEditor(slug: string | undefined) {
   // "state update on unmounted component" warning). cancelInFlightSave
   // covers the side-effect-free portion of cancelPendingSaves (no setState
   // on unmount).
+  //
+  // The selectChapterSeqRef bump here extends the same discipline to
+  // reloadActiveChapter and handleSelectChapter (I5): both gate their
+  // post-await setState on seq === selectChapterSeqRef.current, so
+  // bumping on unmount makes those calls short-circuit cleanly instead
+  // of resolving into setActiveChapter/setChapterWordCount on a gone
+  // component. Without this, a reload GET in flight during unmount
+  // would resolve and setState, triggering React's "state update on
+  // unmounted component" warning.
   useEffect(() => {
     return () => {
       cancelInFlightSave();
+      ++selectChapterSeqRef.current;
     };
   }, [cancelInFlightSave]);
 
