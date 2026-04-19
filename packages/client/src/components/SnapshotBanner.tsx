@@ -29,11 +29,17 @@ export function SnapshotBanner({ label, date, onRestore, onBack }: SnapshotBanne
 
   return (
     <>
+      {/*
+        role="region" on the outer container; the live-region role moves
+        onto the <p> so screen readers announce only the banner text on
+        update — not the restore/back buttons that live alongside it.
+      */}
       <div
-        role="status"
+        role="region"
+        aria-label={S.viewingRegionLabel}
         className="bg-amber-50 border-b border-amber-200 px-6 py-2.5 flex items-center justify-between"
       >
-        <p className="text-sm text-amber-900 font-sans">
+        <p role="status" className="text-sm text-amber-900 font-sans">
           {S.viewingBanner(displayLabel, displayDate)}
         </p>
         <div className="flex items-center gap-3">

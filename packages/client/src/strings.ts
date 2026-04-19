@@ -292,6 +292,7 @@ export const STRINGS = {
     renderError: "Unable to render snapshot content",
     backToEditing: "Back to editing",
     viewingBanner: (label: string, date: string) => `Viewing snapshot: ${label} — ${date}`,
+    viewingRegionLabel: "Snapshot viewing banner",
     emptyState: "No snapshots yet. Create one to save a checkpoint of your work.",
     count: (manual: number, auto: number) =>
       `${manual + auto} snapshots (${manual} manual, ${auto} auto)`,
