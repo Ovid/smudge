@@ -1275,6 +1275,46 @@ describe("EditorPage find-and-replace confirmation", () => {
     expect(screen.queryByText(/Something specific broke/)).toBeNull();
   });
 
+  it("handleReplaceOne on project-gone 404 does not re-fire a search (I4)", async () => {
+    // A bare 404 from api.search.replace can mean either the chapter scope
+    // is gone (SCOPE_NOT_FOUND — re-searching correctly drops the stale
+    // match row) or the project itself is gone (NOT_FOUND — re-searching
+    // will 404 again and overwrite the project-gone banner). Gate the
+    // re-search on the SCOPE_NOT_FOUND code; otherwise leave it alone.
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("project missing", 404, "NOT_FOUND"),
+    );
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
+    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+
+    const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
+    // Initial search (debounced from the Find input change) fires exactly
+    // once before the user clicks — snapshot its call count to compare
+    // against the post-click count.
+    await waitFor(() => expect(api.search.find).toHaveBeenCalled());
+    const findCallsBeforeClick = vi.mocked(api.search.find).mock.calls.length;
+
+    await userEvent.click(replaceOne[0]!);
+
+    await waitFor(() => {
+      expect(screen.getByText(STRINGS.findReplace.replaceProjectNotFound)).toBeInTheDocument();
+    });
+
+    // No additional search fired on the project-gone 404 path.
+    expect(vi.mocked(api.search.find).mock.calls.length).toBe(findCallsBeforeClick);
+  });
+
   it("handleReplaceOne surfaces MATCH_CAP_EXCEEDED with tooManyMatches copy", async () => {
     const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
