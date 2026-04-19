@@ -1,6 +1,6 @@
 import { useRef, useCallback, useMemo, type MutableRefObject } from "react";
 import type { EditorHandle } from "../components/Editor";
-import type { useProjectEditor } from "./useProjectEditor";
+import type { UseProjectEditorReturn } from "./useProjectEditor";
 import { clearAllCachedContent } from "./useContentCache";
 
 export type MutationStage = "flush" | "mutate" | "reload" | "busy";
@@ -31,10 +31,7 @@ export type MutationResult<T = void> =
 
 export type UseEditorMutationArgs = {
   editorRef: MutableRefObject<EditorHandle | null>;
-  projectEditor: Pick<
-    ReturnType<typeof useProjectEditor>,
-    "cancelPendingSaves" | "reloadActiveChapter"
-  >;
+  projectEditor: Pick<UseProjectEditorReturn, "cancelPendingSaves" | "reloadActiveChapter">;
   // Optional predicate the hook consults before re-enabling the editor in
   // its finally block. When a prior run ended in stage:"reload" the caller
   // (EditorPage) shows a persistent "refresh the page" banner — the editor

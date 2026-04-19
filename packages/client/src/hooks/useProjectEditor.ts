@@ -602,3 +602,11 @@ export function useProjectEditor(slug: string | undefined) {
     },
   };
 }
+
+// Explicit return-type alias for cross-file consumers (useEditorMutation).
+// Extracting it here lets callers `import type { UseProjectEditorReturn }`
+// and `Pick<UseProjectEditorReturn, "cancelPendingSaves" | …>` without
+// referencing `ReturnType<typeof useProjectEditor>` from a type-only
+// import — the typeof form compiles under verbatimModuleSyntax, but an
+// explicit alias is plainly a type and survives any future config change.
+export type UseProjectEditorReturn = ReturnType<typeof useProjectEditor>;
