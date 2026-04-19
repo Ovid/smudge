@@ -262,15 +262,14 @@ export function assertSafeRegexPattern(pattern: string): void {
   // (e.g. `\w+\s+\w+`, `\d+\s+`). Disjoint atoms cannot both consume the
   // same char, so the polynomial-backtracking path is unreachable.
   //
-  // We strip character-class contents first so quantifiers inside `[...]`
-  // (which are literal) don't trip the scan.
-  const withoutCharClasses = pattern.replace(/\[[^\]]*\]/g, "[]");
-  // Matches: atom-then-quant, another-atom-then-quant, in sequence. Capture
-  // each atom so we can test for provable disjointness below.
-  // atom = escaped char | . | \w | \s | \d | (...) | [] | bare char
+  // Character classes (`[...]`) are matched as first-class atoms below so
+  // the disjointness check can reason about them — e.g. `[A-Z]+[a-z]+`
+  // is provably safe, and the previous strip-to-`[]` strategy was
+  // rejecting it with a spurious "adjacent unbounded quantifiers" error.
+  // Bare chars exclude `[` and `]` so they don't swallow class brackets.
   const adjacentUnboundedQuantifier =
-    /(\\.|\[\]|\([^()]*\)|[^\\(){}|])(?:[+*]|\{\d+,\d*\})(\\.|\[\]|\([^()]*\)|[^\\(){}|])(?:[+*]|\{\d+,\d*\})/g;
-  for (const m of withoutCharClasses.matchAll(adjacentUnboundedQuantifier)) {
+    /(\\.|\[[^\]]*\]|\([^()]*\)|[^\\(){}|[\]])(?:[+*]|\{\d+,\d*\})(\\.|\[[^\]]*\]|\([^()]*\)|[^\\(){}|[\]])(?:[+*]|\{\d+,\d*\})/g;
+  for (const m of pattern.matchAll(adjacentUnboundedQuantifier)) {
     const [, a1, a2] = m;
     if (a1 === undefined || a2 === undefined) continue;
     if (!areAtomsProvablyDisjoint(a1, a2)) {
@@ -282,47 +281,144 @@ export function assertSafeRegexPattern(pattern: string): void {
 }
 
 /**
- * Returns true when two regex atoms match disjoint character sets — i.e.,
- * no single character can be consumed by both. When this holds, adjacent
- * unbounded quantifiers on the two atoms cannot produce the exponential
- * distribution path that the safety check guards against. False is
- * conservative: unknown atoms fall through to the "potentially unsafe"
- * branch.
+ * Returns true when two regex atoms match disjoint ASCII character sets —
+ * i.e., no single character can be consumed by both. When this holds,
+ * adjacent unbounded quantifiers on the two atoms cannot produce the
+ * exponential distribution path that the safety check guards against.
  *
- * Handles the shorthand character classes `\d`, `\D`, `\w`, `\W`, `\s`,
- * `\S`. Literal character-class ranges (e.g. `[A-Z]+[a-z]+`) are stripped
- * to `[]` by the caller and thus treated as unknown — a documented
- * follow-up limitation.
+ * Handles the shorthand classes `\d`, `\D`, `\w`, `\W`, `\s`, `\S`,
+ * single-character literals, and custom character classes `[...]` (with
+ * ranges like `A-Z`, nested shorthands, negation via `^`). Non-ASCII
+ * content or unrecognized constructs fall through to "unknown" (false),
+ * which is the conservative answer.
  */
 function areAtomsProvablyDisjoint(atomA: string, atomB: string): boolean {
-  const ca = shorthandClass(atomA);
-  const cb = shorthandClass(atomB);
-  if (ca === null || cb === null) return false;
-  // Complement pairs and the provably-disjoint cross-family pairs.
-  const key = [ca, cb].sort().join(",");
-  // Complements: d/D, w/W, s/S.
-  // Cross-family: \d is disjoint with \s and \W (digits ⊂ \w, so digits ∩ non-word = ∅).
-  //               \w is disjoint with \s (word chars are [A-Za-z0-9_], no whitespace).
-  //               \s is disjoint with \d and \w (mirror of the above).
-  // Deliberately NOT listed (not disjoint): \w ∩ \D = letters+underscore ≠ ∅,
-  // \s ∩ \D = \s, \s ∩ \W = \s.
-  return (
-    key === "D,d" ||
-    key === "W,w" ||
-    key === "S,s" ||
-    key === "d,s" ||
-    key === "W,d" ||
-    key === "s,w"
-  );
+  const a = atomToCharSet(atomA);
+  const b = atomToCharSet(atomB);
+  if (a === null || b === null) return false;
+  const [small, big] = a.size <= b.size ? [a, b] : [b, a];
+  for (const k of small) if (big.has(k)) return false;
+  return true;
 }
 
-function shorthandClass(atom: string): "d" | "D" | "w" | "W" | "s" | "S" | null {
-  if (atom === "\\d") return "d";
-  if (atom === "\\D") return "D";
-  if (atom === "\\w") return "w";
-  if (atom === "\\W") return "W";
-  if (atom === "\\s") return "s";
-  if (atom === "\\S") return "S";
+const ASCII_MAX = 128;
+
+function shorthandCharSet(letter: string): Set<number> | null {
+  const s = new Set<number>();
+  if (letter === "d") {
+    for (let i = 0x30; i <= 0x39; i++) s.add(i);
+    return s;
+  }
+  if (letter === "D") {
+    for (let i = 0; i < ASCII_MAX; i++) if (i < 0x30 || i > 0x39) s.add(i);
+    return s;
+  }
+  if (letter === "s") {
+    for (const c of [0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20]) s.add(c);
+    return s;
+  }
+  if (letter === "S") {
+    for (let i = 0; i < ASCII_MAX; i++) s.add(i);
+    for (const c of [0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20]) s.delete(c);
+    return s;
+  }
+  if (letter === "w") {
+    for (let i = 0x30; i <= 0x39; i++) s.add(i);
+    for (let i = 0x41; i <= 0x5a; i++) s.add(i);
+    for (let i = 0x61; i <= 0x7a; i++) s.add(i);
+    s.add(0x5f);
+    return s;
+  }
+  if (letter === "W") {
+    for (let i = 0; i < ASCII_MAX; i++) s.add(i);
+    for (let i = 0x30; i <= 0x39; i++) s.delete(i);
+    for (let i = 0x41; i <= 0x5a; i++) s.delete(i);
+    for (let i = 0x61; i <= 0x7a; i++) s.delete(i);
+    s.delete(0x5f);
+    return s;
+  }
+  return null;
+}
+
+const SIMPLE_ESCAPE_CODES: Record<string, number> = {
+  n: 0x0a,
+  r: 0x0d,
+  t: 0x09,
+  f: 0x0c,
+  v: 0x0b,
+  "0": 0x00,
+};
+
+function charClassToCharSet(contents: string): Set<number> | null {
+  let negate = false;
+  let i = 0;
+  if (contents[0] === "^") {
+    negate = true;
+    i = 1;
+  }
+  const set = new Set<number>();
+  while (i < contents.length) {
+    const c = contents[i]!;
+    if (c === "\\") {
+      const esc = contents[i + 1];
+      if (esc === undefined) return null;
+      const shorthand = shorthandCharSet(esc);
+      if (shorthand) {
+        for (const k of shorthand) set.add(k);
+      } else if (esc in SIMPLE_ESCAPE_CODES) {
+        set.add(SIMPLE_ESCAPE_CODES[esc]!);
+      } else {
+        const code = esc.charCodeAt(0);
+        if (code >= ASCII_MAX) return null;
+        set.add(code);
+      }
+      i += 2;
+      continue;
+    }
+    if (i + 2 < contents.length && contents[i + 1] === "-" && contents[i + 2] !== "]") {
+      // Range. `\X-Y` or `X-\Y` are rare and not supported by this heuristic.
+      const next = contents[i + 2]!;
+      if (next === "\\") return null;
+      const startCode = c.charCodeAt(0);
+      const endCode = next.charCodeAt(0);
+      if (startCode >= ASCII_MAX || endCode >= ASCII_MAX || startCode > endCode) return null;
+      for (let k = startCode; k <= endCode; k++) set.add(k);
+      i += 3;
+      continue;
+    }
+    const code = c.charCodeAt(0);
+    if (code >= ASCII_MAX) return null;
+    set.add(code);
+    i++;
+  }
+  if (negate) {
+    const complement = new Set<number>();
+    for (let k = 0; k < ASCII_MAX; k++) if (!set.has(k)) complement.add(k);
+    return complement;
+  }
+  return set;
+}
+
+function atomToCharSet(atom: string): Set<number> | null {
+  if (atom.length === 2 && atom[0] === "\\") {
+    const esc = atom[1]!;
+    const shorthand = shorthandCharSet(esc);
+    if (shorthand) return shorthand;
+    if (esc in SIMPLE_ESCAPE_CODES) return new Set([SIMPLE_ESCAPE_CODES[esc]!]);
+    const code = esc.charCodeAt(0);
+    if (code >= ASCII_MAX) return null;
+    return new Set([code]);
+  }
+  if (atom.startsWith("[") && atom.endsWith("]")) {
+    return charClassToCharSet(atom.slice(1, -1));
+  }
+  if (atom.startsWith("(")) return null;
+  if (atom === ".") return null;
+  if (atom.length === 1) {
+    const code = atom.charCodeAt(0);
+    if (code >= ASCII_MAX) return null;
+    return new Set([code]);
+  }
   return null;
 }
 

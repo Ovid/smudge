@@ -596,6 +596,24 @@ describe("assertSafeRegexPattern", () => {
     // \s ⊂ \D (whitespace is non-digit), so not disjoint.
     expect(() => assertSafeRegexPattern("\\s+\\D+")).toThrow(/adjacent unbounded quantifier/i);
   });
+
+  it("accepts adjacent quantifiers on provably-disjoint custom character classes", () => {
+    // Previously these were stripped to `[]` by the pre-scan and rejected
+    // with a spurious "adjacent unbounded quantifiers" error. Users running
+    // plain tokenization patterns now get through.
+    expect(() => assertSafeRegexPattern("[A-Z]+[a-z]+")).not.toThrow();
+    expect(() => assertSafeRegexPattern("[A-Z]{2,}[a-z]+")).not.toThrow();
+    expect(() => assertSafeRegexPattern("[a-z]+\\s+")).not.toThrow();
+    expect(() => assertSafeRegexPattern("[0-9]+[a-z]+")).not.toThrow();
+    expect(() => assertSafeRegexPattern("[^a-z]+[a-z]+")).not.toThrow();
+  });
+
+  it("still rejects adjacent quantifiers on overlapping custom character classes", () => {
+    // Overlapping ranges can redistribute characters across both atoms.
+    expect(() => assertSafeRegexPattern("[a-z]+[a-f]+")).toThrow(/adjacent unbounded quantifier/i);
+    expect(() => assertSafeRegexPattern("[A-Z]+[M-Z]+")).toThrow(/adjacent unbounded quantifier/i);
+    expect(() => assertSafeRegexPattern("[a-c]+[b-d]+")).toThrow(/adjacent unbounded quantifier/i);
+  });
 });
 
 describe("replaceInDoc match_index bypasses match cap (I3)", () => {
