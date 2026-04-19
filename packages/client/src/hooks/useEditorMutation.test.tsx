@@ -314,3 +314,43 @@ describe("useEditorMutation — null editor ref", () => {
     expect(projectEditor.reloadActiveChapter).toHaveBeenCalled();
   });
 });
+
+describe("useEditorMutation — latest-ref pattern", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("calls the latest projectEditor methods even when parent re-renders with new identities", async () => {
+    const { editorRef } = buildHandles();
+
+    const firstCancel = vi.fn();
+    const firstReload = vi.fn(async () => true);
+    const secondCancel = vi.fn();
+    const secondReload = vi.fn(async () => true);
+
+    const { result, rerender } = renderHook(
+      (props: { cancel: () => void; reload: () => Promise<boolean> }) =>
+        useEditorMutation({
+          editorRef,
+          projectEditor: {
+            cancelPendingSaves: props.cancel,
+            reloadActiveChapter: props.reload,
+          },
+        }),
+      { initialProps: { cancel: firstCancel, reload: firstReload } },
+    );
+
+    rerender({ cancel: secondCancel, reload: secondReload });
+
+    await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: true,
+      data: undefined,
+    }));
+
+    expect(firstCancel).not.toHaveBeenCalled();
+    expect(firstReload).not.toHaveBeenCalled();
+    expect(secondCancel).toHaveBeenCalled();
+    expect(secondReload).toHaveBeenCalled();
+  });
+});
