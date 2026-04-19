@@ -336,6 +336,8 @@ export const STRINGS = {
       "Unable to save pending changes. Try again once your connection recovers before replacing.",
     replaceSucceededReloadFailed:
       "Replace succeeded, but reloading the chapter failed. Refresh the page before editing — editing now would overwrite the replacement.",
+    replaceResponseUnreadable:
+      "The replace may have completed, but the server response was unreadable. Refresh the page to see the current state before retrying — retrying without refreshing could replace twice.",
     replaceScopeNotFound: "The chapter for this replace is no longer available.",
     replaceProjectNotFound: "This project is no longer available.",
     searchScopeNotFound: "This project is no longer available.",

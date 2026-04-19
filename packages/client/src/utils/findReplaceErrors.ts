@@ -13,6 +13,15 @@ export function mapReplaceErrorToMessage(err: unknown): string | null {
     return STRINGS.findReplace.replaceFailed;
   }
   if (err.code === "ABORTED") return null;
+  // BAD_JSON on a 2xx response means the server likely committed the
+  // replace (and the auto-snapshot) but the body was unparseable
+  // mid-stream. Falling through to the generic "replace failed" copy
+  // would invite a retry that double-replaces. Tell the user to refresh
+  // and verify state before retrying. Only the 2xx case is ambiguous;
+  // a non-2xx body parse failure means the request truly failed.
+  if (err.code === "BAD_JSON" && err.status >= 200 && err.status < 300) {
+    return STRINGS.findReplace.replaceResponseUnreadable;
+  }
   if (err.status === 400) {
     if (err.code === SEARCH_ERROR_CODES.MATCH_CAP_EXCEEDED)
       return STRINGS.findReplace.tooManyMatches;

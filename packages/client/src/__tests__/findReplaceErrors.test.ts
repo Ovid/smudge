@@ -63,6 +63,21 @@ describe("mapReplaceErrorToMessage", () => {
     expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceFailed);
   });
 
+  it("maps BAD_JSON on a 2xx to replaceResponseUnreadable (S4)", () => {
+    // Server-side replace likely committed; falling through to the generic
+    // replaceFailed would invite a retry that double-replaces.
+    const err = new ApiRequestError("Unexpected token", 200, "BAD_JSON");
+    expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceResponseUnreadable);
+  });
+
+  it("does NOT map BAD_JSON on a non-2xx to replaceResponseUnreadable", () => {
+    // A 5xx with an unparseable body really did fail server-side; falling
+    // through to the generic replaceFailed copy is correct here — the
+    // ambiguous-commit copy is only honest for the 2xx case.
+    const err = new ApiRequestError("oops", 500, "BAD_JSON");
+    expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceFailed);
+  });
+
   it("falls back to replaceFailed when err.message is empty", () => {
     const err = new ApiRequestError("", 500);
     expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceFailed);
