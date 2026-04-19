@@ -296,6 +296,42 @@ describe("useEditorMutation — busy guard", () => {
   });
 });
 
+describe("useEditorMutation — synchronous setEditable throw (C1)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("releases inFlightRef when setEditable(false) throws synchronously", async () => {
+    const { editorRef, projectEditor } = buildHandles();
+    const editor = editorRef.current!;
+    let throwOnce = true;
+    editor.setEditable = vi.fn((_editable: boolean) => {
+      if (throwOnce) {
+        throwOnce = false;
+        throw new Error("editor destroyed");
+      }
+    });
+
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+
+    await expect(
+      result.current.run(async () => ({
+        clearCacheFor: [],
+        reloadActiveChapter: false,
+        data: undefined,
+      })),
+    ).rejects.toThrow();
+
+    // The latch must have cleared so a follow-up run is not rejected as busy.
+    const second = await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: false,
+      data: undefined,
+    }));
+    expect(second).toEqual({ ok: true, data: undefined });
+  });
+});
+
 describe("useEditorMutation — null editor ref", () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -50,9 +50,6 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
       if (inFlightRef.current) {
         return { ok: false, stage: "busy" };
       }
-      inFlightRef.current = true;
-      const editor = args.editorRef.current;
-      editor?.setEditable(false);
       // Track the reload-failure path explicitly: we must NOT re-enable the
       // editor in that case. By the time reload fails, markClean() has run
       // and the cache has been cleared, but the TipTap document still shows
@@ -61,7 +58,14 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
       // server-side replace/restore. Keep the editor read-only and surface
       // a banner directing the user to refresh.
       let reloadFailed = false;
+      const editor = args.editorRef.current;
+      // Setting inFlightRef and setEditable inside the try ensures the
+      // finally clears inFlightRef even if setEditable throws synchronously
+      // (e.g. TipTap mid-remount). Otherwise the busy guard latches for the
+      // rest of the session.
       try {
+        inFlightRef.current = true;
+        editor?.setEditable(false);
         try {
           const flushed = await editor?.flushSave();
           if (flushed === false) {
