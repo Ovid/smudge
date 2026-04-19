@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, type MutableRefObject } from "react";
+import { useRef, useCallback, useMemo, type MutableRefObject } from "react";
 import type { EditorHandle } from "../components/Editor";
 import type { useProjectEditor } from "./useProjectEditor";
 import { clearAllCachedContent } from "./useContentCache";
@@ -30,10 +30,12 @@ export type UseEditorMutationReturn = {
 };
 
 export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutationReturn {
+  // Assign the latest-ref during render (matches useKeyboardShortcuts.ts).
+  // A useEffect update would leave a commit-window where `run()` dispatched
+  // from a freshly-rendered handler could still see the prior identities of
+  // cancelPendingSaves/reloadActiveChapter.
   const projectEditorRef = useRef(args.projectEditor);
-  useEffect(() => {
-    projectEditorRef.current = args.projectEditor;
-  });
+  projectEditorRef.current = args.projectEditor;
 
   const inFlightRef = useRef(false);
 
@@ -92,5 +94,5 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
     [args.editorRef],
   );
 
-  return { run };
+  return useMemo(() => ({ run }), [run]);
 }
