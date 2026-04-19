@@ -29,6 +29,15 @@ export type UseEditorMutationArgs = {
     ReturnType<typeof useProjectEditor>,
     "cancelPendingSaves" | "reloadActiveChapter"
   >;
+  // Optional predicate the hook consults before re-enabling the editor in
+  // its finally block. When a prior run ended in stage:"reload" the caller
+  // (EditorPage) shows a persistent "refresh the page" banner — the editor
+  // is deliberately left setEditable(false) so typing can't overwrite the
+  // server-committed mutation. Without this gate, the NEXT successful
+  // run() would unconditionally setEditable(true) while the banner still
+  // claims the editor is locked, inviting data loss (I1). Return true from
+  // isLocked() to keep the editor read-only even after a successful run.
+  isLocked?: () => boolean;
 };
 
 export type UseEditorMutationReturn = {
@@ -49,6 +58,9 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
   // cancelPendingSaves/reloadActiveChapter.
   const projectEditorRef = useRef(args.projectEditor);
   projectEditorRef.current = args.projectEditor;
+
+  const isLockedRef = useRef(args.isLocked);
+  isLockedRef.current = args.isLocked;
 
   const inFlightRef = useRef(false);
 
@@ -120,7 +132,14 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         // busy latch would stay set for the session and every subsequent
         // mutation would short-circuit as stage:"busy". Order matters.
         inFlightRef.current = false;
-        if (!reloadFailed) {
+        // If a prior run left the editor in the reload-failed lock state,
+        // EditorPage's "refresh the page" banner is still showing. Don't
+        // re-enable editing here (I1) — the finally would otherwise silently
+        // override the lock while the banner claims the editor is read-only,
+        // so the next keystroke would PATCH pre-mutation content back over
+        // the server-committed change.
+        const lockedByCaller = isLockedRef.current?.() === true;
+        if (!reloadFailed && !lockedByCaller) {
           try {
             editor?.setEditable(true);
           } catch {

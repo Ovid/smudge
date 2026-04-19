@@ -151,6 +151,13 @@ export function EditorPage() {
   // below can read editorRef.current safely.
   const editorRef = useRef<EditorHandle | null>(null);
 
+  // Latest-ref for the lock predicate: the hook captures the callback once
+  // but must see the current editorLockedMessage state when finally runs.
+  // Without this, a run() callback closure would be stale and the gate
+  // below would never fire after the banner was set (I1).
+  const editorLockedMessageRef = useRef(editorLockedMessage);
+  editorLockedMessageRef.current = editorLockedMessage;
+
   // Single useEditorMutation instance shared by handleRestoreSnapshot,
   // executeReplace, and handleReplaceOne. The cross-caller busy-guard
   // depends on a single invocation — do NOT add a second call.
@@ -160,6 +167,13 @@ export function EditorPage() {
       cancelPendingSaves,
       reloadActiveChapter,
     },
+    // When a prior run left the editor in the reload-failed lock state,
+    // the persistent "refresh the page" banner is on screen and the editor
+    // is read-only. A subsequent successful run's finally must NOT
+    // re-enable the editor (I1) — the user, trusting the banner, would be
+    // refreshing; any keystroke between now and that refresh would PATCH
+    // pre-mutation content back over the server's committed change.
+    isLocked: () => editorLockedMessageRef.current !== null,
   });
 
   // Frozen snapshot of state at the moment the user clicked "Replace All".

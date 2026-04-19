@@ -460,6 +460,72 @@ describe("useEditorMutation — expected chapter id (I2)", () => {
   });
 });
 
+describe("useEditorMutation — isLocked predicate (I1)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("skips setEditable(true) when isLocked() returns true", async () => {
+    // Simulates a prior reload-failure that set EditorPage's persistent
+    // lock banner. A subsequent successful mutation must NOT re-enable the
+    // editor — the banner is still telling the user to refresh, and typing
+    // into re-enabled-but-stale content would silently overwrite the
+    // server-committed change on the next auto-save.
+    const { editorRef, projectEditor } = buildHandles();
+    const isLocked = vi.fn(() => true);
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, isLocked }),
+    );
+
+    const res = await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: false,
+      data: undefined,
+    }));
+
+    expect(res).toEqual({ ok: true, data: undefined });
+    // setEditable(false) on entry, but NOT setEditable(true) on exit.
+    expect(editorRef.current!.setEditable).toHaveBeenCalledTimes(1);
+    expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(false);
+  });
+
+  it("re-enables setEditable(true) when isLocked() returns false", async () => {
+    const { editorRef, projectEditor } = buildHandles();
+    const isLocked = vi.fn(() => false);
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, isLocked }),
+    );
+
+    await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: false,
+      data: undefined,
+    }));
+
+    expect(editorRef.current!.setEditable).toHaveBeenCalledWith(true);
+  });
+
+  it("does not call setEditable(true) when locked, even through the finally's busy-latch safety path", async () => {
+    // Lock flips true between entry and exit: simulates the reload-failed
+    // banner being set by a prior run. This run succeeds, but the exit
+    // re-enable must still be gated.
+    const { editorRef, projectEditor } = buildHandles();
+    let locked = false;
+    const isLocked = () => locked;
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, isLocked }),
+    );
+
+    await result.current.run(async () => {
+      locked = true;
+      return { clearCacheFor: [], reloadActiveChapter: false, data: undefined };
+    });
+
+    expect(editorRef.current!.setEditable).toHaveBeenCalledTimes(1);
+    expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(false);
+  });
+});
+
 describe("useEditorMutation — latest-ref pattern", () => {
   beforeEach(() => {
     vi.clearAllMocks();
