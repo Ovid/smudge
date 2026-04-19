@@ -39,6 +39,14 @@ function canonicalize(value: unknown, depth: number = 0): unknown {
 }
 
 /**
+ * Per-process set of raw-bytes digests that have already produced a warn
+ * for canonicalize fallback. Emitting a warn every snapshot-create for
+ * the same corrupt chapter would flood logs and mask unrelated warnings,
+ * so warn once per unique content (by byte-digest), debug for the rest.
+ */
+const warnedFallbackDigests = new Set<string>();
+
+/**
  * Hash a JSON content string canonically (stable key order) so dedup
  * survives re-serialization (editor round-trips, replace-in-doc, etc).
  * Falls back to hashing the raw string when parsing fails or the
@@ -50,18 +58,35 @@ export function canonicalContentHash(content: string): string {
     canonicalJson = JSON.stringify(canonicalize(JSON.parse(content)));
   } catch (err) {
     // Falling back to raw bytes silently dedups corrupt-but-byte-identical
-    // content across attempts. Demoted to debug: a single corrupt chapter
-    // would otherwise log on every snapshot-create and every dedup check,
-    // polluting test output and masking real warnings (CLAUDE.md zero-
-    // warnings policy).
-    logger.debug(
-      {
-        content_length: content.length,
-        reason: err instanceof CanonicalizeDepthError ? "depth" : "parse",
-      },
-      "canonicalContentHash: content could not be canonicalized; hashing raw bytes",
-    );
+    // content across attempts. Warn ONCE per unique corrupt content (keyed
+    // by raw-bytes digest) so operators see novel corruption but repeated
+    // dedup lookups against the same row don't flood logs.
     canonicalJson = content;
+    const rawDigest = createHash("sha256").update(content).digest("hex");
+    const reason = err instanceof CanonicalizeDepthError ? "depth" : "parse";
+    if (!warnedFallbackDigests.has(rawDigest)) {
+      warnedFallbackDigests.add(rawDigest);
+      logger.warn(
+        { content_length: content.length, reason, digest: rawDigest },
+        "canonicalContentHash: content could not be canonicalized; hashing raw bytes",
+      );
+    } else {
+      logger.debug(
+        { content_length: content.length, reason, digest: rawDigest },
+        "canonicalContentHash: repeat raw-bytes fallback",
+      );
+    }
+    return rawDigest;
   }
   return createHash("sha256").update(canonicalJson).digest("hex");
+}
+
+/**
+ * Test-only: reset the warned-digest dedupe so independent tests don't
+ * suppress each other's assertions. Exported as a named function rather
+ * than exposing the Set directly so callers can't accidentally add
+ * entries.
+ */
+export function __resetWarnedFallbackDigestsForTests(): void {
+  warnedFallbackDigests.clear();
 }
