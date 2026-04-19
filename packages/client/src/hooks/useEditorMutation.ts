@@ -52,7 +52,12 @@ export function useEditorMutation(
         }
         projectEditorRef.current.cancelPendingSaves();
         editor?.markClean();
-        const directive = await mutate();
+        let directive: MutationDirective<T>;
+        try {
+          directive = await mutate();
+        } catch (error) {
+          return { ok: false, stage: "mutate", error };
+        }
         if (directive.clearCacheFor.length > 0) {
           clearAllCachedContent(directive.clearCacheFor);
         }

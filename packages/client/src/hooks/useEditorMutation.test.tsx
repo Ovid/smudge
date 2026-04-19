@@ -155,3 +155,31 @@ describe("useEditorMutation — flush failure", () => {
     expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(true);
   });
 });
+
+describe("useEditorMutation — mutate failure", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns stage 'mutate' on throw and skips cache/reload", async () => {
+    const { editorRef, projectEditor } = buildHandles();
+    const { clearAllCachedContent } = await import("./useContentCache");
+
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor }),
+    );
+    const res = await result.current.run(async () => {
+      throw new Error("server-no");
+    });
+
+    expect(res).toEqual({
+      ok: false,
+      stage: "mutate",
+      error: expect.objectContaining({ message: "server-no" }),
+    });
+    expect(vi.mocked(clearAllCachedContent)).not.toHaveBeenCalled();
+    expect(projectEditor.reloadActiveChapter).not.toHaveBeenCalled();
+    expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(true);
+    expect(editorRef.current!.markClean).toHaveBeenCalled(); // markClean runs before mutate
+  });
+});
