@@ -421,8 +421,15 @@ export function EditorPage() {
         // Use the query/options that produced the current results — not the
         // current input state — so replace-one targets the match the user
         // actually sees, even if they've started typing a new query.
+        // Capture `replacement` here too (unlike the Replace-All paths that
+        // dialog-confirm before this runs): per-match Replace has no confirm
+        // step, so a slow flushSave (seconds during save backoff) would
+        // otherwise let the user type over the replacement input between
+        // click and POST — silently sending a different value than the one
+        // visible at the moment of the click, with no UI to catch it.
         const frozenQuery = findReplace.resultsQuery;
         const frozenOptions = findReplace.resultsOptions;
+        const frozenReplacement = findReplace.replacement;
         if (!frozenQuery || !frozenOptions) return;
         const flushed = (await editorRef.current?.flushSave()) ?? true;
         if (!flushed) {
@@ -441,7 +448,7 @@ export function EditorPage() {
           const result = await api.search.replace(
             slug,
             frozenQuery,
-            findReplace.replacement,
+            frozenReplacement,
             frozenOptions,
             { type: "chapter", chapter_id: chapterId, match_index: matchIndex },
           );
