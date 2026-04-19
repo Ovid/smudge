@@ -20,7 +20,7 @@ import { useProjectEditor } from "../hooks/useProjectEditor";
 import { useEditorMutation } from "../hooks/useEditorMutation";
 import { useSidebarState } from "../hooks/useSidebarState";
 import { useReferencePanelState } from "../hooks/useReferencePanelState";
-import { useSnapshotState } from "../hooks/useSnapshotState";
+import { useSnapshotState, type RestoreFailureReason } from "../hooks/useSnapshotState";
 import { useFindReplaceState } from "../hooks/useFindReplaceState";
 import { ReferencePanel } from "../components/ReferencePanel";
 import { SnapshotPanel } from "../components/SnapshotPanel";
@@ -44,9 +44,7 @@ import { editorExtensions } from "../editorExtensions";
 // clicked "Back to editing" during the flush — treat as a silent no-op.
 class RestoreAbortedError extends Error {}
 class RestoreFailedError extends Error {
-  constructor(
-    public readonly reason: "corrupt_snapshot" | "cross_project_image" | "not_found" | "other",
-  ) {
+  constructor(public readonly reason: RestoreFailureReason) {
     super(`restore failed: ${reason}`);
   }
 }
@@ -208,9 +206,7 @@ export function EditorPage() {
       if (!viewingSnapshotRef.current) throw new RestoreAbortedError();
       const restore = await restoreSnapshot(viewingSnapshot.id);
       if (!restore.ok) {
-        throw new RestoreFailedError(
-          (restore.reason as RestoreFailedError["reason"]) ?? "other",
-        );
+        throw new RestoreFailedError(restore.reason ?? "unknown");
       }
       const stale = Boolean(restore.staleChapterSwitch);
       // On stale-chapter-switch the restore landed on a now-background
