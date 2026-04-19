@@ -294,8 +294,15 @@ export function EditorPage() {
           // chapter switch between click and response still reloads when the
           // now-active chapter was affected.
           const current = getActiveChapter();
+          let reloadFailed = false;
           if (current && result.affected_chapter_ids.includes(current.id)) {
-            await reloadActiveChapter();
+            // Pass an onError callback so a transient GET failure here routes
+            // to the dismissible action banner, not the full-page error
+            // overlay — the replace itself already succeeded on the server.
+            const ok = await reloadActiveChapter(() => {
+              reloadFailed = true;
+            });
+            if (!ok) reloadFailed = true;
           }
           await findReplace.search(slug);
           snapshotPanelRef.current?.refreshSnapshots();
@@ -310,7 +317,9 @@ export function EditorPage() {
           // error banner as well — success and warning are distinct
           // regions, not competing for the same slot.
           setActionInfo(STRINGS.findReplace.replaceSuccess(result.replaced_count));
-          if (result.skipped_chapter_ids && result.skipped_chapter_ids.length > 0) {
+          if (reloadFailed) {
+            setActionError(STRINGS.findReplace.replaceSucceededReloadFailed);
+          } else if (result.skipped_chapter_ids && result.skipped_chapter_ids.length > 0) {
             setActionError(
               STRINGS.findReplace.skippedAfterReplace(result.skipped_chapter_ids.length),
             );
@@ -450,8 +459,14 @@ export function EditorPage() {
             clearAllCachedContent(result.affected_chapter_ids);
           }
           const current = getActiveChapter();
+          let reloadFailed = false;
           if (current && result.affected_chapter_ids.includes(current.id)) {
-            await reloadActiveChapter();
+            // Same rationale as executeReplace: the replace landed; a
+            // transient reload miss should not promote to full-page error.
+            const ok = await reloadActiveChapter(() => {
+              reloadFailed = true;
+            });
+            if (!ok) reloadFailed = true;
           }
           await findReplace.search(slug);
           snapshotPanelRef.current?.refreshSnapshots();
@@ -460,6 +475,9 @@ export function EditorPage() {
           // drive the toolbar count directly via the hook.
           refreshSnapshotCount();
           setActionInfo(STRINGS.findReplace.replaceSuccess(result.replaced_count));
+          if (reloadFailed) {
+            setActionError(STRINGS.findReplace.replaceSucceededReloadFailed);
+          }
         } catch (err) {
           const msg = mapReplaceErrorToMessage(err);
           if (msg) setActionError(msg);

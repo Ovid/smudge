@@ -250,28 +250,42 @@ export function useProjectEditor(slug: string | undefined) {
     }
   }, []);
 
-  const reloadActiveChapter = useCallback(async () => {
-    const current = activeChapterRef.current;
-    if (!current) return;
-    // Clear any client-side cached content so the server copy wins after a restore/replace
-    clearCachedContent(current.id);
-    ++saveSeqRef.current;
-    setSaveStatus("idle");
-    setCacheWarning(false);
-    const seq = ++selectChapterSeqRef.current;
-    try {
-      const chapter = await api.chapters.get(current.id);
-      if (seq !== selectChapterSeqRef.current) return;
-      setActiveChapter(chapter);
-      setChapterWordCount(countWords(chapter.content));
-      // Bump reload key so the Editor remounts with fresh server content
-      setChapterReloadKey((k) => k + 1);
-    } catch (err) {
-      console.warn("Failed to reload chapter:", err);
-      if (seq !== selectChapterSeqRef.current) return;
-      setError(STRINGS.error.loadChapterFailed);
-    }
-  }, []);
+  const reloadActiveChapter = useCallback(
+    async (onError?: (message: string) => void): Promise<boolean> => {
+      const current = activeChapterRef.current;
+      if (!current) return false;
+      // Clear any client-side cached content so the server copy wins after a restore/replace
+      clearCachedContent(current.id);
+      ++saveSeqRef.current;
+      setSaveStatus("idle");
+      setCacheWarning(false);
+      const seq = ++selectChapterSeqRef.current;
+      try {
+        const chapter = await api.chapters.get(current.id);
+        if (seq !== selectChapterSeqRef.current) return false;
+        setActiveChapter(chapter);
+        setChapterWordCount(countWords(chapter.content));
+        // Bump reload key so the Editor remounts with fresh server content
+        setChapterReloadKey((k) => k + 1);
+        return true;
+      } catch (err) {
+        console.warn("Failed to reload chapter:", err);
+        if (seq !== selectChapterSeqRef.current) return false;
+        // If an onError callback is provided, route the failure there so
+        // callers (e.g. post-replace reload) can surface a non-fatal banner
+        // without flipping EditorPage into the full-screen error branch.
+        // Falling back to setError preserves the legacy behavior when no
+        // callback is supplied (e.g. snapshot restore reload).
+        if (onError) {
+          onError(STRINGS.error.loadChapterFailed);
+        } else {
+          setError(STRINGS.error.loadChapterFailed);
+        }
+        return false;
+      }
+    },
+    [],
+  );
 
   const projectRef = useRef(project);
   projectRef.current = project;
