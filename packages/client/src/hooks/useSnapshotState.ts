@@ -35,7 +35,6 @@ export type RestoreFailureReason =
 export interface RestoreResult {
   ok: boolean;
   reason?: RestoreFailureReason;
-  message?: string;
   // Set when the user switched chapters while the restore was in flight. The
   // restore did land on the server, but reloading the now-active chapter
   // would pull in the wrong content — callers should skip reloadActiveChapter
@@ -213,6 +212,17 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
           // chapter-switch: silent no-op.
           if (err.code === "ABORTED") return { ok: true, staleChapterSwitch: true };
           if (err.status === 404) return { ok: false, reason: "not_found" };
+          // 2xx BAD_JSON on a GET has no "maybe committed" ambiguity —
+          // GETs don't commit server-side state. The response body is
+          // garbled (truncated, non-JSON proxy page, or server bug), which
+          // from the user's perspective means this specific snapshot is
+          // unreadable. Mapping to "network" would prompt a "check your
+          // connection" banner that invites a pointless retry; a corrupt
+          // classification surfaces the right copy ("this snapshot is
+          // corrupt") so the user tries a different snapshot instead.
+          if (err.code === "BAD_JSON" && err.status >= 200 && err.status < 300) {
+            return { ok: false, reason: "corrupt_snapshot" };
+          }
           return { ok: false, reason: "network" };
         }
         return { ok: false, reason: "unknown" };
@@ -285,20 +295,20 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
           // revert the committed restore via the generic "network" retry
           // path.
           if (err.code === "BAD_JSON" && err.status >= 200 && err.status < 300) {
-            return { ok: false, reason: "possibly_committed", message: err.message };
+            return { ok: false, reason: "possibly_committed" };
           }
           if (err.code === SNAPSHOT_ERROR_CODES.CORRUPT_SNAPSHOT) {
-            return { ok: false, reason: "corrupt_snapshot", message: err.message };
+            return { ok: false, reason: "corrupt_snapshot" };
           }
           if (err.code === SNAPSHOT_ERROR_CODES.CROSS_PROJECT_IMAGE_REF) {
-            return { ok: false, reason: "cross_project_image", message: err.message };
+            return { ok: false, reason: "cross_project_image" };
           }
           // Distinguish "snapshot (or its chapter) is gone" from generic
           // network failure — retrying the former will always 404.
           if (err.status === 404) {
-            return { ok: false, reason: "not_found", message: err.message };
+            return { ok: false, reason: "not_found" };
           }
-          return { ok: false, reason: "network", message: err.message };
+          return { ok: false, reason: "network" };
         }
         return { ok: false, reason: "unknown" };
       }

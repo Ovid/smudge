@@ -353,6 +353,17 @@ export function EditorPage() {
         // path) — surface a persistent, non-dismissible lock banner so the
         // user-visible signal of the read-only state cannot be hidden (I1).
         setEditorLockedMessage(STRINGS.snapshots.restoreSucceededReloadFailed);
+        // Defensive re-lock to match finalizeReplaceSuccess's convergence
+        // rationale: restore's stage:"reload" currently relies on the
+        // hook's reloadFailed path keeping the editor read-only, but a
+        // future refactor of useEditorMutation's finally could let a
+        // mid-remount throw re-enable the editor after the banner is set.
+        // Applying safeSetEditable(false) here means both mutation callers
+        // (replace and restore) converge on the same invariant: lock
+        // banner and editor state never disagree. safeSetEditable swallows
+        // mid-remount throws so the follow-up refreshSnapshotCount still
+        // runs.
+        safeSetEditable(editorRef, false);
         snapshotPanelRef.current?.refreshSnapshots();
         // Same rationale as the happy path: the server committed the
         // restore + pre-restore auto-snapshot. Without this, the toolbar
@@ -1580,11 +1591,18 @@ export function EditorPage() {
               // outside let a sync throw reject the onView promise,
               // bypassing the {ok,reason} contract SnapshotPanel expects.
               try {
-                editorRef.current?.setEditable(false);
+                // Route through safeSetEditable so a TipTap mid-remount
+                // throw does not escape the try and reject the onView
+                // promise with an untyped error — SnapshotPanel expects
+                // the {ok,reason} | undefined contract. Using the helper
+                // instead of an inline setEditable also routes logging
+                // through the shared warn, matching the discipline the
+                // other mutation entry points follow.
+                safeSetEditable(editorRef, false);
                 const flushed = (await editorRef.current?.flushSave()) ?? true;
                 if (!flushed) {
                   // Re-enable so the user can retry — view was refused.
-                  editorRef.current?.setEditable(true);
+                  safeSetEditable(editorRef, true);
                   return { ok: false, reason: "save_failed" };
                 }
                 cancelPendingSaves();
@@ -1595,20 +1613,17 @@ export function EditorPage() {
                 // staleChapterSwitch, where we return to normal editing
                 // without entering snapshot view.
                 if (!result.ok || result.staleChapterSwitch) {
-                  editorRef.current?.setEditable(true);
+                  safeSetEditable(editorRef, true);
                 }
                 return result;
               } catch (err) {
                 // Swallow the throw; the onView contract is
                 // {ok,reason} | undefined, not an exception channel.
                 // Restoring setEditable(true) keeps the editor usable
-                // on a TipTap-remount sync throw.
-                try {
-                  editorRef.current?.setEditable(true);
-                } catch {
-                  // setEditable on a destroyed editor can throw again;
-                  // ignore — the editor's next remount resets editable.
-                }
+                // on a flushSave/viewSnapshot error (TipTap-remount
+                // throws from setEditable are already absorbed by
+                // safeSetEditable above).
+                safeSetEditable(editorRef, true);
                 console.warn("SnapshotPanel onView aborted:", err);
                 return { ok: false, reason: "save_failed" };
               }

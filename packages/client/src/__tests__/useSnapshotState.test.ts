@@ -201,6 +201,31 @@ describe("useSnapshotState", () => {
     },
   );
 
+  it("viewSnapshot maps 2xx BAD_JSON to corrupt_snapshot, not network", async () => {
+    // GET-side BAD_JSON means the snapshot response body was unreadable —
+    // no "maybe committed" ambiguity (GETs don't commit). Previously this
+    // surfaced as reason:"network", inviting a pointless retry. Mapping
+    // to corrupt_snapshot lets the caller render "this snapshot is
+    // corrupt" copy instead of "check your connection."
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.snapshots.get).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+
+    const { result } = renderHook(() => useSnapshotState("ch-1"));
+    let r: { ok: boolean; reason?: string } = { ok: true };
+    await act(async () => {
+      r = await result.current.viewSnapshot({
+        id: "snap-1",
+        label: null,
+        created_at: new Date().toISOString(),
+      });
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("corrupt_snapshot");
+  });
+
   it("exitSnapshotView clears the viewing snapshot", async () => {
     const row = makeSnapshotRow();
     vi.mocked(api.snapshots.get).mockResolvedValue(row);
@@ -354,7 +379,6 @@ describe("useSnapshotState", () => {
 
     expect(r.ok).toBe(false);
     expect(r.reason).toBe("corrupt_snapshot");
-    expect(r.message).toBe("Corrupt");
   });
 
   it("restoreSnapshot surfaces not_found reason on 404", async () => {
@@ -371,7 +395,6 @@ describe("useSnapshotState", () => {
 
     expect(r.ok).toBe(false);
     expect(r.reason).toBe("not_found");
-    expect(r.message).toBe("Snapshot or chapter not found.");
   });
 
   it("restoreSnapshot surfaces possibly_committed reason on 2xx BAD_JSON (C2)", async () => {
