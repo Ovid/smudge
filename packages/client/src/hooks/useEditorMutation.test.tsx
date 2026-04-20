@@ -543,6 +543,48 @@ describe("useEditorMutation — isLocked predicate (I1)", () => {
     expect(editorRef.current!.setEditable).toHaveBeenCalledWith(true);
   });
 
+  it("re-enables setEditable(true) when isLocked() is true but reloadActiveChapter succeeds (I2)", async () => {
+    // Recovery path: after a prior reload-failure set the lock banner, a
+    // subsequent mutation that successfully reloads the server state
+    // supersedes the lock. The editor's displayed content now matches the
+    // server, so the lock's premise no longer holds — re-enable so the user
+    // can edit. The caller's chapterReloadKey useEffect clears the banner
+    // in the same render.
+    const { editorRef, projectEditor } = buildHandles();
+    const isLocked = vi.fn(() => true);
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor, isLocked }));
+
+    await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: true,
+      data: undefined,
+    }));
+
+    expect(projectEditor.reloadActiveChapter).toHaveBeenCalled();
+    expect(editorRef.current!.setEditable).toHaveBeenCalledWith(true);
+  });
+
+  it("stays setEditable(false) when isLocked() is true AND no reload was performed (I2)", async () => {
+    // Guardrail for the I2 fix: a mutation that succeeds without reloading
+    // must still honor the lock. Without the reload there is no fresh
+    // server state on screen, so typing into a re-enabled editor would
+    // auto-save stale content back over the original server-committed
+    // change.
+    const { editorRef, projectEditor } = buildHandles();
+    const isLocked = vi.fn(() => true);
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor, isLocked }));
+
+    await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: false,
+      data: undefined,
+    }));
+
+    expect(projectEditor.reloadActiveChapter).not.toHaveBeenCalled();
+    expect(editorRef.current!.setEditable).toHaveBeenCalledTimes(1);
+    expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(false);
+  });
+
   it("does not call setEditable(true) when locked, even through the finally's busy-latch safety path", async () => {
     // Lock flips true between entry and exit: simulates the reload-failed
     // banner being set by a prior run. This run succeeds, but the exit

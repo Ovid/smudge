@@ -80,6 +80,14 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
       // server-side replace/restore. Keep the editor read-only and surface
       // a banner directing the user to refresh.
       let reloadFailed = false;
+      // Track reload *success* too: when a prior run left the editor in the
+      // lock state and the current run just successfully re-fetched the
+      // server copy via reloadActiveChapter, the lock's premise ("we never
+      // showed you the post-mutation server state") no longer holds — the
+      // fresh state is now on screen, so the finally should re-enable the
+      // editor regardless of isLocked (I2). The caller's useEffect on
+      // chapterReloadKey clears the banner in the same render.
+      let reloadSucceeded = false;
       const editor = args.editorRef.current;
       // Setting inFlightRef and setEditable inside the try ensures the
       // finally clears inFlightRef even if setEditable throws synchronously
@@ -142,6 +150,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
               data: directive.data,
             };
           }
+          reloadSucceeded = true;
         }
         return { ok: true, data: directive.data };
       } finally {
@@ -158,7 +167,14 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         // override the lock while the banner claims the editor is read-only,
         // so the next keystroke would PATCH pre-mutation content back over
         // the server-committed change.
-        const lockedByCaller = isLockedRef.current?.() === true;
+        // A successful reload supersedes a stale lock: the banner is about
+        // to clear via the caller's chapterReloadKey useEffect, and the
+        // editor's displayed content now matches the server (no stale
+        // pre-mutation content the user could type over). Without this,
+        // the editor would stay setEditable(false) after the banner cleared,
+        // leaving the user in an unrecoverable "looks editable but can't
+        // type" state until chapter switch (I2).
+        const lockedByCaller = isLockedRef.current?.() === true && !reloadSucceeded;
         if (!reloadFailed && !lockedByCaller) {
           try {
             editor?.setEditable(true);
