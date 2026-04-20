@@ -89,6 +89,13 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
       // chapterReloadKey clears the banner in the same render.
       let reloadSucceeded = false;
       const editor = args.editorRef.current;
+      // Null-editor is a deliberate graceful-no-op contract, covered by the
+      // "null editor ref" test below: invariants 1–2 (markClean,
+      // setEditable(false)) are vacuously satisfied when there is no editor
+      // on screen, so the hook proceeds with cancelPendingSaves + mutate +
+      // cache-clear + reload. Do not tighten this to a stage:"flush"
+      // return without also revising the existing test + any callers that
+      // rely on the current behavior.
       // Setting inFlightRef and setEditable inside the try ensures the
       // finally clears inFlightRef even if setEditable throws synchronously
       // (e.g. TipTap mid-remount). Otherwise the busy guard latches for the

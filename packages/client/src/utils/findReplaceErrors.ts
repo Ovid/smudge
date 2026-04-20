@@ -98,10 +98,13 @@ export function mapSearchErrorToMessage(err: unknown): string | null {
     return STRINGS.findReplace.contentTooLarge;
   }
   if (err.status === 404) {
-    // Project (or scoped chapter) is gone — retrying will 404 forever.
-    // Return terminal copy so the panel doesn't invite a retry loop.
-    // Mirrors the replace-side handling via `replaceScopeNotFound`.
-    return STRINGS.findReplace.searchScopeNotFound;
+    // Project is gone — retrying will 404 forever. Return terminal copy
+    // so the panel doesn't invite a retry loop. The search path has no
+    // SCOPE_NOT_FOUND analogue (search operates project-wide; scope only
+    // enters via replace's chapter-scoped mutations), so a 404 here is
+    // always the project-gone case — don't mirror replace's two-arm 404
+    // branch.
+    return STRINGS.findReplace.searchProjectNotFound;
   }
   // Mirror the replace-side NETWORK branch (S4) so offline/DNS/CSP
   // failures route to connection-specific copy instead of the generic

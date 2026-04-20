@@ -401,7 +401,7 @@ describe("useFindReplaceState", () => {
     });
     // 404 is terminal — must not reuse the generic "Search failed. Try again."
     // copy that invites a retry loop.
-    expect(result.current.error).toBe(STRINGS.findReplace.searchScopeNotFound);
+    expect(result.current.error).toBe(STRINGS.findReplace.searchProjectNotFound);
     expect(result.current.results).toBeNull();
   });
 

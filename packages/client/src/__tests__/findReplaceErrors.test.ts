@@ -98,9 +98,9 @@ describe("mapSearchErrorToMessage", () => {
     expect(mapSearchErrorToMessage(err)).toBe(STRINGS.findReplace.contentTooLarge);
   });
 
-  it("maps 404 to searchScopeNotFound", () => {
+  it("maps 404 to searchProjectNotFound", () => {
     const err = new ApiRequestError("gone", 404);
-    expect(mapSearchErrorToMessage(err)).toBe(STRINGS.findReplace.searchScopeNotFound);
+    expect(mapSearchErrorToMessage(err)).toBe(STRINGS.findReplace.searchProjectNotFound);
   });
 
   it("returns null for ABORTED", () => {

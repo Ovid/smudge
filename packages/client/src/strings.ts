@@ -346,7 +346,7 @@ export const STRINGS = {
       "The replace may have completed, but the server response was unreadable. Refresh the page to see the current state before retrying — retrying without refreshing could replace twice.",
     replaceScopeNotFound: "The chapter for this replace is no longer available.",
     replaceProjectNotFound: "This project is no longer available.",
-    searchScopeNotFound: "This project is no longer available.",
+    searchProjectNotFound: "This project is no longer available.",
     replaceSuccess: (count: number) => `Replaced ${count} occurrence${count === 1 ? "" : "s"}.`,
     noMatches: "No matches found",
     matchCount: (count: number, chapters: number) =>
