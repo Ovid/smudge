@@ -91,7 +91,9 @@ export function SnapshotBanner({
             aria-disabled={!canRestore}
             aria-describedby={canRestore ? undefined : "snapshot-restore-disabled-reason"}
             className={`text-sm font-medium text-accent hover:text-accent-hover rounded px-3 py-1 border border-accent/40 hover:bg-accent/10 transition-colors font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring${
-              !canRestore ? " opacity-50 cursor-not-allowed hover:bg-transparent hover:text-accent" : ""
+              !canRestore
+                ? " opacity-50 cursor-not-allowed hover:bg-transparent hover:text-accent"
+                : ""
             }`}
           >
             {S.restoreButton}
