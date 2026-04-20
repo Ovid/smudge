@@ -289,8 +289,23 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         // the editor would stay setEditable(false) after the banner cleared,
         // leaving the user in an unrecoverable "looks editable but can't
         // type" state until chapter switch (I2).
-        const lockedByCaller =
-          isLockedRef.current?.() === true && !reloadSucceeded && !reloadSuperseded;
+        // I3 (review 2026-04-20): wrap the predicate call. Today's
+        // closure (() => editorLockedMessageRef.current !== null) can't
+        // throw, but the public type is () => boolean — a future caller
+        // reading flaky state could throw and bypass the discriminated
+        // MutationResult contract. Callers `await mutation.run(...)`
+        // without try/catch, so an escaping throw would surface as an
+        // unhandled rejection. Conservative default on throw: treat as
+        // locked, so unknown predicate state can't accidentally unlock
+        // an editor over a server-committed change.
+        let lockedByCaller: boolean;
+        try {
+          lockedByCaller =
+            isLockedRef.current?.() === true && !reloadSucceeded && !reloadSuperseded;
+        } catch (err) {
+          console.warn("useEditorMutation: isLocked predicate threw", err);
+          lockedByCaller = true;
+        }
         if (!reloadFailed && !lockedByCaller) {
           // Re-read editorRef.current (I3): if the entry-time editor was
           // destroyed mid-run (chapter switch during mutate) its setEditable

@@ -852,6 +852,43 @@ describe("useEditorMutation — isLocked predicate (I1)", () => {
     expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(false);
   });
 
+  it("treats a throwing isLocked predicate as locked (I3, review 2026-04-20)", async () => {
+    // Defensive: the public contract is () => boolean, but a future
+    // caller could pass a predicate that reads flaky state. Without the
+    // wrap, a throw here would escape run() as an unhandled rejection
+    // and bypass the discriminated MutationResult contract. Conservative
+    // default on throw is "locked" — unknown predicate state must not
+    // accidentally unlock the editor after a server-committed change.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { editorRef, projectEditor } = buildHandles();
+      const isLocked = vi.fn(() => {
+        throw new Error("flaky predicate");
+      });
+      const { result } = renderHook(() =>
+        useEditorMutation({ editorRef, projectEditor, isLocked }),
+      );
+
+      const res = await result.current.run(async () => ({
+        clearCacheFor: [],
+        reloadActiveChapter: false,
+        data: undefined,
+      }));
+
+      expect(res).toEqual({ ok: true, data: undefined });
+      // Conservative default: stay locked. setEditable(true) must NOT
+      // have run in the finally.
+      expect(editorRef.current!.setEditable).toHaveBeenCalledTimes(1);
+      expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(false);
+      expect(warnSpy).toHaveBeenCalledWith(
+        "useEditorMutation: isLocked predicate threw",
+        expect.any(Error),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it("does not call setEditable(true) when locked, even through the finally's busy-latch safety path", async () => {
     // Lock flips true between entry and exit: simulates the reload-failed
     // banner being set by a prior run. This run succeeds, but the exit
