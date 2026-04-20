@@ -416,8 +416,17 @@ export function EditorPage() {
         }
         if (result.error.reason === "corrupt_snapshot") {
           setActionError(STRINGS.snapshots.restoreFailedCorrupt);
+          // I2: corrupt_snapshot is permanent — the snapshot JSON cannot
+          // be parsed, so re-clicking Restore will always fail the same
+          // way. Dismiss the banner so the user can't loop on it.
+          exitSnapshotView();
         } else if (result.error.reason === "cross_project_image") {
           setActionError(STRINGS.snapshots.restoreFailedCrossProjectImage);
+          // I2: cross_project_image is a permanent rejection too — the
+          // snapshot references images that no longer belong to this
+          // project. Dismiss the banner; the user has no recovery path
+          // from this snapshot.
+          exitSnapshotView();
         } else if (result.error.reason === "not_found") {
           setActionError(STRINGS.snapshots.restoreFailedNotFound);
           // I6: The snapshot is gone from the server, so the SnapshotBanner
