@@ -1199,8 +1199,10 @@ describe("EditorPage find-and-replace confirmation", () => {
     // 2-14s replace flush would then call cancelInFlightSave(), aborting
     // the mutation's in-flight save controller mid-run and producing a
     // misattributed "save failed" banner.
-    let resolveReplace: (v: { replaced_count: number; affected_chapter_ids: string[] }) => void =
-      () => {};
+    let resolveReplace: (v: {
+      replaced_count: number;
+      affected_chapter_ids: string[];
+    }) => void = () => {};
     vi.mocked(api.search.replace).mockImplementationOnce(
       () =>
         new Promise<{ replaced_count: number; affected_chapter_ids: string[] }>((resolve) => {
