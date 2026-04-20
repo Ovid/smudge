@@ -198,7 +198,18 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
       // failed, surface that to the user so they don't think the snapshot
       // succeeded when it was silently aborted.
       if (onBeforeCreate) {
-        const flushed = await onBeforeCreate();
+        // I3: defense-in-depth. EditorPage's onBeforeCreate wraps its
+        // flushSave in try/catch, but a future caller that forgets the
+        // wrap would otherwise produce an unhandled rejection here (the
+        // caller's subsequent try/catch below only wraps api.snapshots.create,
+        // not this await).
+        let flushed = false;
+        try {
+          flushed = await onBeforeCreate();
+        } catch {
+          setCreateError(S.createFailed);
+          return;
+        }
         if (!flushed) {
           setCreateError(S.createFailed);
           return;

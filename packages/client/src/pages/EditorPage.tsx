@@ -1663,9 +1663,21 @@ export function EditorPage() {
                 setActionInfo(STRINGS.editor.mutationBusy);
                 return false;
               }
-              const flushed = (await editorRef.current?.flushSave()) ?? true;
-              if (flushed) cancelPendingSaves();
-              return flushed;
+              // I3: TipTap can throw synchronously during a remount window
+              // (see editorSafeOps.ts); flushSave can also reject from an
+              // onSave rejection. Without this try/catch the throw escapes
+              // back through SnapshotPanel.handleCreate as an unhandled
+              // rejection — no banner, no createError, nothing visible to
+              // the user. Mirror onView's pattern and return false so the
+              // panel surfaces its own createFailed message.
+              try {
+                const flushed = (await editorRef.current?.flushSave()) ?? true;
+                if (flushed) cancelPendingSaves();
+                return flushed;
+              } catch (err) {
+                console.warn("SnapshotPanel onBeforeCreate aborted:", err);
+                return false;
+              }
             }}
             onSnapshotsChange={onSnapshotsChange}
             triggerRef={snapshotsTriggerRef}
