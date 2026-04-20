@@ -301,6 +301,13 @@ export function EditorPage() {
         setActionError(STRINGS.snapshots.restoreFailedCrossProjectImage);
       } else if (result.error.reason === "not_found") {
         setActionError(STRINGS.snapshots.restoreFailedNotFound);
+      } else if (result.error.reason === "network") {
+        // Mirror mapReplaceErrorToMessage's NETWORK branch so offline restores
+        // tell the user to check their connection rather than showing the
+        // generic "try again" copy. Without this, a sibling mutation (replace)
+        // gives connection-specific guidance for the same root cause while
+        // restore does not (I1).
+        setActionError(STRINGS.snapshots.restoreNetworkFailed);
       } else {
         setActionError(STRINGS.snapshots.restoreFailed);
       }

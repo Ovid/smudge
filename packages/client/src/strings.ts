@@ -289,6 +289,7 @@ export const STRINGS = {
     restoreConfirm:
       "Replace current chapter content with this snapshot? A snapshot of your current content will be saved automatically.",
     restoreFailed: "Unable to restore snapshot. Try again.",
+    restoreNetworkFailed: "Unable to restore snapshot — check your connection and try again.",
     restoreFailedCorrupt:
       "This snapshot is corrupt and can't be restored. It will remain in the list; create a new snapshot or restore a different one.",
     restoreFailedCrossProjectImage:
