@@ -15,13 +15,21 @@ import type { EditorHandle } from "../components/Editor";
 //
 // Returns true if the setEditable actually applied to a live editor, false
 // if either the ref was null (no editor to apply to) or TipTap threw
-// during a mid-remount window. Lock-convergence callers (the ones that
-// raise the "refresh the page" banner) MUST check the return value and
-// escalate on false — without the apply, the editor is left writable (or
-// a new editor mounts writable after the throw), and a keystroke auto-
-// save can silently revert the server-committed mutation (C1). Callers
-// using this opportunistically (re-enable-after-success) can ignore the
-// return.
+// during a mid-remount window.
+//
+// GH review 2026-04-20: an earlier revision of this comment claimed
+// lock-convergence callers MUST check the boolean return and escalate on
+// false. In practice they don't — and don't need to — because the real
+// data-loss defense is EditorPage's handleSaveLockGated (see
+// EditorPage.tsx around `editorLockedMessageRef.current !== null`): once
+// the lock banner is up, every auto-save PATCH is short-circuited to a
+// no-op regardless of the editor's setEditable state. That gate is what
+// prevents the "editor left writable after a mid-remount throw → first
+// keystroke PATCHes stale content" path from turning into actual
+// data loss. Callers therefore can and do ignore the boolean; the
+// internal console.warn is the signal of record. Treat the return value
+// as informational only — useful if a caller wants to branch on whether
+// the editor actually accepted the change, but not a contract obligation.
 export function safeSetEditable(
   editorRef: MutableRefObject<EditorHandle | null>,
   editable: boolean,

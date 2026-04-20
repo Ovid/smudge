@@ -2545,13 +2545,15 @@ describe("EditorPage snapshot panel", () => {
       await screen.findByText(STRINGS.snapshots.restoreResponseUnreadable),
     ).toBeInTheDocument();
 
-    // The SnapshotBanner's Restore button is now disabled (C1). Clicking
-    // it must NOT open a confirm dialog and MUST NOT invoke the restore
-    // API a second time.
+    // The SnapshotBanner's Restore button is now aria-disabled (C1 —
+    // GH review changed native `disabled` to aria-disabled so screen
+    // readers can still reach the description; the button stays
+    // focusable but onClick early-returns). Clicking it must NOT open a
+    // confirm dialog and MUST NOT invoke the restore API a second time.
     const callsAfterFirstRestore = restoreMock.mock.calls.length;
     const bannerRestore = screen
       .getAllByRole("button", { name: "Restore" })
-      .find((b) => (b as HTMLButtonElement).disabled);
+      .find((b) => b.getAttribute("aria-disabled") === "true");
     expect(bannerRestore).toBeDefined();
     await userEvent.click(bannerRestore!);
     // No second dialog, no second restore API call.

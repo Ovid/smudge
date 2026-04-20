@@ -96,16 +96,20 @@ describe("SnapshotBanner", () => {
     expect(screen.getByRole("status")).toBeInTheDocument();
   });
 
-  it("disables Restore button when canRestore is false (C1)", () => {
+  it("marks Restore button aria-disabled when canRestore is false (C1)", () => {
     // EditorPage drives canRestore from editorLockedMessage === null. When
     // a prior possibly_committed/unknown restore raised the lock banner, a
     // second click would issue a double-restore against an almost-certainly-
-    // committed snapshot. Disabling the button keeps the banner visible (so
-    // the user sees which snapshot they were looking at) while blocking the
-    // second server round-trip.
+    // committed snapshot. aria-disabled (NOT the native `disabled`
+    // attribute) keeps the button focusable so screen readers can reach
+    // the aria-describedby target — a native disabled button is removed
+    // from the tab order and the reason would never be announced.
     render(<SnapshotBanner {...defaultProps} canRestore={false} />);
     const restoreBtn = screen.getByRole("button", { name: S.restoreButton });
-    expect(restoreBtn).toBeDisabled();
+    // aria-disabled is the accessible signal; the native `disabled`
+    // attribute is deliberately absent so the button stays focusable.
+    expect(restoreBtn).toHaveAttribute("aria-disabled", "true");
+    expect(restoreBtn).not.toHaveAttribute("disabled");
     // The reason is exposed via aria-describedby + a visible hint, NOT
     // via the title attribute — browsers suppress tooltips on disabled
     // buttons and most screen readers do not announce title text.
@@ -116,24 +120,38 @@ describe("SnapshotBanner", () => {
     expect(reason?.textContent).toBe(S.restoreUnavailableWhileLocked);
   });
 
-  it("does not open the confirmation dialog when Restore is clicked while disabled (C1)", async () => {
+  it("does not open the confirmation dialog when Restore is clicked while aria-disabled (C1)", async () => {
     const user = userEvent.setup();
     const onRestore = vi.fn();
     render(<SnapshotBanner {...defaultProps} onRestore={onRestore} canRestore={false} />);
 
-    // Click the disabled button — userEvent respects disabled and will not
-    // fire the click handler. Guard that the dialog never opens AND that
-    // onRestore is never called even if a future pointer-events oversight
-    // lets a click through.
+    // aria-disabled does not block pointer events — clicks still reach
+    // onClick. Guard that the handler's early return blocks both the
+    // confirm dialog and onRestore.
     await user.click(screen.getByRole("button", { name: S.restoreButton }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(onRestore).not.toHaveBeenCalled();
   });
 
+  it("keeps the aria-disabled Restore button focusable for screen readers (GH review)", () => {
+    // Native `disabled` removes a button from the tab order on most
+    // browsers, preventing assistive tech from ever announcing its
+    // aria-describedby target. aria-disabled preserves focusability so
+    // the restoreUnavailableWhileLocked hint is actually reachable.
+    render(<SnapshotBanner {...defaultProps} canRestore={false} />);
+    const restoreBtn = screen.getByRole("button", { name: S.restoreButton });
+    // tabIndex not set to -1 and no `disabled` attr — default tab order.
+    expect(restoreBtn).not.toHaveAttribute("disabled");
+    expect(restoreBtn.tabIndex).toBe(0);
+    restoreBtn.focus();
+    expect(document.activeElement).toBe(restoreBtn);
+  });
+
   it("enables Restore button when canRestore is true or omitted (default)", () => {
     render(<SnapshotBanner {...defaultProps} />);
     const restoreBtn = screen.getByRole("button", { name: S.restoreButton });
-    expect(restoreBtn).not.toBeDisabled();
+    // No aria-disabled when usable.
+    expect(restoreBtn).not.toHaveAttribute("aria-disabled", "true");
     expect(restoreBtn).not.toHaveAttribute("title");
     // No aria-describedby and no hidden reason span when the button is
     // usable — the hint is only meaningful while the action is blocked.

@@ -60,12 +60,16 @@ export function SnapshotBanner({
             When disabled, the title attribute is unreliable: most browsers
             suppress tooltips on `disabled` elements and most assistive
             technologies do not announce title text. Instead, expose the
-            reason via aria-describedby pointing at a visually-hidden
-            <span> (announced with the button on focus) AND render a
-            visible inline hint next to the button so sighted users see
-            why the action is unavailable. The editor-locked banner above
-            already explains the global state, but the local hint removes
-            any ambiguity at the point of action.
+            reason via aria-describedby pointing at a visible inline hint
+            next to the button so sighted users see why the action is
+            unavailable, AND use aria-disabled (NOT the native `disabled`
+            attribute) so the button remains focusable and screen
+            readers reach the description. Native `disabled` removes the
+            button from the tab order on most browsers, which prevents
+            assistive tech from ever hearing the aria-describedby target.
+            The editor-locked banner above already explains the global
+            state, but the local hint removes any ambiguity at the point
+            of action.
           */}
           {!canRestore && (
             <span
@@ -77,11 +81,18 @@ export function SnapshotBanner({
           )}
           <button
             type="button"
-            onClick={() => setConfirmOpen(true)}
-            disabled={!canRestore}
+            onClick={() => {
+              // Guard clicks while aria-disabled — the `disabled` attribute
+              // was removed to keep the button focusable for screen
+              // readers, so pointer-events still reach onClick.
+              if (!canRestore) return;
+              setConfirmOpen(true);
+            }}
             aria-disabled={!canRestore}
             aria-describedby={canRestore ? undefined : "snapshot-restore-disabled-reason"}
-            className="text-sm font-medium text-accent hover:text-accent-hover rounded px-3 py-1 border border-accent/40 hover:bg-accent/10 transition-colors font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-accent"
+            className={`text-sm font-medium text-accent hover:text-accent-hover rounded px-3 py-1 border border-accent/40 hover:bg-accent/10 transition-colors font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring${
+              !canRestore ? " opacity-50 cursor-not-allowed hover:bg-transparent hover:text-accent" : ""
+            }`}
           >
             {S.restoreButton}
           </button>
