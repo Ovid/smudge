@@ -1317,8 +1317,59 @@ describe("EditorPage find-and-replace confirmation", () => {
     expect(await screen.findByText(STRINGS.editor.mutationBusy)).toBeInTheDocument();
     expect(api.projects.reorderChapters).not.toHaveBeenCalled();
 
+    // 2) Status change via the chapter row's StatusBadge. Before I4
+    // this PATCHed the chapter row mid-replace, racing the server
+    // writes.
+    const statusButtons = screen.getAllByLabelText(/Chapter status:/);
+    await userEvent.click(statusButtons[0]!);
+    // No listbox option should have opened — and even if it did, the
+    // underlying handleStatusChange must not fire.
+    expect(api.chapters.update).not.toHaveBeenCalled();
+
     // Allow the replace to resolve so the test tears down cleanly.
     resolveReplace({ replaced_count: 1, affected_chapter_ids: [] });
+  });
+
+  it("sidebar rename proceeds when no mutation is in-flight (I4 non-busy branch)", async () => {
+    // Covers the fall-through path of handleRenameChapterWithError: no
+    // mutation in-flight, so the guard does not fire and the underlying
+    // handleRenameChapter PATCH runs.
+    vi.mocked(api.chapters.update).mockResolvedValueOnce({
+      ...mockChapter,
+      title: "New Title",
+    });
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    // Double-click the sidebar chapter button to enter rename mode. The
+    // double-click swaps the button for an input, so capture the row's
+    // data attribute before the dblClick and re-query after.
+    const chapterButtons = screen.getAllByText("Chapter One");
+    const sidebarButton = chapterButtons.find(
+      (el) => el.tagName === "BUTTON" && el.closest("li"),
+    ) as HTMLElement | undefined;
+    expect(sidebarButton).toBeDefined();
+    // Find the sidebar <aside> that holds the row so we can re-scope
+    // after the dblClick re-renders the button out of the DOM.
+    const sidebarAside = sidebarButton!.closest("aside")!;
+    await userEvent.dblClick(sidebarButton!);
+
+    // After dblClick, the button is gone and replaced with an input.
+    // Find the rename input inside the sidebar (distinct from the
+    // editor heading rename input which uses the same aria-label).
+    const inputs = sidebarAside.querySelectorAll("input");
+    const renameInput = inputs[0] as HTMLInputElement | undefined;
+    expect(renameInput).toBeDefined();
+
+    fireEvent.change(renameInput!, { target: { value: "New Title" } });
+    fireEvent.keyDown(renameInput!, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(api.chapters.update).toHaveBeenCalledWith("ch-1", { title: "New Title" });
+    });
   });
 
   it("locks editor on 2xx BAD_JSON from replace — server may have committed (C1)", async () => {
@@ -2043,6 +2094,66 @@ describe("EditorPage snapshot panel", () => {
     await waitFor(() => {
       expect(clearCachedContent).toHaveBeenCalledWith("ch-1");
     });
+  });
+
+  it("locks editor on unknown-reason restore failure (I1/I7)", async () => {
+    // A non-ApiRequestError thrown from restoreSnapshot (e.g. TypeError
+    // on a malformed response, reject-before-send) produces
+    // reason:"unknown". The server commit status is genuinely ambiguous
+    // — the handler must lock the editor via editorLockedMessage rather
+    // than re-enabling with a dismissible banner that could let auto-
+    // save revert a server-committed restore.
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-1",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+    ]);
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-1",
+      chapter_id: "ch-1",
+      label: "v1",
+      content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+      word_count: 5,
+      is_auto: false,
+      created_at: "2026-04-17T10:00:00Z",
+    });
+    // A plain Error (not ApiRequestError) — useSnapshotState.restoreSnapshot
+    // surfaces this as reason:"unknown".
+    (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
+      .fn()
+      .mockRejectedValue(new TypeError("Cannot read property 'json' of undefined"));
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "View" }));
+    await waitFor(() => {
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+    });
+
+    const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
+    await userEvent.click(restoreButtons[0]!);
+    const dialog = await screen.findByRole("alertdialog", { name: "Restore" });
+    const confirmButton = Array.from(dialog.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Restore",
+    );
+    await userEvent.click(confirmButton!);
+
+    // Persistent lock banner with the "response unreadable" copy — same
+    // treatment as 2xx BAD_JSON. The dismissible "try again" banner must
+    // not appear since a retry could double-restore.
+    expect(
+      await screen.findByText(STRINGS.snapshots.restoreResponseUnreadable),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: STRINGS.editor.refreshButton })).toBeInTheDocument();
   });
 
   it("exits snapshot view when restore returns not_found (I6)", async () => {
