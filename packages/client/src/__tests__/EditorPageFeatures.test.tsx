@@ -2283,9 +2283,7 @@ describe("EditorPage snapshot panel", () => {
 
     // Dismissible network banner. The persistent lock banner MUST NOT
     // appear for a pre-send failure — the server never committed.
-    expect(
-      await screen.findByText(STRINGS.snapshots.restoreNetworkFailed),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(STRINGS.snapshots.restoreNetworkFailed)).toBeInTheDocument();
     expect(screen.queryByText(STRINGS.snapshots.restoreResponseUnreadable)).toBeNull();
     expect(screen.queryByRole("button", { name: STRINGS.editor.refreshButton })).toBeNull();
   });
