@@ -568,6 +568,13 @@ export function useProjectEditor(slug: string | undefined) {
         if (slug) {
           try {
             const data = await api.projects.get(slug);
+            // Re-check the seq after the second await (I2). The earlier
+            // guard covers only the api.chapters.update await; a rapid
+            // A→B (fails) then B→C click where the failure lands mid-
+            // api.projects.get would otherwise stomp C's optimistic
+            // update back to A's server-side status, losing the user's
+            // intent silently. Recovery would require another click.
+            if (seq !== statusChangeSeqRef.current) return;
             const revertedChapter = data.chapters.find((c) => c.id === chapterId);
             if (revertedChapter) {
               // Surgically revert only the status field to avoid overwriting
@@ -590,6 +597,10 @@ export function useProjectEditor(slug: string | undefined) {
             // Reload failed — fall through to local revert
           }
         }
+        // Guard the local-revert fallback too: the catch above could be
+        // reached with the seq already superseded, in which case restoring
+        // previousStatus would clobber the newer call's optimistic update.
+        if (seq !== statusChangeSeqRef.current) return;
         if (!reverted && previousStatus !== undefined) {
           setProject((prev) => {
             if (!prev) return prev;

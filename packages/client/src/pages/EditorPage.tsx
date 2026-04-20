@@ -251,6 +251,14 @@ export function EditorPage() {
   const handleRestoreSnapshot = useCallback(async () => {
     if (!viewingSnapshot || !activeChapter) return;
 
+    // C1 defense-in-depth: the SnapshotBanner button is gated on
+    // editorLockedMessage === null, but refuse here too so any
+    // programmatic caller (or future non-button entry point) cannot
+    // double-restore against an already-committed snapshot while the
+    // lock banner is showing. The button gate is the UX affordance;
+    // this is the invariant.
+    if (editorLockedMessageRef.current !== null) return;
+
     // I5 entry guard: actionBusyRef extends the busy window past
     // mutation.run()'s release into the post-run banner/refresh work,
     // preventing a second click from racing trailing setActionError /
@@ -317,6 +325,13 @@ export function EditorPage() {
       if (result.ok) {
         if (!result.data.staleChapterSwitch) {
           snapshotPanelRef.current?.refreshSnapshots();
+          // The server wrote a pre-restore auto-snapshot; the toolbar
+          // badge is now stale by one. The panel-handle refresh above
+          // is a no-op when the panel is closed (the typical state for
+          // a SnapshotBanner-initiated restore), so drive the count
+          // directly — mirrors finalizeReplaceSuccess and the error
+          // branches below (I1).
+          refreshSnapshotCount();
         }
         return;
       }
@@ -339,6 +354,12 @@ export function EditorPage() {
         // user-visible signal of the read-only state cannot be hidden (I1).
         setEditorLockedMessage(STRINGS.snapshots.restoreSucceededReloadFailed);
         snapshotPanelRef.current?.refreshSnapshots();
+        // Same rationale as the happy path: the server committed the
+        // restore + pre-restore auto-snapshot. Without this, the toolbar
+        // badge silently understates the count until the user opens the
+        // panel or switches chapters — and the typical SnapshotBanner-
+        // initiated restore leaves the panel closed (I1).
+        refreshSnapshotCount();
         return;
       }
       // stage === "mutate"
@@ -1419,6 +1440,16 @@ export function EditorPage() {
                   date={viewingSnapshot.created_at}
                   onRestore={handleRestoreSnapshot}
                   onBack={exitSnapshotView}
+                  // C1: Disable Restore while the editor-lock banner is
+                  // showing. The lock is raised on possibly_committed /
+                  // unknown restore outcomes where the server almost
+                  // certainly already committed — a second click would
+                  // re-enter restoreSnapshot and issue a second server
+                  // restore + second auto-snapshot. Keeping the banner
+                  // visible (rather than exitSnapshotView()) preserves
+                  // the "which snapshot was I looking at" context the
+                  // user needs to decide whether to refresh.
+                  canRestore={editorLockedMessage === null}
                 />
               )}
               <div className="flex-1 overflow-y-auto px-6 py-8 page-enter">

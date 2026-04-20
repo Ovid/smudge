@@ -91,6 +91,12 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
       // editor regardless of isLocked (I2). The caller's useEffect on
       // chapterReloadKey clears the banner in the same render.
       let reloadSucceeded = false;
+      // Entry-time editor snapshot — used to detect mid-mutate remounts:
+      // if editorAtEntry was null (chapter mid-remount) and a new TipTap
+      // instance mounts during the await mutate(), we must re-read the
+      // ref and lock that new editor too (I3) — otherwise invariants 1–2
+      // silently break for the reload window and a user keystroke could
+      // race the reload's auto-save.
       const editor = args.editorRef.current;
       // Null-editor is a deliberate graceful-no-op contract, covered by the
       // "null editor ref" test below: invariants 1–2 (markClean,
@@ -152,6 +158,23 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         } catch (error) {
           return { ok: false, stage: "mutate", error };
         }
+        // Re-read the editor ref after the mutate await (I3). If the entry-
+        // time editor was null (mid-remount) and TipTap finished mounting
+        // during the server round-trip, the new editor starts editable=true
+        // by default. Without locking it here, the reload window below
+        // leaves a fresh editor writable — a user keystroke in that window
+        // would either be lost to the reload or PATCH-ed back over the
+        // server commit on the next auto-save. Swallow throws in the same
+        // spirit as the entry-side setEditable: a TipTap mid-remount throw
+        // here should not discard a server-successful mutate.
+        const editorAfterMutate = args.editorRef.current;
+        if (editorAfterMutate !== null && editorAfterMutate !== editor) {
+          try {
+            editorAfterMutate.setEditable(false);
+          } catch (err) {
+            console.warn("useEditorMutation: failed to lock mid-remount editor", err);
+          }
+        }
         if (directive.clearCacheFor.length > 0) {
           clearAllCachedContent(directive.clearCacheFor);
         }
@@ -210,8 +233,15 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         // type" state until chapter switch (I2).
         const lockedByCaller = isLockedRef.current?.() === true && !reloadSucceeded;
         if (!reloadFailed && !lockedByCaller) {
+          // Re-read editorRef.current (I3): if the entry-time editor was
+          // destroyed mid-run (chapter switch during mutate) its setEditable
+          // throws, and the new editor mounts with editable=true by default
+          // — no unlock needed. If the editor is the same instance as at
+          // entry, this is a no-op change. Either way, target the current
+          // editor rather than the captured reference.
+          const editorForUnlock = args.editorRef.current;
           try {
-            editor?.setEditable(true);
+            editorForUnlock?.setEditable(true);
           } catch (err) {
             // Swallowing here keeps run()'s happy-path return value intact
             // for the caller. The editor being non-editable after a
