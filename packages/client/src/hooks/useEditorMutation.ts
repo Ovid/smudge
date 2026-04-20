@@ -91,6 +91,21 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
       // editor regardless of isLocked (I2). The caller's useEffect on
       // chapterReloadKey clears the banner in the same render.
       let reloadSucceeded = false;
+      // I1 (review 2026-04-20): when reloadActiveChapter returns
+      // "superseded", the user switched chapters (or the chapter
+      // vanished) between the directive returning and the reload
+      // firing. Any pre-existing lock banner was scoped to the PRIOR
+      // chapter — it doesn't apply to whichever chapter is active
+      // now. Honoring the lock here would leave the new, unrelated
+      // editor read-only while EditorPage's useEffect on activeChapter
+      // clears the banner, producing a "looks editable but can't type"
+      // dead state the user can't recover from without another chapter
+      // switch or refresh. Track explicitly so the finally can bypass
+      // the lock gate — distinct from reloadSucceeded because we did
+      // NOT refresh the displayed content, so the "lock's premise no
+      // longer holds" semantics are different: on superseded the
+      // premise was always about a different chapter.
+      let reloadSuperseded = false;
       // Entry-time editor snapshot — used to detect mid-mutate remounts:
       // if editorAtEntry was null (chapter mid-remount) and a new TipTap
       // instance mounts during the await mutate(), we must re-read the
@@ -239,11 +254,17 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
           // "superseded": the user switched chapters (or the call was gated
           // out by expectedChapterId) before the reload ran. The mutation
           // itself still committed server-side, so don't raise a lock
-          // banner (I5). But don't set reloadSucceeded either — the active
-          // chapter's displayed content wasn't refreshed, so we must not
-          // override a pre-existing lock.
+          // banner (I5). Track separately from reloadSucceeded because
+          // the displayed chapter's content wasn't refreshed — but the
+          // finally still bypasses the caller's lock gate (I1, review
+          // 2026-04-20): any pre-existing lock was scoped to the PRIOR
+          // chapter, so leaving the unrelated new editor read-only
+          // produces a "no banner, can't type" dead state once
+          // EditorPage's useEffect clears the banner on chapter change.
           if (outcome === "reloaded") {
             reloadSucceeded = true;
+          } else if (outcome === "superseded") {
+            reloadSuperseded = true;
           }
         }
         return { ok: true, data: directive.data };
@@ -268,7 +289,8 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         // the editor would stay setEditable(false) after the banner cleared,
         // leaving the user in an unrecoverable "looks editable but can't
         // type" state until chapter switch (I2).
-        const lockedByCaller = isLockedRef.current?.() === true && !reloadSucceeded;
+        const lockedByCaller =
+          isLockedRef.current?.() === true && !reloadSucceeded && !reloadSuperseded;
         if (!reloadFailed && !lockedByCaller) {
           // Re-read editorRef.current (I3): if the entry-time editor was
           // destroyed mid-run (chapter switch during mutate) its setEditable

@@ -360,12 +360,18 @@ describe("useEditorMutation — reload superseded (I5)", () => {
     expect(res).toEqual({ ok: true, data: { replaced: 3 } });
   });
 
-  it("does NOT override a pre-existing lock when reload was superseded (inline A)", async () => {
-    // Critical contract: superseded reload did NOT refresh the active
-    // chapter's displayed content. If a prior reload-failure set the lock,
-    // a subsequent superseded reload must NOT unlock the editor — typing
-    // on top of stale content would auto-save back over the server-committed
-    // change.
+  it("bypasses a pre-existing caller lock when reload was superseded (I1, review 2026-04-20)", async () => {
+    // Revised semantics: "superseded" implies the user switched chapters
+    // (or the chapter vanished) between the directive returning and the
+    // reload firing — every "superseded" code path in useProjectEditor
+    // either sees current.id !== expectedChapterId or a seq bump, both
+    // of which only happen on chapter change. Any pre-existing lock
+    // banner was scoped to the PRIOR chapter; leaving the unrelated
+    // new editor read-only while EditorPage's useEffect clears the
+    // banner on chapter change produced a dead "no banner, can't type"
+    // state the user couldn't recover from without another switch or
+    // refresh. The finally now unlocks on superseded regardless of the
+    // isLocked predicate.
     const { editorRef, projectEditor } = buildHandles();
     projectEditor.reloadActiveChapter = vi.fn(async () => "superseded" as const);
     const isLocked = vi.fn(() => true);
@@ -378,10 +384,12 @@ describe("useEditorMutation — reload superseded (I5)", () => {
       data: undefined,
     }));
 
-    // setEditable(false) on entry; setEditable(true) must NOT have been
-    // called — lock honored because reload was skipped, not performed.
-    expect(editorRef.current!.setEditable).toHaveBeenCalledTimes(1);
-    expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(false);
+    // setEditable(false) on entry, setEditable(true) in the finally — the
+    // superseded outcome bypasses the caller's lock so the (now unrelated)
+    // editor is usable.
+    expect(editorRef.current!.setEditable).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(editorRef.current!.setEditable).mock.calls[0]![0]).toBe(false);
+    expect(vi.mocked(editorRef.current!.setEditable).mock.calls[1]![0]).toBe(true);
   });
 });
 
