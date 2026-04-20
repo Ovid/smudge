@@ -371,6 +371,16 @@ export function EditorPage() {
         // path) — surface a persistent, non-dismissible lock banner so the
         // user-visible signal of the read-only state cannot be hidden (I1).
         setEditorLockedMessage(STRINGS.snapshots.restoreSucceededReloadFailed);
+        // I2 (review 2026-04-20): defense-in-depth cache-clear mirroring
+        // the possibly_committed branch below. The hook's stage:"reload"
+        // path normally handles cache-clear (including the C1 fix for the
+        // mid-remount re-lock bail), but without a redundant clear here
+        // the restore branch has no backstop if a future hook refactor
+        // introduces a gap between "server commit" and "cache wipe".
+        // The replace flow converges through finalizeReplaceSuccess which
+        // has its own convergence logic; restore has no equivalent, so
+        // mirror the possibly_committed branch's defense-in-depth.
+        clearCachedContent(activeChapter.id);
         // Defensive re-lock to match finalizeReplaceSuccess's convergence
         // rationale: restore's stage:"reload" currently relies on the
         // hook's reloadFailed path keeping the editor read-only, but a
