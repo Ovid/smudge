@@ -437,6 +437,11 @@ export function useProjectEditor(slug: string | undefined) {
       // the resume, but the wakeup wasted a setTimeout slot and held a
       // reference to the deleted chapter id until the timer fired.
       cancelInFlightSave();
+      // Also cancel any in-flight chapter GET (matches handleCreateChapter
+      // discipline): a GET resolving during the delete POST can land
+      // setActiveChapter on the chapter the user is deleting, flashing
+      // the wrong chapter as active before the delete effect settles.
+      cancelInFlightSelect();
       // Mirror handleSelectChapter: the deleted chapter's save-status must
       // not leak into the empty-state or next-selected chapter. Without
       // this, deleting mid-save leaves the footer stuck on "Saving…" until
@@ -496,7 +501,7 @@ export function useProjectEditor(slug: string | undefined) {
         return false;
       }
     },
-    [cancelInFlightSave],
+    [cancelInFlightSave, cancelInFlightSelect],
   );
 
   const handleReorderChapters = useCallback(async (orderedIds: string[]) => {
