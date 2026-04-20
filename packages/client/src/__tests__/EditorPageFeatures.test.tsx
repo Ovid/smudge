@@ -2068,6 +2068,79 @@ describe("EditorPage snapshot panel", () => {
     });
   });
 
+  it("refreshes snapshot count on 2xx BAD_JSON restore (I1)", async () => {
+    // possibly_committed means the server likely wrote a new restore +
+    // auto-snapshot. The snapshot panel handle refresh is a no-op when
+    // the panel is closed, so refreshSnapshotCount is required to keep
+    // the toolbar badge from going stale.
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-1",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+    ]);
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-1",
+      chapter_id: "ch-1",
+      label: "v1",
+      content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+      word_count: 5,
+      is_auto: false,
+      created_at: "2026-04-17T10:00:00Z",
+    });
+    const { ApiRequestError } = await import("../api/client");
+    (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
+      .fn()
+      .mockRejectedValue(new ApiRequestError("Malformed response body", 200, "BAD_JSON"));
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    // Open panel, view snapshot, then close panel so the Restore click
+    // below fires from SnapshotBanner with the panel closed — that's the
+    // realistic state where refreshSnapshots() is a no-op and
+    // refreshSnapshotCount is the only signal that updates the badge.
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "View" }));
+    await waitFor(() => {
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+    });
+    // Close the panel via Escape (the toolbar Snapshots button unmounts
+    // together with the Editor when viewingSnapshot is truthy).
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("complementary", { name: /Snapshots/i })).toBeNull();
+    });
+
+    const listCallsBefore = vi.mocked(api.snapshots.list).mock.calls.length;
+
+    const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
+    await userEvent.click(restoreButtons[0]!);
+    const dialog = await screen.findByRole("alertdialog", { name: "Restore" });
+    const confirmButton = Array.from(dialog.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Restore",
+    );
+    await userEvent.click(confirmButton!);
+
+    // Lock banner confirms we're in the possibly_committed branch.
+    expect(
+      await screen.findByText(STRINGS.snapshots.restoreResponseUnreadable),
+    ).toBeInTheDocument();
+    // refreshSnapshotCount() issues a fresh list() call to update the
+    // toolbar badge — without the I1 fix this would stay at the pre-
+    // restore value because refreshSnapshots() is a no-op on a closed
+    // panel.
+    await waitFor(() => {
+      expect(vi.mocked(api.snapshots.list).mock.calls.length).toBeGreaterThan(listCallsBefore);
+    });
+  });
+
   it("clicks Create Snapshot in the panel (exercises onBeforeCreate)", async () => {
     (api.snapshots as unknown as { create: ReturnType<typeof vi.fn> }).create = vi
       .fn()

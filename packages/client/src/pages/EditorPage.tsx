@@ -365,6 +365,14 @@ export function EditorPage() {
           // companion editor-state change.
           safeSetEditable(editorRef, false);
           snapshotPanelRef.current?.refreshSnapshots();
+          // The server almost certainly just committed a restore + its
+          // auto-snapshot. Drive the toolbar badge directly (I1) — the
+          // panel-handle refresh above is a no-op when the panel is
+          // closed, which is the typical state for a SnapshotBanner-
+          // initiated restore. Without this, the badge silently displays
+          // a stale pre-restore count after an opaque-but-likely-
+          // committed 2xx BAD_JSON.
+          refreshSnapshotCount();
           return;
         }
         if (result.error.reason === "corrupt_snapshot") {
@@ -407,6 +415,16 @@ export function EditorPage() {
         // possibly_committed branch above returns before reaching this
         // line and runs its own refresh.
         snapshotPanelRef.current?.refreshSnapshots();
+        // Drive the toolbar snapshot count the same way finalizeReplaceSuccess
+        // does (I1). The `unknown` branch above locked the editor because
+        // the server commit is ambiguous — if the server did commit, it
+        // also wrote an auto-snapshot, and the panel-handle refresh is a
+        // no-op when the panel is closed. For branches where the server
+        // clearly did NOT commit (corrupt_snapshot, cross_project_image,
+        // not_found, network), this is at most a redundant fetch — no
+        // new snapshot exists, so the count is unchanged. Cheaper than
+        // branching for the narrow "know-nothing-happened" cases.
+        refreshSnapshotCount();
         return;
       }
       setActionError(STRINGS.snapshots.restoreFailed);
@@ -423,6 +441,7 @@ export function EditorPage() {
     findReplace,
     isActionBusy,
     exitSnapshotView,
+    refreshSnapshotCount,
   ]);
 
   // Shared post-replace bookkeeping for executeReplace and handleReplaceOne,
