@@ -915,9 +915,7 @@ describe("useProjectEditor", () => {
       await expect(
         Promise.race([
           savePromise,
-          new Promise((_, reject) =>
-            realSetTimeout(() => reject(new Error("timed out")), 50),
-          ),
+          new Promise((_, reject) => realSetTimeout(() => reject(new Error("timed out")), 50)),
         ]),
       ).resolves.toBe(false);
     } finally {

@@ -54,9 +54,7 @@ interface SnapshotPanelProps {
    *   mutationBusy info banner — the panel suppresses createError here
    *   to avoid a contradictory pair of banners.
    */
-  onBeforeCreate?: () => Promise<
-    { ok: true } | { ok: false; reason: "busy" | "flush_failed" }
-  >;
+  onBeforeCreate?: () => Promise<{ ok: true } | { ok: false; reason: "busy" | "flush_failed" }>;
   /**
    * Fired every time the panel's list fetch succeeds, with the current
    * snapshot count. Lets the parent hook drive the toolbar badge from
