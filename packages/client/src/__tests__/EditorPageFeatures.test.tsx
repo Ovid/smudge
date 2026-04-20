@@ -1229,6 +1229,59 @@ describe("EditorPage find-and-replace confirmation", () => {
     resolveReplace({ replaced_count: 1, affected_chapter_ids: [] });
   });
 
+  it("shows busy banner on panel toggles and view switches mid-mutation (I5)", async () => {
+    // Each toolbar/panel entry point has its own busy guard. A single
+    // in-flight replace exercises several of them — Snapshots toggle,
+    // Reference Panel toggle, Ctrl+H, view-mode tab, and Trash open all
+    // surface the busy banner instead of racing the mutation. Without
+    // the guards: each path either bumps the save seq behind the hook's
+    // back, remounts the Editor while the hook holds a stale handle, or
+    // races the in-flight save controller.
+    let resolveReplace: (v: {
+      replaced_count: number;
+      affected_chapter_ids: string[];
+    }) => void = () => {};
+    vi.mocked(api.search.replace).mockImplementationOnce(
+      () =>
+        new Promise<{ replaced_count: number; affected_chapter_ids: string[] }>((resolve) => {
+          resolveReplace = resolve;
+        }),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    // 1) View-switch via toolbar tab (Preview) — switchToView's busy
+    // guard surfaces banner.
+    await userEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(await screen.findByText(STRINGS.editor.mutationBusy)).toBeInTheDocument();
+
+    // 2) Snapshots toggle — handleToggleSnapshotPanel's busy guard.
+    const snapshotsToggle = screen.getAllByRole("button", { name: /Snapshots/ })[0]!;
+    await userEvent.click(snapshotsToggle);
+    expect(screen.getByText(STRINGS.editor.mutationBusy)).toBeInTheDocument();
+
+    // 3) Reference Panel toggle — handleToggleReferencePanel's busy guard.
+    const refPanelToggle = screen.getByRole("button", {
+      name: STRINGS.referencePanel.toggleTooltip,
+    });
+    await userEvent.click(refPanelToggle);
+    expect(screen.getByText(STRINGS.editor.mutationBusy)).toBeInTheDocument();
+
+    // 4) Ctrl+H toggles Find/Replace — handleToggleFindReplace busy guard.
+    fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+    expect(screen.getByText(STRINGS.editor.mutationBusy)).toBeInTheDocument();
+
+    // 5) Trash button (in sidebar) — openTrashGuarded busy guard.
+    const trashButton = screen.getByRole("button", { name: STRINGS.sidebar.trash });
+    await userEvent.click(trashButton);
+    expect(screen.getByText(STRINGS.editor.mutationBusy)).toBeInTheDocument();
+
+    // Allow the replace to resolve so the test tears down cleanly.
+    resolveReplace({ replaced_count: 1, affected_chapter_ids: [] });
+  });
+
   it("locks editor on 2xx BAD_JSON from replace — server may have committed (C1)", async () => {
     // apiFetch classifies a 2xx response whose body fails to parse as
     // ApiRequestError(status=2xx, code="BAD_JSON"). The server likely
