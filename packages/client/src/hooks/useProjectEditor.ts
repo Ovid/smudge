@@ -388,7 +388,16 @@ export function useProjectEditor(slug: string | undefined) {
       if (expectedChapterId !== undefined && current.id !== expectedChapterId) {
         return "superseded";
       }
-      ++saveSeqRef.current;
+      // I7 (review 2026-04-21): bare ++saveSeqRef.current short-circuits
+      // the retry loop but leaves the in-flight AbortController and any
+      // pending backoff timer dangling. The sole current caller
+      // (useEditorMutation) already runs cancelPendingSaves() before
+      // reloadActiveChapter, but a future direct caller would inherit a
+      // resource leak. Use cancelInFlightSave for parity with
+      // handleSelectChapter / handleCreateChapter / handleDeleteChapter —
+      // all chapter-state transitions consolidate save cancellation
+      // through the same helper.
+      cancelInFlightSave();
       setSaveStatus("idle");
       setCacheWarning(false);
       const seq = ++selectChapterSeqRef.current;
@@ -423,7 +432,7 @@ export function useProjectEditor(slug: string | undefined) {
         return "failed";
       }
     },
-    [],
+    [cancelInFlightSave],
   );
 
   const projectRef = useRef(project);
