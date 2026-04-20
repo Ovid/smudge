@@ -330,8 +330,12 @@ export function EditorPage() {
         // Lock-banner state doesn't enforce read-only by itself; the
         // hook's finally already re-enabled the editor after the
         // mutate-stage throw. Re-apply setEditable(false) so auto-save
-        // cannot overwrite a possibly-committed restore.
-        editorRef.current?.setEditable(false);
+        // cannot overwrite a possibly-committed restore. Wrapped in
+        // safeSetEditable (I2): TipTap can throw synchronously during the
+        // mid-remount window, and an unwrapped throw here would skip the
+        // snapshot panel refresh and leave the lock banner without its
+        // companion editor-state change.
+        safeSetEditable(editorRef, false);
         snapshotPanelRef.current?.refreshSnapshots();
         return;
       }
@@ -359,7 +363,7 @@ export function EditorPage() {
         // throw bypasses the hook's cache-clear, so the pre-restore draft
         // would re-hydrate on refresh and overwrite the server commit.
         clearCachedContent(activeChapter.id);
-        editorRef.current?.setEditable(false);
+        safeSetEditable(editorRef, false);
         snapshotPanelRef.current?.refreshSnapshots();
       }
       return;
@@ -405,8 +409,10 @@ export function EditorPage() {
         // re-enable). In the stage:"mutate" 2xx BAD_JSON path the hook's
         // finally already re-enabled it. Call setEditable(false) here so
         // both callers converge on the same read-only invariant — the
-        // banner and the editor state never disagree (C1).
-        editorRef.current?.setEditable(false);
+        // banner and the editor state never disagree (C1). Wrapped in
+        // safeSetEditable (I2) so a TipTap mid-remount throw does not
+        // skip the awaited search refresh below.
+        safeSetEditable(editorRef, false);
       }
       await findReplace.search(slug);
       snapshotPanelRef.current?.refreshSnapshots();
