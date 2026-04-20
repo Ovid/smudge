@@ -147,6 +147,15 @@ export function EditorPage() {
   const viewingSnapshotRef = useRef(viewingSnapshot);
   viewingSnapshotRef.current = viewingSnapshot;
 
+  // I6 (review 2026-04-21): latest-ref for slug so finalizeReplaceSuccess
+  // reads the CURRENT slug at completion time, not the one captured when
+  // the callback was created. Without this, a project rename mid-replace
+  // would leave the closure pointing at the old slug — the post-replace
+  // findReplace.search call 404s against the stale slug, pinning a
+  // searchProjectNotFound error banner next to a successful replace.
+  const slugRef = useRef(slug);
+  slugRef.current = slug;
+
   // Editor handle is declared here (above useEditorMutation + the migrated
   // mutation callbacks) so the hook can capture the ref and the callbacks
   // below can read editorRef.current safely.
@@ -537,7 +546,14 @@ export function EditorPage() {
       // is true and no override is provided.
       lockMessage?: string;
     }) => {
-      if (!slug) return;
+      // I6 (review 2026-04-21): read the LIVE slug from the ref instead of
+      // the closure-captured value. A project rename that lands mid-replace
+      // updates slug state to the new slug, but this callback was bound
+      // with the old one — without the ref, findReplace.search(oldSlug)
+      // 404s and pins a searchProjectNotFound error banner next to the
+      // replace's success banner.
+      const currentSlug = slugRef.current;
+      if (!currentSlug) return;
       // Set the lock banner BEFORE awaiting the search refresh (I4). The
       // search request can take hundreds of milliseconds; during that window
       // the editor is already setEditable(false) but without a banner, the
@@ -558,7 +574,7 @@ export function EditorPage() {
       // findReplace.search catches network/5xx/4xx internally and resolves
       // void — see useFindReplaceState's search(). No external try/catch
       // is needed here.
-      await findReplace.search(slug);
+      await findReplace.search(currentSlug);
       snapshotPanelRef.current?.refreshSnapshots();
       // Panel-handle refresh is a no-op when the snapshot panel is closed
       // (ref is null). Replace just created N auto-snapshots, so drive the
@@ -571,7 +587,7 @@ export function EditorPage() {
         setActionInfo(STRINGS.findReplace.replaceSuccess(replacedCount));
       }
     },
-    [slug, findReplace, snapshotPanelRef, refreshSnapshotCount],
+    [findReplace, snapshotPanelRef, refreshSnapshotCount],
   );
 
   const executeReplace = useCallback(
