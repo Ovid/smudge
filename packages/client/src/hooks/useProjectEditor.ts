@@ -299,6 +299,12 @@ export function useProjectEditor(slug: string | undefined) {
     const slug = projectSlugRef.current;
     if (!slug) return;
     ++saveSeqRef.current; // cancel any in-flight save retries for the old chapter
+    // Also cancel any in-flight chapter GET (reloadActiveChapter or
+    // handleSelectChapter). Without this bump, a pending reload's
+    // setActiveChapter landing after the POST would overwrite the
+    // newly-created chapter with the old one, and subsequent keystrokes
+    // would PATCH the stale chapter id (I4).
+    cancelInFlightSelect();
     setSaveStatus("idle");
     setSaveErrorMessage(null);
     setCacheWarning(false);
@@ -311,7 +317,7 @@ export function useProjectEditor(slug: string | undefined) {
       console.warn("Failed to create chapter:", err);
       setError(STRINGS.error.createChapterFailed);
     }
-  }, []);
+  }, [cancelInFlightSelect]);
 
   const handleSelectChapter = useCallback(
     async (chapterId: string) => {
