@@ -662,9 +662,22 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
     expect(vi.mocked(editor.setEditable).mock.calls).toEqual([[false]]);
   });
 
-  it("swallows throws from post-mutate setEditable(false) so a mid-remount does not discard a server-successful mutate", async () => {
+  it("promotes a throwing post-mutate setEditable(false) to stage:reload (I1)", async () => {
+    // Before I1: the hook logged and fell through to clearAllCachedContent
+    // + reloadActiveChapter on the assumption the re-lock succeeded. If
+    // it actually threw, the fresh editor was left writable and the
+    // cache for affected chapters had already been wiped — user
+    // keystrokes during the reload-GET window would PATCH pre-mutation
+    // content back over the just-committed server change.
+    //
+    // After: on throw, return stage:"reload" with the directive's data.
+    // The caller surfaces the persistent lock banner and the save gate
+    // (handleSaveLockGated, C1) refuses to PATCH while that banner is up.
     const { projectEditor } = buildHandles();
     const editorRef: MutableRefObject<EditorHandle | null> = { current: null };
+    const clearAllSpy = vi.fn();
+    const reloadSpy = vi.fn(async () => "reloaded" as const);
+    projectEditor.reloadActiveChapter = reloadSpy;
 
     const throwingEditor: EditorHandle = {
       flushSave: vi.fn(async () => true),
@@ -682,11 +695,26 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
 
       const res = await result.current.run(async () => {
         editorRef.current = throwingEditor;
-        return { clearCacheFor: [], reloadActiveChapter: false, data: undefined };
+        return {
+          clearCacheFor: ["ch-1"],
+          reloadActiveChapter: true,
+          reloadChapterId: "ch-1",
+          data: { payload: "committed" } as const,
+        };
       });
 
-      expect(res.ok).toBe(true);
+      expect(res.ok).toBe(false);
+      if (res.ok === false) {
+        expect(res.stage).toBe("reload");
+        if (res.stage === "reload") {
+          expect(res.data).toEqual({ payload: "committed" });
+        }
+      }
       expect(warnSpy).toHaveBeenCalled();
+      // Cache clear / reload MUST NOT run once the re-lock has thrown —
+      // we bail before them.
+      expect(clearAllSpy).not.toHaveBeenCalled();
+      expect(reloadSpy).not.toHaveBeenCalled();
     } finally {
       warnSpy.mockRestore();
     }

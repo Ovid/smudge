@@ -181,7 +181,25 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             editorAfterMutate.markClean();
             projectEditorRef.current.cancelPendingSaves();
           } catch (err) {
+            // I1: Previously we logged and fell through to clearAllCachedContent
+            // + reloadActiveChapter on the assumption the re-lock worked.
+            // If setEditable/markClean/cancelPendingSaves actually throws,
+            // the fresh editor is left writable and we are about to wipe
+            // its cache — user keystrokes during the reload-GET window
+            // would then PATCH pre-mutation content back over the just-
+            // committed server change, and the localStorage safety net
+            // would have already been cleared. Promote to stage:"reload"
+            // instead: the server committed (mutate succeeded), so the
+            // caller surfaces the persistent "refresh the page" lock and
+            // EditorPage's handleSaveLockGated (C1) refuses any PATCH
+            // while the banner is up.
             console.warn("useEditorMutation: failed to lock mid-remount editor", err);
+            reloadFailed = true;
+            return {
+              ok: false,
+              stage: "reload",
+              data: directive.data,
+            };
           }
         }
         if (directive.clearCacheFor.length > 0) {
