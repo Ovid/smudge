@@ -1192,6 +1192,41 @@ describe("EditorPage find-and-replace confirmation", () => {
     warnSpy.mockRestore();
   });
 
+  it("shows busy banner when sidebar Add Chapter is clicked mid-mutation (I2)", async () => {
+    // Regression for the I2 fix: sidebar onAddChapter used to call
+    // handleCreateChapter directly, bypassing the mutation.isBusy() guard
+    // that executeReplace/handleRestoreSnapshot honor. A click during a
+    // 2-14s replace flush would then call cancelInFlightSave(), aborting
+    // the mutation's in-flight save controller mid-run and producing a
+    // misattributed "save failed" banner.
+    let resolveReplace: (v: { replaced_count: number; affected_chapter_ids: string[] }) => void =
+      () => {};
+    vi.mocked(api.search.replace).mockImplementationOnce(
+      () =>
+        new Promise<{ replaced_count: number; affected_chapter_ids: string[] }>((resolve) => {
+          resolveReplace = resolve;
+        }),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    // api.search.replace is now in-flight (promise unresolved) — the
+    // mutation hook is in its mutate-stage wait. Clicking the sidebar
+    // Add Chapter button must now surface the busy banner rather than
+    // racing the in-flight replace.
+    const addButton = await screen.findByRole("button", { name: "Add Chapter" });
+    await userEvent.click(addButton);
+
+    expect(await screen.findByText(STRINGS.editor.mutationBusy)).toBeInTheDocument();
+    // api.chapters.create must NOT have fired — the guard short-circuited.
+    expect(api.chapters.create).not.toHaveBeenCalled();
+
+    // Allow the replace to resolve so the test tears down cleanly.
+    resolveReplace({ replaced_count: 1, affected_chapter_ids: [] });
+  });
+
   it("locks editor on 2xx BAD_JSON from replace — server may have committed (C1)", async () => {
     // apiFetch classifies a 2xx response whose body fails to parse as
     // ApiRequestError(status=2xx, code="BAD_JSON"). The server likely
@@ -1373,6 +1408,33 @@ describe("EditorPage find-and-replace confirmation", () => {
     // disappear — the search refetch clears its own results on 404, and
     // clearError() suppresses any panel-local duplicate copy.
     expect(vi.mocked(api.search.find).mock.calls.length).toBeGreaterThan(findCallsBeforeClick);
+  });
+
+  it("handleReplaceOne locks editor on 2xx BAD_JSON — server may have committed (C1)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
+    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+
+    const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
+    await userEvent.click(replaceOne[0]!);
+
+    expect(
+      await screen.findByText(STRINGS.findReplace.replaceResponseUnreadable),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: STRINGS.editor.refreshButton })).toBeInTheDocument();
   });
 
   it("handleReplaceOne surfaces MATCH_CAP_EXCEEDED with tooManyMatches copy", async () => {
@@ -1688,6 +1750,62 @@ describe("EditorPage snapshot panel", () => {
         (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore,
       ).toHaveBeenCalledWith("snap-1");
     });
+  });
+
+  it("locks editor on 2xx BAD_JSON from restore — server may have committed (C2)", async () => {
+    // Mirror of the replace 2xx BAD_JSON test. apiFetch throws
+    // ApiRequestError(status=2xx, code="BAD_JSON") when a 2xx restore
+    // response body fails to parse — server likely committed the restore
+    // and auto-snapshot, but the response body was unreadable. The caller
+    // must NOT re-enable the editor and must NOT surface a generic retry
+    // banner — the "response unreadable" lock is the only safe UX.
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-1",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+    ]);
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-1",
+      chapter_id: "ch-1",
+      label: "v1",
+      content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+      word_count: 5,
+      is_auto: false,
+      created_at: "2026-04-17T10:00:00Z",
+    });
+    const { ApiRequestError } = await import("../api/client");
+    (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
+      .fn()
+      .mockRejectedValue(new ApiRequestError("Malformed response body", 200, "BAD_JSON"));
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "View" }));
+    await waitFor(() => {
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+    });
+
+    const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
+    await userEvent.click(restoreButtons[0]!);
+    const dialog = await screen.findByRole("alertdialog", { name: "Restore" });
+    const confirmButton = Array.from(dialog.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Restore",
+    );
+    await userEvent.click(confirmButton!);
+
+    expect(
+      await screen.findByText(STRINGS.snapshots.restoreResponseUnreadable),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: STRINGS.editor.refreshButton })).toBeInTheDocument();
   });
 
   it("clicks Create Snapshot in the panel (exercises onBeforeCreate)", async () => {
