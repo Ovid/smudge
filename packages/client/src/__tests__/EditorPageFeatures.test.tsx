@@ -1256,6 +1256,32 @@ describe("EditorPage find-and-replace confirmation", () => {
     expect(screen.queryByText(/Replaced .* occurrence/)).toBeNull();
   });
 
+  it("clears caches for project chapters on 2xx BAD_JSON from project-scope replace (C1)", async () => {
+    // The mutate throw bypasses the hook's directive-driven cache-clear.
+    // Without a fallback clear, a refresh re-hydrates the pre-replace draft
+    // from localStorage and the next auto-save reverts the server-committed
+    // replace. Project-scope replace has no affected_chapter_ids (response
+    // unreadable), so the conservative fallback is to clear all chapters in
+    // the project.
+    const { clearAllCachedContent, clearCachedContent } = await import(
+      "../hooks/useContentCache"
+    );
+    vi.mocked(clearAllCachedContent).mockClear();
+    vi.mocked(clearCachedContent).mockClear();
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    await waitFor(() => {
+      expect(clearAllCachedContent).toHaveBeenCalledWith(["ch-1", "ch-2"]);
+    });
+  });
+
   it("Ctrl+H is blocked while the replace-confirm dialog is open", async () => {
     await openPanelAndClickReplaceAll();
 
@@ -1437,6 +1463,39 @@ describe("EditorPage find-and-replace confirmation", () => {
       await screen.findByText(STRINGS.findReplace.replaceResponseUnreadable),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: STRINGS.editor.refreshButton })).toBeInTheDocument();
+  });
+
+  it("handleReplaceOne clears the chapter's cache on 2xx BAD_JSON (C1)", async () => {
+    // Replace-one is single-chapter; the BAD_JSON branch has no
+    // authoritative affected_chapter_ids in the unreadable response, but
+    // the targeted chapterId is known at the call site. The mutate throw
+    // bypasses the hook's directive-driven cache-clear, so a refresh
+    // would otherwise re-hydrate the pre-replace draft from localStorage.
+    const { clearCachedContent } = await import("../hooks/useContentCache");
+    vi.mocked(clearCachedContent).mockClear();
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
+    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+
+    const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
+    await userEvent.click(replaceOne[0]!);
+
+    await waitFor(() => {
+      expect(clearCachedContent).toHaveBeenCalledWith("ch-1");
+    });
   });
 
   it("handleReplaceOne surfaces MATCH_CAP_EXCEEDED with tooManyMatches copy", async () => {
@@ -1808,6 +1867,60 @@ describe("EditorPage snapshot panel", () => {
       await screen.findByText(STRINGS.snapshots.restoreResponseUnreadable),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: STRINGS.editor.refreshButton })).toBeInTheDocument();
+  });
+
+  it("clears active chapter's cache on 2xx BAD_JSON from restore (C1)", async () => {
+    // The mutate throw bypasses the hook's directive-driven cache-clear.
+    // Without this fallback, refresh re-hydrates the pre-restore draft and
+    // the next auto-save reverts the server-committed restore.
+    const { clearCachedContent } = await import("../hooks/useContentCache");
+    vi.mocked(clearCachedContent).mockClear();
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-1",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+    ]);
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-1",
+      chapter_id: "ch-1",
+      label: "v1",
+      content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+      word_count: 5,
+      is_auto: false,
+      created_at: "2026-04-17T10:00:00Z",
+    });
+    const { ApiRequestError } = await import("../api/client");
+    (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
+      .fn()
+      .mockRejectedValue(new ApiRequestError("Malformed response body", 200, "BAD_JSON"));
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "View" }));
+    await waitFor(() => {
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+    });
+
+    const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
+    await userEvent.click(restoreButtons[0]!);
+    const dialog = await screen.findByRole("alertdialog", { name: "Restore" });
+    const confirmButton = Array.from(dialog.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Restore",
+    );
+    await userEvent.click(confirmButton!);
+
+    await waitFor(() => {
+      expect(clearCachedContent).toHaveBeenCalledWith("ch-1");
+    });
   });
 
   it("clicks Create Snapshot in the panel (exercises onBeforeCreate)", async () => {

@@ -33,6 +33,7 @@ import { useTrashManager } from "../hooks/useTrashManager";
 import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcuts";
 import { api, ApiRequestError } from "../api/client";
 import { mapReplaceErrorToMessage } from "../utils/findReplaceErrors";
+import { clearCachedContent, clearAllCachedContent } from "../hooks/useContentCache";
 import { Logo } from "../components/Logo";
 import { generateHTML } from "@tiptap/html";
 import DOMPurify from "dompurify";
@@ -319,6 +320,12 @@ export function EditorPage() {
         // Treat the same as stage:"reload" — persistent lock banner, no
         // retry prompt, since retrying could double-restore (C2).
         setEditorLockedMessage(STRINGS.snapshots.restoreResponseUnreadable);
+        // Clear the restored chapter's cached draft (C1). The mutate
+        // callback threw before returning a directive, so the hook's
+        // clearAllCachedContent never ran — without this, a refresh would
+        // re-hydrate the pre-restore draft from localStorage and the next
+        // auto-save would PATCH it back over the server-committed restore.
+        clearCachedContent(activeChapter.id);
         // Lock-banner state doesn't enforce read-only by itself; the
         // hook's finally already re-enabled the editor after the
         // mutate-stage throw. Re-apply setEditable(false) so auto-save
@@ -347,6 +354,10 @@ export function EditorPage() {
         // and raise the lock banner rather than a dismissible "try again"
         // that could double-restore if the server already committed (I7).
         setEditorLockedMessage(STRINGS.snapshots.restoreResponseUnreadable);
+        // Same C1 leak as the possibly_committed branch — the mutate
+        // throw bypasses the hook's cache-clear, so the pre-restore draft
+        // would re-hydrate on refresh and overwrite the server commit.
+        clearCachedContent(activeChapter.id);
         editorRef.current?.setEditable(false);
         snapshotPanelRef.current?.refreshSnapshots();
       }
@@ -506,6 +517,19 @@ export function EditorPage() {
         err.status >= 200 &&
         err.status < 300
       ) {
+        // Clear caches for chapters the server may have replaced (C1). The
+        // mutate callback threw, so the hook's directive-based cache-clear
+        // never ran. The response body was unreadable, so affected_chapter_ids
+        // is unavailable — fall back to the requested scope: the targeted
+        // chapter for chapter-scope, or every project chapter for
+        // project-scope. Without this, refresh re-hydrates the pre-replace
+        // draft from localStorage and the next auto-save reverts the
+        // server-committed replace.
+        if (frozen.scope.type === "chapter") {
+          clearCachedContent(frozen.scope.chapter_id);
+        } else {
+          clearAllCachedContent(project.chapters.map((c) => c.id));
+        }
         await finalizeReplaceSuccess({
           replacedCount: null,
           reloadFailed: true,
@@ -677,6 +701,10 @@ export function EditorPage() {
         err.status >= 200 &&
         err.status < 300
       ) {
+        // Replace-one is single-chapter — clear that chapter's cached draft
+        // (C1). The mutate callback threw before returning a directive, so
+        // the hook's clearAllCachedContent never ran.
+        clearCachedContent(chapterId);
         await finalizeReplaceSuccess({
           replacedCount: null,
           reloadFailed: true,
