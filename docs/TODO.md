@@ -1,3 +1,5 @@
+- Need a deep dive into how we save documents to ensure that it's working as
+  intended.
 
 - This is a single user app. Coauthors want to collaborate. How can we do
   this? Can we import an .smg file? That seems problematic because I might
