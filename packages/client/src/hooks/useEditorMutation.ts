@@ -216,10 +216,29 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             // only the reload — we can't safely load fresh server state
             // into an editor we couldn't re-lock.
             console.warn("useEditorMutation: failed to lock mid-remount editor", err);
-            reloadFailed = true;
             if (directive.clearCacheFor.length > 0) {
               clearAllCachedContent(directive.clearCacheFor);
             }
+            // I1 (review 2026-04-21): honor the directive when it did not
+            // ask for a reload. The re-lock bail previously returned
+            // stage:"reload" unconditionally — callers interpret that as
+            // "server committed, follow-up GET failed" and unconditionally
+            // raise a persistent lock banner + cache-wipe + editor lock
+            // on the NEW editor (which may be an unrelated chapter, e.g.
+            // stale-chapter-switch restore or 0-replace). When the
+            // directive's reloadActiveChapter is false, the mutation
+            // intentionally signaled "no GET needed" — either because
+            // nothing was reloadable (0 replace_count) or because the
+            // target is no longer the active chapter. In both cases the
+            // lock banner + cache-wipe would fire against the wrong
+            // chapter. Surface success instead; the cache for affected
+            // chapters has been cleared, and the new editor's own chapter
+            // is untouched by the mutation so leaving it writable is
+            // correct.
+            if (!directive.reloadActiveChapter) {
+              return { ok: true, data: directive.data };
+            }
+            reloadFailed = true;
             return {
               ok: false,
               stage: "reload",

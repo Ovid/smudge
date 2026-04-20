@@ -734,6 +734,66 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
       warnSpy.mockRestore();
     }
   });
+
+  it("returns ok:true on re-lock throw when directive.reloadActiveChapter is false (I1, review 2026-04-21)", async () => {
+    // Prior behavior: the re-lock bail unconditionally returned
+    // stage:"reload" regardless of whether the directive asked for a
+    // reload. Callers treat stage:"reload" as "server committed, GET
+    // failed" and raise a persistent lock banner + cache-wipe + editor
+    // lock. When the directive's reloadActiveChapter is false (e.g.
+    // stale-chapter-switch restore, 0-replace), the mutation intentionally
+    // signaled "no reload needed" — and the new editor that mounted
+    // mid-mutate is on an unrelated chapter. Locking it would be the
+    // wrong chapter, and the contradictory banners (I2 / I3) would fire.
+    //
+    // After fix: honor the directive. Cache-clear still runs, but the
+    // hook returns ok:true with the data so callers surface the normal
+    // success path.
+    const { projectEditor } = buildHandles();
+    const editorRef: MutableRefObject<EditorHandle | null> = { current: null };
+    const reloadSpy = vi.fn(async () => "reloaded" as const);
+    projectEditor.reloadActiveChapter = reloadSpy;
+
+    const throwingEditor: EditorHandle = {
+      flushSave: vi.fn(async () => true),
+      editor: null,
+      insertImage: vi.fn(),
+      markClean: vi.fn(),
+      setEditable: vi.fn(() => {
+        throw new Error("mid-remount throw");
+      }),
+    };
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+
+      const res = await result.current.run(async () => {
+        editorRef.current = throwingEditor;
+        return {
+          clearCacheFor: ["ch-1"],
+          reloadActiveChapter: false,
+          data: { replaced_count: 0 } as const,
+        };
+      });
+
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.data).toEqual({ replaced_count: 0 });
+      }
+      // Cache clear still runs — server committed even if 0-replace.
+      expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["ch-1"]);
+      // Reload was not requested by the directive — must not be called.
+      expect(reloadSpy).not.toHaveBeenCalled();
+      // The throw was still logged via console.warn so devtools has a signal.
+      expect(warnSpy).toHaveBeenCalledWith(
+        "useEditorMutation: failed to lock mid-remount editor",
+        expect.any(Error),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
 });
 
 describe("useEditorMutation — expected chapter id (I2)", () => {
