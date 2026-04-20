@@ -386,9 +386,7 @@ export function EditorPage() {
       // the editor is already setEditable(false) but without a banner, the
       // user sees an unresponsive editor with no explanation.
       if (reloadFailed) {
-        setEditorLockedMessage(
-          lockMessage ?? STRINGS.findReplace.replaceSucceededReloadFailed,
-        );
+        setEditorLockedMessage(lockMessage ?? STRINGS.findReplace.replaceSucceededReloadFailed);
         // The lock banner is UI-only — it does not itself make the editor
         // read-only. In the stage:"reload" path the hook kept the editor
         // setEditable(false) (reloadFailed branch skips the finally's

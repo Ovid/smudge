@@ -1374,8 +1374,7 @@ describe("useProjectEditor", () => {
         }),
     );
 
-    let reloadPromise: Promise<"reloaded" | "superseded" | "failed"> =
-      Promise.resolve("failed");
+    let reloadPromise: Promise<"reloaded" | "superseded" | "failed"> = Promise.resolve("failed");
     act(() => {
       reloadPromise = result.current.reloadActiveChapter();
     });

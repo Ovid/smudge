@@ -3,6 +3,7 @@ import { renderHook } from "@testing-library/react";
 import type { MutableRefObject } from "react";
 import type { EditorHandle } from "../components/Editor";
 import { useEditorMutation, type MutationDirective } from "../hooks/useEditorMutation";
+import type { ReloadOutcome } from "../hooks/useProjectEditor";
 import { clearAllCachedContent } from "./useContentCache";
 
 vi.mock("./useContentCache", () => ({
@@ -26,7 +27,16 @@ function buildHandles() {
     }),
   };
   const editorRef: MutableRefObject<EditorHandle | null> = { current: editor };
-  const projectEditor = {
+  // Typed so individual tests can reassign reloadActiveChapter to mocks
+  // that return "failed" or "superseded" without TS narrowing the return
+  // to a single literal from the initial assignment.
+  const projectEditor: {
+    cancelPendingSaves: () => void;
+    reloadActiveChapter: (
+      onError?: (message: string) => void,
+      expectedChapterId?: string,
+    ) => Promise<ReloadOutcome>;
+  } = {
     cancelPendingSaves: vi.fn(() => {
       calls.push("cancelPendingSaves");
     }),
@@ -516,8 +526,7 @@ describe("useEditorMutation — expected chapter id (I2)", () => {
   it("passes reloadChapterId to reloadActiveChapter so the hook can skip on mismatch", async () => {
     const { editorRef, projectEditor } = buildHandles();
     const reloadSpy = vi.fn(
-      async (_onError?: (msg: string) => void, _expectedChapterId?: string) =>
-        "reloaded" as const,
+      async (_onError?: (msg: string) => void, _expectedChapterId?: string) => "reloaded" as const,
     );
     projectEditor.reloadActiveChapter = reloadSpy;
 
@@ -537,8 +546,7 @@ describe("useEditorMutation — expected chapter id (I2)", () => {
   it("omits the expected chapter id when the directive does not set one (backward compat)", async () => {
     const { editorRef, projectEditor } = buildHandles();
     const reloadSpy = vi.fn(
-      async (_onError?: (msg: string) => void, _expectedChapterId?: string) =>
-        "reloaded" as const,
+      async (_onError?: (msg: string) => void, _expectedChapterId?: string) => "reloaded" as const,
     );
     projectEditor.reloadActiveChapter = reloadSpy;
 
@@ -670,7 +678,7 @@ describe("useEditorMutation — latest-ref pattern", () => {
     const secondReload = vi.fn(async () => "reloaded" as const);
 
     const { result, rerender } = renderHook(
-      (props: { cancel: () => void; reload: () => Promise<boolean> }) =>
+      (props: { cancel: () => void; reload: () => Promise<ReloadOutcome> }) =>
         useEditorMutation({
           editorRef,
           projectEditor: {
