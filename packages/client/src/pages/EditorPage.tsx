@@ -328,17 +328,39 @@ export function EditorPage() {
   // identical sequences (search refetch + snapshot refresh + count bump +
   // success banner + optional lock banner) drift independently.
   const finalizeReplaceSuccess = useCallback(
-    async ({ replacedCount, reloadFailed }: { replacedCount: number; reloadFailed: boolean }) => {
+    async ({
+      replacedCount,
+      reloadFailed,
+      lockMessage,
+    }: {
+      replacedCount: number | null;
+      reloadFailed: boolean;
+      // Override banner copy (used for the 2xx BAD_JSON "possibly committed"
+      // path — C1). Defaults to replaceSucceededReloadFailed when reloadFailed
+      // is true and no override is provided.
+      lockMessage?: string;
+    }) => {
       if (!slug) return;
+      // Set the lock banner BEFORE awaiting the search refresh (I4). The
+      // search request can take hundreds of milliseconds; during that window
+      // the editor is already setEditable(false) but without a banner, the
+      // user sees an unresponsive editor with no explanation.
+      if (reloadFailed) {
+        setEditorLockedMessage(
+          lockMessage ?? STRINGS.findReplace.replaceSucceededReloadFailed,
+        );
+      }
       await findReplace.search(slug);
       snapshotPanelRef.current?.refreshSnapshots();
       // Panel-handle refresh is a no-op when the snapshot panel is closed
       // (ref is null). Replace just created N auto-snapshots, so drive the
       // toolbar count directly via the hook.
       refreshSnapshotCount();
-      setActionInfo(STRINGS.findReplace.replaceSuccess(replacedCount));
-      if (reloadFailed) {
-        setEditorLockedMessage(STRINGS.findReplace.replaceSucceededReloadFailed);
+      // Suppress the "Replaced N occurrences" banner when the count is
+      // unknown (2xx BAD_JSON — the response body was unreadable so we
+      // don't have an authoritative replaced_count to surface).
+      if (replacedCount !== null) {
+        setActionInfo(STRINGS.findReplace.replaceSuccess(replacedCount));
       }
     },
     [slug, findReplace, snapshotPanelRef, refreshSnapshotCount],
@@ -423,7 +445,29 @@ export function EditorPage() {
         return;
       }
       // stage === "mutate"
-      const msg = mapReplaceErrorToMessage(result.error);
+      const err = result.error;
+      // 2xx BAD_JSON: apiFetch throws an ApiRequestError(status=2xx,
+      // code="BAD_JSON") when a 2xx body fails to parse (client.ts:86-92).
+      // The server almost certainly committed the replace (and the
+      // auto-snapshot) and only the response body was unreadable. The
+      // previous handler only showed a dismissible banner and re-enabled
+      // the editor — auto-save's next debounced PATCH would then silently
+      // revert the committed replace (C1). Route to the persistent lock
+      // UX so the editor stays setEditable(false) until refresh.
+      if (
+        err instanceof ApiRequestError &&
+        err.code === "BAD_JSON" &&
+        err.status >= 200 &&
+        err.status < 300
+      ) {
+        await finalizeReplaceSuccess({
+          replacedCount: null,
+          reloadFailed: true,
+          lockMessage: STRINGS.findReplace.replaceResponseUnreadable,
+        });
+        return;
+      }
+      const msg = mapReplaceErrorToMessage(err);
       if (msg) setActionError(msg);
     },
     [
@@ -577,6 +621,23 @@ export function EditorPage() {
       }
       // stage === "mutate"
       const err = result.error;
+      // 2xx BAD_JSON: same C1 branch as executeReplace. The server likely
+      // committed the replace-one (and its auto-snapshot) but the response
+      // body was unreadable. Lock the editor until refresh so auto-save
+      // cannot overwrite a possibly-committed server-side change.
+      if (
+        err instanceof ApiRequestError &&
+        err.code === "BAD_JSON" &&
+        err.status >= 200 &&
+        err.status < 300
+      ) {
+        await finalizeReplaceSuccess({
+          replacedCount: null,
+          reloadFailed: true,
+          lockMessage: STRINGS.findReplace.replaceResponseUnreadable,
+        });
+        return;
+      }
       // On any 404 (chapter soft-deleted OR project gone), refresh the
       // result set BEFORE showing the banner — otherwise the user clicks
       // the same row and loops the same error (I3). Previously gated on

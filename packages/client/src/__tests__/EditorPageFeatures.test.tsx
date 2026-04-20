@@ -1192,6 +1192,33 @@ describe("EditorPage find-and-replace confirmation", () => {
     warnSpy.mockRestore();
   });
 
+  it("locks editor on 2xx BAD_JSON from replace — server may have committed (C1)", async () => {
+    // apiFetch classifies a 2xx response whose body fails to parse as
+    // ApiRequestError(status=2xx, code="BAD_JSON"). The server likely
+    // committed the replace (and the auto-snapshot) but the client cannot
+    // read replaced_count. Before the fix this was shown as a dismissible
+    // banner with the editor re-enabled — auto-save would then silently
+    // revert the committed replace. After: the editor stays read-only and
+    // the "response unreadable" banner becomes persistent until refresh.
+    const { ApiRequestError } = await import("../api/client");
+    const badJson = new ApiRequestError("Malformed response body", 200, "BAD_JSON");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(badJson);
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    // The persistent lock banner with the "response unreadable" copy is the
+    // ONLY signal the user gets in this ambiguous case. The generic
+    // "Replaced N occurrences" banner must NOT appear — we don't have an
+    // authoritative count.
+    expect(
+      await screen.findByText(STRINGS.findReplace.replaceResponseUnreadable),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: STRINGS.editor.refreshButton })).toBeInTheDocument();
+    expect(screen.queryByText(/Replaced .* occurrence/)).toBeNull();
+  });
+
   it("Ctrl+H is blocked while the replace-confirm dialog is open", async () => {
     await openPanelAndClickReplaceAll();
 
