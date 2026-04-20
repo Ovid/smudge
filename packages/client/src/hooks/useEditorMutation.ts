@@ -171,6 +171,15 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         if (editorAfterMutate !== null && editorAfterMutate !== editor) {
           try {
             editorAfterMutate.setEditable(false);
+            // I6: Mid-mutate remount was locked but not markClean-ed. A
+            // keystroke landing in the mount→lock window sets dirtyRef=true
+            // on the fresh editor; when it later unmounts, Editor's cleanup
+            // fires a fire-and-forget PATCH with stale pre-reload content,
+            // silently reverting the just-committed server mutation. Mark
+            // the new editor clean and re-cancel any pending save that may
+            // have been scheduled in that window to close the race.
+            editorAfterMutate.markClean();
+            projectEditorRef.current.cancelPendingSaves();
           } catch (err) {
             console.warn("useEditorMutation: failed to lock mid-remount editor", err);
           }
