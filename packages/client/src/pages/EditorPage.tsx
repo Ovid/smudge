@@ -1718,7 +1718,19 @@ export function EditorPage() {
               // panel surfaces its own createFailed message.
               try {
                 const flushed = (await editorRef.current?.flushSave()) ?? true;
-                if (flushed) cancelPendingSaves();
+                if (flushed) {
+                  cancelPendingSaves();
+                  // I3: cancelPendingSaves clears useProjectEditor-level
+                  // retry/backoff state but does NOT touch the Editor
+                  // component's internal debounceTimerRef. A keystroke that
+                  // lands between flushSave resolving and the snapshot
+                  // POST completing re-dirties the editor and schedules a
+                  // new debounced PATCH that races the snapshot create.
+                  // markClean clears the debounce timer and zeroes the
+                  // dirty flag, closing that race window — the next
+                  // keystroke re-arms it cleanly.
+                  editorRef.current?.markClean();
+                }
                 return flushed;
               } catch (err) {
                 console.warn("SnapshotPanel onBeforeCreate aborted:", err);
