@@ -294,6 +294,20 @@ export function EditorPage() {
     // stage === "mutate"
     if (result.error instanceof RestoreAbortedError) return;
     if (result.error instanceof RestoreFailedError) {
+      if (result.error.reason === "possibly_committed") {
+        // 2xx BAD_JSON on restore: server likely committed the restore
+        // (and its auto-snapshot) but the response body was unreadable.
+        // Treat the same as stage:"reload" — persistent lock banner, no
+        // retry prompt, since retrying could double-restore (C2).
+        setEditorLockedMessage(STRINGS.snapshots.restoreResponseUnreadable);
+        // Lock-banner state doesn't enforce read-only by itself; the
+        // hook's finally already re-enabled the editor after the
+        // mutate-stage throw. Re-apply setEditable(false) so auto-save
+        // cannot overwrite a possibly-committed restore.
+        editorRef.current?.setEditable(false);
+        snapshotPanelRef.current?.refreshSnapshots();
+        return;
+      }
       if (result.error.reason === "corrupt_snapshot") {
         setActionError(STRINGS.snapshots.restoreFailedCorrupt);
       } else if (result.error.reason === "cross_project_image") {
@@ -308,7 +322,14 @@ export function EditorPage() {
         // restore does not (I1).
         setActionError(STRINGS.snapshots.restoreNetworkFailed);
       } else {
-        setActionError(STRINGS.snapshots.restoreFailed);
+        // reason === "unknown": the caught error was not an ApiRequestError
+        // (e.g. TypeError on a malformed response, reject-before-send). The
+        // server commit status is genuinely ambiguous — treat pessimistically
+        // and raise the lock banner rather than a dismissible "try again"
+        // that could double-restore if the server already committed (I7).
+        setEditorLockedMessage(STRINGS.snapshots.restoreResponseUnreadable);
+        editorRef.current?.setEditable(false);
+        snapshotPanelRef.current?.refreshSnapshots();
       }
       return;
     }
@@ -349,6 +370,14 @@ export function EditorPage() {
         setEditorLockedMessage(
           lockMessage ?? STRINGS.findReplace.replaceSucceededReloadFailed,
         );
+        // The lock banner is UI-only — it does not itself make the editor
+        // read-only. In the stage:"reload" path the hook kept the editor
+        // setEditable(false) (reloadFailed branch skips the finally's
+        // re-enable). In the stage:"mutate" 2xx BAD_JSON path the hook's
+        // finally already re-enabled it. Call setEditable(false) here so
+        // both callers converge on the same read-only invariant — the
+        // banner and the editor state never disagree (C1).
+        editorRef.current?.setEditable(false);
       }
       await findReplace.search(slug);
       snapshotPanelRef.current?.refreshSnapshots();

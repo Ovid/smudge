@@ -374,6 +374,30 @@ describe("useSnapshotState", () => {
     expect(r.message).toBe("Snapshot or chapter not found.");
   });
 
+  it("restoreSnapshot surfaces possibly_committed reason on 2xx BAD_JSON (C2)", async () => {
+    // apiFetch throws ApiRequestError(status=2xx, code="BAD_JSON") when a
+    // 2xx response body fails to parse. The server almost certainly
+    // committed the restore (and its auto-snapshot) but the client cannot
+    // verify. Previously this fell through to reason:"network" — the
+    // EditorPage handler then surfaced the generic "retry" banner and
+    // re-enabled the editor. Auto-save would then silently revert the
+    // committed restore. The dedicated "possibly_committed" reason lets
+    // the caller route to a persistent lock banner instead.
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.snapshots.restore).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+
+    const { result } = renderHook(() => useSnapshotState("ch-1"));
+    let r: { ok: boolean; reason?: string; message?: string } = { ok: true };
+    await act(async () => {
+      r = await result.current.restoreSnapshot("snap-1");
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("possibly_committed");
+  });
+
   it("leaves count null when list fetch fails so badge stays hidden", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.snapshots.list).mockRejectedValue(new Error("network error"));

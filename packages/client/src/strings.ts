@@ -300,6 +300,8 @@ export const STRINGS = {
       "Unable to save pending changes. Try again once your connection recovers before restoring.",
     restoreSucceededReloadFailed:
       "Snapshot restored, but reloading the chapter failed. Refresh the page before editing — editing now would overwrite the restore.",
+    restoreResponseUnreadable:
+      "The restore may have completed, but the server response was unreadable. Refresh the page to see the current state — editing now could overwrite the restored content.",
     renderError: "Unable to render snapshot content",
     backToEditing: "Back to editing",
     viewingBanner: (label: string, date: string) => `Viewing snapshot: ${label} — ${date}`,

@@ -16,6 +16,13 @@ export type RestoreFailureReason =
   | "cross_project_image"
   | "not_found"
   | "network"
+  // 2xx BAD_JSON: apiFetch threw ApiRequestError(status=2xx, code="BAD_JSON")
+  // because a 2xx response body failed to parse. The server almost certainly
+  // committed the restore (and its auto-snapshot) but the client cannot
+  // verify. Callers MUST treat this as "possibly committed" and lock the
+  // editor — re-enabling would let auto-save silently revert the committed
+  // restore (C2).
+  | "possibly_committed"
   | "unknown";
 
 export interface RestoreResult {
@@ -258,6 +265,14 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         };
       } catch (err) {
         if (err instanceof ApiRequestError) {
+          // 2xx BAD_JSON: server likely committed the restore but response
+          // body was unreadable. Surface as "possibly_committed" so the
+          // caller locks the editor (C2) instead of letting auto-save
+          // revert the committed restore via the generic "network" retry
+          // path.
+          if (err.code === "BAD_JSON" && err.status >= 200 && err.status < 300) {
+            return { ok: false, reason: "possibly_committed", message: err.message };
+          }
           if (err.code === SNAPSHOT_ERROR_CODES.CORRUPT_SNAPSHOT) {
             return { ok: false, reason: "corrupt_snapshot", message: err.message };
           }
