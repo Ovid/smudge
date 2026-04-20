@@ -33,7 +33,6 @@ import { useTrashManager } from "../hooks/useTrashManager";
 import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcuts";
 import { api, ApiRequestError } from "../api/client";
 import { mapReplaceErrorToMessage } from "../utils/findReplaceErrors";
-import { SEARCH_ERROR_CODES } from "@smudge/shared";
 import { Logo } from "../components/Logo";
 import { generateHTML } from "@tiptap/html";
 import DOMPurify from "dompurify";
@@ -578,22 +577,17 @@ export function EditorPage() {
       }
       // stage === "mutate"
       const err = result.error;
-      // On 404 SCOPE_NOT_FOUND (chapter soft-deleted since the last search),
-      // drop the stale match group BEFORE showing the banner — otherwise the
-      // user clicks the same row and loops the same error. Gate on the
-      // SCOPE_NOT_FOUND code specifically: a bare 404 can also mean the
-      // whole project is gone (NOT_FOUND), in which case re-searching will
-      // 404 again and stamp a second banner over the mapped project-gone
-      // copy.
-      if (
-        err instanceof ApiRequestError &&
-        err.status === 404 &&
-        err.code === SEARCH_ERROR_CODES.SCOPE_NOT_FOUND
-      ) {
+      // On any 404 (chapter soft-deleted OR project gone), refresh the
+      // result set BEFORE showing the banner — otherwise the user clicks
+      // the same row and loops the same error (I3). Previously gated on
+      // SCOPE_NOT_FOUND only, which let bare NOT_FOUND 404s fall through
+      // with stale rows still clickable. The search refetch clears its
+      // result set on 400/404 (useFindReplaceState.ts:191), and the
+      // clearError() call below suppresses the panel-local duplicate so
+      // the action banner set by mapReplaceErrorToMessage is the single
+      // source of truth for this click.
+      if (err instanceof ApiRequestError && err.status === 404) {
         await findReplace.search(slug);
-        // Suppress any panel-local error the refresh may stamp so the
-        // action banner set below (replaceScopeNotFound) is the single
-        // source of truth for this click (I1).
         findReplace.clearError();
       }
       const msg = mapReplaceErrorToMessage(err);
