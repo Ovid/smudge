@@ -306,7 +306,14 @@ export function useProjectEditor(slug: string | undefined) {
   const handleCreateChapter = useCallback(async () => {
     const slug = projectSlugRef.current;
     if (!slug) return;
-    ++saveSeqRef.current; // cancel any in-flight save retries for the old chapter
+    // Full cancel of any in-flight save: bump saveSeq, abort the fetch,
+    // and unblock any backoff sleep (S1). A bare `++saveSeqRef.current`
+    // short-circuited the retry loop's seq check but left the
+    // AbortController live and the backoff timer scheduled — the timer
+    // would wake up seconds later, do nothing useful (guarded by seq),
+    // but hold a reference to the old chapter id until it fired.
+    // Matches the discipline of handleSelectChapter / handleDeleteChapter.
+    cancelInFlightSave();
     // Also cancel any in-flight chapter GET (reloadActiveChapter or
     // handleSelectChapter). Without this bump, a pending reload's
     // setActiveChapter landing after the POST would overwrite the
@@ -325,7 +332,7 @@ export function useProjectEditor(slug: string | undefined) {
       console.warn("Failed to create chapter:", err);
       setError(STRINGS.error.createChapterFailed);
     }
-  }, [cancelInFlightSelect]);
+  }, [cancelInFlightSave, cancelInFlightSelect]);
 
   const handleSelectChapter = useCallback(
     async (chapterId: string) => {

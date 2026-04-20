@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import type { ChapterStatusRow } from "@smudge/shared";
+import type { Chapter, ChapterStatusRow } from "@smudge/shared";
 import { Editor, type EditorHandle } from "../components/Editor";
 import { EditorToolbar } from "../components/EditorToolbar";
 import type { Editor as TipTapEditor } from "@tiptap/react";
@@ -188,32 +188,51 @@ export function EditorPage() {
     perChapterCount: number;
   } | null>(null);
 
-  // Panel exclusivity: when snapshot panel opens, close reference panel and vice versa
+  // Panel exclusivity: when snapshot panel opens, close reference panel and vice versa.
+  //
+  // Each toggle guards on mutation.isBusy() (I2): the panel-exclusivity
+  // logic closes other panels and in handleToggleReferencePanel /
+  // handleToggleFindReplace calls exitSnapshotView. Allowing these to run
+  // mid-mutation would remount the Editor (via ViewModeNav or viewingSnapshot
+  // state) while the hook still holds the pre-remount editor handle,
+  // defeating the hook's setEditable(false) lock.
   const handleToggleSnapshotPanel = useCallback(() => {
+    if (mutation.isBusy()) {
+      setActionInfo(STRINGS.editor.mutationBusy);
+      return;
+    }
     if (!snapshotPanelOpen) {
       setPanelOpen(false);
       findReplace.closePanel();
     }
     toggleSnapshotPanel();
-  }, [snapshotPanelOpen, setPanelOpen, findReplace, toggleSnapshotPanel]);
+  }, [snapshotPanelOpen, setPanelOpen, findReplace, toggleSnapshotPanel, mutation]);
 
   const handleToggleReferencePanel = useCallback(() => {
+    if (mutation.isBusy()) {
+      setActionInfo(STRINGS.editor.mutationBusy);
+      return;
+    }
     if (!panelOpen) {
       setSnapshotPanelOpen(false);
       exitSnapshotView();
       findReplace.closePanel();
     }
     togglePanel();
-  }, [panelOpen, setSnapshotPanelOpen, exitSnapshotView, findReplace, togglePanel]);
+  }, [panelOpen, setSnapshotPanelOpen, exitSnapshotView, findReplace, togglePanel, mutation]);
 
   const handleToggleFindReplace = useCallback(() => {
+    if (mutation.isBusy()) {
+      setActionInfo(STRINGS.editor.mutationBusy);
+      return;
+    }
     if (!findReplace.panelOpen) {
       setPanelOpen(false);
       setSnapshotPanelOpen(false);
       exitSnapshotView();
     }
     findReplace.togglePanel();
-  }, [findReplace, setPanelOpen, setSnapshotPanelOpen, exitSnapshotView]);
+  }, [findReplace, setPanelOpen, setSnapshotPanelOpen, exitSnapshotView, mutation]);
 
   const handleRestoreSnapshot = useCallback(async () => {
     if (!viewingSnapshot || !activeChapter) return;
@@ -817,8 +836,26 @@ export function EditorPage() {
       // Callers that chain additional navigation (e.g. chapter select)
       // must gate on the return value — otherwise the refusal banner and
       // the follow-up navigation contradict each other.
-      const flushed = (await editorRef.current?.flushSave()) ?? true;
+      //
+      // Disable the editor BEFORE awaiting flushSave (invariant 2, I1):
+      // during a slow flush (seconds in save backoff) keystrokes would
+      // otherwise re-dirty the editor and schedule a new debounced save
+      // that fires AFTER the view switch, desyncing editor state from
+      // the displayed view. Mirrors SnapshotPanel.onView and the three
+      // mutation.run() callers.
+      editorRef.current?.setEditable(false);
+      let flushed: boolean;
+      try {
+        flushed = (await editorRef.current?.flushSave()) ?? true;
+      } catch (err) {
+        // A synchronous or async flush throw must restore setEditable(true)
+        // before re-surfacing the failure — otherwise the editor stays
+        // read-only on a path that didn't actually change views.
+        editorRef.current?.setEditable(true);
+        throw err;
+      }
       if (!flushed) {
+        editorRef.current?.setEditable(true);
         setActionError(STRINGS.editor.viewSwitchSaveFailed);
         return false;
       }
@@ -827,10 +864,52 @@ export function EditorPage() {
       if (mode === "dashboard") {
         setDashboardRefreshKey((k) => k + 1);
       }
+      // View-switch succeeded; re-enable so the editor is writable when
+      // the user returns to editor mode. (Preview/Dashboard unmount the
+      // Editor, so this primarily covers the editor→editor no-op path
+      // and any transitional render between switch and remount.)
+      editorRef.current?.setEditable(true);
       return true;
     },
     [setTrashOpen, setActionError, mutation],
   );
+
+  // mutation.isBusy() guards for entry points that either (a) bump the save
+  // seq behind the hook's back — aborting its in-flight flushSave or
+  // reload GET — or (b) remount the Editor while the hook holds a stale
+  // pre-remount handle. Sidebar create/delete clicks and Ctrl+Shift+N all
+  // trigger handleCreateChapter / handleDeleteChapter which call
+  // cancelInFlightSave(); setDeleteTarget opens the confirm dialog that
+  // leads to the same; openTrash changes route state (I2). Without these
+  // guards, clicks during a 2–14s replace/restore flush produce
+  // misattributed "save failed" banners or silently defeat the editor
+  // lock.
+  const handleCreateChapterGuarded = useCallback(() => {
+    if (mutation.isBusy()) {
+      setActionInfo(STRINGS.editor.mutationBusy);
+      return;
+    }
+    handleCreateChapter();
+  }, [mutation, handleCreateChapter]);
+
+  const requestDeleteChapter = useCallback(
+    (chapter: Chapter) => {
+      if (mutation.isBusy()) {
+        setActionInfo(STRINGS.editor.mutationBusy);
+        return;
+      }
+      setDeleteTarget(chapter);
+    },
+    [mutation, setDeleteTarget],
+  );
+
+  const openTrashGuarded = useCallback(() => {
+    if (mutation.isBusy()) {
+      setActionInfo(STRINGS.editor.mutationBusy);
+      return;
+    }
+    openTrash();
+  }, [mutation, openTrash]);
 
   const handleSelectChapterWithFlush = useCallback(
     async (chapterId: string) => {
@@ -885,7 +964,7 @@ export function EditorPage() {
     flushSave: () => editorRef.current?.flushSave(),
     setShortcutHelpOpen,
     toggleSidebar,
-    handleCreateChapter,
+    handleCreateChapter: handleCreateChapterGuarded,
     handleSelectChapterWithFlush,
     setWordCountAnnouncement,
     setNavAnnouncement,
@@ -1035,11 +1114,11 @@ export function EditorPage() {
             project={project}
             activeChapterId={activeChapter?.id ?? null}
             onSelectChapter={handleSelectChapterWithFlush}
-            onAddChapter={handleCreateChapter}
-            onDeleteChapter={setDeleteTarget}
+            onAddChapter={handleCreateChapterGuarded}
+            onDeleteChapter={requestDeleteChapter}
             onReorderChapters={handleReorderChapters}
             onRenameChapter={handleRenameChapterWithError}
-            onOpenTrash={openTrash}
+            onOpenTrash={openTrashGuarded}
             statuses={statuses}
             onStatusChange={handleStatusChangeWithError}
             width={sidebarWidth}
@@ -1095,7 +1174,7 @@ export function EditorPage() {
             <div className="flex-1 flex flex-col items-center justify-center page-enter">
               <p className="text-text-muted mb-6 text-base">{STRINGS.project.emptyChapters}</p>
               <button
-                onClick={handleCreateChapter}
+                onClick={handleCreateChapterGuarded}
                 className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring focus:ring-offset-2 focus:ring-offset-bg-primary shadow-sm"
               >
                 {STRINGS.sidebar.addChapter}
@@ -1251,8 +1330,14 @@ export function EditorPage() {
               // editor and the subsequent unmount cleanup fires a
               // fire-and-forget PATCH with the typed-during-flush
               // content.
-              editorRef.current?.setEditable(false);
+              //
+              // setEditable is INSIDE the try block (I6): useEditorMutation
+              // wraps this exact call in its own try/catch (S4) because
+              // TipTap can throw synchronously during remount. Keeping it
+              // outside let a sync throw reject the onView promise,
+              // bypassing the {ok,reason} contract SnapshotPanel expects.
               try {
+                editorRef.current?.setEditable(false);
                 const flushed = (await editorRef.current?.flushSave()) ?? true;
                 if (!flushed) {
                   // Re-enable so the user can retry — view was refused.
@@ -1271,8 +1356,18 @@ export function EditorPage() {
                 }
                 return result;
               } catch (err) {
-                editorRef.current?.setEditable(true);
-                throw err;
+                // Swallow the throw; the onView contract is
+                // {ok,reason} | undefined, not an exception channel.
+                // Restoring setEditable(true) keeps the editor usable
+                // on a TipTap-remount sync throw.
+                try {
+                  editorRef.current?.setEditable(true);
+                } catch {
+                  // setEditable on a destroyed editor can throw again;
+                  // ignore — the editor's next remount resets editable.
+                }
+                console.warn("SnapshotPanel onView aborted:", err);
+                return { ok: false, reason: "save_failed" };
               }
             }}
             onBeforeCreate={async () => {
