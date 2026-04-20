@@ -1197,6 +1197,17 @@ export function EditorPage() {
   );
 
   const handleProjectSettingsUpdate = useCallback(() => {
+    // I5: Gate the GET + setProject merge behind the mutation/action busy
+    // latches. Running concurrent setProject writes from the settings
+    // refresh and an in-flight mutation can interleave; FindReplace state
+    // reset on project id change (useFindReplaceState) can also discard a
+    // pending search that the user hasn't had a chance to re-kick-off.
+    // Surface the mutationBusy banner so the user knows the refresh was
+    // deferred and can retry once the mutation settles.
+    if (mutation.isBusy() || isActionBusy()) {
+      setActionInfo(STRINGS.editor.mutationBusy);
+      return;
+    }
     setDashboardRefreshKey((k) => k + 1);
     if (slug) {
       api.projects
@@ -1221,7 +1232,7 @@ export function EditorPage() {
           setActionError(STRINGS.error.loadProjectFailed);
         });
     }
-  }, [slug, setProject, setActionError, navigate]);
+  }, [slug, setProject, setActionError, navigate, mutation, isActionBusy]);
 
   useKeyboardShortcuts({
     shortcutHelpOpen,
