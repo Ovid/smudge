@@ -5,17 +5,23 @@ import { clearAllCachedContent } from "./useContentCache";
 
 export type MutationStage = "flush" | "mutate" | "reload" | "busy";
 
+// Discriminated union so the type system forces reloadChapterId whenever
+// reloadActiveChapter is true. Without this, a caller that set
+// reloadActiveChapter: true without reloadChapterId would arm the
+// reload call with an undefined expected chapter id — the hook's
+// mismatch guard (current.id !== expectedChapterId) only fires when
+// expectedChapterId !== undefined, so the reload would unconditionally
+// wipe the active chapter's draft even if the user switched chapters
+// between directive-return and the hook's reload call (I2). Making
+// the shape discriminated moves the constraint from caller discipline
+// to construction.
 export type MutationDirective<T = void> = {
   clearCacheFor: string[];
-  reloadActiveChapter: boolean;
-  // Optional: the chapter id the caller expects to reload. If the user
-  // switched chapters between the mutate callback returning and the hook
-  // invoking reloadActiveChapter, the reload is skipped — otherwise we
-  // would clear the now-active (unrelated) chapter's cache and pull its
-  // server copy, wiping an in-progress draft (I2).
-  reloadChapterId?: string;
   data: T;
-};
+} & (
+  | { reloadActiveChapter: false }
+  | { reloadActiveChapter: true; reloadChapterId: string }
+);
 
 export type MutationResult<T = void> =
   | { ok: true; data: T }

@@ -296,14 +296,21 @@ export function EditorPage() {
         // server response lands. useSnapshotState's stale-detection at
         // useSnapshotState.ts only clears the cache for the chapter the
         // restore targeted; mirroring that here keeps the contract aligned.
+        if (stale) {
+          return {
+            clearCacheFor: [],
+            reloadActiveChapter: false,
+            data: { staleChapterSwitch: true },
+          };
+        }
         return {
-          clearCacheFor: stale ? [] : [activeChapter.id],
-          reloadActiveChapter: !stale,
+          clearCacheFor: [activeChapter.id],
+          reloadActiveChapter: true,
           // Scope the reload to the chapter the restore targets. If the user
           // switches between here and the hook's reload call, the mismatch
           // skips the reload and preserves the now-active chapter's draft.
           reloadChapterId: activeChapter.id,
-          data: { staleChapterSwitch: stale },
+          data: { staleChapterSwitch: false },
         };
       });
 
@@ -538,10 +545,17 @@ export function EditorPage() {
           // now-active chapter was affected.
           const current = getActiveChapter();
           const reload = !!current && resp.affected_chapter_ids.includes(current.id);
+          if (reload && current) {
+            return {
+              clearCacheFor: resp.affected_chapter_ids,
+              reloadActiveChapter: true,
+              reloadChapterId: current.id,
+              data: resp,
+            };
+          }
           return {
             clearCacheFor: resp.affected_chapter_ids,
-            reloadActiveChapter: reload,
-            reloadChapterId: reload && current ? current.id : undefined,
+            reloadActiveChapter: false,
             data: resp,
           };
         });
@@ -746,10 +760,18 @@ export function EditorPage() {
           // matchNotFound banner and re-run the search.
           const reload =
             resp.replaced_count > 0 && !!current && resp.affected_chapter_ids.includes(current.id);
+          const clearCacheFor = resp.replaced_count > 0 ? resp.affected_chapter_ids : [];
+          if (reload && current) {
+            return {
+              clearCacheFor,
+              reloadActiveChapter: true,
+              reloadChapterId: current.id,
+              data: resp,
+            };
+          }
           return {
-            clearCacheFor: resp.replaced_count > 0 ? resp.affected_chapter_ids : [],
-            reloadActiveChapter: reload,
-            reloadChapterId: reload && current ? current.id : undefined,
+            clearCacheFor,
+            reloadActiveChapter: false,
             data: resp,
           };
         });

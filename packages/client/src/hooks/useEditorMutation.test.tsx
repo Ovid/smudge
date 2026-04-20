@@ -59,7 +59,7 @@ describe("useEditorMutation — happy path", () => {
 
     const res = await result.current.run(async () => {
       calls.push("mutate");
-      return { clearCacheFor: ["c1"], reloadActiveChapter: true, data: undefined };
+      return { clearCacheFor: ["c1"], reloadActiveChapter: true, reloadChapterId: "c1", data: undefined };
     });
 
     expect(res).toEqual({ ok: true, data: undefined });
@@ -99,7 +99,7 @@ describe("useEditorMutation — happy path", () => {
 
     await result.current.run(async () => ({
       clearCacheFor: [],
-      reloadActiveChapter: true,
+      reloadActiveChapter: true, reloadChapterId: "c1",
       data: undefined,
     }));
 
@@ -250,7 +250,7 @@ describe("useEditorMutation — reload failure", () => {
     const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
     const res = await result.current.run<{ replaced: number }>(async () => ({
       clearCacheFor: ["c1"],
-      reloadActiveChapter: true,
+      reloadActiveChapter: true, reloadChapterId: "c1",
       data: { replaced: 3 },
     }));
 
@@ -285,7 +285,7 @@ describe("useEditorMutation — reload failure", () => {
     const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
     const res = await result.current.run(async () => ({
       clearCacheFor: [],
-      reloadActiveChapter: true,
+      reloadActiveChapter: true, reloadChapterId: "c1",
       data: undefined,
     }));
 
@@ -302,7 +302,7 @@ describe("useEditorMutation — reload failure", () => {
     const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
     const res = await result.current.run<{ affected: string[] }>(async () => ({
       clearCacheFor: [],
-      reloadActiveChapter: true,
+      reloadActiveChapter: true, reloadChapterId: "c1",
       data: { affected: ["c9"] },
     }));
 
@@ -318,7 +318,7 @@ describe("useEditorMutation — reload failure", () => {
     projectEditor.reloadActiveChapter = vi.fn(async () => "reloaded" as const);
     const res2 = await result.current.run(async () => ({
       clearCacheFor: [],
-      reloadActiveChapter: true,
+      reloadActiveChapter: true, reloadChapterId: "c1",
       data: undefined,
     }));
     expect(res2.ok).toBe(true);
@@ -403,7 +403,7 @@ describe("useEditorMutation — busy guard", () => {
 
     const secondResult = await result.current.run(async () => ({
       clearCacheFor: ["x"],
-      reloadActiveChapter: true,
+      reloadActiveChapter: true, reloadChapterId: "c1",
       data: undefined,
     }));
 
@@ -545,7 +545,7 @@ describe("useEditorMutation — null editor ref", () => {
 
     const res = await result.current.run(async () => ({
       clearCacheFor: ["c1"],
-      reloadActiveChapter: true,
+      reloadActiveChapter: true, reloadChapterId: "c1",
       data: undefined,
     }));
 
@@ -580,23 +580,11 @@ describe("useEditorMutation — expected chapter id (I2)", () => {
     expect(reloadSpy.mock.calls[0]![1]).toBe("ch-1");
   });
 
-  it("omits the expected chapter id when the directive does not set one (backward compat)", async () => {
-    const { editorRef, projectEditor } = buildHandles();
-    const reloadSpy = vi.fn(
-      async (_onError?: (msg: string) => void, _expectedChapterId?: string) => "reloaded" as const,
-    );
-    projectEditor.reloadActiveChapter = reloadSpy;
-
-    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
-    await result.current.run(async () => ({
-      clearCacheFor: [],
-      reloadActiveChapter: true,
-      data: undefined,
-    }));
-
-    expect(reloadSpy).toHaveBeenCalledTimes(1);
-    expect(reloadSpy.mock.calls[0]![1]).toBeUndefined();
-  });
+  // Former test "omits the expected chapter id when the directive does
+  // not set one (backward compat)" — removed with the discriminated
+  // union. MutationDirective now requires reloadChapterId whenever
+  // reloadActiveChapter is true, so the untyped "omit it" branch no
+  // longer type-checks (I2).
 });
 
 describe("useEditorMutation — isLocked predicate (I1)", () => {
@@ -653,7 +641,7 @@ describe("useEditorMutation — isLocked predicate (I1)", () => {
 
     await result.current.run(async () => ({
       clearCacheFor: [],
-      reloadActiveChapter: true,
+      reloadActiveChapter: true, reloadChapterId: "c1",
       data: undefined,
     }));
 
@@ -730,7 +718,7 @@ describe("useEditorMutation — latest-ref pattern", () => {
 
     await result.current.run(async () => ({
       clearCacheFor: [],
-      reloadActiveChapter: true,
+      reloadActiveChapter: true, reloadChapterId: "c1",
       data: undefined,
     }));
 
