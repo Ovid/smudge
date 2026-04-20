@@ -33,7 +33,7 @@ import { useTrashManager } from "../hooks/useTrashManager";
 import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcuts";
 import { api, ApiRequestError } from "../api/client";
 import { mapReplaceErrorToMessage } from "../utils/findReplaceErrors";
-import { clearCachedContent, clearAllCachedContent } from "../hooks/useContentCache";
+import { clearCachedContent } from "../hooks/useContentCache";
 import { safeSetEditable } from "../utils/editorSafeOps";
 import { Logo } from "../components/Logo";
 import { generateHTML } from "@tiptap/html";
@@ -687,16 +687,25 @@ export function EditorPage() {
         ) {
           // Clear caches for chapters the server may have replaced (C1). The
           // mutate callback threw, so the hook's directive-based cache-clear
-          // never ran. The response body was unreadable, so affected_chapter_ids
-          // is unavailable — fall back to the requested scope: the targeted
-          // chapter for chapter-scope, or every project chapter for
-          // project-scope. Without this, refresh re-hydrates the pre-replace
-          // draft from localStorage and the next auto-save reverts the
-          // server-committed replace.
+          // never ran. The response body was unreadable, so
+          // affected_chapter_ids is unavailable.
+          //
+          // I4: For project-scope we previously fell back to clearing
+          // EVERY project chapter's cache — but the server-side replace
+          // may have only touched one or a few chapters, and wiping drafts
+          // in an unrelated chapter the user had unsaved work in was a
+          // real data-loss path. The hook-flush guarantees the ACTIVE
+          // chapter's cache is consistent with the server's post-mutate
+          // state (invariants 1–3), so clear that one and rely on the
+          // lock banner + refresh flow to reconcile the rest. Every
+          // other chapter's cache is preserved; the next navigation
+          // reloads server state against the cached draft exactly as the
+          // non-BAD_JSON flow does.
+          const activeChapterId = getActiveChapter()?.id;
           if (frozen.scope.type === "chapter") {
             clearCachedContent(frozen.scope.chapter_id);
-          } else {
-            clearAllCachedContent(project.chapters.map((c) => c.id));
+          } else if (activeChapterId) {
+            clearCachedContent(activeChapterId);
           }
           await finalizeReplaceSuccess({
             replacedCount: null,

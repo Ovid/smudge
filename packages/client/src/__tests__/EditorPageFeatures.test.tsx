@@ -1472,13 +1472,17 @@ describe("EditorPage find-and-replace confirmation", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
   });
 
-  it("clears caches for project chapters on 2xx BAD_JSON from project-scope replace (C1)", async () => {
+  it("clears only the active chapter's cache on 2xx BAD_JSON from project-scope replace (I4)", async () => {
     // The mutate throw bypasses the hook's directive-driven cache-clear.
-    // Without a fallback clear, a refresh re-hydrates the pre-replace draft
-    // from localStorage and the next auto-save reverts the server-committed
-    // replace. Project-scope replace has no affected_chapter_ids (response
-    // unreadable), so the conservative fallback is to clear all chapters in
-    // the project.
+    // Without a fallback clear, a refresh re-hydrates the pre-replace
+    // draft from localStorage and the next auto-save reverts the
+    // server-committed replace. Before I4, project-scope fell back to
+    // clearing EVERY chapter's cache — destroying unsaved work in
+    // chapters the server never touched. After: clear only the active
+    // chapter (whose cache the hook just flushed, so it is known-
+    // consistent with server state) and rely on the lock banner +
+    // refresh flow to reconcile any other chapters the server may have
+    // written to.
     const { clearAllCachedContent, clearCachedContent } = await import("../hooks/useContentCache");
     vi.mocked(clearAllCachedContent).mockClear();
     vi.mocked(clearCachedContent).mockClear();
@@ -1492,8 +1496,10 @@ describe("EditorPage find-and-replace confirmation", () => {
     await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
 
     await waitFor(() => {
-      expect(clearAllCachedContent).toHaveBeenCalledWith(["ch-1", "ch-2"]);
+      expect(clearCachedContent).toHaveBeenCalledWith("ch-1");
     });
+    // Defensive: we must NOT have cleared every chapter (the old behaviour).
+    expect(clearAllCachedContent).not.toHaveBeenCalledWith(["ch-1", "ch-2"]);
   });
 
   it("Ctrl+H is blocked while the replace-confirm dialog is open", async () => {
