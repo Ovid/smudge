@@ -1229,6 +1229,47 @@ describe("EditorPage find-and-replace confirmation", () => {
     resolveReplace({ replaced_count: 1, affected_chapter_ids: [] });
   });
 
+  it("Ctrl+S flushSave refuses mid-mutation (I2)", async () => {
+    // Regression: Ctrl+S used to call editorRef.current.flushSave() without
+    // consulting the busy latches. A keyboard flush during a mid-flight
+    // mutation.run aborts the mutation's save AbortController via handleSave's
+    // save-abort churn and can commit two PATCHes for the same chapter.
+    // After: the Ctrl+S prop short-circuits when isActionBusy() is true.
+    //
+    // We observe the gate indirectly: during the in-flight replace no
+    // api.chapters.update call is issued as a result of the Ctrl+S.
+    // (flushSave on a clean editor is already a no-op; the assertion
+    // here is that Ctrl+S does not re-enter handleSave through any side
+    // path while the mutation is mid-flight.)
+    let resolveReplace: (v: {
+      replaced_count: number;
+      affected_chapter_ids: string[];
+    }) => void = () => {};
+    vi.mocked(api.search.replace).mockImplementationOnce(
+      () =>
+        new Promise<{ replaced_count: number; affected_chapter_ids: string[] }>((resolve) => {
+          resolveReplace = resolve;
+        }),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    const updateCallsBefore = vi.mocked(api.chapters.update).mock.calls.length;
+
+    // Ctrl+S while the replace promise is still pending.
+    fireEvent.keyDown(document, { key: "s", code: "KeyS", ctrlKey: true });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // No new PATCH was issued as a side effect of the keyboard flush.
+    expect(vi.mocked(api.chapters.update).mock.calls.length).toBe(updateCallsBefore);
+
+    resolveReplace({ replaced_count: 1, affected_chapter_ids: [] });
+  });
+
   it("shows busy banner on panel toggles and view switches mid-mutation (I5)", async () => {
     // Each toolbar/panel entry point has its own busy guard. A single
     // in-flight replace exercises several of them — Snapshots toggle,

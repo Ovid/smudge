@@ -1262,7 +1262,15 @@ export function EditorPage() {
     activeChapter,
     project,
     chapterWordCount,
-    flushSave: () => editorRef.current?.flushSave(),
+    // I2: Gate Ctrl+S on the same busy-latch the other external flushSave
+    // entries (snapshot view / create, chapter switch) observe. A Ctrl+S
+    // during a mid-flight mutation.run would otherwise fire a save whose
+    // AbortController race churns the hook's stage reporting and can
+    // commit two PATCHes for the same chapter.
+    flushSave: () => {
+      if (isActionBusy()) return;
+      return editorRef.current?.flushSave();
+    },
     setShortcutHelpOpen,
     toggleSidebar,
     handleCreateChapter: handleCreateChapterGuarded,
