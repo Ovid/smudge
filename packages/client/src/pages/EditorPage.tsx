@@ -1723,18 +1723,25 @@ export function EditorPage() {
             }}
             onBeforeCreate={async () => {
               // Same I2 guard as onView — refuse snapshot creation while
-              // a mutation is in-flight rather than racing its save.
+              // a mutation is in-flight rather than racing its save. I5
+              // (review 2026-04-21): return a discriminated busy outcome
+              // so the panel suppresses its own createError banner. The
+              // mutationBusy info banner we set here is the sole user-
+              // visible signal for this click — without the reason tag
+              // the panel would stamp createError on top of it, producing
+              // two contradictory messages.
               if (isActionBusy()) {
                 setActionInfo(STRINGS.editor.mutationBusy);
-                return false;
+                return { ok: false, reason: "busy" };
               }
               // I3: TipTap can throw synchronously during a remount window
               // (see editorSafeOps.ts); flushSave can also reject from an
               // onSave rejection. Without this try/catch the throw escapes
               // back through SnapshotPanel.handleCreate as an unhandled
               // rejection — no banner, no createError, nothing visible to
-              // the user. Mirror onView's pattern and return false so the
-              // panel surfaces its own createFailed message.
+              // the user. Mirror onView's pattern and return a
+              // flush_failed outcome so the panel surfaces its own
+              // createFailed message.
               try {
                 const flushed = (await editorRef.current?.flushSave()) ?? true;
                 if (flushed) {
@@ -1749,11 +1756,12 @@ export function EditorPage() {
                   // dirty flag, closing that race window — the next
                   // keystroke re-arms it cleanly.
                   editorRef.current?.markClean();
+                  return { ok: true };
                 }
-                return flushed;
+                return { ok: false, reason: "flush_failed" };
               } catch (err) {
                 console.warn("SnapshotPanel onBeforeCreate aborted:", err);
-                return false;
+                return { ok: false, reason: "flush_failed" };
               }
             }}
             onSnapshotsChange={onSnapshotsChange}

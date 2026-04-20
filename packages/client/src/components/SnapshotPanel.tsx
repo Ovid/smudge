@@ -43,10 +43,20 @@ interface SnapshotPanelProps {
    * Called before snapshot creation. The panel awaits this so the server
    * snapshots the chapter AFTER any pending editor save has landed —
    * otherwise a snapshot taken right after typing captures stale content.
-   * Should resolve true when the pre-save completed (or nothing was dirty)
-   * and false when it failed, in which case snapshot creation is skipped.
+   *
+   * Result contract (I5 — review 2026-04-21):
+   * - `{ ok: true }`: proceed with the snapshot POST.
+   * - `{ ok: false, reason: "flush_failed" }`: the pre-save failed; surface
+   *   createFailed to the user so they don't think the snapshot landed
+   *   when it was silently aborted.
+   * - `{ ok: false, reason: "busy" }`: a concurrent mutation (restore /
+   *   replace) is in flight. The caller already raised its own
+   *   mutationBusy info banner — the panel suppresses createError here
+   *   to avoid a contradictory pair of banners.
    */
-  onBeforeCreate?: () => Promise<boolean>;
+  onBeforeCreate?: () => Promise<
+    { ok: true } | { ok: false; reason: "busy" | "flush_failed" }
+  >;
   /**
    * Fired every time the panel's list fetch succeeds, with the current
    * snapshot count. Lets the parent hook drive the toolbar badge from
@@ -203,15 +213,25 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         // wrap would otherwise produce an unhandled rejection here (the
         // caller's subsequent try/catch below only wraps api.snapshots.create,
         // not this await).
-        let flushed = false;
+        let outcome: { ok: true } | { ok: false; reason: "busy" | "flush_failed" };
         try {
-          flushed = await onBeforeCreate();
+          outcome = await onBeforeCreate();
         } catch {
           setCreateError(S.createFailed);
           return;
         }
-        if (!flushed) {
-          setCreateError(S.createFailed);
+        if (!outcome.ok) {
+          // I5 (review 2026-04-21): busy-return is not a failure — the
+          // caller has already surfaced its own mutationBusy info banner.
+          // Suppressing createError here avoids two contradictory banners
+          // ("Unable to create… save your unsaved changes" + "Another
+          // action is in progress"). The flush-failed branch still
+          // surfaces createFailed because the save genuinely did not
+          // land and the user must know before believing the snapshot
+          // succeeded.
+          if (outcome.reason === "flush_failed") {
+            setCreateError(S.createFailed);
+          }
           return;
         }
       }

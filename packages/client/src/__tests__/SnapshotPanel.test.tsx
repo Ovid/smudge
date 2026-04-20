@@ -200,6 +200,60 @@ describe("SnapshotPanel", () => {
       expect(api.snapshots.create).not.toHaveBeenCalled();
     });
 
+    it("surfaces createFailed when onBeforeCreate returns flush_failed", async () => {
+      // I5 (review 2026-04-21): parity with the throw case above. A
+      // flush_failed outcome means the pre-save didn't land, so the
+      // snapshot about to be taken would capture stale content — surface
+      // createFailed so the user doesn't believe the snapshot reflects
+      // their current writes.
+      const user = userEvent.setup();
+      const onBeforeCreate = vi.fn(async () => ({
+        ok: false as const,
+        reason: "flush_failed" as const,
+      }));
+      render(<SnapshotPanel {...defaultProps} onBeforeCreate={onBeforeCreate} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(S.createButton)).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.createButton));
+      await user.click(screen.getByText(S.save));
+
+      await waitFor(() => {
+        expect(screen.getByText(S.createFailed)).toBeInTheDocument();
+      });
+      expect(api.snapshots.create).not.toHaveBeenCalled();
+    });
+
+    it("suppresses createError when onBeforeCreate returns busy (I5 — review 2026-04-21)", async () => {
+      // Before I5: the caller returned false for both busy and
+      // flush_failed. The panel stamped createError unconditionally,
+      // producing two contradictory banners — the caller's
+      // mutationBusy info banner and the panel's "save your unsaved
+      // changes" error. The discriminated busy outcome now lets the
+      // panel skip its error stamp when the caller has already surfaced
+      // its own.
+      const user = userEvent.setup();
+      const onBeforeCreate = vi.fn(async () => ({
+        ok: false as const,
+        reason: "busy" as const,
+      }));
+      render(<SnapshotPanel {...defaultProps} onBeforeCreate={onBeforeCreate} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(S.createButton)).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.createButton));
+      await user.click(screen.getByText(S.save));
+
+      // No createError banner — the caller owns the user-visible signal.
+      expect(screen.queryByText(S.createFailed)).not.toBeInTheDocument();
+      // POST was skipped because onBeforeCreate said so.
+      expect(api.snapshots.create).not.toHaveBeenCalled();
+    });
+
     it("creates a snapshot without label when input is empty", async () => {
       const user = userEvent.setup();
       render(<SnapshotPanel {...defaultProps} />);
