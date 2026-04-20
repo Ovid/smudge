@@ -546,6 +546,17 @@ export function EditorPage() {
     }) => {
       if (!project || !slug) return;
 
+      // C1: Refuse further server-side writes while the lock banner is up.
+      // A prior restore/replace 2xx BAD_JSON leaves the "refresh the page"
+      // banner active (see handleRestoreSnapshot:260); without this guard a
+      // user could open Ctrl+H and issue another replace, firing a fresh
+      // PATCH + auto-snapshot while the UI claims nothing will touch server
+      // state. Mirror handleRestoreSnapshot's guard exactly.
+      if (editorLockedMessageRef.current !== null) {
+        setActionInfo(STRINGS.editor.mutationBusy);
+        return;
+      }
+
       // I5 entry guard: see actionBusyRef definition above.
       if (isActionBusy()) {
         setActionInfo(STRINGS.editor.mutationBusy);
@@ -754,6 +765,14 @@ export function EditorPage() {
       const frozenOptions = findReplace.resultsOptions;
       const frozenReplacement = findReplace.replacement;
       if (!frozenQuery || !frozenOptions) return;
+
+      // C1: Same lock-banner guard as executeReplace/handleRestoreSnapshot.
+      // Per-match Replace must not issue a server write while the lock
+      // banner claims nothing will touch server state until refresh.
+      if (editorLockedMessageRef.current !== null) {
+        setActionInfo(STRINGS.editor.mutationBusy);
+        return;
+      }
 
       // I5 entry guard: extends busy past mutation.run() into the
       // post-run search refresh + banner work to prevent overlapping
