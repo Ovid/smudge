@@ -17,18 +17,19 @@ describe("safeSetEditable", () => {
   });
 
   it("returns false when ref is null — no editor on which to apply", () => {
-    // C1: lock-convergence callers check the return so they know whether
-    // the editor was actually locked. A null ref means no apply happened;
-    // if a new editor mounts later it will default to editable=true, so
-    // the caller must escalate (the save gate at handleSaveLockGated
-    // prevents any PATCH while the lock banner is up).
+    // A null ref means there is no editor instance available to update.
+    // The helper reports that no apply happened by returning false. The
+    // return is informational (see editorSafeOps.ts contract); the real
+    // data-loss defense is handleSaveLockGated, which short-circuits
+    // auto-save PATCHes while the lock banner is up regardless of the
+    // editor's setEditable state.
     expect(safeSetEditable(makeRef(null), false)).toBe(false);
   });
 
   it("returns false and logs when setEditable throws synchronously", () => {
     // TipTap can throw synchronously during the mid-remount window; the
-    // helper must absorb the throw AND signal failure to its caller so
-    // lock-convergence paths can escalate (C1).
+    // helper must absorb the throw, log it, and report the failed apply
+    // via its informational boolean return value.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const setEditable = vi.fn().mockImplementation(() => {
       throw new Error("TipTap instance destroyed");

@@ -886,6 +886,12 @@ describe("useProjectEditor", () => {
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
+    // Capture the real setTimeout BEFORE vi.useFakeTimers() replaces it, so
+    // the Promise.race timeout watchdog below still fires under fake timers.
+    // Without this, a regression that leaves savePromise pending would hang
+    // the test indefinitely (the fake-timer setTimeout never fires unless
+    // advanced) instead of failing fast with "timed out".
+    const realSetTimeout = globalThis.setTimeout;
     // Use fake timers so we can prove the wait DIDN'T depend on timers.
     vi.useFakeTimers();
     try {
@@ -909,7 +915,9 @@ describe("useProjectEditor", () => {
       await expect(
         Promise.race([
           savePromise,
-          new Promise((_, reject) => setTimeout(() => reject(new Error("timed out")), 10)),
+          new Promise((_, reject) =>
+            realSetTimeout(() => reject(new Error("timed out")), 50),
+          ),
         ]),
       ).resolves.toBe(false);
     } finally {
