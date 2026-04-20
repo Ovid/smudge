@@ -177,6 +177,21 @@ export function EditorPage() {
     isLocked: () => editorLockedMessageRef.current !== null,
   });
 
+  // I5: Caller-level busy ref spanning the ENTIRE handleReplaceOne /
+  // executeReplace / handleRestoreSnapshot async body, including post-run
+  // UI work (await findReplace.search, banner updates). The hook's
+  // inFlightRef releases as soon as run() resolves, so a rapid second
+  // click during finalizeReplaceSuccess's awaited search refresh would
+  // otherwise enter a fresh mutation.run() unconstrained — its
+  // setActionError could land alongside the first click's trailing
+  // setActionInfo("Replaced N occurrences"), leaving a contradictory
+  // success+failure banner pair pinned to one logical operation.
+  const actionBusyRef = useRef(false);
+  const isActionBusy = useCallback(
+    () => mutation.isBusy() || actionBusyRef.current,
+    [mutation],
+  );
+
   // Frozen snapshot of state at the moment the user clicked "Replace All".
   // This prevents the confirmation copy from drifting if the user edits the
   // panel while the dialog is open.
@@ -199,7 +214,7 @@ export function EditorPage() {
   // state) while the hook still holds the pre-remount editor handle,
   // defeating the hook's setEditable(false) lock.
   const handleToggleSnapshotPanel = useCallback(() => {
-    if (mutation.isBusy()) {
+    if (isActionBusy()) {
       setActionInfo(STRINGS.editor.mutationBusy);
       return;
     }
@@ -208,10 +223,10 @@ export function EditorPage() {
       findReplace.closePanel();
     }
     toggleSnapshotPanel();
-  }, [snapshotPanelOpen, setPanelOpen, findReplace, toggleSnapshotPanel, mutation]);
+  }, [snapshotPanelOpen, setPanelOpen, findReplace, toggleSnapshotPanel, isActionBusy]);
 
   const handleToggleReferencePanel = useCallback(() => {
-    if (mutation.isBusy()) {
+    if (isActionBusy()) {
       setActionInfo(STRINGS.editor.mutationBusy);
       return;
     }
@@ -221,10 +236,10 @@ export function EditorPage() {
       findReplace.closePanel();
     }
     togglePanel();
-  }, [panelOpen, setSnapshotPanelOpen, exitSnapshotView, findReplace, togglePanel, mutation]);
+  }, [panelOpen, setSnapshotPanelOpen, exitSnapshotView, findReplace, togglePanel, isActionBusy]);
 
   const handleToggleFindReplace = useCallback(() => {
-    if (mutation.isBusy()) {
+    if (isActionBusy()) {
       setActionInfo(STRINGS.editor.mutationBusy);
       return;
     }
@@ -234,10 +249,21 @@ export function EditorPage() {
       exitSnapshotView();
     }
     findReplace.togglePanel();
-  }, [findReplace, setPanelOpen, setSnapshotPanelOpen, exitSnapshotView, mutation]);
+  }, [findReplace, setPanelOpen, setSnapshotPanelOpen, exitSnapshotView, isActionBusy]);
 
   const handleRestoreSnapshot = useCallback(async () => {
     if (!viewingSnapshot || !activeChapter) return;
+
+    // I5 entry guard: actionBusyRef extends the busy window past
+    // mutation.run()'s release into the post-run banner/refresh work,
+    // preventing a second click from racing trailing setActionError /
+    // setActionInfo of an in-flight handler.
+    if (isActionBusy()) {
+      setActionInfo(STRINGS.editor.mutationBusy);
+      return;
+    }
+    actionBusyRef.current = true;
+    try {
 
     // Clear stale action banners on entry: a previous failure or success
     // banner must not co-display with whatever this restore produces. The
@@ -369,6 +395,9 @@ export function EditorPage() {
       return;
     }
     setActionError(STRINGS.snapshots.restoreFailed);
+    } finally {
+      actionBusyRef.current = false;
+    }
   }, [
     viewingSnapshot,
     activeChapter,
@@ -377,6 +406,7 @@ export function EditorPage() {
     setActionError,
     mutation,
     findReplace,
+    isActionBusy,
   ]);
 
   // Shared post-replace bookkeeping for executeReplace and handleReplaceOne,
@@ -414,6 +444,9 @@ export function EditorPage() {
         // skip the awaited search refresh below.
         safeSetEditable(editorRef, false);
       }
+      // findReplace.search catches network/5xx/4xx internally and resolves
+      // void — see useFindReplaceState's search(). No external try/catch
+      // is needed here.
       await findReplace.search(slug);
       snapshotPanelRef.current?.refreshSnapshots();
       // Panel-handle refresh is a no-op when the snapshot panel is closed
@@ -438,6 +471,14 @@ export function EditorPage() {
       options: { case_sensitive: boolean; whole_word: boolean; regex: boolean };
     }) => {
       if (!project || !slug) return;
+
+      // I5 entry guard: see actionBusyRef definition above.
+      if (isActionBusy()) {
+        setActionInfo(STRINGS.editor.mutationBusy);
+        return;
+      }
+      actionBusyRef.current = true;
+      try {
 
       // Clear any stale banners so a prior op's error/success cannot
       // co-display with this op's outcome — including the panel-local
@@ -546,6 +587,9 @@ export function EditorPage() {
       }
       const msg = mapReplaceErrorToMessage(err);
       if (msg) setActionError(msg);
+      } finally {
+        actionBusyRef.current = false;
+      }
     },
     [
       project,
@@ -555,6 +599,7 @@ export function EditorPage() {
       getActiveChapter,
       setActionError,
       mutation,
+      isActionBusy,
     ],
   );
 
@@ -627,6 +672,16 @@ export function EditorPage() {
       const frozenOptions = findReplace.resultsOptions;
       const frozenReplacement = findReplace.replacement;
       if (!frozenQuery || !frozenOptions) return;
+
+      // I5 entry guard: extends busy past mutation.run() into the
+      // post-run search refresh + banner work to prevent overlapping
+      // banner sets from rapid clicks.
+      if (isActionBusy()) {
+        setActionInfo(STRINGS.editor.mutationBusy);
+        return;
+      }
+      actionBusyRef.current = true;
+      try {
 
       // Mirror executeReplace: clear any stale banners from a prior op so
       // the new replace's outcome does not co-display with an unrelated
@@ -734,6 +789,9 @@ export function EditorPage() {
       }
       const msg = mapReplaceErrorToMessage(err);
       if (msg) setActionError(msg);
+      } finally {
+        actionBusyRef.current = false;
+      }
     },
     [
       project,
@@ -743,6 +801,7 @@ export function EditorPage() {
       getActiveChapter,
       setActionError,
       mutation,
+      isActionBusy,
     ],
   );
 
@@ -855,7 +914,7 @@ export function EditorPage() {
       // hook's awaited flush against this hand-composed flush. Surface the
       // same busy banner the run-routed callers use so the click is not
       // silently dropped.
-      if (mutation.isBusy()) {
+      if (isActionBusy()) {
         setActionInfo(STRINGS.editor.mutationBusy);
         return false;
       }
@@ -923,7 +982,7 @@ export function EditorPage() {
       }
       return true;
     },
-    [setTrashOpen, setActionError, mutation],
+    [setTrashOpen, setActionError, isActionBusy],
   );
 
   // mutation.isBusy() guards for entry points that either (a) bump the save
@@ -937,31 +996,31 @@ export function EditorPage() {
   // misattributed "save failed" banners or silently defeat the editor
   // lock.
   const handleCreateChapterGuarded = useCallback(() => {
-    if (mutation.isBusy()) {
+    if (isActionBusy()) {
       setActionInfo(STRINGS.editor.mutationBusy);
       return;
     }
     handleCreateChapter();
-  }, [mutation, handleCreateChapter]);
+  }, [isActionBusy, handleCreateChapter]);
 
   const requestDeleteChapter = useCallback(
     (chapter: Chapter) => {
-      if (mutation.isBusy()) {
+      if (isActionBusy()) {
         setActionInfo(STRINGS.editor.mutationBusy);
         return;
       }
       setDeleteTarget(chapter);
     },
-    [mutation, setDeleteTarget],
+    [isActionBusy, setDeleteTarget],
   );
 
   const openTrashGuarded = useCallback(() => {
-    if (mutation.isBusy()) {
+    if (isActionBusy()) {
       setActionInfo(STRINGS.editor.mutationBusy);
       return;
     }
     openTrash();
-  }, [mutation, openTrash]);
+  }, [isActionBusy, openTrash]);
 
   const handleSelectChapterWithFlush = useCallback(
     async (chapterId: string) => {
@@ -1371,7 +1430,7 @@ export function EditorPage() {
               // and the subsequent setEditable(true) error branch could
               // re-enable the editor mid-mutation. Surface the busy banner
               // and bail before touching the editor.
-              if (mutation.isBusy()) {
+              if (isActionBusy()) {
                 setActionInfo(STRINGS.editor.mutationBusy);
                 return undefined;
               }
@@ -1434,7 +1493,7 @@ export function EditorPage() {
             onBeforeCreate={async () => {
               // Same I2 guard as onView — refuse snapshot creation while
               // a mutation is in-flight rather than racing its save.
-              if (mutation.isBusy()) {
+              if (isActionBusy()) {
                 setActionInfo(STRINGS.editor.mutationBusy);
                 return false;
               }
