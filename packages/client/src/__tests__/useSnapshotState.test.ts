@@ -398,6 +398,27 @@ describe("useSnapshotState", () => {
     expect(r.reason).toBe("possibly_committed");
   });
 
+  it("restoreSnapshot surfaces aborted reason on ApiRequestError ABORTED (I7)", async () => {
+    // viewSnapshot already treats ABORTED as a silent no-op. Mirror it
+    // for restoreSnapshot — without the dedicated reason, ABORTED falls
+    // through to the network branch and the caller's banner says "check
+    // your connection", which is misleading. No path triggers ABORTED on
+    // restore today; this test guards the contract for future wiring.
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.snapshots.restore).mockRejectedValue(
+      new ApiRequestError("Request aborted", 0, "ABORTED"),
+    );
+
+    const { result } = renderHook(() => useSnapshotState("ch-1"));
+    let r: { ok: boolean; reason?: string } = { ok: true };
+    await act(async () => {
+      r = await result.current.restoreSnapshot("snap-1");
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("aborted");
+  });
+
   it("leaves count null when list fetch fails so badge stays hidden", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.snapshots.list).mockRejectedValue(new Error("network error"));

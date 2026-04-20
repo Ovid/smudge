@@ -341,6 +341,12 @@ export function EditorPage() {
     // stage === "mutate"
     if (result.error instanceof RestoreAbortedError) return;
     if (result.error instanceof RestoreFailedError) {
+      // I7: AbortController-cancelled restore is not user-facing. Mirrors
+      // RestoreAbortedError's silent return. No path triggers this today
+      // (restoreSnapshot has no AbortController wired) — the early return
+      // is in place so a future wiring does not surface a misleading
+      // banner.
+      if (result.error.reason === "aborted") return;
       if (result.error.reason === "possibly_committed") {
         // 2xx BAD_JSON on restore: server likely committed the restore
         // (and its auto-snapshot) but the response body was unreadable.

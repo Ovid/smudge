@@ -23,6 +23,13 @@ export type RestoreFailureReason =
   // editor — re-enabling would let auto-save silently revert the committed
   // restore (C2).
   | "possibly_committed"
+  // The request was aborted (AbortController). No path triggers this today
+  // for restoreSnapshot, but mirror viewSnapshot's discipline: callers must
+  // treat as a silent no-op rather than the misleading "check your
+  // connection" banner the network branch would produce (I7). A future
+  // refactor that wires AbortController into restore must therefore not
+  // surface user-facing copy for the cancellation.
+  | "aborted"
   | "unknown";
 
 export interface RestoreResult {
@@ -265,6 +272,13 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         };
       } catch (err) {
         if (err instanceof ApiRequestError) {
+          // I7: ABORTED is not a user-visible error — mirror viewSnapshot.
+          // The misleading "check your connection" banner the network
+          // branch would otherwise produce is the very fragility the
+          // reviewer flagged.
+          if (err.code === "ABORTED") {
+            return { ok: false, reason: "aborted" };
+          }
           // 2xx BAD_JSON: server likely committed the restore but response
           // body was unreadable. Surface as "possibly_committed" so the
           // caller locks the editor (C2) instead of letting auto-save
