@@ -2229,13 +2229,16 @@ describe("EditorPage snapshot panel", () => {
     });
   });
 
-  it("locks editor on unknown-reason restore failure (I1/I7)", async () => {
-    // A non-ApiRequestError thrown from restoreSnapshot (e.g. TypeError
-    // on a malformed response, reject-before-send) produces
-    // reason:"unknown". The server commit status is genuinely ambiguous
-    // — the handler must lock the editor via editorLockedMessage rather
-    // than re-enabling with a dismissible banner that could let auto-
-    // save revert a server-committed restore.
+  it("shows a dismissible network banner for a pre-send non-ApiRequestError restore reject (I5)", async () => {
+    // I5: apiFetch wraps every real network/fetch error in
+    // ApiRequestError, so a bare non-ApiRequestError reject from
+    // api.snapshots.restore means the server never received the
+    // request. Before I5, useSnapshotState mapped this to "unknown"
+    // and EditorPage treated "unknown" as possibly_committed — wiping
+    // the cached draft and permanently locking the editor for what
+    // was a purely-client bug. After: the hook's restoreReachedServer
+    // flag stays false, the reason is "network", and the caller
+    // surfaces a dismissible retry banner.
     vi.mocked(api.snapshots.list).mockResolvedValue([
       {
         id: "snap-1",
@@ -2255,8 +2258,6 @@ describe("EditorPage snapshot panel", () => {
       is_auto: false,
       created_at: "2026-04-17T10:00:00Z",
     });
-    // A plain Error (not ApiRequestError) — useSnapshotState.restoreSnapshot
-    // surfaces this as reason:"unknown".
     (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
       .fn()
       .mockRejectedValue(new TypeError("Cannot read property 'json' of undefined"));
@@ -2280,13 +2281,13 @@ describe("EditorPage snapshot panel", () => {
     );
     await userEvent.click(confirmButton!);
 
-    // Persistent lock banner with the "response unreadable" copy — same
-    // treatment as 2xx BAD_JSON. The dismissible "try again" banner must
-    // not appear since a retry could double-restore.
+    // Dismissible network banner. The persistent lock banner MUST NOT
+    // appear for a pre-send failure — the server never committed.
     expect(
-      await screen.findByText(STRINGS.snapshots.restoreResponseUnreadable),
+      await screen.findByText(STRINGS.snapshots.restoreNetworkFailed),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: STRINGS.editor.refreshButton })).toBeInTheDocument();
+    expect(screen.queryByText(STRINGS.snapshots.restoreResponseUnreadable)).toBeNull();
+    expect(screen.queryByRole("button", { name: STRINGS.editor.refreshButton })).toBeNull();
   });
 
   it("exits snapshot view when restore returns not_found (I6)", async () => {

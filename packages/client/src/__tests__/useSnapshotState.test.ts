@@ -352,7 +352,15 @@ describe("useSnapshotState", () => {
     expect(r.restoredChapterId).toBe("ch-1");
   });
 
-  it("restoreSnapshot returns ok=false on generic failure", async () => {
+  it("restoreSnapshot routes a non-ApiRequestError pre-send reject to network (I5)", async () => {
+    // I5: before this fix, any non-ApiRequestError throw from the restore
+    // pipeline was categorized as "unknown" and the caller treated that
+    // as possibly_committed — a TypeError before fetch left the client
+    // wiped the cached draft and permanently locked the editor. apiFetch
+    // now wraps every network error in ApiRequestError, so a bare
+    // non-ApiRequestError reject from api.snapshots.restore means the
+    // server never received the request. Route to "network" so the
+    // caller can surface a dismissible retry banner.
     vi.mocked(api.snapshots.restore).mockRejectedValue(new Error("fail"));
 
     const { result } = renderHook(() => useSnapshotState("ch-1"));
@@ -362,7 +370,7 @@ describe("useSnapshotState", () => {
     });
 
     expect(r.ok).toBe(false);
-    expect(r.reason).toBe("unknown");
+    expect(r.reason).toBe("network");
   });
 
   it("restoreSnapshot surfaces corrupt_snapshot reason on 400 CORRUPT_SNAPSHOT", async () => {

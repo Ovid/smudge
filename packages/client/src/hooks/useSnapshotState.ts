@@ -243,8 +243,19 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       // viewingSnapshot for the new chapter.
       const seq = chapterSeqRef.current;
       const restoringChapterId = chapterId;
+      // I5: Distinguish pre-send throws from post-success throws in the
+      // catch below. apiFetch wraps all network/fetch errors in
+      // ApiRequestError, so a non-ApiRequestError catch means either a
+      // purely-client throw before the request left the client (routing
+      // mistake, undefined access) or a post-success bookkeeping throw
+      // (setViewingSnapshot, follow-up list fetch). Pre-send must NOT
+      // wipe the draft cache / lock the editor — the server is known not
+      // to have committed. Post-success is genuinely ambiguous: the
+      // server committed the restore + its auto-snapshot.
+      let restoreReachedServer = false;
       try {
         await api.snapshots.restore(snapshotId);
+        restoreReachedServer = true;
         // A→B→A round-trip: seq moved but the current chapter is once
         // again the one we restored. Treat that as a NOT-stale completion
         // — the caller should reload the editor because the restore
@@ -310,7 +321,20 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
           }
           return { ok: false, reason: "network" };
         }
-        return { ok: false, reason: "unknown" };
+        // Non-ApiRequestError. If the server-side restore already
+        // resolved successfully, the throw came from post-success code
+        // (setViewingSnapshot, follow-up list fetch, seq/chapter-id
+        // bookkeeping) — the server DID commit, so route to
+        // possibly_committed so the caller locks the editor (C1). If
+        // the throw came before the await resolved, no request reached
+        // the server (apiFetch would have wrapped a real fetch error),
+        // so it is a purely-client bug and the safe treatment is the
+        // dismissible "network" branch — the user can retry without
+        // risking a double-restore.
+        if (restoreReachedServer) {
+          return { ok: false, reason: "possibly_committed" };
+        }
+        return { ok: false, reason: "network" };
       }
     },
     [chapterId],
