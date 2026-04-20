@@ -32,7 +32,7 @@ function buildHandles() {
     }),
     reloadActiveChapter: vi.fn(async () => {
       calls.push("reloadActiveChapter");
-      return true;
+      return "reloaded" as const;
     }),
   };
   return { calls, editor, editorRef, projectEditor };
@@ -197,8 +197,8 @@ describe("useEditorMutation — reload failure", () => {
     const { editorRef, projectEditor } = buildHandles();
     // The hook passes a no-op onError; reloadActiveChapter's onError
     // signalling is intentionally suppressed (see useEditorMutation).
-    // What matters is the boolean return: false -> stage:"reload".
-    projectEditor.reloadActiveChapter = vi.fn(async () => false);
+    // What matters is the outcome: "failed" -> stage:"reload".
+    projectEditor.reloadActiveChapter = vi.fn(async () => "failed" as const);
 
     const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
     const res = await result.current.run<{ replaced: number }>(async () => ({
@@ -232,7 +232,7 @@ describe("useEditorMutation — reload failure", () => {
     projectEditor.reloadActiveChapter = vi.fn(async (onError?: (msg: string) => void) => {
       onError?.("would-flip-to-full-page-error");
       onErrorSpy();
-      return false;
+      return "failed" as const;
     });
 
     const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
@@ -248,9 +248,9 @@ describe("useEditorMutation — reload failure", () => {
     if (!res.ok) expect(res.stage).toBe("reload");
   });
 
-  it("returns stage 'reload' with data when reloadActiveChapter returns false without onError", async () => {
+  it("returns stage 'reload' with data when reloadActiveChapter returns 'failed' without onError", async () => {
     const { editorRef, projectEditor } = buildHandles();
-    projectEditor.reloadActiveChapter = vi.fn(async () => false);
+    projectEditor.reloadActiveChapter = vi.fn(async () => "failed" as const);
 
     const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
     const res = await result.current.run<{ affected: string[] }>(async () => ({
@@ -268,13 +268,63 @@ describe("useEditorMutation — reload failure", () => {
     }
     // inFlightRef must still be released so a user-triggered refresh works.
     // Verify by firing another run and confirming it is not rejected as busy.
-    projectEditor.reloadActiveChapter = vi.fn(async () => true);
+    projectEditor.reloadActiveChapter = vi.fn(async () => "reloaded" as const);
     const res2 = await result.current.run(async () => ({
       clearCacheFor: [],
       reloadActiveChapter: true,
       data: undefined,
     }));
     expect(res2.ok).toBe(true);
+  });
+});
+
+describe("useEditorMutation — reload superseded (I5)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("treats 'superseded' reload as success — no stage:'reload', no lock banner", async () => {
+    // User switched chapters between the directive returning and the hook
+    // invoking reloadActiveChapter. The mutation itself committed server-side
+    // and the newly-active chapter is unrelated — we must NOT raise a
+    // persistent lock banner pinned to a chapter the mutation didn't touch.
+    const { editorRef, projectEditor } = buildHandles();
+    projectEditor.reloadActiveChapter = vi.fn(async () => "superseded" as const);
+
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+    const res = await result.current.run<{ replaced: number }>(async () => ({
+      clearCacheFor: ["c1"],
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
+      data: { replaced: 3 },
+    }));
+
+    // ok:true, stage is NOT "reload".
+    expect(res).toEqual({ ok: true, data: { replaced: 3 } });
+  });
+
+  it("does NOT override a pre-existing lock when reload was superseded (inline A)", async () => {
+    // Critical contract: superseded reload did NOT refresh the active
+    // chapter's displayed content. If a prior reload-failure set the lock,
+    // a subsequent superseded reload must NOT unlock the editor — typing
+    // on top of stale content would auto-save back over the server-committed
+    // change.
+    const { editorRef, projectEditor } = buildHandles();
+    projectEditor.reloadActiveChapter = vi.fn(async () => "superseded" as const);
+    const isLocked = vi.fn(() => true);
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor, isLocked }));
+
+    await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: true,
+      reloadChapterId: "ch-1",
+      data: undefined,
+    }));
+
+    // setEditable(false) on entry; setEditable(true) must NOT have been
+    // called — lock honored because reload was skipped, not performed.
+    expect(editorRef.current!.setEditable).toHaveBeenCalledTimes(1);
+    expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(false);
   });
 });
 
@@ -466,7 +516,8 @@ describe("useEditorMutation — expected chapter id (I2)", () => {
   it("passes reloadChapterId to reloadActiveChapter so the hook can skip on mismatch", async () => {
     const { editorRef, projectEditor } = buildHandles();
     const reloadSpy = vi.fn(
-      async (_onError?: (msg: string) => void, _expectedChapterId?: string) => true,
+      async (_onError?: (msg: string) => void, _expectedChapterId?: string) =>
+        "reloaded" as const,
     );
     projectEditor.reloadActiveChapter = reloadSpy;
 
@@ -486,7 +537,8 @@ describe("useEditorMutation — expected chapter id (I2)", () => {
   it("omits the expected chapter id when the directive does not set one (backward compat)", async () => {
     const { editorRef, projectEditor } = buildHandles();
     const reloadSpy = vi.fn(
-      async (_onError?: (msg: string) => void, _expectedChapterId?: string) => true,
+      async (_onError?: (msg: string) => void, _expectedChapterId?: string) =>
+        "reloaded" as const,
     );
     projectEditor.reloadActiveChapter = reloadSpy;
 
@@ -613,9 +665,9 @@ describe("useEditorMutation — latest-ref pattern", () => {
     const { editorRef } = buildHandles();
 
     const firstCancel = vi.fn();
-    const firstReload = vi.fn(async () => true);
+    const firstReload = vi.fn(async () => "reloaded" as const);
     const secondCancel = vi.fn();
-    const secondReload = vi.fn(async () => true);
+    const secondReload = vi.fn(async () => "reloaded" as const);
 
     const { result, rerender } = renderHook(
       (props: { cancel: () => void; reload: () => Promise<boolean> }) =>

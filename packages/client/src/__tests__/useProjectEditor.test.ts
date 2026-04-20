@@ -1306,12 +1306,12 @@ describe("useProjectEditor", () => {
     vi.mocked(api.chapters.get).mockRejectedValueOnce(new Error("reload boom"));
 
     const onError = vi.fn();
-    let ok: boolean | undefined;
+    let outcome: string | undefined;
     await act(async () => {
-      ok = await result.current.reloadActiveChapter(onError);
+      outcome = await result.current.reloadActiveChapter(onError);
     });
 
-    expect(ok).toBe(false);
+    expect(outcome).toBe("failed");
     expect(onError).toHaveBeenCalledWith(STRINGS.error.loadChapterFailed);
     // Must NOT have set the full-page error — the replace already succeeded
     // on the server, callers must stay in the editor to retry.
@@ -1336,14 +1336,16 @@ describe("useProjectEditor", () => {
     // Active is ch1. Caller asks the hook to reload ch2 — mismatch.
     vi.mocked(api.chapters.get).mockClear();
 
-    let ok: boolean | undefined;
+    let outcome: string | undefined;
     await act(async () => {
-      ok = await result.current.reloadActiveChapter(undefined, "ch2");
+      outcome = await result.current.reloadActiveChapter(undefined, "ch2");
     });
 
     // The reload short-circuited: no fetch, no cache clear on the
-    // now-active chapter.
-    expect(ok).toBe(true);
+    // now-active chapter. Outcome is "superseded" — the skip is
+    // intentional and useEditorMutation treats it as not-failed but
+    // does NOT unlock the editor (I5).
+    expect(outcome).toBe("superseded");
     expect(api.chapters.get).not.toHaveBeenCalled();
     expect(vi.mocked(clearCachedContent)).not.toHaveBeenCalled();
   });
@@ -1372,7 +1374,8 @@ describe("useProjectEditor", () => {
         }),
     );
 
-    let reloadPromise: Promise<boolean> = Promise.resolve(false);
+    let reloadPromise: Promise<"reloaded" | "superseded" | "failed"> =
+      Promise.resolve("failed");
     act(() => {
       reloadPromise = result.current.reloadActiveChapter();
     });

@@ -145,11 +145,11 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
           // also stops useProjectEditor's fallback-to-setError from firing
           // and flipping EditorPage into the full-screen error branch when
           // we just want the persistent lock banner.
-          const ok = await projectEditorRef.current.reloadActiveChapter(
+          const outcome = await projectEditorRef.current.reloadActiveChapter(
             () => {},
             directive.reloadChapterId,
           );
-          if (!ok) {
+          if (outcome === "failed") {
             reloadFailed = true;
             return {
               ok: false,
@@ -157,7 +157,17 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
               data: directive.data,
             };
           }
-          reloadSucceeded = true;
+          // "reloaded": fresh server state is on screen — set the unlock
+          // flag so a prior lock can clear.
+          // "superseded": the user switched chapters (or the call was gated
+          // out by expectedChapterId) before the reload ran. The mutation
+          // itself still committed server-side, so don't raise a lock
+          // banner (I5). But don't set reloadSucceeded either — the active
+          // chapter's displayed content wasn't refreshed, so we must not
+          // override a pre-existing lock.
+          if (outcome === "reloaded") {
+            reloadSucceeded = true;
+          }
         }
         return { ok: true, data: directive.data };
       } finally {

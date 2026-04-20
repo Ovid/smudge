@@ -7,6 +7,14 @@ import { STRINGS } from "../strings";
 
 export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
 
+// Discriminated return from reloadActiveChapter so callers can distinguish
+// "fresh server state is now on screen" from "the user switched chapters
+// (or the call was gated out) before the reload ran" from "the GET errored".
+// Conflating the latter two as a single false return made the
+// useEditorMutation hook raise a spurious persistent lock banner on a
+// chapter the mutation didn't touch (I5).
+export type ReloadOutcome = "reloaded" | "superseded" | "failed";
+
 export function useProjectEditor(slug: string | undefined) {
   const [project, setProject] = useState<ProjectWithChapters | null>(null);
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
@@ -351,36 +359,50 @@ export function useProjectEditor(slug: string | undefined) {
   );
 
   const reloadActiveChapter = useCallback(
-    async (onError?: (message: string) => void, expectedChapterId?: string): Promise<boolean> => {
+    async (
+      onError?: (message: string) => void,
+      expectedChapterId?: string,
+    ): Promise<ReloadOutcome> => {
       const current = activeChapterRef.current;
-      if (!current) return false;
+      // No active chapter to reload — treat as superseded so callers don't
+      // raise a lock banner. "failed" is reserved for a fetch that actually
+      // errored; this path is the "nothing to refresh" case and the editor
+      // state is already consistent.
+      if (!current) return "superseded";
       // If the caller passed an expected chapter id and the active chapter
       // no longer matches, the user switched between the directive that
       // requested the reload and this call. Skip the reload entirely —
       // blindly clearing the new chapter's cache and fetching its server
       // copy would wipe the user's in-progress draft of an unrelated
-      // chapter (I2). Return true because the skip is intentional, not a
-      // failure the caller should surface.
+      // chapter (I2). Return "superseded" so useEditorMutation knows the
+      // skip is intentional (not a failure warranting a lock banner) but
+      // also does NOT mark the lock-override "reloadSucceeded" flag — the
+      // now-active chapter's server state was NOT refreshed.
       if (expectedChapterId !== undefined && current.id !== expectedChapterId) {
-        return true;
+        return "superseded";
       }
-      // Clear any client-side cached content so the server copy wins after a restore/replace
-      clearCachedContent(current.id);
       ++saveSeqRef.current;
       setSaveStatus("idle");
       setCacheWarning(false);
       const seq = ++selectChapterSeqRef.current;
       try {
         const chapter = await api.chapters.get(current.id);
-        if (seq !== selectChapterSeqRef.current) return false;
+        if (seq !== selectChapterSeqRef.current) return "superseded";
+        // Clear cache AFTER the server GET succeeds (invariant 3). Before
+        // I3, this ran pre-GET — a failed GET would have already erased the
+        // draft cache that could serve recovery, weakening defense-in-depth.
+        clearCachedContent(current.id);
         setActiveChapter(chapter);
         setChapterWordCount(countWords(chapter.content));
         // Bump reload key so the Editor remounts with fresh server content
         setChapterReloadKey((k) => k + 1);
-        return true;
+        return "reloaded";
       } catch (err) {
         console.warn("Failed to reload chapter:", err);
-        if (seq !== selectChapterSeqRef.current) return false;
+        // Seq bumped during the GET → user navigated away. A newer select
+        // owns state now; "superseded" is correct and must not route to
+        // the lock banner (I5).
+        if (seq !== selectChapterSeqRef.current) return "superseded";
         // If an onError callback is provided, route the failure there so
         // callers (e.g. post-replace reload) can surface a non-fatal banner
         // without flipping EditorPage into the full-screen error branch.
@@ -391,7 +413,7 @@ export function useProjectEditor(slug: string | undefined) {
         } else {
           setError(STRINGS.error.loadChapterFailed);
         }
-        return false;
+        return "failed";
       }
     },
     [],
