@@ -1308,12 +1308,13 @@ describe("EditorPage find-and-replace confirmation", () => {
     expect(screen.queryByText(/Something specific broke/)).toBeNull();
   });
 
-  it("handleReplaceOne on project-gone 404 does not re-fire a search (I4)", async () => {
+  it("handleReplaceOne on any 404 re-fires a search and shows the action banner (I3)", async () => {
     // A bare 404 from api.search.replace can mean either the chapter scope
-    // is gone (SCOPE_NOT_FOUND — re-searching correctly drops the stale
-    // match row) or the project itself is gone (NOT_FOUND — re-searching
-    // will 404 again and overwrite the project-gone banner). Gate the
-    // re-search on the SCOPE_NOT_FOUND code; otherwise leave it alone.
+    // is gone (SCOPE_NOT_FOUND) or the project itself is gone (NOT_FOUND).
+    // Both cases need to drop the stale match rows so the user can't click
+    // the same dead row and loop the same error — re-fire the search on
+    // any 404 and use findReplace.clearError() to suppress the panel-local
+    // duplicate so the action banner remains the single source of truth.
     const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.search.replace).mockRejectedValueOnce(
       new ApiRequestError("project missing", 404, "NOT_FOUND"),
@@ -1332,9 +1333,6 @@ describe("EditorPage find-and-replace confirmation", () => {
     fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
 
     const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
-    // Initial search (debounced from the Find input change) fires exactly
-    // once before the user clicks — snapshot its call count to compare
-    // against the post-click count.
     await waitFor(() => expect(api.search.find).toHaveBeenCalled());
     const findCallsBeforeClick = vi.mocked(api.search.find).mock.calls.length;
 
@@ -1344,8 +1342,10 @@ describe("EditorPage find-and-replace confirmation", () => {
       expect(screen.getByText(STRINGS.findReplace.replaceProjectNotFound)).toBeInTheDocument();
     });
 
-    // No additional search fired on the project-gone 404 path.
-    expect(vi.mocked(api.search.find).mock.calls.length).toBe(findCallsBeforeClick);
+    // Refresh search fires on the project-gone 404 so stale match rows
+    // disappear — the search refetch clears its own results on 404, and
+    // clearError() suppresses any panel-local duplicate copy.
+    expect(vi.mocked(api.search.find).mock.calls.length).toBeGreaterThan(findCallsBeforeClick);
   });
 
   it("handleReplaceOne surfaces MATCH_CAP_EXCEEDED with tooManyMatches copy", async () => {
