@@ -175,6 +175,31 @@ describe("SnapshotPanel", () => {
       expect(api.snapshots.create).toHaveBeenCalledWith("ch-1", "My label");
     });
 
+    it("surfaces createFailed when onBeforeCreate throws (I3 defense-in-depth)", async () => {
+      // EditorPage's onBeforeCreate wraps flushSave in try/catch, but the
+      // panel provides its own try/catch as a defensive layer — a future
+      // caller that forgets the wrap must still surface createFailed
+      // rather than producing an unhandled rejection.
+      const user = userEvent.setup();
+      const throwingOnBeforeCreate = vi.fn().mockRejectedValue(new Error("flushSave threw"));
+      render(<SnapshotPanel {...defaultProps} onBeforeCreate={throwingOnBeforeCreate} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(S.createButton)).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.createButton));
+      await user.click(screen.getByText(S.save));
+
+      await waitFor(() => {
+        expect(screen.getByText(S.createFailed)).toBeInTheDocument();
+      });
+      expect(throwingOnBeforeCreate).toHaveBeenCalled();
+      // api.snapshots.create must NOT have been called — the throw short-
+      // circuited before the POST.
+      expect(api.snapshots.create).not.toHaveBeenCalled();
+    });
+
     it("creates a snapshot without label when input is empty", async () => {
       const user = userEvent.setup();
       render(<SnapshotPanel {...defaultProps} />);

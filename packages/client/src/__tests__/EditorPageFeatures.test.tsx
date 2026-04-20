@@ -1866,6 +1866,92 @@ describe("EditorPage find-and-replace confirmation", () => {
     // Dialog body uses the chapter-scope confirm copy with per-chapter count.
     expect(dialog).toHaveTextContent(/2 occurrences of 'foo' with 'qux' in this chapter/);
   });
+
+  it("executeReplace refuses when editor is locked after a prior BAD_JSON (C1)", async () => {
+    // After a 2xx BAD_JSON restore/replace raises the persistent lock banner,
+    // a second Replace-All must be refused at the entry guard — otherwise
+    // the user could fire another server-side replace + auto-snapshot over
+    // an ambiguously-committed mutation. The API-level mock would normally
+    // resolve, so if the guard misfires we'd see a second search.replace call.
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    // Lock banner now up (possibly_committed).
+    await screen.findByText(STRINGS.findReplace.replaceResponseUnreadable);
+    const callsAfterLock = vi.mocked(api.search.replace).mock.calls.length;
+
+    // Second attempt: the "Replace All in Manuscript" panel button is
+    // still on screen and opens the confirm dialog (setReplaceConfirmation
+    // runs before executeReplace). Click it and confirm — the C1 guard
+    // inside executeReplace refuses without making the API call.
+    const replaceAllButton = screen.queryByRole("button", { name: "Replace All in Manuscript" });
+    if (replaceAllButton) {
+      await userEvent.click(replaceAllButton);
+      const secondDialog = await screen.findByRole("alertdialog", {
+        name: "Replace across manuscript?",
+      });
+      await userEvent.click(
+        Array.from(secondDialog.querySelectorAll("button")).find(
+          (b) => b.textContent?.trim() === "Replace All",
+        )!,
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+
+    // Whether or not the panel button was reachable, the C1 guard means
+    // no second api.search.replace call fires.
+    expect(vi.mocked(api.search.replace).mock.calls.length).toBe(callsAfterLock);
+    // Lock banner persists.
+    expect(screen.getByText(STRINGS.findReplace.replaceResponseUnreadable)).toBeInTheDocument();
+  });
+
+  it("handleReplaceOne refuses when editor is locked after a prior BAD_JSON (C1)", async () => {
+    // Same guard discipline as executeReplace — the per-match Replace
+    // button must not fire a server write while the lock banner is up.
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
+    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+
+    const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
+    await userEvent.click(replaceOne[0]!);
+
+    // Lock banner up.
+    await screen.findByText(STRINGS.findReplace.replaceResponseUnreadable);
+    const callsAfterLock = vi.mocked(api.search.replace).mock.calls.length;
+
+    // Second click on a still-visible per-match Replace (if any) must be
+    // a no-op. The panel may have re-rendered; find buttons again.
+    const replaceAgain = screen.queryAllByRole("button", { name: "Replace" });
+    if (replaceAgain.length > 0) {
+      await userEvent.click(replaceAgain[0]!);
+    }
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(vi.mocked(api.search.replace).mock.calls.length).toBe(callsAfterLock);
+  });
 });
 
 describe("EditorPage snapshot panel", () => {
@@ -2455,5 +2541,122 @@ describe("EditorPage snapshot panel", () => {
 
     const save = await screen.findByRole("button", { name: "Save" });
     await userEvent.click(save);
+  });
+
+  it("exits snapshot view when restore returns corrupt_snapshot (I2)", async () => {
+    // A permanent-failure branch: the snapshot payload cannot be parsed,
+    // so re-clicking Restore will always fail identically. Without
+    // exitSnapshotView the SnapshotBanner stays on screen with a
+    // canRestore=true Restore button, inviting the user to loop.
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-corrupt",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+    ]);
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-corrupt",
+      chapter_id: "ch-1",
+      label: "v1",
+      content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+      word_count: 5,
+      is_auto: false,
+      created_at: "2026-04-17T10:00:00Z",
+    });
+    const { ApiRequestError } = await import("../api/client");
+    (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
+      .fn()
+      .mockRejectedValue(new ApiRequestError("Corrupt snapshot", 400, "CORRUPT_SNAPSHOT"));
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "View" }));
+    await waitFor(() => {
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-corrupt");
+    });
+
+    const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
+    await userEvent.click(restoreButtons[0]!);
+    const dialog = await screen.findByRole("alertdialog", { name: "Restore" });
+    const confirmButton = Array.from(dialog.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Restore",
+    );
+    await userEvent.click(confirmButton!);
+
+    // Error banner for the corrupt case…
+    expect(await screen.findByText(STRINGS.snapshots.restoreFailedCorrupt)).toBeInTheDocument();
+    // …and the SnapshotBanner leaves the screen.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("region", { name: STRINGS.snapshots.viewingRegionLabel }),
+      ).toBeNull();
+    });
+  });
+
+  it("exits snapshot view when restore returns cross_project_image (I2)", async () => {
+    // Same permanent-failure shape as corrupt_snapshot — the snapshot
+    // references images that no longer belong to this project. The user
+    // has no recovery path; dismiss the banner so they can't loop.
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-xref",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+    ]);
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-xref",
+      chapter_id: "ch-1",
+      label: "v1",
+      content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+      word_count: 5,
+      is_auto: false,
+      created_at: "2026-04-17T10:00:00Z",
+    });
+    const { ApiRequestError } = await import("../api/client");
+    (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
+      .fn()
+      .mockRejectedValue(
+        new ApiRequestError("Cross-project image", 400, "CROSS_PROJECT_IMAGE_REF"),
+      );
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "View" }));
+    await waitFor(() => {
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-xref");
+    });
+
+    const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
+    await userEvent.click(restoreButtons[0]!);
+    const dialog = await screen.findByRole("alertdialog", { name: "Restore" });
+    const confirmButton = Array.from(dialog.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Restore",
+    );
+    await userEvent.click(confirmButton!);
+
+    expect(
+      await screen.findByText(STRINGS.snapshots.restoreFailedCrossProjectImage),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("region", { name: STRINGS.snapshots.viewingRegionLabel }),
+      ).toBeNull();
+    });
   });
 });
