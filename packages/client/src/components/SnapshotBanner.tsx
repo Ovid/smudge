@@ -56,12 +56,31 @@ export function SnapshotBanner({
           {S.viewingBanner(displayLabel, displayDate)}
         </p>
         <div className="flex items-center gap-3">
+          {/*
+            When disabled, the title attribute is unreliable: most browsers
+            suppress tooltips on `disabled` elements and most assistive
+            technologies do not announce title text. Instead, expose the
+            reason via aria-describedby pointing at a visually-hidden
+            <span> (announced with the button on focus) AND render a
+            visible inline hint next to the button so sighted users see
+            why the action is unavailable. The editor-locked banner above
+            already explains the global state, but the local hint removes
+            any ambiguity at the point of action.
+          */}
+          {!canRestore && (
+            <span
+              id="snapshot-restore-disabled-reason"
+              className="text-xs text-amber-800 font-sans"
+            >
+              {S.restoreUnavailableWhileLocked}
+            </span>
+          )}
           <button
             type="button"
             onClick={() => setConfirmOpen(true)}
             disabled={!canRestore}
             aria-disabled={!canRestore}
-            title={canRestore ? undefined : S.restoreUnavailableWhileLocked}
+            aria-describedby={canRestore ? undefined : "snapshot-restore-disabled-reason"}
             className="text-sm font-medium text-accent hover:text-accent-hover rounded px-3 py-1 border border-accent/40 hover:bg-accent/10 transition-colors font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-accent"
           >
             {S.restoreButton}

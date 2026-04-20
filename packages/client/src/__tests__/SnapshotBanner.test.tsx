@@ -106,7 +106,14 @@ describe("SnapshotBanner", () => {
     render(<SnapshotBanner {...defaultProps} canRestore={false} />);
     const restoreBtn = screen.getByRole("button", { name: S.restoreButton });
     expect(restoreBtn).toBeDisabled();
-    expect(restoreBtn).toHaveAttribute("title", S.restoreUnavailableWhileLocked);
+    // The reason is exposed via aria-describedby + a visible hint, NOT
+    // via the title attribute — browsers suppress tooltips on disabled
+    // buttons and most screen readers do not announce title text.
+    expect(restoreBtn).not.toHaveAttribute("title");
+    expect(restoreBtn).toHaveAttribute("aria-describedby", "snapshot-restore-disabled-reason");
+    const reason = document.getElementById("snapshot-restore-disabled-reason");
+    expect(reason).not.toBeNull();
+    expect(reason?.textContent).toBe(S.restoreUnavailableWhileLocked);
   });
 
   it("does not open the confirmation dialog when Restore is clicked while disabled (C1)", async () => {
@@ -128,5 +135,9 @@ describe("SnapshotBanner", () => {
     const restoreBtn = screen.getByRole("button", { name: S.restoreButton });
     expect(restoreBtn).not.toBeDisabled();
     expect(restoreBtn).not.toHaveAttribute("title");
+    // No aria-describedby and no hidden reason span when the button is
+    // usable — the hint is only meaningful while the action is blocked.
+    expect(restoreBtn).not.toHaveAttribute("aria-describedby");
+    expect(document.getElementById("snapshot-restore-disabled-reason")).toBeNull();
   });
 });
