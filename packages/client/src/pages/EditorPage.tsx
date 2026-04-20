@@ -159,6 +159,24 @@ export function EditorPage() {
   const editorLockedMessageRef = useRef(editorLockedMessage);
   editorLockedMessageRef.current = editorLockedMessage;
 
+  // Defense-in-depth save gate (C1): wraps handleSave so that, if the lock
+  // banner is showing, no auto-save PATCH leaves the client — regardless of
+  // whether setEditable(false) actually applied. The banner implies the
+  // editor is read-only; a TipTap mid-remount throw from safeSetEditable
+  // can leave the editor writable (safeSetEditable returns false in that
+  // case, but until the user refreshes, keystrokes still fire onUpdate and
+  // schedule a debounced save). Short-circuiting to `false` here turns
+  // those saves into no-ops that leave dirtyRef set — the content cache
+  // (invariant 3) still holds the draft, the server is never PATCHed, and
+  // refreshing the page restores the server-committed state cleanly.
+  const handleSaveLockGated = useCallback(
+    async (content: Record<string, unknown>, chapterId?: string): Promise<boolean> => {
+      if (editorLockedMessageRef.current !== null) return false;
+      return handleSave(content, chapterId);
+    },
+    [handleSave],
+  );
+
   // Single useEditorMutation instance shared by handleRestoreSnapshot,
   // executeReplace, and handleReplaceOne. The cross-caller busy-guard
   // depends on a single invocation — do NOT add a second call.
@@ -1545,7 +1563,7 @@ export function EditorPage() {
                       key={`${activeChapter.id}:${chapterReloadKey}`}
                       chapterId={activeChapter.id}
                       content={activeChapter.content}
-                      onSave={handleSave}
+                      onSave={handleSaveLockGated}
                       onContentChange={handleContentChange}
                       editorRef={editorRef}
                       onEditorReady={setToolbarEditor}
