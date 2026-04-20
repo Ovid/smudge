@@ -322,8 +322,16 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
           lockedByCaller =
             isLockedRef.current?.() === true && !reloadSucceeded && !reloadSuperseded;
         } catch (err) {
+          // I4 (review 2026-04-21): honor reloadSucceeded / reloadSuperseded
+          // even when the predicate throws. An unconditional lockedByCaller=true
+          // would leave the editor setEditable(false) AFTER chapterReloadKey
+          // had already cleared the lock banner — reproducing the "looks
+          // editable but can't type" dead state the flags exist to prevent.
+          // Conservative default otherwise: treat as locked so an unknown
+          // predicate state can't accidentally unlock an editor over a
+          // server-committed change.
           console.warn("useEditorMutation: isLocked predicate threw", err);
-          lockedByCaller = true;
+          lockedByCaller = !reloadSucceeded && !reloadSuperseded;
         }
         if (!reloadFailed && !lockedByCaller) {
           // Re-read editorRef.current (I3): if the entry-time editor was

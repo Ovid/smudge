@@ -949,6 +949,49 @@ describe("useEditorMutation — isLocked predicate (I1)", () => {
     }
   });
 
+  it("still unlocks after a successful reload when the predicate throws (I4, review 2026-04-21)", async () => {
+    // Prior behavior: the catch branch set lockedByCaller=true
+    // unconditionally, which overrode reloadSucceeded / reloadSuperseded.
+    // On a reload-succeeded run whose isLocked predicate throws, the
+    // editor stayed setEditable(false) while chapterReloadKey cleared
+    // the banner — reproducing the "looks editable but can't type" dead
+    // state the flags exist to prevent.
+    //
+    // After: the catch preserves the reloadSucceeded / reloadSuperseded
+    // bypass. Conservative default on throw is still "locked" when the
+    // premise for unlocking doesn't hold.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { editorRef, projectEditor } = buildHandles();
+      projectEditor.reloadActiveChapter = vi.fn(async () => "reloaded" as const);
+      const isLocked = vi.fn(() => {
+        throw new Error("flaky predicate");
+      });
+      const { result } = renderHook(() =>
+        useEditorMutation({ editorRef, projectEditor, isLocked }),
+      );
+
+      const res = await result.current.run(async () => ({
+        clearCacheFor: ["ch-1"],
+        reloadActiveChapter: true,
+        reloadChapterId: "ch-1",
+        data: undefined,
+      }));
+
+      expect(res).toEqual({ ok: true, data: undefined });
+      // Entry locked the editor (false). The finally re-enables it (true)
+      // because reloadSucceeded bypasses the predicate's throw fallback.
+      const setEditableCalls = vi.mocked(editorRef.current!.setEditable).mock.calls;
+      expect(setEditableCalls).toEqual([[false], [true]]);
+      expect(warnSpy).toHaveBeenCalledWith(
+        "useEditorMutation: isLocked predicate threw",
+        expect.any(Error),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it("does not call setEditable(true) when locked, even through the finally's busy-latch safety path", async () => {
     // Lock flips true between entry and exit: simulates the reload-failed
     // banner being set by a prior run. This run succeeds, but the exit
