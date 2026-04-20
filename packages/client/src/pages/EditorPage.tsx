@@ -390,8 +390,15 @@ export function EditorPage() {
         // would re-hydrate on refresh and overwrite the server commit.
         clearCachedContent(activeChapter.id);
         safeSetEditable(editorRef, false);
-        snapshotPanelRef.current?.refreshSnapshots();
       }
+      // I6: Refresh the snapshot list on every error branch. The
+      // not_found branch is the sharpest case — without a refresh, the
+      // stale snapshot row remains clickable and the user loops through
+      // the same 404. Mirrors the sibling handleReplaceOne 404 path
+      // which refreshes its result set for the same reason. The
+      // possibly_committed branch above returns before reaching this
+      // line and runs its own refresh.
+      snapshotPanelRef.current?.refreshSnapshots();
       return;
     }
     setActionError(STRINGS.snapshots.restoreFailed);
