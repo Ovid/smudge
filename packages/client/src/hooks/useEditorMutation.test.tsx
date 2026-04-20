@@ -173,6 +173,43 @@ describe("useEditorMutation — flush failure", () => {
   });
 });
 
+describe("useEditorMutation — settle-phase failure (I1)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns stage 'flush' when cancelPendingSaves throws synchronously", async () => {
+    const { editorRef, projectEditor } = buildHandles();
+    const err = new Error("cancelPendingSaves boom");
+    projectEditor.cancelPendingSaves = vi.fn(() => {
+      throw err;
+    });
+    const mutate = vi.fn<() => Promise<MutationDirective<void>>>();
+
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+    const res = await result.current.run(mutate);
+
+    expect(res).toEqual({ ok: false, stage: "flush", error: err });
+    expect(mutate).not.toHaveBeenCalled();
+    expect(vi.mocked(clearAllCachedContent)).not.toHaveBeenCalled();
+  });
+
+  it("returns stage 'flush' when markClean throws synchronously", async () => {
+    const { editorRef, projectEditor } = buildHandles();
+    const err = new Error("markClean boom");
+    editorRef.current!.markClean = vi.fn(() => {
+      throw err;
+    });
+    const mutate = vi.fn<() => Promise<MutationDirective<void>>>();
+
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+    const res = await result.current.run(mutate);
+
+    expect(res).toEqual({ ok: false, stage: "flush", error: err });
+    expect(mutate).not.toHaveBeenCalled();
+  });
+});
+
 describe("useEditorMutation — mutate failure", () => {
   beforeEach(() => {
     vi.clearAllMocks();

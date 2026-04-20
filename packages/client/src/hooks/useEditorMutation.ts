@@ -127,8 +127,22 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         } catch (error) {
           return { ok: false, stage: "flush", error };
         }
-        projectEditorRef.current.cancelPendingSaves();
-        editor?.markClean();
+        // I1: Wrap in try/catch matching the surrounding setEditable /
+        // flushSave discipline. Today these implementations are safe
+        // (cancelPendingSaves is a ref+setState; markClean is a ref+timer
+        // touch), but a future TipTap upgrade or useProjectEditor refactor
+        // could reintroduce a synchronous throw — without the wrap, the
+        // throw propagates as an unhandled rejection, bypassing every
+        // caller's stage-routing contract (no banner, no editor-state
+        // cleanup except the finally). Attribute to "flush" because both
+        // operations are part of the pre-mutate "settle pending writes"
+        // phase, conceptually adjacent to flushSave.
+        try {
+          projectEditorRef.current.cancelPendingSaves();
+          editor?.markClean();
+        } catch (error) {
+          return { ok: false, stage: "flush", error };
+        }
         let directive: MutationDirective<T>;
         try {
           directive = await mutate();
