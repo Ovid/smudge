@@ -59,7 +59,12 @@ describe("useEditorMutation — happy path", () => {
 
     const res = await result.current.run(async () => {
       calls.push("mutate");
-      return { clearCacheFor: ["c1"], reloadActiveChapter: true, reloadChapterId: "c1", data: undefined };
+      return {
+        clearCacheFor: ["c1"],
+        reloadActiveChapter: true,
+        reloadChapterId: "c1",
+        data: undefined,
+      };
     });
 
     expect(res).toEqual({ ok: true, data: undefined });
@@ -99,7 +104,8 @@ describe("useEditorMutation — happy path", () => {
 
     await result.current.run(async () => ({
       clearCacheFor: [],
-      reloadActiveChapter: true, reloadChapterId: "c1",
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
       data: undefined,
     }));
 
@@ -250,7 +256,8 @@ describe("useEditorMutation — reload failure", () => {
     const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
     const res = await result.current.run<{ replaced: number }>(async () => ({
       clearCacheFor: ["c1"],
-      reloadActiveChapter: true, reloadChapterId: "c1",
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
       data: { replaced: 3 },
     }));
 
@@ -285,7 +292,8 @@ describe("useEditorMutation — reload failure", () => {
     const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
     const res = await result.current.run(async () => ({
       clearCacheFor: [],
-      reloadActiveChapter: true, reloadChapterId: "c1",
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
       data: undefined,
     }));
 
@@ -302,7 +310,8 @@ describe("useEditorMutation — reload failure", () => {
     const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
     const res = await result.current.run<{ affected: string[] }>(async () => ({
       clearCacheFor: [],
-      reloadActiveChapter: true, reloadChapterId: "c1",
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
       data: { affected: ["c9"] },
     }));
 
@@ -318,7 +327,8 @@ describe("useEditorMutation — reload failure", () => {
     projectEditor.reloadActiveChapter = vi.fn(async () => "reloaded" as const);
     const res2 = await result.current.run(async () => ({
       clearCacheFor: [],
-      reloadActiveChapter: true, reloadChapterId: "c1",
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
       data: undefined,
     }));
     expect(res2.ok).toBe(true);
@@ -403,7 +413,8 @@ describe("useEditorMutation — busy guard", () => {
 
     const secondResult = await result.current.run(async () => ({
       clearCacheFor: ["x"],
-      reloadActiveChapter: true, reloadChapterId: "c1",
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
       data: undefined,
     }));
 
@@ -545,7 +556,8 @@ describe("useEditorMutation — null editor ref", () => {
 
     const res = await result.current.run(async () => ({
       clearCacheFor: ["c1"],
-      reloadActiveChapter: true, reloadChapterId: "c1",
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
       data: undefined,
     }));
 
@@ -641,7 +653,8 @@ describe("useEditorMutation — isLocked predicate (I1)", () => {
 
     await result.current.run(async () => ({
       clearCacheFor: [],
-      reloadActiveChapter: true, reloadChapterId: "c1",
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
       data: undefined,
     }));
 
@@ -718,7 +731,8 @@ describe("useEditorMutation — latest-ref pattern", () => {
 
     await result.current.run(async () => ({
       clearCacheFor: [],
-      reloadActiveChapter: true, reloadChapterId: "c1",
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
       data: undefined,
     }));
 

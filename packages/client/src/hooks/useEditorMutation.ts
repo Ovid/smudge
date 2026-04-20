@@ -18,10 +18,7 @@ export type MutationStage = "flush" | "mutate" | "reload" | "busy";
 export type MutationDirective<T = void> = {
   clearCacheFor: string[];
   data: T;
-} & (
-  | { reloadActiveChapter: false }
-  | { reloadActiveChapter: true; reloadChapterId: string }
-);
+} & ({ reloadActiveChapter: false } | { reloadActiveChapter: true; reloadChapterId: string });
 
 export type MutationResult<T = void> =
   | { ok: true; data: T }
