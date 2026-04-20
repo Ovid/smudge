@@ -567,6 +567,134 @@ describe("useEditorMutation — null editor ref", () => {
   });
 });
 
+describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("locks a freshly mounted editor if the entry-time ref was null", async () => {
+    // Scenario: chapter is mid-remount at run() entry (editorRef.current is
+    // null). During the mutate await, TipTap finishes mounting. Without the
+    // I3 fix the new editor stayed editable=true for the reload window —
+    // user keystrokes could race the reload's auto-save and overwrite the
+    // server commit.
+    const { projectEditor } = buildHandles();
+    const editorRef: MutableRefObject<EditorHandle | null> = { current: null };
+
+    const newEditor: EditorHandle = {
+      flushSave: vi.fn(async () => true),
+      editor: null,
+      insertImage: vi.fn(),
+      markClean: vi.fn(),
+      setEditable: vi.fn(),
+    };
+
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+
+    const res = await result.current.run(async () => {
+      // Simulate TipTap finishing its mount during the server round-trip.
+      editorRef.current = newEditor;
+      return {
+        clearCacheFor: [],
+        reloadActiveChapter: false,
+        data: undefined,
+      };
+    });
+
+    expect(res.ok).toBe(true);
+    // The new editor was locked post-mutate, then re-enabled by the finally.
+    expect(newEditor.setEditable).toHaveBeenCalledWith(false);
+    expect(newEditor.setEditable).toHaveBeenCalledWith(true);
+    // setEditable(false) must land BEFORE setEditable(true).
+    const falseCallIdx = vi
+      .mocked(newEditor.setEditable)
+      .mock.calls.findIndex((c) => c[0] === false);
+    const trueCallIdx = vi
+      .mocked(newEditor.setEditable)
+      .mock.calls.findIndex((c) => c[0] === true);
+    expect(falseCallIdx).toBeLessThan(trueCallIdx);
+  });
+
+  it("does not re-lock the same editor that was already locked at entry", async () => {
+    // Non-remount happy path: the same editor instance is present at entry
+    // and at mutate-exit. The post-mutate re-read must not re-call
+    // setEditable(false) (redundant work, and would make the call counts
+    // harder to reason about for tests that assert the setEditable cadence).
+    const { editor, editorRef, projectEditor } = buildHandles();
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+
+    await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: false,
+      data: undefined,
+    }));
+
+    // Exactly one setEditable(false) (entry) and one setEditable(true)
+    // (finally) — no second lock from the post-mutate re-read.
+    expect(editor.setEditable).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(editor.setEditable).mock.calls[0]![0]).toBe(false);
+    expect(vi.mocked(editor.setEditable).mock.calls[1]![0]).toBe(true);
+  });
+
+  it("re-enables the current editor in the finally, not a stale captured reference", async () => {
+    // If the entry-time editor is destroyed mid-run (chapter switch during
+    // mutate), the finally must call setEditable(true) on editorRef.current,
+    // not on the captured reference. Here we null the captured editor and
+    // swap in a fresh one before the reload completes.
+    const { editor, editorRef, projectEditor } = buildHandles();
+
+    const newEditor: EditorHandle = {
+      flushSave: vi.fn(async () => true),
+      editor: null,
+      insertImage: vi.fn(),
+      markClean: vi.fn(),
+      setEditable: vi.fn(),
+    };
+
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+
+    await result.current.run(async () => {
+      editorRef.current = newEditor;
+      return { clearCacheFor: [], reloadActiveChapter: false, data: undefined };
+    });
+
+    // The finally targets the NEW editor for the unlock.
+    expect(newEditor.setEditable).toHaveBeenCalledWith(true);
+    // The stale editor was locked on entry but NOT re-enabled on exit.
+    expect(vi.mocked(editor.setEditable).mock.calls).toEqual([[false]]);
+  });
+
+  it("swallows throws from post-mutate setEditable(false) so a mid-remount does not discard a server-successful mutate", async () => {
+    const { projectEditor } = buildHandles();
+    const editorRef: MutableRefObject<EditorHandle | null> = { current: null };
+
+    const throwingEditor: EditorHandle = {
+      flushSave: vi.fn(async () => true),
+      editor: null,
+      insertImage: vi.fn(),
+      markClean: vi.fn(),
+      setEditable: vi.fn(() => {
+        throw new Error("mid-remount throw");
+      }),
+    };
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+
+      const res = await result.current.run(async () => {
+        editorRef.current = throwingEditor;
+        return { clearCacheFor: [], reloadActiveChapter: false, data: undefined };
+      });
+
+      expect(res.ok).toBe(true);
+      expect(warnSpy).toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+});
+
 describe("useEditorMutation — expected chapter id (I2)", () => {
   beforeEach(() => {
     vi.clearAllMocks();

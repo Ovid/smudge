@@ -2291,6 +2291,142 @@ describe("EditorPage snapshot panel", () => {
     });
   });
 
+  it("refreshes snapshot count on successful restore happy path (I1)", async () => {
+    // The server writes a pre-restore auto-snapshot whenever Restore
+    // succeeds. With the SnapshotBanner-initiated flow the panel is
+    // typically closed, so refreshSnapshots() is a no-op — the toolbar
+    // badge only updates when refreshSnapshotCount() issues its own
+    // list() call. Without the I1 fix the happy path skipped this and
+    // the badge silently understated by one.
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-1",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+    ]);
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-1",
+      chapter_id: "ch-1",
+      label: "v1",
+      content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+      word_count: 5,
+      is_auto: false,
+      created_at: "2026-04-17T10:00:00Z",
+    });
+    (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
+      .fn()
+      .mockResolvedValue({ status: "ok" });
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    // Enter snapshot view, then close the panel so the Restore click fires
+    // with the panel closed — mirrors the real SnapshotBanner-initiated
+    // flow that refreshSnapshots() cannot update.
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "View" }));
+    await waitFor(() => {
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+    });
+    await userEvent.keyboard("{Escape}");
+
+    const listCallsBefore = vi.mocked(api.snapshots.list).mock.calls.length;
+
+    const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
+    await userEvent.click(restoreButtons[0]!);
+    const dialog = await screen.findByRole("alertdialog", { name: "Restore" });
+    const confirmButton = Array.from(dialog.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Restore",
+    );
+    await userEvent.click(confirmButton!);
+
+    await waitFor(() => {
+      expect(
+        (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore,
+      ).toHaveBeenCalledWith("snap-1");
+    });
+    // refreshSnapshotCount() issues a fresh list() call — confirm it ran.
+    await waitFor(() => {
+      expect(vi.mocked(api.snapshots.list).mock.calls.length).toBeGreaterThan(listCallsBefore);
+    });
+  });
+
+  it("disables SnapshotBanner Restore after a possibly_committed lock (C1)", async () => {
+    // After a 2xx BAD_JSON restore raises the lock banner, the Restore
+    // button in SnapshotBanner must be disabled. Without this the user
+    // could click Restore a second time and fire another server-side
+    // restore + auto-snapshot against an almost-certainly-committed
+    // snapshot.
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-1",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+    ]);
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-1",
+      chapter_id: "ch-1",
+      label: "v1",
+      content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+      word_count: 5,
+      is_auto: false,
+      created_at: "2026-04-17T10:00:00Z",
+    });
+    const { ApiRequestError } = await import("../api/client");
+    const restoreMock = vi
+      .fn()
+      .mockRejectedValue(new ApiRequestError("Malformed response body", 200, "BAD_JSON"));
+    (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = restoreMock;
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "View" }));
+    await waitFor(() => {
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+    });
+    await userEvent.keyboard("{Escape}");
+
+    const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
+    await userEvent.click(restoreButtons[0]!);
+    const dialog = await screen.findByRole("alertdialog", { name: "Restore" });
+    const confirmButton = Array.from(dialog.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Restore",
+    );
+    await userEvent.click(confirmButton!);
+
+    // Lock banner appeared — the possibly_committed branch ran.
+    expect(
+      await screen.findByText(STRINGS.snapshots.restoreResponseUnreadable),
+    ).toBeInTheDocument();
+
+    // The SnapshotBanner's Restore button is now disabled (C1). Clicking
+    // it must NOT open a confirm dialog and MUST NOT invoke the restore
+    // API a second time.
+    const callsAfterFirstRestore = restoreMock.mock.calls.length;
+    const bannerRestore = screen
+      .getAllByRole("button", { name: "Restore" })
+      .find((b) => (b as HTMLButtonElement).disabled);
+    expect(bannerRestore).toBeDefined();
+    await userEvent.click(bannerRestore!);
+    // No second dialog, no second restore API call.
+    expect(screen.queryByRole("alertdialog", { name: "Restore" })).toBeNull();
+    expect(restoreMock.mock.calls.length).toBe(callsAfterFirstRestore);
+  });
+
   it("clicks Create Snapshot in the panel (exercises onBeforeCreate)", async () => {
     (api.snapshots as unknown as { create: ReturnType<typeof vi.fn> }).create = vi
       .fn()

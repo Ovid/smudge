@@ -1265,6 +1265,62 @@ describe("useProjectEditor", () => {
     expect(result.current.activeChapter?.status).toBe("revised");
   });
 
+  it("handleStatusChange discards stale revert when newer call lands mid api.projects.get await (I2)", async () => {
+    // Narrower race than the existing supersede test: Call A's
+    // api.chapters.update fails quickly, but its api.projects.get revert
+    // path hangs. While that hangs, Call B lands, succeeds, and writes
+    // "revised" optimistically. When A's projects.get finally resolves
+    // with the pre-B server state ("outline"), the revert would without
+    // the I2 guard stomp B's optimistic "revised" back to "outline" —
+    // silent loss of user intent until another click.
+    vi.mocked(api.chapters.update)
+      .mockRejectedValueOnce(new Error("call A fails")) // Call A rejects immediately
+      .mockResolvedValueOnce({ ...mockChapter1, status: "revised" }); // Call B succeeds
+
+    let resolveReload: (project: typeof mockProject) => void = () => {};
+    const reloadPromise = new Promise<typeof mockProject>((resolve) => {
+      resolveReload = resolve;
+    });
+
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockImplementationOnce(() => reloadPromise); // Call A's revert reload — hangs
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    // Fire Call A — rejection enters the revert path, await api.projects.get hangs.
+    act(() => {
+      result.current.handleStatusChange("ch1", "rough_draft");
+    });
+
+    // Let A's rejection settle and reach the projects.get await.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    // Fire Call B — lands while A is suspended on projects.get.
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "revised");
+    });
+
+    expect(result.current.project?.chapters[0]!.status).toBe("revised");
+
+    // Now resolve A's projects.get with pre-B server state. Without the
+    // I2 guard this would stomp "revised" back to "outline".
+    await act(async () => {
+      resolveReload({
+        ...mockProject,
+        chapters: [{ ...mockChapter1, status: "outline" }, mockChapter2],
+      });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    // Guard fired — B's optimistic update stands.
+    expect(result.current.project?.chapters[0]!.status).toBe("revised");
+    expect(result.current.activeChapter?.status).toBe("revised");
+  });
+
   it("handleStatusChange falls back to local revert when both API update and server reload fail", async () => {
     vi.mocked(api.chapters.update).mockRejectedValue(new Error("status update failed"));
     vi.mocked(api.projects.get)

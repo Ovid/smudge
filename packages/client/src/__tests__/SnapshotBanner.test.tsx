@@ -95,4 +95,40 @@ describe("SnapshotBanner", () => {
     render(<SnapshotBanner {...defaultProps} />);
     expect(screen.getByRole("status")).toBeInTheDocument();
   });
+
+  it("disables Restore button when canRestore is false (C1)", () => {
+    // EditorPage drives canRestore from editorLockedMessage === null. When
+    // a prior possibly_committed/unknown restore raised the lock banner, a
+    // second click would issue a double-restore against an almost-certainly-
+    // committed snapshot. Disabling the button keeps the banner visible (so
+    // the user sees which snapshot they were looking at) while blocking the
+    // second server round-trip.
+    render(<SnapshotBanner {...defaultProps} canRestore={false} />);
+    const restoreBtn = screen.getByRole("button", { name: S.restoreButton });
+    expect(restoreBtn).toBeDisabled();
+    expect(restoreBtn).toHaveAttribute("title", S.restoreUnavailableWhileLocked);
+  });
+
+  it("does not open the confirmation dialog when Restore is clicked while disabled (C1)", async () => {
+    const user = userEvent.setup();
+    const onRestore = vi.fn();
+    render(
+      <SnapshotBanner {...defaultProps} onRestore={onRestore} canRestore={false} />,
+    );
+
+    // Click the disabled button — userEvent respects disabled and will not
+    // fire the click handler. Guard that the dialog never opens AND that
+    // onRestore is never called even if a future pointer-events oversight
+    // lets a click through.
+    await user.click(screen.getByRole("button", { name: S.restoreButton }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(onRestore).not.toHaveBeenCalled();
+  });
+
+  it("enables Restore button when canRestore is true or omitted (default)", () => {
+    render(<SnapshotBanner {...defaultProps} />);
+    const restoreBtn = screen.getByRole("button", { name: S.restoreButton });
+    expect(restoreBtn).not.toBeDisabled();
+    expect(restoreBtn).not.toHaveAttribute("title");
+  });
 });
