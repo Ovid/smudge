@@ -1256,6 +1256,38 @@ describe("EditorPage find-and-replace confirmation", () => {
     expect(screen.queryByText(/Replaced .* occurrence/)).toBeNull();
   });
 
+  it("refuses Preview view switch while editor is locked after BAD_JSON (C2)", async () => {
+    // Once the lock banner is shown, switchToView must NOT proceed —
+    // otherwise an editor->preview->editor round trip would remount the
+    // Editor with editable=true (default), defeating the lock while the
+    // banner persists. The next keystroke would PATCH stale content over
+    // the server-committed mutation.
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    // Lock banner is up.
+    await screen.findByText(STRINGS.findReplace.replaceResponseUnreadable);
+
+    // Click Preview — switchToView should refuse, view stays as editor.
+    const previewButton = screen.getByRole("button", { name: "Preview" });
+    await userEvent.click(previewButton);
+
+    // Wait a tick for any state changes
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // Lock banner still on screen, editor heading still visible (no Preview switch)
+    expect(screen.getByText(STRINGS.findReplace.replaceResponseUnreadable)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+  });
+
   it("clears caches for project chapters on 2xx BAD_JSON from project-scope replace (C1)", async () => {
     // The mutate throw bypasses the hook's directive-driven cache-clear.
     // Without a fallback clear, a refresh re-hydrates the pre-replace draft

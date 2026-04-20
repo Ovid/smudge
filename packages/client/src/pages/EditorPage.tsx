@@ -34,6 +34,7 @@ import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcu
 import { api, ApiRequestError } from "../api/client";
 import { mapReplaceErrorToMessage } from "../utils/findReplaceErrors";
 import { clearCachedContent, clearAllCachedContent } from "../hooks/useContentCache";
+import { safeSetEditable } from "../utils/editorSafeOps";
 import { Logo } from "../components/Logo";
 import { generateHTML } from "@tiptap/html";
 import DOMPurify from "dompurify";
@@ -852,6 +853,16 @@ export function EditorPage() {
         setActionInfo(STRINGS.editor.mutationBusy);
         return false;
       }
+      // Refuse view switches while the editor is locked (C2). The lock
+      // banner is non-dismissible and tells the user to refresh — we must
+      // not let an editor->preview->editor round trip remount the Editor
+      // with editable=true while the banner persists, since the remount
+      // alone restores writability and the next keystroke schedules an
+      // auto-save that overwrites the server-committed mutation. The
+      // banner is already on screen; no second banner needed.
+      if (editorLockedMessageRef.current !== null) {
+        return false;
+      }
       // flushSave returns false when the save pipeline gave up (4xx or
       // all retries exhausted). Preview/Dashboard would then render the
       // LAST server-confirmed content, not what the user just typed —
@@ -869,19 +880,23 @@ export function EditorPage() {
       // that fires AFTER the view switch, desyncing editor state from
       // the displayed view. Mirrors SnapshotPanel.onView and the three
       // mutation.run() callers.
-      editorRef.current?.setEditable(false);
+      safeSetEditable(editorRef, false);
       let flushed: boolean;
       try {
         flushed = (await editorRef.current?.flushSave()) ?? true;
       } catch (err) {
-        // A synchronous or async flush throw must restore setEditable(true)
-        // before re-surfacing the failure — otherwise the editor stays
-        // read-only on a path that didn't actually change views.
-        editorRef.current?.setEditable(true);
-        throw err;
+        // A flush throw must not leave the editor in an inconsistent state
+        // and must not surface as an unhandled rejection (C2): callers like
+        // handleSelectChapterWithFlush void this promise via the sidebar
+        // click handler and have no try/catch. Convert to a save-failed
+        // banner + false return — the same shape as a flushed:false reject.
+        safeSetEditable(editorRef, true);
+        console.warn("switchToView: flushSave threw", err);
+        setActionError(STRINGS.editor.viewSwitchSaveFailed);
+        return false;
       }
       if (!flushed) {
-        editorRef.current?.setEditable(true);
+        safeSetEditable(editorRef, true);
         setActionError(STRINGS.editor.viewSwitchSaveFailed);
         return false;
       }
@@ -893,8 +908,13 @@ export function EditorPage() {
       // View-switch succeeded; re-enable so the editor is writable when
       // the user returns to editor mode. (Preview/Dashboard unmount the
       // Editor, so this primarily covers the editor→editor no-op path
-      // and any transitional render between switch and remount.)
-      editorRef.current?.setEditable(true);
+      // and any transitional render between switch and remount.) Skipped
+      // when the lock is set (defensive — switchToView refuses above when
+      // locked, but a future refactor that loosens the gate must still
+      // honor the lock here).
+      if (editorLockedMessageRef.current === null) {
+        safeSetEditable(editorRef, true);
+      }
       return true;
     },
     [setTrashOpen, setActionError, mutation],
@@ -943,11 +963,20 @@ export function EditorPage() {
       // next chapter) must not run when switchToView refused — otherwise
       // we silently abandon an unsaved chapter while simultaneously
       // showing a banner that implies navigation was blocked.
-      const switched = await switchToView("editor");
-      if (!switched) return;
-      await handleSelectChapter(chapterId);
+      // Wrap in try/catch (C2): switchToView's error paths now degrade to
+      // a banner + false return, but a future refactor that re-introduces
+      // a throw must not surface as an unhandled rejection through the
+      // Sidebar click handler (which voids this promise).
+      try {
+        const switched = await switchToView("editor");
+        if (!switched) return;
+        await handleSelectChapter(chapterId);
+      } catch (err) {
+        console.warn("handleSelectChapterWithFlush failed", err);
+        setActionError(STRINGS.error.loadChapterFailed);
+      }
     },
-    [handleSelectChapter, switchToView],
+    [handleSelectChapter, switchToView, setActionError],
   );
 
   const handleProjectSettingsUpdate = useCallback(() => {
