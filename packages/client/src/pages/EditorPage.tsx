@@ -933,18 +933,47 @@ export function EditorPage() {
 
   const handleStatusChangeWithError = useCallback(
     (chapterId: string, status: string) => {
+      // I4: status PATCHes the same chapter row an in-flight replace may
+      // be writing. Allowing it to slip past the busy guard races two
+      // writes against the same row. Mirror handleCreateChapterGuarded.
+      if (isActionBusy()) {
+        setActionInfo(STRINGS.editor.mutationBusy);
+        return;
+      }
       setActionError(null);
       handleStatusChange(chapterId, status, setActionError);
     },
-    [handleStatusChange, setActionError],
+    [handleStatusChange, setActionError, isActionBusy],
   );
 
   const handleRenameChapterWithError = useCallback(
     (chapterId: string, title: string) => {
+      // I4: same rationale as handleStatusChangeWithError — the PATCH
+      // targets the chapter row an in-flight replace may be writing.
+      if (isActionBusy()) {
+        setActionInfo(STRINGS.editor.mutationBusy);
+        return;
+      }
       setActionError(null);
       handleRenameChapter(chapterId, title, setActionError);
     },
-    [handleRenameChapter, setActionError],
+    [handleRenameChapter, setActionError, isActionBusy],
+  );
+
+  // I4: handleReorderChapters rebuilds the chapter list from pre-mutation
+  // word counts and calls setProject(...) — allowed through unguarded,
+  // a reorder during an in-flight replace pins the other chapters'
+  // counts to their pre-replace values until the next full project
+  // reload.
+  const handleReorderChaptersGuarded = useCallback(
+    (orderedIds: string[]) => {
+      if (isActionBusy()) {
+        setActionInfo(STRINGS.editor.mutationBusy);
+        return;
+      }
+      handleReorderChapters(orderedIds);
+    },
+    [handleReorderChapters, isActionBusy],
   );
 
   const switchToView = useCallback(
@@ -1277,7 +1306,7 @@ export function EditorPage() {
             onSelectChapter={handleSelectChapterWithFlush}
             onAddChapter={handleCreateChapterGuarded}
             onDeleteChapter={requestDeleteChapter}
-            onReorderChapters={handleReorderChapters}
+            onReorderChapters={handleReorderChaptersGuarded}
             onRenameChapter={handleRenameChapterWithError}
             onOpenTrash={openTrashGuarded}
             statuses={statuses}

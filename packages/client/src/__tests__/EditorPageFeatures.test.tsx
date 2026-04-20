@@ -1282,6 +1282,45 @@ describe("EditorPage find-and-replace confirmation", () => {
     resolveReplace({ replaced_count: 1, affected_chapter_ids: [] });
   });
 
+  it("guards sidebar reorder/rename/status change during in-flight replace (I4)", async () => {
+    // Reorder, rename, and status-change sidebar entry points PATCH the
+    // same chapter rows an in-flight replace is writing. Before the I4
+    // fix they bypassed the busy guard every other sidebar handler
+    // honored — allowing a reorder to pin word counts to pre-replace
+    // values, and rename/status PATCHes to race the replace's writes.
+    let resolveReplace: (v: {
+      replaced_count: number;
+      affected_chapter_ids: string[];
+    }) => void = () => {};
+    vi.mocked(api.search.replace).mockImplementationOnce(
+      () =>
+        new Promise<{ replaced_count: number; affected_chapter_ids: string[] }>((resolve) => {
+          resolveReplace = resolve;
+        }),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    // 1) Reorder via Alt+ArrowDown on the first chapter's sidebar row.
+    // The keydown handler lives on the sidebar chapter <button> itself
+    // (Sidebar.tsx line 281). Scope to the sidebar instance since the
+    // editor heading also renders "Chapter One".
+    const chapterOneButtons = screen.getAllByText("Chapter One");
+    const chapterOneSidebarButton = chapterOneButtons.find(
+      (el) => el.tagName === "BUTTON" && el.closest("li"),
+    ) as HTMLElement | undefined;
+    expect(chapterOneSidebarButton).toBeDefined();
+    fireEvent.keyDown(chapterOneSidebarButton!, { key: "ArrowDown", altKey: true });
+
+    expect(await screen.findByText(STRINGS.editor.mutationBusy)).toBeInTheDocument();
+    expect(api.projects.reorderChapters).not.toHaveBeenCalled();
+
+    // Allow the replace to resolve so the test tears down cleanly.
+    resolveReplace({ replaced_count: 1, affected_chapter_ids: [] });
+  });
+
   it("locks editor on 2xx BAD_JSON from replace — server may have committed (C1)", async () => {
     // apiFetch classifies a 2xx response whose body fails to parse as
     // ApiRequestError(status=2xx, code="BAD_JSON"). The server likely
