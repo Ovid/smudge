@@ -1571,6 +1571,15 @@ export function EditorPage() {
             <ImageGallery
               projectId={project.id}
               onInsertImage={(url, alt) => {
+                // I4: gate behind isActionBusy() like every other editor-
+                // modifying entry point. Inserting during an in-flight
+                // mutation fires onUpdate, sets dirtyRef=true on content
+                // that is about to be overwritten, and schedules an auto-
+                // save after the hook already markClean-ed.
+                if (isActionBusy()) {
+                  setActionInfo(STRINGS.editor.mutationBusy);
+                  return;
+                }
                 editorRef.current?.insertImage(url, alt);
               }}
               onNavigateToChapter={(chapterId) => {
