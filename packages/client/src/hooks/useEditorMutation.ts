@@ -87,7 +87,19 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
       // rest of the session.
       try {
         inFlightRef.current = true;
-        editor?.setEditable(false);
+        // Wrap the synchronous setEditable(false) in its own try/catch so a
+        // TipTap mid-remount throw surfaces as a typed stage:"flush" failure
+        // rather than rejecting the returned Promise (S4). All call sites
+        // `await mutation.run(...)` without a try/catch and rely on the
+        // discriminated MutationResult contract — letting the throw escape
+        // would produce an unhandled rejection and bypass every caller's
+        // stage-specific copy. Attribute to "flush" because a locked editor
+        // prevents us from flushing pending changes before the mutation.
+        try {
+          editor?.setEditable(false);
+        } catch (error) {
+          return { ok: false, stage: "flush", error };
+        }
         try {
           const flushed = await editor?.flushSave();
           if (flushed === false) {

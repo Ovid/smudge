@@ -326,28 +326,31 @@ describe("useEditorMutation — synchronous setEditable throw (C1)", () => {
     vi.clearAllMocks();
   });
 
-  it("releases inFlightRef when setEditable(false) throws synchronously", async () => {
+  it("returns stage:'flush' when setEditable(false) throws synchronously (S4)", async () => {
     const { editorRef, projectEditor } = buildHandles();
     const editor = editorRef.current!;
     let throwOnce = true;
+    const err = new Error("editor destroyed");
     editor.setEditable = vi.fn((_editable: boolean) => {
       if (throwOnce) {
         throwOnce = false;
-        throw new Error("editor destroyed");
+        throw err;
       }
     });
 
     const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
 
-    await expect(
-      result.current.run(async () => ({
-        clearCacheFor: [],
-        reloadActiveChapter: false,
-        data: undefined,
-      })),
-    ).rejects.toThrow();
+    // Previously rejected the Promise, escaping the discriminated
+    // MutationResult contract. Now surfaces as stage:"flush" so callers
+    // can handle it via their existing stage ladder without try/catch.
+    const first = await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: false,
+      data: undefined,
+    }));
+    expect(first).toEqual({ ok: false, stage: "flush", error: err });
 
-    // The latch must have cleared so a follow-up run is not rejected as busy.
+    // The latch must have cleared so a follow-up run proceeds normally.
     const second = await result.current.run(async () => ({
       clearCacheFor: [],
       reloadActiveChapter: false,
