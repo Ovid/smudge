@@ -1295,9 +1295,7 @@ describe("EditorPage find-and-replace confirmation", () => {
     // replace. Project-scope replace has no affected_chapter_ids (response
     // unreadable), so the conservative fallback is to clear all chapters in
     // the project.
-    const { clearAllCachedContent, clearCachedContent } = await import(
-      "../hooks/useContentCache"
-    );
+    const { clearAllCachedContent, clearCachedContent } = await import("../hooks/useContentCache");
     vi.mocked(clearAllCachedContent).mockClear();
     vi.mocked(clearCachedContent).mockClear();
     const { ApiRequestError } = await import("../api/client");

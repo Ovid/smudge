@@ -187,10 +187,7 @@ export function EditorPage() {
   // setActionInfo("Replaced N occurrences"), leaving a contradictory
   // success+failure banner pair pinned to one logical operation.
   const actionBusyRef = useRef(false);
-  const isActionBusy = useCallback(
-    () => mutation.isBusy() || actionBusyRef.current,
-    [mutation],
-  );
+  const isActionBusy = useCallback(() => mutation.isBusy() || actionBusyRef.current, [mutation]);
 
   // Frozen snapshot of state at the moment the user clicked "Replace All".
   // This prevents the confirmation copy from drifting if the user edits the
@@ -264,150 +261,149 @@ export function EditorPage() {
     }
     actionBusyRef.current = true;
     try {
+      // Clear stale action banners on entry: a previous failure or success
+      // banner must not co-display with whatever this restore produces. The
+      // two find-replace callers below also do this. Mirror them in clearing
+      // findReplace.error (S3) so an old panel-local search-failed message
+      // doesn't linger next to the restore outcome.
+      setActionError(null);
+      setActionInfo(null);
+      findReplace.clearError();
 
-    // Clear stale action banners on entry: a previous failure or success
-    // banner must not co-display with whatever this restore produces. The
-    // two find-replace callers below also do this. Mirror them in clearing
-    // findReplace.error (S3) so an old panel-local search-failed message
-    // doesn't linger next to the restore outcome.
-    setActionError(null);
-    setActionInfo(null);
-    findReplace.clearError();
+      type RestoreData = { staleChapterSwitch: boolean };
 
-    type RestoreData = { staleChapterSwitch: boolean };
+      const result = await mutation.run<RestoreData>(async () => {
+        // Re-check intent AFTER the hook's flush/markClean: if the user
+        // clicked "Back to editing" during the flush window, abort before
+        // issuing the server restore. Throwing a sentinel surfaces as
+        // stage: "mutate" with a RestoreAbortedError the caller swallows.
+        if (!viewingSnapshotRef.current) throw new RestoreAbortedError();
+        const restore = await restoreSnapshot(viewingSnapshot.id);
+        if (!restore.ok) {
+          throw new RestoreFailedError(restore.reason ?? "unknown");
+        }
+        const stale = Boolean(restore.staleChapterSwitch);
+        // On stale-chapter-switch the restore landed on a now-background
+        // chapter — skip both the cache clear (useSnapshotState already
+        // cleared the restoring chapter's cache) and the active-chapter
+        // reload (it would pull the wrong chapter's server state).
+        //
+        // NOTE: This branch deliberately uses the CLOSURE activeChapter.id
+        // (not getActiveChapter() like executeReplace/handleReplaceOne).
+        // The restore was initiated against a specific snapshot of a
+        // specific chapter — its cache-clear and reloadChapterId must
+        // target that chapter, not whichever chapter is active when the
+        // server response lands. useSnapshotState's stale-detection at
+        // useSnapshotState.ts only clears the cache for the chapter the
+        // restore targeted; mirroring that here keeps the contract aligned.
+        return {
+          clearCacheFor: stale ? [] : [activeChapter.id],
+          reloadActiveChapter: !stale,
+          // Scope the reload to the chapter the restore targets. If the user
+          // switches between here and the hook's reload call, the mismatch
+          // skips the reload and preserves the now-active chapter's draft.
+          reloadChapterId: activeChapter.id,
+          data: { staleChapterSwitch: stale },
+        };
+      });
 
-    const result = await mutation.run<RestoreData>(async () => {
-      // Re-check intent AFTER the hook's flush/markClean: if the user
-      // clicked "Back to editing" during the flush window, abort before
-      // issuing the server restore. Throwing a sentinel surfaces as
-      // stage: "mutate" with a RestoreAbortedError the caller swallows.
-      if (!viewingSnapshotRef.current) throw new RestoreAbortedError();
-      const restore = await restoreSnapshot(viewingSnapshot.id);
-      if (!restore.ok) {
-        throw new RestoreFailedError(restore.reason ?? "unknown");
+      if (result.ok) {
+        if (!result.data.staleChapterSwitch) {
+          snapshotPanelRef.current?.refreshSnapshots();
+        }
+        return;
       }
-      const stale = Boolean(restore.staleChapterSwitch);
-      // On stale-chapter-switch the restore landed on a now-background
-      // chapter — skip both the cache clear (useSnapshotState already
-      // cleared the restoring chapter's cache) and the active-chapter
-      // reload (it would pull the wrong chapter's server state).
-      //
-      // NOTE: This branch deliberately uses the CLOSURE activeChapter.id
-      // (not getActiveChapter() like executeReplace/handleReplaceOne).
-      // The restore was initiated against a specific snapshot of a
-      // specific chapter — its cache-clear and reloadChapterId must
-      // target that chapter, not whichever chapter is active when the
-      // server response lands. useSnapshotState's stale-detection at
-      // useSnapshotState.ts only clears the cache for the chapter the
-      // restore targeted; mirroring that here keeps the contract aligned.
-      return {
-        clearCacheFor: stale ? [] : [activeChapter.id],
-        reloadActiveChapter: !stale,
-        // Scope the reload to the chapter the restore targets. If the user
-        // switches between here and the hook's reload call, the mismatch
-        // skips the reload and preserves the now-active chapter's draft.
-        reloadChapterId: activeChapter.id,
-        data: { staleChapterSwitch: stale },
-      };
-    });
-
-    if (result.ok) {
-      if (!result.data.staleChapterSwitch) {
-        snapshotPanelRef.current?.refreshSnapshots();
+      if (result.stage === "busy") {
+        // Silent returns turned Restore into a dead-button during the up-to-14s
+        // save-retry backoff. Surface a transient info banner so users know
+        // their click was received and another operation is running.
+        setActionInfo(STRINGS.editor.mutationBusy);
+        return;
       }
-      return;
-    }
-    if (result.stage === "busy") {
-      // Silent returns turned Restore into a dead-button during the up-to-14s
-      // save-retry backoff. Surface a transient info banner so users know
-      // their click was received and another operation is running.
-      setActionInfo(STRINGS.editor.mutationBusy);
-      return;
-    }
-    if (result.stage === "flush") {
-      // The fault is the save, not the restore — attribute it correctly.
-      setActionError(STRINGS.snapshots.restoreFailedSaveFirst);
-      return;
-    }
-    if (result.stage === "reload") {
-      // Server-side restore succeeded; only the follow-up GET failed. The
-      // editor stays setEditable(false) (see useEditorMutation reloadFailed
-      // path) — surface a persistent, non-dismissible lock banner so the
-      // user-visible signal of the read-only state cannot be hidden (I1).
-      setEditorLockedMessage(STRINGS.snapshots.restoreSucceededReloadFailed);
-      snapshotPanelRef.current?.refreshSnapshots();
-      return;
-    }
-    // stage === "mutate"
-    if (result.error instanceof RestoreAbortedError) return;
-    if (result.error instanceof RestoreFailedError) {
-      // I7: AbortController-cancelled restore is not user-facing. Mirrors
-      // RestoreAbortedError's silent return. No path triggers this today
-      // (restoreSnapshot has no AbortController wired) — the early return
-      // is in place so a future wiring does not surface a misleading
-      // banner.
-      if (result.error.reason === "aborted") return;
-      if (result.error.reason === "possibly_committed") {
-        // 2xx BAD_JSON on restore: server likely committed the restore
-        // (and its auto-snapshot) but the response body was unreadable.
-        // Treat the same as stage:"reload" — persistent lock banner, no
-        // retry prompt, since retrying could double-restore (C2).
-        setEditorLockedMessage(STRINGS.snapshots.restoreResponseUnreadable);
-        // Clear the restored chapter's cached draft (C1). The mutate
-        // callback threw before returning a directive, so the hook's
-        // clearAllCachedContent never ran — without this, a refresh would
-        // re-hydrate the pre-restore draft from localStorage and the next
-        // auto-save would PATCH it back over the server-committed restore.
-        clearCachedContent(activeChapter.id);
-        // Lock-banner state doesn't enforce read-only by itself; the
-        // hook's finally already re-enabled the editor after the
-        // mutate-stage throw. Re-apply setEditable(false) so auto-save
-        // cannot overwrite a possibly-committed restore. Wrapped in
-        // safeSetEditable (I2): TipTap can throw synchronously during the
-        // mid-remount window, and an unwrapped throw here would skip the
-        // snapshot panel refresh and leave the lock banner without its
-        // companion editor-state change.
-        safeSetEditable(editorRef, false);
+      if (result.stage === "flush") {
+        // The fault is the save, not the restore — attribute it correctly.
+        setActionError(STRINGS.snapshots.restoreFailedSaveFirst);
+        return;
+      }
+      if (result.stage === "reload") {
+        // Server-side restore succeeded; only the follow-up GET failed. The
+        // editor stays setEditable(false) (see useEditorMutation reloadFailed
+        // path) — surface a persistent, non-dismissible lock banner so the
+        // user-visible signal of the read-only state cannot be hidden (I1).
+        setEditorLockedMessage(STRINGS.snapshots.restoreSucceededReloadFailed);
         snapshotPanelRef.current?.refreshSnapshots();
         return;
       }
-      if (result.error.reason === "corrupt_snapshot") {
-        setActionError(STRINGS.snapshots.restoreFailedCorrupt);
-      } else if (result.error.reason === "cross_project_image") {
-        setActionError(STRINGS.snapshots.restoreFailedCrossProjectImage);
-      } else if (result.error.reason === "not_found") {
-        setActionError(STRINGS.snapshots.restoreFailedNotFound);
-      } else if (result.error.reason === "network") {
-        // Mirror mapReplaceErrorToMessage's NETWORK branch so offline restores
-        // tell the user to check their connection rather than showing the
-        // generic "try again" copy. Without this, a sibling mutation (replace)
-        // gives connection-specific guidance for the same root cause while
-        // restore does not (I1).
-        setActionError(STRINGS.snapshots.restoreNetworkFailed);
-      } else {
-        // reason === "unknown": the caught error was not an ApiRequestError
-        // (e.g. TypeError on a malformed response, reject-before-send). The
-        // server commit status is genuinely ambiguous — treat pessimistically
-        // and raise the lock banner rather than a dismissible "try again"
-        // that could double-restore if the server already committed (I7).
-        setEditorLockedMessage(STRINGS.snapshots.restoreResponseUnreadable);
-        // Same C1 leak as the possibly_committed branch — the mutate
-        // throw bypasses the hook's cache-clear, so the pre-restore draft
-        // would re-hydrate on refresh and overwrite the server commit.
-        clearCachedContent(activeChapter.id);
-        safeSetEditable(editorRef, false);
+      // stage === "mutate"
+      if (result.error instanceof RestoreAbortedError) return;
+      if (result.error instanceof RestoreFailedError) {
+        // I7: AbortController-cancelled restore is not user-facing. Mirrors
+        // RestoreAbortedError's silent return. No path triggers this today
+        // (restoreSnapshot has no AbortController wired) — the early return
+        // is in place so a future wiring does not surface a misleading
+        // banner.
+        if (result.error.reason === "aborted") return;
+        if (result.error.reason === "possibly_committed") {
+          // 2xx BAD_JSON on restore: server likely committed the restore
+          // (and its auto-snapshot) but the response body was unreadable.
+          // Treat the same as stage:"reload" — persistent lock banner, no
+          // retry prompt, since retrying could double-restore (C2).
+          setEditorLockedMessage(STRINGS.snapshots.restoreResponseUnreadable);
+          // Clear the restored chapter's cached draft (C1). The mutate
+          // callback threw before returning a directive, so the hook's
+          // clearAllCachedContent never ran — without this, a refresh would
+          // re-hydrate the pre-restore draft from localStorage and the next
+          // auto-save would PATCH it back over the server-committed restore.
+          clearCachedContent(activeChapter.id);
+          // Lock-banner state doesn't enforce read-only by itself; the
+          // hook's finally already re-enabled the editor after the
+          // mutate-stage throw. Re-apply setEditable(false) so auto-save
+          // cannot overwrite a possibly-committed restore. Wrapped in
+          // safeSetEditable (I2): TipTap can throw synchronously during the
+          // mid-remount window, and an unwrapped throw here would skip the
+          // snapshot panel refresh and leave the lock banner without its
+          // companion editor-state change.
+          safeSetEditable(editorRef, false);
+          snapshotPanelRef.current?.refreshSnapshots();
+          return;
+        }
+        if (result.error.reason === "corrupt_snapshot") {
+          setActionError(STRINGS.snapshots.restoreFailedCorrupt);
+        } else if (result.error.reason === "cross_project_image") {
+          setActionError(STRINGS.snapshots.restoreFailedCrossProjectImage);
+        } else if (result.error.reason === "not_found") {
+          setActionError(STRINGS.snapshots.restoreFailedNotFound);
+        } else if (result.error.reason === "network") {
+          // Mirror mapReplaceErrorToMessage's NETWORK branch so offline restores
+          // tell the user to check their connection rather than showing the
+          // generic "try again" copy. Without this, a sibling mutation (replace)
+          // gives connection-specific guidance for the same root cause while
+          // restore does not (I1).
+          setActionError(STRINGS.snapshots.restoreNetworkFailed);
+        } else {
+          // reason === "unknown": the caught error was not an ApiRequestError
+          // (e.g. TypeError on a malformed response, reject-before-send). The
+          // server commit status is genuinely ambiguous — treat pessimistically
+          // and raise the lock banner rather than a dismissible "try again"
+          // that could double-restore if the server already committed (I7).
+          setEditorLockedMessage(STRINGS.snapshots.restoreResponseUnreadable);
+          // Same C1 leak as the possibly_committed branch — the mutate
+          // throw bypasses the hook's cache-clear, so the pre-restore draft
+          // would re-hydrate on refresh and overwrite the server commit.
+          clearCachedContent(activeChapter.id);
+          safeSetEditable(editorRef, false);
+        }
+        // I6: Refresh the snapshot list on every error branch. The
+        // not_found branch is the sharpest case — without a refresh, the
+        // stale snapshot row remains clickable and the user loops through
+        // the same 404. Mirrors the sibling handleReplaceOne 404 path
+        // which refreshes its result set for the same reason. The
+        // possibly_committed branch above returns before reaching this
+        // line and runs its own refresh.
+        snapshotPanelRef.current?.refreshSnapshots();
+        return;
       }
-      // I6: Refresh the snapshot list on every error branch. The
-      // not_found branch is the sharpest case — without a refresh, the
-      // stale snapshot row remains clickable and the user loops through
-      // the same 404. Mirrors the sibling handleReplaceOne 404 path
-      // which refreshes its result set for the same reason. The
-      // possibly_committed branch above returns before reaching this
-      // line and runs its own refresh.
-      snapshotPanelRef.current?.refreshSnapshots();
-      return;
-    }
-    setActionError(STRINGS.snapshots.restoreFailed);
+      setActionError(STRINGS.snapshots.restoreFailed);
     } finally {
       actionBusyRef.current = false;
     }
@@ -492,114 +488,115 @@ export function EditorPage() {
       }
       actionBusyRef.current = true;
       try {
+        // Clear any stale banners so a prior op's error/success cannot
+        // co-display with this op's outcome — including the panel-local
+        // findReplace.error (S3), which would otherwise leave a failed
+        // search's message inside the panel next to a fresh success
+        // banner above it.
+        setActionInfo(null);
+        setActionError(null);
+        findReplace.clearError();
 
-      // Clear any stale banners so a prior op's error/success cannot
-      // co-display with this op's outcome — including the panel-local
-      // findReplace.error (S3), which would otherwise leave a failed
-      // search's message inside the panel next to a fresh success
-      // banner above it.
-      setActionInfo(null);
-      setActionError(null);
-      findReplace.clearError();
+        type ReplaceData = Awaited<ReturnType<typeof api.search.replace>>;
 
-      type ReplaceData = Awaited<ReturnType<typeof api.search.replace>>;
-
-      const result = await mutation.run<ReplaceData>(async () => {
-        const resp = await api.search.replace(
-          slug,
-          frozen.query,
-          frozen.replacement,
-          frozen.options,
-          frozen.scope,
-        );
-        // Read the CURRENT active chapter (not the closure value) so a
-        // chapter switch between click and response still reloads when the
-        // now-active chapter was affected.
-        const current = getActiveChapter();
-        const reload = !!current && resp.affected_chapter_ids.includes(current.id);
-        return {
-          clearCacheFor: resp.affected_chapter_ids,
-          reloadActiveChapter: reload,
-          reloadChapterId: reload && current ? current.id : undefined,
-          data: resp,
-        };
-      });
-
-      if (result.ok) {
-        const resp = result.data;
-        // Always surface a positive success banner so the user can
-        // distinguish "did nothing because something went wrong" from
-        // "finished with no user-visible change". When chapters were
-        // skipped due to corrupt content, show the warning through the
-        // error banner as well — success and warning are distinct
-        // regions, not competing for the same slot.
-        await finalizeReplaceSuccess({
-          replacedCount: resp.replaced_count,
-          reloadFailed: false,
+        const result = await mutation.run<ReplaceData>(async () => {
+          const resp = await api.search.replace(
+            slug,
+            frozen.query,
+            frozen.replacement,
+            frozen.options,
+            frozen.scope,
+          );
+          // Read the CURRENT active chapter (not the closure value) so a
+          // chapter switch between click and response still reloads when the
+          // now-active chapter was affected.
+          const current = getActiveChapter();
+          const reload = !!current && resp.affected_chapter_ids.includes(current.id);
+          return {
+            clearCacheFor: resp.affected_chapter_ids,
+            reloadActiveChapter: reload,
+            reloadChapterId: reload && current ? current.id : undefined,
+            data: resp,
+          };
         });
-        if (resp.skipped_chapter_ids && resp.skipped_chapter_ids.length > 0) {
-          setActionError(STRINGS.findReplace.skippedAfterReplace(resp.skipped_chapter_ids.length));
+
+        if (result.ok) {
+          const resp = result.data;
+          // Always surface a positive success banner so the user can
+          // distinguish "did nothing because something went wrong" from
+          // "finished with no user-visible change". When chapters were
+          // skipped due to corrupt content, show the warning through the
+          // error banner as well — success and warning are distinct
+          // regions, not competing for the same slot.
+          await finalizeReplaceSuccess({
+            replacedCount: resp.replaced_count,
+            reloadFailed: false,
+          });
+          if (resp.skipped_chapter_ids && resp.skipped_chapter_ids.length > 0) {
+            setActionError(
+              STRINGS.findReplace.skippedAfterReplace(resp.skipped_chapter_ids.length),
+            );
+          }
+          return;
         }
-        return;
-      }
 
-      if (result.stage === "busy") {
-        setActionInfo(STRINGS.editor.mutationBusy);
-        return;
-      }
-      if (result.stage === "flush") {
-        // Attribute the failure to the save, not the replace.
-        setActionError(STRINGS.findReplace.replaceFailedSaveFirst);
-        return;
-      }
-      if (result.stage === "reload") {
-        // Server-side replace succeeded; only the follow-up GET failed.
-        // result.data carries the ReplaceResponse so we can show the real
-        // replaced_count alongside the persistent lock banner (I1).
-        await finalizeReplaceSuccess({
-          replacedCount: result.data.replaced_count,
-          reloadFailed: true,
-        });
-        return;
-      }
-      // stage === "mutate"
-      const err = result.error;
-      // 2xx BAD_JSON: apiFetch throws an ApiRequestError(status=2xx,
-      // code="BAD_JSON") when a 2xx body fails to parse (client.ts:86-92).
-      // The server almost certainly committed the replace (and the
-      // auto-snapshot) and only the response body was unreadable. The
-      // previous handler only showed a dismissible banner and re-enabled
-      // the editor — auto-save's next debounced PATCH would then silently
-      // revert the committed replace (C1). Route to the persistent lock
-      // UX so the editor stays setEditable(false) until refresh.
-      if (
-        err instanceof ApiRequestError &&
-        err.code === "BAD_JSON" &&
-        err.status >= 200 &&
-        err.status < 300
-      ) {
-        // Clear caches for chapters the server may have replaced (C1). The
-        // mutate callback threw, so the hook's directive-based cache-clear
-        // never ran. The response body was unreadable, so affected_chapter_ids
-        // is unavailable — fall back to the requested scope: the targeted
-        // chapter for chapter-scope, or every project chapter for
-        // project-scope. Without this, refresh re-hydrates the pre-replace
-        // draft from localStorage and the next auto-save reverts the
-        // server-committed replace.
-        if (frozen.scope.type === "chapter") {
-          clearCachedContent(frozen.scope.chapter_id);
-        } else {
-          clearAllCachedContent(project.chapters.map((c) => c.id));
+        if (result.stage === "busy") {
+          setActionInfo(STRINGS.editor.mutationBusy);
+          return;
         }
-        await finalizeReplaceSuccess({
-          replacedCount: null,
-          reloadFailed: true,
-          lockMessage: STRINGS.findReplace.replaceResponseUnreadable,
-        });
-        return;
-      }
-      const msg = mapReplaceErrorToMessage(err);
-      if (msg) setActionError(msg);
+        if (result.stage === "flush") {
+          // Attribute the failure to the save, not the replace.
+          setActionError(STRINGS.findReplace.replaceFailedSaveFirst);
+          return;
+        }
+        if (result.stage === "reload") {
+          // Server-side replace succeeded; only the follow-up GET failed.
+          // result.data carries the ReplaceResponse so we can show the real
+          // replaced_count alongside the persistent lock banner (I1).
+          await finalizeReplaceSuccess({
+            replacedCount: result.data.replaced_count,
+            reloadFailed: true,
+          });
+          return;
+        }
+        // stage === "mutate"
+        const err = result.error;
+        // 2xx BAD_JSON: apiFetch throws an ApiRequestError(status=2xx,
+        // code="BAD_JSON") when a 2xx body fails to parse (client.ts:86-92).
+        // The server almost certainly committed the replace (and the
+        // auto-snapshot) and only the response body was unreadable. The
+        // previous handler only showed a dismissible banner and re-enabled
+        // the editor — auto-save's next debounced PATCH would then silently
+        // revert the committed replace (C1). Route to the persistent lock
+        // UX so the editor stays setEditable(false) until refresh.
+        if (
+          err instanceof ApiRequestError &&
+          err.code === "BAD_JSON" &&
+          err.status >= 200 &&
+          err.status < 300
+        ) {
+          // Clear caches for chapters the server may have replaced (C1). The
+          // mutate callback threw, so the hook's directive-based cache-clear
+          // never ran. The response body was unreadable, so affected_chapter_ids
+          // is unavailable — fall back to the requested scope: the targeted
+          // chapter for chapter-scope, or every project chapter for
+          // project-scope. Without this, refresh re-hydrates the pre-replace
+          // draft from localStorage and the next auto-save reverts the
+          // server-committed replace.
+          if (frozen.scope.type === "chapter") {
+            clearCachedContent(frozen.scope.chapter_id);
+          } else {
+            clearAllCachedContent(project.chapters.map((c) => c.id));
+          }
+          await finalizeReplaceSuccess({
+            replacedCount: null,
+            reloadFailed: true,
+            lockMessage: STRINGS.findReplace.replaceResponseUnreadable,
+          });
+          return;
+        }
+        const msg = mapReplaceErrorToMessage(err);
+        if (msg) setActionError(msg);
       } finally {
         actionBusyRef.current = false;
       }
@@ -695,113 +692,118 @@ export function EditorPage() {
       }
       actionBusyRef.current = true;
       try {
+        // Mirror executeReplace: clear any stale banners from a prior op so
+        // the new replace's outcome does not co-display with an unrelated
+        // success or error message — including the panel-local
+        // findReplace.error (S3).
+        setActionInfo(null);
+        setActionError(null);
+        findReplace.clearError();
 
-      // Mirror executeReplace: clear any stale banners from a prior op so
-      // the new replace's outcome does not co-display with an unrelated
-      // success or error message — including the panel-local
-      // findReplace.error (S3).
-      setActionInfo(null);
-      setActionError(null);
-      findReplace.clearError();
+        type ReplaceData = Awaited<ReturnType<typeof api.search.replace>>;
 
-      type ReplaceData = Awaited<ReturnType<typeof api.search.replace>>;
-
-      const result = await mutation.run<ReplaceData>(async () => {
-        const resp = await api.search.replace(slug, frozenQuery, frozenReplacement, frozenOptions, {
-          type: "chapter",
-          chapter_id: chapterId,
-          match_index: matchIndex,
+        const result = await mutation.run<ReplaceData>(async () => {
+          const resp = await api.search.replace(
+            slug,
+            frozenQuery,
+            frozenReplacement,
+            frozenOptions,
+            {
+              type: "chapter",
+              chapter_id: chapterId,
+              match_index: matchIndex,
+            },
+          );
+          const current = getActiveChapter();
+          // Replace-one with 0 count means the match was gone on the server —
+          // emit no cache clear / no reload; the ok branch will surface the
+          // matchNotFound banner and re-run the search.
+          const reload =
+            resp.replaced_count > 0 && !!current && resp.affected_chapter_ids.includes(current.id);
+          return {
+            clearCacheFor: resp.replaced_count > 0 ? resp.affected_chapter_ids : [],
+            reloadActiveChapter: reload,
+            reloadChapterId: reload && current ? current.id : undefined,
+            data: resp,
+          };
         });
-        const current = getActiveChapter();
-        // Replace-one with 0 count means the match was gone on the server —
-        // emit no cache clear / no reload; the ok branch will surface the
-        // matchNotFound banner and re-run the search.
-        const reload =
-          resp.replaced_count > 0 && !!current && resp.affected_chapter_ids.includes(current.id);
-        return {
-          clearCacheFor: resp.replaced_count > 0 ? resp.affected_chapter_ids : [],
-          reloadActiveChapter: reload,
-          reloadChapterId: reload && current ? current.id : undefined,
-          data: resp,
-        };
-      });
 
-      if (result.ok) {
-        const resp = result.data;
-        if (resp.replaced_count === 0) {
-          // Stale match: refresh results so the row disappears and the user
-          // can't click it again to loop the same error. The action banner
-          // (matchNotFound) is the authoritative description of this click;
-          // suppress any panel-local error the refresh may stamp (I1) so we
-          // don't show two banners with competing wordings for one outcome.
-          setActionError(STRINGS.findReplace.matchNotFound);
-          await findReplace.search(slug);
-          findReplace.clearError();
+        if (result.ok) {
+          const resp = result.data;
+          if (resp.replaced_count === 0) {
+            // Stale match: refresh results so the row disappears and the user
+            // can't click it again to loop the same error. The action banner
+            // (matchNotFound) is the authoritative description of this click;
+            // suppress any panel-local error the refresh may stamp (I1) so we
+            // don't show two banners with competing wordings for one outcome.
+            setActionError(STRINGS.findReplace.matchNotFound);
+            await findReplace.search(slug);
+            findReplace.clearError();
+            return;
+          }
+          await finalizeReplaceSuccess({
+            replacedCount: resp.replaced_count,
+            reloadFailed: false,
+          });
           return;
         }
-        await finalizeReplaceSuccess({
-          replacedCount: resp.replaced_count,
-          reloadFailed: false,
-        });
-        return;
-      }
 
-      if (result.stage === "busy") {
-        setActionInfo(STRINGS.editor.mutationBusy);
-        return;
-      }
-      if (result.stage === "flush") {
-        setActionError(STRINGS.findReplace.replaceFailedSaveFirst);
-        return;
-      }
-      if (result.stage === "reload") {
-        // Server-side replace succeeded; only the follow-up GET failed.
-        // Persistent lock banner (I1) — the editor stays read-only until
-        // the page is refreshed.
-        await finalizeReplaceSuccess({
-          replacedCount: result.data.replaced_count,
-          reloadFailed: true,
-        });
-        return;
-      }
-      // stage === "mutate"
-      const err = result.error;
-      // 2xx BAD_JSON: same C1 branch as executeReplace. The server likely
-      // committed the replace-one (and its auto-snapshot) but the response
-      // body was unreadable. Lock the editor until refresh so auto-save
-      // cannot overwrite a possibly-committed server-side change.
-      if (
-        err instanceof ApiRequestError &&
-        err.code === "BAD_JSON" &&
-        err.status >= 200 &&
-        err.status < 300
-      ) {
-        // Replace-one is single-chapter — clear that chapter's cached draft
-        // (C1). The mutate callback threw before returning a directive, so
-        // the hook's clearAllCachedContent never ran.
-        clearCachedContent(chapterId);
-        await finalizeReplaceSuccess({
-          replacedCount: null,
-          reloadFailed: true,
-          lockMessage: STRINGS.findReplace.replaceResponseUnreadable,
-        });
-        return;
-      }
-      // On any 404 (chapter soft-deleted OR project gone), refresh the
-      // result set BEFORE showing the banner — otherwise the user clicks
-      // the same row and loops the same error (I3). Previously gated on
-      // SCOPE_NOT_FOUND only, which let bare NOT_FOUND 404s fall through
-      // with stale rows still clickable. The search refetch clears its
-      // result set on 400/404 (useFindReplaceState.ts:191), and the
-      // clearError() call below suppresses the panel-local duplicate so
-      // the action banner set by mapReplaceErrorToMessage is the single
-      // source of truth for this click.
-      if (err instanceof ApiRequestError && err.status === 404) {
-        await findReplace.search(slug);
-        findReplace.clearError();
-      }
-      const msg = mapReplaceErrorToMessage(err);
-      if (msg) setActionError(msg);
+        if (result.stage === "busy") {
+          setActionInfo(STRINGS.editor.mutationBusy);
+          return;
+        }
+        if (result.stage === "flush") {
+          setActionError(STRINGS.findReplace.replaceFailedSaveFirst);
+          return;
+        }
+        if (result.stage === "reload") {
+          // Server-side replace succeeded; only the follow-up GET failed.
+          // Persistent lock banner (I1) — the editor stays read-only until
+          // the page is refreshed.
+          await finalizeReplaceSuccess({
+            replacedCount: result.data.replaced_count,
+            reloadFailed: true,
+          });
+          return;
+        }
+        // stage === "mutate"
+        const err = result.error;
+        // 2xx BAD_JSON: same C1 branch as executeReplace. The server likely
+        // committed the replace-one (and its auto-snapshot) but the response
+        // body was unreadable. Lock the editor until refresh so auto-save
+        // cannot overwrite a possibly-committed server-side change.
+        if (
+          err instanceof ApiRequestError &&
+          err.code === "BAD_JSON" &&
+          err.status >= 200 &&
+          err.status < 300
+        ) {
+          // Replace-one is single-chapter — clear that chapter's cached draft
+          // (C1). The mutate callback threw before returning a directive, so
+          // the hook's clearAllCachedContent never ran.
+          clearCachedContent(chapterId);
+          await finalizeReplaceSuccess({
+            replacedCount: null,
+            reloadFailed: true,
+            lockMessage: STRINGS.findReplace.replaceResponseUnreadable,
+          });
+          return;
+        }
+        // On any 404 (chapter soft-deleted OR project gone), refresh the
+        // result set BEFORE showing the banner — otherwise the user clicks
+        // the same row and loops the same error (I3). Previously gated on
+        // SCOPE_NOT_FOUND only, which let bare NOT_FOUND 404s fall through
+        // with stale rows still clickable. The search refetch clears its
+        // result set on 400/404 (useFindReplaceState.ts:191), and the
+        // clearError() call below suppresses the panel-local duplicate so
+        // the action banner set by mapReplaceErrorToMessage is the single
+        // source of truth for this click.
+        if (err instanceof ApiRequestError && err.status === 404) {
+          await findReplace.search(slug);
+          findReplace.clearError();
+        }
+        const msg = mapReplaceErrorToMessage(err);
+        if (msg) setActionError(msg);
       } finally {
         actionBusyRef.current = false;
       }
