@@ -112,9 +112,7 @@ describe("SnapshotBanner", () => {
   it("does not open the confirmation dialog when Restore is clicked while disabled (C1)", async () => {
     const user = userEvent.setup();
     const onRestore = vi.fn();
-    render(
-      <SnapshotBanner {...defaultProps} onRestore={onRestore} canRestore={false} />,
-    );
+    render(<SnapshotBanner {...defaultProps} onRestore={onRestore} canRestore={false} />);
 
     // Click the disabled button — userEvent respects disabled and will not
     // fire the click handler. Guard that the dialog never opens AND that

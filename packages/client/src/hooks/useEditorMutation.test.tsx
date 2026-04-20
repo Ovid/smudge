@@ -609,9 +609,7 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
     const falseCallIdx = vi
       .mocked(newEditor.setEditable)
       .mock.calls.findIndex((c) => c[0] === false);
-    const trueCallIdx = vi
-      .mocked(newEditor.setEditable)
-      .mock.calls.findIndex((c) => c[0] === true);
+    const trueCallIdx = vi.mocked(newEditor.setEditable).mock.calls.findIndex((c) => c[0] === true);
     expect(falseCallIdx).toBeLessThan(trueCallIdx);
   });
 
