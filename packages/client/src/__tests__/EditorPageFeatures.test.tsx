@@ -2006,6 +2006,68 @@ describe("EditorPage snapshot panel", () => {
     });
   });
 
+  it("exits snapshot view when restore returns not_found (I6)", async () => {
+    // When the snapshot has been deleted (or its chapter purged) between
+    // entering snapshot view and clicking Restore, the server replies 404.
+    // Without exiting view, the SnapshotBanner with its now-broken Restore
+    // button stays on screen and the user loops clicking Restore on a
+    // dead snapshot.
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-gone",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+    ]);
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-gone",
+      chapter_id: "ch-1",
+      label: "v1",
+      content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+      word_count: 5,
+      is_auto: false,
+      created_at: "2026-04-17T10:00:00Z",
+    });
+    const { ApiRequestError } = await import("../api/client");
+    (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
+      .fn()
+      .mockRejectedValue(new ApiRequestError("Snapshot not found", 404, "NOT_FOUND"));
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "View" }));
+    await waitFor(() => {
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-gone");
+    });
+
+    // Confirm banner is on-screen before the 404.
+    expect(screen.getByRole("region", { name: STRINGS.snapshots.viewingRegionLabel })).toBeTruthy();
+
+    const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
+    await userEvent.click(restoreButtons[0]!);
+    const dialog = await screen.findByRole("alertdialog", { name: "Restore" });
+    const confirmButton = Array.from(dialog.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Restore",
+    );
+    await userEvent.click(confirmButton!);
+
+    // The not-found action banner shows up…
+    expect(await screen.findByText(STRINGS.snapshots.restoreFailedNotFound)).toBeInTheDocument();
+    // …and the stale SnapshotBanner has left the screen.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("region", { name: STRINGS.snapshots.viewingRegionLabel }),
+      ).toBeNull();
+    });
+  });
+
   it("clicks Create Snapshot in the panel (exercises onBeforeCreate)", async () => {
     (api.snapshots as unknown as { create: ReturnType<typeof vi.fn> }).create = vi
       .fn()

@@ -373,6 +373,12 @@ export function EditorPage() {
           setActionError(STRINGS.snapshots.restoreFailedCrossProjectImage);
         } else if (result.error.reason === "not_found") {
           setActionError(STRINGS.snapshots.restoreFailedNotFound);
+          // I6: The snapshot is gone from the server, so the SnapshotBanner
+          // for it must also leave the screen. Without this, the user sees
+          // "Viewing snapshot from <date>" with a Restore button that will
+          // always 404 — and the server's auto-created pre-restore snapshot
+          // list refresh does not dismiss the banner by itself.
+          exitSnapshotView();
         } else if (result.error.reason === "network") {
           // Mirror mapReplaceErrorToMessage's NETWORK branch so offline restores
           // tell the user to check their connection rather than showing the
@@ -416,6 +422,7 @@ export function EditorPage() {
     mutation,
     findReplace,
     isActionBusy,
+    exitSnapshotView,
   ]);
 
   // Shared post-replace bookkeeping for executeReplace and handleReplaceOne,
