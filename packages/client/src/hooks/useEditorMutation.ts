@@ -184,17 +184,27 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             // I1: Previously we logged and fell through to clearAllCachedContent
             // + reloadActiveChapter on the assumption the re-lock worked.
             // If setEditable/markClean/cancelPendingSaves actually throws,
-            // the fresh editor is left writable and we are about to wipe
-            // its cache — user keystrokes during the reload-GET window
-            // would then PATCH pre-mutation content back over the just-
-            // committed server change, and the localStorage safety net
-            // would have already been cleared. Promote to stage:"reload"
-            // instead: the server committed (mutate succeeded), so the
-            // caller surfaces the persistent "refresh the page" lock and
-            // EditorPage's handleSaveLockGated (C1) refuses any PATCH
+            // the fresh editor is left writable — user keystrokes during
+            // the reload-GET window would PATCH pre-mutation content back
+            // over the just-committed server change. Promote to
+            // stage:"reload": the server committed (mutate succeeded), so
+            // the caller surfaces the persistent "refresh the page" lock
+            // and EditorPage's handleSaveLockGated (C1) refuses any PATCH
             // while the banner is up.
+            //
+            // C1 (review 2026-04-20): the cache-clear MUST still run
+            // before the bail. The server committed the mutation; if we
+            // skip the cache-clear and the user refreshes (which the
+            // lock banner explicitly directs them to do), localStorage
+            // re-hydrates pre-mutation drafts and the first keystroke
+            // PATCHes stale content back over the server commit. Skip
+            // only the reload — we can't safely load fresh server state
+            // into an editor we couldn't re-lock.
             console.warn("useEditorMutation: failed to lock mid-remount editor", err);
             reloadFailed = true;
+            if (directive.clearCacheFor.length > 0) {
+              clearAllCachedContent(directive.clearCacheFor);
+            }
             return {
               ok: false,
               stage: "reload",

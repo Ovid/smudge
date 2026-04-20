@@ -673,9 +673,14 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
     // After: on throw, return stage:"reload" with the directive's data.
     // The caller surfaces the persistent lock banner and the save gate
     // (handleSaveLockGated, C1) refuses to PATCH while that banner is up.
+    //
+    // C1 (review 2026-04-20): cache-clear MUST run before the bail —
+    // server committed the mutation, so localStorage drafts must be
+    // wiped to prevent refresh-and-PATCH-stale-content. Reload must NOT
+    // run (we can't safely load fresh state into an editor we failed
+    // to re-lock).
     const { projectEditor } = buildHandles();
     const editorRef: MutableRefObject<EditorHandle | null> = { current: null };
-    const clearAllSpy = vi.fn();
     const reloadSpy = vi.fn(async () => "reloaded" as const);
     projectEditor.reloadActiveChapter = reloadSpy;
 
@@ -711,9 +716,11 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
         }
       }
       expect(warnSpy).toHaveBeenCalled();
-      // Cache clear / reload MUST NOT run once the re-lock has thrown —
-      // we bail before them.
-      expect(clearAllSpy).not.toHaveBeenCalled();
+      // Cache clear MUST run (server committed; prevent stale-draft
+      // rehydration on refresh). Reload MUST NOT run (editor is in a
+      // degraded state — re-lock failed, so loading fresh content
+      // into a writable editor would race with user keystrokes).
+      expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["ch-1"]);
       expect(reloadSpy).not.toHaveBeenCalled();
     } finally {
       warnSpy.mockRestore();
