@@ -429,8 +429,16 @@ export function useProjectEditor(slug: string | undefined) {
         if (activeChapterRef.current?.id === chapter.id) {
           const first = remaining[0];
           if (first) {
+            // Capture-and-compare the select seq across the secondary GET
+            // (I5). Without this guard, a rapid click-then-click during
+            // delete (user selects another chapter after the delete POST
+            // resolves but before this GET does) would let the stale
+            // "next chapter after delete" fetch pin the sidebar over the
+            // user's explicit selection.
+            const seq = ++selectChapterSeqRef.current;
             try {
               const ch = await api.chapters.get(first.id);
+              if (seq !== selectChapterSeqRef.current) return true;
               setActiveChapter(ch);
               setChapterWordCount(countWords(ch.content));
             } catch (err) {
@@ -442,6 +450,7 @@ export function useProjectEditor(slug: string | undefined) {
               // I3 the catch was silent and the user saw "Add chapter"
               // as if the project had no chapters left.
               console.warn("Failed to load chapter after delete:", err);
+              if (seq !== selectChapterSeqRef.current) return true;
               onError?.(STRINGS.error.loadChapterFailed);
               setActiveChapter(null);
               setChapterWordCount(0);
