@@ -256,6 +256,15 @@ export function EditorPage() {
   }, [snapshotPanelOpen, setPanelOpen, findReplace, toggleSnapshotPanel, isActionBusy]);
 
   const handleToggleReferencePanel = useCallback(() => {
+    // C1: refuse while the lock banner is up. If we ran exitSnapshotView()
+    // under a possibly_committed / unknown restore lock, React would mount
+    // the live editor in its default editable state; subsequent keystrokes
+    // would land in useContentCache and silently revert the server-committed
+    // restore on next load.
+    if (isEditorLocked()) {
+      setActionInfo(STRINGS.editor.lockedRefusal);
+      return;
+    }
     if (isActionBusy()) {
       setActionInfo(STRINGS.editor.mutationBusy);
       return;
@@ -266,9 +275,22 @@ export function EditorPage() {
       findReplace.closePanel();
     }
     togglePanel();
-  }, [panelOpen, setSnapshotPanelOpen, exitSnapshotView, findReplace, togglePanel, isActionBusy]);
+  }, [
+    panelOpen,
+    setSnapshotPanelOpen,
+    exitSnapshotView,
+    findReplace,
+    togglePanel,
+    isActionBusy,
+    isEditorLocked,
+  ]);
 
   const handleToggleFindReplace = useCallback(() => {
+    // C1: see handleToggleReferencePanel — same rationale.
+    if (isEditorLocked()) {
+      setActionInfo(STRINGS.editor.lockedRefusal);
+      return;
+    }
     if (isActionBusy()) {
       setActionInfo(STRINGS.editor.mutationBusy);
       return;
@@ -279,7 +301,14 @@ export function EditorPage() {
       exitSnapshotView();
     }
     findReplace.togglePanel();
-  }, [findReplace, setPanelOpen, setSnapshotPanelOpen, exitSnapshotView, isActionBusy]);
+  }, [
+    findReplace,
+    setPanelOpen,
+    setSnapshotPanelOpen,
+    exitSnapshotView,
+    isActionBusy,
+    isEditorLocked,
+  ]);
 
   const handleRestoreSnapshot = useCallback(async () => {
     if (!viewingSnapshot || !activeChapter) return;

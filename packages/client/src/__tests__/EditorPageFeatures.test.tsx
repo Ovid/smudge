@@ -2930,4 +2930,75 @@ describe("EditorPage snapshot panel", () => {
     // Lock banner is still up through all three refusals.
     expect(screen.getByText(STRINGS.snapshots.restoreResponseUnreadable)).toBeInTheDocument();
   });
+
+  it("refuses reference-panel and Ctrl+H toggles while the editor-lock banner is up (C1)", async () => {
+    // Without the lock guard, both panel toggles call exitSnapshotView
+    // unconditionally. During a possibly_committed restore the lock banner
+    // hides the snapshot view but viewingSnapshot is still set; toggling a
+    // panel would remount the live Editor (default editable=true) and
+    // subsequent keystrokes would land in useContentCache, silently
+    // reverting the server-committed restore on next load.
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-1",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+    ]);
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-1",
+      chapter_id: "ch-1",
+      label: "v1",
+      content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+      word_count: 5,
+      is_auto: false,
+      created_at: "2026-04-17T10:00:00Z",
+    });
+    const { ApiRequestError } = await import("../api/client");
+    (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
+      .fn()
+      .mockRejectedValue(new ApiRequestError("Malformed response body", 200, "BAD_JSON"));
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "View" }));
+    await waitFor(() => {
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+    });
+    await userEvent.keyboard("{Escape}");
+    const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
+    await userEvent.click(restoreButtons[0]!);
+    const dialog = await screen.findByRole("alertdialog", { name: "Restore" });
+    const confirmButton = Array.from(dialog.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Restore",
+    );
+    await userEvent.click(confirmButton!);
+
+    expect(
+      await screen.findByText(STRINGS.snapshots.restoreResponseUnreadable),
+    ).toBeInTheDocument();
+
+    // 1) Reference panel toggle button — refuse with lockedRefusal.
+    const refPanelToggle = screen.getByRole("button", {
+      name: STRINGS.referencePanel.toggleTooltip,
+    });
+    await userEvent.click(refPanelToggle);
+    expect(screen.getByText(STRINGS.editor.lockedRefusal)).toBeInTheDocument();
+    // Reference panel did not open (would render its complementary landmark).
+    expect(screen.queryByRole("complementary", { name: STRINGS.referencePanel.ariaLabel })).toBeNull();
+
+    // 2) Ctrl+H toggles Find/Replace — refuse with lockedRefusal.
+    fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+    expect(screen.getByText(STRINGS.editor.lockedRefusal)).toBeInTheDocument();
+
+    // Lock banner is still up through both refusals.
+    expect(screen.getByText(STRINGS.snapshots.restoreResponseUnreadable)).toBeInTheDocument();
+  });
 });
