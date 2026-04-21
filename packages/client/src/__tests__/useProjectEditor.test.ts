@@ -1478,6 +1478,55 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("handleCreateChapter targets the new project's slug immediately after a URL-driven slug change (I1)", async () => {
+    // Before I1 the slug-ref was only written from project.slug after the
+    // new project loaded — a click landing in the inter-project loading
+    // window would POST /projects/<old-slug>/chapters, creating a chapter
+    // on the project the user had just navigated away from.
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.create).mockReset().mockResolvedValue({
+      ...mockChapter1,
+      id: "new-ch",
+      project_id: "p2",
+      title: UNTITLED_CHAPTER,
+    });
+
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    // Stall the next project GET so we exercise the inter-project loading
+    // window — click fires while slug has advanced but project state still
+    // holds the old project.
+    let resolveOther!: (p: typeof otherProject) => void;
+    vi.mocked(api.projects.get).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOther = resolve;
+        }),
+    );
+
+    rerender({ slug: "other-project" });
+
+    await act(async () => {
+      await result.current.handleCreateChapter();
+    });
+
+    expect(api.chapters.create).toHaveBeenCalledWith("other-project");
+    resolveOther(otherProject);
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+  });
+
   it("cross-project slug change resets activeChapter when cached id is absent from new project (I4)", async () => {
     const otherChapter = { ...mockChapter1, id: "other-1", project_id: "p2" };
     const otherProject = {

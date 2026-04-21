@@ -33,8 +33,30 @@ export function useProjectEditor(slug: string | undefined) {
   // discarding it when clearCachedContent runs on success.
   const latestContentRef = useRef<{ id: string; content: Record<string, unknown> } | null>(null);
   const projectSlugRef = useRef(slug);
-  if (project?.slug !== undefined) {
-    projectSlugRef.current = project.slug;
+  // I1 (review 2026-04-21): the ref must reflect the CURRENT URL slug so
+  // that handlers firing during an inter-project loading window
+  // (handleCreateChapter, handleReorderChapters, handleUpdateProjectTitle)
+  // don't mutate the previous project. Before this fix, the ref was only
+  // written from project.slug after loadProject resolved, so any click
+  // landing in the gap would POST /projects/<old-slug>/... against the
+  // project the user had just navigated away from.
+  //
+  // Precedence:
+  //   1. When the `slug` argument changes (URL-driven navigation, back/
+  //      forward, react-router navigate), sync the ref to the new URL
+  //      slug immediately. Detected via a prev-slug sentinel so the
+  //      sync runs exactly once per slug transition.
+  //   2. `handleUpdateProjectTitle` writes the ref directly on rename
+  //      success — we must not clobber that write on the next render
+  //      before the URL has caught up with navigate(). The prev-slug
+  //      sentinel guards against that: slug hasn't changed, so we
+  //      don't touch the ref.
+  const prevSlugArgRef = useRef(slug);
+  if (prevSlugArgRef.current !== slug) {
+    prevSlugArgRef.current = slug;
+    if (slug !== undefined) {
+      projectSlugRef.current = slug;
+    }
   }
   const selectChapterSeqRef = useRef(0);
   const saveSeqRef = useRef(0);
