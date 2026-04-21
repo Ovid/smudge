@@ -80,12 +80,6 @@ export function useFindReplaceState(
     return () => {
       searchAbortRef.current?.abort();
       searchAbortRef.current = null;
-      // I2 (review 2026-04-21): also bump the seq. The in-flight response's
-      // finally clears `loading` only when seq === current; without a bump
-      // here, the abort's synchronous "fulfilled with abort" path could race
-      // the finally in teardown, though the primary leak is symmetry with
-      // the project-change reset below.
-      searchSeqRef.current++;
     };
   }, []);
 

@@ -329,7 +329,8 @@ export const STRINGS = {
     // no feedback at all (the panel's !res.ok gate ignored ok:true), so
     // the user saw a dead View button. Surface a brief info explaining
     // why and how to recover.
-    viewStaleChapterSwitch: "This snapshot belongs to a different chapter. Select that chapter to view it.",
+    viewStaleChapterSwitch:
+      "This snapshot belongs to a different chapter. Select that chapter to view it.",
     ariaLabel: "Chapter snapshots",
     relativeTime: {
       justNow: "just now",

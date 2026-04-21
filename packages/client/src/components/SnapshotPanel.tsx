@@ -34,16 +34,14 @@ interface SnapshotPanelProps {
   chapterId: string | null;
   isOpen: boolean;
   onClose: () => void;
-  onView: (snapshot: {
-    id: string;
-    label: string | null;
-    created_at: string;
-  }) => Promise<
-    // I6: `staleChapterSwitch` on the ok branch signals that the view was
-    // abandoned because the user changed chapters mid-fetch. The panel
-    // surfaces a brief info rather than treating ok:true as a success.
-    { ok: true; staleChapterSwitch?: boolean } | { ok: false; reason?: string } | undefined
-  > | undefined;
+  onView: (snapshot: { id: string; label: string | null; created_at: string }) =>
+    | Promise<
+        // I6: `staleChapterSwitch` on the ok branch signals that the view was
+        // abandoned because the user changed chapters mid-fetch. The panel
+        // surfaces a brief info rather than treating ok:true as a success.
+        { ok: true; staleChapterSwitch?: boolean } | { ok: false; reason?: string } | undefined
+      >
+    | undefined;
   /**
    * Called before snapshot creation. The panel awaits this so the server
    * snapshots the chapter AFTER any pending editor save has landed —

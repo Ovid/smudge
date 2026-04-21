@@ -2992,7 +2992,9 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(refPanelToggle);
     expect(screen.getByText(STRINGS.editor.lockedRefusal)).toBeInTheDocument();
     // Reference panel did not open (would render its complementary landmark).
-    expect(screen.queryByRole("complementary", { name: STRINGS.referencePanel.ariaLabel })).toBeNull();
+    expect(
+      screen.queryByRole("complementary", { name: STRINGS.referencePanel.ariaLabel }),
+    ).toBeNull();
 
     // 2) Ctrl+H toggles Find/Replace — refuse with lockedRefusal.
     fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
