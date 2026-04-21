@@ -2849,4 +2849,85 @@ describe("EditorPage snapshot panel", () => {
     expect(screen.getByText(STRINGS.editor.lockedRefusal)).toBeInTheDocument();
     expect(screen.getByText(STRINGS.snapshots.restoreResponseUnreadable)).toBeInTheDocument();
   });
+
+  it("refuses create/reorder/openTrash while the editor-lock banner is up (I4)", async () => {
+    // Mirror of the delete test for the remaining three guarded handlers.
+    // Each must surface the locked-refusal banner AND leave the persistent
+    // lock banner intact — otherwise the [activeChapter?.id] / editor-remount
+    // paths they trigger would silently clear the lock.
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-1",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+    ]);
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-1",
+      chapter_id: "ch-1",
+      label: "v1",
+      content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+      word_count: 5,
+      is_auto: false,
+      created_at: "2026-04-17T10:00:00Z",
+    });
+    const { ApiRequestError } = await import("../api/client");
+    (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
+      .fn()
+      .mockRejectedValue(new ApiRequestError("Malformed response body", 200, "BAD_JSON"));
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "View" }));
+    await waitFor(() => {
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+    });
+    await userEvent.keyboard("{Escape}");
+    const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
+    await userEvent.click(restoreButtons[0]!);
+    const dialog = await screen.findByRole("alertdialog", { name: "Restore" });
+    const confirmButton = Array.from(dialog.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Restore",
+    );
+    await userEvent.click(confirmButton!);
+
+    expect(
+      await screen.findByText(STRINGS.snapshots.restoreResponseUnreadable),
+    ).toBeInTheDocument();
+
+    // Clear any prior actionInfo.
+    // 1) Create chapter — sidebar Add button.
+    const createChapterCallsBefore = vi.mocked(api.chapters.create).mock.calls.length;
+    const addChapterButton = screen.getByRole("button", { name: STRINGS.sidebar.addChapter });
+    await userEvent.click(addChapterButton);
+    expect(screen.getByText(STRINGS.editor.lockedRefusal)).toBeInTheDocument();
+    expect(vi.mocked(api.chapters.create).mock.calls.length).toBe(createChapterCallsBefore);
+
+    // 2) Open Trash — sidebar Trash button.
+    const reorderCallsBefore = vi.mocked(api.projects.reorderChapters).mock.calls.length;
+    const trashButton = screen.getByRole("button", { name: STRINGS.sidebar.trash });
+    await userEvent.click(trashButton);
+    expect(screen.getByText(STRINGS.editor.lockedRefusal)).toBeInTheDocument();
+    expect(api.projects.trash).not.toHaveBeenCalled();
+
+    // 3) Reorder — Alt+ArrowDown on Chapter One sidebar row.
+    const chapterOneButtons = screen.getAllByText("Chapter One");
+    const chapterOneSidebarButton = chapterOneButtons.find(
+      (el) => el.tagName === "BUTTON" && el.closest("li"),
+    ) as HTMLElement | undefined;
+    expect(chapterOneSidebarButton).toBeDefined();
+    fireEvent.keyDown(chapterOneSidebarButton!, { key: "ArrowDown", altKey: true });
+    expect(screen.getByText(STRINGS.editor.lockedRefusal)).toBeInTheDocument();
+    expect(vi.mocked(api.projects.reorderChapters).mock.calls.length).toBe(reorderCallsBefore);
+
+    // Lock banner is still up through all three refusals.
+    expect(screen.getByText(STRINGS.snapshots.restoreResponseUnreadable)).toBeInTheDocument();
+  });
 });
