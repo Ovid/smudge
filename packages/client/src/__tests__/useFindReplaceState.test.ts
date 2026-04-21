@@ -457,6 +457,46 @@ describe("useFindReplaceState", () => {
     );
   });
 
+  it("debounced search reads latest slug at fire time, not effect setup (I3)", async () => {
+    // If the projectSlug changes (rename) during the 300ms debounce window,
+    // the debounce callback must POST against the CURRENT slug. Previously
+    // `const slug = latestSlugRef.current` ran at effect-setup and was
+    // closed over by the setTimeout, so the search fired against the
+    // dead slug — contradicting the search() wrapper comment that says
+    // `latestSlugRef.current` should be read at call time.
+    const searchResult = { total_count: 0, chapters: [] };
+    mockFind.mockResolvedValue(searchResult);
+
+    const { result, rerender } = renderHook(
+      ({ slug }: { slug: string }) => useFindReplaceState(slug),
+      { initialProps: { slug: "old-slug" } },
+    );
+
+    act(() => {
+      result.current.togglePanel();
+      result.current.setQuery("word");
+    });
+
+    // Advance partway through the debounce window, then rename.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(150);
+    });
+    rerender({ slug: "new-slug" });
+
+    // Fire the remainder of the debounce.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+
+    expect(mockFind).toHaveBeenCalledTimes(1);
+    expect(mockFind).toHaveBeenCalledWith(
+      "new-slug",
+      "word",
+      expect.any(Object),
+      expect.any(AbortSignal),
+    );
+  });
+
   it("does not auto-search when panel is closed", async () => {
     const { result } = renderHook(() => useFindReplaceState("my-project"));
 

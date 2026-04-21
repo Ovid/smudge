@@ -236,8 +236,17 @@ export function useFindReplaceState(
     if (!panelOpen || !query || !latestSlugRef.current) {
       return;
     }
-    const slug = latestSlugRef.current;
+    // I3 (review 2026-04-21): read latestSlugRef.current INSIDE the
+    // setTimeout callback, not at effect-setup time. A project rename
+    // between the effect running and the 300ms timer firing updates
+    // the ref (via the projectSlug sync useEffect) but does not re-run
+    // this effect, so capturing `slug` here would fire the search
+    // against the dead slug — directly contradicting the design intent
+    // documented on the search() wrapper below ("always read .current
+    // at call time").
     debounceRef.current = setTimeout(() => {
+      const slug = latestSlugRef.current;
+      if (!slug) return;
       search(slug);
     }, 300);
     return () => {
