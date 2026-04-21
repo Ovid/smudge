@@ -2847,8 +2847,6 @@ describe("EditorPage snapshot panel", () => {
     expect(screen.queryByRole("alertdialog", { name: /Move .+ to trash/ })).toBeNull();
     expect(api.chapters.delete).not.toHaveBeenCalled();
     expect(screen.getByText(STRINGS.editor.lockedRefusal)).toBeInTheDocument();
-    expect(
-      screen.getByText(STRINGS.snapshots.restoreResponseUnreadable),
-    ).toBeInTheDocument();
+    expect(screen.getByText(STRINGS.snapshots.restoreResponseUnreadable)).toBeInTheDocument();
   });
 });

@@ -375,10 +375,7 @@ describe("useEditorMutation — reload superseded (I5)", () => {
     const { editorRef, projectEditor } = buildHandles();
     const reloadMock = vi
       .fn<
-        (
-          onError?: (message: string) => void,
-          expectedChapterId?: string,
-        ) => Promise<ReloadOutcome>
+        (onError?: (message: string) => void, expectedChapterId?: string) => Promise<ReloadOutcome>
       >()
       .mockResolvedValueOnce("superseded")
       .mockResolvedValueOnce("reloaded");
@@ -406,10 +403,7 @@ describe("useEditorMutation — reload superseded (I5)", () => {
     const { editorRef, projectEditor } = buildHandles();
     projectEditor.reloadActiveChapter = vi
       .fn<
-        (
-          onError?: (message: string) => void,
-          expectedChapterId?: string,
-        ) => Promise<ReloadOutcome>
+        (onError?: (message: string) => void, expectedChapterId?: string) => Promise<ReloadOutcome>
       >()
       .mockResolvedValueOnce("superseded")
       .mockResolvedValueOnce("failed");

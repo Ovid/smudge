@@ -303,9 +303,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             // banner.
             const currentId = projectEditorRef.current.getActiveChapter()?.id;
             if (currentId && directive.clearCacheFor.includes(currentId)) {
-              const secondOutcome = await projectEditorRef.current.reloadActiveChapter(
-                () => {},
-              );
+              const secondOutcome = await projectEditorRef.current.reloadActiveChapter(() => {});
               if (secondOutcome === "failed") {
                 reloadSuperseded = false;
                 reloadFailed = true;

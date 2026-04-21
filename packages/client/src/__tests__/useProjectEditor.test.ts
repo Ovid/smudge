@@ -1492,12 +1492,14 @@ describe("useProjectEditor", () => {
 
     vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
     vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
-    vi.mocked(api.chapters.create).mockReset().mockResolvedValue({
-      ...mockChapter1,
-      id: "new-ch",
-      project_id: "p2",
-      title: UNTITLED_CHAPTER,
-    });
+    vi.mocked(api.chapters.create)
+      .mockReset()
+      .mockResolvedValue({
+        ...mockChapter1,
+        id: "new-ch",
+        project_id: "p2",
+        title: UNTITLED_CHAPTER,
+      });
 
     const { rerender, result } = renderHook(
       ({ slug }: { slug: string }) => useProjectEditor(slug),
