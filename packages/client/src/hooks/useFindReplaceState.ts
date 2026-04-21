@@ -86,7 +86,10 @@ export function useFindReplaceState(
   // Keep panelOpenRef in sync so the debounce setTimeout callback can
   // check the latest value at fire time (I2). State-driven closure
   // would see a stale value if the panel closed between the effect's
-  // scheduling and the timer firing.
+  // scheduling and the timer firing. This effect is a belt to
+  // closePanel/togglePanel's synchronous ref writes: if a future path
+  // changes panelOpen without going through those helpers, the ref
+  // still tracks it eventually.
   useEffect(() => {
     panelOpenRef.current = panelOpen;
   }, [panelOpen]);
@@ -130,10 +133,19 @@ export function useFindReplaceState(
   }, [projectId]);
 
   const togglePanel = useCallback(() => {
-    setPanelOpen((prev) => !prev);
+    // Sync the ref *synchronously* alongside the state update. The
+    // useEffect sync below runs after React commits, leaving a window
+    // where a pre-queued debounce callback could see the stale ref in
+    // React 18 concurrent-mode scheduling. Updating the ref here
+    // closes the window: the very next task reads the new value.
+    setPanelOpen((prev) => {
+      panelOpenRef.current = !prev;
+      return !prev;
+    });
   }, []);
 
   const closePanel = useCallback(() => {
+    panelOpenRef.current = false;
     setPanelOpen(false);
     // Clear result state so reopening the panel (Ctrl+H → Esc → Ctrl+H)
     // does not surface a stale result set pinned to potentially edited
