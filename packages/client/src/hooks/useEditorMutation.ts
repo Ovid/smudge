@@ -239,6 +239,27 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             // is untouched by the mutation so leaving it writable is
             // correct.
             if (!directive.reloadActiveChapter) {
+              // I5 (review 2026-04-21): if the now-active chapter was ALSO
+              // in clearCacheFor (typical when a chapter switch during the
+              // mutation landed on a different affected chapter), returning
+              // ok:true leaves the user with a writable editor whose
+              // displayed content may be pre-mutation — the cache was
+              // cleared, but the on-screen draft is whatever
+              // handleSelectChapter's GET loaded, which could have raced the
+              // server-side commit. The very next keystroke PATCHes stale
+              // content over the server-committed mutation. Escalate to
+              // stage:"reload" so callers raise the persistent lock banner
+              // instead. Readers at a chapter OUTSIDE clearCacheFor are
+              // unaffected and the ok:true branch still applies.
+              const currentId = projectEditorRef.current.getActiveChapter()?.id;
+              if (currentId && directive.clearCacheFor.includes(currentId)) {
+                reloadFailed = true;
+                return {
+                  ok: false,
+                  stage: "reload",
+                  data: directive.data,
+                };
+              }
               return { ok: true, data: directive.data };
             }
             reloadFailed = true;

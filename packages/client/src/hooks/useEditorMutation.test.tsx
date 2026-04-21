@@ -898,6 +898,54 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
       warnSpy.mockRestore();
     }
   });
+
+  it("escalates re-lock throw to stage:'reload' when active chapter is in clearCacheFor (I5, review 2026-04-21)", async () => {
+    // I1 review (above) relaxed the re-lock bail to ok:true when the
+    // directive's reloadActiveChapter was false — on the assumption the
+    // new editor is on an unrelated chapter. But if the user switched
+    // between AFFECTED chapters mid-mutate, the new editor IS on a chapter
+    // in clearCacheFor: its cache was just wiped, and whatever
+    // handleSelectChapter's GET loaded may be pre-mutation content. The
+    // next keystroke would PATCH stale content over the server commit.
+    // Escalate to stage:"reload" so callers raise the persistent lock.
+    const { projectEditor } = buildHandles();
+    const editorRef: MutableRefObject<EditorHandle | null> = { current: null };
+    projectEditor.getActiveChapter = vi.fn(() => chapterWithId("ch-1"));
+
+    const throwingEditor: EditorHandle = {
+      flushSave: vi.fn(async () => true),
+      editor: null,
+      insertImage: vi.fn(),
+      markClean: vi.fn(),
+      setEditable: vi.fn(() => {
+        throw new Error("mid-remount throw");
+      }),
+    };
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+
+      const res = await result.current.run(async () => {
+        editorRef.current = throwingEditor;
+        return {
+          clearCacheFor: ["ch-1"],
+          reloadActiveChapter: false,
+          data: { replaced_count: 1 } as const,
+        };
+      });
+
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.stage).toBe("reload");
+        expect(res.data).toEqual({ replaced_count: 1 });
+      }
+      // Cache clear still runs — same invariant as the ok:true branch.
+      expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["ch-1"]);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
 });
 
 describe("useEditorMutation — expected chapter id (I2)", () => {
