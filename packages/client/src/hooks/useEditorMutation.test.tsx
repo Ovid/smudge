@@ -88,7 +88,10 @@ describe("useEditorMutation — happy path", () => {
     });
 
     expect(res).toEqual({ ok: true, data: undefined });
+    // Entry-side cancelPendingSaves (S2) runs before setEditable so a
+    // throw from the sync lock cannot strand a backoff save alive.
     expect(calls).toEqual([
+      "cancelPendingSaves",
       "setEditable(false)",
       "flushSave",
       "cancelPendingSaves",
@@ -193,7 +196,11 @@ describe("useEditorMutation — flush failure", () => {
     expect(mutate).not.toHaveBeenCalled();
     expect(vi.mocked(clearAllCachedContent)).not.toHaveBeenCalled();
     expect(projectEditor.reloadActiveChapter).not.toHaveBeenCalled();
-    expect(projectEditor.cancelPendingSaves).not.toHaveBeenCalled();
+    // S2 (review 2026-04-21): cancelPendingSaves runs at entry before
+    // setEditable so a mid-remount throw cannot strand a backoff save
+    // alive; the second call in the settle phase is skipped when
+    // flushSave resolves false.
+    expect(projectEditor.cancelPendingSaves).toHaveBeenCalledTimes(1);
     expect(editorRef.current!.markClean).not.toHaveBeenCalled();
     expect(editorRef.current!.setEditable).toHaveBeenLastCalledWith(true);
   });
@@ -943,6 +950,55 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
       }
       // Cache clear still runs — same invariant as the ok:true branch.
       expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["ch-1"]);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("cancelPendingSaves even when entry setEditable(false) throws (S2)", async () => {
+    // If the synchronous entry setEditable(false) throws on a TipTap
+    // mid-remount, the hook currently returns stage:"flush" before
+    // cancelPendingSaves runs further down. Any pre-existing save in
+    // backoff is still alive and can commit pre-mutation content
+    // seconds later while the caller banner says the mutation failed.
+    // cancelPendingSaves is a ref+setState touch (cannot itself
+    // throw) so it's safe to run before the first setEditable.
+    const { projectEditor } = buildHandles();
+    const cancelSpy = vi.fn();
+    projectEditor.cancelPendingSaves = cancelSpy;
+
+    const throwingEditor: EditorHandle = {
+      flushSave: vi.fn(async () => true),
+      editor: null,
+      insertImage: vi.fn(),
+      markClean: vi.fn(),
+      setEditable: vi.fn(() => {
+        throw new Error("mid-remount throw");
+      }),
+    };
+    const editorRef: MutableRefObject<EditorHandle | null> = { current: throwingEditor };
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+
+      const res = await result.current.run(async () => ({
+        clearCacheFor: [],
+        reloadActiveChapter: false,
+        data: undefined,
+      }));
+
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.stage).toBe("flush");
+      // cancelPendingSaves must have run despite the entry setEditable
+      // throw — otherwise a save in backoff still commits post-throw.
+      expect(cancelSpy).toHaveBeenCalled();
+      // The finally also tried to re-enable the still-throwing editor;
+      // that swallowed throw emits a warn — assert and suppress.
+      expect(warnSpy).toHaveBeenCalledWith(
+        "useEditorMutation: failed to re-enable editor",
+        expect.any(Error),
+      );
     } finally {
       warnSpy.mockRestore();
     }

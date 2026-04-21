@@ -129,6 +129,23 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
       // rest of the session.
       try {
         inFlightRef.current = true;
+        // S2 (review 2026-04-21): cancelPendingSaves BEFORE the first
+        // setEditable. Any pre-existing save in backoff from prior
+        // keystrokes must be aborted before we commit to the mutation
+        // — if the synchronous entry setEditable(false) throws on a
+        // TipTap mid-remount and returns stage:"flush" below, the
+        // cancelPendingSaves further down (line ~168) never runs and
+        // the backoff save fires seconds later, committing pre-mutation
+        // content while the caller banner already says the mutation
+        // failed. cancelPendingSaves is a ref+setState touch, idempotent
+        // and cannot throw, so running it first is safe. Guard it
+        // anyway so a future refactor that introduces a throw cannot
+        // short-circuit the locking sequence.
+        try {
+          projectEditorRef.current.cancelPendingSaves();
+        } catch (error) {
+          return { ok: false, stage: "flush", error };
+        }
         // Wrap the synchronous setEditable(false) in its own try/catch so a
         // TipTap mid-remount throw surfaces as a typed stage:"flush" failure
         // rather than rejecting the returned Promise (S4). All call sites
@@ -164,6 +181,11 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         // cleanup except the finally). Attribute to "flush" because both
         // operations are part of the pre-mutate "settle pending writes"
         // phase, conceptually adjacent to flushSave.
+        //
+        // cancelPendingSaves repeats here (also called at the top under
+        // S2) because flushSave itself creates a new save attempt; this
+        // second call ensures no retries are scheduled between the flush
+        // resolving and the mutate firing.
         try {
           projectEditorRef.current.cancelPendingSaves();
           editor?.markClean();
