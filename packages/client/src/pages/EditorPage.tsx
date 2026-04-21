@@ -608,6 +608,7 @@ export function EditorPage() {
       replacedCount,
       reloadFailed,
       lockMessage,
+      targetChapterId,
     }: {
       replacedCount: number | null;
       reloadFailed: boolean;
@@ -615,6 +616,14 @@ export function EditorPage() {
       // path — C1). Defaults to replaceSucceededReloadFailed when reloadFailed
       // is true and no override is provided.
       lockMessage?: string;
+      // I1: chapter id the replace targeted (for chapter-scope and replace-one)
+      // OR the active chapter at dispatch (for project-scope). When reloadFailed
+      // and the currently-active chapter has drifted away from this target,
+      // prefer a dismissible action error over a persistent lock banner pinned
+      // to an untouched chapter. Mirrors handleRestoreSnapshot's
+      // possibly_committed stale-chapter-switch branch. Omit to preserve legacy
+      // unconditional-lock behavior (e.g. paths where no target can be inferred).
+      targetChapterId?: string;
     }) => {
       // I6 (review 2026-04-21): read the LIVE slug from the ref instead of
       // the closure-captured value. A project rename that lands mid-replace
@@ -628,7 +637,15 @@ export function EditorPage() {
       // search request can take hundreds of milliseconds; during that window
       // the editor is already setEditable(false) but without a banner, the
       // user sees an unresponsive editor with no explanation.
-      if (reloadFailed) {
+      //
+      // I1: If the active chapter has drifted from the replace target, the
+      // lock banner would pin to a chapter the mutation never touched — and
+      // the [activeChapter?.id] effect would silently dismiss it on the next
+      // chapter switch anyway. Fall through to the dismissible action-error
+      // branch below in that case.
+      const currentId = targetChapterId !== undefined ? getActiveChapter()?.id : undefined;
+      const stale = targetChapterId !== undefined && currentId !== targetChapterId;
+      if (reloadFailed && !stale) {
         setEditorLockedMessage(lockMessage ?? STRINGS.findReplace.replaceSucceededReloadFailed);
         // The lock banner is UI-only — it does not itself make the editor
         // read-only. In the stage:"reload" path the hook kept the editor
@@ -640,6 +657,13 @@ export function EditorPage() {
         // safeSetEditable (I2) so a TipTap mid-remount throw does not
         // skip the awaited search refresh below.
         safeSetEditable(editorRef, false);
+      } else if (reloadFailed && stale) {
+        // I1: the target chapter is no longer active. A persistent lock
+        // banner here would be misattributed — the user is looking at a
+        // different chapter that the replace did not touch. Surface the
+        // same copy as a dismissible action error so the signal reaches the
+        // user without disabling an unrelated chapter's editor.
+        setActionError(lockMessage ?? STRINGS.findReplace.replaceSucceededReloadFailed);
       }
       // findReplace.search catches network/5xx/4xx internally and resolves
       // void — see useFindReplaceState's search(). No external try/catch
@@ -657,7 +681,7 @@ export function EditorPage() {
         setActionInfo(STRINGS.findReplace.replaceSuccess(replacedCount));
       }
     },
-    [findReplace, snapshotPanelRef, refreshSnapshotCount],
+    [findReplace, snapshotPanelRef, refreshSnapshotCount, getActiveChapter, setActionError],
   );
 
   const executeReplace = useCallback(
@@ -686,6 +710,14 @@ export function EditorPage() {
         return;
       }
       actionBusyRef.current = true;
+      // I1: capture target chapter id at dispatch. For chapter-scope, the
+      // explicit scope chapter; for project-scope, the active chapter at
+      // click time (best-effort — project-scope can affect many chapters,
+      // but the user's mental model pins the lock banner to whatever they
+      // were looking at). finalizeReplaceSuccess uses this to skip the
+      // persistent lock when the user has since switched chapters.
+      const targetChapterId =
+        frozen.scope.type === "chapter" ? frozen.scope.chapter_id : getActiveChapter()?.id;
       try {
         // Clear any stale banners so a prior op's error/success cannot
         // co-display with this op's outcome — including the panel-local
@@ -762,6 +794,7 @@ export function EditorPage() {
           await finalizeReplaceSuccess({
             replacedCount: result.data.replaced_count,
             reloadFailed: true,
+            targetChapterId,
           });
           return;
         }
@@ -824,6 +857,7 @@ export function EditorPage() {
             replacedCount: null,
             reloadFailed: true,
             lockMessage: STRINGS.findReplace.replaceResponseUnreadable,
+            targetChapterId,
           });
           return;
         }
@@ -1011,6 +1045,9 @@ export function EditorPage() {
           await finalizeReplaceSuccess({
             replacedCount: result.data.replaced_count,
             reloadFailed: true,
+            // I1 (this review): replace-one always targets chapterId. If the
+            // user switched chapters mid-flight, route to dismissible error.
+            targetChapterId: chapterId,
           });
           return;
         }
@@ -1034,6 +1071,7 @@ export function EditorPage() {
             replacedCount: null,
             reloadFailed: true,
             lockMessage: STRINGS.findReplace.replaceResponseUnreadable,
+            targetChapterId: chapterId,
           });
           return;
         }
