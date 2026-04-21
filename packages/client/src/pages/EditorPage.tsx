@@ -194,6 +194,7 @@ export function EditorPage() {
     projectEditor: {
       cancelPendingSaves,
       reloadActiveChapter,
+      getActiveChapter,
     },
     // When a prior run left the editor in the reload-failed lock state,
     // the persistent "refresh the page" banner is on screen and the editor
