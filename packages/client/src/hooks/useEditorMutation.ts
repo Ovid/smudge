@@ -303,7 +303,17 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             // banner.
             const currentId = projectEditorRef.current.getActiveChapter()?.id;
             if (currentId && directive.clearCacheFor.includes(currentId)) {
-              const secondOutcome = await projectEditorRef.current.reloadActiveChapter(() => {});
+              // I3 (review 2026-04-21): pass currentId as expectedChapterId.
+              // Without it, a further chapter switch during this second reload
+              // lets a failed fetch land against a third chapter — the hook
+              // then sets reloadFailed=true and raises a persistent lock
+              // banner on a chapter the mutation never targeted, wiping
+              // unrelated local draft state on refresh. With the guard, a
+              // further switch returns "superseded" (benign) instead.
+              const secondOutcome = await projectEditorRef.current.reloadActiveChapter(
+                () => {},
+                currentId,
+              );
               if (secondOutcome === "failed") {
                 reloadSuperseded = false;
                 reloadFailed = true;

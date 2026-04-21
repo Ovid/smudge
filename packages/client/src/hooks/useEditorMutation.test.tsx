@@ -410,8 +410,11 @@ describe("useEditorMutation — reload superseded (I5)", () => {
 
     expect(res).toEqual({ ok: true, data: undefined });
     expect(reloadMock).toHaveBeenCalledTimes(2);
-    // Second call has no expectedChapterId — hook reloads whatever is current.
-    expect(reloadMock.mock.calls[1]![1]).toBeUndefined();
+    // Second call pins to the now-active chapter id (I3, follow-up review
+    // 2026-04-21): without the guard, a further chapter switch during the
+    // retry's fetch lets a failed reload raise a lock banner on a third
+    // chapter the mutation never targeted.
+    expect(reloadMock.mock.calls[1]![1]).toBe("c2");
   });
 
   it("returns stage:'reload' when the I3 second reload fails", async () => {
