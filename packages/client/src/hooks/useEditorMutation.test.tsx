@@ -1004,6 +1004,54 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
     }
   });
 
+  it("locks an editor that mounts between cache-clear and reload (S5)", async () => {
+    // If editorAfterMutate is null (unmount-during-mutate window),
+    // the hook skipped the re-lock entirely. A new editor that
+    // mounts in the pre-reload cache-clear step starts editable=true
+    // and unmarked — any keystroke in that window races the reload
+    // GET and PATCHes pre-reload content back over the server change.
+    // Re-read the ref right before the reload call so the late-mounted
+    // editor is locked before the GET begins.
+    const { projectEditor } = buildHandles();
+    const editorRef: MutableRefObject<EditorHandle | null> = { current: null };
+
+    const lateMountedEditor: EditorHandle = {
+      flushSave: vi.fn(async () => true),
+      editor: null,
+      insertImage: vi.fn(),
+      markClean: vi.fn(),
+      setEditable: vi.fn(),
+    };
+
+    // Simulate the TipTap mount happening during the cache-clear step,
+    // after the post-mutate re-read already observed null.
+    vi.mocked(clearAllCachedContent).mockImplementation(() => {
+      editorRef.current = lateMountedEditor;
+    });
+
+    projectEditor.reloadActiveChapter = vi.fn(async () => {
+      // The pre-reload re-read must have locked the late-mounted
+      // editor BEFORE this reload call fires.
+      expect(lateMountedEditor.setEditable).toHaveBeenCalledWith(false);
+      return "reloaded" as const;
+    });
+
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+
+    await result.current.run(async () => {
+      // editorRef is still null at mutate return; the editor mounts
+      // during clearAllCachedContent (simulated above).
+      return {
+        clearCacheFor: ["c1"],
+        reloadActiveChapter: true,
+        reloadChapterId: "c1",
+        data: undefined,
+      };
+    });
+
+    expect(lateMountedEditor.setEditable).toHaveBeenCalledWith(false);
+  });
+
   it("reloadActiveChapter throw surfaces as stage:reload (S4)", async () => {
     // Today reloadActiveChapter catches internally and returns "failed",
     // but a future refactor that escapes a throw past ReloadOutcome

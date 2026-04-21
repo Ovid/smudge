@@ -313,6 +313,55 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         if (directive.clearCacheFor.length > 0) {
           clearAllCachedContent(directive.clearCacheFor);
         }
+        // S5 (review 2026-04-21): re-read the editor ref one more time
+        // before the reload. The post-mutate re-read above can miss
+        // the unmount-between-mutate-and-reload window — entry editor
+        // unmounts during mutate, editorAfterMutate is null so the
+        // re-lock is skipped, and a fresh TipTap mounts during the
+        // cache-clear step with editable=true. Without this second
+        // re-read, a keystroke lands in the reload-GET window and
+        // PATCHes pre-reload content back over the server change.
+        // Only fires when editorAfterMutate was null (otherwise the
+        // above block has already done the lock).
+        if (editorAfterMutate === null) {
+          const lateMounted = args.editorRef.current;
+          if (lateMounted !== null) {
+            try {
+              lateMounted.setEditable(false);
+              lateMounted.markClean();
+              projectEditorRef.current.cancelPendingSaves();
+            } catch (err) {
+              // Match the main re-lock-fail catch's discipline: server
+              // already committed, so on failure promote to stage:
+              // "reload" (or ok:true when directive said no reload),
+              // exactly as the post-mutate re-lock catch does above.
+              // Inlined here because we've already passed the cache-
+              // clear step — duplicating is simpler than threading
+              // the state back through the main catch.
+              console.warn(
+                "useEditorMutation: failed to lock late-mounted editor (S5)",
+                err,
+              );
+              try {
+                projectEditorRef.current.cancelPendingSaves();
+              } catch (cancelErr) {
+                console.warn(
+                  "useEditorMutation: cancelPendingSaves threw during S5 late-lock catch",
+                  cancelErr,
+                );
+              }
+              if (!directive.reloadActiveChapter) {
+                return { ok: true, data: directive.data };
+              }
+              reloadFailed = true;
+              return {
+                ok: false,
+                stage: "reload",
+                data: directive.data,
+              };
+            }
+          }
+        }
         if (directive.reloadActiveChapter) {
           // Passing a no-op onError is intentional: reloadActiveChapter only
           // emits STRINGS.error.loadChapterFailed, which would never reach
