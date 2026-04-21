@@ -197,13 +197,22 @@ export function useFindReplaceState(
           // Aborted: no banner, no state changes.
           return;
         }
-        if (err instanceof ApiRequestError && (err.status === 400 || err.status === 404)) {
+        if (
+          err instanceof ApiRequestError &&
+          (err.status === 400 || err.status === 404 || err.status === 413)
+        ) {
           // 400s mean the CURRENT query is invalid; stale results no
           // longer correspond to anything the user typed.
           // 404s mean the project (or scope) has gone away — the prior
           // results are pinned to a slug/chapter that no longer resolves
           // and can't be acted on. Clear so the panel is consistent with
           // the error.
+          // 413 (I4, review 2026-04-21): the query itself exceeded the
+          // server's body-size cap and will keep being rejected until
+          // the user changes the query — not transient. Keeping stale
+          // results alongside the contentTooLarge banner lets Replace
+          // act on matches the server has already said it cannot
+          // process.
           setError(message);
           setResults(null);
           setResultsQuery(null);

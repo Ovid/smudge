@@ -405,6 +405,33 @@ describe("useFindReplaceState", () => {
     expect(result.current.results).toBeNull();
   });
 
+  it("search() clears results on 413 (query exceeds size cap) (I4)", async () => {
+    // 413 is not transient — the query itself exceeded the server's
+    // body-size cap and will keep being rejected until the user
+    // changes the query. Keeping prior results next to the
+    // contentTooLarge banner lets Replace act on stale matches the
+    // server has already said it cannot process.
+    const priorResults = { total_count: 1, chapters: [{ id: "c1", title: "Ch 1", matches: [] }] };
+    mockFind.mockResolvedValueOnce(priorResults);
+
+    const { result } = renderHook(() => useFindReplaceState("my-project"));
+    act(() => {
+      result.current.setQuery("test");
+    });
+    await act(async () => {
+      await result.current.search("my-project");
+    });
+    expect(result.current.results).toEqual(priorResults);
+
+    const { ApiRequestError } = await import("../api/client");
+    mockFind.mockRejectedValueOnce(new ApiRequestError("too large", 413));
+    await act(async () => {
+      await result.current.search("my-project");
+    });
+    expect(result.current.error).toBe(STRINGS.findReplace.contentTooLarge);
+    expect(result.current.results).toBeNull();
+  });
+
   it("search() DOES clear results on 400 (query itself is invalid) (S8)", async () => {
     const priorResults = { total_count: 1, chapters: [{ id: "c1", title: "Ch 1", matches: [] }] };
     mockFind.mockResolvedValueOnce(priorResults);
