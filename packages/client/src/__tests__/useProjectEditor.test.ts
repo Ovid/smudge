@@ -1601,8 +1601,8 @@ describe("useProjectEditor", () => {
       .mockReset()
       .mockImplementationOnce(
         () =>
-          new Promise<void>((resolve) => {
-            resolveReorder = () => resolve();
+          new Promise<{ message: string }>((resolve) => {
+            resolveReorder = () => resolve({ message: "ok" });
           }),
       );
 

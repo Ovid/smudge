@@ -936,9 +936,10 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
       });
 
       expect(res.ok).toBe(false);
-      if (!res.ok) {
-        expect(res.stage).toBe("reload");
+      if (!res.ok && res.stage === "reload") {
         expect(res.data).toEqual({ replaced_count: 1 });
+      } else {
+        throw new Error(`expected stage:'reload', got ${JSON.stringify(res)}`);
       }
       // Cache clear still runs — same invariant as the ok:true branch.
       expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["ch-1"]);
