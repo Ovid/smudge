@@ -34,7 +34,10 @@ export type MutationResult<T = void> =
 
 export type UseEditorMutationArgs = {
   editorRef: MutableRefObject<EditorHandle | null>;
-  projectEditor: Pick<UseProjectEditorReturn, "cancelPendingSaves" | "reloadActiveChapter">;
+  projectEditor: Pick<
+    UseProjectEditorReturn,
+    "cancelPendingSaves" | "reloadActiveChapter" | "getActiveChapter"
+  >;
   // Optional predicate the hook consults before re-enabling the editor in
   // its finally block. When a prior run ended in stage:"reload" the caller
   // (EditorPage) shows a persistent "refresh the page" banner — the editor
@@ -284,6 +287,46 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             reloadSucceeded = true;
           } else if (outcome === "superseded") {
             reloadSuperseded = true;
+            // I3 (review 2026-04-21): supersession means the user switched
+            // to a different chapter than reloadChapterId while the
+            // mutation was in flight. If the new active chapter was ALSO
+            // in this mutation's clearCacheFor (typical case: project-
+            // scope replace affecting multiple chapters), handleSelectChapter's
+            // GET could have raced the mutation's POST and landed pre-
+            // mutation content on screen. With reloadSuperseded set, the
+            // finally re-enables the editor, so the very next keystroke
+            // would PATCH stale content back over the server-committed
+            // change. Re-run the reload without an expectedChapterId so it
+            // targets whatever is currently active — a fresh GET pulls the
+            // post-mutation content. On failure, fall through to the
+            // stage:"reload" branch so callers raise the persistent lock
+            // banner.
+            const currentId = projectEditorRef.current.getActiveChapter()?.id;
+            if (currentId && directive.clearCacheFor.includes(currentId)) {
+              const secondOutcome = await projectEditorRef.current.reloadActiveChapter(
+                () => {},
+              );
+              if (secondOutcome === "failed") {
+                reloadSuperseded = false;
+                reloadFailed = true;
+                return {
+                  ok: false,
+                  stage: "reload",
+                  data: directive.data,
+                };
+              }
+              if (secondOutcome === "reloaded") {
+                // Fresh content is on screen; prefer the "success" unlock
+                // semantics over the superseded "unrelated chapter" semantics.
+                reloadSucceeded = true;
+              }
+              // "superseded" second time: another chapter switch happened,
+              // and the newly-active chapter wasn't necessarily affected.
+              // Fall through — reloadSuperseded remains true. If the user
+              // landed on yet another affected chapter, they'll hit the
+              // same race on the NEXT keystroke, which is as rare as this
+              // branch and is the same cost as the original I3 window.
+            }
           }
         }
         return { ok: true, data: directive.data };

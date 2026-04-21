@@ -36,6 +36,7 @@ function buildHandles() {
       onError?: (message: string) => void,
       expectedChapterId?: string,
     ) => Promise<ReloadOutcome>;
+    getActiveChapter: () => { id: string } | null;
   } = {
     cancelPendingSaves: vi.fn(() => {
       calls.push("cancelPendingSaves");
@@ -44,6 +45,7 @@ function buildHandles() {
       calls.push("reloadActiveChapter");
       return "reloaded" as const;
     }),
+    getActiveChapter: vi.fn(() => null),
   };
   return { calls, editor, editorRef, projectEditor };
 }
@@ -358,6 +360,93 @@ describe("useEditorMutation — reload superseded (I5)", () => {
 
     // ok:true, stage is NOT "reload".
     expect(res).toEqual({ ok: true, data: { replaced: 3 } });
+  });
+
+  it("re-reloads the now-active chapter when it was in clearCacheFor (I3, review 2026-04-21)", async () => {
+    // Project-scope replace affected [c1, c2]. User switched from c1 (the
+    // reloadChapterId) to c2 mid-flight. Without the fix, the hook cleared
+    // c2's cache, re-locked then re-unlocked the freshly-mounted c2 editor,
+    // and left whatever handleSelectChapter's (possibly pre-replace) GET
+    // had loaded on screen — the next keystroke would PATCH stale content
+    // over the server-committed replace. With the fix, the hook detects
+    // that the new active chapter is in clearCacheFor and fires a second
+    // reload without an expectedChapterId so a fresh GET pulls post-
+    // mutation content.
+    const { editorRef, projectEditor } = buildHandles();
+    const reloadMock = vi
+      .fn<
+        (
+          onError?: (message: string) => void,
+          expectedChapterId?: string,
+        ) => Promise<ReloadOutcome>
+      >()
+      .mockResolvedValueOnce("superseded")
+      .mockResolvedValueOnce("reloaded");
+    projectEditor.reloadActiveChapter = reloadMock;
+    projectEditor.getActiveChapter = vi.fn(() => ({ id: "c2" }) as { id: string });
+
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+    const res = await result.current.run(async () => ({
+      clearCacheFor: ["c1", "c2"],
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
+      data: undefined,
+    }));
+
+    expect(res).toEqual({ ok: true, data: undefined });
+    expect(reloadMock).toHaveBeenCalledTimes(2);
+    // Second call has no expectedChapterId — hook reloads whatever is current.
+    expect(reloadMock.mock.calls[1]![1]).toBeUndefined();
+  });
+
+  it("returns stage:'reload' when the I3 second reload fails", async () => {
+    // If the second reload (targeting the now-active affected chapter) fails,
+    // the editor must remain locked — otherwise the user could type over
+    // server-committed content with the stale pre-mutation GET still on screen.
+    const { editorRef, projectEditor } = buildHandles();
+    projectEditor.reloadActiveChapter = vi
+      .fn<
+        (
+          onError?: (message: string) => void,
+          expectedChapterId?: string,
+        ) => Promise<ReloadOutcome>
+      >()
+      .mockResolvedValueOnce("superseded")
+      .mockResolvedValueOnce("failed");
+    projectEditor.getActiveChapter = vi.fn(() => ({ id: "c2" }) as { id: string });
+
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+    const res = await result.current.run<{ n: number }>(async () => ({
+      clearCacheFor: ["c1", "c2"],
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
+      data: { n: 5 },
+    }));
+
+    expect(res).toEqual({ ok: false, stage: "reload", data: { n: 5 } });
+  });
+
+  it("does NOT re-reload when the now-active chapter was not in clearCacheFor (I3)", async () => {
+    // If the user switched to an unrelated chapter (not in the mutation's
+    // clearCacheFor), its content wasn't touched by the server-side
+    // mutation and its editor state is independent. A second reload would
+    // be a gratuitous GET and could clobber a draft in progress.
+    const { editorRef, projectEditor } = buildHandles();
+    const reloadMock = vi.fn(async () => "superseded" as const);
+    projectEditor.reloadActiveChapter = reloadMock;
+    projectEditor.getActiveChapter = vi.fn(() => ({ id: "c3" }) as { id: string });
+
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+    const res = await result.current.run(async () => ({
+      clearCacheFor: ["c1", "c2"],
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
+      data: undefined,
+    }));
+
+    expect(res).toEqual({ ok: true, data: undefined });
+    // Only the first reload — no second GET.
+    expect(reloadMock).toHaveBeenCalledTimes(1);
   });
 
   it("bypasses a pre-existing caller lock when reload was superseded (I1, review 2026-04-20)", async () => {
