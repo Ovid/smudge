@@ -33,7 +33,7 @@ import { useTrashManager } from "../hooks/useTrashManager";
 import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcuts";
 import { api, ApiRequestError } from "../api/client";
 import { mapReplaceErrorToMessage } from "../utils/findReplaceErrors";
-import { clearCachedContent } from "../hooks/useContentCache";
+import { clearCachedContent, clearAllCachedContent } from "../hooks/useContentCache";
 import { safeSetEditable } from "../utils/editorSafeOps";
 import { Logo } from "../components/Logo";
 import { generateHTML } from "@tiptap/html";
@@ -727,11 +727,28 @@ export function EditorPage() {
           // other chapter's cache is preserved; the next navigation
           // reloads server state against the cached draft exactly as the
           // non-BAD_JSON flow does.
+          //
+          // Edge case — project scope with no active chapter: if the
+          // user has no chapter open (e.g. Trash/Dashboard view at click
+          // time), the "clear the active chapter" fallback is a no-op
+          // and localStorage drafts for every chapter are left intact.
+          // After the user follows the lock banner's refresh prompt and
+          // opens a chapter the replace may have touched, the cached
+          // draft would re-hydrate and the next auto-save would revert
+          // the server-committed replace. Since affected_chapter_ids is
+          // unreadable (that's why we're here), clear every project
+          // chapter's cache as the least-bad choice: any draft present
+          // in this narrow window pre-dates the current session's
+          // editing (no chapter was open to be typed into), so the
+          // data-loss risk that motivated the selective-clear above does
+          // not apply here.
           const activeChapterId = getActiveChapter()?.id;
           if (frozen.scope.type === "chapter") {
             clearCachedContent(frozen.scope.chapter_id);
           } else if (activeChapterId) {
             clearCachedContent(activeChapterId);
+          } else if (project) {
+            clearAllCachedContent(project.chapters.map((c) => c.id));
           }
           await finalizeReplaceSuccess({
             replacedCount: null,
