@@ -79,12 +79,12 @@ export function SnapshotBanner({
             state, but the local hint removes any ambiguity at the point
             of action.
           */}
-          {!canRestore && (
+          {(!canRestore || !canBack) && (
             <span
-              id="snapshot-restore-disabled-reason"
+              id="snapshot-actions-disabled-reason"
               className="text-xs text-amber-800 font-sans"
             >
-              {S.restoreUnavailableWhileLocked}
+              {S.actionsUnavailableWhileLocked}
             </span>
           )}
           <button
@@ -97,7 +97,7 @@ export function SnapshotBanner({
               setConfirmOpen(true);
             }}
             aria-disabled={!canRestore}
-            aria-describedby={canRestore ? undefined : "snapshot-restore-disabled-reason"}
+            aria-describedby={canRestore ? undefined : "snapshot-actions-disabled-reason"}
             className={`text-sm font-medium text-accent hover:text-accent-hover rounded px-3 py-1 border border-accent/40 hover:bg-accent/10 transition-colors font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring${
               !canRestore
                 ? " opacity-50 cursor-not-allowed hover:bg-transparent hover:text-accent"
@@ -115,7 +115,7 @@ export function SnapshotBanner({
               onBack();
             }}
             aria-disabled={!canBack}
-            aria-describedby={canBack ? undefined : "snapshot-restore-disabled-reason"}
+            aria-describedby={canBack ? undefined : "snapshot-actions-disabled-reason"}
             className={`text-sm text-text-secondary hover:text-text-primary transition-colors font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring rounded px-3 py-1${
               !canBack
                 ? " opacity-50 cursor-not-allowed hover:bg-transparent hover:text-text-secondary"

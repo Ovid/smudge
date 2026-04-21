@@ -287,8 +287,8 @@ export const STRINGS = {
     deleteConfirmButton: "Delete",
     deleteCancel: "Cancel",
     restoreButton: "Restore",
-    restoreUnavailableWhileLocked:
-      "Restore unavailable — the editor is locked. Refresh the page before restoring again.",
+    actionsUnavailableWhileLocked:
+      "Unavailable — the editor is locked. Refresh the page before continuing.",
     restoreConfirm:
       "Replace current chapter content with this snapshot? A snapshot of your current content will be saved automatically.",
     restoreFailed: "Unable to restore snapshot. Try again.",

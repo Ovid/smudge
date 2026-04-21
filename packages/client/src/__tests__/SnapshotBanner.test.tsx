@@ -114,10 +114,10 @@ describe("SnapshotBanner", () => {
     // via the title attribute — browsers suppress tooltips on disabled
     // buttons and most screen readers do not announce title text.
     expect(restoreBtn).not.toHaveAttribute("title");
-    expect(restoreBtn).toHaveAttribute("aria-describedby", "snapshot-restore-disabled-reason");
-    const reason = document.getElementById("snapshot-restore-disabled-reason");
+    expect(restoreBtn).toHaveAttribute("aria-describedby", "snapshot-actions-disabled-reason");
+    const reason = document.getElementById("snapshot-actions-disabled-reason");
     expect(reason).not.toBeNull();
-    expect(reason?.textContent).toBe(S.restoreUnavailableWhileLocked);
+    expect(reason?.textContent).toBe(S.actionsUnavailableWhileLocked);
   });
 
   it("does not open the confirmation dialog when Restore is clicked while aria-disabled (C1)", async () => {
@@ -137,7 +137,7 @@ describe("SnapshotBanner", () => {
     // Native `disabled` removes a button from the tab order on most
     // browsers, preventing assistive tech from ever announcing its
     // aria-describedby target. aria-disabled preserves focusability so
-    // the restoreUnavailableWhileLocked hint is actually reachable.
+    // the actionsUnavailableWhileLocked hint is actually reachable.
     render(<SnapshotBanner {...defaultProps} canRestore={false} />);
     const restoreBtn = screen.getByRole("button", { name: S.restoreButton });
     // tabIndex not set to -1 and no `disabled` attr — default tab order.
@@ -156,7 +156,7 @@ describe("SnapshotBanner", () => {
     // No aria-describedby and no hidden reason span when the button is
     // usable — the hint is only meaningful while the action is blocked.
     expect(restoreBtn).not.toHaveAttribute("aria-describedby");
-    expect(document.getElementById("snapshot-restore-disabled-reason")).toBeNull();
+    expect(document.getElementById("snapshot-actions-disabled-reason")).toBeNull();
   });
 
   it("marks Back button aria-disabled when canBack is false (S3)", () => {
@@ -183,5 +183,18 @@ describe("SnapshotBanner", () => {
     render(<SnapshotBanner {...defaultProps} />);
     const backBtn = screen.getByRole("button", { name: S.backToEditing });
     expect(backBtn).not.toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("renders the shared hint when canBack is false even if canRestore is true (GH review)", () => {
+    // Guard against a dangling aria-describedby: the Back button's
+    // aria-describedby pointed at the hint's id, but the hint was only
+    // rendered when !canRestore. If canBack flipped independently, the
+    // Back button's describedby would point at a missing element.
+    render(<SnapshotBanner {...defaultProps} canRestore={true} canBack={false} />);
+    const backBtn = screen.getByRole("button", { name: S.backToEditing });
+    expect(backBtn).toHaveAttribute("aria-describedby", "snapshot-actions-disabled-reason");
+    const reason = document.getElementById("snapshot-actions-disabled-reason");
+    expect(reason).not.toBeNull();
+    expect(reason?.textContent).toBe(S.actionsUnavailableWhileLocked);
   });
 });
