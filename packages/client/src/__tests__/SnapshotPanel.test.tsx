@@ -343,6 +343,102 @@ describe("SnapshotPanel", () => {
       });
     });
 
+    it("surfaces network view-result with the network-specific copy (S4)", async () => {
+      const user = userEvent.setup();
+      const snap = makeSnapshot({ id: "snap-79", label: "NetFail" });
+      vi.mocked(api.snapshots.list).mockResolvedValue([snap]);
+      const onView = vi.fn().mockResolvedValue({ ok: false, reason: "network" });
+      render(<SnapshotPanel {...defaultProps} onView={onView} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("NetFail")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.view));
+
+      await waitFor(() => {
+        expect(screen.getByText(S.viewFailedNetwork)).toBeInTheDocument();
+      });
+    });
+
+    it("surfaces corrupt_snapshot view-result with the corrupt copy", async () => {
+      const user = userEvent.setup();
+      const snap = makeSnapshot({ id: "snap-80", label: "Bad" });
+      vi.mocked(api.snapshots.list).mockResolvedValue([snap]);
+      const onView = vi.fn().mockResolvedValue({ ok: false, reason: "corrupt_snapshot" });
+      render(<SnapshotPanel {...defaultProps} onView={onView} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Bad")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.view));
+
+      await waitFor(() => {
+        expect(screen.getByText(S.viewFailedCorrupt)).toBeInTheDocument();
+      });
+    });
+
+    it("surfaces not_found view-result with the not-found copy and refreshes the list", async () => {
+      const user = userEvent.setup();
+      const snap = makeSnapshot({ id: "snap-81", label: "Gone" });
+      vi.mocked(api.snapshots.list).mockResolvedValue([snap]);
+      const onView = vi.fn().mockResolvedValue({ ok: false, reason: "not_found" });
+      render(<SnapshotPanel {...defaultProps} onView={onView} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Gone")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.view));
+
+      await waitFor(() => {
+        expect(screen.getByText(S.viewFailedNotFound)).toBeInTheDocument();
+      });
+    });
+
+    it("suppresses viewError when onView returns locked reason (S1)", async () => {
+      const user = userEvent.setup();
+      const snap = makeSnapshot({ id: "snap-82", label: "Locked" });
+      vi.mocked(api.snapshots.list).mockResolvedValue([snap]);
+      const onView = vi.fn().mockResolvedValue({ ok: false, reason: "locked" });
+      render(<SnapshotPanel {...defaultProps} onView={onView} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Locked")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.view));
+
+      // Wait a tick for any state updates to flush.
+      await new Promise((r) => setTimeout(r, 0));
+
+      // Panel-local view errors MUST stay suppressed — the lock banner
+      // elsewhere is the sole user-visible signal.
+      expect(screen.queryByText(S.viewFailed)).not.toBeInTheDocument();
+      expect(screen.queryByText(S.viewFailedSaveFirst)).not.toBeInTheDocument();
+      expect(screen.queryByText(S.viewFailedNetwork)).not.toBeInTheDocument();
+    });
+
+    it("surfaces viewFailed for unexpected reason values", async () => {
+      const user = userEvent.setup();
+      const snap = makeSnapshot({ id: "snap-83", label: "Odd" });
+      vi.mocked(api.snapshots.list).mockResolvedValue([snap]);
+      // Cover the final fallthrough else.
+      const onView = vi.fn().mockResolvedValue({ ok: false, reason: "unknown" });
+      render(<SnapshotPanel {...defaultProps} onView={onView} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Odd")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.view));
+
+      await waitFor(() => {
+        expect(screen.getByText(S.viewFailed)).toBeInTheDocument();
+      });
+    });
+
     it("clears a stale viewError when the panel reopens for a different chapter (I3)", async () => {
       const user = userEvent.setup();
       const snap = makeSnapshot({ id: "snap-77", label: "Pre-view" });

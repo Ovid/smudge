@@ -125,5 +125,49 @@ describe("useChapterTitleEditing", () => {
       expect(handleRenameChapter).not.toHaveBeenCalled();
       expect(result.current.editingTitle).toBe(false);
     });
+
+    it("exits edit mode silently when Escape was pressed before save", async () => {
+      const chapter = buildChapter();
+      const handleRenameChapter = vi.fn(async () => undefined);
+      const isActionBusy = vi.fn(() => false);
+      const isEditorLocked = vi.fn(() => false);
+
+      const { result } = renderHook(() =>
+        useChapterTitleEditing(chapter, handleRenameChapter, isActionBusy, isEditorLocked),
+      );
+
+      act(() => result.current.startEditingTitle());
+      act(() => result.current.setTitleDraft("Edited"));
+      // cancelEditingTitle sets escapePressedRef — the next save must bail
+      // without invoking handleRenameChapter.
+      act(() => result.current.cancelEditingTitle());
+      await act(async () => {
+        await result.current.saveTitle();
+      });
+
+      expect(handleRenameChapter).not.toHaveBeenCalled();
+      expect(result.current.editingTitle).toBe(false);
+    });
+
+    it("cancels edit mode when active chapter changes mid-edit", async () => {
+      const chapter1 = buildChapter({ id: "c1", title: "One" });
+      const chapter2 = buildChapter({ id: "c2", title: "Two" });
+      const handleRenameChapter = vi.fn(async () => undefined);
+      const isActionBusy = vi.fn(() => false);
+      const isEditorLocked = vi.fn(() => false);
+
+      const { result, rerender } = renderHook(
+        ({ ch }: { ch: typeof chapter1 }) =>
+          useChapterTitleEditing(ch, handleRenameChapter, isActionBusy, isEditorLocked),
+        { initialProps: { ch: chapter1 } },
+      );
+
+      act(() => result.current.startEditingTitle());
+      expect(result.current.editingTitle).toBe(true);
+
+      // Simulate navigating to a different chapter
+      rerender({ ch: chapter2 });
+      expect(result.current.editingTitle).toBe(false);
+    });
   });
 });
