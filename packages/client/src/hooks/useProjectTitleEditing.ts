@@ -7,6 +7,16 @@ export function useProjectTitleEditing(
   handleUpdateProjectTitle: (title: string) => Promise<string | undefined>,
   setProjectTitleError: (error: string | null) => void,
   navigate: (path: string, options?: { replace: boolean }) => void,
+  // I4: Every other editor-affecting mutation entry point (create/delete/
+  // rename chapter, status change, reorder, settings, replace, restore)
+  // gates on the shared action-busy latch. Renaming the project rewrites
+  // projectSlugRef.current synchronously, while in-flight replace callbacks
+  // still hold the old slug closure — the POST hits the old URL while
+  // finalizeReplaceSuccess's search refresh hits the new one, leaving
+  // results inconsistent with the committed replace. Injecting the busy
+  // predicate here keeps the gate co-located with the save call instead
+  // of wrapping every EditorPage call site.
+  isActionBusy?: () => boolean,
 ) {
   const [editingProjectTitle, setEditingProjectTitle] = useState(false);
   const [projectTitleDraft, setProjectTitleDraft] = useState("");
@@ -45,6 +55,12 @@ export function useProjectTitleEditing(
     }
     if (!project || !projectTitleDraft.trim()) {
       setEditingProjectTitle(false);
+      return;
+    }
+    // I4: Refuse mid-mutation. Keep edit mode open (do not exit on blur)
+    // so the user's typed draft is preserved for retry once the mutation
+    // settles — closing here would discard the draft silently.
+    if (isActionBusy?.()) {
       return;
     }
     isSavingProjectTitleRef.current = true;

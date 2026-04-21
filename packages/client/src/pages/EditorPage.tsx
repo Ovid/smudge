@@ -1006,6 +1006,7 @@ export function EditorPage() {
     handleUpdateProjectTitle,
     setProjectTitleError,
     navigate,
+    isActionBusy,
   );
 
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);

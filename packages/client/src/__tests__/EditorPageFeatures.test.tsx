@@ -1371,6 +1371,49 @@ describe("EditorPage find-and-replace confirmation", () => {
     resolveReplace({ replaced_count: 1, affected_chapter_ids: [] });
   });
 
+  it("refuses to save project title mid-mutation (I4-project-title)", async () => {
+    // Renaming the project mid-replace splits slug state:
+    // projectSlugRef.current updates synchronously, while in-flight
+    // executeReplace holds the old slug closure for api.search.replace
+    // and finalizeReplaceSuccess's search refresh reads the new slug.
+    // The result is a replace POST against the old URL + search GET
+    // against the new one. Gate saveProjectTitle on isActionBusy() so
+    // the rename is refused while a mutation is live; edit mode stays
+    // open so the user's typed draft survives for retry.
+    let resolveReplace: (v: {
+      replaced_count: number;
+      affected_chapter_ids: string[];
+    }) => void = () => {};
+    vi.mocked(api.search.replace).mockImplementationOnce(
+      () =>
+        new Promise<{ replaced_count: number; affected_chapter_ids: string[] }>((resolve) => {
+          resolveReplace = resolve;
+        }),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    // Replace is in flight. Try to rename the project.
+    const updateCallsBefore = vi.mocked(api.projects.update).mock.calls.length;
+    const projectHeading = screen.getByRole("heading", { level: 1 });
+    await userEvent.dblClick(projectHeading);
+    const input = screen.getByLabelText("Project title");
+    await userEvent.clear(input);
+    await userEvent.type(input, "Renamed");
+    fireEvent.keyDown(input, { key: "Enter" });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // No PUT fired; edit mode still open so the draft survives.
+    expect(vi.mocked(api.projects.update).mock.calls.length).toBe(updateCallsBefore);
+    expect(screen.getByLabelText("Project title")).toBeInTheDocument();
+
+    resolveReplace({ replaced_count: 1, affected_chapter_ids: [] });
+  });
+
   it("sidebar rename proceeds when no mutation is in-flight (I4 non-busy branch)", async () => {
     // Covers the fall-through path of handleRenameChapterWithError: no
     // mutation in-flight, so the guard does not fire and the underlying
