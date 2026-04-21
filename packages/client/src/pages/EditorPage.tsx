@@ -440,13 +440,26 @@ export function EditorPage() {
           // (and its auto-snapshot) but the response body was unreadable.
           // Treat the same as stage:"reload" — persistent lock banner, no
           // retry prompt, since retrying could double-restore (C2).
-          setEditorLockedMessage(STRINGS.snapshots.restoreResponseUnreadable);
-          // Clear the restored chapter's cached draft (C1). The mutate
-          // callback threw before returning a directive, so the hook's
-          // clearAllCachedContent never ran — without this, a refresh would
-          // re-hydrate the pre-restore draft from localStorage and the next
-          // auto-save would PATCH it back over the server-committed restore.
+          //
+          // I2 (review 2026-04-21): the lock banner and safeSetEditable
+          // are global / editor-ref-scoped, so they pin to the currently-
+          // active editor. If the user switched chapters between restore
+          // dispatch and the possibly_committed response landing, this
+          // branch would lock the chapter they are now looking at — which
+          // the restore never touched. Check the live active chapter
+          // against the original restore target; on mismatch, clear the
+          // target's cache (still correct) but surface a dismissible
+          // action error instead of pinning a banner and disabling a
+          // chapter the user didn't restore.
           clearCachedContent(activeChapter.id);
+          const currentId = getActiveChapter()?.id;
+          if (currentId !== undefined && currentId !== activeChapter.id) {
+            setActionError(STRINGS.snapshots.restoreResponseUnreadable);
+            snapshotPanelRef.current?.refreshSnapshots();
+            refreshSnapshotCount();
+            return;
+          }
+          setEditorLockedMessage(STRINGS.snapshots.restoreResponseUnreadable);
           // Lock-banner state doesn't enforce read-only by itself; the
           // hook's finally already re-enabled the editor after the
           // mutate-stage throw. Re-apply setEditable(false) so auto-save
@@ -501,12 +514,22 @@ export function EditorPage() {
           // server commit status is genuinely ambiguous — treat pessimistically
           // and raise the lock banner rather than a dismissible "try again"
           // that could double-restore if the server already committed (I7).
-          setEditorLockedMessage(STRINGS.snapshots.restoreResponseUnreadable);
-          // Same C1 leak as the possibly_committed branch — the mutate
-          // throw bypasses the hook's cache-clear, so the pre-restore draft
-          // would re-hydrate on refresh and overwrite the server commit.
+          //
+          // I2 (review 2026-04-21): mirror the possibly_committed stale-
+          // chapter-switch check. Lock banner and safeSetEditable are
+          // scoped to the currently-active editor; if the user moved to a
+          // different chapter while the restore was in flight, we would
+          // otherwise pin the persistent banner to a chapter the restore
+          // never touched. Clearing the original target's cache is still
+          // correct in either case.
           clearCachedContent(activeChapter.id);
-          safeSetEditable(editorRef, false);
+          const currentId = getActiveChapter()?.id;
+          if (currentId !== undefined && currentId !== activeChapter.id) {
+            setActionError(STRINGS.snapshots.restoreResponseUnreadable);
+          } else {
+            setEditorLockedMessage(STRINGS.snapshots.restoreResponseUnreadable);
+            safeSetEditable(editorRef, false);
+          }
         }
         // I6: Refresh the snapshot list on every error branch. The
         // not_found branch is the sharpest case — without a refresh, the
@@ -543,6 +566,7 @@ export function EditorPage() {
     isActionBusy,
     exitSnapshotView,
     refreshSnapshotCount,
+    getActiveChapter,
   ]);
 
   // Shared post-replace bookkeeping for executeReplace and handleReplaceOne,
