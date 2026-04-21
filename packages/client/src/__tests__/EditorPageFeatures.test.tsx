@@ -3093,6 +3093,19 @@ describe("EditorPage snapshot panel", () => {
     expect(screen.getByText(STRINGS.snapshots.restoreResponseUnreadable)).toBeInTheDocument();
   });
 
+  // I4 (review 2026-04-21): the possibly_committed and unknown-reason
+  // stale-chapter-switch branches in handleRestoreSnapshot call
+  // exitSnapshotView() when getActiveChapter() moved off activeChapter.id
+  // between restore dispatch and response. That specific race is not
+  // exercised by a component test here because the surrounding busy
+  // guard (actionBusyRef true during the restore) blocks every user-
+  // facing chapter-switch path — switchToView, Sidebar onSelectChapter,
+  // and Ctrl+H/Ctrl+. panel toggles all check isActionBusy(). The fix
+  // is justified by the sibling permanent-error branches (corrupt,
+  // cross_project_image, not_found — already tested above) all calling
+  // exitSnapshotView() for the same reason: banner must leave the
+  // screen once the user has navigated away from the target chapter.
+
   it("refuses to merge foreign project metadata in handleProjectSettingsUpdate (I3)", async () => {
     // Cross-project race: user navigates A→B while api.projects.get(A)
     // is in flight. Without the id guard, A's {title, slug, mode, ...}

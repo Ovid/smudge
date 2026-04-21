@@ -485,6 +485,15 @@ export function EditorPage() {
           const currentId = getActiveChapter()?.id;
           if (currentId !== undefined && currentId !== activeChapter.id) {
             setActionError(STRINGS.snapshots.restoreResponseUnreadable);
+            // I4 (review 2026-04-21): leave snapshot view — the banner
+            // that prompted this restore is still pointing at a chapter
+            // the user has navigated away from. Without this, Restore
+            // and "Back to editing" remain live on a banner that refers
+            // to a chapter the user is no longer looking at, inviting
+            // repeat restores against the wrong chapter. Mirrors the
+            // permanent-error branches (corrupt_snapshot, not_found,
+            // cross_project_image).
+            exitSnapshotView();
             snapshotPanelRef.current?.refreshSnapshots();
             refreshSnapshotCount();
             return;
@@ -556,6 +565,11 @@ export function EditorPage() {
           const currentId = getActiveChapter()?.id;
           if (currentId !== undefined && currentId !== activeChapter.id) {
             setActionError(STRINGS.snapshots.restoreResponseUnreadable);
+            // I4 (review 2026-04-21): mirror the possibly_committed
+            // stale-chapter-switch branch above. The SnapshotBanner must
+            // leave the screen when the user has navigated away from the
+            // chapter the restore targeted.
+            exitSnapshotView();
           } else {
             setEditorLockedMessage(STRINGS.snapshots.restoreResponseUnreadable);
             safeSetEditable(editorRef, false);
