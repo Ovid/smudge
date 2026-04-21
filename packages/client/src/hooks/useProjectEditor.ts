@@ -54,9 +54,13 @@ export function useProjectEditor(slug: string | undefined) {
   const prevSlugArgRef = useRef(slug);
   if (prevSlugArgRef.current !== slug) {
     prevSlugArgRef.current = slug;
-    if (slug !== undefined) {
-      projectSlugRef.current = slug;
-    }
+    // S3 (review 2026-04-21): sync the ref in lock-step with
+    // prevSlugArgRef, including the defined→undefined transition.
+    // Previously the ref was rewritten only when the new slug was
+    // defined, leaving it pointing at the prior project after the
+    // URL cleared — a late handler click landing in that window
+    // would POST against the old project.
+    projectSlugRef.current = slug;
   }
   const selectChapterSeqRef = useRef(0);
   const saveSeqRef = useRef(0);

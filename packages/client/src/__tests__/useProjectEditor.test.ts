@@ -1670,6 +1670,33 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("transitions slug to undefined without leaving a stale projectSlugRef (S3)", async () => {
+    // The prev-slug sentinel used to rewrite projectSlugRef only when
+    // the new slug was defined, leaving the ref pointing at the prior
+    // project after a defined→undefined transition. Any handler firing
+    // in that window (e.g. a late-user click racing navigation) would
+    // POST against the old project. Clearing the ref to undefined in
+    // lock-step with prevSlugArgRef closes that window.
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.chapters.create).mockReset();
+
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string | undefined }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" as string | undefined } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    rerender({ slug: undefined });
+
+    // After the transition, handleCreateChapter must refuse rather than
+    // POST to /projects/test-project/chapters.
+    await act(async () => {
+      await result.current.handleCreateChapter();
+    });
+    expect(api.chapters.create).not.toHaveBeenCalled();
+  });
+
   it("cross-project slug change resets activeChapter when cached id is absent from new project (I4)", async () => {
     const otherChapter = { ...mockChapter1, id: "other-1", project_id: "p2" };
     const otherProject = {
