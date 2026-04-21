@@ -1704,6 +1704,16 @@ export function EditorPage() {
             isOpen={snapshotPanelOpen}
             onClose={() => setSnapshotPanelOpen(false)}
             onView={async (snap) => {
+              // S1: Refuse snapshot view while the editor-lock banner is up.
+              // handleSaveLockGated makes flushSave return false whenever the
+              // lock is active; without this early-return the panel would
+              // stamp "save your unsaved changes" on top of a banner that
+              // says "refresh the page" — contradictory guidance. Return a
+              // discriminated reason so the panel suppresses its own error
+              // copy (the lock banner is the message).
+              if (editorLockedMessageRef.current !== null) {
+                return { ok: false, reason: "locked" };
+              }
               // Refuse snapshot view while a useEditorMutation.run() is
               // in-flight (I2): the hand-composed flushSave/cancelPendingSaves
               // below would abort the in-flight mutation's save controller
@@ -1775,6 +1785,15 @@ export function EditorPage() {
               }
             }}
             onBeforeCreate={async () => {
+              // S1: Refuse snapshot creation while the lock banner is up.
+              // Without this, handleSaveLockGated forces flushSave to false
+              // and the panel shows createFailed ("Save your unsaved changes
+              // and try again") — contradicting the lock banner's "refresh
+              // the page." Return a discriminated locked outcome so the panel
+              // suppresses createError entirely.
+              if (editorLockedMessageRef.current !== null) {
+                return { ok: false, reason: "locked" };
+              }
               // Same I2 guard as onView — refuse snapshot creation while
               // a mutation is in-flight rather than racing its save. I5
               // (review 2026-04-21): return a discriminated busy outcome

@@ -53,8 +53,15 @@ interface SnapshotPanelProps {
    *   replace) is in flight. The caller already raised its own
    *   mutationBusy info banner — the panel suppresses createError here
    *   to avoid a contradictory pair of banners.
+   * - `{ ok: false, reason: "locked" }`: the editor-lock banner (refresh-the-
+   *   page) is showing after a possibly-committed restore/replace. The
+   *   persistent lock banner is the sole user-visible signal — the panel
+   *   suppresses createError to avoid contradicting "refresh the page" with
+   *   "save and try again."
    */
-  onBeforeCreate?: () => Promise<{ ok: true } | { ok: false; reason: "busy" | "flush_failed" }>;
+  onBeforeCreate?: () => Promise<
+    { ok: true } | { ok: false; reason: "busy" | "flush_failed" | "locked" }
+  >;
   /**
    * Fired every time the panel's list fetch succeeds, with the current
    * snapshot count. Lets the parent hook drive the toolbar badge from
@@ -211,7 +218,9 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         // wrap would otherwise produce an unhandled rejection here (the
         // caller's subsequent try/catch below only wraps api.snapshots.create,
         // not this await).
-        let outcome: { ok: true } | { ok: false; reason: "busy" | "flush_failed" };
+        let outcome:
+          | { ok: true }
+          | { ok: false; reason: "busy" | "flush_failed" | "locked" };
         try {
           outcome = await onBeforeCreate();
         } catch {
@@ -226,7 +235,9 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
           // action is in progress"). The flush-failed branch still
           // surfaces createFailed because the save genuinely did not
           // land and the user must know before believing the snapshot
-          // succeeded.
+          // succeeded. Same treatment for "locked": the persistent lock
+          // banner ("refresh the page") is the user-visible signal —
+          // stamping createError on top would contradict it.
           if (outcome.reason === "flush_failed") {
             setCreateError(S.createFailed);
           }
@@ -453,6 +464,13 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
                               // misleading on a connection drop — a retry will
                               // fail identically until the network recovers.
                               setViewError(S.viewFailedNetwork);
+                            } else if (res.reason === "locked" || res.reason === "busy") {
+                              // S1: caller refused before touching the editor
+                              // because the lock banner is up (locked) or a
+                              // mutation is in flight (busy). Both surfaces
+                              // have their own user-visible signal already —
+                              // suppress the panel-local viewError to avoid a
+                              // contradictory second banner.
                             } else {
                               setViewError(S.viewFailed);
                             }
