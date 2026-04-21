@@ -447,6 +447,12 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
                               setViewError(S.viewFailedCorrupt);
                             } else if (res.reason === "save_failed") {
                               setViewError(S.viewFailedSaveFirst);
+                            } else if (res.reason === "network") {
+                              // S4: mirror restore/replace's dedicated network
+                              // copy. The generic viewFailed ("Try again") is
+                              // misleading on a connection drop — a retry will
+                              // fail identically until the network recovers.
+                              setViewError(S.viewFailedNetwork);
                             } else {
                               setViewError(S.viewFailed);
                             }

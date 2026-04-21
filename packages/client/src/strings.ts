@@ -320,6 +320,7 @@ export const STRINGS = {
     viewFailed: "Unable to open snapshot. Try again.",
     viewFailedNotFound: "This snapshot no longer exists. Refresh to see the latest snapshot list.",
     viewFailedCorrupt: "This snapshot is corrupt and can't be displayed.",
+    viewFailedNetwork: "Unable to open snapshot. Check your connection and try again.",
     viewFailedSaveFirst:
       "Unable to save pending changes. Try again once your connection recovers before viewing a snapshot.",
     ariaLabel: "Chapter snapshots",
