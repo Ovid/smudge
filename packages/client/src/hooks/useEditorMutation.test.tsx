@@ -947,6 +947,53 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
       warnSpy.mockRestore();
     }
   });
+
+  it("cancelPendingSaves in the re-lock-fail catch so a keystroke-scheduled save can't commit (S1)", async () => {
+    // The re-lock try-block runs: setEditable(false), markClean,
+    // cancelPendingSaves — in that order. If setEditable(false) throws
+    // before cancelPendingSaves runs, a user keystroke in the mount→
+    // throw window may already have scheduled a debounced save on the
+    // fresh editor. The catch must cancel it; otherwise the save
+    // commits pre-mutation content after the banner has already told
+    // the user the editor is locked, overwriting the server commit.
+    const { projectEditor } = buildHandles();
+    const editorRef: MutableRefObject<EditorHandle | null> = { current: null };
+    const cancelSpy = vi.fn();
+    projectEditor.cancelPendingSaves = cancelSpy;
+
+    const throwingEditor: EditorHandle = {
+      flushSave: vi.fn(async () => true),
+      editor: null,
+      insertImage: vi.fn(),
+      markClean: vi.fn(),
+      setEditable: vi.fn(() => {
+        throw new Error("mid-remount throw");
+      }),
+    };
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+
+      await result.current.run(async () => {
+        editorRef.current = throwingEditor;
+        return {
+          clearCacheFor: ["ch-1"],
+          reloadActiveChapter: true,
+          reloadChapterId: "ch-1",
+          data: undefined,
+        };
+      });
+
+      const preRelockCalls = cancelSpy.mock.calls.length;
+      // First call: the pre-mutate cancelPendingSaves at the top of run().
+      // The re-lock-fail catch must add a second call to cancel any save
+      // scheduled on the freshly-mounted editor before the lock failed.
+      expect(preRelockCalls).toBeGreaterThanOrEqual(2);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
 });
 
 describe("useEditorMutation — expected chapter id (I2)", () => {

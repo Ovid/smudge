@@ -218,7 +218,25 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             // PATCHes stale content back over the server commit. Skip
             // only the reload — we can't safely load fresh server state
             // into an editor we couldn't re-lock.
+            //
+            // S1 (review 2026-04-21): cancelPendingSaves in the catch.
+            // If setEditable(false) threw before the try-block's
+            // cancelPendingSaves ran, a keystroke scheduled on the
+            // fresh editor during the mount→throw window still holds
+            // a live debounced save. Without this re-cancel it fires
+            // seconds later and commits pre-mutation content over the
+            // server change, contradicting the lock banner. Wrap in
+            // its own try/catch so a cancelPendingSaves throw cannot
+            // mask the original setEditable/markClean error.
             console.warn("useEditorMutation: failed to lock mid-remount editor", err);
+            try {
+              projectEditorRef.current.cancelPendingSaves();
+            } catch (cancelErr) {
+              console.warn(
+                "useEditorMutation: cancelPendingSaves threw during re-lock-fail catch",
+                cancelErr,
+              );
+            }
             if (directive.clearCacheFor.length > 0) {
               clearAllCachedContent(directive.clearCacheFor);
             }
