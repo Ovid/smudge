@@ -4,7 +4,25 @@ import type { MutableRefObject } from "react";
 import type { EditorHandle } from "../components/Editor";
 import { useEditorMutation, type MutationDirective } from "../hooks/useEditorMutation";
 import type { ReloadOutcome } from "../hooks/useProjectEditor";
+import type { Chapter } from "@smudge/shared";
 import { clearAllCachedContent } from "./useContentCache";
+
+const STUB_CHAPTER: Chapter = {
+  id: "stub",
+  project_id: "p1",
+  title: "Stub",
+  content: { type: "doc", content: [{ type: "paragraph" }] },
+  sort_order: 0,
+  word_count: 0,
+  status: "outline",
+  created_at: "2026-01-01",
+  updated_at: "2026-01-01",
+  deleted_at: null,
+};
+
+function chapterWithId(id: string): Chapter {
+  return { ...STUB_CHAPTER, id };
+}
 
 vi.mock("./useContentCache", () => ({
   clearAllCachedContent: vi.fn(),
@@ -36,7 +54,7 @@ function buildHandles() {
       onError?: (message: string) => void,
       expectedChapterId?: string,
     ) => Promise<ReloadOutcome>;
-    getActiveChapter: () => { id: string } | null;
+    getActiveChapter: () => Chapter | null;
   } = {
     cancelPendingSaves: vi.fn(() => {
       calls.push("cancelPendingSaves");
@@ -380,7 +398,7 @@ describe("useEditorMutation — reload superseded (I5)", () => {
       .mockResolvedValueOnce("superseded")
       .mockResolvedValueOnce("reloaded");
     projectEditor.reloadActiveChapter = reloadMock;
-    projectEditor.getActiveChapter = vi.fn(() => ({ id: "c2" }) as { id: string });
+    projectEditor.getActiveChapter = vi.fn(() => chapterWithId("c2"));
 
     const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
     const res = await result.current.run(async () => ({
@@ -407,7 +425,7 @@ describe("useEditorMutation — reload superseded (I5)", () => {
       >()
       .mockResolvedValueOnce("superseded")
       .mockResolvedValueOnce("failed");
-    projectEditor.getActiveChapter = vi.fn(() => ({ id: "c2" }) as { id: string });
+    projectEditor.getActiveChapter = vi.fn(() => chapterWithId("c2"));
 
     const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
     const res = await result.current.run<{ n: number }>(async () => ({
@@ -428,7 +446,7 @@ describe("useEditorMutation — reload superseded (I5)", () => {
     const { editorRef, projectEditor } = buildHandles();
     const reloadMock = vi.fn(async () => "superseded" as const);
     projectEditor.reloadActiveChapter = reloadMock;
-    projectEditor.getActiveChapter = vi.fn(() => ({ id: "c3" }) as { id: string });
+    projectEditor.getActiveChapter = vi.fn(() => chapterWithId("c3"));
 
     const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
     const res = await result.current.run(async () => ({
@@ -1107,6 +1125,7 @@ describe("useEditorMutation — latest-ref pattern", () => {
     const secondCancel = vi.fn();
     const secondReload = vi.fn(async () => "reloaded" as const);
 
+    const getActiveChapterStub = vi.fn(() => null as Chapter | null);
     const { result, rerender } = renderHook(
       (props: { cancel: () => void; reload: () => Promise<ReloadOutcome> }) =>
         useEditorMutation({
@@ -1114,6 +1133,7 @@ describe("useEditorMutation — latest-ref pattern", () => {
           projectEditor: {
             cancelPendingSaves: props.cancel,
             reloadActiveChapter: props.reload,
+            getActiveChapter: getActiveChapterStub,
           },
         }),
       { initialProps: { cancel: firstCancel, reload: firstReload } },
