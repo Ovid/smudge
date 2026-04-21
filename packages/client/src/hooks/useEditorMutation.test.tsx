@@ -1004,6 +1004,46 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
     }
   });
 
+  it("reloadActiveChapter throw surfaces as stage:reload (S4)", async () => {
+    // Today reloadActiveChapter catches internally and returns "failed",
+    // but a future refactor that escapes a throw past ReloadOutcome
+    // would bypass the MutationResult contract — callers await
+    // mutation.run() without a try/catch and expect the discriminated
+    // union. Treat a throw the same as "failed": set reloadFailed and
+    // return stage:"reload".
+    const { editorRef, projectEditor } = buildHandles();
+    const reloadSpy = vi.fn(async () => {
+      throw new Error("reload boom");
+    });
+    projectEditor.reloadActiveChapter = reloadSpy as typeof projectEditor.reloadActiveChapter;
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+
+      const res = await result.current.run(async () => ({
+        clearCacheFor: ["c1"],
+        reloadActiveChapter: true,
+        reloadChapterId: "c1",
+        data: { payload: "committed" } as const,
+      }));
+
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.stage).toBe("reload");
+        if (res.stage === "reload") {
+          expect(res.data).toEqual({ payload: "committed" });
+        }
+      }
+      expect(warnSpy).toHaveBeenCalledWith(
+        "useEditorMutation: reloadActiveChapter threw",
+        expect.any(Error),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it("cancelPendingSaves in the re-lock-fail catch so a keystroke-scheduled save can't commit (S1)", async () => {
     // The re-lock try-block runs: setEditable(false), markClean,
     // cancelPendingSaves — in that order. If setEditable(false) throws

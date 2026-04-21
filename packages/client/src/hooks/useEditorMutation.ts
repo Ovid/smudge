@@ -320,10 +320,34 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
           // also stops useProjectEditor's fallback-to-setError from firing
           // and flipping EditorPage into the full-screen error branch when
           // we just want the persistent lock banner.
-          const outcome = await projectEditorRef.current.reloadActiveChapter(
-            () => {},
-            directive.reloadChapterId,
-          );
+          //
+          // S4 (review 2026-04-21): wrap in try/catch matching the
+          // surrounding setEditable/flushSave/cancelPendingSaves
+          // discipline. Today reloadActiveChapter catches internally and
+          // surfaces "failed" through its ReloadOutcome return type, but
+          // a future refactor that introduces a throw would escape as
+          // an unhandled rejection — bypassing the MutationResult
+          // contract (callers `await mutation.run(...)` without
+          // try/catch). Treat a throw the same as the "failed" outcome:
+          // set reloadFailed and return stage:"reload" so the caller
+          // raises the persistent lock banner.
+          let outcome: Awaited<
+            ReturnType<typeof projectEditorRef.current.reloadActiveChapter>
+          >;
+          try {
+            outcome = await projectEditorRef.current.reloadActiveChapter(
+              () => {},
+              directive.reloadChapterId,
+            );
+          } catch (err) {
+            console.warn("useEditorMutation: reloadActiveChapter threw", err);
+            reloadFailed = true;
+            return {
+              ok: false,
+              stage: "reload",
+              data: directive.data,
+            };
+          }
           if (outcome === "failed") {
             reloadFailed = true;
             return {
@@ -371,10 +395,29 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
               // banner on a chapter the mutation never targeted, wiping
               // unrelated local draft state on refresh. With the guard, a
               // further switch returns "superseded" (benign) instead.
-              const secondOutcome = await projectEditorRef.current.reloadActiveChapter(
-                () => {},
-                currentId,
-              );
+              //
+              // S4 (review 2026-04-21): wrapped in try/catch for the same
+              // reason as the first reload call above — a future refactor
+              // that escapes a throw past ReloadOutcome would bypass the
+              // MutationResult contract.
+              let secondOutcome: Awaited<
+                ReturnType<typeof projectEditorRef.current.reloadActiveChapter>
+              >;
+              try {
+                secondOutcome = await projectEditorRef.current.reloadActiveChapter(
+                  () => {},
+                  currentId,
+                );
+              } catch (err) {
+                console.warn("useEditorMutation: second reloadActiveChapter threw", err);
+                reloadSuperseded = false;
+                reloadFailed = true;
+                return {
+                  ok: false,
+                  stage: "reload",
+                  data: directive.data,
+                };
+              }
               if (secondOutcome === "failed") {
                 reloadSuperseded = false;
                 reloadFailed = true;
