@@ -69,6 +69,7 @@ export const STRINGS = {
     viewSwitchSaveFailed:
       "Unable to save pending changes. Try again once your connection recovers before switching views.",
     mutationBusy: "Another operation is in progress — please wait.",
+    lockedRefusal: "The editor is locked — refresh the page before continuing.",
     refreshButton: "Refresh page",
   },
   shortcuts: {

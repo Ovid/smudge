@@ -1166,6 +1166,14 @@ export function EditorPage() {
         setActionInfo(STRINGS.editor.mutationBusy);
         return;
       }
+      // I4 (review 2026-04-21): refuse while the editor-locked banner is up.
+      // A reorder doesn't by itself dismiss the banner, but the persistent
+      // "refresh the page" banner means the editor state is ambiguous;
+      // mutating the project structure underneath makes the ambiguity worse.
+      if (editorLockedMessageRef.current !== null) {
+        setActionInfo(STRINGS.editor.lockedRefusal);
+        return;
+      }
       handleReorderChapters(orderedIds);
     },
     [handleReorderChapters, isActionBusy],
@@ -1265,6 +1273,15 @@ export function EditorPage() {
       setActionInfo(STRINGS.editor.mutationBusy);
       return;
     }
+    // I4 (review 2026-04-21): refuse while the lock banner is up. Create
+    // switches the active chapter, which fires the [activeChapter?.id]
+    // effect and clears editorLockedMessage — silently dismissing a
+    // banner that was intentionally persistent. The title-edit hooks and
+    // snapshot view already consult isEditorLocked; mirror that here.
+    if (editorLockedMessageRef.current !== null) {
+      setActionInfo(STRINGS.editor.lockedRefusal);
+      return;
+    }
     handleCreateChapter();
   }, [isActionBusy, handleCreateChapter]);
 
@@ -1272,6 +1289,17 @@ export function EditorPage() {
     (chapter: Chapter) => {
       if (isActionBusy()) {
         setActionInfo(STRINGS.editor.mutationBusy);
+        return;
+      }
+      // I4 (review 2026-04-21): refuse while the lock banner is up.
+      // handleDeleteChapter switches the active chapter on success, which
+      // fires the [activeChapter?.id] useEffect and silently clears
+      // editorLockedMessage. The banner that was telling the user "refresh
+      // the page because your state is ambiguous" disappears, and the new
+      // chapter's editor is enabled — whatever ambiguity triggered the
+      // lock is now invisible. Same rationale as title-edit / snapshot view.
+      if (editorLockedMessageRef.current !== null) {
+        setActionInfo(STRINGS.editor.lockedRefusal);
         return;
       }
       setDeleteTarget(chapter);
@@ -1282,6 +1310,13 @@ export function EditorPage() {
   const openTrashGuarded = useCallback(() => {
     if (isActionBusy()) {
       setActionInfo(STRINGS.editor.mutationBusy);
+      return;
+    }
+    // I4: refuse while the lock banner is up. Trash view unmounts the
+    // editor, implicitly clearing the editorLockedMessage reminder —
+    // consistent with the other guarded entry points.
+    if (editorLockedMessageRef.current !== null) {
+      setActionInfo(STRINGS.editor.lockedRefusal);
       return;
     }
     openTrash();

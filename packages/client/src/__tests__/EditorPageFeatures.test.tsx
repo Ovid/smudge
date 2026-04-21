@@ -2784,4 +2784,71 @@ describe("EditorPage snapshot panel", () => {
       ).toBeNull();
     });
   });
+
+  it("refuses delete-chapter while the editor-lock banner is up (I4)", async () => {
+    // After a 2xx BAD_JSON restore raises the persistent "refresh the page"
+    // banner, clicking Delete on the active chapter previously bypassed the
+    // lock check — handleDeleteChapter would switch to another chapter,
+    // firing the [activeChapter?.id] useEffect that silently clears
+    // editorLockedMessage. The ambiguity signal vanishes and the user never
+    // sees the "refresh" direction they needed to act on.
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-1",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+    ]);
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-1",
+      chapter_id: "ch-1",
+      label: "v1",
+      content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+      word_count: 5,
+      is_auto: false,
+      created_at: "2026-04-17T10:00:00Z",
+    });
+    const { ApiRequestError } = await import("../api/client");
+    (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
+      .fn()
+      .mockRejectedValue(new ApiRequestError("Malformed response body", 200, "BAD_JSON"));
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    // Drive into the possibly_committed lock state.
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "View" }));
+    await waitFor(() => {
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+    });
+    await userEvent.keyboard("{Escape}");
+    const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
+    await userEvent.click(restoreButtons[0]!);
+    const dialog = await screen.findByRole("alertdialog", { name: "Restore" });
+    const confirmButton = Array.from(dialog.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Restore",
+    );
+    await userEvent.click(confirmButton!);
+
+    expect(
+      await screen.findByText(STRINGS.snapshots.restoreResponseUnreadable),
+    ).toBeInTheDocument();
+
+    // Now attempt to delete a chapter. The guarded handler must refuse:
+    // no confirm dialog, lock banner still visible, chapters.delete not called.
+    const deleteButtons = screen.getAllByRole("button", { name: /Delete/ });
+    await userEvent.click(deleteButtons[0]!);
+    expect(screen.queryByRole("alertdialog", { name: /Move .+ to trash/ })).toBeNull();
+    expect(api.chapters.delete).not.toHaveBeenCalled();
+    expect(screen.getByText(STRINGS.editor.lockedRefusal)).toBeInTheDocument();
+    expect(
+      screen.getByText(STRINGS.snapshots.restoreResponseUnreadable),
+    ).toBeInTheDocument();
+  });
 });
