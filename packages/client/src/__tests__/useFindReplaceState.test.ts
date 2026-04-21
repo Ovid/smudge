@@ -522,4 +522,47 @@ describe("useFindReplaceState", () => {
     expect(result.current.replacement).toBe("");
     expect(result.current.results).toBeNull();
   });
+
+  it("clears loading on project-change reset so the new panel is not stuck 'Searching…' (I2)", async () => {
+    // Before I2 the project-change reset bumped searchSeqRef and aborted
+    // the controller but did not clear `loading`. The in-flight search's
+    // finally only clears loading when seq === current — after the bump
+    // the check fails and loading stays true forever. closePanel sidesteps
+    // this by clearing loading explicitly, so the bug only manifested when
+    // navigating projects with the panel open.
+    let resolveFind: (v: { total_count: number; chapters: [] }) => void = () => {};
+    mockFind.mockImplementationOnce(
+      () =>
+        new Promise<{ total_count: number; chapters: [] }>((resolve) => {
+          resolveFind = resolve;
+        }),
+    );
+
+    const { result, rerender } = renderHook(
+      ({ slug, id }: { slug: string; id: string }) => useFindReplaceState(slug, id),
+      { initialProps: { slug: "first", id: "proj-1" } },
+    );
+
+    act(() => {
+      result.current.togglePanel();
+      result.current.setQuery("hello");
+    });
+    // Let the 300ms debounce fire so the search starts and loading flips.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(result.current.loading).toBe(true);
+
+    // Navigate to a different project with the panel still open and a
+    // search in flight.
+    rerender({ slug: "second", id: "proj-2" });
+
+    expect(result.current.loading).toBe(false);
+    // Resolve the now-orphaned response — it must not flip loading back.
+    resolveFind({ total_count: 0, chapters: [] });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.loading).toBe(false);
+  });
 });

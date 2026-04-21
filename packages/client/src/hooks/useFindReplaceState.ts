@@ -80,6 +80,12 @@ export function useFindReplaceState(
     return () => {
       searchAbortRef.current?.abort();
       searchAbortRef.current = null;
+      // I2 (review 2026-04-21): also bump the seq. The in-flight response's
+      // finally clears `loading` only when seq === current; without a bump
+      // here, the abort's synchronous "fulfilled with abort" path could race
+      // the finally in teardown, though the primary leak is symmetry with
+      // the project-change reset below.
+      searchSeqRef.current++;
     };
   }, []);
 
@@ -94,6 +100,15 @@ export function useFindReplaceState(
       setResultsQuery(null);
       setResultsOptions(null);
       setError(null);
+      // I2 (review 2026-04-21): clear loading here. The seq bump below
+      // stops the in-flight response from writing state back, but its
+      // `finally { if (seq === searchSeqRef.current) setLoading(false) }`
+      // fails the seq check after the bump — leaving a stuck "Searching…"
+      // spinner on the new project's panel with no recovery path except
+      // closePanel(). closePanel already clears loading; mirror that here
+      // so a user who navigates projects without closing the panel sees
+      // the same idle state they would after a clean close/reopen.
+      setLoading(false);
       searchSeqRef.current++;
       // Abort any in-flight search so the server stops walking a project
       // the user has left. The seq bump prevents the response from
