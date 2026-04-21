@@ -1004,6 +1004,224 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
     }
   });
 
+  it("S5 late-lock catch logs when the nested cancelPendingSaves throws", async () => {
+    // Defensive inner try/catch inside the S5 late-lock catch.
+    // cancelPendingSaves is a ref+setState touch today but a future
+    // refactor could throw; this inner catch ensures the original
+    // lock-fail error is still reported and the stage decision stands.
+    const { projectEditor } = buildHandles();
+
+    // First two cancelPendingSaves calls succeed (S2 entry, settle
+    // phase); the third — inside the S5 late-lock catch — throws.
+    let cancelCallCount = 0;
+    projectEditor.cancelPendingSaves = vi.fn(() => {
+      cancelCallCount++;
+      if (cancelCallCount >= 3) throw new Error("cancel boom");
+    });
+
+    const throwingLate: EditorHandle = {
+      flushSave: vi.fn(async () => true),
+      editor: null,
+      insertImage: vi.fn(),
+      markClean: vi.fn(),
+      setEditable: vi.fn(() => {
+        throw new Error("late-mount setEditable boom");
+      }),
+    };
+    const editorRef: MutableRefObject<EditorHandle | null> = { current: null };
+
+    vi.mocked(clearAllCachedContent).mockImplementation(() => {
+      editorRef.current = throwingLate;
+    });
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+      const res = await result.current.run(async () => ({
+        clearCacheFor: ["c1"],
+        reloadActiveChapter: false,
+        data: { replaced_count: 0 } as const,
+      }));
+      // Directive said no reload — S5 late-lock failure returns ok:true.
+      expect(res.ok).toBe(true);
+      expect(warnSpy).toHaveBeenCalledWith(
+        "useEditorMutation: cancelPendingSaves threw during S5 late-lock catch",
+        expect.any(Error),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("main re-lock-fail catch logs when the nested cancelPendingSaves throws", async () => {
+    // Same defensive inner try/catch as S5 above, but on the primary
+    // post-mutate re-lock path (editorAfterMutate !== null).
+    const { projectEditor } = buildHandles();
+
+    // S2 entry + settle-phase + post-mutate inner all succeed; the
+    // one inside the re-lock-fail catch throws.
+    let cancelCallCount = 0;
+    projectEditor.cancelPendingSaves = vi.fn(() => {
+      cancelCallCount++;
+      // Call order when setEditable throws in the re-lock try-block:
+      // S2 entry (1), settle phase (2), re-lock catch inner cancel (3).
+      // The in-try cancelPendingSaves (would be 3 if setEditable
+      // succeeded) is never reached because setEditable throws first.
+      if (cancelCallCount >= 3) throw new Error("cancel boom");
+    });
+
+    const newEditor: EditorHandle = {
+      flushSave: vi.fn(async () => true),
+      editor: null,
+      insertImage: vi.fn(),
+      markClean: vi.fn(),
+      setEditable: vi.fn((flag) => {
+        if (flag === false) throw new Error("re-lock boom");
+      }),
+    };
+    const editorRef: MutableRefObject<EditorHandle | null> = { current: null };
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+      await result.current.run(async () => {
+        editorRef.current = newEditor;
+        return {
+          clearCacheFor: ["c1"],
+          reloadActiveChapter: false,
+          data: { replaced_count: 0 } as const,
+        };
+      });
+      expect(warnSpy).toHaveBeenCalledWith(
+        "useEditorMutation: cancelPendingSaves threw during re-lock-fail catch",
+        expect.any(Error),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("S5 late-lock throw with reload directive promotes to stage:reload", async () => {
+    // Covers the catch path inside the S5 late-mount re-read block.
+    // When the late-mounted editor's setEditable throws, we must
+    // cancel any pending save (matching the main re-lock-fail
+    // discipline) and promote to stage:"reload".
+    const { projectEditor } = buildHandles();
+    const editorRef: MutableRefObject<EditorHandle | null> = { current: null };
+    const cancelSpy = vi.fn();
+    projectEditor.cancelPendingSaves = cancelSpy;
+
+    const throwingLate: EditorHandle = {
+      flushSave: vi.fn(async () => true),
+      editor: null,
+      insertImage: vi.fn(),
+      markClean: vi.fn(),
+      setEditable: vi.fn(() => {
+        throw new Error("late-mount throw");
+      }),
+    };
+    vi.mocked(clearAllCachedContent).mockImplementation(() => {
+      editorRef.current = throwingLate;
+    });
+    const reloadSpy = vi.fn(async () => "reloaded" as const);
+    projectEditor.reloadActiveChapter = reloadSpy;
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+      const res = await result.current.run(async () => ({
+        clearCacheFor: ["c1"],
+        reloadActiveChapter: true,
+        reloadChapterId: "c1",
+        data: { payload: "x" } as const,
+      }));
+      expect(res.ok).toBe(false);
+      if (!res.ok && res.stage === "reload") {
+        expect(res.data).toEqual({ payload: "x" });
+      }
+      // The reload was skipped — we can't safely load fresh server state
+      // into an editor we couldn't re-lock.
+      expect(reloadSpy).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        "useEditorMutation: failed to lock late-mounted editor (S5)",
+        expect.any(Error),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("S5 late-lock throw with reloadActiveChapter:false returns ok:true", async () => {
+    // When the directive did not request a reload (e.g. 0-replace),
+    // a late-lock throw should still honor the directive and return
+    // ok:true — same discipline as the main re-lock-fail I1 branch.
+    const { projectEditor } = buildHandles();
+    const editorRef: MutableRefObject<EditorHandle | null> = { current: null };
+
+    const throwingLate: EditorHandle = {
+      flushSave: vi.fn(async () => true),
+      editor: null,
+      insertImage: vi.fn(),
+      markClean: vi.fn(),
+      setEditable: vi.fn(() => {
+        throw new Error("late-mount throw");
+      }),
+    };
+    vi.mocked(clearAllCachedContent).mockImplementation(() => {
+      editorRef.current = throwingLate;
+    });
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+      const res = await result.current.run(async () => ({
+        clearCacheFor: ["c1"],
+        reloadActiveChapter: false,
+        data: { replaced_count: 0 } as const,
+      }));
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.data).toEqual({ replaced_count: 0 });
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("second reloadActiveChapter throw surfaces as stage:reload (S4)", async () => {
+    // Covers the catch path on the "superseded-then-retry" branch:
+    // first reload returns superseded, getActiveChapter is in
+    // clearCacheFor, then the second reload throws. Must be
+    // classified as reloadFailed (not reloadSuperseded) so the
+    // caller raises the persistent lock banner.
+    const { editorRef, projectEditor } = buildHandles();
+    projectEditor.getActiveChapter = vi.fn(() => chapterWithId("c2"));
+
+    let callCount = 0;
+    projectEditor.reloadActiveChapter = vi.fn(async () => {
+      callCount++;
+      if (callCount === 1) return "superseded" as const;
+      throw new Error("second reload boom");
+    });
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor }));
+      const res = await result.current.run(async () => ({
+        clearCacheFor: ["c1", "c2"],
+        reloadActiveChapter: true,
+        reloadChapterId: "c1",
+        data: { payload: "x" } as const,
+      }));
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.stage).toBe("reload");
+      expect(warnSpy).toHaveBeenCalledWith(
+        "useEditorMutation: second reloadActiveChapter threw",
+        expect.any(Error),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it("locks an editor that mounts between cache-clear and reload (S5)", async () => {
     // If editorAfterMutate is null (unmount-during-mutate window),
     // the hook skipped the re-lock entirely. A new editor that
