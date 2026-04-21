@@ -1458,6 +1458,14 @@ export function EditorPage() {
           if (mutation.isBusy() || isActionBusy()) return;
           setProject((prev) => {
             if (!prev) return data;
+            // I3 (review 2026-04-21): cross-project race. If the user
+            // navigated A→B while api.projects.get(A) was in flight,
+            // `prev` now reflects B but `data` carries A's top-level
+            // metadata. Merging {...data, chapters: prev.chapters}
+            // would splice A's title/slug/mode/targets onto B's
+            // chapter list silently. Refuse the merge on id mismatch;
+            // a later settings refresh on B will pick up B's state.
+            if (prev.id !== data.id) return prev;
             return { ...data, chapters: prev.chapters };
           });
         })

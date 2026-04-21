@@ -3092,4 +3092,55 @@ describe("EditorPage snapshot panel", () => {
     // Lock banner is still up through both refusals.
     expect(screen.getByText(STRINGS.snapshots.restoreResponseUnreadable)).toBeInTheDocument();
   });
+
+  it("refuses to merge foreign project metadata in handleProjectSettingsUpdate (I3)", async () => {
+    // Cross-project race: user navigates A→B while api.projects.get(A)
+    // is in flight. Without the id guard, A's {title, slug, mode, ...}
+    // would splice onto B's chapter list silently. Simulate by returning
+    // a project with a different id than the one currently in state.
+    const initial = { ...mockProject };
+    const foreign = {
+      ...mockProject,
+      id: "proj-other",
+      slug: "other-project",
+      title: "Foreign Project Title",
+    };
+    // First call = initial page load, second call = settings-update refetch.
+    vi.mocked(api.projects.get).mockResolvedValueOnce(initial);
+    vi.mocked(api.projects.get).mockResolvedValueOnce(foreign);
+    vi.mocked(api.projects.update).mockResolvedValue({
+      ...initial,
+      author_name: "New Author",
+    });
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    // Open the project settings dialog via the gear button.
+    const settingsButton = screen.getByRole("button", { name: /project settings/i });
+    await userEvent.click(settingsButton);
+
+    // Edit Author Name, then blur — triggers saveField → onUpdate →
+    // handleProjectSettingsUpdate → api.projects.get (2nd call, foreign).
+    const authorInput = screen.getByLabelText(STRINGS.projectSettings.authorName);
+    await userEvent.clear(authorInput);
+    await userEvent.type(authorInput, "New Author");
+    fireEvent.blur(authorInput);
+
+    // Wait for the 2nd api.projects.get to have resolved.
+    await waitFor(() => {
+      expect(vi.mocked(api.projects.get).mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+    // Give React a microtask to process any pending setProject update.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The foreign project's title must NOT have replaced the heading.
+    expect(screen.queryByRole("heading", { name: "Foreign Project Title" })).toBeNull();
+    expect(screen.getByRole("heading", { name: initial.title })).toBeInTheDocument();
+  });
 });
