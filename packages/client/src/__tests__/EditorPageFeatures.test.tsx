@@ -1472,6 +1472,40 @@ describe("EditorPage find-and-replace confirmation", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
   });
 
+  it("Ctrl+S refuses to flush while editor is locked after BAD_JSON (I2-lock)", async () => {
+    // After a 2xx BAD_JSON replace raises the lock banner, pressing Ctrl+S
+    // used to reach editorRef.current.flushSave(), which called
+    // handleSaveLockGated, which returned false, which Editor.flushSave
+    // maps to "save failed" and flips the indicator to error — scaring the
+    // user into a refresh that loses the lock-banner context. After the
+    // fix, the Ctrl+S handler short-circuits when editorLockedMessageRef
+    // is set, so no save is attempted at all and the indicator stays
+    // consistent with the lock banner's "refresh to recover" narrative.
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.search.replace).mockRejectedValueOnce(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    // Lock banner is up.
+    await screen.findByText(STRINGS.findReplace.replaceResponseUnreadable);
+    const updateCallsBefore = vi.mocked(api.chapters.update).mock.calls.length;
+
+    // Ctrl+S while the lock banner is up.
+    fireEvent.keyDown(document, { key: "s", code: "KeyS", ctrlKey: true });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // No PATCH issued as a side effect of the keyboard flush.
+    expect(vi.mocked(api.chapters.update).mock.calls.length).toBe(updateCallsBefore);
+    // Lock banner still the authoritative signal.
+    expect(screen.getByText(STRINGS.findReplace.replaceResponseUnreadable)).toBeInTheDocument();
+  });
+
   it("clears only the active chapter's cache on 2xx BAD_JSON from project-scope replace (I4)", async () => {
     // The mutate throw bypasses the hook's directive-driven cache-clear.
     // Without a fallback clear, a refresh re-hydrates the pre-replace

@@ -1302,8 +1302,16 @@ export function EditorPage() {
     // during a mid-flight mutation.run would otherwise fire a save whose
     // AbortController race churns the hook's stage reporting and can
     // commit two PATCHes for the same chapter.
+    //
+    // Also gate on the persistent lock banner. handleSaveLockGated returns
+    // false while the banner is up; Editor.flushSave maps that to "save
+    // failed" and flips the indicator to error without any server attempt.
+    // The banner already tells the user to refresh — swallowing Ctrl+S
+    // silently here avoids scaring them into clearing the banner context
+    // with a refresh that drops their unsaved-local state.
     flushSave: () => {
       if (isActionBusy()) return;
+      if (editorLockedMessageRef.current !== null) return;
       return editorRef.current?.flushSave();
     },
     setShortcutHelpOpen,
