@@ -420,6 +420,29 @@ describe("SnapshotPanel", () => {
       expect(screen.queryByText(S.viewFailedNetwork)).not.toBeInTheDocument();
     });
 
+    it("surfaces viewStaleChapterSwitch when onView returns ok+staleChapterSwitch (I6)", async () => {
+      // Before I6 the panel's !res.ok gate ignored ok:true returns. A
+      // chapter-switch race (or ABORTED) returned ok+staleChapterSwitch
+      // and fell through with no branch — the user clicked View and
+      // nothing happened. The I6 branch surfaces a brief info so the
+      // click is not a dead button.
+      const user = userEvent.setup();
+      const snap = makeSnapshot({ id: "snap-stale", label: "Stale" });
+      vi.mocked(api.snapshots.list).mockResolvedValue([snap]);
+      const onView = vi.fn().mockResolvedValue({ ok: true, staleChapterSwitch: true });
+      render(<SnapshotPanel {...defaultProps} onView={onView} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Stale")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.view));
+
+      await waitFor(() => {
+        expect(screen.getByText(S.viewStaleChapterSwitch)).toBeInTheDocument();
+      });
+    });
+
     it("surfaces viewFailed for unexpected reason values", async () => {
       const user = userEvent.setup();
       const snap = makeSnapshot({ id: "snap-83", label: "Odd" });
