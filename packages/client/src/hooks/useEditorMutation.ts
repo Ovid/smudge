@@ -338,10 +338,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
               // Inlined here because we've already passed the cache-
               // clear step — duplicating is simpler than threading
               // the state back through the main catch.
-              console.warn(
-                "useEditorMutation: failed to lock late-mounted editor (S5)",
-                err,
-              );
+              console.warn("useEditorMutation: failed to lock late-mounted editor (S5)", err);
               try {
                 projectEditorRef.current.cancelPendingSaves();
               } catch (cancelErr) {
@@ -380,9 +377,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
           // try/catch). Treat a throw the same as the "failed" outcome:
           // set reloadFailed and return stage:"reload" so the caller
           // raises the persistent lock banner.
-          let outcome: Awaited<
-            ReturnType<typeof projectEditorRef.current.reloadActiveChapter>
-          >;
+          let outcome: Awaited<ReturnType<typeof projectEditorRef.current.reloadActiveChapter>>;
           try {
             outcome = await projectEditorRef.current.reloadActiveChapter(
               () => {},
