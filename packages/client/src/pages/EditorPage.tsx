@@ -1429,12 +1429,21 @@ export function EditorPage() {
     if (slug) {
       api.projects
         .get(slug)
-        .then((data) =>
+        .then((data) => {
+          // S7 (review 2026-04-21): re-check busy before merging. The
+          // entry gate above guarantees no mutation was in flight when
+          // we dispatched the GET, but a mutation can start during the
+          // in-flight GET — its commit writes post-mutation top-level
+          // fields (target word count / deadline / mode) to state, and
+          // this .then would then stomp them with the pre-mutation GET
+          // response. Skip the merge; a subsequent refresh picks up
+          // the post-mutation state once the mutation settles.
+          if (mutation.isBusy() || isActionBusy()) return;
           setProject((prev) => {
             if (!prev) return data;
             return { ...data, chapters: prev.chapters };
-          }),
-        )
+          });
+        })
         .catch((err: unknown) => {
           // 404 after a settings update means the project was deleted
           // (or purged) from another tab/request — refreshing here would
