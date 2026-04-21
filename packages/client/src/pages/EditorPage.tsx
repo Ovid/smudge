@@ -1202,6 +1202,14 @@ export function EditorPage() {
         setActionInfo(STRINGS.editor.mutationBusy);
         return;
       }
+      // I1 (review 2026-04-21): refuse while the editor-locked banner is up.
+      // Sibling sidebar guards all check this; without it, a status PATCH
+      // fires against a chapter the user was told to refresh after a
+      // possibly-committed restore/replace.
+      if (editorLockedMessageRef.current !== null) {
+        setActionInfo(STRINGS.editor.lockedRefusal);
+        return;
+      }
       setActionError(null);
       handleStatusChange(chapterId, status, setActionError);
     },
@@ -1214,6 +1222,15 @@ export function EditorPage() {
       // targets the chapter row an in-flight replace may be writing.
       if (isActionBusy()) {
         setActionInfo(STRINGS.editor.mutationBusy);
+        return;
+      }
+      // I2 (review 2026-04-21): refuse while the editor-locked banner is up.
+      // The inline title editor (useChapterTitleEditing) gates on
+      // isEditorLocked, but the sidebar entry point did not — a sidebar
+      // rename while the lock banner is up would PATCH a chapter the user
+      // was told to refresh.
+      if (editorLockedMessageRef.current !== null) {
+        setActionInfo(STRINGS.editor.lockedRefusal);
         return;
       }
       setActionError(null);

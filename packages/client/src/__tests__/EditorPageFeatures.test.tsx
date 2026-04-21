@@ -3003,4 +3003,93 @@ describe("EditorPage snapshot panel", () => {
     // Lock banner is still up through both refusals.
     expect(screen.getByText(STRINGS.snapshots.restoreResponseUnreadable)).toBeInTheDocument();
   });
+
+  it("refuses sidebar status-change and rename while the editor-lock banner is up (I1/I2)", async () => {
+    // After a possibly_committed 2xx BAD_JSON restore, isActionBusy() returns
+    // false (the finally clears it) but the lock banner is up. The sidebar
+    // status-change and rename entry points must refuse just like their
+    // sibling guards (delete/create/reorder/openTrash) — otherwise the
+    // PATCH fires against a chapter the user has been told to refresh.
+    vi.mocked(api.chapterStatuses.list).mockResolvedValue([
+      { status: "outline", sort_order: 0, label: "Outline" },
+      { status: "revised", sort_order: 1, label: "Revised" },
+    ]);
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-1",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+    ]);
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-1",
+      chapter_id: "ch-1",
+      label: "v1",
+      content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+      word_count: 5,
+      is_auto: false,
+      created_at: "2026-04-17T10:00:00Z",
+    });
+    const { ApiRequestError } = await import("../api/client");
+    (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
+      .fn()
+      .mockRejectedValue(new ApiRequestError("Malformed response body", 200, "BAD_JSON"));
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "View" }));
+    await waitFor(() => {
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+    });
+    await userEvent.keyboard("{Escape}");
+    const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
+    await userEvent.click(restoreButtons[0]!);
+    const dialog = await screen.findByRole("alertdialog", { name: "Restore" });
+    const confirmButton = Array.from(dialog.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Restore",
+    );
+    await userEvent.click(confirmButton!);
+
+    expect(
+      await screen.findByText(STRINGS.snapshots.restoreResponseUnreadable),
+    ).toBeInTheDocument();
+
+    // 1) Status-change via sidebar StatusBadge — must refuse with
+    // lockedRefusal and must not PATCH the chapter (I1). Clicking the
+    // toggle just opens the listbox; the guard fires when an option is
+    // selected and selectStatus routes through onStatusChange.
+    const updateCallsBefore = vi.mocked(api.chapters.update).mock.calls.length;
+    const statusButtons = screen.getAllByLabelText(/Chapter status:/);
+    await userEvent.click(statusButtons[0]!);
+    const revisedOption = await screen.findByRole("option", { name: /Revised/ });
+    await userEvent.click(revisedOption);
+    expect(screen.getByText(STRINGS.editor.lockedRefusal)).toBeInTheDocument();
+    expect(vi.mocked(api.chapters.update).mock.calls.length).toBe(updateCallsBefore);
+
+    // 2) Sidebar inline rename via double-click + Enter — must refuse with
+    // lockedRefusal and must not PATCH the chapter title (I2).
+    const chapterButtons = screen.getAllByText("Chapter One");
+    const sidebarButton = chapterButtons.find(
+      (el) => el.tagName === "BUTTON" && el.closest("li"),
+    ) as HTMLElement | undefined;
+    expect(sidebarButton).toBeDefined();
+    const sidebarAside = sidebarButton!.closest("aside")!;
+    await userEvent.dblClick(sidebarButton!);
+    const renameInput = sidebarAside.querySelectorAll("input")[0] as HTMLInputElement | undefined;
+    expect(renameInput).toBeDefined();
+    fireEvent.change(renameInput!, { target: { value: "Locked Rename" } });
+    fireEvent.keyDown(renameInput!, { key: "Enter" });
+    expect(screen.getByText(STRINGS.editor.lockedRefusal)).toBeInTheDocument();
+    expect(vi.mocked(api.chapters.update).mock.calls.length).toBe(updateCallsBefore);
+
+    // Lock banner is still up through both refusals.
+    expect(screen.getByText(STRINGS.snapshots.restoreResponseUnreadable)).toBeInTheDocument();
+  });
 });
