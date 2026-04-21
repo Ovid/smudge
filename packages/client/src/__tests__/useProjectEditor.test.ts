@@ -1529,6 +1529,147 @@ describe("useProjectEditor", () => {
     await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
   });
 
+  it("handleCreateChapter discards response and skips state merge when slug drifts mid-POST (C2)", async () => {
+    // Before C2 the response was merged unconditionally. A click-then-
+    // navigate race would POST Project A, resolve during Project B's load,
+    // and setActiveChapter + setProject would attach Project A's new
+    // chapter to Project B — a phantom chapter in the sidebar whose
+    // subsequent edits would PATCH the wrong project's row.
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    let resolveCreate!: (c: typeof mockChapter1) => void;
+    vi.mocked(api.chapters.create)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveCreate = resolve;
+          }),
+      );
+
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    // Kick off the create against Project A.
+    let createPromise!: Promise<void>;
+    act(() => {
+      createPromise = result.current.handleCreateChapter();
+    });
+
+    // Navigate to Project B while the POST is in flight. The URL slug
+    // prop change rewrites projectSlugRef.current synchronously.
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    rerender({ slug: "other-project" });
+
+    // Resolve the stale POST with Project A's new chapter.
+    await act(async () => {
+      resolveCreate({ ...mockChapter1, id: "phantom", project_id: "p1" });
+      await createPromise;
+    });
+
+    // Wait for Project B to finish loading.
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    // The phantom chapter must NOT have been merged into Project B's state.
+    expect(result.current.project?.chapters.find((c) => c.id === "phantom")).toBeUndefined();
+  });
+
+  it("handleReorderChapters discards response when slug drifts mid-PUT (C2)", async () => {
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [{ ...mockChapter1, id: "b1" }],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    let resolveReorder!: () => void;
+    vi.mocked(api.projects.reorderChapters)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveReorder = () => resolve();
+          }),
+      );
+
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    let reorderPromise!: Promise<void>;
+    act(() => {
+      // Pass Project A's chapter ids.
+      reorderPromise = result.current.handleReorderChapters(["ch2", "ch1"]);
+    });
+
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    rerender({ slug: "other-project" });
+
+    await act(async () => {
+      resolveReorder();
+      await reorderPromise;
+    });
+
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    // Project B's chapter list must still contain its own chapter id.
+    // Without the guard the reorder would have filter-dropped Project A's
+    // ids against Project B's chapters and left B with an empty list.
+    expect(result.current.project?.chapters.map((c) => c.id)).toEqual(["b1"]);
+  });
+
+  it("handleCreateChapter routes failures through onError callback (I4)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.create).mockRejectedValue(new Error("create boom"));
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    const onError = vi.fn();
+    await act(async () => {
+      await result.current.handleCreateChapter(onError);
+    });
+
+    // onError receives the failure; full-page error state stays null so
+    // the editor session survives a recoverable POST failure.
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.createChapterFailed);
+    expect(result.current.error).toBeNull();
+    warnSpy.mockRestore();
+  });
+
+  it("handleReorderChapters routes failures through onError callback (I4)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.projects.reorderChapters).mockRejectedValue(new Error("reorder boom"));
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    const onError = vi.fn();
+    await act(async () => {
+      await result.current.handleReorderChapters(["ch2", "ch1"], onError);
+    });
+
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.reorderFailed);
+    expect(result.current.error).toBeNull();
+    warnSpy.mockRestore();
+  });
+
   it("cross-project slug change resets activeChapter when cached id is absent from new project (I4)", async () => {
     const otherChapter = { ...mockChapter1, id: "other-1", project_id: "p2" };
     const otherProject = {

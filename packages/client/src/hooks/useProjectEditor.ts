@@ -325,36 +325,56 @@ export function useProjectEditor(slug: string | undefined) {
     }
   }, []);
 
-  const handleCreateChapter = useCallback(async () => {
-    const slug = projectSlugRef.current;
-    if (!slug) return;
-    // Full cancel of any in-flight save: bump saveSeq, abort the fetch,
-    // and unblock any backoff sleep (S1). A bare `++saveSeqRef.current`
-    // short-circuited the retry loop's seq check but left the
-    // AbortController live and the backoff timer scheduled — the timer
-    // would wake up seconds later, do nothing useful (guarded by seq),
-    // but hold a reference to the old chapter id until it fired.
-    // Matches the discipline of handleSelectChapter / handleDeleteChapter.
-    cancelInFlightSave();
-    // Also cancel any in-flight chapter GET (reloadActiveChapter or
-    // handleSelectChapter). Without this bump, a pending reload's
-    // setActiveChapter landing after the POST would overwrite the
-    // newly-created chapter with the old one, and subsequent keystrokes
-    // would PATCH the stale chapter id (I4).
-    cancelInFlightSelect();
-    setSaveStatus("idle");
-    setSaveErrorMessage(null);
-    setCacheWarning(false);
-    try {
-      const newChapter = await api.chapters.create(slug);
-      setActiveChapter(newChapter);
-      setChapterWordCount(0);
-      setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
-    } catch (err) {
-      console.warn("Failed to create chapter:", err);
-      setError(STRINGS.error.createChapterFailed);
-    }
-  }, [cancelInFlightSave, cancelInFlightSelect]);
+  const handleCreateChapter = useCallback(
+    async (onError?: (message: string) => void) => {
+      const slug = projectSlugRef.current;
+      if (!slug) return;
+      // Full cancel of any in-flight save: bump saveSeq, abort the fetch,
+      // and unblock any backoff sleep (S1). A bare `++saveSeqRef.current`
+      // short-circuited the retry loop's seq check but left the
+      // AbortController live and the backoff timer scheduled — the timer
+      // would wake up seconds later, do nothing useful (guarded by seq),
+      // but hold a reference to the old chapter id until it fired.
+      // Matches the discipline of handleSelectChapter / handleDeleteChapter.
+      cancelInFlightSave();
+      // Also cancel any in-flight chapter GET (reloadActiveChapter or
+      // handleSelectChapter). Without this bump, a pending reload's
+      // setActiveChapter landing after the POST would overwrite the
+      // newly-created chapter with the old one, and subsequent keystrokes
+      // would PATCH the stale chapter id (I4).
+      cancelInFlightSelect();
+      setSaveStatus("idle");
+      setSaveErrorMessage(null);
+      setCacheWarning(false);
+      try {
+        const newChapter = await api.chapters.create(slug);
+        // C2: discard the response if the user navigated to a different
+        // project mid-POST. Without this, `setActiveChapter` and the
+        // `setProject` merge would write Project A's new chapter into
+        // Project B's state, producing a phantom chapter in the sidebar
+        // and pointing subsequent edits at the wrong project's chapter id.
+        if (projectSlugRef.current !== slug) return;
+        setActiveChapter(newChapter);
+        setChapterWordCount(0);
+        setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
+      } catch (err) {
+        console.warn("Failed to create chapter:", err);
+        if (projectSlugRef.current !== slug) return;
+        // I4: route through the onError callback (same pattern as
+        // handleRenameChapter / handleStatusChange / handleDeleteChapter)
+        // so a recoverable failure surfaces as a dismissible banner
+        // rather than the full-screen error overlay, which would tear
+        // down the editor session and leave the user with only a
+        // "back to projects" link.
+        if (onError) {
+          onError(STRINGS.error.createChapterFailed);
+        } else {
+          setError(STRINGS.error.createChapterFailed);
+        }
+      }
+    },
+    [cancelInFlightSave, cancelInFlightSelect],
+  );
 
   const handleSelectChapter = useCallback(
     async (chapterId: string) => {
@@ -535,26 +555,43 @@ export function useProjectEditor(slug: string | undefined) {
     [cancelInFlightSave, cancelInFlightSelect],
   );
 
-  const handleReorderChapters = useCallback(async (orderedIds: string[]) => {
-    const slug = projectSlugRef.current;
-    if (!slug) return;
-    try {
-      await api.projects.reorderChapters(slug, orderedIds);
-      setProject((prev) => {
-        if (!prev) return prev;
-        const reordered = orderedIds
-          .map((id, index) => {
-            const ch = prev.chapters.find((c) => c.id === id);
-            return ch ? { ...ch, sort_order: index } : undefined;
-          })
-          .filter(Boolean) as Chapter[];
-        return { ...prev, chapters: reordered };
-      });
-    } catch (err) {
-      console.warn("Failed to reorder chapters:", err);
-      setError(STRINGS.error.reorderFailed);
-    }
-  }, []);
+  const handleReorderChapters = useCallback(
+    async (orderedIds: string[], onError?: (message: string) => void) => {
+      const slug = projectSlugRef.current;
+      if (!slug) return;
+      try {
+        await api.projects.reorderChapters(slug, orderedIds);
+        // C2: discard if the user navigated away mid-PUT. Without this,
+        // the reorder would apply Project A's ordered ids to Project B's
+        // chapters array — the filter by id then drops everything (ids
+        // don't match), leaving Project B with an empty chapters list
+        // until refresh.
+        if (projectSlugRef.current !== slug) return;
+        setProject((prev) => {
+          if (!prev) return prev;
+          const reordered = orderedIds
+            .map((id, index) => {
+              const ch = prev.chapters.find((c) => c.id === id);
+              return ch ? { ...ch, sort_order: index } : undefined;
+            })
+            .filter(Boolean) as Chapter[];
+          return { ...prev, chapters: reordered };
+        });
+      } catch (err) {
+        console.warn("Failed to reorder chapters:", err);
+        if (projectSlugRef.current !== slug) return;
+        // I4: route through the onError callback rather than setError so
+        // a 400 on id-list mismatch (recoverable per CLAUDE.md) surfaces
+        // as a dismissible banner instead of tearing down the editor.
+        if (onError) {
+          onError(STRINGS.error.reorderFailed);
+        } else {
+          setError(STRINGS.error.reorderFailed);
+        }
+      }
+    },
+    [],
+  );
 
   const handleUpdateProjectTitle = useCallback(
     async (title: string): Promise<string | undefined> => {
@@ -563,6 +600,14 @@ export function useProjectEditor(slug: string | undefined) {
       setProjectTitleError(null);
       try {
         const updated = await api.projects.update(slug, { title });
+        // C3 defense-in-depth: if the URL slug changed mid-PATCH, discard
+        // the response. The primary C3 guard lives in useProjectTitleEditing
+        // (refuses saveProjectTitle when project.slug !== slug), but this
+        // extra check keeps handleUpdateProjectTitle independently safe for
+        // any future direct caller. Without it, projectSlugRef.current would
+        // be rewritten to the PATCH response's slug, stomping the URL-driven
+        // sync from the prev-slug sentinel.
+        if (projectSlugRef.current !== slug) return undefined;
         projectSlugRef.current = updated.slug;
         setProject((prev) => (prev ? { ...prev, title: updated.title, slug: updated.slug } : prev));
         return updated.slug;

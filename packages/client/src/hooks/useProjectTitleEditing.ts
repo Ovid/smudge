@@ -64,6 +64,19 @@ export function useProjectTitleEditing(
       setEditingProjectTitle(false);
       return;
     }
+    // C3: Refuse if the URL slug has drifted from the project we're editing.
+    // useProjectEditor's prev-slug sentinel rewrites projectSlugRef.current
+    // synchronously on URL change, BEFORE the async loadProject reloads
+    // project state. A blur landing in that window would PATCH the new
+    // project with the old project's intended title and lose the rename
+    // intent silently. The existing project.id useEffect above also cancels
+    // editing on id change, but fires AFTER state has reloaded — too late
+    // for the synchronous blur path. Compare project.slug (loaded) to slug
+    // (current URL prop) to detect the drift window. Keep edit mode open so
+    // the user's typed draft is preserved for retry.
+    if (project.slug !== slug) {
+      return;
+    }
     // I4/I2: Refuse mid-mutation or while the lock banner is up. Keep edit
     // mode open (do not exit on blur) so the user's typed draft is preserved
     // for retry once the mutation settles — closing here would discard the

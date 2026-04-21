@@ -201,6 +201,43 @@ describe("useProjectTitleEditing", () => {
       expect(result.current.editingProjectTitle).toBe(false);
     });
 
+    it("refuses save when URL slug has drifted from project.slug (C3)", async () => {
+      // When the URL slug advances ahead of loaded project state (a
+      // synchronous write to projectSlugRef's underlying prop before the
+      // async loadProject resolves), a blur on the title input must NOT
+      // PATCH — otherwise the new project would be renamed with the old
+      // project's intended title and the rename intent would be lost.
+      const project = buildProject({ slug: "alpha" });
+      const handleUpdateProjectTitle = vi.fn(async () => "beta");
+      const setProjectTitleError = vi.fn();
+      const navigate = vi.fn();
+      const isActionBusy = vi.fn(() => false);
+      const isEditorLocked = vi.fn(() => false);
+
+      const { result } = renderHook(() =>
+        useProjectTitleEditing(
+          project,
+          // URL slug has already advanced to beta, project state still holds alpha.
+          "beta",
+          handleUpdateProjectTitle,
+          setProjectTitleError,
+          navigate,
+          isActionBusy,
+          isEditorLocked,
+        ),
+      );
+
+      act(() => result.current.startEditingProjectTitle());
+      act(() => result.current.setProjectTitleDraft("Renamed Alpha"));
+      await act(async () => {
+        await result.current.saveProjectTitle();
+      });
+
+      expect(handleUpdateProjectTitle).not.toHaveBeenCalled();
+      // Edit mode stays open so the user's typed draft is preserved for retry.
+      expect(result.current.editingProjectTitle).toBe(true);
+    });
+
     it("keeps edit mode open when handleUpdateProjectTitle returns undefined", async () => {
       const project = buildProject();
       const handleUpdateProjectTitle = vi.fn(async () => undefined);

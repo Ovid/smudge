@@ -1203,9 +1203,10 @@ export function EditorPage() {
         setActionInfo(STRINGS.editor.lockedRefusal);
         return;
       }
-      handleReorderChapters(orderedIds);
+      setActionError(null);
+      handleReorderChapters(orderedIds, setActionError);
     },
-    [handleReorderChapters, isActionBusy],
+    [handleReorderChapters, isActionBusy, setActionError],
   );
 
   const switchToView = useCallback(
@@ -1311,8 +1312,9 @@ export function EditorPage() {
       setActionInfo(STRINGS.editor.lockedRefusal);
       return;
     }
-    handleCreateChapter();
-  }, [isActionBusy, handleCreateChapter]);
+    setActionError(null);
+    handleCreateChapter(setActionError);
+  }, [isActionBusy, handleCreateChapter, setActionError]);
 
   const requestDeleteChapter = useCallback(
     (chapter: Chapter) => {
