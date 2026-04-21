@@ -1473,10 +1473,26 @@ export function EditorPage() {
     // The banner already tells the user to refresh — swallowing Ctrl+S
     // silently here avoids scaring them into clearing the banner context
     // with a refresh that drops their unsaved-local state.
-    flushSave: () => {
+    // I1 (review 2026-04-21): wrap the flushSave call in try/catch
+    // matching switchToView, SnapshotPanel.onView, and onBeforeCreate.
+    // Editor.flushSave calls editor.getJSON() synchronously, which can
+    // throw during a TipTap mid-remount, and the returned promise can
+    // also reject from an onSave rejection. useKeyboardShortcuts
+    // invokes this callback as `flushSaveRef.current?.()` without
+    // awaiting — a sync throw escapes the keydown handler; a promise
+    // rejection surfaces as an unhandled rejection. Either bypasses
+    // the save-failed banner discipline every other flushSave entry
+    // point observes. Swallow to an actionError so the user gets the
+    // same recoverable feedback as the other paths.
+    flushSave: async () => {
       if (isActionBusy()) return;
       if (editorLockedMessageRef.current !== null) return;
-      return editorRef.current?.flushSave();
+      try {
+        await editorRef.current?.flushSave();
+      } catch (err) {
+        console.warn("Ctrl+S: flushSave threw", err);
+        setActionError(STRINGS.editor.saveFailed);
+      }
     },
     setShortcutHelpOpen,
     toggleSidebar,
