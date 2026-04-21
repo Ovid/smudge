@@ -289,7 +289,18 @@ export function EditorPage() {
     // double-restore against an already-committed snapshot while the
     // lock banner is showing. The button gate is the UX affordance;
     // this is the invariant.
-    if (editorLockedMessageRef.current !== null) return;
+    //
+    // S5: announce the busy banner alongside the refusal, matching
+    // executeReplace/handleReplaceOne's lock-banner branch. Under normal
+    // operation the SnapshotBanner's canRestore gate suppresses the click
+    // entirely, so this runs only on a programmatic call — but the
+    // sibling replace paths surface the same copy for the same state, and
+    // diverging here would leave a future non-button caller silently
+    // dropping clicks.
+    if (editorLockedMessageRef.current !== null) {
+      setActionInfo(STRINGS.editor.mutationBusy);
+      return;
+    }
 
     // I5 entry guard: actionBusyRef extends the busy window past
     // mutation.run()'s release into the post-run banner/refresh work,
