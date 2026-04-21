@@ -1598,6 +1598,13 @@ export function EditorPage() {
                   // the "which snapshot was I looking at" context the
                   // user needs to decide whether to refresh.
                   canRestore={editorLockedMessage === null}
+                  // S3: Same gate on Back-to-editing. Clicking Back while
+                  // locked would drop the user into a locked editor showing
+                  // pre-restore content while the banner says "editing
+                  // would overwrite" — a confusing state with no clean
+                  // recovery path that isn't "refresh." Keep the user in
+                  // snapshot view until they refresh.
+                  canBack={editorLockedMessage === null}
                 />
               )}
               <div className="flex-1 overflow-y-auto px-6 py-8 page-enter">

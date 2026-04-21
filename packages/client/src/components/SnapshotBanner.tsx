@@ -14,6 +14,13 @@ interface SnapshotBannerProps {
   // click would re-enter restoreSnapshot and almost certainly issue a
   // double-restore against a snapshot the server already committed (C1).
   canRestore?: boolean;
+  // S3: When false, the Back-to-editing button is disabled. Mirrors
+  // canRestore: when the lock banner is up (possibly-committed restore),
+  // clicking Back would drop into a locked editor still showing pre-
+  // restore content while the banner warns that "typing would overwrite."
+  // Keeping the snapshot view up until the user refreshes preserves the
+  // unambiguous "refresh the page" path.
+  canBack?: boolean;
 }
 
 const S = STRINGS.snapshots;
@@ -34,6 +41,7 @@ export function SnapshotBanner({
   onRestore,
   onBack,
   canRestore = true,
+  canBack = true,
 }: SnapshotBannerProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -100,8 +108,19 @@ export function SnapshotBanner({
           </button>
           <button
             type="button"
-            onClick={onBack}
-            className="text-sm text-text-secondary hover:text-text-primary transition-colors font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring rounded px-3 py-1"
+            onClick={() => {
+              // S3: aria-disabled leaves pointer events intact; gate clicks
+              // here. Same discipline as the Restore button above.
+              if (!canBack) return;
+              onBack();
+            }}
+            aria-disabled={!canBack}
+            aria-describedby={canBack ? undefined : "snapshot-restore-disabled-reason"}
+            className={`text-sm text-text-secondary hover:text-text-primary transition-colors font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring rounded px-3 py-1${
+              !canBack
+                ? " opacity-50 cursor-not-allowed hover:bg-transparent hover:text-text-secondary"
+                : ""
+            }`}
           >
             {S.backToEditing}
           </button>

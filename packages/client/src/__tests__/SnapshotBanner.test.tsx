@@ -158,4 +158,30 @@ describe("SnapshotBanner", () => {
     expect(restoreBtn).not.toHaveAttribute("aria-describedby");
     expect(document.getElementById("snapshot-restore-disabled-reason")).toBeNull();
   });
+
+  it("marks Back button aria-disabled when canBack is false (S3)", () => {
+    // EditorPage drives canBack off editorLockedMessage the same way it
+    // drives canRestore. Clicking Back while locked would drop the user
+    // into an editor showing pre-restore content while the lock banner
+    // warns that "typing would overwrite" — a confusing UI with no clean
+    // recovery path other than refresh.
+    render(<SnapshotBanner {...defaultProps} canBack={false} />);
+    const backBtn = screen.getByRole("button", { name: S.backToEditing });
+    expect(backBtn).toHaveAttribute("aria-disabled", "true");
+    expect(backBtn).not.toHaveAttribute("disabled");
+  });
+
+  it("does not call onBack when Back is clicked while aria-disabled (S3)", async () => {
+    const user = userEvent.setup();
+    const onBack = vi.fn();
+    render(<SnapshotBanner {...defaultProps} onBack={onBack} canBack={false} />);
+    await user.click(screen.getByRole("button", { name: S.backToEditing }));
+    expect(onBack).not.toHaveBeenCalled();
+  });
+
+  it("enables Back button when canBack is true or omitted (default)", () => {
+    render(<SnapshotBanner {...defaultProps} />);
+    const backBtn = screen.getByRole("button", { name: S.backToEditing });
+    expect(backBtn).not.toHaveAttribute("aria-disabled", "true");
+  });
 });
