@@ -333,6 +333,14 @@ export function useProjectEditor(slug: string | undefined) {
     async (onError?: (message: string) => void) => {
       const slug = projectSlugRef.current;
       if (!slug) return;
+      // S6 (review 2026-04-21): the post-await drift guard (below)
+      // uses a two-part compare so a concurrent rename does not
+      // discard a valid response. A rename updates projectSlugRef to
+      // the new slug AND updates projectRef.slug to match, so when
+      // projectSlugRef equals projectRef?.slug we're still on the
+      // SAME project just with a new slug — keep the response.
+      // Cross-project navigation desyncs the two (URL changed, loaded
+      // project not yet swapped), and the guard fires correctly.
       // Full cancel of any in-flight save: bump saveSeq, abort the fetch,
       // and unblock any backoff sleep (S1). A bare `++saveSeqRef.current`
       // short-circuited the retry loop's seq check but left the
@@ -357,13 +365,15 @@ export function useProjectEditor(slug: string | undefined) {
         // `setProject` merge would write Project A's new chapter into
         // Project B's state, producing a phantom chapter in the sidebar
         // and pointing subsequent edits at the wrong project's chapter id.
-        if (projectSlugRef.current !== slug) return;
+        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
+          return;
         setActiveChapter(newChapter);
         setChapterWordCount(0);
         setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
       } catch (err) {
         console.warn("Failed to create chapter:", err);
-        if (projectSlugRef.current !== slug) return;
+        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
+          return;
         // I4: route through the onError callback (same pattern as
         // handleRenameChapter / handleStatusChange / handleDeleteChapter)
         // so a recoverable failure surfaces as a dismissible banner
@@ -563,6 +573,8 @@ export function useProjectEditor(slug: string | undefined) {
     async (orderedIds: string[], onError?: (message: string) => void) => {
       const slug = projectSlugRef.current;
       if (!slug) return;
+      // S6 (review 2026-04-21): two-part drift guard — see
+      // handleCreateChapter for full rationale.
       try {
         await api.projects.reorderChapters(slug, orderedIds);
         // C2: discard if the user navigated away mid-PUT. Without this,
@@ -570,7 +582,8 @@ export function useProjectEditor(slug: string | undefined) {
         // chapters array — the filter by id then drops everything (ids
         // don't match), leaving Project B with an empty chapters list
         // until refresh.
-        if (projectSlugRef.current !== slug) return;
+        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
+          return;
         setProject((prev) => {
           if (!prev) return prev;
           const reordered = orderedIds
@@ -583,7 +596,8 @@ export function useProjectEditor(slug: string | undefined) {
         });
       } catch (err) {
         console.warn("Failed to reorder chapters:", err);
-        if (projectSlugRef.current !== slug) return;
+        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
+          return;
         // I4: route through the onError callback rather than setError so
         // a 400 on id-list mismatch (recoverable per CLAUDE.md) surfaces
         // as a dismissible banner instead of tearing down the editor.
@@ -601,17 +615,18 @@ export function useProjectEditor(slug: string | undefined) {
     async (title: string): Promise<string | undefined> => {
       const slug = projectSlugRef.current;
       if (!slug) return undefined;
+      // S6 (review 2026-04-21): two-part drift guard — see
+      // handleCreateChapter for full rationale.
       setProjectTitleError(null);
       try {
         const updated = await api.projects.update(slug, { title });
-        // C3 defense-in-depth: if the URL slug changed mid-PATCH, discard
+        // C3 defense-in-depth: if the user navigated mid-PATCH, discard
         // the response. The primary C3 guard lives in useProjectTitleEditing
         // (refuses saveProjectTitle when project.slug !== slug), but this
         // extra check keeps handleUpdateProjectTitle independently safe for
-        // any future direct caller. Without it, projectSlugRef.current would
-        // be rewritten to the PATCH response's slug, stomping the URL-driven
-        // sync from the prev-slug sentinel.
-        if (projectSlugRef.current !== slug) return undefined;
+        // any future direct caller.
+        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
+          return undefined;
         projectSlugRef.current = updated.slug;
         setProject((prev) => (prev ? { ...prev, title: updated.title, slug: updated.slug } : prev));
         return updated.slug;

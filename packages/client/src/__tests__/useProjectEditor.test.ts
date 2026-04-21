@@ -1670,6 +1670,66 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("handleCreateChapter response survives a concurrent rename (S6)", async () => {
+    // handleCreateChapter captured the slug at entry and compared it
+    // against projectSlugRef after the POST. handleUpdateProjectTitle
+    // rewrites that ref on rename success, so a rename between the
+    // create POST's dispatch and its response tripped the slug-drift
+    // guard and silently discarded a valid chapter. Project id is
+    // stable across rename — compare ids so the response lands.
+    const renamedProject = {
+      ...mockProject,
+      slug: "renamed-project",
+      title: "Renamed",
+    };
+    const newChapter = {
+      id: "ch3",
+      project_id: "p1",
+      title: UNTITLED_CHAPTER,
+      content: null,
+      sort_order: 2,
+      word_count: 0,
+      status: "outline" as const,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+      deleted_at: null,
+    };
+
+    vi.mocked(api.chapters.create).mockReset();
+    let resolveCreate!: (c: typeof newChapter) => void;
+    vi.mocked(api.chapters.create).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCreate = resolve;
+        }),
+    );
+    vi.mocked(api.projects.update).mockResolvedValue(renamedProject);
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    // Kick off the create. The POST stays in flight.
+    let createPromise!: Promise<void>;
+    act(() => {
+      createPromise = result.current.handleCreateChapter();
+    });
+
+    // User renames the project while the POST is in flight —
+    // handleUpdateProjectTitle rewrites projectSlugRef to the new slug.
+    await act(async () => {
+      await result.current.handleUpdateProjectTitle("Renamed");
+    });
+
+    // Resolve the create. The response belongs to the same project
+    // (by id), so it must land in state despite the slug drift.
+    await act(async () => {
+      resolveCreate(newChapter);
+      await createPromise;
+    });
+
+    expect(result.current.project?.chapters.find((c) => c.id === "ch3")).toBeDefined();
+  });
+
   it("transitions slug to undefined without leaving a stale projectSlugRef (S3)", async () => {
     // The prev-slug sentinel used to rewrite projectSlugRef only when
     // the new slug was defined, leaving the ref pointing at the prior
