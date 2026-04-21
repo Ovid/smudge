@@ -1536,7 +1536,7 @@ export function EditorPage() {
               <button
                 onClick={() => setActionInfo(null)}
                 className="text-accent hover:text-text-primary text-xs ml-4 focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
-                aria-label={STRINGS.a11y.dismissError}
+                aria-label={STRINGS.a11y.dismissInfo}
               >
                 ✕
               </button>

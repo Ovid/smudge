@@ -125,6 +125,7 @@ export const STRINGS = {
     projectTitleInput: "Project title",
     editorContent: "Chapter content",
     dismissError: "Dismiss error",
+    dismissInfo: "Dismiss info",
     viewModesNav: "View modes",
   },
   toolbar: {
