@@ -590,6 +590,57 @@ describe("useFindReplaceState", () => {
     expect(result.current.results).toBeNull();
   });
 
+  it("debounced search bails if panel was closed between timer fire and callback execution (I2)", async () => {
+    // Task-queue race: 300ms debounce timer moves its callback onto
+    // the task queue before closePanel's clearTimeout can stop it.
+    // Once queued, the callback runs regardless. Without the
+    // panelOpenRef re-check, it would invoke search() against a
+    // closed panel — the fetch has its own fresh abort controller
+    // (closePanel's abort targeted a prior in-flight search), so the
+    // response would pass the seq guard and write stale results +
+    // loading state back. We simulate the race by capturing the
+    // scheduled callback and invoking it manually after closePanel.
+    mockFind.mockResolvedValue({ total_count: 42, chapters: [] });
+
+    const origSetTimeout = globalThis.setTimeout;
+    let capturedCallback: (() => void) | null = null;
+    const spy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+      fn: () => void,
+      ms: number,
+    ) => {
+      if (ms === 300) {
+        capturedCallback = fn;
+        return 0 as unknown as ReturnType<typeof setTimeout>;
+      }
+      return origSetTimeout(fn, ms);
+    }) as typeof setTimeout);
+
+    try {
+      const { result } = renderHook(() => useFindReplaceState("my-project"));
+      act(() => {
+        result.current.togglePanel();
+        result.current.setQuery("foo");
+      });
+      expect(capturedCallback).not.toBeNull();
+
+      act(() => {
+        result.current.closePanel();
+      });
+
+      // Simulate the callback slipping past closePanel's clearTimeout.
+      await act(async () => {
+        capturedCallback?.();
+        await Promise.resolve();
+      });
+
+      expect(mockFind).not.toHaveBeenCalled();
+      expect(result.current.loading).toBe(false);
+      expect(result.current.results).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("clears loading on project-change reset so the new panel is not stuck 'Searching…' (I2)", async () => {
     // Before I2 the project-change reset bumped searchSeqRef and aborted
     // the controller but did not clear `loading`. The in-flight search's

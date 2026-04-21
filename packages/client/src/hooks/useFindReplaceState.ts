@@ -56,6 +56,15 @@ export function useFindReplaceState(
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestSlugRef = useRef<string | null>(projectSlug ?? null);
+  // I2 (review 2026-04-21): tracks the latest panelOpen value so the
+  // debounced auto-search can early-bail if its 300ms timer slipped
+  // past closePanel's clearTimeout (a task-queue race the ref-less
+  // check couldn't cover). Without it, the setTimeout callback runs
+  // search() on a closed panel — the fetch has its own fresh abort
+  // controller (closePanel's abort targeted a prior in-flight
+  // search), so the response lands, passes the seq guard, and writes
+  // stale results and loading state that surface on the next open.
+  const panelOpenRef = useRef(false);
   // Key state reset on project identity, not slug. A project rename
   // changes the slug without changing the project — preserving the
   // user's in-progress query/replacement across a rename is the
@@ -73,6 +82,14 @@ export function useFindReplaceState(
   useEffect(() => {
     if (projectSlug) latestSlugRef.current = projectSlug;
   }, [projectSlug]);
+
+  // Keep panelOpenRef in sync so the debounce setTimeout callback can
+  // check the latest value at fire time (I2). State-driven closure
+  // would see a stale value if the panel closed between the effect's
+  // scheduling and the timer firing.
+  useEffect(() => {
+    panelOpenRef.current = panelOpen;
+  }, [panelOpen]);
 
   // On unmount, abort any in-flight search so the server stops walking
   // chapters for a caller that no longer exists.
@@ -253,7 +270,17 @@ export function useFindReplaceState(
     // against the dead slug — directly contradicting the design intent
     // documented on the search() wrapper below ("always read .current
     // at call time").
+    //
+    // I2 (review 2026-04-21): also re-check panelOpenRef at fire time.
+    // If closePanel ran between the timer firing and its callback
+    // executing (task-queue race), clearTimeout was a no-op and the
+    // callback would otherwise invoke search() on a closed panel —
+    // the fetch has its own fresh abort controller (closePanel's
+    // abort targeted a prior in-flight search), so the response would
+    // land, pass the seq guard, and write stale results + loading
+    // state back that surface on the next open.
     debounceRef.current = setTimeout(() => {
+      if (!panelOpenRef.current) return;
       const slug = latestSlugRef.current;
       if (!slug) return;
       search(slug);
