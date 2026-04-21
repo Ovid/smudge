@@ -216,6 +216,11 @@ export function EditorPage() {
   const actionBusyRef = useRef(false);
   const isActionBusy = useCallback(() => mutation.isBusy() || actionBusyRef.current, [mutation]);
 
+  // I2: shared lock-banner predicate for entry points outside useEditorMutation
+  // (title edits, panel open/close). Reads through the latest-ref so callbacks
+  // captured once see the current banner state.
+  const isEditorLocked = useCallback(() => editorLockedMessageRef.current !== null, []);
+
   // Frozen snapshot of state at the moment the user clicked "Replace All".
   // This prevents the confirmation copy from drifting if the user edits the
   // panel while the dialog is open.
@@ -1007,7 +1012,12 @@ export function EditorPage() {
     startEditingTitle,
     saveTitle,
     cancelEditingTitle,
-  } = useChapterTitleEditing(activeChapter, handleRenameChapter);
+  } = useChapterTitleEditing(
+    activeChapter,
+    handleRenameChapter,
+    isActionBusy,
+    isEditorLocked,
+  );
 
   const {
     editingProjectTitle,
@@ -1024,6 +1034,7 @@ export function EditorPage() {
     setProjectTitleError,
     navigate,
     isActionBusy,
+    isEditorLocked,
   );
 
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);

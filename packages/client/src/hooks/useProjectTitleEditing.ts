@@ -16,7 +16,14 @@ export function useProjectTitleEditing(
   // results inconsistent with the committed replace. Injecting the busy
   // predicate here keeps the gate co-located with the save call instead
   // of wrapping every EditorPage call site.
-  isActionBusy?: () => boolean,
+  //
+  // S7: Required (not optional). A test double or future caller that omits
+  // the predicate would silently disable this load-bearing guard.
+  isActionBusy: () => boolean,
+  // I2: A project-title PATCH during the lock-banner window races a
+  // possibly-committed restore/replace — the exact save-pipeline violation
+  // the lock banner exists to prevent. Gate here alongside isActionBusy.
+  isEditorLocked: () => boolean,
 ) {
   const [editingProjectTitle, setEditingProjectTitle] = useState(false);
   const [projectTitleDraft, setProjectTitleDraft] = useState("");
@@ -57,10 +64,11 @@ export function useProjectTitleEditing(
       setEditingProjectTitle(false);
       return;
     }
-    // I4: Refuse mid-mutation. Keep edit mode open (do not exit on blur)
-    // so the user's typed draft is preserved for retry once the mutation
-    // settles — closing here would discard the draft silently.
-    if (isActionBusy?.()) {
+    // I4/I2: Refuse mid-mutation or while the lock banner is up. Keep edit
+    // mode open (do not exit on blur) so the user's typed draft is preserved
+    // for retry once the mutation settles — closing here would discard the
+    // draft silently.
+    if (isActionBusy() || isEditorLocked()) {
       return;
     }
     isSavingProjectTitleRef.current = true;
