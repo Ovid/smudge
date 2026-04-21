@@ -218,9 +218,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         // wrap would otherwise produce an unhandled rejection here (the
         // caller's subsequent try/catch below only wraps api.snapshots.create,
         // not this await).
-        let outcome:
-          | { ok: true }
-          | { ok: false; reason: "busy" | "flush_failed" | "locked" };
+        let outcome: { ok: true } | { ok: false; reason: "busy" | "flush_failed" | "locked" };
         try {
           outcome = await onBeforeCreate();
         } catch {

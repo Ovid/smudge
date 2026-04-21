@@ -1023,12 +1023,7 @@ export function EditorPage() {
     startEditingTitle,
     saveTitle,
     cancelEditingTitle,
-  } = useChapterTitleEditing(
-    activeChapter,
-    handleRenameChapter,
-    isActionBusy,
-    isEditorLocked,
-  );
+  } = useChapterTitleEditing(activeChapter, handleRenameChapter, isActionBusy, isEditorLocked);
 
   const {
     editingProjectTitle,

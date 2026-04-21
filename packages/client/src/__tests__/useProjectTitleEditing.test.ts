@@ -3,9 +3,7 @@ import { renderHook, act } from "@testing-library/react";
 import { useProjectTitleEditing } from "../hooks/useProjectTitleEditing";
 import type { ProjectWithChapters } from "@smudge/shared";
 
-function buildProject(
-  overrides: Partial<ProjectWithChapters> = {},
-): ProjectWithChapters {
+function buildProject(overrides: Partial<ProjectWithChapters> = {}): ProjectWithChapters {
   return {
     id: "p1",
     title: "Project",
