@@ -57,6 +57,13 @@ describe("useAbortableSequence", () => {
     expect(captured.isStale()).toBe(true);
   });
 
+  it("start() after unmount returns a fresh token (harmless; consumer setState is a no-op)", () => {
+    const { result, unmount } = renderHook(() => useAbortableSequence());
+    unmount();
+    const token = result.current.start();
+    expect(token.isStale()).toBe(false);
+  });
+
   it("two sequences in the same component are independent", () => {
     const { result } = renderHook(() => ({
       a: useAbortableSequence(),
