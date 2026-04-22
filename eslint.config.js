@@ -51,6 +51,20 @@ export default tseslint.config(
           // (`left.type`, `right.type`, `right.property.name`) rather than
           // child/sibling combinators because BinaryExpression's left/right
           // are named fields, not positional siblings.
+          //
+          // NOT caught: the MIRRORED form `ref.current !== local` /
+          // `ref.current === local`. Adding a `[left.property.name='current']
+          // [right.type='Identifier']` selector was considered (review S1,
+          // 2026-04-22) and rejected after testing: it false-positives on 14
+          // legitimate sites — prev-value diff detection
+          // (`prevSlugArgRef.current !== slug`), abort-controller identity
+          // (`saveAbortRef.current === controller`), slug-drift checks,
+          // still-on-chapter checks, and the canonical epoch comparison
+          // inside `useAbortableSequence` itself. The original sequence-ref
+          // anti-pattern typically pairs `++ref.current` (the bump) with a
+          // comparison; esquery cannot express that cross-statement
+          // constraint. The primary defense is the useAbortableSequence
+          // primitive; this rule is a backstop for the simplest bypass.
           selector:
             "BinaryExpression[operator=/^[!=]==$/][left.type='Identifier'][right.type='MemberExpression'][right.property.name='current']",
           message:
