@@ -1463,6 +1463,56 @@ describe("useProjectEditor", () => {
     errorSpy.mockRestore();
   });
 
+  it("handleDeleteChapter unmounting during delete await does not fire post-unmount setState (S3/S4)", async () => {
+    // Code review S4: handleDeleteChapter calls selectChapterSeq.start() AFTER
+    // `await api.chapters.delete(...)`. If the component unmounts during that
+    // await, the post-await start() runs on an unmounted component. Before S3
+    // the returned token was fresh (isStale() === false), so setActiveChapter
+    // / setChapterWordCount / onError fired post-unmount — React 18 silently
+    // swallows setState, but onError is an external callback the caller owns.
+    // With S3's mountedRef, post-unmount start() returns a stale token and
+    // the `if (token.isStale()) return true` guard short-circuits the branch.
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValueOnce(mockChapter1);
+
+    let resolveDelete: () => void = () => {};
+    vi.mocked(api.chapters.delete).mockImplementationOnce(
+      () =>
+        new Promise<{ message: string }>((resolve) => {
+          resolveDelete = () => resolve({ message: "ok" });
+        }),
+    );
+
+    const onError = vi.fn();
+    const { result, unmount } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    // Fire the delete of the active chapter. The flow would, after the delete
+    // resolves, call selectChapterSeq.start() and then api.chapters.get() for
+    // the next chapter — but we unmount first, so start() runs post-unmount.
+    let deletePromise: Promise<boolean> = Promise.resolve(false);
+    act(() => {
+      deletePromise = result.current.handleDeleteChapter(mockChapter1, onError);
+    });
+
+    // Unmount BEFORE the delete resolves, so selectChapterSeq.start() will be
+    // called on an unmounted component.
+    unmount();
+
+    // Now resolve the delete. The hook's catch clause has no chapter to load
+    // (we didn't queue a second get mock), but the isStale() guard should
+    // short-circuit before that matters.
+    await act(async () => {
+      resolveDelete();
+      await deletePromise;
+    });
+
+    // The structural contract: onError is an external callback, and calling
+    // it after unmount would surface a spurious error banner on a freshly
+    // mounted successor component owned by the same caller.
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it("reloadActiveChapter without onError falls back to setError (legacy callers)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
