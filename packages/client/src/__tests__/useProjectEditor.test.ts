@@ -1046,6 +1046,71 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("handleSave 4xx error state does not bleed across an A→B→A chapter switch (S5)", async () => {
+    // Code review S5: on an A→B→A round-trip while an A save is in-flight,
+    // the 4xx response's terminal setSaveStatus("error") was gated only by
+    // `activeChapterRef.current?.id === savingChapterId` — which is TRUE
+    // after the round-trip because the user is back on A. The stale save's
+    // error then bled into A's newly-active session. S5 adds the
+    // `!token.isStale()` gate (paralleling the cache-clear guard two lines
+    // above) so the old save's failure cannot surface in A's fresh state.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    // Initial load: first chapters.get call returns mockChapter1 for
+    // activeChapter; subsequent calls will be made by the chapter switches.
+    vi.mocked(api.chapters.get).mockReset();
+    vi.mocked(api.chapters.get)
+      .mockResolvedValueOnce(mockChapter1)
+      .mockResolvedValueOnce(mockChapter2)
+      .mockResolvedValueOnce(mockChapter1);
+
+    // Deferred 4xx rejection so we can switch chapters mid-save, then
+    // reject after the round-trip. We mock at api.chapters.update level,
+    // so cancelInFlightSave's AbortController.abort() does not propagate
+    // into the mock — the promise stays pending until we reject it.
+    let rejectSave: (err: Error) => void = () => {};
+    vi.mocked(api.chapters.update).mockImplementationOnce(
+      () =>
+        new Promise<typeof mockChapter1>((_resolve, reject) => {
+          rejectSave = reject;
+        }),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter?.id).toBe("ch1"));
+
+    // Kick off save of A; do NOT await (it's pending on our deferred mock).
+    let savePromise: Promise<boolean> = Promise.resolve(false);
+    act(() => {
+      savePromise = result.current.handleSave({ type: "doc", content: [] }, "ch1");
+    });
+
+    // A→B→A: each switch calls cancelInFlightSave → saveSeq.abort(), which
+    // invalidates the save's token. After two switches the token is
+    // doubly stale.
+    await act(async () => {
+      await result.current.handleSelectChapter("ch2");
+    });
+    await act(async () => {
+      await result.current.handleSelectChapter("ch1");
+    });
+    expect(result.current.activeChapter?.id).toBe("ch1");
+
+    // Now reject the original save with a 4xx. Without S5 the error branch
+    // reads activeChapter==="ch1" && savingChapterId==="ch1" → fires
+    // setSaveStatus("error") on A's fresh session.
+    await act(async () => {
+      rejectSave(new ApiRequestError("Bad Request", 400));
+      await savePromise;
+    });
+
+    // Contract: the stale save's 4xx must not surface on the fresh A session.
+    expect(result.current.saveStatus).not.toBe("error");
+    expect(result.current.saveErrorMessage).toBeNull();
+    warnSpy.mockRestore();
+  });
+
   it("handleSave preserves cached draft on 413 so the user can trim and retry (C1)", async () => {
     // 413 is emitted by the Express body-size guard BEFORE the chapter
     // handler runs — the server never sees the content, let alone stores

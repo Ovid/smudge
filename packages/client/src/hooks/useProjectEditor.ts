@@ -295,7 +295,13 @@ export function useProjectEditor(slug: string | undefined) {
           latestContentRef.current = null;
         }
       }
-      if (activeChapterRef.current?.id === savingChapterId) {
+      // Gate on BOTH activeChapter id and token freshness (S5): on an
+      // A→B→A round-trip while an older save's 4xx is landing, the id
+      // check alone is true (user is back on A) but the save's token is
+      // stale. Without the isStale() guard the cancelled save's error
+      // state bleeds into A's fresh session. Parallels the cache-clear
+      // guard immediately above.
+      if (activeChapterRef.current?.id === savingChapterId && !token.isStale()) {
         setSaveStatus("error");
         setSaveErrorMessage(rejected4xx ? rejected4xx.message : STRINGS.editor.saveFailed);
       }
