@@ -48,9 +48,20 @@ export function useAbortableSequence(): AbortableSequence {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      // Defense-in-depth: the `!mountedRef.current` check in isStale()
+      // already stales every outstanding and future token, so this bump
+      // is redundant today. Kept so the abort-like semantics stay
+      // explicit at the mutation site if the mountedRef gate is ever
+      // refactored.
       counterRef.current += 1;
     };
   }, []);
 
+  // The three callbacks are useCallback(…, [])-stable, but `{ start,
+  // capture, abort }` would be a fresh object on every render without
+  // useMemo. Consumers that put the AbortableSequence itself in a
+  // dependency array (see useProjectEditor, useSnapshotState) rely on
+  // that outer-object identity — pinned by the "returns a stable
+  // AbortableSequence object across renders" test below.
   return useMemo(() => ({ start, capture, abort }), [start, capture, abort]);
 }
