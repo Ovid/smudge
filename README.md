@@ -10,10 +10,13 @@ Smudge organizes your long-form work — fiction or non-fiction — as projects 
 
 ## Quick Start
 
+**Prerequisites:** Node.js 22 (pinned in [`.nvmrc`](.nvmrc)). Recommended: install via [nvm](https://github.com/nvm-sh/nvm) on macOS/Linux, [nvm-windows](https://github.com/coreybutler/nvm-windows) or [fnm](https://github.com/Schniz/fnm) on Windows. All read `.nvmrc` automatically.
+
 ```bash
 # Clone and install
 git clone https://github.com/Ovid/smudge.git
 cd smudge
+nvm install        # or: fnm use, volta pin — reads .nvmrc
 npm install
 
 # Start developing
@@ -21,6 +24,12 @@ make dev
 ```
 
 The app runs at [http://localhost:3456](http://localhost:3456).
+
+If you plan to run the end-to-end tests (`make e2e` or `make all`), also run this once per machine:
+
+```bash
+npx playwright install    # Chromium/Firefox/WebKit browser binaries (~265 MB)
+```
 
 ### Docker
 
