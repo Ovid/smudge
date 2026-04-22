@@ -28,8 +28,8 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 3b | Document Export | PDF, Word (.docx), EPUB | Done |
 | 4a | Reference Panel & Images | Collapsible side panel infrastructure, image upload/storage | Done |
 | 4b | Snapshots & Find-and-Replace | Manual/auto snapshots, project-wide search and replace | Done |
-| 4b.1 | Editor Orchestration Helper | Extract shared save-flush/markClean/setEditable/reload shape into one helper | In Progress |
-| 4b.2 | Abortable Sequence Hook | Unify ad-hoc seq-refs into a single `useAbortableSequence()` primitive | Planned |
+| 4b.1 | Editor Orchestration Helper | Extract shared save-flush/markClean/setEditable/reload shape into one helper | Done |
+| 4b.2 | Abortable Sequence Hook | Unify ad-hoc seq-refs into a single `useAbortableSequence()` primitive | In Progress |
 | 4b.3 | Unified API Error Mapper | Single module mapping API errors to UI strings; no raw server text in UI | Planned |
 | 4b.4 | Raw-Strings ESLint Rule | Enforce strings.ts externalization via lint; fix existing violations | Planned |
 | 4b.5 | Editor State Machine | Unify `editable`/`locked`/`busy` editor state into one machine; add `committed_but_unreloaded` mutation stage for ambiguous server responses | Planned |
@@ -601,6 +601,7 @@ Editor mutation flows in `packages/client/src/` currently implemented ad-hoc in 
 ---
 
 ## Phase 4b.2: Abortable Sequence Hook
+<!-- plan: 2026-04-22-abortable-sequence-hook-design.md -->
 
 ### Goal
 
