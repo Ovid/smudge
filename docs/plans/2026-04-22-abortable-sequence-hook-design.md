@@ -13,7 +13,7 @@ Replace the ad-hoc sequence refs scattered across the client (`saveSeqRef`, `sel
 
 Each existing seq-ref is individually correct. Their interactions are not: staleness is implicit in a local `!==` comparison against a freestanding ref, reviewers must verify the ref is bumped before the request (CLAUDE.md §Save-Pipeline Invariants rule 4), and every new flow that needs staleness is one more variant of the same shape. This is how stale-closure bugs kept slipping through Phase 4b review. The primitive turns the invariant into code — callers receive a token whose `isStale()` cannot be wrong about *which* sequence it belongs to, and the primitive's tested contract covers the cases (new-start, bump-to-abort, capture-for-cross-axis, unmount) that hand-rolled refs have to re-derive each time.
 
-This is a pure refactor: no user-visible behavior change.
+This is a refactor with one companion bug fix, made expressible by the new primitive. Review S5 (2026-04-22, commit `0630ed6`) added `&& !token.isStale()` to `useProjectEditor.ts:304`'s terminal `setSaveStatus("error")` gate — on `main` an A→B→A chapter round-trip during a 4xx response window let A's cancelled-save error bleed into A's fresh state, because the existing `activeChapterRef.current?.id === savingChapterId` predicate is `true` after the round-trip. The bleed was only reliably closable once `token.isStale()` existed, so the fix rides with the migration rather than splitting into a follow-up. No other user-visible behavior changes.
 
 ## Non-goals
 
@@ -104,7 +104,7 @@ Four call sites, two patterns, one common cleanup path.
 6. A token from `capture()` called *after* `start()` is fresh (tracks current epoch).
 7. **Unmount invalidates all outstanding tokens.** Render → `start()` → unmount → `token.isStale()` returns `true`.
 8. Two `useAbortableSequence()` calls in the same component are independent. `seq1.abort()` does not affect `seq2`'s tokens.
-9. `start()` after unmount is harmless. The counter still ticks; any setState that would follow on the returned token's use is stale anyway.
+9. `start()` / `capture()` after unmount return stale tokens via the `mountedRef` gate at `packages/client/src/hooks/useAbortableSequence.ts:24`, making `if (token.isStale()) return` a hard stop without relying on epoch drift. Tightened by review S3 (2026-04-22, commit `f113338`) — the earlier wording "the counter still ticks; any setState … is stale anyway" understated the semantic, because it implied the guarantee was transitive through a later bump rather than direct via the mount flag.
 
 **Consumer integration tests — preserved unchanged.** The existing race tests already cover the real scenarios and should continue to pass:
 
@@ -122,6 +122,7 @@ Four call sites, two patterns, one common cleanup path.
 An ESLint `no-restricted-syntax` rule flags the anti-pattern shape so the primitive stays load-bearing:
 
 - **Targets:** `BinaryExpression` with operator in `['!==', '===']`, right operand `<Identifier>.current`, left operand a locally-scoped `Identifier`. Both operators matter: `!==` expresses "am I stale" (`useProjectEditor.ts:212`, `useFindReplaceState.ts:218`) but `===` expresses the negation, "am I still fresh" (`useProjectEditor.ts:305`, `useSnapshotState.ts:142,286`, `useFindReplaceState.ts:257`). A rule that catches only `!==` leaves an obvious bypass: reintroducing the pattern via `if (seq === foo.current) commitResult()` would sail through CI. Widening covers both forms. False-positive risk remains low — common legitimate `.current` comparisons like `activeChapterRef.current?.id === savingChapterId` place the MemberExpression on the *left* and do not match this selector.
+- **Mirrored form (intentionally NOT caught).** `ref.current !== local` / `ref.current === local` — i.e. the same comparison with operands reversed — is not flagged. Review S1 (2026-04-22, commit `2004c0a`) considered adding the mirrored selector and rejected it after testing: it false-positives on 14 legitimate sites (prev-value diffs like `prevSlugArgRef.current !== slug`, abort-controller identity, slug-drift checks, still-on-chapter checks, and the canonical epoch comparison inside `useAbortableSequence` itself). The original anti-pattern pairs `++ref.current` with a comparison; esquery cannot express that cross-statement constraint, so this rule is a backstop for the simplest bypass while the primary defense remains the `useAbortableSequence` primitive. Canonical rationale lives at `eslint.config.js:54-67`.
 - **Message:** points reviewers at `useAbortableSequence` in the hooks directory and names the three API methods.
 - **Fixture test.** A deliberately-violating fixture is linted as part of `make lint` CI so the rule's coverage can be asserted. If the rule stops firing on the fixture (e.g. someone relaxes it), CI fails.
 - **Escape hatch.** `// eslint-disable-next-line no-restricted-syntax -- <reason>` is available for legitimate exceptions. I do not expect any. Reviewers who see an unexplained escape-hatch in a PR should push back.
@@ -180,4 +181,4 @@ After commit 6, `grep -rn 'SeqRef\|seqRef\|sequenceRef' packages/client/src/` sh
 - Existing consumer integration tests (`useProjectEditor.test.ts`, `useFindReplaceState.test.ts`, `useSnapshotState.test.ts`, `SnapshotPanel` tests) pass without semantic change. The `useProjectEditor.test.ts:1417-1422` assertion is updated to ride on auto-abort.
 - CLAUDE.md §Save-Pipeline Invariants carries both edits.
 - `make cover` verified on `packages/client` after the migration commits and before the CLAUDE.md edit. Floors (95/85/90/95 statements/branches/functions/lines, per `vitest.config.ts` and CLAUDE.md §Testing Philosophy) met or exceeded. If any floor drops, fix by adding meaningful tests for the newly-uncovered branches — not by lowering the threshold.
-- No user-visible behavior change.
+- No user-visible behavior change, except the single companion bug fix in §Goal (S5 error-bleed gate at `useProjectEditor.ts:304`).
