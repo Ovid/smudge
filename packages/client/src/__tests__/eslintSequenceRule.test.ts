@@ -22,10 +22,12 @@ describe("no-restricted-syntax sequence-ref rule", () => {
         if (seq !== ref.current) return;
       }
     `;
-    const [result] = await lint(code);
+    const results = await lint(code);
+    expect(results).toHaveLength(1);
+    const result = results[0]!;
     const msgs = result.messages.filter((m) => m.ruleId === "no-restricted-syntax");
     expect(msgs).toHaveLength(1);
-    expect(msgs[0].message).toMatch(/useAbortableSequence/);
+    expect(msgs[0]!.message).toMatch(/useAbortableSequence/);
   });
 
   it("rejects `seq === xSeqRef.current` — the still-fresh negative check", async () => {
@@ -37,7 +39,9 @@ describe("no-restricted-syntax sequence-ref rule", () => {
         if (seq === ref.current) return;
       }
     `;
-    const [result] = await lint(code);
+    const results = await lint(code);
+    expect(results).toHaveLength(1);
+    const result = results[0]!;
     const msgs = result.messages.filter((m) => m.ruleId === "no-restricted-syntax");
     expect(msgs).toHaveLength(1);
   });
@@ -50,7 +54,9 @@ describe("no-restricted-syntax sequence-ref rule", () => {
         if (ref.current?.id === savingChapterId) return;
       }
     `;
-    const [result] = await lint(code);
+    const results = await lint(code);
+    expect(results).toHaveLength(1);
+    const result = results[0]!;
     const msgs = result.messages.filter((m) => m.ruleId === "no-restricted-syntax");
     expect(msgs).toHaveLength(0);
   });

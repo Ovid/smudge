@@ -631,10 +631,7 @@ describe("SnapshotPanel migration structural check", () => {
   it("no longer uses raw seq-ref patterns", () => {
     // jsdom hijacks new URL(relative, base); use path.resolve for robust file lookup.
     const source = readFileSync(
-      resolve(
-        dirname(fileURLToPath(import.meta.url)),
-        "../components/SnapshotPanel.tsx",
-      ),
+      resolve(dirname(fileURLToPath(import.meta.url)), "../components/SnapshotPanel.tsx"),
       "utf-8",
     );
     expect(source).not.toMatch(/chapterSeqRef/);

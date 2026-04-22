@@ -694,10 +694,7 @@ describe("useFindReplaceState migration structural check", () => {
     // URL; resolve via path.resolve on the test file's directory instead so
     // the resulting path is the real file:// filesystem path.
     const here = fileURLToPath(import.meta.url);
-    const source = readFileSync(
-      resolve(dirname(here), "../hooks/useFindReplaceState.ts"),
-      "utf-8",
-    );
+    const source = readFileSync(resolve(dirname(here), "../hooks/useFindReplaceState.ts"), "utf-8");
     expect(source).not.toMatch(/searchSeqRef/);
     expect(source).toMatch(/useAbortableSequence/);
   });
