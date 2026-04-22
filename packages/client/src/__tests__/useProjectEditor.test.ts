@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import { UNTITLED_CHAPTER } from "@smudge/shared";
 
 import { api, ApiRequestError } from "../api/client";
@@ -1414,13 +1417,12 @@ describe("useProjectEditor", () => {
 
   it("reloadActiveChapter in flight during unmount does not setState on a gone component (I5)", async () => {
     // The save path had unmount protection via cancelInFlightSave bumping
-    // saveSeqRef, but reloadActiveChapter was guarded only by
-    // selectChapterSeqRef — and the unmount effect didn't bump it. A
-    // reload GET that resolved post-unmount would setActiveChapter /
-    // setChapterWordCount / setChapterReloadKey on a gone component,
-    // surfacing React's "state update on unmounted component" warning.
-    // Fix: the unmount effect now bumps selectChapterSeqRef, so the
-    // post-await seq check short-circuits cleanly.
+    // saveSeq, but reloadActiveChapter was guarded only by
+    // selectChapterSeq — and the unmount effect used to need an explicit
+    // cancelInFlightSelect() bump. Under useAbortableSequence, each hook
+    // instance auto-aborts on unmount, so a post-unmount GET resolution
+    // is discarded by selectChapterSeq's isStale() check without any
+    // explicit unmount-effect line. This test pins that behavior.
     vi.mocked(api.chapters.get).mockReset().mockResolvedValueOnce(mockChapter1);
     vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
     const { result, unmount } = renderHook(() => useProjectEditor("test-project"));
@@ -1787,5 +1789,19 @@ describe("useProjectEditor", () => {
     // is no longer in the newly-loaded project's chapter set and loaded
     // project B's first chapter instead.
     await waitFor(() => expect(result.current.activeChapter?.id).toBe("other-1"));
+  });
+});
+
+describe("useProjectEditor migration structural check", () => {
+  it("no longer uses raw seq-ref patterns", () => {
+    // jsdom hijacks new URL(relative, base); use path.resolve for robust file lookup.
+    const source = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), "../hooks/useProjectEditor.ts"),
+      "utf-8",
+    );
+    expect(source).not.toMatch(/selectChapterSeqRef/);
+    expect(source).not.toMatch(/saveSeqRef/);
+    expect(source).not.toMatch(/statusChangeSeqRef/);
+    expect(source).toMatch(/useAbortableSequence/);
   });
 });
