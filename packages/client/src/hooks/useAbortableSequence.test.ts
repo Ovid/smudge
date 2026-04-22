@@ -77,6 +77,23 @@ describe("useAbortableSequence", () => {
     expect(token.isStale()).toBe(true);
   });
 
+  it("survives React StrictMode's mount→cleanup→mount double-effect", async () => {
+    // React 18 StrictMode runs useEffect twice in development: mount,
+    // cleanup, mount. A naive cleanup-only `mountedRef = false` would flip
+    // the flag on the first cleanup and never revive it, silently breaking
+    // every consumer (auto-save, chapter select, snapshot view) because
+    // every token reports isStale() = true. Pin that re-mount restores
+    // the mounted flag so StrictMode dev builds behave like prod.
+    const React = await import("react");
+    const { result } = renderHook(() => useAbortableSequence(), {
+      wrapper: ({ children }) => React.createElement(React.StrictMode, null, children),
+    });
+    const token = result.current.start();
+    // If the cleanup's `mountedRef = false` survived the re-mount, this
+    // token would already be stale before any epoch change.
+    expect(token.isStale()).toBe(false);
+  });
+
   it("two sequences in the same component are independent", () => {
     const { result } = renderHook(() => ({
       a: useAbortableSequence(),

@@ -38,6 +38,14 @@ export function useAbortableSequence(): AbortableSequence {
   }, []);
 
   useEffect(() => {
+    // React 18 StrictMode runs mount/cleanup/mount in development. Without
+    // this line, the first cleanup sets mountedRef.current = false and the
+    // second mount doesn't revive it — every subsequent token reports
+    // isStale() true, silently breaking every flow that gates on the hook
+    // (auto-save, chapter select, snapshot view). Re-setting on each mount
+    // closes the pair so production (single mount) and dev (double mount)
+    // behave identically.
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       counterRef.current += 1;
