@@ -293,7 +293,7 @@ describe("useSnapshotState", () => {
       restorePromise = result.current.restoreSnapshot("snap-1");
     });
 
-    // Switch chapters mid-flight. The chapterId effect bumps chapterSeqRef.
+    // Switch chapters mid-flight. The chapterId effect calls chapterSeq.abort().
     rerender({ id: "ch-2" });
 
     let r: { ok: boolean; staleChapterSwitch?: boolean } = { ok: false };
