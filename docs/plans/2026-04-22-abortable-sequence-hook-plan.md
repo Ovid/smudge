@@ -809,7 +809,7 @@ Expected: FAIL — `no-restricted-syntax` rule not yet configured to target the 
 
 ### Step 7.3: Add the rule to `eslint.config.js`
 
-Edit `/Users/ovid/projects/smudge/eslint.config.js`. Inside the `rules` block of the object targeting `packages/client/**/*.{ts,tsx}` (the React-hooks block at `L.31-40`), add:
+Edit `eslint.config.js` (repo root). Inside the `rules` block of the object targeting `packages/client/**/*.{ts,tsx}` (the React-hooks block at `L.31-40`), add:
 
 ```js
 "no-restricted-syntax": [
