@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useAbortableSequence, type SequenceToken } from "./useAbortableSequence";
+import { useAbortableSequence } from "./useAbortableSequence";
 
 describe("useAbortableSequence", () => {
   it("a fresh start() token is not stale", () => {
