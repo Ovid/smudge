@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from "react";
 import { api, ApiRequestError } from "../api/client";
+import { useAbortableSequence } from "../hooks/useAbortableSequence";
 import { STRINGS } from "../strings";
 import type { SnapshotListItem } from "@smudge/shared";
 
@@ -103,51 +104,52 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
     // wrong element for keyboard users.
     const closedByUserRef = useRef(false);
     // Guards async list responses against rapid chapter switches: every
-    // chapter change bumps the seq, and stale resolutions check before
-    // calling setSnapshots. Without this, the imperative refreshSnapshots()
-    // path could overwrite a newer chapter's list with a stale one.
-    const chapterSeqRef = useRef(0);
+    // chapter change abort()s the sequence, and stale resolutions bail via
+    // token.isStale() before calling setSnapshots. Without this, the
+    // imperative refreshSnapshots() path could overwrite a newer chapter's
+    // list with a stale one.
+    const chapterSeq = useAbortableSequence();
 
     const fetchSnapshots = useCallback(async () => {
       if (!chapterId) return;
-      const seq = chapterSeqRef.current;
+      const token = chapterSeq.capture();
       try {
         const data = await api.snapshots.list(chapterId);
-        if (seq !== chapterSeqRef.current) return;
+        if (token.isStale()) return;
         setSnapshots(data);
         setListError(null);
         onSnapshotsChange?.(data.length);
       } catch {
-        if (seq !== chapterSeqRef.current) return;
+        if (token.isStale()) return;
         // Surface the failure instead of silently showing an empty panel;
         // otherwise a network blip makes the user think a chapter with
         // snapshots has none.
         setListError(S.listFailed);
       }
-    }, [chapterId, onSnapshotsChange]);
+    }, [chapterId, onSnapshotsChange, chapterSeq]);
 
     useImperativeHandle(ref, () => ({ refreshSnapshots: fetchSnapshots }), [fetchSnapshots]);
 
     // Fetch on mount and when chapterId changes
     useEffect(() => {
-      // Bump seq before fetching so any in-flight list response from the
-      // prior chapter is discarded by fetchSnapshots' seq check.
-      chapterSeqRef.current++;
+      // Abort before fetching so any in-flight list response from the
+      // prior chapter is discarded via token.isStale() checks below.
+      chapterSeq.abort();
       if (!isOpen || !chapterId) return;
-      const seq = chapterSeqRef.current;
+      const token = chapterSeq.capture();
       api.snapshots
         .list(chapterId)
         .then((data) => {
-          if (seq !== chapterSeqRef.current) return;
+          if (token.isStale()) return;
           setSnapshots(data);
           setListError(null);
           onSnapshotsChange?.(data.length);
         })
         .catch(() => {
-          if (seq !== chapterSeqRef.current) return;
+          if (token.isStale()) return;
           setListError(S.listFailed);
         });
-    }, [isOpen, chapterId, onSnapshotsChange]);
+    }, [isOpen, chapterId, onSnapshotsChange, chapterSeq]);
 
     // Focus management
     useEffect(() => {

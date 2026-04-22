@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import { SnapshotPanel } from "../components/SnapshotPanel";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
@@ -621,5 +624,20 @@ describe("SnapshotPanel", () => {
         expect(panel).toHaveFocus();
       });
     });
+  });
+});
+
+describe("SnapshotPanel migration structural check", () => {
+  it("no longer uses raw seq-ref patterns", () => {
+    // jsdom hijacks new URL(relative, base); use path.resolve for robust file lookup.
+    const source = readFileSync(
+      resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        "../components/SnapshotPanel.tsx",
+      ),
+      "utf-8",
+    );
+    expect(source).not.toMatch(/chapterSeqRef/);
+    expect(source).toMatch(/useAbortableSequence/);
   });
 });
