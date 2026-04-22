@@ -34,19 +34,37 @@ interface SnapshotPanelProps {
   chapterId: string | null;
   isOpen: boolean;
   onClose: () => void;
-  onView: (snapshot: {
-    id: string;
-    label: string | null;
-    created_at: string;
-  }) => Promise<{ ok: boolean; reason?: string } | undefined> | undefined;
+  onView: (snapshot: { id: string; label: string | null; created_at: string }) =>
+    | Promise<
+        // I6: `staleChapterSwitch` on the ok branch signals that the view was
+        // abandoned because the user changed chapters mid-fetch. The panel
+        // surfaces a brief info rather than treating ok:true as a success.
+        { ok: true; staleChapterSwitch?: boolean } | { ok: false; reason?: string } | undefined
+      >
+    | undefined;
   /**
    * Called before snapshot creation. The panel awaits this so the server
    * snapshots the chapter AFTER any pending editor save has landed —
    * otherwise a snapshot taken right after typing captures stale content.
-   * Should resolve true when the pre-save completed (or nothing was dirty)
-   * and false when it failed, in which case snapshot creation is skipped.
+   *
+   * Result contract (I5 — review 2026-04-21):
+   * - `{ ok: true }`: proceed with the snapshot POST.
+   * - `{ ok: false, reason: "flush_failed" }`: the pre-save failed; surface
+   *   createFailed to the user so they don't think the snapshot landed
+   *   when it was silently aborted.
+   * - `{ ok: false, reason: "busy" }`: a concurrent mutation (restore /
+   *   replace) is in flight. The caller already raised its own
+   *   mutationBusy info banner — the panel suppresses createError here
+   *   to avoid a contradictory pair of banners.
+   * - `{ ok: false, reason: "locked" }`: the editor-lock banner (refresh-the-
+   *   page) is showing after a possibly-committed restore/replace. The
+   *   persistent lock banner is the sole user-visible signal — the panel
+   *   suppresses createError to avoid contradicting "refresh the page" with
+   *   "save and try again."
    */
-  onBeforeCreate?: () => Promise<boolean>;
+  onBeforeCreate?: () => Promise<
+    { ok: true } | { ok: false; reason: "busy" | "flush_failed" | "locked" }
+  >;
   /**
    * Fired every time the panel's list fetch succeeds, with the current
    * snapshot count. Lets the parent hook drive the toolbar badge from
@@ -198,9 +216,32 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
       // failed, surface that to the user so they don't think the snapshot
       // succeeded when it was silently aborted.
       if (onBeforeCreate) {
-        const flushed = await onBeforeCreate();
-        if (!flushed) {
+        // I3: defense-in-depth. EditorPage's onBeforeCreate wraps its
+        // flushSave in try/catch, but a future caller that forgets the
+        // wrap would otherwise produce an unhandled rejection here (the
+        // caller's subsequent try/catch below only wraps api.snapshots.create,
+        // not this await).
+        let outcome: { ok: true } | { ok: false; reason: "busy" | "flush_failed" | "locked" };
+        try {
+          outcome = await onBeforeCreate();
+        } catch {
           setCreateError(S.createFailed);
+          return;
+        }
+        if (!outcome.ok) {
+          // I5 (review 2026-04-21): busy-return is not a failure — the
+          // caller has already surfaced its own mutationBusy info banner.
+          // Suppressing createError here avoids two contradictory banners
+          // ("Unable to create… save your unsaved changes" + "Another
+          // action is in progress"). The flush-failed branch still
+          // surfaces createFailed because the save genuinely did not
+          // land and the user must know before believing the snapshot
+          // succeeded. Same treatment for "locked": the persistent lock
+          // banner ("refresh the page") is the user-visible signal —
+          // stamping createError on top would contradict it.
+          if (outcome.reason === "flush_failed") {
+            setCreateError(S.createFailed);
+          }
           return;
         }
       }
@@ -410,7 +451,16 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
                             label: snap.label,
                             created_at: snap.created_at,
                           });
-                          if (res && "ok" in res && !res.ok) {
+                          // I6: explicit staleChapterSwitch branch. Without
+                          // this the click produced no feedback — the panel
+                          // only read the error discriminant, so a benign
+                          // chapter-switch race looked identical to a dead
+                          // button. Surface the info copy through the same
+                          // viewError slot so the row's existing visual
+                          // treatment applies.
+                          if (res && "ok" in res && res.ok && res.staleChapterSwitch) {
+                            setViewError(S.viewStaleChapterSwitch);
+                          } else if (res && "ok" in res && !res.ok) {
                             if (res.reason === "not_found") {
                               setViewError(S.viewFailedNotFound);
                               await fetchSnapshots();
@@ -418,6 +468,19 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
                               setViewError(S.viewFailedCorrupt);
                             } else if (res.reason === "save_failed") {
                               setViewError(S.viewFailedSaveFirst);
+                            } else if (res.reason === "network") {
+                              // S4: mirror restore/replace's dedicated network
+                              // copy. The generic viewFailed ("Try again") is
+                              // misleading on a connection drop — a retry will
+                              // fail identically until the network recovers.
+                              setViewError(S.viewFailedNetwork);
+                            } else if (res.reason === "locked" || res.reason === "busy") {
+                              // S1: caller refused before touching the editor
+                              // because the lock banner is up (locked) or a
+                              // mutation is in flight (busy). Both surfaces
+                              // have their own user-visible signal already —
+                              // suppress the panel-local viewError to avoid a
+                              // contradictory second banner.
                             } else {
                               setViewError(S.viewFailed);
                             }

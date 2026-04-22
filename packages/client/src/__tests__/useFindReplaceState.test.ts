@@ -401,7 +401,34 @@ describe("useFindReplaceState", () => {
     });
     // 404 is terminal — must not reuse the generic "Search failed. Try again."
     // copy that invites a retry loop.
-    expect(result.current.error).toBe(STRINGS.findReplace.searchScopeNotFound);
+    expect(result.current.error).toBe(STRINGS.findReplace.searchProjectNotFound);
+    expect(result.current.results).toBeNull();
+  });
+
+  it("search() clears results on 413 (query exceeds size cap) (I4)", async () => {
+    // 413 is not transient — the query itself exceeded the server's
+    // body-size cap and will keep being rejected until the user
+    // changes the query. Keeping prior results next to the
+    // contentTooLarge banner lets Replace act on stale matches the
+    // server has already said it cannot process.
+    const priorResults = { total_count: 1, chapters: [{ id: "c1", title: "Ch 1", matches: [] }] };
+    mockFind.mockResolvedValueOnce(priorResults);
+
+    const { result } = renderHook(() => useFindReplaceState("my-project"));
+    act(() => {
+      result.current.setQuery("test");
+    });
+    await act(async () => {
+      await result.current.search("my-project");
+    });
+    expect(result.current.results).toEqual(priorResults);
+
+    const { ApiRequestError } = await import("../api/client");
+    mockFind.mockRejectedValueOnce(new ApiRequestError("too large", 413));
+    await act(async () => {
+      await result.current.search("my-project");
+    });
+    expect(result.current.error).toBe(STRINGS.findReplace.contentTooLarge);
     expect(result.current.results).toBeNull();
   });
 
@@ -452,6 +479,46 @@ describe("useFindReplaceState", () => {
     expect(mockFind).toHaveBeenCalledWith(
       "my-project",
       "hello",
+      expect.any(Object),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("debounced search reads latest slug at fire time, not effect setup (I3)", async () => {
+    // If the projectSlug changes (rename) during the 300ms debounce window,
+    // the debounce callback must POST against the CURRENT slug. Previously
+    // `const slug = latestSlugRef.current` ran at effect-setup and was
+    // closed over by the setTimeout, so the search fired against the
+    // dead slug — contradicting the search() wrapper comment that says
+    // `latestSlugRef.current` should be read at call time.
+    const searchResult = { total_count: 0, chapters: [] };
+    mockFind.mockResolvedValue(searchResult);
+
+    const { result, rerender } = renderHook(
+      ({ slug }: { slug: string }) => useFindReplaceState(slug),
+      { initialProps: { slug: "old-slug" } },
+    );
+
+    act(() => {
+      result.current.togglePanel();
+      result.current.setQuery("word");
+    });
+
+    // Advance partway through the debounce window, then rename.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(150);
+    });
+    rerender({ slug: "new-slug" });
+
+    // Fire the remainder of the debounce.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+
+    expect(mockFind).toHaveBeenCalledTimes(1);
+    expect(mockFind).toHaveBeenCalledWith(
+      "new-slug",
+      "word",
       expect.any(Object),
       expect.any(AbortSignal),
     );
@@ -521,5 +588,99 @@ describe("useFindReplaceState", () => {
     expect(result.current.query).toBe("");
     expect(result.current.replacement).toBe("");
     expect(result.current.results).toBeNull();
+  });
+
+  it("debounced search bails if panel was closed between timer fire and callback execution (I2)", async () => {
+    // Task-queue race: 300ms debounce timer moves its callback onto
+    // the task queue before closePanel's clearTimeout can stop it.
+    // Once queued, the callback runs regardless. Without the
+    // panelOpenRef re-check, it would invoke search() against a
+    // closed panel — the fetch has its own fresh abort controller
+    // (closePanel's abort targeted a prior in-flight search), so the
+    // response would pass the seq guard and write stale results +
+    // loading state back. We simulate the race by capturing the
+    // scheduled callback and invoking it manually after closePanel.
+    mockFind.mockResolvedValue({ total_count: 42, chapters: [] });
+
+    const origSetTimeout = globalThis.setTimeout;
+    let capturedCallback: (() => void) | null = null;
+    const spy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+      fn: () => void,
+      ms: number,
+    ) => {
+      if (ms === 300) {
+        capturedCallback = fn;
+        return 0 as unknown as ReturnType<typeof setTimeout>;
+      }
+      return origSetTimeout(fn, ms);
+    }) as typeof setTimeout);
+
+    try {
+      const { result } = renderHook(() => useFindReplaceState("my-project"));
+      act(() => {
+        result.current.togglePanel();
+        result.current.setQuery("foo");
+      });
+      expect(capturedCallback).not.toBeNull();
+
+      act(() => {
+        result.current.closePanel();
+      });
+
+      // Simulate the callback slipping past closePanel's clearTimeout.
+      await act(async () => {
+        capturedCallback?.();
+        await Promise.resolve();
+      });
+
+      expect(mockFind).not.toHaveBeenCalled();
+      expect(result.current.loading).toBe(false);
+      expect(result.current.results).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("clears loading on project-change reset so the new panel is not stuck 'Searching…' (I2)", async () => {
+    // Before I2 the project-change reset bumped searchSeqRef and aborted
+    // the controller but did not clear `loading`. The in-flight search's
+    // finally only clears loading when seq === current — after the bump
+    // the check fails and loading stays true forever. closePanel sidesteps
+    // this by clearing loading explicitly, so the bug only manifested when
+    // navigating projects with the panel open.
+    let resolveFind: (v: { total_count: number; chapters: [] }) => void = () => {};
+    mockFind.mockImplementationOnce(
+      () =>
+        new Promise<{ total_count: number; chapters: [] }>((resolve) => {
+          resolveFind = resolve;
+        }),
+    );
+
+    const { result, rerender } = renderHook(
+      ({ slug, id }: { slug: string; id: string }) => useFindReplaceState(slug, id),
+      { initialProps: { slug: "first", id: "proj-1" } },
+    );
+
+    act(() => {
+      result.current.togglePanel();
+      result.current.setQuery("hello");
+    });
+    // Let the 300ms debounce fire so the search starts and loading flips.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(result.current.loading).toBe(true);
+
+    // Navigate to a different project with the panel still open and a
+    // search in flight.
+    rerender({ slug: "second", id: "proj-2" });
+
+    expect(result.current.loading).toBe(false);
+    // Resolve the now-orphaned response — it must not flip loading back.
+    resolveFind({ total_count: 0, chapters: [] });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.loading).toBe(false);
   });
 });

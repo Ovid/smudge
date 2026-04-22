@@ -7,6 +7,14 @@ import { STRINGS } from "../strings";
 
 export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
 
+// Discriminated return from reloadActiveChapter so callers can distinguish
+// "fresh server state is now on screen" from "the user switched chapters
+// (or the call was gated out) before the reload ran" from "the GET errored".
+// Conflating the latter two as a single false return made the
+// useEditorMutation hook raise a spurious persistent lock banner on a
+// chapter the mutation didn't touch (I5).
+export type ReloadOutcome = "reloaded" | "superseded" | "failed";
+
 export function useProjectEditor(slug: string | undefined) {
   const [project, setProject] = useState<ProjectWithChapters | null>(null);
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
@@ -25,8 +33,34 @@ export function useProjectEditor(slug: string | undefined) {
   // discarding it when clearCachedContent runs on success.
   const latestContentRef = useRef<{ id: string; content: Record<string, unknown> } | null>(null);
   const projectSlugRef = useRef(slug);
-  if (project?.slug !== undefined) {
-    projectSlugRef.current = project.slug;
+  // I1 (review 2026-04-21): the ref must reflect the CURRENT URL slug so
+  // that handlers firing during an inter-project loading window
+  // (handleCreateChapter, handleReorderChapters, handleUpdateProjectTitle)
+  // don't mutate the previous project. Before this fix, the ref was only
+  // written from project.slug after loadProject resolved, so any click
+  // landing in the gap would POST /projects/<old-slug>/... against the
+  // project the user had just navigated away from.
+  //
+  // Precedence:
+  //   1. When the `slug` argument changes (URL-driven navigation, back/
+  //      forward, react-router navigate), sync the ref to the new URL
+  //      slug immediately. Detected via a prev-slug sentinel so the
+  //      sync runs exactly once per slug transition.
+  //   2. `handleUpdateProjectTitle` writes the ref directly on rename
+  //      success — we must not clobber that write on the next render
+  //      before the URL has caught up with navigate(). The prev-slug
+  //      sentinel guards against that: slug hasn't changed, so we
+  //      don't touch the ref.
+  const prevSlugArgRef = useRef(slug);
+  if (prevSlugArgRef.current !== slug) {
+    prevSlugArgRef.current = slug;
+    // S3 (review 2026-04-21): sync the ref in lock-step with
+    // prevSlugArgRef, including the defined→undefined transition.
+    // Previously the ref was rewritten only when the new slug was
+    // defined, leaving it pointing at the prior project after the
+    // URL cleared — a late handler click landing in that window
+    // would POST against the old project.
+    projectSlugRef.current = slug;
   }
   const selectChapterSeqRef = useRef(0);
   const saveSeqRef = useRef(0);
@@ -41,6 +75,56 @@ export function useProjectEditor(slug: string | undefined) {
     resolve: () => void;
   } | null>(null);
   const statusChangeSeqRef = useRef(0);
+
+  // Shared cancel-in-flight-save helper. Bumps the save seq (so the retry
+  // loop short-circuits on its next iteration), aborts the fetch, and
+  // unblocks any backoff sleep. handleSelectChapter, handleDeleteChapter,
+  // cancelPendingSaves, and unmount cleanup all go through this — before
+  // S3, the select/delete paths omitted the backoff-unblock step, leaving
+  // the retry loop asleep for up to 8s after a chapter switch/delete.
+  const cancelInFlightSave = useCallback(() => {
+    ++saveSeqRef.current;
+    if (saveAbortRef.current) {
+      saveAbortRef.current.abort();
+      saveAbortRef.current = null;
+    }
+    if (saveBackoffRef.current) {
+      clearTimeout(saveBackoffRef.current.timer);
+      saveBackoffRef.current.resolve();
+      saveBackoffRef.current = null;
+    }
+  }, []);
+
+  // Bump the select-chapter seq. Extends the same short-circuit
+  // discipline cancelInFlightSave provides for saves (I5):
+  // reloadActiveChapter and handleSelectChapter both gate their
+  // post-await setState on seq === selectChapterSeqRef.current, so a
+  // late-resolving GET after unmount becomes a cheap no-op instead of
+  // setActiveChapter on a gone component.
+  //
+  // Wrapped in useCallback (matching cancelInFlightSave) so the ref
+  // access happens inside a stable function identity rather than
+  // directly in the cleanup closure — the react-hooks/exhaustive-deps
+  // rule would otherwise flag the inline ref read as potentially stale,
+  // even though a monotonic seq counter is exactly the kind of ref that
+  // wants the latest value at cleanup time.
+  const cancelInFlightSelect = useCallback(() => {
+    ++selectChapterSeqRef.current;
+  }, []);
+
+  // Unmount cleanup: the retry loop inside handleSave runs outside React's
+  // render phase, so without this teardown an in-flight save-backoff sleep
+  // would wake after EditorPage unmounted, call api.chapters.update, and
+  // schedule state writes on a gone component (and in dev it would log the
+  // "state update on unmounted component" warning). cancelInFlightSave
+  // covers the side-effect-free portion of cancelPendingSaves (no setState
+  // on unmount); cancelInFlightSelect does the same for reloads/selects.
+  useEffect(() => {
+    return () => {
+      cancelInFlightSave();
+      cancelInFlightSelect();
+    };
+  }, [cancelInFlightSave, cancelInFlightSelect]);
 
   useEffect(() => {
     let cancelled = false;
@@ -114,7 +198,16 @@ export function useProjectEditor(slug: string | undefined) {
 
       setSaveStatus("saving");
       setSaveErrorMessage(null);
-      let rejected4xx: { message: string } | null = null;
+      // Map server 4xx error code/status to a strings.ts entry. Never
+      // surface the raw err.message — that's server-authored English that
+      // bypasses the i18n-ready externalization (CLAUDE.md). Mirrors the
+      // discipline in utils/findReplaceErrors.ts.
+      const mapSaveError = (err: ApiRequestError): string => {
+        if (err.status === 413) return STRINGS.editor.saveFailedTooLarge;
+        if (err.code === "VALIDATION_ERROR") return STRINGS.editor.saveFailedInvalid;
+        return STRINGS.editor.saveFailed;
+      };
+      let rejected4xx: { message: string; code?: string } | null = null;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (seq !== saveSeqRef.current) return false; // chapter changed, abort retries
         // Re-read latest content each attempt so backoff retries post keystrokes
@@ -170,31 +263,46 @@ export function useProjectEditor(slug: string | undefined) {
           }
           if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
             console.warn("Save failed with 4xx:", err);
-            // Capture the server's specific message (e.g. INVALID_CONTENT)
-            // so the UI can surface it instead of the generic retry copy.
-            rejected4xx = { message: err.message || STRINGS.editor.saveFailed };
+            // Map to strings.ts copy rather than forwarding the raw
+            // server-authored message — see mapSaveError above.
+            rejected4xx = { message: mapSaveError(err), code: err.code };
             break;
           }
           if (attempt < MAX_RETRIES) {
             await new Promise<void>((resolve) => {
               const timer = setTimeout(() => {
-                saveBackoffRef.current = null;
+                // Only null the shared ref if it still points to OUR handle.
+                // If a concurrent save or cancellation has replaced it with
+                // a newer timer/resolve pair, clearing would drop the
+                // newer attempt's ability to be unblocked by
+                // cancelInFlightSave (S4).
+                if (saveBackoffRef.current?.timer === timer) {
+                  saveBackoffRef.current = null;
+                }
                 resolve();
               }, BACKOFF_MS[attempt]);
               saveBackoffRef.current = { timer, resolve };
             });
-            // If cancelPendingSaves cleared the timer and resolved early,
+            // If cancelInFlightSave cleared the timer and resolved early,
             // the seq check at the top of the next loop iteration exits
             // cleanly.
           }
         }
       }
       if (saveAbortRef.current === controller) saveAbortRef.current = null;
-      // On a 4xx rejection the server preserves the previous good content
-      // and will reject the same payload on every retry. Clear the local
-      // draft so the next load pulls the server's preserved content rather
-      // than rehydrating the rejected payload into a persistent error loop.
-      if (rejected4xx) {
+      // Only wipe the local draft when the server's intent is unambiguous:
+      // VALIDATION_ERROR means the payload is malformed and will be
+      // rejected on every retry, so the cache would otherwise feed an
+      // infinite error loop. Everything else (413 PAYLOAD_TOO_LARGE, bare
+      // 4xx without a known code) is preserved — invariant #3 says the
+      // cache is the last line of defense against data loss, and 413 in
+      // particular is rejected at the Express body-size guard BEFORE the
+      // chapter handler runs, so the server never held the typed content
+      // in the first place. Also guard by seq: if the user switched
+      // chapters between the rejected PATCH being sent and its 4xx
+      // landing, a different path (handleSelectChapter) now owns this
+      // chapter's cache and we must not stomp on it (I2).
+      if (rejected4xx && rejected4xx.code === "VALIDATION_ERROR" && seq === saveSeqRef.current) {
         clearCachedContent(savingChapterId);
         if (latestContentRef.current?.id === savingChapterId) {
           latestContentRef.current = null;
@@ -221,76 +329,152 @@ export function useProjectEditor(slug: string | undefined) {
     }
   }, []);
 
-  const handleCreateChapter = useCallback(async () => {
-    const slug = projectSlugRef.current;
-    if (!slug) return;
-    ++saveSeqRef.current; // cancel any in-flight save retries for the old chapter
-    setSaveStatus("idle");
-    setSaveErrorMessage(null);
-    setCacheWarning(false);
-    try {
-      const newChapter = await api.chapters.create(slug);
-      setActiveChapter(newChapter);
-      setChapterWordCount(0);
-      setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
-    } catch (err) {
-      console.warn("Failed to create chapter:", err);
-      setError(STRINGS.error.createChapterFailed);
-    }
-  }, []);
+  const handleCreateChapter = useCallback(
+    async (onError?: (message: string) => void) => {
+      const slug = projectSlugRef.current;
+      if (!slug) return;
+      // S6 (review 2026-04-21): the post-await drift guard (below)
+      // uses a two-part compare so a concurrent rename does not
+      // discard a valid response. A rename updates projectSlugRef to
+      // the new slug AND updates projectRef.slug to match, so when
+      // projectSlugRef equals projectRef?.slug we're still on the
+      // SAME project just with a new slug — keep the response.
+      // Cross-project navigation desyncs the two (URL changed, loaded
+      // project not yet swapped), and the guard fires correctly.
+      // Full cancel of any in-flight save: bump saveSeq, abort the fetch,
+      // and unblock any backoff sleep (S1). A bare `++saveSeqRef.current`
+      // short-circuited the retry loop's seq check but left the
+      // AbortController live and the backoff timer scheduled — the timer
+      // would wake up seconds later, do nothing useful (guarded by seq),
+      // but hold a reference to the old chapter id until it fired.
+      // Matches the discipline of handleSelectChapter / handleDeleteChapter.
+      cancelInFlightSave();
+      // Also cancel any in-flight chapter GET (reloadActiveChapter or
+      // handleSelectChapter). Without this bump, a pending reload's
+      // setActiveChapter landing after the POST would overwrite the
+      // newly-created chapter with the old one, and subsequent keystrokes
+      // would PATCH the stale chapter id (I4).
+      cancelInFlightSelect();
+      setSaveStatus("idle");
+      setSaveErrorMessage(null);
+      setCacheWarning(false);
+      try {
+        const newChapter = await api.chapters.create(slug);
+        // C2: discard the response if the user navigated to a different
+        // project mid-POST. Without this, `setActiveChapter` and the
+        // `setProject` merge would write Project A's new chapter into
+        // Project B's state, producing a phantom chapter in the sidebar
+        // and pointing subsequent edits at the wrong project's chapter id.
+        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
+          return;
+        setActiveChapter(newChapter);
+        setChapterWordCount(0);
+        setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
+      } catch (err) {
+        console.warn("Failed to create chapter:", err);
+        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
+          return;
+        // I4: route through the onError callback (same pattern as
+        // handleRenameChapter / handleStatusChange / handleDeleteChapter)
+        // so a recoverable failure surfaces as a dismissible banner
+        // rather than the full-screen error overlay, which would tear
+        // down the editor session and leave the user with only a
+        // "back to projects" link.
+        if (onError) {
+          onError(STRINGS.error.createChapterFailed);
+        } else {
+          setError(STRINGS.error.createChapterFailed);
+        }
+      }
+    },
+    [cancelInFlightSave, cancelInFlightSelect],
+  );
 
-  const handleSelectChapter = useCallback(async (chapterId: string) => {
-    if (activeChapterRef.current && chapterId === activeChapterRef.current.id) return;
-    ++saveSeqRef.current; // cancel any in-flight save retries for the old chapter
-    // Abort the in-flight PATCH too — the seq bump alone stops the retry
-    // loop and state writes, but the server-side write keeps running. An
-    // abort ensures no wasted work and no pre-existing PATCH completing
-    // against the switched-away chapter.
-    saveAbortRef.current?.abort();
-    saveAbortRef.current = null;
-    setSaveStatus("idle");
-    // Mirror handleCreateChapter: the previous chapter's persistent save
-    // failure message must not follow the user into the newly-selected
-    // chapter. The status reset alone hides the footer indicator, but
-    // saveErrorMessage is a separate state and would otherwise linger.
-    setSaveErrorMessage(null);
-    setCacheWarning(false);
-    const seq = ++selectChapterSeqRef.current;
-    try {
-      const chapter = await api.chapters.get(chapterId);
-      if (seq !== selectChapterSeqRef.current) return; // superseded by a newer selection
-      const cached = getCachedContent(chapterId);
-      const effectiveChapter = cached ? { ...chapter, content: cached } : chapter;
-      setActiveChapter(effectiveChapter);
-      setChapterWordCount(countWords(effectiveChapter.content));
-    } catch (err) {
-      console.warn("Failed to load chapter:", err);
-      if (seq !== selectChapterSeqRef.current) return;
-      setError(STRINGS.error.loadChapterFailed);
-    }
-  }, []);
+  const handleSelectChapter = useCallback(
+    async (chapterId: string) => {
+      if (activeChapterRef.current && chapterId === activeChapterRef.current.id) return;
+      // Seq bump + abort + backoff-unblock. Before S3 this path only bumped
+      // the seq and aborted — if a retry was asleep in backoff, it would
+      // sit for up to 8s before the next iteration's seq check fired.
+      cancelInFlightSave();
+      setSaveStatus("idle");
+      // Mirror handleCreateChapter: the previous chapter's persistent save
+      // failure message must not follow the user into the newly-selected
+      // chapter. The status reset alone hides the footer indicator, but
+      // saveErrorMessage is a separate state and would otherwise linger.
+      setSaveErrorMessage(null);
+      setCacheWarning(false);
+      const seq = ++selectChapterSeqRef.current;
+      try {
+        const chapter = await api.chapters.get(chapterId);
+        if (seq !== selectChapterSeqRef.current) return; // superseded by a newer selection
+        const cached = getCachedContent(chapterId);
+        const effectiveChapter = cached ? { ...chapter, content: cached } : chapter;
+        setActiveChapter(effectiveChapter);
+        setChapterWordCount(countWords(effectiveChapter.content));
+      } catch (err) {
+        console.warn("Failed to load chapter:", err);
+        if (seq !== selectChapterSeqRef.current) return;
+        setError(STRINGS.error.loadChapterFailed);
+      }
+    },
+    [cancelInFlightSave],
+  );
 
   const reloadActiveChapter = useCallback(
-    async (onError?: (message: string) => void): Promise<boolean> => {
+    async (
+      onError?: (message: string) => void,
+      expectedChapterId?: string,
+    ): Promise<ReloadOutcome> => {
       const current = activeChapterRef.current;
-      if (!current) return false;
-      // Clear any client-side cached content so the server copy wins after a restore/replace
-      clearCachedContent(current.id);
-      ++saveSeqRef.current;
+      // No active chapter to reload — treat as superseded so callers don't
+      // raise a lock banner. "failed" is reserved for a fetch that actually
+      // errored; this path is the "nothing to refresh" case and the editor
+      // state is already consistent.
+      if (!current) return "superseded";
+      // If the caller passed an expected chapter id and the active chapter
+      // no longer matches, the user switched between the directive that
+      // requested the reload and this call. Skip the reload entirely —
+      // blindly clearing the new chapter's cache and fetching its server
+      // copy would wipe the user's in-progress draft of an unrelated
+      // chapter (I2). Return "superseded" so useEditorMutation knows the
+      // skip is intentional (not a failure warranting a lock banner) but
+      // also does NOT mark the lock-override "reloadSucceeded" flag — the
+      // now-active chapter's server state was NOT refreshed.
+      if (expectedChapterId !== undefined && current.id !== expectedChapterId) {
+        return "superseded";
+      }
+      // I7 (review 2026-04-21): bare ++saveSeqRef.current short-circuits
+      // the retry loop but leaves the in-flight AbortController and any
+      // pending backoff timer dangling. The sole current caller
+      // (useEditorMutation) already runs cancelPendingSaves() before
+      // reloadActiveChapter, but a future direct caller would inherit a
+      // resource leak. Use cancelInFlightSave for parity with
+      // handleSelectChapter / handleCreateChapter / handleDeleteChapter —
+      // all chapter-state transitions consolidate save cancellation
+      // through the same helper.
+      cancelInFlightSave();
       setSaveStatus("idle");
       setCacheWarning(false);
       const seq = ++selectChapterSeqRef.current;
       try {
         const chapter = await api.chapters.get(current.id);
-        if (seq !== selectChapterSeqRef.current) return false;
+        if (seq !== selectChapterSeqRef.current) return "superseded";
+        // Clear cache AFTER the server GET succeeds (invariant 3). Before
+        // I3, this ran pre-GET — a failed GET would have already erased the
+        // draft cache that could serve recovery, weakening defense-in-depth.
+        clearCachedContent(current.id);
         setActiveChapter(chapter);
         setChapterWordCount(countWords(chapter.content));
         // Bump reload key so the Editor remounts with fresh server content
         setChapterReloadKey((k) => k + 1);
-        return true;
+        return "reloaded";
       } catch (err) {
         console.warn("Failed to reload chapter:", err);
-        if (seq !== selectChapterSeqRef.current) return false;
+        // Seq bumped during the GET → user navigated away. A newer select
+        // owns state now; "superseded" is correct and must not route to
+        // the lock banner (I5).
+        if (seq !== selectChapterSeqRef.current) return "superseded";
         // If an onError callback is provided, route the failure there so
         // callers (e.g. post-replace reload) can surface a non-fatal banner
         // without flipping EditorPage into the full-screen error branch.
@@ -301,10 +485,10 @@ export function useProjectEditor(slug: string | undefined) {
         } else {
           setError(STRINGS.error.loadChapterFailed);
         }
-        return false;
+        return "failed";
       }
     },
-    [],
+    [cancelInFlightSave],
   );
 
   const projectRef = useRef(project);
@@ -312,12 +496,17 @@ export function useProjectEditor(slug: string | undefined) {
 
   const handleDeleteChapter = useCallback(
     async (chapter: Chapter, onError?: (message: string) => void): Promise<boolean> => {
-      ++saveSeqRef.current; // cancel any in-flight save retries for the deleted chapter
-      // Abort the in-flight PATCH as well — the server-side `deleted_at IS
-      // NULL` filter neuters the race, but aborting still saves the wasted
-      // round trip.
-      saveAbortRef.current?.abort();
-      saveAbortRef.current = null;
+      // Seq bump + abort + backoff-unblock. Before S3 this path omitted
+      // the backoff-unblock, so a retry asleep in backoff could wake up
+      // after the chapter was gone. The seq check still short-circuits
+      // the resume, but the wakeup wasted a setTimeout slot and held a
+      // reference to the deleted chapter id until the timer fired.
+      cancelInFlightSave();
+      // Also cancel any in-flight chapter GET (matches handleCreateChapter
+      // discipline): a GET resolving during the delete POST can land
+      // setActiveChapter on the chapter the user is deleting, flashing
+      // the wrong chapter as active before the delete effect settles.
+      cancelInFlightSelect();
       // Mirror handleSelectChapter: the deleted chapter's save-status must
       // not leak into the empty-state or next-selected chapter. Without
       // this, deleting mid-save leaves the footer stuck on "Saving…" until
@@ -339,12 +528,29 @@ export function useProjectEditor(slug: string | undefined) {
         if (activeChapterRef.current?.id === chapter.id) {
           const first = remaining[0];
           if (first) {
+            // Capture-and-compare the select seq across the secondary GET
+            // (I5). Without this guard, a rapid click-then-click during
+            // delete (user selects another chapter after the delete POST
+            // resolves but before this GET does) would let the stale
+            // "next chapter after delete" fetch pin the sidebar over the
+            // user's explicit selection.
+            const seq = ++selectChapterSeqRef.current;
             try {
               const ch = await api.chapters.get(first.id);
+              if (seq !== selectChapterSeqRef.current) return true;
               setActiveChapter(ch);
               setChapterWordCount(countWords(ch.content));
-            } catch {
-              // Secondary fetch failed — fall through to empty state
+            } catch (err) {
+              // Secondary fetch failed — fall through to the empty state
+              // rather than setting activeChapter to the list-level row
+              // (which has content=null). Surface the failure via the
+              // onError callback and a console.warn so the user and the
+              // dev console both learn something went wrong (I3); before
+              // I3 the catch was silent and the user saw "Add chapter"
+              // as if the project had no chapters left.
+              console.warn("Failed to load chapter after delete:", err);
+              if (seq !== selectChapterSeqRef.current) return true;
+              onError?.(STRINGS.error.loadChapterFailed);
               setActiveChapter(null);
               setChapterWordCount(0);
             }
@@ -360,37 +566,67 @@ export function useProjectEditor(slug: string | undefined) {
         return false;
       }
     },
-    [],
+    [cancelInFlightSave, cancelInFlightSelect],
   );
 
-  const handleReorderChapters = useCallback(async (orderedIds: string[]) => {
-    const slug = projectSlugRef.current;
-    if (!slug) return;
-    try {
-      await api.projects.reorderChapters(slug, orderedIds);
-      setProject((prev) => {
-        if (!prev) return prev;
-        const reordered = orderedIds
-          .map((id, index) => {
-            const ch = prev.chapters.find((c) => c.id === id);
-            return ch ? { ...ch, sort_order: index } : undefined;
-          })
-          .filter(Boolean) as Chapter[];
-        return { ...prev, chapters: reordered };
-      });
-    } catch (err) {
-      console.warn("Failed to reorder chapters:", err);
-      setError(STRINGS.error.reorderFailed);
-    }
-  }, []);
+  const handleReorderChapters = useCallback(
+    async (orderedIds: string[], onError?: (message: string) => void) => {
+      const slug = projectSlugRef.current;
+      if (!slug) return;
+      // S6 (review 2026-04-21): two-part drift guard — see
+      // handleCreateChapter for full rationale.
+      try {
+        await api.projects.reorderChapters(slug, orderedIds);
+        // C2: discard if the user navigated away mid-PUT. Without this,
+        // the reorder would apply Project A's ordered ids to Project B's
+        // chapters array — the filter by id then drops everything (ids
+        // don't match), leaving Project B with an empty chapters list
+        // until refresh.
+        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
+          return;
+        setProject((prev) => {
+          if (!prev) return prev;
+          const reordered = orderedIds
+            .map((id, index) => {
+              const ch = prev.chapters.find((c) => c.id === id);
+              return ch ? { ...ch, sort_order: index } : undefined;
+            })
+            .filter(Boolean) as Chapter[];
+          return { ...prev, chapters: reordered };
+        });
+      } catch (err) {
+        console.warn("Failed to reorder chapters:", err);
+        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
+          return;
+        // I4: route through the onError callback rather than setError so
+        // a 400 on id-list mismatch (recoverable per CLAUDE.md) surfaces
+        // as a dismissible banner instead of tearing down the editor.
+        if (onError) {
+          onError(STRINGS.error.reorderFailed);
+        } else {
+          setError(STRINGS.error.reorderFailed);
+        }
+      }
+    },
+    [],
+  );
 
   const handleUpdateProjectTitle = useCallback(
     async (title: string): Promise<string | undefined> => {
       const slug = projectSlugRef.current;
       if (!slug) return undefined;
+      // S6 (review 2026-04-21): two-part drift guard — see
+      // handleCreateChapter for full rationale.
       setProjectTitleError(null);
       try {
         const updated = await api.projects.update(slug, { title });
+        // C3 defense-in-depth: if the user navigated mid-PATCH, discard
+        // the response. The primary C3 guard lives in useProjectTitleEditing
+        // (refuses saveProjectTitle when project.slug !== slug), but this
+        // extra check keeps handleUpdateProjectTitle independently safe for
+        // any future direct caller.
+        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
+          return undefined;
         projectSlugRef.current = updated.slug;
         setProject((prev) => (prev ? { ...prev, title: updated.title, slug: updated.slug } : prev));
         return updated.slug;
@@ -432,6 +668,13 @@ export function useProjectEditor(slug: string | undefined) {
         if (slug) {
           try {
             const data = await api.projects.get(slug);
+            // Re-check the seq after the second await (I2). The earlier
+            // guard covers only the api.chapters.update await; a rapid
+            // A→B (fails) then B→C click where the failure lands mid-
+            // api.projects.get would otherwise stomp C's optimistic
+            // update back to A's server-side status, losing the user's
+            // intent silently. Recovery would require another click.
+            if (seq !== statusChangeSeqRef.current) return;
             const revertedChapter = data.chapters.find((c) => c.id === chapterId);
             if (revertedChapter) {
               // Surgically revert only the status field to avoid overwriting
@@ -454,6 +697,10 @@ export function useProjectEditor(slug: string | undefined) {
             // Reload failed — fall through to local revert
           }
         }
+        // Guard the local-revert fallback too: the catch above could be
+        // reached with the seq already superseded, in which case restoring
+        // previousStatus would clobber the newer call's optimistic update.
+        if (seq !== statusChangeSeqRef.current) return;
         if (!reverted && previousStatus !== undefined) {
           setProject((prev) => {
             if (!prev) return prev;
@@ -534,20 +781,7 @@ export function useProjectEditor(slug: string | undefined) {
     // view mode so a retry from earlier typing cannot write to the server
     // while the editor is supposed to be read-only.
     cancelPendingSaves: () => {
-      ++saveSeqRef.current;
-      // Abort the in-flight PATCH if any so a stale retry cannot land on
-      // the server after a subsequent snapshot restore.
-      if (saveAbortRef.current) {
-        saveAbortRef.current.abort();
-        saveAbortRef.current = null;
-      }
-      // Unblock any retry backoff sleep so the loop reaches its seq check
-      // and exits without waiting up to 8s for the timer to fire naturally.
-      if (saveBackoffRef.current) {
-        clearTimeout(saveBackoffRef.current.timer);
-        saveBackoffRef.current.resolve();
-        saveBackoffRef.current = null;
-      }
+      cancelInFlightSave();
       // Reset status to idle so the header doesn't stay on "Saving…".
       // The aborted save's own status-write is guarded by the chapter/seq
       // check and short-circuits, so without this reset the UI would
@@ -557,3 +791,11 @@ export function useProjectEditor(slug: string | undefined) {
     },
   };
 }
+
+// Explicit return-type alias for cross-file consumers (useEditorMutation).
+// Extracting it here lets callers `import type { UseProjectEditorReturn }`
+// and `Pick<UseProjectEditorReturn, "cancelPendingSaves" | …>` without
+// referencing `ReturnType<typeof useProjectEditor>` from a type-only
+// import — the typeof form compiles under verbatimModuleSyntax, but an
+// explicit alias is plainly a type and survives any future config change.
+export type UseProjectEditorReturn = ReturnType<typeof useProjectEditor>;

@@ -26,6 +26,13 @@ export interface UseFindReplaceStateReturn {
   resultsOptions: SearchOptionsShape | null;
   loading: boolean;
   error: string | null;
+  /**
+   * Reset the panel-local error so a stale prior-search failure cannot
+   * co-display with a fresh mutation outcome (S3). Used by replace
+   * callers on entry alongside the parent's actionError/actionInfo
+   * clears.
+   */
+  clearError: () => void;
   search: (projectSlug: string) => Promise<void>;
 }
 
@@ -49,6 +56,15 @@ export function useFindReplaceState(
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestSlugRef = useRef<string | null>(projectSlug ?? null);
+  // I2 (review 2026-04-21): tracks the latest panelOpen value so the
+  // debounced auto-search can early-bail if its 300ms timer slipped
+  // past closePanel's clearTimeout (a task-queue race the ref-less
+  // check couldn't cover). Without it, the setTimeout callback runs
+  // search() on a closed panel — the fetch has its own fresh abort
+  // controller (closePanel's abort targeted a prior in-flight
+  // search), so the response lands, passes the seq guard, and writes
+  // stale results and loading state that surface on the next open.
+  const panelOpenRef = useRef(false);
   // Key state reset on project identity, not slug. A project rename
   // changes the slug without changing the project — preserving the
   // user's in-progress query/replacement across a rename is the
@@ -66,6 +82,17 @@ export function useFindReplaceState(
   useEffect(() => {
     if (projectSlug) latestSlugRef.current = projectSlug;
   }, [projectSlug]);
+
+  // Keep panelOpenRef in sync so the debounce setTimeout callback can
+  // check the latest value at fire time (I2). State-driven closure
+  // would see a stale value if the panel closed between the effect's
+  // scheduling and the timer firing. This effect is a belt to
+  // closePanel/togglePanel's synchronous ref writes: if a future path
+  // changes panelOpen without going through those helpers, the ref
+  // still tracks it eventually.
+  useEffect(() => {
+    panelOpenRef.current = panelOpen;
+  }, [panelOpen]);
 
   // On unmount, abort any in-flight search so the server stops walking
   // chapters for a caller that no longer exists.
@@ -87,6 +114,15 @@ export function useFindReplaceState(
       setResultsQuery(null);
       setResultsOptions(null);
       setError(null);
+      // I2 (review 2026-04-21): clear loading here. The seq bump below
+      // stops the in-flight response from writing state back, but its
+      // `finally { if (seq === searchSeqRef.current) setLoading(false) }`
+      // fails the seq check after the bump — leaving a stuck "Searching…"
+      // spinner on the new project's panel with no recovery path except
+      // closePanel(). closePanel already clears loading; mirror that here
+      // so a user who navigates projects without closing the panel sees
+      // the same idle state they would after a clean close/reopen.
+      setLoading(false);
       searchSeqRef.current++;
       // Abort any in-flight search so the server stops walking a project
       // the user has left. The seq bump prevents the response from
@@ -97,10 +133,19 @@ export function useFindReplaceState(
   }, [projectId]);
 
   const togglePanel = useCallback(() => {
-    setPanelOpen((prev) => !prev);
+    // Sync the ref *synchronously* alongside the state update. The
+    // useEffect sync below runs after React commits, leaving a window
+    // where a pre-queued debounce callback could see the stale ref in
+    // React 18 concurrent-mode scheduling. Updating the ref here
+    // closes the window: the very next task reads the new value.
+    setPanelOpen((prev) => {
+      panelOpenRef.current = !prev;
+      return !prev;
+    });
   }, []);
 
   const closePanel = useCallback(() => {
+    panelOpenRef.current = false;
     setPanelOpen(false);
     // Clear result state so reopening the panel (Ctrl+H → Esc → Ctrl+H)
     // does not surface a stale result set pinned to potentially edited
@@ -181,13 +226,22 @@ export function useFindReplaceState(
           // Aborted: no banner, no state changes.
           return;
         }
-        if (err instanceof ApiRequestError && (err.status === 400 || err.status === 404)) {
+        if (
+          err instanceof ApiRequestError &&
+          (err.status === 400 || err.status === 404 || err.status === 413)
+        ) {
           // 400s mean the CURRENT query is invalid; stale results no
           // longer correspond to anything the user typed.
           // 404s mean the project (or scope) has gone away — the prior
           // results are pinned to a slug/chapter that no longer resolves
           // and can't be acted on. Clear so the panel is consistent with
           // the error.
+          // 413 (I4, review 2026-04-21): the query itself exceeded the
+          // server's body-size cap and will keep being rejected until
+          // the user changes the query — not transient. Keeping stale
+          // results alongside the contentTooLarge banner lets Replace
+          // act on matches the server has already said it cannot
+          // process.
           setError(message);
           setResults(null);
           setResultsQuery(null);
@@ -220,8 +274,27 @@ export function useFindReplaceState(
     if (!panelOpen || !query || !latestSlugRef.current) {
       return;
     }
-    const slug = latestSlugRef.current;
+    // I3 (review 2026-04-21): read latestSlugRef.current INSIDE the
+    // setTimeout callback, not at effect-setup time. A project rename
+    // between the effect running and the 300ms timer firing updates
+    // the ref (via the projectSlug sync useEffect) but does not re-run
+    // this effect, so capturing `slug` here would fire the search
+    // against the dead slug — directly contradicting the design intent
+    // documented on the search() wrapper below ("always read .current
+    // at call time").
+    //
+    // I2 (review 2026-04-21): also re-check panelOpenRef at fire time.
+    // If closePanel ran between the timer firing and its callback
+    // executing (task-queue race), clearTimeout was a no-op and the
+    // callback would otherwise invoke search() on a closed panel —
+    // the fetch has its own fresh abort controller (closePanel's
+    // abort targeted a prior in-flight search), so the response would
+    // land, pass the seq guard, and write stale results + loading
+    // state back that surface on the next open.
     debounceRef.current = setTimeout(() => {
+      if (!panelOpenRef.current) return;
+      const slug = latestSlugRef.current;
+      if (!slug) return;
       search(slug);
     }, 300);
     return () => {
@@ -246,6 +319,7 @@ export function useFindReplaceState(
     resultsOptions,
     loading,
     error,
+    clearError: useCallback(() => setError(null), []),
     search: useCallback(
       async (_slug: string) => {
         // Callers (EditorPage executeReplace/handleReplaceOne) capture

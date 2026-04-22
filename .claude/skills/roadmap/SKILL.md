@@ -101,9 +101,51 @@ Invoke the `paad:pushback` skill against the design document just created in `do
 
 After pushback completes, discuss the findings with the user and update the design document to address any valid concerns before moving on.
 
-## 7. Announce Completion
+## 7. CLAUDE.md Review
 
-> **Roadmap updated.** Phase N: [Name] brainstormed → `docs/plans/[filename]`.
+Before announcing completion, evaluate whether `CLAUDE.md` needs updating to reflect this phase.
+
+Re-read `CLAUDE.md` with the final design in mind and check each section for drift:
+
+- **§Key Architecture Decisions** — does the phase introduce a new invariant, source-of-truth rule, or cross-cutting pattern that belongs here? (e.g. a new helper that codifies existing invariants should be referenced so future developers route through it.)
+- **§API Design** — new endpoints, new error codes, or a new shape for an error envelope?
+- **§Data Model** — new tables, new columns, or a change to soft-delete/UUID conventions?
+- **§Testing Philosophy** — a new test layer, fixture convention, or coverage requirement?
+- **§Target Project Structure** — a new top-level folder or package?
+- **§Accessibility / §Visual Design** — a new a11y primitive or visual token worth documenting at the root level?
+- **§Pull Request Scope** — does the phase reveal a new PR-scope hazard worth codifying?
+
+If any section needs updating, discuss the proposed change with the user and fold the `CLAUDE.md` edit into the design document as an explicit deliverable of the phase (a task in the plan, not an afterthought). If no section needs updating, state that explicitly so the check is visible.
+
+## 8. Write the Implementation Plan
+
+Invoke the `superpowers:writing-plans` skill against the finalized design document. The writing-plans skill will produce a bite-sized TDD task list that turns the design into concrete, reviewable commits.
+
+When invoking writing-plans, provide:
+
+- The path to the finalized design document from step 4.
+- The constraints captured during steps 6 and 7 (pushback findings, any CLAUDE.md edits that must land as part of the phase).
+- Repository-specific constraints from `CLAUDE.md` (§Testing Philosophy coverage floors, §Pull Request Scope one-refactor / one-feature rule, zero-warnings rule).
+- That the plan should be saved alongside the design in `docs/plans/` with filename pattern `YYYY-MM-DD-<topic>-plan.md`.
+
+The plan must honor the PR scope rules: a single roadmap phase is a single PR. If the plan would naturally span multiple PRs (for example, a refactor followed by a feature), split at the phase boundary in the roadmap first and re-run this skill against each sub-phase.
+
+## 9. Alignment Check
+
+Invoke the `paad:alignment` skill against the implementation plan just produced. Alignment catches coverage gaps, scope creep, and design-vs-plan mismatches — it verifies that every requirement in the design is traced to at least one task, every task maps back to a requirement, and every task is expressed in TDD red/green/refactor format.
+
+Pass the alignment skill both documents:
+
+- The design document from step 4 (the source of truth for requirements).
+- The implementation plan from step 8 (the breakdown being aligned).
+
+After alignment completes, discuss any findings with the user and update the plan (and occasionally the design) to close the gaps. Do not proceed to announcement until the plan and design are aligned, or the user explicitly accepts any remaining gaps.
+
+## 10. Announce Completion
+
+> **Roadmap updated.** Phase N: [Name] brainstormed and planned.
+> - Design: `docs/plans/<filename>-design.md`
+> - Plan: `docs/plans/<filename>-plan.md`
 > Next unplanned phase: Phase M: [Name] (or "all phases planned").
 
-Offer to move to implementing the new design, or to review the updated roadmap.
+Offer to move to implementing the plan (via `superpowers:subagent-driven-development` or `superpowers:executing-plans` in a separate session), or to review the updated roadmap.

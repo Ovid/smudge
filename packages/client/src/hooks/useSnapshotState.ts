@@ -16,12 +16,25 @@ export type RestoreFailureReason =
   | "cross_project_image"
   | "not_found"
   | "network"
+  // 2xx BAD_JSON: apiFetch threw ApiRequestError(status=2xx, code="BAD_JSON")
+  // because a 2xx response body failed to parse. The server almost certainly
+  // committed the restore (and its auto-snapshot) but the client cannot
+  // verify. Callers MUST treat this as "possibly committed" and lock the
+  // editor — re-enabling would let auto-save silently revert the committed
+  // restore (C2).
+  | "possibly_committed"
+  // The request was aborted (AbortController). No path triggers this today
+  // for restoreSnapshot, but mirror viewSnapshot's discipline: callers must
+  // treat as a silent no-op rather than the misleading "check your
+  // connection" banner the network branch would produce (I7). A future
+  // refactor that wires AbortController into restore must therefore not
+  // surface user-facing copy for the cancellation.
+  | "aborted"
   | "unknown";
 
 export interface RestoreResult {
   ok: boolean;
   reason?: RestoreFailureReason;
-  message?: string;
   // Set when the user switched chapters while the restore was in flight. The
   // restore did land on the server, but reloading the now-active chapter
   // would pull in the wrong content — callers should skip reloadActiveChapter
@@ -199,6 +212,17 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
           // chapter-switch: silent no-op.
           if (err.code === "ABORTED") return { ok: true, staleChapterSwitch: true };
           if (err.status === 404) return { ok: false, reason: "not_found" };
+          // 2xx BAD_JSON on a GET has no "maybe committed" ambiguity —
+          // GETs don't commit server-side state. The response body is
+          // garbled (truncated, non-JSON proxy page, or server bug), which
+          // from the user's perspective means this specific snapshot is
+          // unreadable. Mapping to "network" would prompt a "check your
+          // connection" banner that invites a pointless retry; a corrupt
+          // classification surfaces the right copy ("this snapshot is
+          // corrupt") so the user tries a different snapshot instead.
+          if (err.code === "BAD_JSON" && err.status >= 200 && err.status < 300) {
+            return { ok: false, reason: "corrupt_snapshot" };
+          }
           return { ok: false, reason: "network" };
         }
         return { ok: false, reason: "unknown" };
@@ -219,8 +243,19 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       // viewingSnapshot for the new chapter.
       const seq = chapterSeqRef.current;
       const restoringChapterId = chapterId;
+      // I5: Distinguish pre-send throws from post-success throws in the
+      // catch below. apiFetch wraps all network/fetch errors in
+      // ApiRequestError, so a non-ApiRequestError catch means either a
+      // purely-client throw before the request left the client (routing
+      // mistake, undefined access) or a post-success bookkeeping throw
+      // (setViewingSnapshot, follow-up list fetch). Pre-send must NOT
+      // wipe the draft cache / lock the editor — the server is known not
+      // to have committed. Post-success is genuinely ambiguous: the
+      // server committed the restore + its auto-snapshot.
+      let restoreReachedServer = false;
       try {
         await api.snapshots.restore(snapshotId);
+        restoreReachedServer = true;
         // A→B→A round-trip: seq moved but the current chapter is once
         // again the one we restored. Treat that as a NOT-stale completion
         // — the caller should reload the editor because the restore
@@ -258,20 +293,48 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         };
       } catch (err) {
         if (err instanceof ApiRequestError) {
+          // I7: ABORTED is not a user-visible error — mirror viewSnapshot.
+          // The misleading "check your connection" banner the network
+          // branch would otherwise produce is the very fragility the
+          // reviewer flagged.
+          if (err.code === "ABORTED") {
+            return { ok: false, reason: "aborted" };
+          }
+          // 2xx BAD_JSON: server likely committed the restore but response
+          // body was unreadable. Surface as "possibly_committed" so the
+          // caller locks the editor (C2) instead of letting auto-save
+          // revert the committed restore via the generic "network" retry
+          // path.
+          if (err.code === "BAD_JSON" && err.status >= 200 && err.status < 300) {
+            return { ok: false, reason: "possibly_committed" };
+          }
           if (err.code === SNAPSHOT_ERROR_CODES.CORRUPT_SNAPSHOT) {
-            return { ok: false, reason: "corrupt_snapshot", message: err.message };
+            return { ok: false, reason: "corrupt_snapshot" };
           }
           if (err.code === SNAPSHOT_ERROR_CODES.CROSS_PROJECT_IMAGE_REF) {
-            return { ok: false, reason: "cross_project_image", message: err.message };
+            return { ok: false, reason: "cross_project_image" };
           }
           // Distinguish "snapshot (or its chapter) is gone" from generic
           // network failure — retrying the former will always 404.
           if (err.status === 404) {
-            return { ok: false, reason: "not_found", message: err.message };
+            return { ok: false, reason: "not_found" };
           }
-          return { ok: false, reason: "network", message: err.message };
+          return { ok: false, reason: "network" };
         }
-        return { ok: false, reason: "unknown" };
+        // Non-ApiRequestError. If the server-side restore already
+        // resolved successfully, the throw came from post-success code
+        // (setViewingSnapshot, follow-up list fetch, seq/chapter-id
+        // bookkeeping) — the server DID commit, so route to
+        // possibly_committed so the caller locks the editor (C1). If
+        // the throw came before the await resolved, no request reached
+        // the server (apiFetch would have wrapped a real fetch error),
+        // so it is a purely-client bug and the safe treatment is the
+        // dismissible "network" branch — the user can retry without
+        // risking a double-restore.
+        if (restoreReachedServer) {
+          return { ok: false, reason: "possibly_committed" };
+        }
+        return { ok: false, reason: "network" };
       }
     },
     [chapterId],

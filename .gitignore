@@ -152,3 +152,6 @@ scratch/
 # Playwright
 test-results/
 playwright-report/
+
+# Local Claude Code runtime artifacts
+.claude/scheduled_tasks.lock

@@ -63,9 +63,32 @@ describe("mapReplaceErrorToMessage", () => {
     expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceFailed);
   });
 
+  it("maps BAD_JSON on a 2xx to replaceResponseUnreadable (S4)", () => {
+    // Server-side replace likely committed; falling through to the generic
+    // replaceFailed would invite a retry that double-replaces.
+    const err = new ApiRequestError("Unexpected token", 200, "BAD_JSON");
+    expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceResponseUnreadable);
+  });
+
+  it("does NOT map BAD_JSON on a non-2xx to replaceResponseUnreadable", () => {
+    // A 5xx with an unparseable body really did fail server-side; falling
+    // through to the generic replaceFailed copy is correct here — the
+    // ambiguous-commit copy is only honest for the 2xx case.
+    const err = new ApiRequestError("oops", 500, "BAD_JSON");
+    expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceFailed);
+  });
+
   it("falls back to replaceFailed when err.message is empty", () => {
     const err = new ApiRequestError("", 500);
     expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceFailed);
+  });
+
+  it("maps NETWORK (status 0) to replaceNetworkFailed so users can self-diagnose (S4)", () => {
+    // apiFetch classifies offline / DNS / CSP failures as status=0 with
+    // code="NETWORK". "Replace failed. Try again." is the wrong prompt
+    // here — the user needs to check their connection, not mash retry.
+    const err = new ApiRequestError("fetch failed", 0, "NETWORK");
+    expect(mapReplaceErrorToMessage(err)).toBe(STRINGS.findReplace.replaceNetworkFailed);
   });
 });
 
@@ -75,13 +98,18 @@ describe("mapSearchErrorToMessage", () => {
     expect(mapSearchErrorToMessage(err)).toBe(STRINGS.findReplace.contentTooLarge);
   });
 
-  it("maps 404 to searchScopeNotFound", () => {
+  it("maps 404 to searchProjectNotFound", () => {
     const err = new ApiRequestError("gone", 404);
-    expect(mapSearchErrorToMessage(err)).toBe(STRINGS.findReplace.searchScopeNotFound);
+    expect(mapSearchErrorToMessage(err)).toBe(STRINGS.findReplace.searchProjectNotFound);
   });
 
   it("returns null for ABORTED", () => {
     const err = new ApiRequestError("aborted", 0, "ABORTED");
     expect(mapSearchErrorToMessage(err)).toBeNull();
+  });
+
+  it("maps NETWORK (status 0) to searchNetworkFailed so users can self-diagnose (S4)", () => {
+    const err = new ApiRequestError("fetch failed", 0, "NETWORK");
+    expect(mapSearchErrorToMessage(err)).toBe(STRINGS.findReplace.searchNetworkFailed);
   });
 });

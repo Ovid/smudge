@@ -28,10 +28,11 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 3b | Document Export | PDF, Word (.docx), EPUB | Done |
 | 4a | Reference Panel & Images | Collapsible side panel infrastructure, image upload/storage | Done |
 | 4b | Snapshots & Find-and-Replace | Manual/auto snapshots, project-wide search and replace | Done |
-| 4b.1 | Editor Orchestration Helper | Extract shared save-flush/markClean/setEditable/reload shape into one helper | Planned |
+| 4b.1 | Editor Orchestration Helper | Extract shared save-flush/markClean/setEditable/reload shape into one helper | In Progress |
 | 4b.2 | Abortable Sequence Hook | Unify ad-hoc seq-refs into a single `useAbortableSequence()` primitive | Planned |
 | 4b.3 | Unified API Error Mapper | Single module mapping API errors to UI strings; no raw server text in UI | Planned |
 | 4b.4 | Raw-Strings ESLint Rule | Enforce strings.ts externalization via lint; fix existing violations | Planned |
+| 4b.5 | Editor State Machine | Unify `editable`/`locked`/`busy` editor state into one machine; add `committed_but_unreloaded` mutation stage for ambiguous server responses | Planned |
 | 4c | Notes, Tags & Outtakes | Inline notes, paragraph tags, scratchpad for cut text | Planned |
 | 5a | Fiction: Characters | Character sheets with structured fields and freeform notes | Planned |
 | 5b | Fiction: Scene Cards | Scene cards / outline mode with drag-and-drop | Planned |
@@ -566,6 +567,7 @@ Project-wide find and replace — not just the current chapter. Critical for: re
 ---
 
 ## Phase 4b.1: Editor Orchestration Helper
+<!-- plan: 2026-04-19-editor-orchestration-helper-design.md -->
 
 ### Goal
 
@@ -691,6 +693,46 @@ The externalization rule has been repeatedly violated despite being a documented
 ### Dependencies
 
 - Phase 4b (merged 2026-04-19). Independent of 4b.1–4b.3; may land last.
+
+---
+
+## Phase 4b.5: Editor State Machine
+
+### Goal
+
+Replace the scattered editor-state refs (`editable`, `editorLockedMessage`, `inFlightRef`, `reloadFailed`, `reloadSucceeded`) with a single state machine that owns the editor's operational state. Close the divergence gap between the lock banner and the editor's actual editable state, and add an explicit "committed but unreloaded" mutation stage covering the cases where the server succeeded but the client cannot confirm.
+
+### Why Now
+
+Pattern analysis across the six `ovid/architecture` code reviews (2026-04-19 to 2026-04-20) identified three recurring Critical findings that all trace to the same structural shape: editor state lives in N separate refs/state kept in sync by discipline. When any one diverges — stale `expectedChapterId` skip in `reloadActiveChapter`, 2xx `BAD_JSON` on a replace or restore response, a caller that forgets to clear the lock — the editor becomes editable while the banner still says "read-only", and the next keystroke's auto-save silently overwrites the committed server change. Phase 4b.1 centralized the *flow* but not the *state*; without this phase, Phases 4c / 5b / 7e will rediscover the same class of data-loss race.
+
+### Scope
+
+- One `EditorMutationState` primitive (shape decided at design time) that owns `{ editable, locked, busy }` as a machine driven by explicit events, not by independent setState calls.
+- Extend `MutationResult.stage` with a `"committed_but_unreloaded"` variant covering:
+  - 2xx `BAD_JSON` on replace / restore response bodies.
+  - `expectedChapterId` skip where the hook would otherwise treat skip as success.
+- Callers handle the new stage exhaustively (compile-time `: never` default) and route to the persistent lock banner.
+- Migrate `editorLockedMessage` in `EditorPage.tsx` to read from the state machine rather than its own `useState` + side-effect clear on `chapterReloadKey`.
+
+### Out of Scope
+
+- New user-facing behavior.
+- Changes to the server-side save path or response envelope.
+- Migration of hand-composed flush sequences in external callers (covered under Phase 4b.1's "all call sites route through the helper" DoD).
+- Codifying CLAUDE.md §Save-Pipeline Invariants as type constraints beyond the editor-mutation state itself.
+
+### Definition of Done
+
+- A single source of truth for the editor's `{ editable, locked, busy }` state — no free-standing `editorLockedMessage` / `inFlightRef` / `reloadFailed` / `reloadSucceeded` tracking.
+- `MutationResult` includes `"committed_but_unreloaded"`; every caller handles it exhaustively.
+- Regression tests cover the three Critical findings from the 2026-04-20 review: stale-`expectedChapterId` skip, 2xx `BAD_JSON` on replace, 2xx `BAD_JSON` on restore — each asserting the editor stays read-only and the lock banner stays visible.
+- No behavior change visible to the user in the happy path.
+
+### Dependencies
+
+- Phase 4b.1 (Editor Orchestration Helper) — should land first; this phase tightens the state surface the helper operates on.
+- Should land before Phase 4c (Notes, Tags & Outtakes), which adds a new class of content-mutating flow.
 
 ---
 

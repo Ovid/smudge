@@ -87,6 +87,8 @@ make help                            # Show all available make targets
 4. **Bump the sequence ref before the request, not after.** Any in-flight response for an older sequence is discarded on return. Bumping after creates a window where stale responses land.
 5. **Error codes stay inside the allowlist.** HTTP status codes are 200, 201, 400, 404, 409, 413, 500 (see §API Design). New conditions get an existing code plus a discriminating `error.code` string — never a new status.
 
+For mutation-via-server flows (snapshot restore, project-wide replace, and future similar operations), route through `useEditorMutation` in `packages/client/src/hooks/useEditorMutation.ts` — it enforces invariants 1–4 by construction. Hand-composing these steps is reserved for flows outside its scope (e.g. snapshot view, which does not mutate content).
+
 **String externalization.** All UI strings in `packages/client/src/strings.ts` as constants, never raw literals in components. Prepares for future i18n without architectural changes.
 
 ## API Design

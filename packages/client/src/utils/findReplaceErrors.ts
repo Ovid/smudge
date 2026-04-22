@@ -13,6 +13,19 @@ export function mapReplaceErrorToMessage(err: unknown): string | null {
     return STRINGS.findReplace.replaceFailed;
   }
   if (err.code === "ABORTED") return null;
+  // BAD_JSON is only assigned by apiFetch() on a 2xx response whose body
+  // failed to parse (see packages/client/src/api/client.ts) — non-2xx
+  // parse failures fall through to undefined `code`, so this branch
+  // cannot fire for them. A 2xx BAD_JSON means the server likely
+  // committed the replace (and the auto-snapshot) but the body was
+  // unreadable mid-stream. Falling through to the generic "replace
+  // failed" copy would invite a retry that double-replaces; tell the
+  // user to refresh and verify state before retrying. The status-range
+  // check is defensive — if apiFetch ever broadens BAD_JSON, keep this
+  // "possibly committed" copy scoped to the genuinely ambiguous 2xx case.
+  if (err.code === "BAD_JSON" && err.status >= 200 && err.status < 300) {
+    return STRINGS.findReplace.replaceResponseUnreadable;
+  }
   if (err.status === 400) {
     if (err.code === SEARCH_ERROR_CODES.MATCH_CAP_EXCEEDED)
       return STRINGS.findReplace.tooManyMatches;
@@ -42,6 +55,15 @@ export function mapReplaceErrorToMessage(err: unknown): string | null {
       return STRINGS.findReplace.replaceScopeNotFound;
     }
     return STRINGS.findReplace.replaceProjectNotFound;
+  }
+  // apiFetch maps offline / DNS / CSP failures to status=0 with
+  // code="NETWORK" (see api/client.ts classifyFetchError). Surfacing the
+  // generic "Replace failed" copy for those conflates a transient-5xx
+  // retry with a connectivity problem the user can fix; branch on the
+  // NETWORK code so the UI invites the user to check the connection
+  // rather than hammer retry (S4).
+  if (err.status === 0 && err.code === "NETWORK") {
+    return STRINGS.findReplace.replaceNetworkFailed;
   }
   return STRINGS.findReplace.replaceFailed;
 }
@@ -76,10 +98,19 @@ export function mapSearchErrorToMessage(err: unknown): string | null {
     return STRINGS.findReplace.contentTooLarge;
   }
   if (err.status === 404) {
-    // Project (or scoped chapter) is gone — retrying will 404 forever.
-    // Return terminal copy so the panel doesn't invite a retry loop.
-    // Mirrors the replace-side handling via `replaceScopeNotFound`.
-    return STRINGS.findReplace.searchScopeNotFound;
+    // Project is gone — retrying will 404 forever. Return terminal copy
+    // so the panel doesn't invite a retry loop. The search path has no
+    // SCOPE_NOT_FOUND analogue (search operates project-wide; scope only
+    // enters via replace's chapter-scoped mutations), so a 404 here is
+    // always the project-gone case — don't mirror replace's two-arm 404
+    // branch.
+    return STRINGS.findReplace.searchProjectNotFound;
+  }
+  // Mirror the replace-side NETWORK branch (S4) so offline/DNS/CSP
+  // failures route to connection-specific copy instead of the generic
+  // "Search failed" bucket that 5xx and unknowns share.
+  if (err.status === 0 && err.code === "NETWORK") {
+    return STRINGS.findReplace.searchNetworkFailed;
   }
   return STRINGS.findReplace.searchFailed;
 }

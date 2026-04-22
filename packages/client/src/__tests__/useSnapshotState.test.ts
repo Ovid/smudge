@@ -201,6 +201,31 @@ describe("useSnapshotState", () => {
     },
   );
 
+  it("viewSnapshot maps 2xx BAD_JSON to corrupt_snapshot, not network", async () => {
+    // GET-side BAD_JSON means the snapshot response body was unreadable —
+    // no "maybe committed" ambiguity (GETs don't commit). Previously this
+    // surfaced as reason:"network", inviting a pointless retry. Mapping
+    // to corrupt_snapshot lets the caller render "this snapshot is
+    // corrupt" copy instead of "check your connection."
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.snapshots.get).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+
+    const { result } = renderHook(() => useSnapshotState("ch-1"));
+    let r: { ok: boolean; reason?: string } = { ok: true };
+    await act(async () => {
+      r = await result.current.viewSnapshot({
+        id: "snap-1",
+        label: null,
+        created_at: new Date().toISOString(),
+      });
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("corrupt_snapshot");
+  });
+
   it("exitSnapshotView clears the viewing snapshot", async () => {
     const row = makeSnapshotRow();
     vi.mocked(api.snapshots.get).mockResolvedValue(row);
@@ -327,7 +352,15 @@ describe("useSnapshotState", () => {
     expect(r.restoredChapterId).toBe("ch-1");
   });
 
-  it("restoreSnapshot returns ok=false on generic failure", async () => {
+  it("restoreSnapshot routes a non-ApiRequestError pre-send reject to network (I5)", async () => {
+    // I5: before this fix, any non-ApiRequestError throw from the restore
+    // pipeline was categorized as "unknown" and the caller treated that
+    // as possibly_committed — a TypeError before fetch left the client
+    // wiped the cached draft and permanently locked the editor. apiFetch
+    // now wraps every network error in ApiRequestError, so a bare
+    // non-ApiRequestError reject from api.snapshots.restore means the
+    // server never received the request. Route to "network" so the
+    // caller can surface a dismissible retry banner.
     vi.mocked(api.snapshots.restore).mockRejectedValue(new Error("fail"));
 
     const { result } = renderHook(() => useSnapshotState("ch-1"));
@@ -337,7 +370,7 @@ describe("useSnapshotState", () => {
     });
 
     expect(r.ok).toBe(false);
-    expect(r.reason).toBe("unknown");
+    expect(r.reason).toBe("network");
   });
 
   it("restoreSnapshot surfaces corrupt_snapshot reason on 400 CORRUPT_SNAPSHOT", async () => {
@@ -354,7 +387,6 @@ describe("useSnapshotState", () => {
 
     expect(r.ok).toBe(false);
     expect(r.reason).toBe("corrupt_snapshot");
-    expect(r.message).toBe("Corrupt");
   });
 
   it("restoreSnapshot surfaces not_found reason on 404", async () => {
@@ -371,7 +403,51 @@ describe("useSnapshotState", () => {
 
     expect(r.ok).toBe(false);
     expect(r.reason).toBe("not_found");
-    expect(r.message).toBe("Snapshot or chapter not found.");
+  });
+
+  it("restoreSnapshot surfaces possibly_committed reason on 2xx BAD_JSON (C2)", async () => {
+    // apiFetch throws ApiRequestError(status=2xx, code="BAD_JSON") when a
+    // 2xx response body fails to parse. The server almost certainly
+    // committed the restore (and its auto-snapshot) but the client cannot
+    // verify. Previously this fell through to reason:"network" — the
+    // EditorPage handler then surfaced the generic "retry" banner and
+    // re-enabled the editor. Auto-save would then silently revert the
+    // committed restore. The dedicated "possibly_committed" reason lets
+    // the caller route to a persistent lock banner instead.
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.snapshots.restore).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+
+    const { result } = renderHook(() => useSnapshotState("ch-1"));
+    let r: { ok: boolean; reason?: string; message?: string } = { ok: true };
+    await act(async () => {
+      r = await result.current.restoreSnapshot("snap-1");
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("possibly_committed");
+  });
+
+  it("restoreSnapshot surfaces aborted reason on ApiRequestError ABORTED (I7)", async () => {
+    // viewSnapshot already treats ABORTED as a silent no-op. Mirror it
+    // for restoreSnapshot — without the dedicated reason, ABORTED falls
+    // through to the network branch and the caller's banner says "check
+    // your connection", which is misleading. No path triggers ABORTED on
+    // restore today; this test guards the contract for future wiring.
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.snapshots.restore).mockRejectedValue(
+      new ApiRequestError("Request aborted", 0, "ABORTED"),
+    );
+
+    const { result } = renderHook(() => useSnapshotState("ch-1"));
+    let r: { ok: boolean; reason?: string } = { ok: true };
+    await act(async () => {
+      r = await result.current.restoreSnapshot("snap-1");
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("aborted");
   });
 
   it("leaves count null when list fetch fails so badge stays hidden", async () => {

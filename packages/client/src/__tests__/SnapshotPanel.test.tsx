@@ -175,6 +175,85 @@ describe("SnapshotPanel", () => {
       expect(api.snapshots.create).toHaveBeenCalledWith("ch-1", "My label");
     });
 
+    it("surfaces createFailed when onBeforeCreate throws (I3 defense-in-depth)", async () => {
+      // EditorPage's onBeforeCreate wraps flushSave in try/catch, but the
+      // panel provides its own try/catch as a defensive layer — a future
+      // caller that forgets the wrap must still surface createFailed
+      // rather than producing an unhandled rejection.
+      const user = userEvent.setup();
+      const throwingOnBeforeCreate = vi.fn().mockRejectedValue(new Error("flushSave threw"));
+      render(<SnapshotPanel {...defaultProps} onBeforeCreate={throwingOnBeforeCreate} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(S.createButton)).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.createButton));
+      await user.click(screen.getByText(S.save));
+
+      await waitFor(() => {
+        expect(screen.getByText(S.createFailed)).toBeInTheDocument();
+      });
+      expect(throwingOnBeforeCreate).toHaveBeenCalled();
+      // api.snapshots.create must NOT have been called — the throw short-
+      // circuited before the POST.
+      expect(api.snapshots.create).not.toHaveBeenCalled();
+    });
+
+    it("surfaces createFailed when onBeforeCreate returns flush_failed", async () => {
+      // I5 (review 2026-04-21): parity with the throw case above. A
+      // flush_failed outcome means the pre-save didn't land, so the
+      // snapshot about to be taken would capture stale content — surface
+      // createFailed so the user doesn't believe the snapshot reflects
+      // their current writes.
+      const user = userEvent.setup();
+      const onBeforeCreate = vi.fn(async () => ({
+        ok: false as const,
+        reason: "flush_failed" as const,
+      }));
+      render(<SnapshotPanel {...defaultProps} onBeforeCreate={onBeforeCreate} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(S.createButton)).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.createButton));
+      await user.click(screen.getByText(S.save));
+
+      await waitFor(() => {
+        expect(screen.getByText(S.createFailed)).toBeInTheDocument();
+      });
+      expect(api.snapshots.create).not.toHaveBeenCalled();
+    });
+
+    it("suppresses createError when onBeforeCreate returns busy (I5 — review 2026-04-21)", async () => {
+      // Before I5: the caller returned false for both busy and
+      // flush_failed. The panel stamped createError unconditionally,
+      // producing two contradictory banners — the caller's
+      // mutationBusy info banner and the panel's "save your unsaved
+      // changes" error. The discriminated busy outcome now lets the
+      // panel skip its error stamp when the caller has already surfaced
+      // its own.
+      const user = userEvent.setup();
+      const onBeforeCreate = vi.fn(async () => ({
+        ok: false as const,
+        reason: "busy" as const,
+      }));
+      render(<SnapshotPanel {...defaultProps} onBeforeCreate={onBeforeCreate} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(S.createButton)).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.createButton));
+      await user.click(screen.getByText(S.save));
+
+      // No createError banner — the caller owns the user-visible signal.
+      expect(screen.queryByText(S.createFailed)).not.toBeInTheDocument();
+      // POST was skipped because onBeforeCreate said so.
+      expect(api.snapshots.create).not.toHaveBeenCalled();
+    });
+
     it("creates a snapshot without label when input is empty", async () => {
       const user = userEvent.setup();
       render(<SnapshotPanel {...defaultProps} />);
@@ -261,6 +340,125 @@ describe("SnapshotPanel", () => {
 
       await waitFor(() => {
         expect(screen.getByText(S.viewFailedSaveFirst)).toBeInTheDocument();
+      });
+    });
+
+    it("surfaces network view-result with the network-specific copy (S4)", async () => {
+      const user = userEvent.setup();
+      const snap = makeSnapshot({ id: "snap-79", label: "NetFail" });
+      vi.mocked(api.snapshots.list).mockResolvedValue([snap]);
+      const onView = vi.fn().mockResolvedValue({ ok: false, reason: "network" });
+      render(<SnapshotPanel {...defaultProps} onView={onView} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("NetFail")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.view));
+
+      await waitFor(() => {
+        expect(screen.getByText(S.viewFailedNetwork)).toBeInTheDocument();
+      });
+    });
+
+    it("surfaces corrupt_snapshot view-result with the corrupt copy", async () => {
+      const user = userEvent.setup();
+      const snap = makeSnapshot({ id: "snap-80", label: "Bad" });
+      vi.mocked(api.snapshots.list).mockResolvedValue([snap]);
+      const onView = vi.fn().mockResolvedValue({ ok: false, reason: "corrupt_snapshot" });
+      render(<SnapshotPanel {...defaultProps} onView={onView} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Bad")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.view));
+
+      await waitFor(() => {
+        expect(screen.getByText(S.viewFailedCorrupt)).toBeInTheDocument();
+      });
+    });
+
+    it("surfaces not_found view-result with the not-found copy and refreshes the list", async () => {
+      const user = userEvent.setup();
+      const snap = makeSnapshot({ id: "snap-81", label: "Gone" });
+      vi.mocked(api.snapshots.list).mockResolvedValue([snap]);
+      const onView = vi.fn().mockResolvedValue({ ok: false, reason: "not_found" });
+      render(<SnapshotPanel {...defaultProps} onView={onView} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Gone")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.view));
+
+      await waitFor(() => {
+        expect(screen.getByText(S.viewFailedNotFound)).toBeInTheDocument();
+      });
+    });
+
+    it("suppresses viewError when onView returns locked reason (S1)", async () => {
+      const user = userEvent.setup();
+      const snap = makeSnapshot({ id: "snap-82", label: "Locked" });
+      vi.mocked(api.snapshots.list).mockResolvedValue([snap]);
+      const onView = vi.fn().mockResolvedValue({ ok: false, reason: "locked" });
+      render(<SnapshotPanel {...defaultProps} onView={onView} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Locked")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.view));
+
+      // Wait a tick for any state updates to flush.
+      await new Promise((r) => setTimeout(r, 0));
+
+      // Panel-local view errors MUST stay suppressed — the lock banner
+      // elsewhere is the sole user-visible signal.
+      expect(screen.queryByText(S.viewFailed)).not.toBeInTheDocument();
+      expect(screen.queryByText(S.viewFailedSaveFirst)).not.toBeInTheDocument();
+      expect(screen.queryByText(S.viewFailedNetwork)).not.toBeInTheDocument();
+    });
+
+    it("surfaces viewStaleChapterSwitch when onView returns ok+staleChapterSwitch (I6)", async () => {
+      // Before I6 the panel's !res.ok gate ignored ok:true returns. A
+      // chapter-switch race (or ABORTED) returned ok+staleChapterSwitch
+      // and fell through with no branch — the user clicked View and
+      // nothing happened. The I6 branch surfaces a brief info so the
+      // click is not a dead button.
+      const user = userEvent.setup();
+      const snap = makeSnapshot({ id: "snap-stale", label: "Stale" });
+      vi.mocked(api.snapshots.list).mockResolvedValue([snap]);
+      const onView = vi.fn().mockResolvedValue({ ok: true, staleChapterSwitch: true });
+      render(<SnapshotPanel {...defaultProps} onView={onView} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Stale")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.view));
+
+      await waitFor(() => {
+        expect(screen.getByText(S.viewStaleChapterSwitch)).toBeInTheDocument();
+      });
+    });
+
+    it("surfaces viewFailed for unexpected reason values", async () => {
+      const user = userEvent.setup();
+      const snap = makeSnapshot({ id: "snap-83", label: "Odd" });
+      vi.mocked(api.snapshots.list).mockResolvedValue([snap]);
+      // Cover the final fallthrough else.
+      const onView = vi.fn().mockResolvedValue({ ok: false, reason: "unknown" });
+      render(<SnapshotPanel {...defaultProps} onView={onView} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Odd")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.view));
+
+      await waitFor(() => {
+        expect(screen.getByText(S.viewFailed)).toBeInTheDocument();
       });
     });
 

@@ -8,6 +8,16 @@ export function useChapterTitleEditing(
     title: string,
     onError?: (message: string) => void,
   ) => Promise<void>,
+  // I1: The sidebar rename path wraps handleRenameChapter with an isActionBusy
+  // check; the inline-title editor calls saveTitle directly. Injecting the
+  // predicate here co-locates the gate with the save call so all chapter-title
+  // PATCH entry points share the same contract — no second entry point can
+  // slip past during a 2–14s save backoff or in-flight replace.
+  isActionBusy: () => boolean,
+  // I2: Title PATCHes during the lock banner window would race a possibly-
+  // committed restore/replace — the very fragility the lock banner exists
+  // to prevent. Gate here alongside isActionBusy.
+  isEditorLocked: () => boolean,
 ) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -50,6 +60,12 @@ export function useChapterTitleEditing(
     }
     if (!activeChapter || !titleDraft.trim()) {
       setEditingTitle(false);
+      return;
+    }
+    // I1/I2: Refuse mid-mutation or while the lock banner is up. Keep edit
+    // mode open (do not exit on blur) so the user's typed draft is preserved
+    // for retry once the mutation settles — closing here would discard it.
+    if (isActionBusy() || isEditorLocked()) {
       return;
     }
     isSavingTitleRef.current = true;

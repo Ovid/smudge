@@ -61,9 +61,16 @@ export const STRINGS = {
     saved: "Saved",
     unsaved: "Unsaved changes",
     saveFailed: "Unable to save \u2014 check connection",
+    saveFailedInvalid:
+      "Unable to save \u2014 the chapter content is invalid. Undo recent changes or reload the page.",
+    saveFailedTooLarge:
+      "Unable to save \u2014 the chapter is too large. Split it into shorter chapters before continuing.",
     cacheUnavailable: "Local backup unavailable",
     viewSwitchSaveFailed:
       "Unable to save pending changes. Try again once your connection recovers before switching views.",
+    mutationBusy: "Another operation is in progress — please wait.",
+    lockedRefusal: "The editor is locked — refresh the page before continuing.",
+    refreshButton: "Refresh page",
   },
   shortcuts: {
     dialogTitle: "Keyboard Shortcuts",
@@ -119,6 +126,7 @@ export const STRINGS = {
     projectTitleInput: "Project title",
     editorContent: "Chapter content",
     dismissError: "Dismiss error",
+    dismissInfo: "Dismiss info",
     viewModesNav: "View modes",
   },
   toolbar: {
@@ -280,9 +288,12 @@ export const STRINGS = {
     deleteConfirmButton: "Delete",
     deleteCancel: "Cancel",
     restoreButton: "Restore",
+    actionsUnavailableWhileLocked:
+      "Unavailable — the editor is locked. Refresh the page before continuing.",
     restoreConfirm:
       "Replace current chapter content with this snapshot? A snapshot of your current content will be saved automatically.",
     restoreFailed: "Unable to restore snapshot. Try again.",
+    restoreNetworkFailed: "Unable to restore snapshot — check your connection and try again.",
     restoreFailedCorrupt:
       "This snapshot is corrupt and can't be restored. It will remain in the list; create a new snapshot or restore a different one.",
     restoreFailedCrossProjectImage:
@@ -292,7 +303,9 @@ export const STRINGS = {
     restoreFailedSaveFirst:
       "Unable to save pending changes. Try again once your connection recovers before restoring.",
     restoreSucceededReloadFailed:
-      "Snapshot restored, but reloading the chapter failed. Refresh the page to see the restored content.",
+      "Snapshot restored, but reloading the chapter failed. Refresh the page before editing — editing now would overwrite the restore.",
+    restoreResponseUnreadable:
+      "The restore may have completed, but the server response was unreadable. Refresh the page to see the current state — editing now could overwrite the restored content.",
     renderError: "Unable to render snapshot content",
     backToEditing: "Back to editing",
     viewingBanner: (label: string, date: string) => `Viewing snapshot: ${label} — ${date}`,
@@ -308,8 +321,16 @@ export const STRINGS = {
     viewFailed: "Unable to open snapshot. Try again.",
     viewFailedNotFound: "This snapshot no longer exists. Refresh to see the latest snapshot list.",
     viewFailedCorrupt: "This snapshot is corrupt and can't be displayed.",
+    viewFailedNetwork: "Unable to open snapshot. Check your connection and try again.",
     viewFailedSaveFirst:
       "Unable to save pending changes. Try again once your connection recovers before viewing a snapshot.",
+    // I6: viewSnapshot returns {ok:true, staleChapterSwitch:true} when the
+    // user switched chapters mid-fetch. Before the fix the click produced
+    // no feedback at all (the panel's !res.ok gate ignored ok:true), so
+    // the user saw a dead View button. Surface a brief info explaining
+    // why and how to recover.
+    viewStaleChapterSwitch:
+      "This snapshot belongs to a different chapter. Select that chapter to view it.",
     ariaLabel: "Chapter snapshots",
     relativeTime: {
       justNow: "just now",
@@ -330,13 +351,16 @@ export const STRINGS = {
     wholeWord: "Whole word",
     regex: "Regular expression",
     replaceFailed: "Replace failed. Try again.",
+    replaceNetworkFailed: "Replace failed — check your connection and try again.",
     replaceFailedSaveFirst:
       "Unable to save pending changes. Try again once your connection recovers before replacing.",
     replaceSucceededReloadFailed:
-      "Replace succeeded. Reload the chapter to see the updated content.",
+      "Replace succeeded, but reloading the chapter failed. Refresh the page before editing — editing now would overwrite the replacement.",
+    replaceResponseUnreadable:
+      "The replace may have completed, but the server response was unreadable. Refresh the page to see the current state before retrying — retrying without refreshing could replace twice.",
     replaceScopeNotFound: "The chapter for this replace is no longer available.",
     replaceProjectNotFound: "This project is no longer available.",
-    searchScopeNotFound: "This project is no longer available.",
+    searchProjectNotFound: "This project is no longer available.",
     replaceSuccess: (count: number) => `Replaced ${count} occurrence${count === 1 ? "" : "s"}.`,
     noMatches: "No matches found",
     matchCount: (count: number, chapters: number) =>
@@ -369,6 +393,7 @@ export const STRINGS = {
     invalidReplaceRequest: "Replace request was rejected. Check your search and replace inputs.",
     invalidSearchRequest: "Search request was rejected. Check your search input.",
     searchFailed: "Search failed. Try again.",
+    searchNetworkFailed: "Search failed — check your connection and try again.",
     skippedChapters: (count: number) =>
       `${count} chapter${count === 1 ? " was" : "s were"} skipped due to corrupt content.`,
     skippedAfterReplace: (count: number) =>
