@@ -1,8 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, cleanup } from "@testing-library/react";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
 import { useFindReplaceState } from "../hooks/useFindReplaceState";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
@@ -688,14 +685,4 @@ describe("useFindReplaceState", () => {
   });
 });
 
-describe("useFindReplaceState migration structural check", () => {
-  it("no longer uses raw seq-ref patterns", () => {
-    // jsdom hijacks `new URL(relative, base)` to produce an http://localhost
-    // URL; resolve via path.resolve on the test file's directory instead so
-    // the resulting path is the real file:// filesystem path.
-    const here = fileURLToPath(import.meta.url);
-    const source = readFileSync(resolve(dirname(here), "../hooks/useFindReplaceState.ts"), "utf-8");
-    expect(source).not.toMatch(/searchSeqRef/);
-    expect(source).toMatch(/useAbortableSequence/);
-  });
-});
+// (Migration structural check moved to migrationStructuralCheck.test.ts — S2.)

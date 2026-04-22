@@ -1,8 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
 import { UNTITLED_CHAPTER } from "@smudge/shared";
 
 import { api, ApiRequestError } from "../api/client";
@@ -1907,16 +1904,6 @@ describe("useProjectEditor", () => {
   });
 });
 
-describe("useProjectEditor migration structural check", () => {
-  it("no longer uses raw seq-ref patterns", () => {
-    // jsdom hijacks new URL(relative, base); use path.resolve for robust file lookup.
-    const source = readFileSync(
-      resolve(dirname(fileURLToPath(import.meta.url)), "../hooks/useProjectEditor.ts"),
-      "utf-8",
-    );
-    expect(source).not.toMatch(/selectChapterSeqRef/);
-    expect(source).not.toMatch(/saveSeqRef/);
-    expect(source).not.toMatch(/statusChangeSeqRef/);
-    expect(source).toMatch(/useAbortableSequence/);
-  });
-});
+// (Migration structural check moved to migrationStructuralCheck.test.ts —
+// S2, 2026-04-22 review. Four near-identical per-file greps collapsed into
+// one tree-wide assertion.)
