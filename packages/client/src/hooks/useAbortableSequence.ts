@@ -12,9 +12,16 @@ export type AbortableSequence = {
 
 export function useAbortableSequence(): AbortableSequence {
   const counterRef = useRef(0);
+  const mountedRef = useRef(true);
 
+  // Token staleness combines two conditions:
+  //   1. Epoch mismatch (a later start/abort bumped the counter), OR
+  //   2. The owning component has unmounted.
+  // Condition 2 is what lets start()/capture() called after unmount
+  // return a stale token, closing the window where a post-unmount
+  // setState would otherwise sneak through.
   const makeToken = (epoch: number): SequenceToken => ({
-    isStale: () => counterRef.current !== epoch,
+    isStale: () => !mountedRef.current || counterRef.current !== epoch,
   });
 
   const start = useCallback((): SequenceToken => {
@@ -32,6 +39,7 @@ export function useAbortableSequence(): AbortableSequence {
 
   useEffect(() => {
     return () => {
+      mountedRef.current = false;
       counterRef.current += 1;
     };
   }, []);

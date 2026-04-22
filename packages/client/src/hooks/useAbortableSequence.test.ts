@@ -57,11 +57,24 @@ describe("useAbortableSequence", () => {
     expect(captured.isStale()).toBe(true);
   });
 
-  it("start() after unmount returns a fresh token (harmless; consumer setState is a no-op)", () => {
+  it("start() called after unmount returns a stale token", () => {
+    // Pins CLAUDE.md §Save-Pipeline Invariants rule 4: "component unmount
+    // auto-aborts." A post-unmount start() must NOT open a window in which
+    // downstream setState calls fire on an unmounted component. React 18
+    // silently swallows setState after unmount, but that is the wrong
+    // layer to rely on — the hook contract is that any token obtained
+    // after unmount reports isStale() true.
     const { result, unmount } = renderHook(() => useAbortableSequence());
     unmount();
     const token = result.current.start();
-    expect(token.isStale()).toBe(false);
+    expect(token.isStale()).toBe(true);
+  });
+
+  it("capture() called after unmount returns a stale token", () => {
+    const { result, unmount } = renderHook(() => useAbortableSequence());
+    unmount();
+    const token = result.current.capture();
+    expect(token.isStale()).toBe(true);
   });
 
   it("two sequences in the same component are independent", () => {
