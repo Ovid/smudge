@@ -37,10 +37,14 @@ interface SnapshotPanelProps {
   onClose: () => void;
   onView: (snapshot: { id: string; label: string | null; created_at: string }) =>
     | Promise<
-        // I6: `staleChapterSwitch` on the ok branch signals that the view was
-        // abandoned because the user changed chapters mid-fetch. The panel
-        // surfaces a brief info rather than treating ok:true as a success.
-        { ok: true; staleChapterSwitch?: boolean } | { ok: false; reason?: string } | undefined
+        // I6 / S6: `superseded` on the ok branch signals that the view
+        // response was discarded. Two causes:
+        //   - "chapter": user switched chapters mid-fetch — surface info.
+        //   - "sameChapterNewer": a newer View click on the same chapter
+        //     is already updating the UI — stay silent.
+        | { ok: true; superseded?: "chapter" | "sameChapterNewer" }
+        | { ok: false; reason?: string }
+        | undefined
       >
     | undefined;
   /**
@@ -453,14 +457,16 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
                             label: snap.label,
                             created_at: snap.created_at,
                           });
-                          // I6: explicit staleChapterSwitch branch. Without
-                          // this the click produced no feedback — the panel
-                          // only read the error discriminant, so a benign
-                          // chapter-switch race looked identical to a dead
-                          // button. Surface the info copy through the same
-                          // viewError slot so the row's existing visual
-                          // treatment applies.
-                          if (res && "ok" in res && res.ok && res.staleChapterSwitch) {
+                          // I6 / S6: two supersession causes, two
+                          // behaviors. "chapter" means the user navigated
+                          // away — surface viewStaleChapterSwitch info so
+                          // the click isn't a dead button (I6 regression).
+                          // "sameChapterNewer" means a later click on the
+                          // same chapter is already updating the UI; stay
+                          // silent so the older click doesn't flash a
+                          // misleading "belongs to a different chapter"
+                          // message over the fresh view (S6 regression).
+                          if (res && "ok" in res && res.ok && res.superseded === "chapter") {
                             setViewError(S.viewStaleChapterSwitch);
                           } else if (res && "ok" in res && !res.ok) {
                             if (res.reason === "not_found") {

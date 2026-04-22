@@ -50,13 +50,29 @@ export interface RestoreResult {
 
 export type ViewFailureReason = "not_found" | "corrupt_snapshot" | "network" | "unknown";
 
+// Why this view request's result was discarded. Separated from `reason`
+// (failure) because a superseded view is not a failure — the server may
+// have returned 200 with a valid snapshot, we just don't want to surface
+// it. Review S6 (2026-04-22) split this from a single `staleChapterSwitch`
+// boolean so the panel can show "belongs to a different chapter" copy
+// ONLY on actual chapter switches, not on rapid same-chapter reclicks
+// where the newer click is already updating the UI.
+export type ViewSupersededReason =
+  // User switched chapters during the GET — the response applies to a
+  // chapter that is no longer active. Panel surfaces an info banner
+  // telling the user to select that chapter.
+  | "chapter"
+  // User clicked View again on the same chapter before this one resolved —
+  // the newer click is winning. Panel should stay silent; the fresh view
+  // is already updating the UI.
+  | "sameChapterNewer";
+
 export interface ViewResult {
   ok: boolean;
   reason?: ViewFailureReason;
-  // Set when the user switched chapters while the view was in flight.
-  // Callers should show no banner — the response belongs to a chapter
-  // that is no longer active.
-  staleChapterSwitch?: boolean;
+  // Present when the response was discarded because a newer request (same
+  // or different axis) supersedes it.
+  superseded?: ViewSupersededReason;
 }
 
 export interface UseSnapshotStateReturn {
@@ -176,8 +192,8 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       const vToken = viewSeq.start();
       try {
         const full = await api.snapshots.get(snapshot.id);
-        if (cToken.isStale()) return { ok: true, staleChapterSwitch: true };
-        if (vToken.isStale()) return { ok: true, staleChapterSwitch: true };
+        if (cToken.isStale()) return { ok: true, superseded: "chapter" };
+        if (vToken.isStale()) return { ok: true, superseded: "sameChapterNewer" };
         // SnapshotRow.content is typed as a JSON string on the wire.
         let content: unknown;
         try {
@@ -208,12 +224,14 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         // should not surface the response's error on the now-active panel.
         // Without this, a 404 from the old chapter's snapshot lands as a
         // "snapshot no longer exists" banner attributed to the new chapter.
-        if (cToken.isStale()) return { ok: true, staleChapterSwitch: true };
-        if (vToken.isStale()) return { ok: true, staleChapterSwitch: true };
+        if (cToken.isStale()) return { ok: true, superseded: "chapter" };
+        if (vToken.isStale()) return { ok: true, superseded: "sameChapterNewer" };
         if (err instanceof ApiRequestError) {
-          // ABORTED is not a user-visible error — treat it like a stale
-          // chapter-switch: silent no-op.
-          if (err.code === "ABORTED") return { ok: true, staleChapterSwitch: true };
+          // ABORTED is not a user-visible error — mirror the supersession
+          // path with sameChapterNewer (abort is always same-chapter-
+          // triggered in this hook; a chapter switch would have surfaced
+          // via cToken.isStale() above).
+          if (err.code === "ABORTED") return { ok: true, superseded: "sameChapterNewer" };
           if (err.status === 404) return { ok: false, reason: "not_found" };
           // 2xx BAD_JSON on a GET has no "maybe committed" ambiguity —
           // GETs don't commit server-side state. The response body is

@@ -423,16 +423,19 @@ describe("SnapshotPanel", () => {
       expect(screen.queryByText(S.viewFailedNetwork)).not.toBeInTheDocument();
     });
 
-    it("surfaces viewStaleChapterSwitch when onView returns ok+staleChapterSwitch (I6)", async () => {
+    it("surfaces viewStaleChapterSwitch when onView returns ok+superseded='chapter' (I6 / S6)", async () => {
       // Before I6 the panel's !res.ok gate ignored ok:true returns. A
-      // chapter-switch race (or ABORTED) returned ok+staleChapterSwitch
-      // and fell through with no branch — the user clicked View and
-      // nothing happened. The I6 branch surfaces a brief info so the
-      // click is not a dead button.
+      // chapter-switch race returned ok+staleChapterSwitch and fell
+      // through with no branch — the user clicked View and nothing
+      // happened. The I6 branch surfaces a brief info so the click is
+      // not a dead button. S6 (2026-04-22 review) then split the single
+      // `staleChapterSwitch` boolean into `superseded: "chapter" |
+      // "sameChapterNewer"` so this panel copy fires ONLY on an actual
+      // chapter switch, not on same-chapter rapid reclicks.
       const user = userEvent.setup();
       const snap = makeSnapshot({ id: "snap-stale", label: "Stale" });
       vi.mocked(api.snapshots.list).mockResolvedValue([snap]);
-      const onView = vi.fn().mockResolvedValue({ ok: true, staleChapterSwitch: true });
+      const onView = vi.fn().mockResolvedValue({ ok: true, superseded: "chapter" });
       render(<SnapshotPanel {...defaultProps} onView={onView} />);
 
       await waitFor(() => {
@@ -444,6 +447,29 @@ describe("SnapshotPanel", () => {
       await waitFor(() => {
         expect(screen.getByText(S.viewStaleChapterSwitch)).toBeInTheDocument();
       });
+    });
+
+    it("stays silent when onView returns ok+superseded='sameChapterNewer' (S6)", async () => {
+      // S6 (2026-04-22 review): a newer View click on the same chapter
+      // is already updating the UI. Showing "belongs to a different
+      // chapter" copy over the fresh view is misleading — suppress the
+      // panel-local viewError so the newer click's result stands alone.
+      const user = userEvent.setup();
+      const snap = makeSnapshot({ id: "snap-same", label: "Same" });
+      vi.mocked(api.snapshots.list).mockResolvedValue([snap]);
+      const onView = vi.fn().mockResolvedValue({ ok: true, superseded: "sameChapterNewer" });
+      render(<SnapshotPanel {...defaultProps} onView={onView} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Same")).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText(S.view));
+
+      // Wait for the click to settle, then assert no supersession banner fires.
+      await waitFor(() => expect(onView).toHaveBeenCalled());
+      expect(screen.queryByText(S.viewStaleChapterSwitch)).not.toBeInTheDocument();
+      expect(screen.queryByText(S.viewFailed)).not.toBeInTheDocument();
     });
 
     it("surfaces viewFailed for unexpected reason values", async () => {

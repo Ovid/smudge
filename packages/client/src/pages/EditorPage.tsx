@@ -1972,9 +1972,11 @@ export function EditorPage() {
                 // viewSnapshot returns ok:false for network/not_found/
                 // corrupt failures — re-enable the editor so the user
                 // isn't left in an invisibly read-only state. Same for
-                // staleChapterSwitch, where we return to normal editing
-                // without entering snapshot view.
-                if (!result.ok || result.staleChapterSwitch) {
+                // any supersession (chapter switch OR same-chapter
+                // newer click): the response was discarded, so we
+                // return to normal editing without entering snapshot
+                // view.
+                if (!result.ok || result.superseded) {
                   safeSetEditable(editorRef, true);
                 }
                 return result;
