@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useAbortableSequence } from "./useAbortableSequence";
+import { useAbortableSequence, type SequenceToken } from "./useAbortableSequence";
 
 describe("useAbortableSequence", () => {
   it("a fresh start() token is not stale", () => {
@@ -38,6 +38,17 @@ describe("useAbortableSequence", () => {
     const { result } = renderHook(() => useAbortableSequence());
     result.current.abort();
     const token = result.current.capture();
+    expect(token.isStale()).toBe(false);
+  });
+
+  it("start() called after abort() is fresh", () => {
+    // Mirror of the capture()-after-abort() case above. Without this, the
+    // start()-after-abort() path is only covered transitively by counter
+    // monotonicity — a future regression that leaked an aborted epoch into
+    // the next start() would slip through unseen.
+    const { result } = renderHook(() => useAbortableSequence());
+    result.current.abort();
+    const token = result.current.start();
     expect(token.isStale()).toBe(false);
   });
 
@@ -92,6 +103,26 @@ describe("useAbortableSequence", () => {
     // If the cleanup's `mountedRef = false` survived the re-mount, this
     // token would already be stale before any epoch change.
     expect(token.isStale()).toBe(false);
+  });
+
+  it("start() called during initial render returns a fresh token", () => {
+    // Pins that useAbortableSequence.ts:15 initializes mountedRef to
+    // `useRef(true)`, not `useRef(false)`. If a future refactor flipped
+    // the default to false, the mount effect would still flip it to true
+    // *after* render completes — so every consumer that calls start() in
+    // the render body (during the initial render, before effects commit)
+    // would silently produce stale tokens. Call isStale() during the same
+    // render pass so the assertion captures the value *before* the effect
+    // has had a chance to revive mountedRef.
+    let renderPhaseStaleness: boolean | null = null;
+    renderHook(() => {
+      const seq = useAbortableSequence();
+      if (renderPhaseStaleness === null) {
+        renderPhaseStaleness = seq.start().isStale();
+      }
+      return seq;
+    });
+    expect(renderPhaseStaleness).toBe(false);
   });
 
   it("two sequences in the same component are independent", () => {
