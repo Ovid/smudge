@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { api, ApiRequestError } from "../api/client";
 import { type SearchResult } from "@smudge/shared";
 import { mapSearchErrorToMessage } from "../utils/findReplaceErrors";
+import { useAbortableSequence } from "./useAbortableSequence";
 
 export interface SearchOptionsShape {
   case_sensitive: boolean;
@@ -62,19 +63,18 @@ export function useFindReplaceState(
   // check couldn't cover). Without it, the setTimeout callback runs
   // search() on a closed panel — the fetch has its own fresh abort
   // controller (closePanel's abort targeted a prior in-flight
-  // search), so the response lands, passes the seq guard, and writes
-  // stale results and loading state that surface on the next open.
+  // search), so the response lands, passes the sequence guard, and
+  // writes stale results and loading state that surface on the next open.
   const panelOpenRef = useRef(false);
   // Key state reset on project identity, not slug. A project rename
   // changes the slug without changing the project — preserving the
   // user's in-progress query/replacement across a rename is the
   // expected UX; wiping it is surprising data loss.
   const latestProjectIdRef = useRef<string | null>(projectId ?? null);
-  // Monotonic counter used to discard stale in-flight search responses.
-  const searchSeqRef = useRef(0);
+  const searchSeq = useAbortableSequence();
   // Owned by the latest in-flight search() call. Aborting releases the
-  // HTTP connection and stops the server-side regex walk; the seq-based
-  // guard still protects us from late resolutions writing state back.
+  // HTTP connection and stops the server-side regex walk; the sequence
+  // token still protects us from late resolutions writing state back.
   const searchAbortRef = useRef<AbortController | null>(null);
 
   // Keep latestSlugRef in sync with the current slug so search() always
@@ -114,23 +114,23 @@ export function useFindReplaceState(
       setResultsQuery(null);
       setResultsOptions(null);
       setError(null);
-      // I2 (review 2026-04-21): clear loading here. The seq bump below
-      // stops the in-flight response from writing state back, but its
-      // `finally { if (seq === searchSeqRef.current) setLoading(false) }`
-      // fails the seq check after the bump — leaving a stuck "Searching…"
-      // spinner on the new project's panel with no recovery path except
+      // I2 (review 2026-04-21): clear loading here. The sequence abort
+      // below stops the in-flight response from writing state back, but
+      // its finally-clause `if (!token.isStale()) setLoading(false)`
+      // bails after the abort — leaving a stuck "Searching…" spinner on
+      // the new project's panel with no recovery path except
       // closePanel(). closePanel already clears loading; mirror that here
       // so a user who navigates projects without closing the panel sees
       // the same idle state they would after a clean close/reopen.
       setLoading(false);
-      searchSeqRef.current++;
+      searchSeq.abort();
       // Abort any in-flight search so the server stops walking a project
-      // the user has left. The seq bump prevents the response from
-      // writing state back, but without abort the server keeps scanning.
+      // the user has left. The sequence abort prevents the response from
+      // writing state back, but without this the server keeps scanning.
       searchAbortRef.current?.abort();
       searchAbortRef.current = null;
     }
-  }, [projectId]);
+  }, [projectId, searchSeq]);
 
   const togglePanel = useCallback(() => {
     // Sync the ref *synchronously* alongside the state update. The
@@ -157,26 +157,26 @@ export function useFindReplaceState(
     setResultsOptions(null);
     setError(null);
     // Any still-in-flight response must not write state back; its
-    // seq-guarded finally will also not be reached to clear `loading`,
+    // token-guarded finally will also not be reached to clear `loading`,
     // so reset it here or reopening the panel shows a stuck "Searching…".
     setLoading(false);
     // Invalidate any still-in-flight response so a late reply can't
     // write results back after the panel was explicitly closed.
-    searchSeqRef.current++;
+    searchSeq.abort();
     // Abort the underlying fetch too so the server stops walking chapters
     // for a search the user has clearly moved on from.
     searchAbortRef.current?.abort();
     searchAbortRef.current = null;
     // Clear any pending debounced search; if the panel closes inside the
     // 300ms debounce window, the timer would otherwise fire search(slug)
-    // after the panel was closed — bumping the seq again and writing a
+    // after the panel was closed — starting a new sequence and writing a
     // stale result set pinned to the pre-close query/options, visible on
     // reopen.
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
-  }, []);
+  }, [searchSeq]);
 
   const toggleOption = useCallback((opt: "case_sensitive" | "whole_word" | "regex") => {
     setOptions((prev) => ({ ...prev, [opt]: !prev[opt] }));
@@ -184,9 +184,9 @@ export function useFindReplaceState(
 
   const search = useCallback(
     async (slug: string) => {
-      // Always bump the seq so any still-in-flight response for a prior
-      // query is discarded rather than overwriting cleared state.
-      const seq = ++searchSeqRef.current;
+      // Always bump the sequence so any still-in-flight response for a
+      // prior query is discarded rather than overwriting cleared state.
+      const token = searchSeq.start();
       // Abort any prior in-flight search so a rapid-typing stream doesn't
       // leave N regex walks running server-side for queries the user has
       // already moved past.
@@ -215,12 +215,12 @@ export function useFindReplaceState(
       setError(null);
       try {
         const result = await api.search.find(slug, frozenQuery, frozenOptions, controller.signal);
-        if (seq !== searchSeqRef.current) return;
+        if (token.isStale()) return;
         setResults(result);
         setResultsQuery(frozenQuery);
         setResultsOptions(frozenOptions);
       } catch (err) {
-        if (seq !== searchSeqRef.current) return;
+        if (token.isStale()) return;
         const message = mapSearchErrorToMessage(err);
         if (message === null) {
           // Aborted: no banner, no state changes.
@@ -254,16 +254,16 @@ export function useFindReplaceState(
           setError(message);
         }
       } finally {
-        if (seq === searchSeqRef.current) {
+        if (!token.isStale()) {
           setLoading(false);
           // Release this request's controller — a stale (overwritten) ref
           // would already have been replaced by the next search, so only
-          // the current-seq branch owns the cleanup.
+          // the still-current branch owns the cleanup.
           if (searchAbortRef.current === controller) searchAbortRef.current = null;
         }
       }
     },
-    [query, options],
+    [query, options, searchSeq],
   );
 
   // Debounced auto-search when query/options change
@@ -289,8 +289,8 @@ export function useFindReplaceState(
     // callback would otherwise invoke search() on a closed panel —
     // the fetch has its own fresh abort controller (closePanel's
     // abort targeted a prior in-flight search), so the response would
-    // land, pass the seq guard, and write stale results + loading
-    // state back that surface on the next open.
+    // land, pass the sequence guard, and write stale results +
+    // loading state back that surface on the next open.
     debounceRef.current = setTimeout(() => {
       if (!panelOpenRef.current) return;
       const slug = latestSlugRef.current;
