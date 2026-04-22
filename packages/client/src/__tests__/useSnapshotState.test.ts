@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, cleanup } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import { useSnapshotState } from "../hooks/useSnapshotState";
 import { api } from "../api/client";
 import type { Chapter, SnapshotListItem, SnapshotRow } from "@smudge/shared";
@@ -462,5 +465,18 @@ describe("useSnapshotState", () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(result.current.snapshotCount).toBeNull();
     warnSpy.mockRestore();
+  });
+});
+
+describe("useSnapshotState migration structural check", () => {
+  it("no longer uses raw seq-ref patterns", () => {
+    // jsdom hijacks new URL(relative, base); use path.resolve for robust file lookup.
+    const source = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), "../hooks/useSnapshotState.ts"),
+      "utf-8",
+    );
+    expect(source).not.toMatch(/chapterSeqRef/);
+    expect(source).not.toMatch(/viewSeqRef/);
+    expect(source).toMatch(/useAbortableSequence/);
   });
 });
