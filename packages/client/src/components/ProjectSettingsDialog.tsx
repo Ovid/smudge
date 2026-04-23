@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
+import { mapApiError } from "../errors";
 
 const TIMEZONES = (() => {
   try {
@@ -197,7 +198,8 @@ export function ProjectSettingsDialog({
     } catch (err) {
       if (controller.signal.aborted) return; // superseded by a newer request
       console.error("Failed to save timezone:", err);
-      setTimezoneSaveError(STRINGS.projectSettings.saveError);
+      const { message } = mapApiError(err, "settings.update");
+      if (message) setTimezoneSaveError(message);
       setTimezone(confirmedTimezoneRef.current);
     }
   }

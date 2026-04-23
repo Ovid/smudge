@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { STRINGS } from "../strings";
 import { STATUS_COLORS } from "../statusColors";
 import { ProgressStrip } from "./ProgressStrip";
+import { mapApiError } from "../errors";
 
 type DashboardData = Awaited<ReturnType<typeof api.projects.dashboard>>;
 
@@ -47,7 +48,8 @@ export function DashboardView({
       .catch((err) => {
         if (!cancelled) {
           console.warn("Failed to load dashboard:", err);
-          setError(STRINGS.error.loadDashboardFailed);
+          const { message } = mapApiError(err, "dashboard.load");
+          if (message) setError(message);
         }
       });
     return () => {
@@ -67,6 +69,12 @@ export function DashboardView({
       .catch((err) => {
         if (!cancelled) {
           console.warn("Failed to load velocity:", err);
+          // Route through the unified mapper for diagnostics + scope parity.
+          // The UI surfaces velocity failure via the error flag (ProgressStrip
+          // renders STRINGS.velocity.loadError based on this flag); we still
+          // call mapApiError so scope routing is consistent and a future
+          // byCode/byStatus override on `project.velocity` flows naturally.
+          mapApiError(err, "project.velocity");
           setVelocityWithSlug({ slug, data: null, error: true });
         }
       });

@@ -1169,7 +1169,8 @@ export function EditorPage() {
             attempts++;
             timerId = setTimeout(fetchStatuses, 2000 * attempts);
           } else {
-            setActionError(STRINGS.error.statusesFetchFailed);
+            const { message } = mapApiError(err, "chapterStatus.fetch");
+            if (message) setActionError(message);
           }
         });
     }
@@ -1411,7 +1412,8 @@ export function EditorPage() {
         await handleSelectChapter(chapterId);
       } catch (err) {
         console.warn("handleSelectChapterWithFlush failed", err);
-        setActionError(STRINGS.error.loadChapterFailed);
+        const { message } = mapApiError(err, "chapter.load");
+        if (message) setActionError(message);
       }
     },
     [handleSelectChapter, switchToView, setActionError],
@@ -1467,7 +1469,8 @@ export function EditorPage() {
             navigate("/");
             return;
           }
-          setActionError(STRINGS.error.loadProjectFailed);
+          const { message } = mapApiError(err, "project.load");
+          if (message) setActionError(message);
         });
     }
   }, [slug, setProject, setActionError, navigate, mutation, isActionBusy]);

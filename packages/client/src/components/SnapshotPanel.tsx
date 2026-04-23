@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardR
 import { api, ApiRequestError } from "../api/client";
 import { useAbortableSequence } from "../hooks/useAbortableSequence";
 import { STRINGS } from "../strings";
+import { mapApiError } from "../errors";
 import type { SnapshotListItem } from "@smudge/shared";
 
 const S = STRINGS.snapshots;
@@ -123,12 +124,13 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         setSnapshots(data);
         setListError(null);
         onSnapshotsChange?.(data.length);
-      } catch {
+      } catch (err) {
         if (token.isStale()) return;
         // Surface the failure instead of silently showing an empty panel;
         // otherwise a network blip makes the user think a chapter with
         // snapshots has none.
-        setListError(S.listFailed);
+        const { message } = mapApiError(err, "snapshot.list");
+        if (message) setListError(message);
       }
     }, [chapterId, onSnapshotsChange, chapterSeq]);
 
@@ -149,9 +151,10 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
           setListError(null);
           onSnapshotsChange?.(data.length);
         })
-        .catch(() => {
+        .catch((err) => {
           if (token.isStale()) return;
-          setListError(S.listFailed);
+          const { message } = mapApiError(err, "snapshot.list");
+          if (message) setListError(message);
         });
     }, [isOpen, chapterId, onSnapshotsChange, chapterSeq]);
 
@@ -261,8 +264,9 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         setCreateLabel("");
         setDuplicateMessage(false);
         await fetchSnapshots();
-      } catch {
-        setCreateError(S.createFailed);
+      } catch (err) {
+        const { message } = mapApiError(err, "snapshot.create");
+        if (message) setCreateError(message);
       }
     };
 
@@ -285,7 +289,8 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         // Keep the confirm dialog open and surface an error so the user
         // knows the delete didn't land — silently swallowing it makes
         // users believe a destructive action succeeded when it hadn't.
-        setDeleteError(S.deleteFailed);
+        const { message } = mapApiError(err, "snapshot.delete");
+        if (message) setDeleteError(message);
       }
     };
 

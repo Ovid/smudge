@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import type { Chapter, ProjectWithChapters } from "@smudge/shared";
 import { api } from "../api/client";
-import { STRINGS } from "../strings";
+import { mapApiError } from "../errors";
 
 export function useTrashManager(
   project: ProjectWithChapters | null,
@@ -23,7 +23,8 @@ export function useTrashManager(
       setTrashOpen(true);
     } catch (err) {
       console.error("Failed to load trash:", err);
-      setActionError(STRINGS.error.loadTrashFailed);
+      const { message } = mapApiError(err, "trash.load");
+      if (message) setActionError(message);
     }
   }, [project]);
 
@@ -50,7 +51,8 @@ export function useTrashManager(
         }
       } catch (err) {
         console.error("Failed to restore chapter:", err);
-        setActionError(STRINGS.error.restoreChapterFailed);
+        const { message } = mapApiError(err, "trash.restoreChapter");
+        if (message) setActionError(message);
       }
     },
     [slug, setProject, navigate],

@@ -6,6 +6,7 @@ import { NewProjectDialog } from "../components/NewProjectDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { STRINGS } from "../strings";
 import { Logo } from "../components/Logo";
+import { mapApiError } from "../errors";
 
 export function HomePage() {
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
@@ -24,7 +25,8 @@ export function HomePage() {
       } catch (err) {
         console.warn("Failed to load projects:", err);
         if (!cancelled) {
-          setError(STRINGS.error.loadFailed);
+          const { message } = mapApiError(err, "project.load");
+          if (message) setError(message);
         }
       }
     }
@@ -44,7 +46,8 @@ export function HomePage() {
       navigate(`/projects/${project.slug}`);
     } catch (err) {
       console.warn("Failed to create project:", err);
-      setError(STRINGS.error.createFailed);
+      const { message } = mapApiError(err, "project.create");
+      if (message) setError(message);
     }
   }
 
@@ -57,7 +60,8 @@ export function HomePage() {
       setDeleteTarget(null);
     } catch (err) {
       console.warn("Failed to delete project:", err);
-      setError(STRINGS.error.deleteFailed);
+      const { message } = mapApiError(err, "project.delete");
+      if (message) setError(message);
       setDeleteTarget(null);
     }
   }

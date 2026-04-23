@@ -5,6 +5,7 @@ import { api, ApiRequestError } from "../api/client";
 import { getCachedContent, setCachedContent, clearCachedContent } from "./useContentCache";
 import { useAbortableSequence } from "./useAbortableSequence";
 import { STRINGS } from "../strings";
+import { mapApiError } from "../errors";
 
 export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
 
@@ -149,7 +150,8 @@ export function useProjectEditor(slug: string | undefined) {
       } catch (err) {
         console.warn("Failed to load project:", err);
         if (cancelled) return;
-        setError(STRINGS.error.loadProjectFailed);
+        const { message } = mapApiError(err, "project.load");
+        if (message) setError(message);
       }
     }
 
@@ -374,10 +376,12 @@ export function useProjectEditor(slug: string | undefined) {
         // rather than the full-screen error overlay, which would tear
         // down the editor session and leave the user with only a
         // "back to projects" link.
+        const { message } = mapApiError(err, "chapter.create");
+        if (!message) return;
         if (onError) {
-          onError(STRINGS.error.createChapterFailed);
+          onError(message);
         } else {
-          setError(STRINGS.error.createChapterFailed);
+          setError(message);
         }
       }
     },
@@ -409,7 +413,8 @@ export function useProjectEditor(slug: string | undefined) {
       } catch (err) {
         console.warn("Failed to load chapter:", err);
         if (token.isStale()) return;
-        setError(STRINGS.error.loadChapterFailed);
+        const { message } = mapApiError(err, "chapter.load");
+        if (message) setError(message);
       }
     },
     [cancelInFlightSave, selectChapterSeq],
@@ -474,10 +479,12 @@ export function useProjectEditor(slug: string | undefined) {
         // without flipping EditorPage into the full-screen error branch.
         // Falling back to setError preserves the legacy behavior when no
         // callback is supplied (e.g. snapshot restore reload).
+        const { message } = mapApiError(err, "chapter.load");
+        if (!message) return "failed";
         if (onError) {
-          onError(STRINGS.error.loadChapterFailed);
+          onError(message);
         } else {
-          setError(STRINGS.error.loadChapterFailed);
+          setError(message);
         }
         return "failed";
       }
@@ -545,7 +552,8 @@ export function useProjectEditor(slug: string | undefined) {
               // as if the project had no chapters left.
               console.warn("Failed to load chapter after delete:", err);
               if (token.isStale()) return true;
-              onError?.(STRINGS.error.loadChapterFailed);
+              const { message } = mapApiError(err, "chapter.load");
+              if (message) onError?.(message);
               setActiveChapter(null);
               setChapterWordCount(0);
             }
@@ -557,7 +565,8 @@ export function useProjectEditor(slug: string | undefined) {
         return true;
       } catch (err) {
         console.warn("Failed to delete chapter:", err);
-        onError?.(STRINGS.error.deleteChapterFailed);
+        const { message } = mapApiError(err, "chapter.delete");
+        if (message) onError?.(message);
         return false;
       }
     },
@@ -596,10 +605,12 @@ export function useProjectEditor(slug: string | undefined) {
         // I4: route through the onError callback rather than setError so
         // a 400 on id-list mismatch (recoverable per CLAUDE.md) surfaces
         // as a dismissible banner instead of tearing down the editor.
+        const { message } = mapApiError(err, "chapter.reorder");
+        if (!message) return;
         if (onError) {
-          onError(STRINGS.error.reorderFailed);
+          onError(message);
         } else {
-          setError(STRINGS.error.reorderFailed);
+          setError(message);
         }
       }
     },
@@ -629,7 +640,8 @@ export function useProjectEditor(slug: string | undefined) {
         console.warn("Failed to update project title:", err);
         // Don't call setError — that triggers the full-page error overlay.
         // Returning undefined keeps the title edit mode open so the user can retry.
-        setProjectTitleError(STRINGS.error.updateTitleFailed);
+        const { message } = mapApiError(err, "project.updateTitle");
+        if (message) setProjectTitleError(message);
         return undefined;
       }
     },
@@ -655,8 +667,9 @@ export function useProjectEditor(slug: string | undefined) {
       setActiveChapter((prev) => (prev?.id === chapterId ? { ...prev, status } : prev));
       try {
         await api.chapters.update(chapterId, { status });
-      } catch {
+      } catch (err) {
         if (token.isStale()) return; // newer call owns state
+        const { message } = mapApiError(err, "chapter.updateStatus");
         // Revert by reloading from server, falling back to local revert
         let reverted = false;
         const slug = projectSlugRef.current;
@@ -713,7 +726,7 @@ export function useProjectEditor(slug: string | undefined) {
         // Status change failures are non-fatal — the revert already restored consistent state.
         // Call the optional onError callback for the caller to display (e.g., as a dismissible banner),
         // rather than setError which triggers the full-page error overlay.
-        onError?.(STRINGS.error.statusChangeFailed);
+        if (message) onError?.(message);
       }
     },
     [statusChangeSeq],
@@ -741,7 +754,8 @@ export function useProjectEditor(slug: string | undefined) {
         // Don't call setError — that triggers the full-page error overlay.
         // Rename failures are non-fatal; surface via the optional callback
         // so callers can display inline (same pattern as handleStatusChange).
-        onError?.(STRINGS.error.renameChapterFailed);
+        const { message } = mapApiError(err, "chapter.rename");
+        if (message) onError?.(message);
       }
     },
     [],
