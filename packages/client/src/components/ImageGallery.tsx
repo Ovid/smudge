@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useReducer } from "react";
 import type { ImageRow } from "@smudge/shared";
 import { api } from "../api/client";
+import { mapApiError } from "../errors";
 import { STRINGS } from "../strings";
 
 interface ImageGalleryProps {
@@ -191,30 +192,24 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
     if (!selectedImage) return;
 
     try {
-      const result = await api.images.delete(selectedImage.id);
-      if ("deleted" in result && result.deleted) {
-        announce(S.deleteSuccess(selectedImage.filename));
-        setSelectedImage(null);
-        setConfirmingDelete(false);
-        incrementRefreshKey();
-        return;
-      }
-      // 409 or unexpected response — treat as blocked
-      const chapters =
-        "error" in result &&
-        result.error &&
-        typeof result.error === "object" &&
-        "chapters" in result.error &&
-        Array.isArray((result.error as { chapters: unknown }).chapters)
-          ? (
-              result.error as { chapters: Array<{ title: string; trashed?: boolean }> }
-            ).chapters.map((c) => (c.trashed ? `${c.title} (${S.inTrash})` : c.title))
-          : [];
-      announce(S.deleteBlocked(chapters));
+      await api.images.delete(selectedImage.id);
+      announce(S.deleteSuccess(selectedImage.filename));
+      setSelectedImage(null);
       setConfirmingDelete(false);
+      incrementRefreshKey();
     } catch (err: unknown) {
-      const reason = err instanceof Error ? err.message : "Unknown error";
-      announce(S.deleteFailed(reason));
+      const { message, extras } = mapApiError(err, "image.delete");
+      // ABORTED: silent (mapper returned message: null). Leave the detail
+      // view and confirmation state as-is so the user can retry.
+      if (!message) return;
+      if (extras?.chapters) {
+        const chapters = (extras.chapters as Array<{ title: string; trashed?: boolean }>).map(
+          (c) => (c.trashed ? `${c.title} (${S.inTrash})` : c.title),
+        );
+        announce(S.deleteBlocked(chapters));
+      } else {
+        announce(message);
+      }
       setConfirmingDelete(false);
     }
   }

@@ -377,25 +377,39 @@ describe("api.images", () => {
 
     const result = await api.images.delete("img-1");
     expect(result).toEqual({ deleted: true });
-    expect(mockFetch).toHaveBeenCalledWith("/api/images/img-1", { method: "DELETE" });
+    expect(mockFetch).toHaveBeenCalledWith("/api/images/img-1", {
+      headers: { "Content-Type": "application/json" },
+      method: "DELETE",
+    });
   });
 
-  it("delete(id) returns conflict body when image is still referenced (409)", async () => {
-    const conflictBody = {
-      error: {
-        code: "IMAGE_IN_USE",
-        message: "Image is referenced by chapters",
-        chapters: [{ id: "ch-1", title: "Chapter One" }],
-      },
-    };
+  it("delete(id) throws ApiRequestError with IMAGE_IN_USE code and chapters in extras on 409", async () => {
+    const { ApiRequestError } = await import("../api/client");
     mockFetch.mockResolvedValue({
       ok: false,
       status: 409,
-      json: () => Promise.resolve(conflictBody),
+      json: () =>
+        Promise.resolve({
+          error: {
+            code: "IMAGE_IN_USE",
+            message: "Image is referenced by chapters",
+            chapters: [{ id: "ch-1", title: "Chapter One" }],
+          },
+        }),
     });
 
-    const result = await api.images.delete("img-1");
-    expect(result).toEqual(conflictBody);
+    let caught: unknown;
+    try {
+      await api.images.delete("img-1");
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(409);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("IMAGE_IN_USE");
+    expect((caught as InstanceType<typeof ApiRequestError>).extras).toEqual({
+      chapters: [{ id: "ch-1", title: "Chapter One" }],
+    });
   });
 
   it("delete(id) throws ApiRequestError on non-409 failure with server message", async () => {
@@ -415,7 +429,7 @@ describe("api.images", () => {
       json: () => Promise.resolve({}),
     });
 
-    await expect(api.images.delete("img-1")).rejects.toThrow("Delete failed (500)");
+    await expect(api.images.delete("img-1")).rejects.toThrow("Request failed: 500");
   });
 });
 
@@ -658,5 +672,47 @@ describe("error handling", () => {
     expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("BAD_JSON");
     expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(200);
     expect((caught as Error).message).toMatch(/Unexpected token/);
+  });
+
+  it("carries envelope extras on ApiRequestError when present", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue(
+      jsonResponse(
+        {
+          error: {
+            code: "IMAGE_IN_USE",
+            message: "in use",
+            chapters: [{ id: "c1", title: "Chapter 1" }],
+          },
+        },
+        409,
+      ),
+    );
+
+    let caught: unknown;
+    try {
+      await api.projects.get("some-slug");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).extras).toEqual({
+      chapters: [{ id: "c1", title: "Chapter 1" }],
+    });
+  });
+
+  it("ApiRequestError.extras is undefined when envelope has only code and message", async () => {
+    const ClientModule = await import("../api/client");
+    mockFetch.mockResolvedValue(
+      jsonResponse({ error: { code: "NOT_FOUND", message: "gone" } }, 404),
+    );
+    let caught: InstanceType<typeof ClientModule.ApiRequestError> | undefined;
+    try {
+      await api.projects.get("slug");
+    } catch (err) {
+      caught = err as InstanceType<typeof ClientModule.ApiRequestError>;
+    }
+    expect(caught).toBeInstanceOf(ClientModule.ApiRequestError);
+    expect(caught?.extras).toBeUndefined();
   });
 });

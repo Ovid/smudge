@@ -182,44 +182,28 @@ const scopeWithExtras = {
   fallback: "fallback",
   byCode: { IMAGE_IN_USE: "in use" },
   extrasFrom: (err: ApiRequestError) => {
-    const chapters = (err as unknown as { extras?: { chapters?: unknown } }).extras?.chapters;
+    const chapters = (err.extras as { chapters?: unknown } | undefined)?.chapters;
     return Array.isArray(chapters) ? { chapters } : undefined;
   },
 } as const;
 
-// TODO: unskip in commit 2 — these tests use the 4-arg ApiRequestError form
-// that commit 2 introduces. The `as any` cast on the constructor preserves
-// the test bodies so commit 2 only needs to remove the cast.
-describe.skip("mapApiError — extras (TODO: unskip in commit 2)", () => {
+describe("mapApiError — extras", () => {
   it("computes extras when scope declares extrasFrom", () => {
-    const err = new (ApiRequestError as unknown as new (
-      message: string,
-      status: number,
-      code: string,
-      extras: Record<string, unknown>,
-    ) => ApiRequestError)("in use", 409, "IMAGE_IN_USE", {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
       chapters: [{ id: "c1", title: "Chapter 1" }],
     });
     const result = resolveError(err, scopeWithExtras);
     expect(result.extras).toEqual({ chapters: [{ id: "c1", title: "Chapter 1" }] });
   });
   it("returns extras: undefined when server envelope is malformed", () => {
-    const err = new (ApiRequestError as unknown as new (
-      message: string,
-      status: number,
-      code: string,
-      extras: Record<string, unknown>,
-    ) => ApiRequestError)("in use", 409, "IMAGE_IN_USE", { chapters: "not-an-array" });
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: "not-an-array",
+    });
     const result = resolveError(err, scopeWithExtras);
     expect(result.extras).toBeUndefined();
   });
   it("does not include extras when scope has no extrasFrom", () => {
-    const err = new (ApiRequestError as unknown as new (
-      message: string,
-      status: number,
-      code: string,
-      extras: Record<string, unknown>,
-    ) => ApiRequestError)("bad", 400, "VALIDATION_ERROR", { something: "else" });
+    const err = new ApiRequestError("bad", 400, "VALIDATION_ERROR", { something: "else" });
     const result = resolveError(err, scopeWithByCode);
     expect(result.extras).toBeUndefined();
   });
@@ -253,16 +237,10 @@ describe("SCOPES — image.delete", () => {
   });
 });
 
-// TODO: unskip in commit 2 — these tests need 4-arg ApiRequestError.
-describe.skip("SCOPES — image.delete extrasFrom (TODO: unskip in commit 2)", () => {
+describe("SCOPES — image.delete extrasFrom", () => {
   const scope = SCOPES["image.delete"];
   it("IMAGE_IN_USE with chapters in extras → extras forwarded", () => {
-    const err = new (ApiRequestError as unknown as new (
-      message: string,
-      status: number,
-      code: string,
-      extras: Record<string, unknown>,
-    ) => ApiRequestError)("in use", 409, "IMAGE_IN_USE", {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
       chapters: [{ id: "c1", title: "Chapter 1" }],
     });
     expect(resolveError(err, scope).extras).toEqual({
@@ -270,12 +248,9 @@ describe.skip("SCOPES — image.delete extrasFrom (TODO: unskip in commit 2)", (
     });
   });
   it("IMAGE_IN_USE with malformed extras → extras undefined", () => {
-    const err = new (ApiRequestError as unknown as new (
-      message: string,
-      status: number,
-      code: string,
-      extras: Record<string, unknown>,
-    ) => ApiRequestError)("in use", 409, "IMAGE_IN_USE", { chapters: "not-an-array" });
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: "not-an-array",
+    });
     expect(resolveError(err, scope).extras).toBeUndefined();
   });
 });

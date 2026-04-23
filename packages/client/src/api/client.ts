@@ -24,6 +24,7 @@ export class ApiRequestError extends Error {
     message: string,
     public readonly status: number,
     public readonly code?: string,
+    public readonly extras?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "ApiRequestError";
@@ -59,10 +60,22 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   if (!res.ok) {
     let message = `Request failed: ${res.status}`;
     let code: string | undefined;
+    let extras: Record<string, unknown> | undefined;
     try {
       const body = (await res.json()) as ApiError;
       message = body.error?.message ?? message;
       code = body.error?.code;
+      // Capture any non-code/non-message fields on the error envelope so
+      // callers can surface structured details (e.g. `chapters` on a 409
+      // IMAGE_IN_USE). Keeping this generic means every new extras field
+      // on the server becomes available on ApiRequestError without a
+      // transport change.
+      if (body.error) {
+        const { code: _c, message: _m, ...rest } = body.error;
+        if (Object.keys(rest).length > 0) {
+          extras = rest as Record<string, unknown>;
+        }
+      }
     } catch (err: unknown) {
       // Body read can ALSO abort (e.g. controller cancelled after headers
       // arrived). Propagate as ABORTED so callers that key on err.code
@@ -74,7 +87,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
         throw classifyFetchError(err);
       }
     }
-    throw new ApiRequestError(message, res.status, code);
+    throw new ApiRequestError(message, res.status, code, extras);
   }
 
   if (res.status === 204) return undefined as T;
@@ -260,47 +273,8 @@ export const api = {
       });
     },
 
-    async delete(id: string): Promise<
-      | { deleted: boolean }
-      | {
-          error: {
-            code: string;
-            message: string;
-            chapters: Array<{ id: string; title: string }>;
-          };
-        }
-    > {
-      const res = await fetch(`${BASE}/images/${id}`, { method: "DELETE" });
-      const body = await res.json().catch(() => null);
-      if (res.status === 409) {
-        if (
-          body &&
-          typeof body === "object" &&
-          "error" in body &&
-          body.error &&
-          typeof body.error === "object" &&
-          "chapters" in body.error &&
-          Array.isArray(body.error.chapters)
-        ) {
-          return body;
-        }
-        throw new ApiRequestError("Delete blocked (conflict)", 409);
-      }
-      if (!res.ok) {
-        throw new ApiRequestError(
-          body?.error?.message ?? `Delete failed (${res.status})`,
-          res.status,
-        );
-      }
-      if (
-        !body ||
-        typeof body !== "object" ||
-        !("deleted" in body) ||
-        typeof body.deleted !== "boolean"
-      ) {
-        throw new ApiRequestError(`Delete failed (${res.status})`, res.status);
-      }
-      return body;
+    delete(id: string): Promise<{ deleted: boolean }> {
+      return apiFetch(`/images/${id}`, { method: "DELETE" });
     },
   },
 

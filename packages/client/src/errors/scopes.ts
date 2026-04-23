@@ -57,8 +57,7 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     fallback: STRINGS.imageGallery.deleteFailedGeneric,
     byCode: { IMAGE_IN_USE: STRINGS.imageGallery.deleteBlockedInUse },
     extrasFrom: (err: ApiRequestError) => {
-      // TODO: commit 2 — drop `as unknown as` once ApiRequestError has a public `extras` field.
-      const chapters = (err as unknown as { extras?: { chapters?: unknown } }).extras?.chapters;
+      const chapters = (err.extras as { chapters?: unknown } | undefined)?.chapters;
       return Array.isArray(chapters) ? { chapters } : undefined;
     },
   },

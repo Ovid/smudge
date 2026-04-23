@@ -2,21 +2,25 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ImageGallery } from "../components/ImageGallery";
-import { api } from "../api/client";
+import { api, ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
 import type { ImageRow } from "@smudge/shared";
 
-vi.mock("../api/client", () => ({
-  api: {
-    images: {
-      list: vi.fn(),
-      upload: vi.fn(),
-      references: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
+vi.mock("../api/client", async () => {
+  const actual = await vi.importActual<typeof import("../api/client")>("../api/client");
+  return {
+    ...actual,
+    api: {
+      images: {
+        list: vi.fn(),
+        upload: vi.fn(),
+        references: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+      },
     },
-  },
-}));
+  };
+});
 
 const S = STRINGS.imageGallery;
 
@@ -557,13 +561,11 @@ describe("ImageGallery", () => {
 
   it("handles delete API returning an in-use error", async () => {
     const user = userEvent.setup();
-    vi.mocked(api.images.delete).mockResolvedValue({
-      error: {
-        code: "IMAGE_IN_USE",
-        message: "Image is used",
+    vi.mocked(api.images.delete).mockRejectedValue(
+      new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
         chapters: [{ id: "ch-1", title: "Chapter One" }],
-      },
-    });
+      }),
+    );
     await renderAndOpenDetail(makeImage({ reference_count: 0 }), user);
 
     // Show confirm, then click delete
@@ -574,6 +576,59 @@ describe("ImageGallery", () => {
     await waitFor(() => {
       expect(screen.getByText(S.backToGrid)).toBeInTheDocument();
     });
+  });
+
+  it("announces blocked message with chapter list when server returns 409 IMAGE_IN_USE", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.images.delete).mockRejectedValue(
+      new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+        chapters: [
+          { id: "ch-1", title: "Chapter One" },
+          { id: "ch-2", title: "Chapter Two", trashed: true },
+        ],
+      }),
+    );
+    await renderAndOpenDetail(makeImage({ reference_count: 0 }), user);
+
+    await user.click(screen.getByText(S.deleteButton));
+    await user.click(screen.getByText(S.deleteButton));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(S.deleteBlocked(["Chapter One", `Chapter Two (${S.inTrash})`])),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("announces generic delete failure when server returns non-409 error", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.images.delete).mockRejectedValue(
+      new ApiRequestError("boom", 500, "INTERNAL_ERROR"),
+    );
+    await renderAndOpenDetail(makeImage({ reference_count: 0 }), user);
+
+    await user.click(screen.getByText(S.deleteButton));
+    await user.click(screen.getByText(S.deleteButton));
+
+    await waitFor(() => {
+      expect(screen.getByText(S.deleteFailedGeneric)).toBeInTheDocument();
+    });
+  });
+
+  it("silently swallows an ABORTED delete (no announcement)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.images.delete).mockRejectedValue(new ApiRequestError("aborted", 0, "ABORTED"));
+    await renderAndOpenDetail(makeImage({ reference_count: 0 }), user);
+
+    await user.click(screen.getByText(S.deleteButton));
+    await user.click(screen.getByText(S.deleteButton));
+
+    // No announcement should surface, and the detail view should remain.
+    await waitFor(() => {
+      expect(api.images.delete).toHaveBeenCalled();
+    });
+    expect(screen.queryByText(S.deleteFailedGeneric)).not.toBeInTheDocument();
+    expect(screen.getByText(S.backToGrid)).toBeInTheDocument();
   });
 
   // --- Aria live region ---
