@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { api, ApiRequestError } from "../api/client";
 import { type SearchResult } from "@smudge/shared";
-import { mapSearchErrorToMessage } from "../utils/findReplaceErrors";
+import { mapApiError } from "../errors";
 import { useAbortableSequence } from "./useAbortableSequence";
 
 export interface SearchOptionsShape {
@@ -221,7 +221,7 @@ export function useFindReplaceState(
         setResultsOptions(frozenOptions);
       } catch (err) {
         if (token.isStale()) return;
-        const message = mapSearchErrorToMessage(err);
+        const { message } = mapApiError(err, "findReplace.search");
         if (message === null) {
           // Aborted: no banner, no state changes.
           return;

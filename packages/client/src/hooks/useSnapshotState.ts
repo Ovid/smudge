@@ -5,6 +5,38 @@ import { clearCachedContent } from "./useContentCache";
 import { useAbortableSequence } from "./useAbortableSequence";
 import type { SnapshotPanelHandle } from "../components/SnapshotPanel";
 
+// Synthetic ApiRequestErrors for failure paths where the hook caught a
+// non-ApiRequestError (or wants to remap a real ApiRequestError to a
+// different classification). The caller only ever inspects the failure arm
+// via mapApiError, so these need to produce the right MappedError fields:
+//   - NETWORK (status 0, code "NETWORK") → `transient: true` via the
+//     snapshot.{restore,view} scope's `network:` entry.
+//   - 200 BAD_JSON → `possiblyCommitted: true` via the snapshot.restore
+//     scope's `committed:` entry. Only restore has ambiguous commit state;
+//     viewSnapshot remaps BAD_JSON to CORRUPT_SNAPSHOT (see below).
+//   - CORRUPT_SNAPSHOT code → scope's byCode entry for the "this snapshot
+//     is corrupt" copy.
+// Keeping the synthesis inside the hook means EditorPage never has to
+// reason about non-ApiRequestError throws — every failure arm carries a
+// real ApiRequestError that the scope registry knows how to classify.
+function makeClientNetworkError(): ApiRequestError {
+  return new ApiRequestError("Client-side failure before request reached server.", 0, "NETWORK");
+}
+function makePossiblyCommittedError(): ApiRequestError {
+  return new ApiRequestError(
+    "Restore response body unreadable after server commit.",
+    200,
+    "BAD_JSON",
+  );
+}
+function makeCorruptViewError(): ApiRequestError {
+  return new ApiRequestError(
+    "Snapshot content could not be parsed as a TipTap document.",
+    400,
+    SNAPSHOT_ERROR_CODES.CORRUPT_SNAPSHOT,
+  );
+}
+
 interface ViewingSnapshot {
   id: string;
   label: string | null;
@@ -12,48 +44,10 @@ interface ViewingSnapshot {
   created_at: string;
 }
 
-export type RestoreFailureReason =
-  | "corrupt_snapshot"
-  | "cross_project_image"
-  | "not_found"
-  | "network"
-  // 2xx BAD_JSON: apiFetch threw ApiRequestError(status=2xx, code="BAD_JSON")
-  // because a 2xx response body failed to parse. The server almost certainly
-  // committed the restore (and its auto-snapshot) but the client cannot
-  // verify. Callers MUST treat this as "possibly committed" and lock the
-  // editor — re-enabling would let auto-save silently revert the committed
-  // restore (C2).
-  | "possibly_committed"
-  // The request was aborted (AbortController). No path triggers this today
-  // for restoreSnapshot, but mirror viewSnapshot's discipline: callers must
-  // treat as a silent no-op rather than the misleading "check your
-  // connection" banner the network branch would produce (I7). A future
-  // refactor that wires AbortController into restore must therefore not
-  // surface user-facing copy for the cancellation.
-  | "aborted"
-  | "unknown";
-
-export interface RestoreResult {
-  ok: boolean;
-  reason?: RestoreFailureReason;
-  // Set when the user switched chapters while the restore was in flight. The
-  // restore did land on the server, but reloading the now-active chapter
-  // would pull in the wrong content — callers should skip reloadActiveChapter
-  // in this branch.
-  staleChapterSwitch?: boolean;
-  // The chapter id whose content was restored. Callers can compare this to
-  // the currently-active chapter id (which may differ from the one the
-  // restore was initiated on after an A→B→A round trip) to decide whether
-  // to reload the editor.
-  restoredChapterId?: string;
-}
-
-export type ViewFailureReason = "not_found" | "corrupt_snapshot" | "network" | "unknown";
-
-// Why this view request's result was discarded. Separated from `reason`
-// (failure) because a superseded view is not a failure — the server may
-// have returned 200 with a valid snapshot, we just don't want to surface
-// it. Review S6 (2026-04-22) split this from a single `staleChapterSwitch`
+// Why this view request's result was discarded. Separated from the failure
+// arm because a superseded view is not a failure — the server may have
+// returned 200 with a valid snapshot, we just don't want to surface it.
+// Review S6 (2026-04-22) split this from a single `staleChapterSwitch`
 // boolean so the panel can show "belongs to a different chapter" copy
 // ONLY on actual chapter switches, not on rapid same-chapter reclicks
 // where the newer click is already updating the UI.
@@ -67,13 +61,40 @@ export type ViewSupersededReason =
   // is already updating the UI.
   | "sameChapterNewer";
 
-export interface ViewResult {
-  ok: boolean;
-  reason?: ViewFailureReason;
-  // Present when the response was discarded because a newer request (same
-  // or different axis) supersedes it.
-  superseded?: ViewSupersededReason;
-}
+// Discriminated union: the failure arm carries the caught ApiRequestError
+// verbatim so the caller can run it through mapApiError("snapshot.restore")
+// to get `{ message, possiblyCommitted, transient }` — one mapping table
+// lives in errors/scopes.ts instead of duplicated ladders across the hook
+// and EditorPage. Non-ApiRequestError throws are normalized into synthetic
+// ApiRequestError in the hook so the caller only ever branches on MappedError
+// fields; see the restoreSnapshot catch block for the two synthesis sites
+// (pre-send → NETWORK; post-success → 200 BAD_JSON).
+export type RestoreResult =
+  | {
+      ok: true;
+      // Set when the user switched chapters while the restore was in flight.
+      // The restore did land on the server, but reloading the now-active
+      // chapter would pull in the wrong content — callers should skip
+      // reloadActiveChapter in this branch.
+      staleChapterSwitch?: boolean;
+      // The chapter id whose content was restored. Callers can compare this
+      // to the currently-active chapter id (which may differ from the one
+      // the restore was initiated on after an A→B→A round trip) to decide
+      // whether to reload the editor.
+      restoredChapterId?: string;
+    }
+  | { ok: false; error: ApiRequestError };
+
+// Same discriminated-union shape as RestoreResult. The failure arm carries
+// an ApiRequestError; the success arm preserves `superseded` verbatim —
+// recent commits (8ae123b, a2d0f09, 894f0ac) depend on both discriminant
+// values of ViewSupersededReason, so the success-arm shape is load-bearing.
+export type ViewResult =
+  | {
+      ok: true;
+      superseded?: ViewSupersededReason;
+    }
+  | { ok: false; error: ApiRequestError };
 
 export interface UseSnapshotStateReturn {
   snapshotPanelOpen: boolean;
@@ -195,21 +216,21 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         if (cToken.isStale()) return { ok: true, superseded: "chapter" };
         if (vToken.isStale()) return { ok: true, superseded: "sameChapterNewer" };
         // SnapshotRow.content is typed as a JSON string on the wire.
+        // A parse failure, or a non-object payload (valid JSON like "42",
+        // "null", or "[1,2,3]"), means the stored snapshot is not a TipTap
+        // document and would crash the read-only preview editor. Mirror the
+        // server-side restore path (which gates on TipTapDocSchema.safeParse)
+        // by synthesizing a CORRUPT_SNAPSHOT ApiRequestError so the
+        // snapshot.view scope's byCode entry maps it to the
+        // "this snapshot is corrupt" copy.
         let content: unknown;
         try {
           content = JSON.parse(full.content);
         } catch {
-          return { ok: false, reason: "corrupt_snapshot" };
+          return { ok: false, error: makeCorruptViewError() };
         }
-        // Reject anything that is not a plain object: valid JSON like
-        // "42", "null", or "[1,2,3]" parses successfully but is not a
-        // TipTap document and would crash the read-only preview editor
-        // when we hand it to TipTap downstream. The server's restore path
-        // gates on TipTapDocSchema.safeParse for the same reason; surface
-        // a clean corrupt_snapshot here rather than letting the editor
-        // throw.
         if (content === null || typeof content !== "object" || Array.isArray(content)) {
-          return { ok: false, reason: "corrupt_snapshot" };
+          return { ok: false, error: makeCorruptViewError() };
         }
         setViewingSnapshot({
           id: snapshot.id,
@@ -230,23 +251,28 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
           // ABORTED is not a user-visible error — mirror the supersession
           // path with sameChapterNewer (abort is always same-chapter-
           // triggered in this hook; a chapter switch would have surfaced
-          // via cToken.isStale() above).
+          // via cToken.isStale() above). mapApiError treats ABORTED as
+          // `message: null`, but returning it as the failure arm would
+          // require EditorPage to re-check the code; the supersession
+          // discriminant is cleaner and preserves the pre-refactor behavior.
           if (err.code === "ABORTED") return { ok: true, superseded: "sameChapterNewer" };
-          if (err.status === 404) return { ok: false, reason: "not_found" };
           // 2xx BAD_JSON on a GET has no "maybe committed" ambiguity —
-          // GETs don't commit server-side state. The response body is
-          // garbled (truncated, non-JSON proxy page, or server bug), which
-          // from the user's perspective means this specific snapshot is
-          // unreadable. Mapping to "network" would prompt a "check your
-          // connection" banner that invites a pointless retry; a corrupt
-          // classification surfaces the right copy ("this snapshot is
-          // corrupt") so the user tries a different snapshot instead.
+          // GETs don't commit server-side state. Remap the synthetic code
+          // to CORRUPT_SNAPSHOT so the snapshot.view scope routes it to the
+          // "this snapshot is corrupt" copy rather than the network scope's
+          // "check your connection" banner that invites a pointless retry.
           if (err.code === "BAD_JSON" && err.status >= 200 && err.status < 300) {
-            return { ok: false, reason: "corrupt_snapshot" };
+            return { ok: false, error: makeCorruptViewError() };
           }
-          return { ok: false, reason: "network" };
+          return { ok: false, error: err };
         }
-        return { ok: false, reason: "unknown" };
+        // Non-ApiRequestError (TypeError, rejectors that bypass apiFetch).
+        // apiFetch wraps every real network failure in ApiRequestError, so a
+        // bare throw here is a purely-client problem — synthesize a NETWORK
+        // ApiRequestError so the caller sees the transient-retry copy from
+        // the snapshot.view scope rather than silently dropping to the
+        // generic fallback.
+        return { ok: false, error: makeClientNetworkError() };
       }
     },
     [chapterSeq, viewSeq],
@@ -314,48 +340,27 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         };
       } catch (err) {
         if (err instanceof ApiRequestError) {
-          // I7: ABORTED is not a user-visible error — mirror viewSnapshot.
-          // The misleading "check your connection" banner the network
-          // branch would otherwise produce is the very fragility the
-          // reviewer flagged.
-          if (err.code === "ABORTED") {
-            return { ok: false, reason: "aborted" };
-          }
-          // 2xx BAD_JSON: server likely committed the restore but response
-          // body was unreadable. Surface as "possibly_committed" so the
-          // caller locks the editor (C2) instead of letting auto-save
-          // revert the committed restore via the generic "network" retry
-          // path.
-          if (err.code === "BAD_JSON" && err.status >= 200 && err.status < 300) {
-            return { ok: false, reason: "possibly_committed" };
-          }
-          if (err.code === SNAPSHOT_ERROR_CODES.CORRUPT_SNAPSHOT) {
-            return { ok: false, reason: "corrupt_snapshot" };
-          }
-          if (err.code === SNAPSHOT_ERROR_CODES.CROSS_PROJECT_IMAGE_REF) {
-            return { ok: false, reason: "cross_project_image" };
-          }
-          // Distinguish "snapshot (or its chapter) is gone" from generic
-          // network failure — retrying the former will always 404.
-          if (err.status === 404) {
-            return { ok: false, reason: "not_found" };
-          }
-          return { ok: false, reason: "network" };
+          // I7: ABORTED stays a silent no-op. mapApiError already returns
+          // `message: null` for ABORTED, so forwarding the error is enough —
+          // the caller reads MappedError.message and bails when it's null
+          // without needing a dedicated discriminant.
+          return { ok: false, error: err };
         }
         // Non-ApiRequestError. If the server-side restore already
         // resolved successfully, the throw came from post-success code
         // (setViewingSnapshot, follow-up list fetch, epoch/chapter-id
-        // bookkeeping) — the server DID commit, so route to
-        // possibly_committed so the caller locks the editor (C1). If
+        // bookkeeping) — the server DID commit, so synthesize a
+        // possibly-committed ApiRequestError (200 BAD_JSON) so the caller's
+        // mapApiError routes it to the persistent lock banner (C1/C2). If
         // the throw came before the await resolved, no request reached
-        // the server (apiFetch would have wrapped a real fetch error),
-        // so it is a purely-client bug and the safe treatment is the
-        // dismissible "network" branch — the user can retry without
-        // risking a double-restore.
+        // the server (apiFetch would have wrapped a real fetch error), so
+        // it is a purely-client bug and the safe treatment is the
+        // dismissible transient-network banner — the user can retry without
+        // risking a double-restore (I5).
         if (restoreReachedServer) {
-          return { ok: false, reason: "possibly_committed" };
+          return { ok: false, error: makePossiblyCommittedError() };
         }
-        return { ok: false, reason: "network" };
+        return { ok: false, error: makeClientNetworkError() };
       }
     },
     [chapterId, chapterSeq],

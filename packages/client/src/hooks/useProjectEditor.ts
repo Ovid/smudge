@@ -188,7 +188,7 @@ export function useProjectEditor(slug: string | undefined) {
       // Map server 4xx error code/status to a strings.ts entry. Never
       // surface the raw err.message — that's server-authored English that
       // bypasses the i18n-ready externalization (CLAUDE.md). Mirrors the
-      // discipline in utils/findReplaceErrors.ts.
+      // discipline in errors/scopes.ts.
       const mapSaveError = (err: ApiRequestError): string => {
         if (err.status === 413) return STRINGS.editor.saveFailedTooLarge;
         if (err.code === "VALIDATION_ERROR") return STRINGS.editor.saveFailedInvalid;

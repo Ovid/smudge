@@ -1003,7 +1003,7 @@ describe("useProjectEditor", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     // Raw server-authored English must NOT reach the UI — the mapper in
     // useProjectEditor routes err.code to strings.ts the same way
-    // findReplaceErrors does. Regression guard for I3.
+    // errors/scopes.ts does. Regression guard for I3.
     vi.mocked(api.chapters.update).mockRejectedValue(
       new ApiRequestError("Invalid status: xyz", 400, "VALIDATION_ERROR"),
     );
