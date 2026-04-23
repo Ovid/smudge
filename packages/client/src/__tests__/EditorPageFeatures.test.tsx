@@ -2137,6 +2137,102 @@ describe("EditorPage snapshot panel", () => {
     });
   });
 
+  it("keeps editor non-editable when older View click resolves with superseded:sameChapterNewer (newer click still in flight)", async () => {
+    // Regression: when the user rapid-clicks View on two snapshots of the
+    // same chapter, the older (superseded) response must NOT flip the
+    // editor back to editable while the newer response is still in flight.
+    // If it did, the user could type in the gap and Editor.tsx's unmount
+    // cleanup (fire-and-forget PATCH on dirty content) would commit that
+    // typing to the server as the newer response mounts snapshot view and
+    // unmounts the Editor. Only !ok or superseded==="chapter" should re-enable.
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-1",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+      {
+        id: "snap-2",
+        chapter_id: "ch-1",
+        label: "v2",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-18T10:00:00Z",
+      },
+    ]);
+    let resolveFirst: ((row: unknown) => void) | null = null;
+    let resolveSecond: ((row: unknown) => void) | null = null;
+    vi.mocked(api.snapshots.get)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve as (row: unknown) => void;
+          }) as unknown as ReturnType<typeof api.snapshots.get>,
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveSecond = resolve as (row: unknown) => void;
+          }) as unknown as ReturnType<typeof api.snapshots.get>,
+      );
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    const viewButtons = await screen.findAllByRole("button", { name: "View" });
+    expect(viewButtons.length).toBeGreaterThanOrEqual(2);
+
+    // Click first (hangs on in-flight GET), then second (bumps vToken so the
+    // first's token is now stale). Fire from within act so React flushes the
+    // onClick handlers up to their viewSnapshot await.
+    await act(async () => {
+      fireEvent.click(viewButtons[0]!);
+    });
+    await act(async () => {
+      fireEvent.click(viewButtons[1]!);
+    });
+    await waitFor(() => {
+      expect(api.snapshots.get).toHaveBeenCalledTimes(2);
+    });
+
+    // Resolve the OLDER request first — its vToken is stale, so viewSnapshot
+    // returns { ok: true, superseded: "sameChapterNewer" }. The onView
+    // callback must NOT re-enable the editor (newer request still in flight).
+    await act(async () => {
+      resolveFirst!({
+        id: "snap-1",
+        chapter_id: "ch-1",
+        label: "v1",
+        content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      });
+    });
+
+    const editorEl = screen.getByRole("textbox", { name: STRINGS.a11y.editorContent });
+    expect(editorEl).toHaveAttribute("contenteditable", "false");
+
+    // Cleanup: resolve the pending newer GET so no dangling promises.
+    await act(async () => {
+      resolveSecond!({
+        id: "snap-2",
+        chapter_id: "ch-1",
+        label: "v2",
+        content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-18T10:00:00Z",
+      });
+    });
+  });
+
   it("restores a viewed snapshot via Restore button (happy path through useEditorMutation)", async () => {
     vi.mocked(api.snapshots.list).mockResolvedValue([
       {
