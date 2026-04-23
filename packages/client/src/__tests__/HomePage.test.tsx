@@ -243,10 +243,7 @@ describe("HomePage", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
-      // Migrated to mapApiError(err, "project.load") — surfaces the scope's
-      // fallback (STRINGS.error.loadProjectFailed) rather than the former
-      // inline STRINGS.error.loadFailed.
-      expect(screen.getByText("Failed to load project")).toBeInTheDocument();
+      expect(screen.getByText("Failed to load projects")).toBeInTheDocument();
     });
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("Failed to load projects:"),
@@ -262,7 +259,7 @@ describe("HomePage", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
-      expect(screen.getByText("Failed to load project")).toBeInTheDocument();
+      expect(screen.getByText("Failed to load projects")).toBeInTheDocument();
     });
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("Failed to load projects:"),

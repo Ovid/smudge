@@ -413,10 +413,10 @@ describe("SCOPES registry", () => {
   it("covers all known scopes", () => {
     const expected: ApiErrorScope[] = [
       "project.load",
+      "projectList.load",
       "project.create",
       "project.delete",
       "project.updateTitle",
-      "project.velocity",
       "chapter.load",
       "chapter.save",
       "chapter.create",
@@ -438,7 +438,6 @@ describe("SCOPES registry", () => {
       "export.run",
       "trash.load",
       "trash.restoreChapter",
-      "settings.get",
       "settings.update",
       "dashboard.load",
     ];

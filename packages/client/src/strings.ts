@@ -54,7 +54,6 @@ export const STRINGS = {
     loadDashboardFailed: "Failed to load dashboard",
     statusChangeFailed: "Failed to update chapter status",
     statusesFetchFailed: "Failed to load chapter statuses — status changes unavailable",
-    settingsLoadFailedGeneric: "Unable to load settings.",
     settingsUpdateFailedGeneric: "Unable to save settings.",
   },
   editor: {

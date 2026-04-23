@@ -5,10 +5,10 @@ import { SEARCH_ERROR_CODES, SNAPSHOT_ERROR_CODES } from "@smudge/shared";
 
 export type ApiErrorScope =
   | "project.load"
+  | "projectList.load"
   | "project.create"
   | "project.delete"
   | "project.updateTitle"
-  | "project.velocity"
   | "chapter.load"
   | "chapter.save"
   | "chapter.create"
@@ -30,16 +30,15 @@ export type ApiErrorScope =
   | "export.run"
   | "trash.load"
   | "trash.restoreChapter"
-  | "settings.get"
   | "settings.update"
   | "dashboard.load";
 
 export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   "project.load": { fallback: STRINGS.error.loadProjectFailed },
+  "projectList.load": { fallback: STRINGS.error.loadFailed },
   "project.create": { fallback: STRINGS.error.createFailed },
   "project.delete": { fallback: STRINGS.error.deleteFailed },
   "project.updateTitle": { fallback: STRINGS.error.updateTitleFailed },
-  "project.velocity": { fallback: STRINGS.velocity.loadError },
   "chapter.load": { fallback: STRINGS.error.loadChapterFailed },
   "chapter.save": {
     fallback: STRINGS.editor.saveFailed,
@@ -119,7 +118,6 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   "export.run": { fallback: STRINGS.export.errorFailed },
   "trash.load": { fallback: STRINGS.error.loadTrashFailed },
   "trash.restoreChapter": { fallback: STRINGS.error.restoreChapterFailed },
-  "settings.get": { fallback: STRINGS.error.settingsLoadFailedGeneric },
   "settings.update": { fallback: STRINGS.error.settingsUpdateFailedGeneric },
   "dashboard.load": { fallback: STRINGS.error.loadDashboardFailed },
 };

@@ -25,7 +25,7 @@ export function HomePage() {
       } catch (err) {
         console.warn("Failed to load projects:", err);
         if (!cancelled) {
-          const { message } = mapApiError(err, "project.load");
+          const { message } = mapApiError(err, "projectList.load");
           if (message) setError(message);
         }
       }

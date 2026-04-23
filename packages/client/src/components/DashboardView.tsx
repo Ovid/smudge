@@ -69,12 +69,6 @@ export function DashboardView({
       .catch((err) => {
         if (!cancelled) {
           console.warn("Failed to load velocity:", err);
-          // Route through the unified mapper for diagnostics + scope parity.
-          // The UI surfaces velocity failure via the error flag (ProgressStrip
-          // renders STRINGS.velocity.loadError based on this flag); we still
-          // call mapApiError so scope routing is consistent and a future
-          // byCode/byStatus override on `project.velocity` flows naturally.
-          mapApiError(err, "project.velocity");
           setVelocityWithSlug({ slug, data: null, error: true });
         }
       });
