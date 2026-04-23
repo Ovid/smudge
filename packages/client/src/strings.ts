@@ -323,7 +323,6 @@ export const STRINGS = {
     createFailed: "Unable to create snapshot. Save your unsaved changes and try again.",
     createFailedGeneric: "Unable to create snapshot. Try again.",
     deleteFailed: "Unable to delete snapshot. Try again.",
-    deleteFailedGeneric: "Unable to delete snapshot. Try again.",
     listFailed: "Unable to load snapshots. Try opening the panel again.",
     listFailedGeneric: "Unable to load snapshots. Try again.",
     viewFailed: "Unable to open snapshot. Try again.",
