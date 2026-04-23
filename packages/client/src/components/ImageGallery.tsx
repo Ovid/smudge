@@ -127,8 +127,8 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
         incrementRefreshKey();
       })
       .catch((err: unknown) => {
-        const reason = err instanceof Error ? err.message : "Unknown error";
-        announce(S.uploadFailed(reason));
+        const { message } = mapApiError(err, "image.upload");
+        if (message) announce(message);
       });
   }
 
@@ -160,9 +160,10 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
       setSelectedImage(updated);
       setSaveStatus("saved");
       incrementRefreshKey();
-    } catch {
+    } catch (err: unknown) {
       setSaveStatus("idle");
-      announce(S.saveFailed);
+      const { message } = mapApiError(err, "image.updateMetadata");
+      if (message) announce(message);
     }
   }
 
@@ -178,9 +179,10 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
         setSaveStatus("saved");
         incrementRefreshKey();
         imageToInsert = updated;
-      } catch {
+      } catch (err: unknown) {
         setSaveStatus("idle");
-        announce(S.saveFailed);
+        const { message } = mapApiError(err, "image.updateMetadata");
+        if (message) announce(message);
         return;
       }
     }

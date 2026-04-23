@@ -2,12 +2,24 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, within, fireEvent, waitFor, cleanup, act } from "@testing-library/react";
 import { Editor, type EditorHandle } from "../components/Editor";
 import { api } from "../api/client";
+import { STRINGS } from "../strings";
 
 vi.mock("../api/client", () => ({
   api: {
     images: {
       upload: vi.fn(),
     },
+  },
+  ApiRequestError: class ApiRequestError extends Error {
+    constructor(
+      message: string,
+      public readonly status: number,
+      public readonly code?: string,
+      public readonly extras?: Record<string, unknown>,
+    ) {
+      super(message);
+      this.name = "ApiRequestError";
+    }
   },
 }));
 
@@ -677,7 +689,7 @@ describe("Editor", () => {
     });
 
     await waitFor(() => {
-      expect(onImageAnnouncement).toHaveBeenCalledWith("Upload failed: File too large");
+      expect(onImageAnnouncement).toHaveBeenCalledWith(STRINGS.imageGallery.uploadFailedGeneric);
     });
   });
 

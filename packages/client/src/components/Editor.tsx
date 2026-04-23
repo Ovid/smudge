@@ -6,6 +6,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { editorExtensions } from "../editorExtensions";
 import { STRINGS } from "../strings";
 import { api } from "../api/client";
+import { mapApiError } from "../errors";
 
 export interface EditorHandle {
   flushSave: () => Promise<boolean>;
@@ -256,9 +257,9 @@ export function Editor({
             .run();
           onImageAnnouncementRef.current?.(STRINGS.imageGallery.insertSuccess(image.filename));
         }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Unknown error";
-        onImageAnnouncementRef.current?.(STRINGS.imageGallery.uploadFailed(message));
+      } catch (err: unknown) {
+        const { message } = mapApiError(err, "image.upload");
+        if (message) onImageAnnouncementRef.current?.(message);
       }
     });
     return () => {

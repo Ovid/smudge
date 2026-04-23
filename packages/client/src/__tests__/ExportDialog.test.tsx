@@ -17,6 +17,8 @@ vi.mock("../api/client", () => ({
     constructor(
       message: string,
       public readonly status: number,
+      public readonly code?: string,
+      public readonly extras?: Record<string, unknown>,
     ) {
       super(message);
       this.name = "ApiRequestError";
@@ -154,7 +156,7 @@ describe("ExportDialog", () => {
     });
   });
 
-  it("shows specific server error message for ApiRequestError", async () => {
+  it("shows generic error message for ApiRequestError (no raw message leak)", async () => {
     const user = userEvent.setup();
     vi.mocked(api.projects.export).mockRejectedValue(
       new ApiRequestError("One or more chapter IDs do not belong to this project.", 400),
@@ -164,10 +166,21 @@ describe("ExportDialog", () => {
     await user.click(screen.getByText("Export"));
 
     await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent(
-        "One or more chapter IDs do not belong to this project.",
-      );
+      expect(screen.getByRole("alert")).toHaveTextContent("Export failed. Please try again.");
     });
+  });
+
+  it("stays silent when export is aborted by ABORTED error code", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.projects.export).mockRejectedValue(new ApiRequestError("aborted", 0, "ABORTED"));
+
+    render(<ExportDialog {...defaultProps} />);
+    await user.click(screen.getByText("Export"));
+
+    // The ABORTED mapping returns message: null — no alert should appear.
+    // Wait a tick for the catch to run.
+    await act(async () => {});
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("exports with markdown format when selected", async () => {

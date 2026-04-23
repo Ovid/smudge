@@ -152,9 +152,9 @@ describe("ImageGallery", () => {
     });
   });
 
-  it("announces error when upload fails", async () => {
+  it("announces generic error when upload fails with ApiRequestError", async () => {
     const user = userEvent.setup();
-    vi.mocked(api.images.upload).mockRejectedValue(new Error("Server error"));
+    vi.mocked(api.images.upload).mockRejectedValue(new ApiRequestError("Server error", 500));
 
     render(<ImageGallery {...defaultProps} />);
 
@@ -163,11 +163,11 @@ describe("ImageGallery", () => {
     await user.upload(fileInput, file);
 
     await waitFor(() => {
-      expect(screen.getByText(S.uploadFailed("Server error"))).toBeInTheDocument();
+      expect(screen.getByText(S.uploadFailedGeneric)).toBeInTheDocument();
     });
   });
 
-  it("announces error for non-Error upload failures", async () => {
+  it("announces generic error for non-Error upload failures", async () => {
     const user = userEvent.setup();
     vi.mocked(api.images.upload).mockRejectedValue("something weird");
 
@@ -178,8 +178,24 @@ describe("ImageGallery", () => {
     await user.upload(fileInput, file);
 
     await waitFor(() => {
-      expect(screen.getByText(S.uploadFailed("Unknown error"))).toBeInTheDocument();
+      expect(screen.getByText(S.uploadFailedGeneric)).toBeInTheDocument();
     });
+  });
+
+  it("stays silent when upload is aborted", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.images.upload).mockRejectedValue(new ApiRequestError("aborted", 0, "ABORTED"));
+
+    render(<ImageGallery {...defaultProps} />);
+
+    const file = new File(["pixels"], "bad.png", { type: "image/png" });
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(fileInput, file);
+
+    await waitFor(() => {
+      expect(api.images.upload).toHaveBeenCalled();
+    });
+    expect(screen.queryByText(S.uploadFailedGeneric)).not.toBeInTheDocument();
   });
 
   it("rejects files larger than 10MB", async () => {

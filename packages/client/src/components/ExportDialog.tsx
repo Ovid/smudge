@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { EXPORT_FILE_EXTENSIONS, type ExportFormatType } from "@smudge/shared";
-import { api, ApiRequestError } from "../api/client";
+import { api } from "../api/client";
+import { mapApiError } from "../errors";
 import { STRINGS } from "../strings";
 
 interface ExportDialogProps {
@@ -147,7 +148,8 @@ export function ExportDialog({
       onClose();
     } catch (err) {
       if (controller.signal.aborted) return;
-      setError(err instanceof ApiRequestError ? err.message : STRINGS.export.errorFailed);
+      const { message } = mapApiError(err, "export.run");
+      if (message) setError(message);
     } finally {
       exportingRef.current = false;
       setExporting(false);

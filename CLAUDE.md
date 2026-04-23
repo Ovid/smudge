@@ -32,7 +32,7 @@ packages/
       settings/           # routes, service, repository, types
       chapter-statuses/   # routes, service, repository, types
       db/                 # connection singleton, migrations/
-  client/       # React SPA, components/, hooks/, pages/, api/, strings.ts
+  client/       # React SPA, components/, hooks/, pages/, api/, errors/, strings.ts
 e2e/            # Playwright tests
 ```
 
@@ -88,6 +88,17 @@ make help                            # Show all available make targets
 5. **Error codes stay inside the allowlist.** HTTP status codes are 200, 201, 400, 404, 409, 413, 500 (see §API Design). New conditions get an existing code plus a discriminating `error.code` string — never a new status.
 
 For mutation-via-server flows (snapshot restore, project-wide replace, and future similar operations), route through `useEditorMutation` in `packages/client/src/hooks/useEditorMutation.ts` — it enforces invariants 1–4 by construction. Hand-composing these steps is reserved for flows outside its scope (e.g. snapshot view, which does not mutate content). For any client flow whose response must be discarded when superseded by a newer request or an external epoch change (chapter switch, project switch, unmount), route through `useAbortableSequence` — it encodes the "bump before, check after" contract as tokens, auto-aborts on unmount, and is enforced by ESLint.
+
+**Unified API error mapping.** All client code that surfaces a user-visible
+message from an API error must route through `mapApiError(err, scope)` in
+`packages/client/src/errors/`. The mapper returns `{ message,
+possiblyCommitted, transient, extras? }`; it is the single owner of
+code/status-to-string translation and of the cross-cutting rules (ABORTED
+is silent, 2xx BAD_JSON is `possiblyCommitted`, NETWORK is `transient`).
+Raw `err.message` must never reach the UI. New API surfaces add a scope
+entry to `scopes.ts`; they do not write ad-hoc ladders at call sites.
+This invariant will be enforced by ESLint in Phase 4b.4; until then, it
+is enforced by review.
 
 **String externalization.** All UI strings in `packages/client/src/strings.ts` as constants, never raw literals in components. Prepares for future i18n without architectural changes.
 
