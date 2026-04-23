@@ -684,3 +684,5 @@ describe("useFindReplaceState", () => {
     expect(result.current.loading).toBe(false);
   });
 });
+
+// (Migration structural check moved to migrationStructuralCheck.test.ts — S2.)

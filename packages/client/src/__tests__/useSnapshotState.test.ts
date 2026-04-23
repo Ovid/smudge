@@ -226,6 +226,97 @@ describe("useSnapshotState", () => {
     expect(r.reason).toBe("corrupt_snapshot");
   });
 
+  it("viewSnapshot returns superseded='chapter' on chapter switch (S6)", async () => {
+    // Review S6 (2026-04-22): the old shape `{ok:true, staleChapterSwitch:true}`
+    // conflated two different causes of supersession into one discriminant,
+    // and the panel UI then surfaced "belongs to a different chapter" copy
+    // even when the user had NOT switched chapters. Pin the split:
+    // cToken.isStale() path → superseded === "chapter".
+    let resolveGet: (row: SnapshotRow) => void = () => {};
+    vi.mocked(api.snapshots.get).mockImplementationOnce(
+      () =>
+        new Promise<SnapshotRow>((resolve) => {
+          resolveGet = resolve;
+        }),
+    );
+
+    const { result, rerender } = renderHook(
+      ({ chapterId }: { chapterId: string }) => useSnapshotState(chapterId),
+      { initialProps: { chapterId: "ch-1" } },
+    );
+
+    let viewPromise: ReturnType<typeof result.current.viewSnapshot> = Promise.resolve({
+      ok: false,
+    });
+    act(() => {
+      viewPromise = result.current.viewSnapshot({
+        id: "snap-1",
+        label: null,
+        created_at: new Date().toISOString(),
+      });
+    });
+    // Chapter switch while the GET is pending. The chapterId effect fires
+    // chapterSeq.abort() so the captured cToken becomes stale.
+    rerender({ chapterId: "ch-2" });
+
+    let r: Awaited<ReturnType<typeof result.current.viewSnapshot>> = { ok: false };
+    await act(async () => {
+      resolveGet(makeSnapshotRow());
+      r = await viewPromise;
+    });
+
+    expect(r.ok).toBe(true);
+    expect(r.superseded).toBe("chapter");
+  });
+
+  it("viewSnapshot returns superseded='sameChapterNewer' when a newer view click wins (S6)", async () => {
+    // Review S6: two rapid View clicks on the SAME chapter must not report
+    // the older click's outcome as "belongs to a different chapter." Pin
+    // the split: vToken.isStale() path (chapter epoch unchanged, view
+    // epoch advanced) → superseded === "sameChapterNewer".
+    let resolveFirstGet: (row: SnapshotRow) => void = () => {};
+    vi.mocked(api.snapshots.get)
+      .mockImplementationOnce(
+        () =>
+          new Promise<SnapshotRow>((resolve) => {
+            resolveFirstGet = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(makeSnapshotRow({ id: "snap-2" }));
+
+    const { result } = renderHook(() => useSnapshotState("ch-1"));
+
+    let firstPromise: ReturnType<typeof result.current.viewSnapshot> = Promise.resolve({
+      ok: false,
+    });
+    act(() => {
+      firstPromise = result.current.viewSnapshot({
+        id: "snap-1",
+        label: null,
+        created_at: new Date().toISOString(),
+      });
+    });
+    // Second (newer) View click on the same chapter. viewSeq.start() bumps
+    // the view epoch, invalidating the first call's vToken. Chapter epoch
+    // is unchanged.
+    await act(async () => {
+      await result.current.viewSnapshot({
+        id: "snap-2",
+        label: null,
+        created_at: new Date().toISOString(),
+      });
+    });
+
+    let r: Awaited<ReturnType<typeof result.current.viewSnapshot>> = { ok: false };
+    await act(async () => {
+      resolveFirstGet(makeSnapshotRow({ id: "snap-1" }));
+      r = await firstPromise;
+    });
+
+    expect(r.ok).toBe(true);
+    expect(r.superseded).toBe("sameChapterNewer");
+  });
+
   it("exitSnapshotView clears the viewing snapshot", async () => {
     const row = makeSnapshotRow();
     vi.mocked(api.snapshots.get).mockResolvedValue(row);
@@ -290,7 +381,7 @@ describe("useSnapshotState", () => {
       restorePromise = result.current.restoreSnapshot("snap-1");
     });
 
-    // Switch chapters mid-flight. The chapterId effect bumps chapterSeqRef.
+    // Switch chapters mid-flight. The chapterId effect calls chapterSeq.abort().
     rerender({ id: "ch-2" });
 
     let r: { ok: boolean; staleChapterSwitch?: boolean } = { ok: false };
@@ -464,3 +555,5 @@ describe("useSnapshotState", () => {
     warnSpy.mockRestore();
   });
 });
+
+// (Migration structural check moved to migrationStructuralCheck.test.ts — S2.)

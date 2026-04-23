@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { SNAPSHOT_ERROR_CODES } from "@smudge/shared";
 import { api, ApiRequestError } from "../api/client";
 import { clearCachedContent } from "./useContentCache";
+import { useAbortableSequence } from "./useAbortableSequence";
 import type { SnapshotPanelHandle } from "../components/SnapshotPanel";
 
 interface ViewingSnapshot {
@@ -49,13 +50,29 @@ export interface RestoreResult {
 
 export type ViewFailureReason = "not_found" | "corrupt_snapshot" | "network" | "unknown";
 
+// Why this view request's result was discarded. Separated from `reason`
+// (failure) because a superseded view is not a failure — the server may
+// have returned 200 with a valid snapshot, we just don't want to surface
+// it. Review S6 (2026-04-22) split this from a single `staleChapterSwitch`
+// boolean so the panel can show "belongs to a different chapter" copy
+// ONLY on actual chapter switches, not on rapid same-chapter reclicks
+// where the newer click is already updating the UI.
+export type ViewSupersededReason =
+  // User switched chapters during the GET — the response applies to a
+  // chapter that is no longer active. Panel surfaces an info banner
+  // telling the user to select that chapter.
+  | "chapter"
+  // User clicked View again on the same chapter before this one resolved —
+  // the newer click is winning. Panel should stay silent; the fresh view
+  // is already updating the UI.
+  | "sameChapterNewer";
+
 export interface ViewResult {
   ok: boolean;
   reason?: ViewFailureReason;
-  // Set when the user switched chapters while the view was in flight.
-  // Callers should show no banner — the response belongs to a chapter
-  // that is no longer active.
-  staleChapterSwitch?: boolean;
+  // Present when the response was discarded because a newer request (same
+  // or different axis) supersedes it.
+  superseded?: ViewSupersededReason;
 }
 
 export interface UseSnapshotStateReturn {
@@ -98,13 +115,13 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   const [viewingSnapshot, setViewingSnapshot] = useState<ViewingSnapshot | null>(null);
   const [snapshotCount, setSnapshotCount] = useState<number | null>(null);
   const snapshotPanelRef = useRef<SnapshotPanelHandle>(null);
-  // Monotonic counter to discard stale list responses after a chapter switch.
-  const chapterSeqRef = useRef(0);
-  // Per-request sequence for viewSnapshot: guards against rapid successive
-  // View clicks on the SAME chapter (where chapterSeqRef doesn't change)
+  // Monotonic epoch to discard stale list responses after a chapter switch.
+  const chapterSeq = useAbortableSequence();
+  // Per-request epoch for viewSnapshot: guards against rapid successive
+  // View clicks on the SAME chapter (where chapterSeq doesn't bump)
   // resolving out of order — an older response would otherwise land after
   // a newer one and pin the wrong snapshot as the current view.
-  const viewSeqRef = useRef(0);
+  const viewSeq = useAbortableSequence();
   // Mirror the current chapterId so async handlers can check the live value
   // against their captured one (needed for A→B→A restore detection).
   const currentChapterIdRef = useRef<string | null>(chapterId);
@@ -124,7 +141,8 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   // would persist after the user selected chapter B in the sidebar,
   // and a Restore click would silently overwrite chapter A's content.
   useEffect(() => {
-    const seq = ++chapterSeqRef.current;
+    chapterSeq.abort(); // invalidate the prior chapter's list response
+    const token = chapterSeq.capture();
     // Reset to null (unknown) rather than 0 so the badge doesn't claim
     // "no snapshots" during the load gap or after a fetch failure.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: must reset before fetch resolves
@@ -139,13 +157,13 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
     api.snapshots
       .list(chapterId)
       .then((data) => {
-        if (seq === chapterSeqRef.current) setSnapshotCount(data.length);
+        if (!token.isStale()) setSnapshotCount(data.length);
       })
       .catch(() => {
         // Leave count as null so the badge stays hidden. The next panel
         // interaction will retry via refreshCount.
       });
-  }, [chapterId]);
+  }, [chapterId, chapterSeq]);
 
   const setSnapshotPanelOpen = useCallback((open: boolean) => {
     setSnapshotPanelOpenState(open);
@@ -165,16 +183,17 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       // doesn't pin a stale snapshot to the wrong chapter. Without this,
       // a subsequent Restore click would silently overwrite the previous
       // chapter using viewingSnapshot.id.
-      const seq = chapterSeqRef.current;
-      // Per-request sequence for same-chapter rapid clicks: two View
-      // clicks on the same chapter share chapterSeqRef but need their
-      // own ordering so the later request "wins" regardless of network
-      // resolve order.
-      const vseq = ++viewSeqRef.current;
+      const cToken = chapterSeq.capture();
+      // Per-request epoch for same-chapter rapid clicks: two View
+      // clicks on the same chapter share the chapter epoch but need
+      // their own ordering so the later request "wins" regardless of
+      // network resolve order. start() bumps so any in-flight View
+      // response from an older click is invalidated.
+      const vToken = viewSeq.start();
       try {
         const full = await api.snapshots.get(snapshot.id);
-        if (seq !== chapterSeqRef.current) return { ok: true, staleChapterSwitch: true };
-        if (vseq !== viewSeqRef.current) return { ok: true, staleChapterSwitch: true };
+        if (cToken.isStale()) return { ok: true, superseded: "chapter" };
+        if (vToken.isStale()) return { ok: true, superseded: "sameChapterNewer" };
         // SnapshotRow.content is typed as a JSON string on the wire.
         let content: unknown;
         try {
@@ -200,17 +219,19 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         });
         return { ok: true };
       } catch (err) {
-        // Mirror the success-path stale-seq guards: a chapter switch (or a
+        // Mirror the success-path stale-epoch guards: a chapter switch (or a
         // newer View click on the same chapter) during the in-flight GET
         // should not surface the response's error on the now-active panel.
         // Without this, a 404 from the old chapter's snapshot lands as a
         // "snapshot no longer exists" banner attributed to the new chapter.
-        if (seq !== chapterSeqRef.current) return { ok: true, staleChapterSwitch: true };
-        if (vseq !== viewSeqRef.current) return { ok: true, staleChapterSwitch: true };
+        if (cToken.isStale()) return { ok: true, superseded: "chapter" };
+        if (vToken.isStale()) return { ok: true, superseded: "sameChapterNewer" };
         if (err instanceof ApiRequestError) {
-          // ABORTED is not a user-visible error — treat it like a stale
-          // chapter-switch: silent no-op.
-          if (err.code === "ABORTED") return { ok: true, staleChapterSwitch: true };
+          // ABORTED is not a user-visible error — mirror the supersession
+          // path with sameChapterNewer (abort is always same-chapter-
+          // triggered in this hook; a chapter switch would have surfaced
+          // via cToken.isStale() above).
+          if (err.code === "ABORTED") return { ok: true, superseded: "sameChapterNewer" };
           if (err.status === 404) return { ok: false, reason: "not_found" };
           // 2xx BAD_JSON on a GET has no "maybe committed" ambiguity —
           // GETs don't commit server-side state. The response body is
@@ -228,7 +249,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         return { ok: false, reason: "unknown" };
       }
     },
-    [],
+    [chapterSeq, viewSeq],
   );
 
   const exitSnapshotView = useCallback(() => {
@@ -237,11 +258,11 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
 
   const restoreSnapshot = useCallback(
     async (snapshotId: string): Promise<RestoreResult> => {
-      // Capture seq before the restore await. If the user switches chapters
-      // during the restore, we must not apply the follow-up list response
-      // to the new chapter's state (wrong count) and must not reset
-      // viewingSnapshot for the new chapter.
-      const seq = chapterSeqRef.current;
+      // Capture the epoch before the restore await. If the user switches
+      // chapters during the restore, we must not apply the follow-up list
+      // response to the new chapter's state (wrong count) and must not
+      // reset viewingSnapshot for the new chapter.
+      const token = chapterSeq.capture();
       const restoringChapterId = chapterId;
       // I5: Distinguish pre-send throws from post-success throws in the
       // catch below. apiFetch wraps all network/fetch errors in
@@ -256,11 +277,11 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       try {
         await api.snapshots.restore(snapshotId);
         restoreReachedServer = true;
-        // A→B→A round-trip: seq moved but the current chapter is once
+        // A→B→A round-trip: epoch moved but the current chapter is once
         // again the one we restored. Treat that as a NOT-stale completion
         // — the caller should reload the editor because the restore
         // landed on what the user is viewing now.
-        const seqMoved = seq !== chapterSeqRef.current;
+        const seqMoved = token.isStale();
         const stillOnRestoredChapter = currentChapterIdRef.current === restoringChapterId;
         if (seqMoved && !stillOnRestoredChapter) {
           // True stale switch: user navigated away and stayed away. Clear
@@ -275,15 +296,15 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         }
         setViewingSnapshot(null);
         if (restoringChapterId) {
-          // Use the CURRENT ref seq for the follow-up list, since the
-          // old seq is stale after an A→B→A round-trip. The list still
-          // needs to be keyed to the current chapterSeq so a later
-          // switch can discard it.
-          const freshSeq = chapterSeqRef.current;
+          // Capture the CURRENT epoch for the follow-up list, since the
+          // original token is stale after an A→B→A round-trip. The list
+          // still needs to be keyed to the current chapter epoch so a
+          // later switch can discard it.
+          const freshToken = chapterSeq.capture();
           api.snapshots
             .list(restoringChapterId)
             .then((data) => {
-              if (freshSeq === chapterSeqRef.current) setSnapshotCount(data.length);
+              if (!freshToken.isStale()) setSnapshotCount(data.length);
             })
             .catch(() => {});
         }
@@ -323,7 +344,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         }
         // Non-ApiRequestError. If the server-side restore already
         // resolved successfully, the throw came from post-success code
-        // (setViewingSnapshot, follow-up list fetch, seq/chapter-id
+        // (setViewingSnapshot, follow-up list fetch, epoch/chapter-id
         // bookkeeping) — the server DID commit, so route to
         // possibly_committed so the caller locks the editor (C1). If
         // the throw came before the await resolved, no request reached
@@ -337,19 +358,19 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         return { ok: false, reason: "network" };
       }
     },
-    [chapterId],
+    [chapterId, chapterSeq],
   );
 
   const refreshCount = useCallback(() => {
     if (!chapterId) return;
-    const seq = chapterSeqRef.current;
+    const token = chapterSeq.capture();
     api.snapshots
       .list(chapterId)
       .then((data) => {
-        if (seq === chapterSeqRef.current) setSnapshotCount(data.length);
+        if (!token.isStale()) setSnapshotCount(data.length);
       })
       .catch(() => {});
-  }, [chapterId]);
+  }, [chapterId, chapterSeq]);
 
   // Feeds the hook's count from the panel's own list fetch so the toolbar
   // badge stays in sync without duplicating the GET.

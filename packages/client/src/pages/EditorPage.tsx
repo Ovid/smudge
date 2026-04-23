@@ -1969,12 +1969,20 @@ export function EditorPage() {
                 }
                 cancelPendingSaves();
                 const result = await viewSnapshot(snap);
-                // viewSnapshot returns ok:false for network/not_found/
-                // corrupt failures — re-enable the editor so the user
-                // isn't left in an invisibly read-only state. Same for
-                // staleChapterSwitch, where we return to normal editing
-                // without entering snapshot view.
-                if (!result.ok || result.staleChapterSwitch) {
+                // Re-enable on actual failure (user must be able to
+                // retry) and on "chapter" supersession (the Editor is
+                // unmounting/remounting into chapter B, so this is a
+                // no-op but keeps the happy path symmetric). Do NOT
+                // re-enable on "sameChapterNewer": a newer View click
+                // on the same chapter is still in flight and is about
+                // to either mount snapshot view (unmounting the Editor)
+                // or re-enable on its own failure. Re-enabling here
+                // opens a typing window between this (older) response
+                // and the newer one — any keystrokes would ride the
+                // Editor's unmount-cleanup PATCH (Editor.tsx:182-191)
+                // into the server as the snapshot view mounts, against
+                // invariant #2.
+                if (!result.ok || result.superseded === "chapter") {
                   safeSetEditable(editorRef, true);
                 }
                 return result;

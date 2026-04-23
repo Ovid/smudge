@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from "react";
 import { api, ApiRequestError } from "../api/client";
+import { useAbortableSequence } from "../hooks/useAbortableSequence";
 import { STRINGS } from "../strings";
 import type { SnapshotListItem } from "@smudge/shared";
 
@@ -36,10 +37,14 @@ interface SnapshotPanelProps {
   onClose: () => void;
   onView: (snapshot: { id: string; label: string | null; created_at: string }) =>
     | Promise<
-        // I6: `staleChapterSwitch` on the ok branch signals that the view was
-        // abandoned because the user changed chapters mid-fetch. The panel
-        // surfaces a brief info rather than treating ok:true as a success.
-        { ok: true; staleChapterSwitch?: boolean } | { ok: false; reason?: string } | undefined
+        // I6 / S6: `superseded` on the ok branch signals that the view
+        // response was discarded. Two causes:
+        //   - "chapter": user switched chapters mid-fetch — surface info.
+        //   - "sameChapterNewer": a newer View click on the same chapter
+        //     is already updating the UI — stay silent.
+        | { ok: true; superseded?: "chapter" | "sameChapterNewer" }
+        | { ok: false; reason?: string }
+        | undefined
       >
     | undefined;
   /**
@@ -103,51 +108,52 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
     // wrong element for keyboard users.
     const closedByUserRef = useRef(false);
     // Guards async list responses against rapid chapter switches: every
-    // chapter change bumps the seq, and stale resolutions check before
-    // calling setSnapshots. Without this, the imperative refreshSnapshots()
-    // path could overwrite a newer chapter's list with a stale one.
-    const chapterSeqRef = useRef(0);
+    // chapter change abort()s the sequence, and stale resolutions bail via
+    // token.isStale() before calling setSnapshots. Without this, the
+    // imperative refreshSnapshots() path could overwrite a newer chapter's
+    // list with a stale one.
+    const chapterSeq = useAbortableSequence();
 
     const fetchSnapshots = useCallback(async () => {
       if (!chapterId) return;
-      const seq = chapterSeqRef.current;
+      const token = chapterSeq.capture();
       try {
         const data = await api.snapshots.list(chapterId);
-        if (seq !== chapterSeqRef.current) return;
+        if (token.isStale()) return;
         setSnapshots(data);
         setListError(null);
         onSnapshotsChange?.(data.length);
       } catch {
-        if (seq !== chapterSeqRef.current) return;
+        if (token.isStale()) return;
         // Surface the failure instead of silently showing an empty panel;
         // otherwise a network blip makes the user think a chapter with
         // snapshots has none.
         setListError(S.listFailed);
       }
-    }, [chapterId, onSnapshotsChange]);
+    }, [chapterId, onSnapshotsChange, chapterSeq]);
 
     useImperativeHandle(ref, () => ({ refreshSnapshots: fetchSnapshots }), [fetchSnapshots]);
 
     // Fetch on mount and when chapterId changes
     useEffect(() => {
-      // Bump seq before fetching so any in-flight list response from the
-      // prior chapter is discarded by fetchSnapshots' seq check.
-      chapterSeqRef.current++;
+      // Abort before fetching so any in-flight list response from the
+      // prior chapter is discarded via token.isStale() checks below.
+      chapterSeq.abort();
       if (!isOpen || !chapterId) return;
-      const seq = chapterSeqRef.current;
+      const token = chapterSeq.capture();
       api.snapshots
         .list(chapterId)
         .then((data) => {
-          if (seq !== chapterSeqRef.current) return;
+          if (token.isStale()) return;
           setSnapshots(data);
           setListError(null);
           onSnapshotsChange?.(data.length);
         })
         .catch(() => {
-          if (seq !== chapterSeqRef.current) return;
+          if (token.isStale()) return;
           setListError(S.listFailed);
         });
-    }, [isOpen, chapterId, onSnapshotsChange]);
+    }, [isOpen, chapterId, onSnapshotsChange, chapterSeq]);
 
     // Focus management
     useEffect(() => {
@@ -451,14 +457,16 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
                             label: snap.label,
                             created_at: snap.created_at,
                           });
-                          // I6: explicit staleChapterSwitch branch. Without
-                          // this the click produced no feedback — the panel
-                          // only read the error discriminant, so a benign
-                          // chapter-switch race looked identical to a dead
-                          // button. Surface the info copy through the same
-                          // viewError slot so the row's existing visual
-                          // treatment applies.
-                          if (res && "ok" in res && res.ok && res.staleChapterSwitch) {
+                          // I6 / S6: two supersession causes, two
+                          // behaviors. "chapter" means the user navigated
+                          // away — surface viewStaleChapterSwitch info so
+                          // the click isn't a dead button (I6 regression).
+                          // "sameChapterNewer" means a later click on the
+                          // same chapter is already updating the UI; stay
+                          // silent so the older click doesn't flash a
+                          // misleading "belongs to a different chapter"
+                          // message over the fresh view (S6 regression).
+                          if (res && "ok" in res && res.ok && res.superseded === "chapter") {
                             setViewError(S.viewStaleChapterSwitch);
                           } else if (res && "ok" in res && !res.ok) {
                             if (res.reason === "not_found") {

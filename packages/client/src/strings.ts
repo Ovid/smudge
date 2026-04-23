@@ -324,11 +324,12 @@ export const STRINGS = {
     viewFailedNetwork: "Unable to open snapshot. Check your connection and try again.",
     viewFailedSaveFirst:
       "Unable to save pending changes. Try again once your connection recovers before viewing a snapshot.",
-    // I6: viewSnapshot returns {ok:true, staleChapterSwitch:true} when the
-    // user switched chapters mid-fetch. Before the fix the click produced
+    // I6 / S6: viewSnapshot returns {ok:true, superseded:"chapter"} when
+    // the user switched chapters mid-fetch. Before I6 the click produced
     // no feedback at all (the panel's !res.ok gate ignored ok:true), so
-    // the user saw a dead View button. Surface a brief info explaining
-    // why and how to recover.
+    // the user saw a dead View button. This copy fires ONLY for the
+    // actual chapter-switch case — same-chapter rapid reclicks return
+    // superseded:"sameChapterNewer" and the panel stays silent (S6).
     viewStaleChapterSwitch:
       "This snapshot belongs to a different chapter. Select that chapter to view it.",
     ariaLabel: "Chapter snapshots",
