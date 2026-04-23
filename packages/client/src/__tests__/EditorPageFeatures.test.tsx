@@ -2348,6 +2348,88 @@ describe("EditorPage snapshot panel", () => {
     expect(screen.getByRole("button", { name: STRINGS.editor.refreshButton })).toBeInTheDocument();
   });
 
+  it("surfaces generic restoreFailed copy and exits snapshot view on a generic 500 restore error", async () => {
+    // Phase 4b.3 commit 3 migrated the restore failure branches off the
+    // old RestoreFailureReason enum onto mapApiError("snapshot.restore").
+    // A generic 500 INTERNAL_ERROR has no byCode/byStatus/network/committed
+    // match and falls through to the scope's fallback (restoreFailed), where
+    // MappedError reports possiblyCommitted=false, transient=false. Under
+    // the pre-refactor code this was reason:"network" — the SnapshotBanner
+    // stayed on screen and the copy was restoreNetworkFailed ("retry"). The
+    // new behaviour lands in EditorPage's permanent-failure else branch:
+    // surface restoreFailed and exit snapshot view so the user isn't looping
+    // clicks on a banner that will keep failing identically.
+    //
+    // Without this test a future refactor of the fallback branch (copy swap
+    // or accidentally re-introducing a transient-style banner retention)
+    // could silently regress either half of the migration.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-1",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+    ]);
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-1",
+      chapter_id: "ch-1",
+      label: "v1",
+      content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+      word_count: 5,
+      is_auto: false,
+      created_at: "2026-04-17T10:00:00Z",
+    });
+    const { ApiRequestError } = await import("../api/client");
+    (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
+      .fn()
+      .mockRejectedValue(new ApiRequestError("boom", 500, "INTERNAL_ERROR"));
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "View" }));
+    await waitFor(() => {
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+    });
+
+    // Snapshot banner is on-screen before the failed restore.
+    expect(screen.getByRole("region", { name: STRINGS.snapshots.viewingRegionLabel })).toBeTruthy();
+
+    const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
+    await userEvent.click(restoreButtons[0]!);
+    const dialog = await screen.findByRole("alertdialog", { name: "Restore" });
+    const confirmButton = Array.from(dialog.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Restore",
+    );
+    await userEvent.click(confirmButton!);
+
+    // Generic fallback copy — NOT the network or response-unreadable copy.
+    expect(await screen.findByText(STRINGS.snapshots.restoreFailed)).toBeInTheDocument();
+    expect(screen.queryByText(STRINGS.snapshots.restoreNetworkFailed)).toBeNull();
+    expect(screen.queryByText(STRINGS.snapshots.restoreResponseUnreadable)).toBeNull();
+    // No persistent lock banner — this is a dismissible action error, not a
+    // possibly-committed lock.
+    expect(screen.queryByRole("button", { name: STRINGS.editor.refreshButton })).toBeNull();
+    // Snapshot banner has been dismissed via exitSnapshotView — otherwise
+    // the user loops clicking Restore on a permanently-failing snapshot.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("region", { name: STRINGS.snapshots.viewingRegionLabel }),
+      ).toBeNull();
+    });
+
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
   it("clears active chapter's cache on 2xx BAD_JSON from restore (C1)", async () => {
     // The mutate throw bypasses the hook's directive-driven cache-clear.
     // Without this fallback, refresh re-hydrates the pre-restore draft and
@@ -2409,9 +2491,9 @@ describe("EditorPage snapshot panel", () => {
     // request. Before I5, useSnapshotState mapped this to "unknown"
     // and EditorPage treated "unknown" as possibly_committed — wiping
     // the cached draft and permanently locking the editor for what
-    // was a purely-client bug. After: the hook's restoreReachedServer
-    // flag stays false, the reason is "network", and the caller
-    // surfaces a dismissible retry banner.
+    // was a purely-client bug. After: the hook synthesizes a NETWORK
+    // ApiRequestError and the caller surfaces a dismissible retry
+    // banner via the snapshot.restore scope's `network:` copy.
     vi.mocked(api.snapshots.list).mockResolvedValue([
       {
         id: "snap-1",

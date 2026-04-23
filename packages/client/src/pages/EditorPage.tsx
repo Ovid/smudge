@@ -1978,6 +1978,8 @@ export function EditorPage() {
                   // button.
                   return { ok: false, reason: "unknown" };
                 }
+                // TODO(commit-4): drop this re-derivation once SnapshotPanel consumes MappedError directly.
+                // The branches below mirror logic mapApiError already applied; see scopes.ts['snapshot.view'].
                 const code = result.error.code;
                 if (result.error.status === 404) return { ok: false, reason: "not_found" };
                 if (code === SNAPSHOT_ERROR_CODES.CORRUPT_SNAPSHOT) {

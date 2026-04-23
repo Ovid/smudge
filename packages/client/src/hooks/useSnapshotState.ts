@@ -10,10 +10,12 @@ import type { SnapshotPanelHandle } from "../components/SnapshotPanel";
 // different classification). The caller only ever inspects the failure arm
 // via mapApiError, so these need to produce the right MappedError fields:
 //   - NETWORK (status 0, code "NETWORK") → `transient: true` via the
-//     snapshot.{restore,view} scope's `network:` entry.
-//   - 200 BAD_JSON → `possiblyCommitted: true` via the snapshot.restore
-//     scope's `committed:` entry. Only restore has ambiguous commit state;
-//     viewSnapshot remaps BAD_JSON to CORRUPT_SNAPSHOT (see below).
+//     snapshot.{restore,view} scope's `network:` entry. apiFetch wraps
+//     every real network/fetch failure in ApiRequestError, so a bare
+//     non-ApiRequestError throw is a purely-client bug (the request never
+//     reached the server) — synthesizing NETWORK gives the caller the
+//     dismissible transient-retry copy rather than the possibly-committed
+//     lock banner.
 //   - CORRUPT_SNAPSHOT code → scope's byCode entry for the "this snapshot
 //     is corrupt" copy.
 // Keeping the synthesis inside the hook means EditorPage never has to
@@ -21,13 +23,6 @@ import type { SnapshotPanelHandle } from "../components/SnapshotPanel";
 // real ApiRequestError that the scope registry knows how to classify.
 function makeClientNetworkError(): ApiRequestError {
   return new ApiRequestError("Client-side failure before request reached server.", 0, "NETWORK");
-}
-function makePossiblyCommittedError(): ApiRequestError {
-  return new ApiRequestError(
-    "Restore response body unreadable after server commit.",
-    200,
-    "BAD_JSON",
-  );
 }
 function makeCorruptViewError(): ApiRequestError {
   return new ApiRequestError(
@@ -65,10 +60,9 @@ export type ViewSupersededReason =
 // verbatim so the caller can run it through mapApiError("snapshot.restore")
 // to get `{ message, possiblyCommitted, transient }` — one mapping table
 // lives in errors/scopes.ts instead of duplicated ladders across the hook
-// and EditorPage. Non-ApiRequestError throws are normalized into synthetic
-// ApiRequestError in the hook so the caller only ever branches on MappedError
-// fields; see the restoreSnapshot catch block for the two synthesis sites
-// (pre-send → NETWORK; post-success → 200 BAD_JSON).
+// and EditorPage. Non-ApiRequestError throws are normalized into a synthetic
+// NETWORK ApiRequestError in the hook so the caller only ever branches on
+// MappedError fields; see the restoreSnapshot catch block.
 export type RestoreResult =
   | {
       ok: true;
@@ -290,19 +284,8 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       // reset viewingSnapshot for the new chapter.
       const token = chapterSeq.capture();
       const restoringChapterId = chapterId;
-      // I5: Distinguish pre-send throws from post-success throws in the
-      // catch below. apiFetch wraps all network/fetch errors in
-      // ApiRequestError, so a non-ApiRequestError catch means either a
-      // purely-client throw before the request left the client (routing
-      // mistake, undefined access) or a post-success bookkeeping throw
-      // (setViewingSnapshot, follow-up list fetch). Pre-send must NOT
-      // wipe the draft cache / lock the editor — the server is known not
-      // to have committed. Post-success is genuinely ambiguous: the
-      // server committed the restore + its auto-snapshot.
-      let restoreReachedServer = false;
       try {
         await api.snapshots.restore(snapshotId);
-        restoreReachedServer = true;
         // A→B→A round-trip: epoch moved but the current chapter is once
         // again the one we restored. Treat that as a NOT-stale completion
         // — the caller should reload the editor because the restore
@@ -346,20 +329,17 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
           // without needing a dedicated discriminant.
           return { ok: false, error: err };
         }
-        // Non-ApiRequestError. If the server-side restore already
-        // resolved successfully, the throw came from post-success code
-        // (setViewingSnapshot, follow-up list fetch, epoch/chapter-id
-        // bookkeeping) — the server DID commit, so synthesize a
-        // possibly-committed ApiRequestError (200 BAD_JSON) so the caller's
-        // mapApiError routes it to the persistent lock banner (C1/C2). If
-        // the throw came before the await resolved, no request reached
-        // the server (apiFetch would have wrapped a real fetch error), so
-        // it is a purely-client bug and the safe treatment is the
-        // dismissible transient-network banner — the user can retry without
-        // risking a double-restore (I5).
-        if (restoreReachedServer) {
-          return { ok: false, error: makePossiblyCommittedError() };
-        }
+        // Non-ApiRequestError. apiFetch wraps every real network/fetch
+        // error in ApiRequestError, so a bare throw here means the request
+        // never reached the server: either a purely-client bug before the
+        // await resolved (routing mistake, undefined access) or a
+        // post-success bookkeeping throw that cannot actually fire today
+        // because every line after `await api.snapshots.restore(...)` is
+        // either ref access, a setState dispatch, or a Promise chain
+        // whose `.catch(() => {})` swallows its own failures. Synthesize
+        // a NETWORK ApiRequestError so the caller's mapApiError routes it
+        // to the dismissible transient-retry copy — the user can retry
+        // without risking a double-restore (I5).
         return { ok: false, error: makeClientNetworkError() };
       }
     },
