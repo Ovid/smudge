@@ -247,7 +247,8 @@ export const api = {
         ...(signal ? { signal } : {}),
       }),
 
-    trash: (slug: string) => apiFetch<Chapter[]>(`/projects/${enc(slug)}/trash`),
+    trash: (slug: string, signal?: AbortSignal) =>
+      apiFetch<Chapter[]>(`/projects/${enc(slug)}/trash`, signal ? { signal } : undefined),
 
     dashboard: (slug: string, signal?: AbortSignal) =>
       apiFetch<{

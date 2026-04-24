@@ -135,6 +135,54 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     expect(setProject).not.toHaveBeenCalled();
   });
 
+  // I5 (review 2026-04-24): api.projects.trash now accepts a signal
+  // and the hook wires a controller. Unmount aborts the in-flight
+  // fetch so a late .then/.catch can't fire setState on a gone
+  // component, and an aborted console.error no longer pollutes test
+  // output (zero-warnings invariant).
+  it("aborts in-flight trash fetch on unmount (I5)", async () => {
+    const project = makeProject();
+    let capturedSignal: AbortSignal | undefined;
+    vi.mocked(api.projects.trash).mockImplementation((_slug, signal) => {
+      capturedSignal = signal;
+      return new Promise(() => {}); // never resolves
+    });
+
+    const { result, unmount } = renderHook(() =>
+      useTrashManager(project, project.slug, vi.fn(), vi.fn(), vi.fn()),
+    );
+
+    act(() => {
+      void result.current.openTrash();
+    });
+    await waitFor(() => expect(api.projects.trash).toHaveBeenCalled());
+    expect(capturedSignal?.aborted).toBe(false);
+
+    unmount();
+
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  it("on ABORTED error, does not log to console.error (I5)", async () => {
+    const project = makeProject();
+    vi.mocked(api.projects.trash).mockRejectedValue(
+      new ApiRequestError("aborted", 0, "ABORTED"),
+    );
+
+    const { result } = renderHook(() =>
+      useTrashManager(project, project.slug, vi.fn(), vi.fn(), vi.fn()),
+    );
+
+    await act(async () => {
+      await result.current.openTrash();
+    });
+
+    // Mapper returns message=null for ABORTED, so no actionError.
+    expect(result.current.actionError).toBeNull();
+    // Zero-warnings invariant: a superseded/unmount abort must not log.
+    expect(errorSpy).not.toHaveBeenCalledWith("Failed to load trash:", expect.anything());
+  });
+
   it("on PROJECT_PURGED (non-committed failure), keeps the chapter in trash and shows error", async () => {
     // Regression guard: non-committed errors keep the chapter visible in
     // the trash list so the user can try a different action — only the

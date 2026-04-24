@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import type { Chapter, ProjectWithChapters } from "@smudge/shared";
 import { api } from "../api/client";
 import { mapApiError } from "../errors";
@@ -14,17 +14,36 @@ export function useTrashManager(
   const [trashedChapters, setTrashedChapters] = useState<Chapter[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<Chapter | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // I5 (review 2026-04-24): api.projects.trash now accepts a signal.
+  // Abort any prior in-flight trash fetch before issuing a new one
+  // (rapid openTrash clicks) and on unmount so the browser drops the
+  // request rather than setState-ing into a torn-down hook. Gate
+  // console.error on !aborted to uphold the zero-warnings invariant.
+  const trashAbortRef = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      trashAbortRef.current?.abort();
+    },
+    [],
+  );
 
   const openTrash = useCallback(async () => {
     if (!project) return;
+    trashAbortRef.current?.abort();
+    const controller = new AbortController();
+    trashAbortRef.current = controller;
     try {
-      const trashed = await api.projects.trash(project.slug);
+      const trashed = await api.projects.trash(project.slug, controller.signal);
+      if (controller.signal.aborted) return;
       setTrashedChapters(trashed);
       setTrashOpen(true);
     } catch (err) {
-      console.error("Failed to load trash:", err);
+      if (controller.signal.aborted) return;
       const { message } = mapApiError(err, "trash.load");
-      if (message) setActionError(message);
+      // message:null for ABORTED — skip both the log and the banner.
+      if (message === null) return;
+      console.error("Failed to load trash:", err);
+      setActionError(message);
     }
   }, [project]);
 
