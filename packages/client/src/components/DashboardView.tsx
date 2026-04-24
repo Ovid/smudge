@@ -77,11 +77,18 @@ export function DashboardView({
           // unmount), so leave the previous velocity state in place and
           // do not surface an error banner.
           if (message === null) return;
-          setVelocityWithSlug({
+          // I3 (review 2026-04-24): preserve prior good data on a
+          // transient refresh failure so the progress strip doesn't
+          // blank on a network blip (the error banner renders below
+          // the strip, but only if data is null). Mirrors the
+          // useFindReplaceState convention of keeping prior results on
+          // transient errors. Preserve only when the slug matches —
+          // stale data from a different project is not worth keeping.
+          setVelocityWithSlug((prev) => ({
             slug,
-            data: null,
+            data: prev?.slug === slug ? prev.data : null,
             error: message,
-          });
+          }));
         }
       });
     return () => {

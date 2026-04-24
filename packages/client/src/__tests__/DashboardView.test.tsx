@@ -486,6 +486,69 @@ describe("DashboardView", () => {
     warnSpy.mockRestore();
   });
 
+  it("preserves prior velocity data when a refresh fetch fails (I3 2026-04-24)", async () => {
+    // On error the handler used to overwrite prior data with null,
+    // which blanks the progress strip after any transient blip — the
+    // user reading the progress bar sees it vanish after a silent
+    // refreshKey bump. useFindReplaceState keeps prior results on
+    // transient errors; this should match.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
+    // First call succeeds; second fails.
+    vi.mocked(api.projects.velocity)
+      .mockResolvedValueOnce({
+        words_today: 500,
+        daily_average_7d: 420,
+        daily_average_30d: 350,
+        current_total: 1700,
+        target_word_count: 50000,
+        remaining_words: 48300,
+        target_deadline: "2027-03-01",
+        days_until_deadline: 322,
+        required_pace: 150,
+        projected_completion_date: "2027-02-15",
+        today: "2026-04-12",
+      })
+      .mockRejectedValueOnce(new Error("Network failure"));
+
+    const { rerender } = render(
+      <DashboardView
+        slug="test-project"
+        statuses={statuses}
+        onNavigateToChapter={vi.fn()}
+        refreshKey={0}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("progressbar")).toBeInTheDocument();
+    });
+
+    // Bump refreshKey to trigger a re-fetch that will fail.
+    rerender(
+      <DashboardView
+        slug="test-project"
+        statuses={statuses}
+        onNavigateToChapter={vi.fn()}
+        refreshKey={1}
+      />,
+    );
+
+    // Wait long enough for the re-fetch to reject and setState to run.
+    await waitFor(() => {
+      expect(api.projects.velocity).toHaveBeenCalledTimes(2);
+    });
+    // Flush the microtask for the rejection's setState.
+    await waitFor(() => {
+      // Progress bar must still be on-screen (data preserved).
+      expect(screen.getByRole("progressbar")).toBeInTheDocument();
+    });
+
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
   it("stays silent when velocity fetch is aborted (no error banner)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
