@@ -95,6 +95,10 @@ export const STRINGS = {
       "Unable to save \u2014 the chapter content is invalid. Undo recent changes or reload the page.",
     saveFailedTooLarge:
       "Unable to save \u2014 the chapter is too large. Split it into shorter chapters before continuing.",
+    saveCommittedUnreadable:
+      "Your save may have completed, but the server response was unreadable. Refresh the page before continuing \u2014 editing now could overwrite the saved content.",
+    saveFailedCorrupt:
+      "Unable to save \u2014 the chapter content on the server is corrupted. Reload the page before continuing.",
     cacheUnavailable: "Local backup unavailable",
     viewSwitchSaveFailed:
       "Unable to save pending changes. Try again once your connection recovers before switching views.",

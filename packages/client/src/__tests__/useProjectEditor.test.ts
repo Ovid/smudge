@@ -1043,6 +1043,71 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("handleSave breaks immediately on 2xx BAD_JSON and shows committed copy (I5)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    let returnValue = true;
+    await act(async () => {
+      returnValue = await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(returnValue).toBe(false);
+    expect(result.current.saveStatus).toBe("error");
+    expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveCommittedUnreadable);
+    // No retry — server may have committed; retrying risks stomp
+    expect(api.chapters.update).toHaveBeenCalledTimes(1);
+    warnSpy.mockRestore();
+  });
+
+  it("handleSave breaks immediately on 500 UPDATE_READ_FAILURE (I5)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("Chapter was updated but could not be re-read.", 500, "UPDATE_READ_FAILURE"),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    let returnValue = true;
+    await act(async () => {
+      returnValue = await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(returnValue).toBe(false);
+    expect(result.current.saveStatus).toBe("error");
+    // Same committed UX as 2xx BAD_JSON — server updated the row, just failed re-read
+    expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveCommittedUnreadable);
+    expect(api.chapters.update).toHaveBeenCalledTimes(1);
+    warnSpy.mockRestore();
+  });
+
+  it("handleSave breaks immediately on 500 CORRUPT_CONTENT (I5)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("Chapter content is corrupted and cannot be loaded.", 500, "CORRUPT_CONTENT"),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    let returnValue = true;
+    await act(async () => {
+      returnValue = await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(returnValue).toBe(false);
+    expect(result.current.saveStatus).toBe("error");
+    expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedCorrupt);
+    expect(api.chapters.update).toHaveBeenCalledTimes(1);
+    warnSpy.mockRestore();
+  });
+
   it("handleSave 4xx error state does not bleed across an A→B→A chapter switch (S5)", async () => {
     // Code review S5: on an A→B→A round-trip while an A save is in-flight,
     // the 4xx response's terminal setSaveStatus("error") was gated only by

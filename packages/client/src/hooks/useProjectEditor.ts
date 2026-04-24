@@ -241,6 +241,34 @@ export function useProjectEditor(slug: string | undefined) {
           if (err instanceof ApiRequestError && err.code === "ABORTED") {
             return false;
           }
+          // I5: a 2xx BAD_JSON or a 5xx whose code identifies a specific
+          // committed/terminal server state must not retry:
+          //   - 2xx BAD_JSON: server likely committed the PATCH but the
+          //     response body was unreadable. Retrying would either
+          //     commit-again the same content (wasteful, possibly
+          //     racing a concurrent keystroke) or land while the user
+          //     is reading the warning banner.
+          //   - 5xx UPDATE_READ_FAILURE: the server updated the row but
+          //     could not re-read it — the save committed; same UX as
+          //     2xx BAD_JSON.
+          //   - 5xx CORRUPT_CONTENT: the existing row is corrupt;
+          //     retrying will not fix it.
+          // Everything else under 500 (bare 500, transient NETWORK, etc.)
+          // still retries with backoff.
+          if (
+            err instanceof ApiRequestError &&
+            (err.code === "BAD_JSON" ||
+              err.code === "UPDATE_READ_FAILURE" ||
+              err.code === "CORRUPT_CONTENT")
+          ) {
+            console.warn("Save failed with terminal code:", err.code);
+            const mapped = mapApiError(err, "chapter.save");
+            rejected4xx = {
+              message: mapped.message ?? STRINGS.editor.saveFailed,
+              code: err.code,
+            };
+            break;
+          }
           if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
             console.warn("Save failed with 4xx:", err);
             // I4 (2026-04-23 review): route through the unified mapper

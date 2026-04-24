@@ -73,9 +73,21 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   },
   "chapter.save": {
     fallback: STRINGS.editor.saveFailed,
-    committed: STRINGS.error.possiblyCommitted,
+    // I5: chapter.save is the app's most load-bearing mutation, so the
+    // committed UX gets a save-specific banner (not the generic
+    // possiblyCommitted default) that explicitly warns against typing
+    // before refresh — continued edits would overwrite the server-
+    // committed content.
+    committed: STRINGS.editor.saveCommittedUnreadable,
     byStatus: { 413: STRINGS.editor.saveFailedTooLarge },
-    byCode: { VALIDATION_ERROR: STRINGS.editor.saveFailedInvalid },
+    byCode: {
+      VALIDATION_ERROR: STRINGS.editor.saveFailedInvalid,
+      // UPDATE_READ_FAILURE is a 500 where the server updated the row
+      // but could not re-read it: the save actually committed. Same
+      // committed/lock UX as 2xx BAD_JSON.
+      UPDATE_READ_FAILURE: STRINGS.editor.saveCommittedUnreadable,
+      CORRUPT_CONTENT: STRINGS.editor.saveFailedCorrupt,
+    },
   },
   "chapter.create": {
     fallback: STRINGS.error.createChapterFailed,
