@@ -1817,6 +1817,43 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("handleUpdateProjectTitle surfaces committed copy + refreshes on 2xx BAD_JSON (I3)", async () => {
+    // Without a committed: branch, a 2xx BAD_JSON response to the rename
+    // PATCH left projectSlugRef pointing at the old slug while the server
+    // may have moved the project to a new slug — every subsequent save/
+    // create/reorder POSTs against the dead slug and 404s, cascading
+    // failures until the user refreshes. Expected: surface the committed
+    // copy and attempt a project refresh so the case where the slug did
+    // not change (e.g. cosmetic rename) recovers in place.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.projects.update).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+    // Refresh GET returns the same project (rename did not alter slug).
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject)
+      .mockResolvedValueOnce({ ...mockProject, title: "Renamed" });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    let returned: string | undefined;
+    await act(async () => {
+      returned = await result.current.handleUpdateProjectTitle("Renamed");
+    });
+
+    // Refresh GET was fired to resync state.
+    expect(api.projects.get).toHaveBeenCalledTimes(2);
+    // Committed copy surfaced via projectTitleError (keeps edit mode open).
+    expect(result.current.projectTitleError).toBe(STRINGS.error.updateTitleResponseUnreadable);
+    // Title picked up from refresh so the UI is not stuck on the old one.
+    expect(result.current.project?.title).toBe("Renamed");
+    // Returns undefined so useProjectTitleEditing keeps edit mode open.
+    expect(returned).toBeUndefined();
+    warnSpy.mockRestore();
+  });
+
   it("handleCreateChapter refreshes project on READ_AFTER_CREATE_FAILURE (C1)", async () => {
     // Server inserted the chapter but could not re-read it — emits a
     // 500 with READ_AFTER_CREATE_FAILURE. The server message literally

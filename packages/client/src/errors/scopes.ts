@@ -38,7 +38,10 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   "projectList.load": { fallback: STRINGS.error.loadFailed },
   "project.create": { fallback: STRINGS.error.createFailed },
   "project.delete": { fallback: STRINGS.error.deleteFailed },
-  "project.updateTitle": { fallback: STRINGS.error.updateTitleFailed },
+  "project.updateTitle": {
+    fallback: STRINGS.error.updateTitleFailed,
+    committed: STRINGS.error.updateTitleResponseUnreadable,
+  },
   "chapter.load": { fallback: STRINGS.error.loadChapterFailed },
   "chapter.save": {
     fallback: STRINGS.editor.saveFailed,

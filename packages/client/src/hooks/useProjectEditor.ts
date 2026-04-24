@@ -664,7 +664,31 @@ export function useProjectEditor(slug: string | undefined) {
         console.warn("Failed to update project title:", err);
         // Don't call setError — that triggers the full-page error overlay.
         // Returning undefined keeps the title edit mode open so the user can retry.
-        const { message } = mapApiError(err, "project.updateTitle");
+        const { message, possiblyCommitted } = mapApiError(err, "project.updateTitle");
+        // I3: slug desync recovery. On 2xx BAD_JSON the server may have
+        // committed the rename (new slug) but we can't read the new one
+        // from the unreadable body. Subsequent save/create/reorder POSTs
+        // against projectSlugRef.current would 404 against a dead slug —
+        // cascading silent failures until the user refreshes. Attempt a
+        // project refresh under the current (old) slug; if the slug did
+        // not change (cosmetic rename, same-slug result) this recovers
+        // in place. If the slug did change the GET 404s; the committed
+        // copy alone tells the user to refresh the page.
+        if (possiblyCommitted) {
+          try {
+            const refreshed = await api.projects.get(slug);
+            if (
+              projectSlugRef.current === slug ||
+              projectSlugRef.current === projectRef.current?.slug
+            ) {
+              setProject(refreshed);
+              projectSlugRef.current = refreshed.slug;
+            }
+          } catch {
+            // Refresh failed (slug changed → 404, or network) — the
+            // committed copy below instructs the user to refresh manually.
+          }
+        }
         if (message) setProjectTitleError(message);
         return undefined;
       }

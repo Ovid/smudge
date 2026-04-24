@@ -51,6 +51,8 @@ export const STRINGS = {
     deleteChapterFailed: "Failed to delete chapter",
     reorderFailed: "Failed to reorder chapters",
     updateTitleFailed: "Failed to update project title",
+    updateTitleResponseUnreadable:
+      "The title change may have been saved, but the server response was unreadable. Refresh the page to see the current project title.",
     renameChapterFailed: "Failed to rename chapter",
     deleteFailed: "Failed to delete project",
     loadTrashFailed: "Failed to load trash",
