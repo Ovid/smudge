@@ -71,6 +71,13 @@ export const STRINGS = {
       "The chapter may have been created, but the server response was unreadable. Refresh to see the current chapter list.",
     createChapterReadAfterFailure:
       "The chapter was created but could not be retrieved. Refresh to see the current chapter list — do not click Add chapter again.",
+    // I13 (review 2026-04-24): the project was soft-deleted between
+    // gallery/sidebar render and the Add-Chapter click landing. The
+    // generic "Failed to create chapter" invites retry, which would
+    // 404 again. Tell the user the project is gone so they navigate
+    // away.
+    createChapterProjectGone:
+      "This project has been deleted. Navigate to Home to see the current project list.",
     loadChapterFailed: "Failed to load chapter",
     loadChapterFailedNetwork: "Failed to load chapter — check your connection and try again.",
     deleteChapterFailed: "Failed to delete chapter",

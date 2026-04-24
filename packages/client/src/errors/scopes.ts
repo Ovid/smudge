@@ -111,6 +111,11 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     network: STRINGS.error.createChapterFailedNetwork,
     committed: STRINGS.error.createChapterResponseUnreadable,
     byCode: { READ_AFTER_CREATE_FAILURE: STRINGS.error.createChapterReadAfterFailure },
+    // I13 (review 2026-04-24): project soft-deleted between sidebar
+    // render and click. Sibling image.upload has the same 404 branch
+    // (uploadProjectGone); chapter.create was missing it and surfaced
+    // the generic "Failed to create chapter" that invites retry.
+    byStatus: { 404: STRINGS.error.createChapterProjectGone },
     // S8 (review 2026-04-24): the server inserted the row but could
     // not re-read it — treat as committed so consumers surface the
     // committed UX and avoid duplicate-create retries.
