@@ -77,6 +77,14 @@ export function useProjectEditor(slug: string | undefined) {
     resolve: () => void;
   } | null>(null);
   const statusChangeSeq = useAbortableSequence();
+  // I11: rapid status clicks (A→B→C) used to issue overlapping PATCHes
+  // with no server-side ordering guarantee. statusChangeSeq only
+  // discarded response *processing*; both requests still reached the
+  // server and the persisted row could settle on A or B while the UI
+  // shows C. Mirror saveAbortRef: abort any prior in-flight PATCH
+  // before issuing a new one, and thread the signal into
+  // api.chapters.update so the abort actually severs the request.
+  const statusChangeAbortRef = useRef<AbortController | null>(null);
 
   // Shared cancel-in-flight-save helper. Aborts the save sequence (so the
   // retry loop short-circuits on its next iteration via token.isStale()),
@@ -765,6 +773,11 @@ export function useProjectEditor(slug: string | undefined) {
   const handleStatusChange = useCallback(
     async (chapterId: string, status: string, onError?: (message: string) => void) => {
       const token = statusChangeSeq.start();
+      // I11: abort the prior in-flight PATCH before issuing a new one so
+      // overlapping status clicks cannot land out-of-order at the server.
+      statusChangeAbortRef.current?.abort();
+      const controller = new AbortController();
+      statusChangeAbortRef.current = controller;
       // Save previous status for revert
       const previousStatus = projectRef.current?.chapters.find((c) => c.id === chapterId)?.status;
 
@@ -780,10 +793,18 @@ export function useProjectEditor(slug: string | undefined) {
       // status to the wrong chapter if the user rapidly switches chapters.
       setActiveChapter((prev) => (prev?.id === chapterId ? { ...prev, status } : prev));
       try {
-        await api.chapters.update(chapterId, { status });
+        await api.chapters.update(chapterId, { status }, controller.signal);
+        if (statusChangeAbortRef.current === controller) statusChangeAbortRef.current = null;
       } catch (err) {
+        if (statusChangeAbortRef.current === controller) statusChangeAbortRef.current = null;
         if (token.isStale()) return; // newer call owns state
         const { message, possiblyCommitted } = mapApiError(err, "chapter.updateStatus");
+        // I11 (follow-on from the new AbortController): an ABORTED
+        // error means a later click cancelled this PATCH mid-flight —
+        // the newer click already owns the optimistic state and is
+        // driving its own PATCH. Reverting here would stomp the live
+        // call. Mirror saveAbortRef's ABORTED short-circuit.
+        if (message === null) return;
         // I6 (2026-04-23): 2xx BAD_JSON means the server committed the
         // new status but the response body was unreadable. A revert
         // here either silently no-ops (the reload GET returns the new

@@ -758,6 +758,44 @@ describe("useProjectEditor", () => {
     expect(result.current.project?.chapters[0]!.status).toBe("outline");
   });
 
+  it("handleStatusChange threads AbortSignal into api.chapters.update (I11)", async () => {
+    // Rapid status clicks used to issue overlapping PATCHes with no
+    // ordering guarantee at the server. The signal lets the newer
+    // click sever the older one's fetch.
+    vi.mocked(api.chapters.update).mockResolvedValue({ ...mockChapter1, status: "revised" });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "revised");
+    });
+
+    const callArgs = vi.mocked(api.chapters.update).mock.calls[0];
+    expect(callArgs?.[2]).toBeInstanceOf(AbortSignal);
+  });
+
+  it("handleStatusChange does not revert on ABORTED (I11 follow-on)", async () => {
+    // Rapid A→B→C: B's PATCH gets aborted when C's click fires. B's
+    // catch must not revert (that would stomp C's optimistic state).
+    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("aborted", 0, "ABORTED"));
+    // Guard: the revert path would call projects.get; assert it does not.
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    const onError = vi.fn();
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "revised", onError);
+    });
+
+    expect(onError).not.toHaveBeenCalled();
+    // projects.get is called exactly once for the initial load, never
+    // for a revert. If the revert fired we would see 2 calls.
+    expect(api.projects.get).toHaveBeenCalledTimes(1);
+  });
+
   it("handleStatusChange updates activeChapter status when it's the active chapter", async () => {
     vi.mocked(api.chapters.update).mockResolvedValue({ ...mockChapter1, status: "edited" });
 
