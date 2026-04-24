@@ -361,15 +361,25 @@ export function useProjectEditor(slug: string | undefined) {
   const handleCreateChapter = useCallback(
     async (onError?: (message: string) => void) => {
       const slug = projectSlugRef.current;
-      if (!slug) return;
-      // S6 (review 2026-04-21): the post-await drift guard (below)
-      // uses a two-part compare so a concurrent rename does not
-      // discard a valid response. A rename updates projectSlugRef to
-      // the new slug AND updates projectRef.slug to match, so when
-      // projectSlugRef equals projectRef?.slug we're still on the
-      // SAME project just with a new slug — keep the response.
-      // Cross-project navigation desyncs the two (URL changed, loaded
-      // project not yet swapped), and the guard fires correctly.
+      const projectId = projectRef.current?.id;
+      if (!slug || !projectId) return;
+      // S6 (review 2026-04-21) + C1 (review 2026-04-24): the post-await
+      // drift guard below combines two checks.
+      //   1. Project id captured at POST time vs projectRef.current?.id
+      //      at response time. The id is stable across rename and
+      //      changes only on cross-project navigation AFTER the new
+      //      project finishes loading. This distinguishes rename
+      //      (keep) from completed cross-project nav (discard).
+      //   2. Slug two-part compare (projectSlugRef vs captured slug
+      //      AND vs projectRef.slug). The id check can't see the
+      //      window between a URL slug prop change and loadProject
+      //      completing — projectRef still holds the old project's
+      //      id, so id equality passes. The slug compare catches
+      //      that window because projectSlugRef has already advanced
+      //      to the new URL slug while projectRef.slug still holds
+      //      the old one.
+      // Both checks are needed: (1) covers post-load cross-nav, (2)
+      // covers pre-load cross-nav, neither covers what the other does.
       // Full cancel of any in-flight save: abort the save sequence, abort
       // the fetch, and unblock any backoff sleep (S1). A bare seq-abort
       // without the controller abort + backoff clear would short-circuit
@@ -390,11 +400,13 @@ export function useProjectEditor(slug: string | undefined) {
       setCacheWarning(false);
       try {
         const newChapter = await api.chapters.create(slug);
-        // C2: discard the response if the user navigated to a different
-        // project mid-POST. Without this, `setActiveChapter` and the
-        // `setProject` merge would write Project A's new chapter into
-        // Project B's state, producing a phantom chapter in the sidebar
-        // and pointing subsequent edits at the wrong project's chapter id.
+        // C2 + C1: discard the response if the user navigated to a
+        // different project mid-POST. Without this, `setActiveChapter`
+        // and the `setProject` merge would write Project A's new
+        // chapter into Project B's state, producing a phantom chapter
+        // in the sidebar and pointing subsequent edits at the wrong
+        // project's chapter id.
+        if (projectRef.current?.id !== projectId) return;
         if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
           return;
         setActiveChapter(newChapter);
@@ -402,6 +414,7 @@ export function useProjectEditor(slug: string | undefined) {
         setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
       } catch (err) {
         console.warn("Failed to create chapter:", err);
+        if (projectRef.current?.id !== projectId) return;
         if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
           return;
         // I4: route through the onError callback (same pattern as
@@ -431,10 +444,14 @@ export function useProjectEditor(slug: string | undefined) {
           const previousChapterIds = new Set(projectRef.current?.chapters.map((c) => c.id) ?? []);
           try {
             const refreshed = await api.projects.get(slug);
-            if (
-              projectSlugRef.current === slug ||
-              projectSlugRef.current === projectRef.current?.slug
-            ) {
+            // Merge only if the user is still on the same project (by
+            // id — stable across rename, changes on cross-project
+            // navigation). The prior slug-OR check let a stale
+            // recovery response merge into a different project's
+            // state after the user navigated away AND the new project
+            // finished loading (the two refs then realign to the new
+            // slug, making the OR evaluate true).
+            if (projectRef.current?.id === projectId) {
               setProject(refreshed);
               const added = refreshed.chapters.filter((c) => !previousChapterIds.has(c.id));
               if (added.length > 0) {
@@ -651,16 +668,18 @@ export function useProjectEditor(slug: string | undefined) {
   const handleReorderChapters = useCallback(
     async (orderedIds: string[], onError?: (message: string) => void) => {
       const slug = projectSlugRef.current;
-      if (!slug) return;
-      // S6 (review 2026-04-21): two-part drift guard — see
-      // handleCreateChapter for full rationale.
+      const projectId = projectRef.current?.id;
+      if (!slug || !projectId) return;
+      // S6 (review 2026-04-21) + C1 (review 2026-04-24): drift guard —
+      // see handleCreateChapter for full rationale.
       try {
         await api.projects.reorderChapters(slug, orderedIds);
-        // C2: discard if the user navigated away mid-PUT. Without this,
-        // the reorder would apply Project A's ordered ids to Project B's
-        // chapters array — the filter by id then drops everything (ids
-        // don't match), leaving Project B with an empty chapters list
-        // until refresh.
+        // C2 + C1: discard if the user navigated away mid-PUT. Without
+        // this, the reorder would apply Project A's ordered ids to
+        // Project B's chapters array — the filter by id then drops
+        // everything (ids don't match), leaving Project B with an
+        // empty chapters list until refresh.
+        if (projectRef.current?.id !== projectId) return;
         if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
           return;
         setProject((prev) => {
@@ -675,6 +694,7 @@ export function useProjectEditor(slug: string | undefined) {
         });
       } catch (err) {
         console.warn("Failed to reorder chapters:", err);
+        if (projectRef.current?.id !== projectId) return;
         if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
           return;
         // I4: route through the onError callback rather than setError so
@@ -716,9 +736,10 @@ export function useProjectEditor(slug: string | undefined) {
   const handleUpdateProjectTitle = useCallback(
     async (title: string): Promise<string | undefined> => {
       const slug = projectSlugRef.current;
-      if (!slug) return undefined;
-      // S6 (review 2026-04-21): two-part drift guard — see
-      // handleCreateChapter for full rationale.
+      const projectId = projectRef.current?.id;
+      if (!slug || !projectId) return undefined;
+      // S6 (review 2026-04-21) + C1 (review 2026-04-24): drift guard —
+      // see handleCreateChapter for full rationale.
       setProjectTitleError(null);
       try {
         const updated = await api.projects.update(slug, { title });
@@ -727,6 +748,7 @@ export function useProjectEditor(slug: string | undefined) {
         // (refuses saveProjectTitle when project.slug !== slug), but this
         // extra check keeps handleUpdateProjectTitle independently safe for
         // any future direct caller.
+        if (projectRef.current?.id !== projectId) return undefined;
         if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
           return undefined;
         projectSlugRef.current = updated.slug;
@@ -749,10 +771,9 @@ export function useProjectEditor(slug: string | undefined) {
         if (possiblyCommitted) {
           try {
             const refreshed = await api.projects.get(slug);
-            if (
-              projectSlugRef.current === slug ||
-              projectSlugRef.current === projectRef.current?.slug
-            ) {
+            // Merge only if still on the same project (id stable across
+            // rename, changes on cross-project navigation).
+            if (projectRef.current?.id === projectId) {
               setProject(refreshed);
               projectSlugRef.current = refreshed.slug;
             }

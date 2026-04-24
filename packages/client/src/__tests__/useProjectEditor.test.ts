@@ -1859,6 +1859,117 @@ describe("useProjectEditor", () => {
     expect(result.current.project?.chapters.map((c) => c.id)).toEqual(["b1"]);
   });
 
+  it("handleCreateChapter discards response after the new project finished loading (C1 2026-04-24)", async () => {
+    // The two-part AND drift guard returned early only when BOTH refs
+    // drifted. After a cross-project navigation fully completes the URL
+    // slug ref and the loaded project's slug have both advanced to B, so
+    // ref-against-ref equality is true and the AND short-circuits to
+    // false — a stale Project A POST response is then merged into
+    // Project B's state. Project id is stable across rename and changes
+    // on cross-project navigation; capturing it at POST time and
+    // checking against projectRef at response time distinguishes the
+    // two and discards only the cross-project leak.
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    let resolveCreate!: (c: typeof mockChapter1) => void;
+    vi.mocked(api.chapters.create)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveCreate = resolve;
+          }),
+      );
+
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    let createPromise!: Promise<void>;
+    act(() => {
+      createPromise = result.current.handleCreateChapter();
+    });
+
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    rerender({ slug: "other-project" });
+
+    // CRITICAL: wait for Project B to finish loading BEFORE resolving
+    // Project A's stale POST. This is the window the AND guard fails:
+    // once projectRef.slug === "other-project" and projectSlugRef ===
+    // "other-project", ref-against-ref equality holds and the guard
+    // decides the response is fresh.
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    await act(async () => {
+      resolveCreate({ ...mockChapter1, id: "phantom", project_id: "p1" });
+      await createPromise;
+    });
+
+    // Project B's state must NOT contain Project A's new chapter.
+    expect(result.current.project?.chapters.find((c) => c.id === "phantom")).toBeUndefined();
+    expect(result.current.project?.chapters).toEqual([]);
+  });
+
+  it("handleReorderChapters discards response after the new project finished loading (C1 2026-04-24)", async () => {
+    // Same AND-guard hole: a stale reorder PUT for Project A landing
+    // after Project B fully loaded filter-drops Project A's ids against
+    // Project B's chapters and leaves B's sidebar empty until refresh.
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [{ ...mockChapter1, id: "b1" }],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    let resolveReorder!: () => void;
+    vi.mocked(api.projects.reorderChapters)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ message: string }>((resolve) => {
+            resolveReorder = () => resolve({ message: "ok" });
+          }),
+      );
+
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    let reorderPromise!: Promise<void>;
+    act(() => {
+      reorderPromise = result.current.handleReorderChapters(["ch2", "ch1"]);
+    });
+
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    rerender({ slug: "other-project" });
+
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    await act(async () => {
+      resolveReorder();
+      await reorderPromise;
+    });
+
+    // Project B's own chapter must still be present — the stale reorder
+    // must not have filter-dropped it.
+    expect(result.current.project?.chapters.map((c) => c.id)).toEqual(["b1"]);
+  });
+
   it("handleCreateChapter routes failures through onError callback (I4)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.create).mockRejectedValue(new Error("create boom"));
