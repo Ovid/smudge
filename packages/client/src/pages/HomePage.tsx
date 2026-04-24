@@ -16,25 +16,27 @@ export function HomePage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadProjects() {
-      try {
-        const data = await api.projects.list();
-        if (!cancelled) setProjects(data);
-      } catch (err) {
+    // Copilot review 2026-04-24: mirror DashboardView's abort pattern.
+    // The previous `cancelled` flag left console.warn firing BEFORE the
+    // guard on unmount rejections, violating CLAUDE.md's zero-warnings
+    // rule. Using AbortController and gating warn on signal.aborted
+    // keeps navigation/unmount races silent.
+    const controller = new AbortController();
+    api.projects
+      .list(controller.signal)
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        setProjects(data);
+      })
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
         console.warn("Failed to load projects:", err);
-        if (!cancelled) {
-          const { message } = mapApiError(err, "projectList.load");
-          if (message) setError(message);
-        }
-      }
-    }
-
-    loadProjects();
+        const { message } = mapApiError(err, "projectList.load");
+        if (message) setError(message);
+      });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, []);
 

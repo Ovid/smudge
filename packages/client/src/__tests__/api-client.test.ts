@@ -31,6 +31,16 @@ describe("api.projects", () => {
     });
   });
 
+  it("list(signal) threads signal to fetch", async () => {
+    mockFetch.mockResolvedValue(jsonResponse([]));
+    const controller = new AbortController();
+    await api.projects.list(controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects", {
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+    });
+  });
+
   it("get(slug) fetches GET /api/projects/:slug", async () => {
     const project = { id: "p1", title: "Test", chapters: [] };
     mockFetch.mockResolvedValue(jsonResponse(project));

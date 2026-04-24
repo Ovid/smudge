@@ -353,4 +353,28 @@ describe("HomePage", () => {
     expect(screen.getByText("Novel One")).toBeInTheDocument();
     expect(api.projects.delete).not.toHaveBeenCalled();
   });
+
+  it("does not console.warn when loadProjects rejects after unmount", async () => {
+    // Copilot review 2026-04-24: the previous bare `cancelled` flag
+    // with warn ABOVE the check produced console noise on navigation/
+    // unmount races. Verify the abort path keeps test output clean
+    // (zero-warnings-in-test-output rule).
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let rejectFn: (err: Error) => void = () => {};
+    vi.mocked(api.projects.list).mockReturnValue(
+      new Promise<never>((_, reject) => {
+        rejectFn = reject;
+      }),
+    );
+
+    const { unmount } = renderHomePage();
+    // Unmount BEFORE the rejection lands.
+    unmount();
+    // Now reject and let microtasks drain.
+    rejectFn(new Error("Network error"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
 });

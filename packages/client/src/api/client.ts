@@ -200,7 +200,8 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   projects: {
-    list: () => apiFetch<ProjectListItem[]>("/projects"),
+    list: (signal?: AbortSignal) =>
+      apiFetch<ProjectListItem[]>("/projects", signal ? { signal } : undefined),
 
     get: (slug: string) => apiFetch<ProjectWithChapters>(`/projects/${enc(slug)}`),
 
