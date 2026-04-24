@@ -89,16 +89,33 @@ export function ExportDialog({
 
   useEffect(() => {
     if ((format === "epub" || format === "docx") && open) {
+      // Route cover-image list failures through mapApiError (review
+      // 2026-04-24 S3). A bare `.catch(() => setCoverImages([]))`
+      // silently swallowed every error kind — including ABORTED on
+      // dialog unmount, which would then fire setState on a torn-down
+      // component. Mapping treats ABORTED as null and lets real
+      // failures flow through an empty-list fallback.
+      const controller = new AbortController();
       api.images
         .list(projectId)
         .then((imgs) => {
+          if (controller.signal.aborted) return;
           setCoverImages(
             imgs.map((i) => ({ id: i.id, filename: i.filename, mime_type: i.mime_type })),
           );
         })
-        .catch(() => {
+        .catch((err: unknown) => {
+          if (controller.signal.aborted) return;
+          const { message } = mapApiError(err, "image.list");
+          // ABORTED surfaces as message === null; silent no-op.
+          if (message === null) return;
+          // Non-abort failure: surface nothing in the dropdown so the
+          // user can still export without a cover.
           setCoverImages([]);
         });
+      return () => {
+        controller.abort();
+      };
     }
   }, [format, open, projectId]);
 

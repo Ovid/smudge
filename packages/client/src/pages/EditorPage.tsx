@@ -38,7 +38,7 @@ import { clearCachedContent, clearAllCachedContent } from "../hooks/useContentCa
 import { safeSetEditable } from "../utils/editorSafeOps";
 import { Logo } from "../components/Logo";
 import { generateHTML } from "@tiptap/html";
-import DOMPurify from "dompurify";
+import { sanitizeEditorHtml } from "../sanitizer";
 import { editorExtensions } from "../editorExtensions";
 
 // Sentinel errors used by the handleRestoreSnapshot mutate callback so the
@@ -61,7 +61,7 @@ class RestoreFailedError extends Error {
 function renderSnapshotContent(content: Record<string, unknown>): string {
   try {
     const html = generateHTML(content as Parameters<typeof generateHTML>[0], editorExtensions);
-    return DOMPurify.sanitize(html);
+    return sanitizeEditorHtml(html);
   } catch {
     return `<p>${STRINGS.snapshots.renderError}</p>`;
   }

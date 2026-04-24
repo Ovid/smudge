@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { generateHTML } from "@tiptap/html";
-import DOMPurify from "dompurify";
+import { sanitizeEditorHtml } from "../sanitizer";
 import type { Chapter } from "@smudge/shared";
 import { editorExtensions } from "../editorExtensions";
 import { STRINGS } from "../strings";
@@ -73,7 +73,7 @@ export function PreviewMode({ chapters, onNavigateToChapter }: PreviewModeProps)
                   return (
                     <div
                       className="prose prose-xl font-serif text-text-primary leading-[2] prose-headings:text-text-primary prose-headings:tracking-tight prose-a:text-accent prose-blockquote:border-l-accent-light prose-blockquote:text-text-secondary prose-hr:border-border"
-                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html) }}
+                      dangerouslySetInnerHTML={{ __html: sanitizeEditorHtml(html) }}
                     />
                   );
                 }

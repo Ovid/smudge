@@ -60,6 +60,11 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     fallback: STRINGS.error.updateTitleFailed,
     committed: STRINGS.error.updateTitleResponseUnreadable,
     byCode: { PROJECT_TITLE_EXISTS: STRINGS.error.projectTitleExists },
+    // S4 (review 2026-04-24): the rename endpoint and project.updateFields
+    // hit the same PATCH /projects/:slug handler — mirror the 404 string
+    // so a project-was-deleted race between rename and save gets the
+    // same notFound copy here as sibling field saves.
+    byStatus: { 404: STRINGS.projectSettings.saveNotFound },
   },
   "project.updateFields": {
     fallback: STRINGS.projectSettings.saveError,
@@ -121,6 +126,10 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   },
   "image.references": {
     fallback: STRINGS.imageGallery.referencesLoadFailed,
+    // S5 (review 2026-04-24): add the transient-retry copy so a NETWORK
+    // error gets a "check your connection" message instead of the
+    // generic fallback. Mirrors image.list and other GET scopes.
+    network: STRINGS.imageGallery.referencesLoadFailedNetwork,
   },
   "image.upload": {
     fallback: STRINGS.imageGallery.uploadFailedGeneric,
@@ -193,7 +202,11 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     },
     byStatus: { 404: STRINGS.snapshots.viewFailedNotFound },
   },
-  "snapshot.list": { fallback: STRINGS.snapshots.listFailedGeneric },
+  "snapshot.list": {
+    fallback: STRINGS.snapshots.listFailedGeneric,
+    // S5: transient-retry copy on NETWORK — mirrors sibling GET scopes.
+    network: STRINGS.snapshots.listFailedNetwork,
+  },
   "snapshot.create": {
     fallback: STRINGS.snapshots.createFailedGeneric,
     committed: STRINGS.error.possiblyCommitted,

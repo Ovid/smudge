@@ -315,6 +315,8 @@ export const STRINGS = {
     loadFailed: "Failed to load images.",
     loadFailedNetwork: "Failed to load images — check your connection and try again.",
     referencesLoadFailed: "Failed to load references for this image.",
+    referencesLoadFailedNetwork:
+      "Failed to load references for this image — check your connection and try again.",
     retryButton: "Retry",
     uploadFailedGeneric: "Upload failed. Check your connection and try again.",
     uploadInvalidFile:
@@ -373,6 +375,7 @@ export const STRINGS = {
     deleteFailed: "Unable to delete snapshot. Try again.",
     listFailed: "Unable to load snapshots. Try opening the panel again.",
     listFailedGeneric: "Unable to load snapshots. Try again.",
+    listFailedNetwork: "Unable to load snapshots — check your connection and try again.",
     viewFailed: "Unable to open snapshot. Try again.",
     viewFailedNotFound: "This snapshot no longer exists. Refresh to see the latest snapshot list.",
     viewFailedCorrupt: "This snapshot is corrupt and can't be displayed.",
