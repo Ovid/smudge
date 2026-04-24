@@ -48,9 +48,13 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   },
   "project.create": {
     fallback: STRINGS.error.createFailed,
+    committed: STRINGS.error.possiblyCommitted,
     byCode: { PROJECT_TITLE_EXISTS: STRINGS.error.projectTitleExists },
   },
-  "project.delete": { fallback: STRINGS.error.deleteFailed },
+  "project.delete": {
+    fallback: STRINGS.error.deleteFailed,
+    committed: STRINGS.error.possiblyCommitted,
+  },
   "project.updateTitle": {
     fallback: STRINGS.error.updateTitleFailed,
     committed: STRINGS.error.updateTitleResponseUnreadable,
@@ -69,6 +73,7 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   },
   "chapter.save": {
     fallback: STRINGS.editor.saveFailed,
+    committed: STRINGS.error.possiblyCommitted,
     byStatus: { 413: STRINGS.editor.saveFailedTooLarge },
     byCode: { VALIDATION_ERROR: STRINGS.editor.saveFailedInvalid },
   },
@@ -77,8 +82,14 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     committed: STRINGS.error.createChapterResponseUnreadable,
     byCode: { READ_AFTER_CREATE_FAILURE: STRINGS.error.createChapterReadAfterFailure },
   },
-  "chapter.delete": { fallback: STRINGS.error.deleteChapterFailed },
-  "chapter.rename": { fallback: STRINGS.error.renameChapterFailed },
+  "chapter.delete": {
+    fallback: STRINGS.error.deleteChapterFailed,
+    committed: STRINGS.error.possiblyCommitted,
+  },
+  "chapter.rename": {
+    fallback: STRINGS.error.renameChapterFailed,
+    committed: STRINGS.error.possiblyCommitted,
+  },
   "chapter.reorder": {
     fallback: STRINGS.error.reorderFailed,
     committed: STRINGS.error.reorderResponseUnreadable,
@@ -100,11 +111,13 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   },
   "image.upload": {
     fallback: STRINGS.imageGallery.uploadFailedGeneric,
+    committed: STRINGS.error.possiblyCommitted,
     byStatus: { 413: STRINGS.imageGallery.fileTooLarge },
     byCode: { PAYLOAD_TOO_LARGE: STRINGS.imageGallery.fileTooLarge },
   },
   "image.delete": {
     fallback: STRINGS.imageGallery.deleteFailedGeneric,
+    committed: STRINGS.error.possiblyCommitted,
     byCode: { IMAGE_IN_USE: STRINGS.imageGallery.deleteBlockedInUse },
     // S5 (2026-04-23 review): validate per-element shape, not just that
     // `chapters` is an array. ImageGallery casts elements to
@@ -124,7 +137,10 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
       return valid.length === chapters.length ? { chapters: valid } : undefined;
     },
   },
-  "image.updateMetadata": { fallback: STRINGS.imageGallery.saveFailed },
+  "image.updateMetadata": {
+    fallback: STRINGS.imageGallery.saveFailed,
+    committed: STRINGS.error.possiblyCommitted,
+  },
   "snapshot.restore": {
     fallback: STRINGS.snapshots.restoreFailed,
     network: STRINGS.snapshots.restoreNetworkFailed,
@@ -145,8 +161,14 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     byStatus: { 404: STRINGS.snapshots.viewFailedNotFound },
   },
   "snapshot.list": { fallback: STRINGS.snapshots.listFailedGeneric },
-  "snapshot.create": { fallback: STRINGS.snapshots.createFailedGeneric },
-  "snapshot.delete": { fallback: STRINGS.snapshots.deleteFailed },
+  "snapshot.create": {
+    fallback: STRINGS.snapshots.createFailedGeneric,
+    committed: STRINGS.error.possiblyCommitted,
+  },
+  "snapshot.delete": {
+    fallback: STRINGS.snapshots.deleteFailed,
+    committed: STRINGS.error.possiblyCommitted,
+  },
   "findReplace.search": {
     fallback: STRINGS.findReplace.searchFailed,
     network: STRINGS.findReplace.searchNetworkFailed,
@@ -186,13 +208,17 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   },
   "trash.restoreChapter": {
     fallback: STRINGS.error.restoreChapterFailed,
+    committed: STRINGS.error.possiblyCommitted,
     byCode: {
       PROJECT_PURGED: STRINGS.error.restoreChapterProjectPurged,
       CHAPTER_PURGED: STRINGS.error.restoreChapterAlreadyPurged,
       RESTORE_CONFLICT: STRINGS.error.restoreChapterSlugConflict,
     },
   },
-  "settings.update": { fallback: STRINGS.error.settingsUpdateFailedGeneric },
+  "settings.update": {
+    fallback: STRINGS.error.settingsUpdateFailedGeneric,
+    committed: STRINGS.error.possiblyCommitted,
+  },
   "dashboard.load": {
     fallback: STRINGS.error.loadDashboardFailed,
     network: STRINGS.error.loadDashboardFailedNetwork,

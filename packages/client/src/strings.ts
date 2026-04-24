@@ -37,6 +37,13 @@ export const STRINGS = {
     cancelButton: "Cancel",
   },
   error: {
+    // I4 shared default for the ambiguous-commit UX: used as the
+    // committed: entry of any mutation scope that does not declare a
+    // more-specific banner. Surfaces when a 2xx response body fails to
+    // parse — the server likely committed the mutation but the client
+    // cannot confirm, so a retry would be unsafe.
+    possiblyCommitted:
+      "The request may have completed, but the server response was unreadable. Refresh the page to see the current state before trying again.",
     projectNotFound: "Project not found",
     backToProjects: "Back to Projects",
     loadFailed: "Failed to load projects",

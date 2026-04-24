@@ -229,6 +229,32 @@ describe("SCOPES — chapter.save", () => {
   });
 });
 
+describe("I4 — 2xx BAD_JSON on mutation scopes sets possiblyCommitted=true", () => {
+  // Each mutation scope must surface the ambiguous-commit UX on 2xx
+  // BAD_JSON. Missing this routes the user through the normal error
+  // fallback and invites a retry after the server already committed.
+  const mutationScopes: ApiErrorScope[] = [
+    "chapter.save",
+    "chapter.delete",
+    "chapter.rename",
+    "project.create",
+    "project.delete",
+    "image.upload",
+    "image.delete",
+    "image.updateMetadata",
+    "snapshot.create",
+    "snapshot.delete",
+    "settings.update",
+    "trash.restoreChapter",
+  ];
+  it.each(mutationScopes)("%s marks 2xx BAD_JSON possiblyCommitted", (scope) => {
+    const err = new ApiRequestError("bad json", 200, "BAD_JSON");
+    const result = mapApiError(err, scope);
+    expect(result.possiblyCommitted).toBe(true);
+    expect(result.message).not.toBeNull();
+  });
+});
+
 describe("SCOPES — project.create", () => {
   const scope = SCOPES["project.create"];
   it("PROJECT_TITLE_EXISTS → projectTitleExists copy (I12)", () => {
