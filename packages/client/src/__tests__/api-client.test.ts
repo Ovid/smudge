@@ -722,6 +722,27 @@ describe("api.images.upload (I1 transport classification)", () => {
     expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("BAD_JSON");
     expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(200);
   });
+
+  it("re-throws ABORTED when !ok error-body read aborts (I2)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    const abort = new DOMException("aborted", "AbortError");
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.reject(abort),
+    });
+
+    const file = new File(["x"], "a.png", { type: "image/png" });
+    let caught: unknown;
+    try {
+      await api.images.upload("p1", file);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("ABORTED");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
 });
 
 describe("error handling", () => {

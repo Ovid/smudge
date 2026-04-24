@@ -101,7 +101,18 @@ async function readErrorEnvelope(
     const code = body.error?.code;
     const extras = extractExtras(body.error);
     return { message, code, extras };
-  } catch {
+  } catch (err: unknown) {
+    // I2: a body-read can abort (caller cancelled the in-flight request
+    // after headers arrived). Surfacing that as a status-only
+    // ApiRequestError would break the ABORTED contract — the mapper
+    // could not silence a cancel the user just initiated and would
+    // show a fake error toast. Mirror apiFetch's body-read pattern and
+    // re-throw via classifyFetchError for AbortError; any other
+    // parse failure (proxy HTML page, truncated body) still uses the
+    // status-only fallback below.
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw classifyFetchError(err);
+    }
     return { message: fallbackMessage, code: undefined, extras: undefined };
   }
 }
