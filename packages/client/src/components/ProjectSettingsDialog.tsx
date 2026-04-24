@@ -278,8 +278,19 @@ export function ProjectSettingsDialog({
     } catch (err) {
       if (controller.signal.aborted) return; // superseded by a newer request
       console.error("Failed to save timezone:", err);
-      const { message } = mapApiError(err, "settings.update");
+      const { message, possiblyCommitted } = mapApiError(err, "settings.update");
       if (message) setTimezoneSaveError(message);
+      // C2 (review 2026-04-24): on possiblyCommitted the server likely
+      // stored the new timezone; reverting would contradict committed
+      // state and leave the parent (dashboard, velocity, ProgressStrip)
+      // rendering the old value. Mirror saveField: promote the optimistic
+      // value to confirmed, surface the committed copy (already set via
+      // setTimezoneSaveError), and fire onUpdate so the parent refreshes.
+      if (possiblyCommitted) {
+        confirmedTimezoneRef.current = value;
+        onUpdate();
+        return;
+      }
       setTimezone(confirmedTimezoneRef.current);
     }
   }

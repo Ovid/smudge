@@ -311,6 +311,46 @@ describe("ProjectSettingsDialog", () => {
     });
   });
 
+  // C2 (review 2026-04-24): saveTimezone unconditionally reverts the
+  // select on error. On 2xx BAD_JSON the server has committed the new
+  // timezone but the client couldn't read the response — reverting would
+  // contradict committed state and the parent (dashboard, velocity,
+  // ProgressStrip) would keep rendering stale timezone. Mirror saveField:
+  // on possiblyCommitted, skip the revert, promote the optimistic value
+  // to confirmed, surface the committed copy, and fire onUpdate so the
+  // parent refreshes.
+  it("on possiblyCommitted (2xx BAD_JSON), keeps optimistic timezone and fires onUpdate (C2)", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(api.settings.get).mockResolvedValue({ timezone: "UTC" });
+    vi.mocked(api.settings.update).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+    const user = userEvent.setup();
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText(/timezone/i)).toHaveValue("UTC");
+    });
+    await user.selectOptions(screen.getByLabelText(/timezone/i), "Europe/London");
+
+    await waitFor(() => {
+      expect(api.settings.update).toHaveBeenCalled();
+    });
+    // Optimistic value must NOT revert — server likely committed.
+    expect(screen.getByLabelText(/timezone/i)).toHaveValue("Europe/London");
+    // Parent must refresh so consumers see the committed value.
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalled();
+    });
+    errSpy.mockRestore();
+  });
+
   it("reverts timezone on save failure", async () => {
     vi.mocked(api.settings.get).mockResolvedValue({ timezone: "UTC" });
     vi.mocked(api.settings.update).mockRejectedValue(new Error("save failed"));
