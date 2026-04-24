@@ -315,6 +315,9 @@ export const STRINGS = {
     referencesLoadFailed: "Failed to load references for this image.",
     retryButton: "Retry",
     uploadFailedGeneric: "Upload failed. Check your connection and try again.",
+    uploadInvalidFile:
+      "We couldn't upload that file. Check that it's a supported image type (PNG, JPG, GIF, or WebP) and that the file isn't empty.",
+    uploadProjectGone: "This project has been deleted. Uploads aren't available.",
     deleteFailedGeneric: "Delete failed. Try again.",
     deleteBlockedInUse: "This image is in use. Remove it from those chapters first.",
   },

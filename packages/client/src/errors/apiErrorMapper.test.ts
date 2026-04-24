@@ -301,6 +301,22 @@ describe("SCOPES — image.upload", () => {
     const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
     expect(resolveError(err, scope).message).toBe(STRINGS.imageGallery.uploadFailedGeneric);
   });
+  // I1 (2026-04-24 review): server emits 400 VALIDATION_ERROR for missing
+  // file, unsupported MIME, MIME/content mismatch, and empty file. Without
+  // a byCode entry the user sees the network-blame fallback even though
+  // the server has deterministically rejected the file — they retry the
+  // same file forever.
+  it("VALIDATION_ERROR (400) → uploadInvalidFile", () => {
+    const err = new ApiRequestError("bad type", 400, "VALIDATION_ERROR");
+    expect(resolveError(err, scope).message).toBe(STRINGS.imageGallery.uploadInvalidFile);
+  });
+  // I1: 404 NOT_FOUND is emitted when the project was deleted between the
+  // user opening the gallery and the upload request landing. Network-blame
+  // fallback is wrong; the user needs to know the project is gone.
+  it("404 → uploadProjectGone", () => {
+    const err = new ApiRequestError("gone", 404, "NOT_FOUND");
+    expect(resolveError(err, scope).message).toBe(STRINGS.imageGallery.uploadProjectGone);
+  });
 });
 
 describe("SCOPES — image.delete", () => {

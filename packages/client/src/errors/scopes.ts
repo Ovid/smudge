@@ -125,8 +125,22 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   "image.upload": {
     fallback: STRINGS.imageGallery.uploadFailedGeneric,
     committed: STRINGS.error.possiblyCommitted,
-    byStatus: { 413: STRINGS.imageGallery.fileTooLarge },
-    byCode: { PAYLOAD_TOO_LARGE: STRINGS.imageGallery.fileTooLarge },
+    byStatus: {
+      413: STRINGS.imageGallery.fileTooLarge,
+      // I1 (2026-04-24 review): project was deleted between gallery-open
+      // and upload request landing. The generic fallback blamed the
+      // network, which is misleading — the request deterministically
+      // fails until a new project is selected.
+      404: STRINGS.imageGallery.uploadProjectGone,
+    },
+    byCode: {
+      PAYLOAD_TOO_LARGE: STRINGS.imageGallery.fileTooLarge,
+      // I1 (2026-04-24 review): server 400 for missing file, unsupported
+      // MIME, MIME/content mismatch, and empty file. Without a byCode
+      // entry the user sees "Check your connection" — which has nothing
+      // to do with why the server rejected their file.
+      VALIDATION_ERROR: STRINGS.imageGallery.uploadInvalidFile,
+    },
   },
   "image.delete": {
     fallback: STRINGS.imageGallery.deleteFailedGeneric,
