@@ -45,7 +45,11 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     byStatus: { 413: STRINGS.editor.saveFailedTooLarge },
     byCode: { VALIDATION_ERROR: STRINGS.editor.saveFailedInvalid },
   },
-  "chapter.create": { fallback: STRINGS.error.createChapterFailed },
+  "chapter.create": {
+    fallback: STRINGS.error.createChapterFailed,
+    committed: STRINGS.error.createChapterResponseUnreadable,
+    byCode: { READ_AFTER_CREATE_FAILURE: STRINGS.error.createChapterReadAfterFailure },
+  },
   "chapter.delete": { fallback: STRINGS.error.deleteChapterFailed },
   "chapter.rename": { fallback: STRINGS.error.renameChapterFailed },
   "chapter.reorder": { fallback: STRINGS.error.reorderFailed },

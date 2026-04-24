@@ -376,8 +376,32 @@ export function useProjectEditor(slug: string | undefined) {
         // rather than the full-screen error overlay, which would tear
         // down the editor session and leave the user with only a
         // "back to projects" link.
-        const { message } = mapApiError(err, "chapter.create");
+        const { message, possiblyCommitted } = mapApiError(err, "chapter.create");
         if (!message) return;
+        // C1: chapter.create is non-idempotent — the server assigns a new
+        // row per POST. On an ambiguous-commit outcome (2xx BAD_JSON ⇒
+        // possiblyCommitted) or the explicit READ_AFTER_CREATE_FAILURE
+        // code, the row may already exist on the server and retrying
+        // would create a duplicate. Fetch the project fresh so the new
+        // chapter appears in the sidebar without another POST; surface
+        // the committed-specific copy so the user knows not to click
+        // Add chapter again.
+        const readAfterCreateFailed =
+          err instanceof ApiRequestError && err.code === "READ_AFTER_CREATE_FAILURE";
+        if (possiblyCommitted || readAfterCreateFailed) {
+          try {
+            const refreshed = await api.projects.get(slug);
+            if (
+              projectSlugRef.current === slug ||
+              projectSlugRef.current === projectRef.current?.slug
+            ) {
+              setProject(refreshed);
+            }
+          } catch {
+            // Refresh is best-effort; the error copy instructs the user
+            // to refresh the page manually if this also failed.
+          }
+        }
         if (onError) {
           onError(message);
         } else {

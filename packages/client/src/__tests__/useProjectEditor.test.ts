@@ -1767,6 +1767,97 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("handleCreateChapter refreshes project on 2xx BAD_JSON to avoid duplicate POST (C1)", async () => {
+    // Server created the chapter but the response body was unreadable.
+    // Without the committed-branch fix, the UI surfaces a generic error
+    // and the user's retry click POSTs again → duplicate chapter.
+    // Expected: fetch project fresh so the new chapter appears in state,
+    // and surface the committed-specific copy via onError.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const newChapter = {
+      id: "ch3",
+      project_id: "p1",
+      title: UNTITLED_CHAPTER,
+      content: null,
+      sort_order: 2,
+      word_count: 0,
+      status: "outline" as const,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+      deleted_at: null,
+    };
+    const refreshedProject = { ...mockProject, chapters: [mockChapter1, mockChapter2, newChapter] };
+
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError("bad json", 200, "BAD_JSON"),
+    );
+    // First get = initial load; second get = refresh after committed POST.
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject)
+      .mockResolvedValueOnce(refreshedProject);
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project?.chapters).toHaveLength(2));
+
+    const onError = vi.fn();
+    await act(async () => {
+      await result.current.handleCreateChapter(onError);
+    });
+
+    // The refresh GET was fired (avoiding the need for another POST).
+    expect(api.projects.get).toHaveBeenCalledTimes(2);
+    // Banner surfaces the committed-specific copy rather than the generic
+    // "Failed to create chapter." that invites retry.
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.createChapterResponseUnreadable);
+    // New chapter shows up in state from the refresh so the user does not
+    // need to click "Add chapter" again.
+    expect(result.current.project?.chapters.find((c) => c.id === "ch3")).toBeDefined();
+    expect(result.current.error).toBeNull();
+    warnSpy.mockRestore();
+  });
+
+  it("handleCreateChapter refreshes project on READ_AFTER_CREATE_FAILURE (C1)", async () => {
+    // Server inserted the chapter but could not re-read it — emits a
+    // 500 with READ_AFTER_CREATE_FAILURE. The server message literally
+    // says "Do not retry." Same recovery path as the BAD_JSON case.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const newChapter = {
+      id: "ch3",
+      project_id: "p1",
+      title: UNTITLED_CHAPTER,
+      content: null,
+      sort_order: 2,
+      word_count: 0,
+      status: "outline" as const,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+      deleted_at: null,
+    };
+    const refreshedProject = { ...mockProject, chapters: [mockChapter1, mockChapter2, newChapter] };
+
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError("Chapter was created but could not be retrieved.", 500, "READ_AFTER_CREATE_FAILURE"),
+    );
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject)
+      .mockResolvedValueOnce(refreshedProject);
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project?.chapters).toHaveLength(2));
+
+    const onError = vi.fn();
+    await act(async () => {
+      await result.current.handleCreateChapter(onError);
+    });
+
+    expect(api.projects.get).toHaveBeenCalledTimes(2);
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.createChapterReadAfterFailure);
+    expect(result.current.project?.chapters.find((c) => c.id === "ch3")).toBeDefined();
+    warnSpy.mockRestore();
+  });
+
   it("handleReorderChapters routes failures through onError callback (I4)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.projects.reorderChapters).mockRejectedValue(new Error("reorder boom"));

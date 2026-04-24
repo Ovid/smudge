@@ -43,6 +43,10 @@ export const STRINGS = {
     loadProjectFailed: "Failed to load project",
     createFailed: "Failed to create project",
     createChapterFailed: "Failed to create chapter",
+    createChapterResponseUnreadable:
+      "The chapter may have been created, but the server response was unreadable. Refresh to see the current chapter list.",
+    createChapterReadAfterFailure:
+      "The chapter was created but could not be retrieved. Refresh to see the current chapter list — do not click Add chapter again.",
     loadChapterFailed: "Failed to load chapter",
     deleteChapterFailed: "Failed to delete chapter",
     reorderFailed: "Failed to reorder chapters",
