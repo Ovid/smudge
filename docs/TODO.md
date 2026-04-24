@@ -141,6 +141,19 @@ are not lost and can be picked up as small independent PRs.
   comparison could be wrong if the title was updated from another source.
   Mitigated by single-user context but worth cleaning up.
 
+## DEP0040 suppression in Makefile (2026-04-24)
+
+The Makefile sets `NODE_OPTIONS=--disable-warning=DEP0040` to silence the
+Node 22 built-in `punycode` runtime deprecation. Two transitive deps still
+use `require("punycode")`:
+
+- `jsdom → whatwg-url → tr46`
+- `eslint → ajv@6 → uri-js`
+
+Remove the `NODE_OPTIONS` line from the Makefile (and this entry) when
+both `tr46` and `uri-js` ship releases that use the userland `punycode/`
+specifier. Check periodically with `npm ls punycode --all`.
+
 # Features
 
 - Need an "outline" mode that pre-populate chapters titles and outlines.

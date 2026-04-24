@@ -14,7 +14,7 @@ Smudge is a web-based writing application for long-form fiction and non-fiction,
 
 - **Monorepo:** npm workspaces with three packages: `shared`, `server`, `client`
 - **Language:** TypeScript everywhere (frontend + backend + shared)
-- **Backend:** Node.js 20 LTS, Express 4.x, better-sqlite3 (synchronous), Knex.js (migrations/queries), Zod (validation)
+- **Backend:** Node.js 22 LTS (Jod; see CONTRIBUTING.md for the DEP0040 workaround), Express 4.x, better-sqlite3 (synchronous), Knex.js (migrations/queries), Zod (validation)
 - **Frontend:** React 18+, Vite, TipTap v2 (rich text editor, stores content as JSON not HTML), Tailwind CSS, @dnd-kit/sortable v10
 - **Testing:** Vitest (unit + integration with Supertest), Playwright (e2e + aXe-core a11y)
 - **Deployment:** Single Docker container, Express serves API + static frontend on port 3456, SQLite persisted via Docker volume
