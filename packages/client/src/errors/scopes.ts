@@ -55,8 +55,14 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   },
   "chapter.delete": { fallback: STRINGS.error.deleteChapterFailed },
   "chapter.rename": { fallback: STRINGS.error.renameChapterFailed },
-  "chapter.reorder": { fallback: STRINGS.error.reorderFailed },
-  "chapter.updateStatus": { fallback: STRINGS.error.statusChangeFailed },
+  "chapter.reorder": {
+    fallback: STRINGS.error.reorderFailed,
+    committed: STRINGS.error.reorderResponseUnreadable,
+  },
+  "chapter.updateStatus": {
+    fallback: STRINGS.error.statusChangeFailed,
+    committed: STRINGS.error.statusChangeResponseUnreadable,
+  },
   "chapterStatus.fetch": { fallback: STRINGS.error.statusesFetchFailed },
   "image.upload": { fallback: STRINGS.imageGallery.uploadFailedGeneric },
   "image.delete": {

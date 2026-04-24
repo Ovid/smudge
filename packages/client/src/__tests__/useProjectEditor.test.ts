@@ -1895,6 +1895,65 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("handleStatusChange preserves optimistic status on 2xx BAD_JSON + surfaces committed copy (I6)", async () => {
+    // 2xx BAD_JSON means the server committed the new status but the
+    // response body was unreadable. Reverting (locally or from the
+    // server) either silently no-ops (reload returns the new status) or
+    // fights the server's committed state. Conservative behavior: keep
+    // the optimistic update and surface the committed copy so the user
+    // knows the response was ambiguous. Skipping the revert also avoids
+    // the unnecessary project GET.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+    // Guard: projects.get must NOT be called for the revert on committed.
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    const onError = vi.fn();
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "revised", onError);
+    });
+
+    // Only the initial project load — no revert GET.
+    expect(api.projects.get).toHaveBeenCalledTimes(1);
+    // Optimistic status stands because the server committed it.
+    expect(result.current.project?.chapters[0]!.status).toBe("revised");
+    expect(result.current.activeChapter?.status).toBe("revised");
+    // Committed copy surfaced, not the generic fallback.
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.statusChangeResponseUnreadable);
+    warnSpy.mockRestore();
+  });
+
+  it("handleReorderChapters applies order on 2xx BAD_JSON + surfaces committed copy (I6)", async () => {
+    // Server committed the reorder but the body was unreadable. The
+    // previous behavior left setProject untouched, so the chapter list
+    // visually snapped back to the pre-drag order even though the
+    // server had the new order. Apply the requested order to state on
+    // possiblyCommitted so the UI matches the committed server state,
+    // and surface the committed copy so the user knows to refresh.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.projects.reorderChapters).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+
+    const onError = vi.fn();
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleReorderChapters(["ch2", "ch1"], onError);
+    });
+
+    // Reorder applied to state despite the unreadable body.
+    expect(result.current.project?.chapters.map((c) => c.id)).toEqual(["ch2", "ch1"]);
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.reorderResponseUnreadable);
+    warnSpy.mockRestore();
+  });
+
   it("handleReorderChapters routes failures through onError callback (I4)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.projects.reorderChapters).mockRejectedValue(new Error("reorder boom"));

@@ -59,6 +59,10 @@ export const STRINGS = {
     restoreChapterFailed: "Failed to restore chapter",
     loadDashboardFailed: "Failed to load dashboard",
     statusChangeFailed: "Failed to update chapter status",
+    statusChangeResponseUnreadable:
+      "The status change may have been saved, but the server response was unreadable. Refresh to see the current status.",
+    reorderResponseUnreadable:
+      "The chapter reorder may have been saved, but the server response was unreadable. Refresh to see the current order.",
     statusesFetchFailed: "Failed to load chapter statuses — status changes unavailable",
     settingsUpdateFailedGeneric: "Unable to save settings.",
   },

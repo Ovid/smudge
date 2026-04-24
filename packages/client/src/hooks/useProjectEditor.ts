@@ -626,7 +626,28 @@ export function useProjectEditor(slug: string | undefined) {
         // I4: route through the onError callback rather than setError so
         // a 400 on id-list mismatch (recoverable per CLAUDE.md) surfaces
         // as a dismissible banner instead of tearing down the editor.
-        const { message } = mapApiError(err, "chapter.reorder");
+        const { message, possiblyCommitted } = mapApiError(err, "chapter.reorder");
+        // I6 (2026-04-23): 2xx BAD_JSON means the server committed the
+        // reorder but the body was unreadable. Before this fix the
+        // catch touched no state, so the drag-and-drop visually snapped
+        // back to the pre-drag order while the server held the new
+        // order — a user retry would re-apply the same order
+        // idempotently but confusingly. Apply the requested order to
+        // client state on possiblyCommitted so the UI matches the
+        // committed server state, and surface the committed copy so
+        // the user knows the response was ambiguous.
+        if (possiblyCommitted) {
+          setProject((prev) => {
+            if (!prev) return prev;
+            const reordered = orderedIds
+              .map((id, index) => {
+                const ch = prev.chapters.find((c) => c.id === id);
+                return ch ? { ...ch, sort_order: index } : undefined;
+              })
+              .filter(Boolean) as Chapter[];
+            return { ...prev, chapters: reordered };
+          });
+        }
         if (!message) return;
         if (onError) {
           onError(message);
@@ -714,7 +735,18 @@ export function useProjectEditor(slug: string | undefined) {
         await api.chapters.update(chapterId, { status });
       } catch (err) {
         if (token.isStale()) return; // newer call owns state
-        const { message } = mapApiError(err, "chapter.updateStatus");
+        const { message, possiblyCommitted } = mapApiError(err, "chapter.updateStatus");
+        // I6 (2026-04-23): 2xx BAD_JSON means the server committed the
+        // new status but the response body was unreadable. A revert
+        // here either silently no-ops (the reload GET returns the new
+        // status the user just set) or fights the committed server
+        // state (local revert). Keep the optimistic update — the
+        // committed copy below tells the user the response was
+        // ambiguous, and the next chapter load will reconcile state.
+        if (possiblyCommitted) {
+          if (message) onError?.(message);
+          return;
+        }
         // Revert by reloading from server, falling back to local revert
         let reverted = false;
         const slug = projectSlugRef.current;
