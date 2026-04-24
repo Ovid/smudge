@@ -225,9 +225,11 @@ describe("Chapter title editing", () => {
     await userEvent.type(input, "Renamed Chapter{Enter}");
 
     await waitFor(() => {
-      expect(api.chapters.update).toHaveBeenCalledWith("ch-1", {
-        title: "Renamed Chapter",
-      });
+      expect(api.chapters.update).toHaveBeenCalledWith(
+        "ch-1",
+        { title: "Renamed Chapter" },
+        expect.any(AbortSignal),
+      );
     });
   });
 

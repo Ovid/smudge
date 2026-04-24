@@ -116,6 +116,14 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // a new one, and thread the signal into api.projects.reorderChapters
   // so the older request is actually severed.
   const reorderAbortRef = useRef<AbortController | null>(null);
+  // I7 (review 2026-04-24): rename and delete-chapter siblings went
+  // without AbortControllers. Rapid renames raced at the server with
+  // no ordering guard; a delete that the user moved past kept running
+  // setState paths on stale chapter ids. Mirror title/status abort
+  // refs: the rename path aborts on supersede, the delete path aborts
+  // on unmount.
+  const renameChapterAbortRef = useRef<AbortController | null>(null);
+  const deleteChapterAbortRef = useRef<AbortController | null>(null);
 
   // Shared cancel-in-flight-save helper. Aborts the save sequence (so the
   // retry loop short-circuits on its next iteration via token.isStale()),
@@ -155,6 +163,8 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       titleChangeAbortRef.current?.abort();
       statusChangeAbortRef.current?.abort();
       reorderAbortRef.current?.abort();
+      renameChapterAbortRef.current?.abort();
+      deleteChapterAbortRef.current?.abort();
     };
   }, [cancelInFlightSave]);
 
@@ -669,8 +679,16 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       setSaveStatus("idle");
       setSaveErrorMessage(null);
       setCacheWarning(false);
+      // I7: abort any prior in-flight delete before issuing a new one
+      // and cover this controller in the unmount cleanup so the browser
+      // drops the DELETE rather than running it for a torn-down caller.
+      deleteChapterAbortRef.current?.abort();
+      const controller = new AbortController();
+      deleteChapterAbortRef.current = controller;
       try {
-        await api.chapters.delete(chapter.id);
+        await api.chapters.delete(chapter.id, controller.signal);
+        if (controller.signal.aborted) return false;
+        if (deleteChapterAbortRef.current === controller) deleteChapterAbortRef.current = null;
         clearCachedContent(chapter.id);
         // Compute remaining from the ref (current state), not the stale closure
         const remaining = projectRef.current?.chapters.filter((c) => c.id !== chapter.id) ?? [];
@@ -691,7 +709,10 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             // sidebar over the user's explicit selection.
             const token = selectChapterSeq.start();
             try {
-              const ch = await api.chapters.get(first.id);
+              // I7: thread the delete controller through the follow-up
+              // GET so an unmount aborts both the DELETE-step and the
+              // post-delete active-chapter fetch together.
+              const ch = await api.chapters.get(first.id, controller.signal);
               if (token.isStale()) return true;
               setActiveChapter(ch);
               setChapterWordCount(countWords(ch.content));
@@ -717,6 +738,11 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         }
         return true;
       } catch (err) {
+        if (deleteChapterAbortRef.current === controller) deleteChapterAbortRef.current = null;
+        // I7: ABORTED means unmount or a newer delete superseded this
+        // one; stay silent so we don't fire a banner on a torn-down
+        // caller (happens in practice in tests too).
+        if (controller.signal.aborted) return false;
         console.warn("Failed to delete chapter:", err);
         const { message } = mapApiError(err, "chapter.delete");
         if (message) onError?.(message);
@@ -992,8 +1018,16 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
 
   const handleRenameChapter = useCallback(
     async (chapterId: string, title: string, onError?: (message: string) => void) => {
+      // I7: abort any prior in-flight rename before issuing a new one
+      // so overlapping renames cannot commit out of typing order at the
+      // server (same rationale as title/status abort refs).
+      renameChapterAbortRef.current?.abort();
+      const controller = new AbortController();
+      renameChapterAbortRef.current = controller;
       try {
-        await api.chapters.update(chapterId, { title });
+        await api.chapters.update(chapterId, { title }, controller.signal);
+        if (controller.signal.aborted) return;
+        if (renameChapterAbortRef.current === controller) renameChapterAbortRef.current = null;
         if (activeChapterRef.current?.id === chapterId) {
           // Only update the title — don't overwrite content with stale server data.
           // The editor holds the current truth (same principle as handleSave).
@@ -1008,6 +1042,11 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           };
         });
       } catch (err) {
+        if (renameChapterAbortRef.current === controller) renameChapterAbortRef.current = null;
+        // I7: ABORTED means a newer rename superseded this one; stay
+        // silent so the newer call's state update is not contradicted
+        // by a stale error banner.
+        if (controller.signal.aborted) return;
         console.warn("Failed to rename chapter:", err);
         // Don't call setError — that triggers the full-page error overlay.
         // Rename failures are non-fatal; surface via the optional callback

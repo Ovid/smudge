@@ -319,7 +319,8 @@ export const api = {
   },
 
   chapters: {
-    get: (id: string) => apiFetch<Chapter>(`/chapters/${enc(id)}`),
+    get: (id: string, signal?: AbortSignal) =>
+      apiFetch<Chapter>(`/chapters/${enc(id)}`, signal ? { signal } : undefined),
 
     create: (projectSlug: string) =>
       apiFetch<Chapter>(`/projects/${enc(projectSlug)}/chapters`, { method: "POST" }),
@@ -343,8 +344,11 @@ export const api = {
         ...(signal ? { signal } : {}),
       }),
 
-    delete: (id: string) =>
-      apiFetch<{ message: string }>(`/chapters/${enc(id)}`, { method: "DELETE" }),
+    delete: (id: string, signal?: AbortSignal) =>
+      apiFetch<{ message: string }>(`/chapters/${enc(id)}`, {
+        method: "DELETE",
+        ...(signal ? { signal } : {}),
+      }),
 
     restore: (id: string) =>
       apiFetch<Chapter & { project_slug: string }>(`/chapters/${enc(id)}/restore`, {

@@ -145,6 +145,16 @@ describe("api.chapters", () => {
     });
   });
 
+  it("get(id, signal) threads signal to fetch (I7)", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ id: "ch-1", title: "Ch1" }));
+    const controller = new AbortController();
+    await api.chapters.get("ch-1", controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/chapters/ch-1", {
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+    });
+  });
+
   it("create(projectSlug) sends POST /api/projects/:slug/chapters", async () => {
     const chapter = { id: "ch-new", title: UNTITLED_CHAPTER };
     mockFetch.mockResolvedValue(jsonResponse(chapter, 201));
@@ -164,6 +174,17 @@ describe("api.chapters", () => {
     expect(mockFetch).toHaveBeenCalledWith("/api/chapters/ch1", {
       headers: { "Content-Type": "application/json" },
       method: "DELETE",
+    });
+  });
+
+  it("delete(id, signal) threads signal to fetch (I7)", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ message: "ok" }));
+    const controller = new AbortController();
+    await api.chapters.delete("ch1", controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/chapters/ch1", {
+      headers: { "Content-Type": "application/json" },
+      method: "DELETE",
+      signal: controller.signal,
     });
   });
 

@@ -837,6 +837,38 @@ describe("useProjectEditor", () => {
     expect(result.current.project?.chapters[0]!.status).toBe("outline");
   });
 
+  // I7 (review 2026-04-24): rapid renames used to race at the server;
+  // the newer PATCH now severs the older one by installing a signal on
+  // renameChapterAbortRef before issuing the new call.
+  it("handleRenameChapter threads AbortSignal into api.chapters.update (I7)", async () => {
+    vi.mocked(api.chapters.update).mockResolvedValue({ ...mockChapter1, title: "Renamed" });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleRenameChapter("ch1", "Renamed");
+    });
+
+    const callArgs = vi.mocked(api.chapters.update).mock.calls[0];
+    expect(callArgs?.[2]).toBeInstanceOf(AbortSignal);
+  });
+
+  it("handleDeleteChapter threads AbortSignal into api.chapters.delete (I7)", async () => {
+    vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter2);
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleDeleteChapter(mockChapter1);
+    });
+
+    const callArgs = vi.mocked(api.chapters.delete).mock.calls[0];
+    expect(callArgs?.[1]).toBeInstanceOf(AbortSignal);
+  });
+
   it("handleStatusChange threads AbortSignal into api.chapters.update (I11)", async () => {
     // Rapid status clicks used to issue overlapping PATCHes with no
     // ordering guarantee at the server. The signal lets the newer

@@ -1452,7 +1452,11 @@ describe("EditorPage find-and-replace confirmation", () => {
     fireEvent.keyDown(renameInput!, { key: "Enter" });
 
     await waitFor(() => {
-      expect(api.chapters.update).toHaveBeenCalledWith("ch-1", { title: "New Title" });
+      expect(api.chapters.update).toHaveBeenCalledWith(
+        "ch-1",
+        { title: "New Title" },
+        expect.any(AbortSignal),
+      );
     });
   });
 
