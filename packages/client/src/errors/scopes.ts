@@ -94,11 +94,19 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
       UPDATE_READ_FAILURE: STRINGS.editor.saveCommittedUnreadable,
       CORRUPT_CONTENT: STRINGS.editor.saveFailedCorrupt,
     },
+    // S8: UPDATE_READ_FAILURE means the server persisted the row but
+    // couldn't serialize the response. Surface possiblyCommitted so
+    // callers route through the committed/lock path.
+    committedCodes: ["UPDATE_READ_FAILURE"],
   },
   "chapter.create": {
     fallback: STRINGS.error.createChapterFailed,
     committed: STRINGS.error.createChapterResponseUnreadable,
     byCode: { READ_AFTER_CREATE_FAILURE: STRINGS.error.createChapterReadAfterFailure },
+    // S8 (review 2026-04-24): the server inserted the row but could
+    // not re-read it — treat as committed so consumers surface the
+    // committed UX and avoid duplicate-create retries.
+    committedCodes: ["READ_AFTER_CREATE_FAILURE"],
   },
   "chapter.delete": {
     fallback: STRINGS.error.deleteChapterFailed,
@@ -270,6 +278,9 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
       // restore; it just couldn't re-read the row for the response body.
       RESTORE_READ_FAILURE: STRINGS.error.restoreChapterCommitted,
     },
+    // S8: RESTORE_READ_FAILURE surfaces possiblyCommitted so
+    // useTrashManager doesn't need the inline code check.
+    committedCodes: ["RESTORE_READ_FAILURE"],
   },
   "settings.update": {
     fallback: STRINGS.error.settingsUpdateFailedGeneric,

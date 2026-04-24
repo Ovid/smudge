@@ -15,6 +15,16 @@ export type ScopeEntry = {
   byCode?: Partial<Record<string, string>>;
   byStatus?: Partial<Record<number, string>>;
   extrasFrom?: (err: ApiRequestError) => Record<string, unknown> | undefined;
+  // S8 (review 2026-04-24): codes whose byCode hit also means "the
+  // server committed the mutation but couldn't serialize the row" —
+  // e.g. RESTORE_READ_FAILURE on trash.restoreChapter,
+  // READ_AFTER_CREATE_FAILURE on chapter.create. Listing them here
+  // lets the mapper surface possiblyCommitted=true for these codes
+  // too, so call sites don't have to re-implement the inline ladder
+  // `possiblyCommitted || err.code === "RESTORE_READ_FAILURE"`. Adding
+  // a new committed-intent code in the future means updating the scope
+  // alone rather than every call site.
+  committedCodes?: string[];
 };
 
 function isApiRequestError(err: unknown): err is ApiRequestError {
@@ -100,7 +110,11 @@ export function resolveError(err: unknown, scope: ScopeEntry): MappedError {
   if (byCodeMatch !== undefined) {
     return {
       message: byCodeMatch,
-      possiblyCommitted: false,
+      // S8: commit intent encoded at scope level — byCode matches that
+      // are listed in committedCodes surface possiblyCommitted=true so
+      // consumers don't need to maintain an inline code allowlist.
+      possiblyCommitted:
+        err.code !== undefined && scope.committedCodes?.includes(err.code) === true,
       transient: false,
       extras: scope.extrasFrom?.(err),
     };

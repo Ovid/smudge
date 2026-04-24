@@ -445,8 +445,15 @@ export function useProjectEditor(slug: string | undefined) {
         // chapter appears in the sidebar without another POST; surface
         // the committed-specific copy so the user knows not to click
         // Add chapter again.
-        const readAfterCreateFailed = isApiError(err) && err.code === "READ_AFTER_CREATE_FAILURE";
-        if (possiblyCommitted || readAfterCreateFailed) {
+        //
+        // S8 (review 2026-04-24): `possiblyCommitted` now covers both
+        // 2xx BAD_JSON and the explicit READ_AFTER_CREATE_FAILURE code
+        // (via scope.committedCodes). The former inline `err.code ===
+        // "READ_AFTER_CREATE_FAILURE"` check lived here to work around
+        // that gap; removing it keeps the recovery logic in the scope
+        // registry where future committed-intent codes can be added
+        // without touching this call site.
+        if (possiblyCommitted) {
           // I7: snapshot pre-POST chapter ids so we can identify the
           // server-created row in the refreshed list. The happy path
           // calls setActiveChapter(newChapter); the recovery path must
