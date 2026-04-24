@@ -44,6 +44,7 @@ export const STRINGS = {
     loadProjectFailed: "Failed to load project",
     loadProjectFailedNetwork: "Failed to load project — check your connection and try again.",
     createFailed: "Failed to create project",
+    projectTitleExists: "A project with this title already exists. Choose a different title.",
     createChapterFailed: "Failed to create chapter",
     createChapterResponseUnreadable:
       "The chapter may have been created, but the server response was unreadable. Refresh to see the current chapter list.",

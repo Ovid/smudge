@@ -229,6 +229,30 @@ describe("SCOPES — chapter.save", () => {
   });
 });
 
+describe("SCOPES — project.create", () => {
+  const scope = SCOPES["project.create"];
+  it("PROJECT_TITLE_EXISTS → projectTitleExists copy (I12)", () => {
+    const err = new ApiRequestError("exists", 400, "PROJECT_TITLE_EXISTS");
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.projectTitleExists);
+  });
+  it("500 → createFailed (fallback)", () => {
+    const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.createFailed);
+  });
+});
+
+describe("SCOPES — project.updateTitle", () => {
+  const scope = SCOPES["project.updateTitle"];
+  it("PROJECT_TITLE_EXISTS → projectTitleExists copy (I12)", () => {
+    const err = new ApiRequestError("exists", 400, "PROJECT_TITLE_EXISTS");
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.projectTitleExists);
+  });
+  it("500 → updateTitleFailed (fallback)", () => {
+    const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.updateTitleFailed);
+  });
+});
+
 describe("SCOPES — image.upload", () => {
   const scope = SCOPES["image.upload"];
   it("413 → fileTooLarge", () => {

@@ -46,11 +46,15 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     fallback: STRINGS.error.loadFailed,
     network: STRINGS.error.loadFailedNetwork,
   },
-  "project.create": { fallback: STRINGS.error.createFailed },
+  "project.create": {
+    fallback: STRINGS.error.createFailed,
+    byCode: { PROJECT_TITLE_EXISTS: STRINGS.error.projectTitleExists },
+  },
   "project.delete": { fallback: STRINGS.error.deleteFailed },
   "project.updateTitle": {
     fallback: STRINGS.error.updateTitleFailed,
     committed: STRINGS.error.updateTitleResponseUnreadable,
+    byCode: { PROJECT_TITLE_EXISTS: STRINGS.error.projectTitleExists },
   },
   "project.updateFields": {
     fallback: STRINGS.projectSettings.saveError,
