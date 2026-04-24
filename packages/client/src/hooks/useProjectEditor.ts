@@ -270,11 +270,11 @@ export function useProjectEditor(slug: string | undefined) {
               err.code === "CORRUPT_CONTENT")
           ) {
             console.warn("Save failed with terminal code:", err.code);
-            const mapped = mapApiError(err, "chapter.save");
-            rejected4xx = {
-              message: mapped.message ?? STRINGS.editor.saveFailed,
-              code: err.code,
-            };
+            // mapApiError returns message: null only for ABORTED, which
+            // has already been filtered above — the three codes here all
+            // route to scope.committed / byCode matches, all non-null.
+            const { message } = mapApiError(err, "chapter.save");
+            rejected4xx = { message: message as string, code: err.code };
             break;
           }
           if (isClientError(err)) {
@@ -285,9 +285,10 @@ export function useProjectEditor(slug: string | undefined) {
             // scope's byStatus[413] / byCode[VALIDATION_ERROR] / fallback
             // produce the same strings.ts copy the inline mapSaveError
             // duplicated. err.code is preserved separately for the
-            // cache-clear decision below.
+            // cache-clear decision below. ABORTED is filtered above so
+            // mapped.message is guaranteed non-null in this branch.
             const { message } = mapApiError(err, "chapter.save");
-            rejected4xx = { message: message ?? STRINGS.editor.saveFailed, code: err.code };
+            rejected4xx = { message: message as string, code: err.code };
             break;
           }
           if (attempt < MAX_RETRIES) {

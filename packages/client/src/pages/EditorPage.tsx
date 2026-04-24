@@ -836,10 +836,12 @@ export function EditorPage() {
           } else if (project) {
             clearAllCachedContent(project.chapters.map((c) => c.id));
           }
+          // possiblyCommitted implies scope.committed is defined, so
+          // mapped.message is a non-null string (replaceResponseUnreadable).
           await finalizeReplaceSuccess({
             replacedCount: null,
             reloadFailed: true,
-            lockMessage: mapped.message ?? STRINGS.findReplace.replaceResponseUnreadable,
+            lockMessage: mapped.message as string,
             targetChapterId,
           });
           return;
@@ -1048,10 +1050,12 @@ export function EditorPage() {
           // (C1). The mutate callback threw before returning a directive, so
           // the hook's clearAllCachedContent never ran.
           clearCachedContent(chapterId);
+          // possiblyCommitted implies scope.committed is defined, so
+          // mapped.message is a non-null string (replaceResponseUnreadable).
           await finalizeReplaceSuccess({
             replacedCount: null,
             reloadFailed: true,
-            lockMessage: mapped.message ?? STRINGS.findReplace.replaceResponseUnreadable,
+            lockMessage: mapped.message as string,
             targetChapterId: chapterId,
           });
           return;
