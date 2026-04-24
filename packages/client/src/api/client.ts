@@ -30,10 +30,14 @@ const enc = encodeURIComponent;
 
 // ApiRequestError.message is DEVELOPER-facing only. UI callers route
 // through mapApiError (errors/apiErrorMapper.ts) and never read .message
-// directly — the mapper owns string-selection for the UI. Fallback
-// messages populated here use a `[dev]` prefix (S3) so any log that
-// accidentally surfaces them is immediately recognizable as non-
-// user-facing copy instead of masquerading as product strings.
+// directly — the mapper owns string-selection for the UI. Every
+// ApiRequestError.message produced inside this module carries a `[dev]`
+// prefix (S3) — status-only fallbacks, NETWORK, ABORTED, and BAD_JSON
+// all prepend it — so any log that accidentally surfaces one is
+// immediately recognizable as non-user-facing copy instead of
+// masquerading as a product string. Exception: the server-provided
+// envelope `error.message` passes through unprefixed, because it's the
+// server's own copy, not synthesized here.
 export class ApiRequestError extends Error {
   constructor(
     message: string,
@@ -183,8 +187,14 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     if (err instanceof DOMException && err.name === "AbortError") {
       throw classifyFetchError(err);
     }
-    const message = err instanceof Error ? err.message : "[dev] Malformed response body";
-    throw new ApiRequestError(message, res.status, "BAD_JSON");
+    // Force the `[dev]` prefix on BAD_JSON messages too (review
+    // 2026-04-24). The raw JSON parser error (e.g. "Unexpected end of
+    // JSON input") is useful in logs, but the class-level invariant
+    // requires every ApiRequestError.message produced inside this
+    // module to be identifiable as developer-only copy — mirrors
+    // classifyFetchError's `[dev] ${raw}` treatment of NETWORK.
+    const raw = err instanceof Error ? err.message : "Malformed response body";
+    throw new ApiRequestError(`[dev] ${raw}`, res.status, "BAD_JSON");
   });
 }
 
@@ -298,8 +308,9 @@ export const api = {
         if (err instanceof DOMException && err.name === "AbortError") {
           throw classifyFetchError(err);
         }
-        const message = err instanceof Error ? err.message : "[dev] Malformed export response";
-        throw new ApiRequestError(message, res.status, "BAD_JSON");
+        // [dev] prefix on BAD_JSON — see apiFetch's body-read branch.
+        const raw = err instanceof Error ? err.message : "Malformed export response";
+        throw new ApiRequestError(`[dev] ${raw}`, res.status, "BAD_JSON");
       });
     },
   },
@@ -377,8 +388,9 @@ export const api = {
         if (err instanceof DOMException && err.name === "AbortError") {
           throw classifyFetchError(err);
         }
-        const message = err instanceof Error ? err.message : "[dev] Malformed response body";
-        throw new ApiRequestError(message, res.status, "BAD_JSON");
+        // [dev] prefix on BAD_JSON — see apiFetch's body-read branch.
+        const raw = err instanceof Error ? err.message : "Malformed response body";
+        throw new ApiRequestError(`[dev] ${raw}`, res.status, "BAD_JSON");
       });
     },
 

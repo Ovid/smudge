@@ -668,6 +668,7 @@ describe("api.projects.export (additional)", () => {
     expect(caught).toBeInstanceOf(ApiRequestError);
     expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("BAD_JSON");
     expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(200);
+    expect((caught as InstanceType<typeof ApiRequestError>).message).toMatch(/^\[dev\] /);
   });
 });
 
@@ -760,6 +761,10 @@ describe("api.images.upload (I1 transport classification)", () => {
     expect(caught).toBeInstanceOf(ApiRequestError);
     expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("BAD_JSON");
     expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(200);
+    // BAD_JSON messages must carry the [dev] prefix so stray logs of
+    // ApiRequestError.message are immediately identifiable as
+    // developer-only copy (review 2026-04-24).
+    expect((caught as InstanceType<typeof ApiRequestError>).message).toMatch(/^\[dev\] /);
   });
 
   it("re-throws ABORTED when !ok error-body read aborts (I2)", async () => {
@@ -897,7 +902,8 @@ describe("error handling", () => {
     expect(caught).toBeInstanceOf(ApiRequestError);
     expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("BAD_JSON");
     expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(200);
-    expect((caught as Error).message).toMatch(/Unexpected token/);
+    // Prefix first, then the parser's underlying message preserved.
+    expect((caught as Error).message).toMatch(/^\[dev\] .*Unexpected token/);
   });
 
   it("carries envelope extras on ApiRequestError when present", async () => {
