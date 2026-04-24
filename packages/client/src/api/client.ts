@@ -216,7 +216,8 @@ export const api = {
     list: (signal?: AbortSignal) =>
       apiFetch<ProjectListItem[]>("/projects", signal ? { signal } : undefined),
 
-    get: (slug: string) => apiFetch<ProjectWithChapters>(`/projects/${enc(slug)}`),
+    get: (slug: string, signal?: AbortSignal) =>
+      apiFetch<ProjectWithChapters>(`/projects/${enc(slug)}`, signal ? { signal } : undefined),
 
     create: (input: CreateProjectInput) =>
       apiFetch<Project>("/projects", {

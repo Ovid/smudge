@@ -78,6 +78,16 @@ describe("api.projects", () => {
     });
   });
 
+  it("get(slug, signal) threads signal to fetch (I22)", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({}));
+    const controller = new AbortController();
+    await api.projects.get("p1", controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1", {
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+    });
+  });
+
   it("reorderChapters sends PUT /api/projects/:slug/chapters/order", async () => {
     mockFetch.mockResolvedValue(jsonResponse({ message: "ok" }));
 

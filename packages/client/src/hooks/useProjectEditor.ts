@@ -133,6 +133,13 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // target the actual server-side value. Parallels
   // confirmedTimezoneRef / confirmedFieldsRef in ProjectSettingsDialog.
   const confirmedStatusRef = useRef<Record<string, string | undefined>>({});
+  // I22 (review 2026-04-24): recovery GETs fired by BAD_JSON catches
+  // in handleCreateChapter / handleUpdateProjectTitle / handleStatusChange
+  // had no AbortController. Each call replaces the prior controller
+  // on this ref so unmount aborts the latest in-flight recovery.
+  // Earlier recoveries are superseded by their caller's next entry
+  // anyway; a per-mutation ref pool would be overkill.
+  const recoveryGetAbortRef = useRef<AbortController | null>(null);
 
   // Shared cancel-in-flight-save helper. Aborts the save sequence (so the
   // retry loop short-circuits on its next iteration via token.isStale()),
@@ -174,6 +181,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       reorderAbortRef.current?.abort();
       renameChapterAbortRef.current?.abort();
       deleteChapterAbortRef.current?.abort();
+      recoveryGetAbortRef.current?.abort();
     };
   }, [cancelInFlightSave]);
 
@@ -529,8 +537,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           // in the sidebar but stays on the previously-active chapter,
           // contradicting the committed-banner UX.
           const previousChapterIds = new Set(projectRef.current?.chapters.map((c) => c.id) ?? []);
+          recoveryGetAbortRef.current?.abort();
+          const recoveryController = new AbortController();
+          recoveryGetAbortRef.current = recoveryController;
           try {
-            const refreshed = await api.projects.get(slug);
+            const refreshed = await api.projects.get(slug, recoveryController.signal);
+            if (recoveryController.signal.aborted) return;
             // Merge only if the user is still on the same project (by
             // id — stable across rename, changes on cross-project
             // navigation). The prior slug-OR check let a stale
@@ -892,8 +904,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // in place. If the slug did change the GET 404s; the committed
         // copy alone tells the user to refresh the page.
         if (possiblyCommitted) {
+          recoveryGetAbortRef.current?.abort();
+          const recoveryController = new AbortController();
+          recoveryGetAbortRef.current = recoveryController;
           try {
-            const refreshed = await api.projects.get(slug);
+            const refreshed = await api.projects.get(slug, recoveryController.signal);
+            if (recoveryController.signal.aborted) return undefined;
             // Merge only if still on the same project (id stable across
             // rename, changes on cross-project navigation).
             if (projectRef.current?.id === projectId) {
@@ -989,8 +1005,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         let reverted = false;
         const slug = projectSlugRef.current;
         if (slug) {
+          recoveryGetAbortRef.current?.abort();
+          const recoveryController = new AbortController();
+          recoveryGetAbortRef.current = recoveryController;
           try {
-            const data = await api.projects.get(slug);
+            const data = await api.projects.get(slug, recoveryController.signal);
+            if (recoveryController.signal.aborted) return;
             // Re-check the token after the second await (I2). The
             // earlier guard covers only the api.chapters.update await; a
             // rapid A→B (fails) then B→C click where the failure lands
