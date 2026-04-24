@@ -106,8 +106,22 @@ export function resolveError(err: unknown, scope: ScopeEntry): MappedError {
   // does not ship conflicting code/status pairs), but the ordering
   // choice is pinned here so a future status-first "fix" sees the
   // trade-off explicitly.
-  const byCodeMatch = err.code ? scope.byCode?.[err.code] : undefined;
-  if (byCodeMatch !== undefined) {
+  //
+  // C2 (review 2026-04-24): `err.code` is attacker-influenced (it
+  // arrives in the server envelope). A naive `scope.byCode[err.code]`
+  // indexes through the prototype chain, so a code matching an
+  // Object.prototype method name (e.g. "toString", "hasOwnProperty")
+  // resolves to the inherited function. The non-undefined check passes
+  // and React renders the function source — violating CLAUDE.md's
+  // "raw err.message must never reach the UI" invariant. Guard with an
+  // own-property check and verify the value is a string.
+  const byCodeMatch =
+    err.code !== undefined &&
+    scope.byCode !== undefined &&
+    Object.hasOwn(scope.byCode, err.code)
+      ? scope.byCode[err.code]
+      : undefined;
+  if (typeof byCodeMatch === "string") {
     return {
       message: byCodeMatch,
       // S8: commit intent encoded at scope level — byCode matches that

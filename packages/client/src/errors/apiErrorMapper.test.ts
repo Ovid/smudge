@@ -148,6 +148,47 @@ describe("mapApiError — byCode", () => {
     const result = resolveError(err, scopeWithByCode);
     expect(result.message).toBe("fallback");
   });
+  // C2 (review 2026-04-24): `scope.byCode?.[err.code]` resolves through the
+  // prototype chain on a plain object. If the server emits a code matching
+  // an Object.prototype method name (`toString`, `hasOwnProperty`,
+  // `valueOf`, `constructor`), the lookup returns the inherited function
+  // rather than undefined and the mapper would otherwise hand a function
+  // (typed as `string`) to React, which crashes on render or renders the
+  // function source. Guard with an own-property check so these codes fall
+  // through to byStatus / fallback, and defensively verify the value is a
+  // string.
+  const prototypePollutingCodes = [
+    "toString",
+    "hasOwnProperty",
+    "valueOf",
+    "constructor",
+    "__proto__",
+  ] as const;
+  it.each(prototypePollutingCodes)(
+    "falls through to fallback when err.code is %s (prototype pollution)",
+    (code) => {
+      const err = new ApiRequestError("bad", 400, code);
+      const result = resolveError(err, scopeWithByCode);
+      expect(result.message).toBe("fallback");
+      expect(typeof result.message).toBe("string");
+    },
+  );
+  it("ignores a byCode entry whose value is not a string (defensive)", () => {
+    // Defense-in-depth: an own-property byCode entry whose value is a
+    // non-string (e.g., from a caller that accidentally passed a function
+    // or object) must not reach the UI as the message. Fall through to
+    // byStatus / fallback instead.
+    const scope = {
+      fallback: "fallback",
+      // Cast is required — the public type forbids non-string values, but
+      // we're asserting runtime safety against a misuse the type can't
+      // prevent (e.g., a future dev mutating byCode at runtime).
+      byCode: { BOGUS: 42 as unknown as string },
+    } as const;
+    const err = new ApiRequestError("bad", 400, "BOGUS");
+    const result = resolveError(err, scope);
+    expect(result.message).toBe("fallback");
+  });
 });
 
 const scopeWithByStatus = {
