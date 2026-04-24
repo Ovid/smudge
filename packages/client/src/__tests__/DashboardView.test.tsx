@@ -13,6 +13,7 @@ vi.mock("../api/client", () => ({
     constructor(
       message: string,
       public readonly status: number,
+      public readonly code?: string,
     ) {
       super(message);
       this.name = "ApiRequestError";
@@ -482,6 +483,32 @@ describe("DashboardView", () => {
       expect.any(Error),
     );
     errorSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it("stays silent when velocity fetch is aborted (no error banner)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.projects.velocity).mockRejectedValue(
+      new ApiRequestError("aborted", 0, "ABORTED"),
+    );
+
+    render(
+      <DashboardView
+        slug="test-project"
+        statuses={statuses}
+        onNavigateToChapter={vi.fn()}
+        refreshKey={0}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Chapter One")).toBeInTheDocument();
+    });
+
+    // No error banner — ABORTED from mapApiError returns message: null
+    expect(screen.queryByText(/unable to load/i)).not.toBeInTheDocument();
     warnSpy.mockRestore();
   });
 

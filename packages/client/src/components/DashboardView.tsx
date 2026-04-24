@@ -73,10 +73,14 @@ export function DashboardView({
         if (!cancelled) {
           console.warn("Failed to load velocity:", err);
           const { message } = mapApiError(err, "project.velocity");
+          // ABORTED → message: null: the caller cancelled (navigation/
+          // unmount), so leave the previous velocity state in place and
+          // do not surface an error banner.
+          if (message === null) return;
           setVelocityWithSlug({
             slug,
             data: null,
-            error: message ?? STRINGS.velocity.loadError,
+            error: message,
           });
         }
       });
