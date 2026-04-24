@@ -587,6 +587,35 @@ describe("ImageGallery", () => {
     expect(screen.queryByText(S.usedInChapters)).not.toBeInTheDocument();
   });
 
+  it("announces mapped references failure instead of silently swallowing (I6)", async () => {
+    const user = userEvent.setup();
+    const image = makeImage({ reference_count: 1 });
+    vi.mocked(api.images.references).mockRejectedValue(
+      new ApiRequestError("boom", 500, "INTERNAL_ERROR"),
+    );
+    await renderAndOpenDetail(image, user);
+
+    await waitFor(() => {
+      const live = document.querySelector('[aria-live="polite"]');
+      expect(live?.textContent).toContain(S.referencesLoadFailed);
+    });
+  });
+
+  it("stays silent when references fetch is aborted (I6)", async () => {
+    const user = userEvent.setup();
+    const image = makeImage({ reference_count: 1 });
+    vi.mocked(api.images.references).mockRejectedValue(
+      new ApiRequestError("aborted", 0, "ABORTED"),
+    );
+    await renderAndOpenDetail(image, user);
+
+    await waitFor(() => {
+      expect(api.images.references).toHaveBeenCalled();
+    });
+    const live = document.querySelector('[aria-live="polite"]');
+    expect(live?.textContent ?? "").not.toContain(S.referencesLoadFailed);
+  });
+
   it("handles delete API returning an in-use error", async () => {
     const user = userEvent.setup();
     vi.mocked(api.images.delete).mockRejectedValue(

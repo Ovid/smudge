@@ -106,16 +106,21 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
           setReferencesLoaded(true);
         }
       })
-      .catch(() => {
-        if (!cancelled) {
-          setReferences([]);
-          setReferencesLoaded(true);
-        }
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        // I6: don't mark references as loaded on failure — the detail
+        // view falls back to selectedImage.reference_count, which at
+        // least preserves the "in use" confirm gate when the row is
+        // known-referenced. Announce the mapped message so the user
+        // knows the fresh reference check failed. ABORTED (message:
+        // null) stays silent per the mapper contract.
+        const { message } = mapApiError(err, "image.references");
+        if (message) announce(message);
       });
     return () => {
       cancelled = true;
     };
-  }, [selectedImageId]);
+  }, [selectedImageId, announce]);
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -476,9 +481,16 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
                       setReferences(data.chapters);
                       setReferencesLoaded(true);
                     })
-                    .catch(() => {
-                      setReferences([]);
-                      setReferencesLoaded(true);
+                    .catch((err: unknown) => {
+                      // I6: keep referencesLoaded=false (show the
+                      // "Loading details…" gate when reference_count>0
+                      // rather than the plain Delete confirm) and
+                      // announce the mapped failure so the user knows
+                      // the refresh failed. The server's 409
+                      // IMAGE_IN_USE still catches a slipped-through
+                      // delete attempt.
+                      const { message } = mapApiError(err, "image.references");
+                      if (message) announce(message);
                     });
                 }
                 setConfirmingDelete(true);
