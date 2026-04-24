@@ -141,7 +141,17 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
         incrementRefreshKey();
       })
       .catch((err: unknown) => {
-        const { message } = mapApiError(err, "image.upload");
+        const { message, possiblyCommitted } = mapApiError(err, "image.upload");
+        // I3 (2026-04-24 review): on 2xx BAD_JSON the server stored the
+        // image but the client couldn't parse the response. Without the
+        // refresh, the stale list stays on screen and a user retry
+        // uploads the same file again (server doesn't dedupe) — creating
+        // a second row and a second blob for one intended upload. The
+        // refresh pulls the authoritative list so the newly-stored image
+        // is visible and retry is unnecessary.
+        if (possiblyCommitted) {
+          incrementRefreshKey();
+        }
         if (message) announce(message);
       });
   }

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, within, fireEvent, waitFor, cleanup, act } from "@testing-library/react";
 import { Editor, type EditorHandle } from "../components/Editor";
-import { api } from "../api/client";
+import { api, ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
 
 vi.mock("../api/client", () => ({
@@ -691,6 +691,68 @@ describe("Editor", () => {
     await waitFor(() => {
       expect(onImageAnnouncement).toHaveBeenCalledWith(STRINGS.imageGallery.uploadFailedGeneric);
     });
+  });
+
+  // I3 (2026-04-24 review): on 2xx BAD_JSON (server stored the blob but
+  // the client can't parse the response) the editor paste path must
+  // surface the committed copy — user needs to know to check the gallery.
+  // The insert is *not* attempted because there's no server-assigned id;
+  // if the user retried by pasting again, the server would store a
+  // second blob for one intended insertion. The current try/catch
+  // already skips the insert on error; this test pins the behavior so
+  // a future refactor can't regress it into a silent failure.
+  it("image paste handler announces committed copy on 2xx BAD_JSON and does not insert (I3)", async () => {
+    const onImageAnnouncement = vi.fn();
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+    vi.mocked(api.images.upload).mockRejectedValue(
+      new ApiRequestError("[dev] bad body", 200, "BAD_JSON"),
+    );
+
+    render(
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={mockOnSave()}
+        editorRef={editorRef}
+        onImageAnnouncement={onImageAnnouncement}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(editorRef.current?.editor).not.toBeNull();
+    });
+
+    const editor = editorRef.current!.editor!;
+    const initialJsonBeforePaste = JSON.stringify(editor.getJSON());
+    const file = new File(["pixels"], "committed.png", { type: "image/png" });
+    const imagePastePlugin = findImagePastePlugin(editor);
+
+    const fakeEvent = {
+      preventDefault: vi.fn(),
+      clipboardData: {
+        items: [{ type: "image/png", getAsFile: () => file }],
+      },
+    };
+
+    (imagePastePlugin.props.handlePaste as (...args: unknown[]) => unknown)(
+      editor.view,
+      fakeEvent,
+      editor.view.state.doc.slice(0),
+    );
+
+    await waitFor(() => {
+      expect(api.images.upload).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(onImageAnnouncement).toHaveBeenCalledWith(
+        STRINGS.imageGallery.uploadCommittedRefresh,
+      );
+    });
+    // No insert happened — the editor content is unchanged. Retrying
+    // by pasting again would upload the file a second time and create
+    // a duplicate server row, so the committed copy is the signal to
+    // check the gallery instead.
+    expect(JSON.stringify(editor.getJSON())).toBe(initialJsonBeforePaste);
   });
 
   it("image drop handler calls api.images.upload", async () => {

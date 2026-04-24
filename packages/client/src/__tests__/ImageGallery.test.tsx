@@ -182,6 +182,41 @@ describe("ImageGallery", () => {
     });
   });
 
+  // I3 (2026-04-24 review): 2xx BAD_JSON on upload means the server stored
+  // the image but the client couldn't parse the response. Without special
+  // handling the gallery kept its stale list, the user retried, and the
+  // server created a second row for the same file (no server-side dedupe).
+  // The fix: surface the committed copy and call incrementRefreshKey so
+  // the authoritative list is fetched — future retry sees the row and
+  // stops duplicating uploads.
+  it("on 2xx BAD_JSON, announces committed copy and re-fetches gallery (I3)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.images.list).mockResolvedValue([]);
+    vi.mocked(api.images.upload).mockRejectedValue(
+      new ApiRequestError("[dev] bad body", 200, "BAD_JSON"),
+    );
+
+    render(<ImageGallery {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(api.images.list).toHaveBeenCalledTimes(1);
+    });
+
+    const file = new File(["pixels"], "committed.png", { type: "image/png" });
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(fileInput, file);
+
+    await waitFor(() => {
+      expect(screen.getByText(S.uploadCommittedRefresh)).toBeInTheDocument();
+    });
+    // Gallery re-fetches after possiblyCommitted so the authoritative
+    // list includes the newly-stored image and prevents duplicate
+    // uploads on retry.
+    await waitFor(() => {
+      expect(api.images.list).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it("stays silent when upload is aborted", async () => {
     const user = userEvent.setup();
     vi.mocked(api.images.upload).mockRejectedValue(new ApiRequestError("aborted", 0, "ABORTED"));

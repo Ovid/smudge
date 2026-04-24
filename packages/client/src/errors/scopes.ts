@@ -124,7 +124,13 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   },
   "image.upload": {
     fallback: STRINGS.imageGallery.uploadFailedGeneric,
-    committed: STRINGS.error.possiblyCommitted,
+    // I3 (2026-04-24 review): 2xx BAD_JSON means the server stored the
+    // image but the client couldn't read the row. Generic possiblyCommitted
+    // copy left consumers guessing — callers (ImageGallery, Editor paste
+    // path) branch on possiblyCommitted to either refresh the gallery
+    // (so duplicate uploads on retry don't sneak in) or direct the user
+    // to it. The scope-level string tells them what to do.
+    committed: STRINGS.imageGallery.uploadCommittedRefresh,
     byStatus: {
       413: STRINGS.imageGallery.fileTooLarge,
       // I1 (2026-04-24 review): project was deleted between gallery-open
