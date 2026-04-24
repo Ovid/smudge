@@ -406,7 +406,6 @@ export const STRINGS = {
     deleteFailed: "Unable to delete snapshot. Try again.",
     deleteFailedNetwork: "Unable to delete snapshot — check your connection and try again.",
     listFailed: "Unable to load snapshots. Try opening the panel again.",
-    listFailedGeneric: "Unable to load snapshots. Try again.",
     listFailedNetwork: "Unable to load snapshots — check your connection and try again.",
     viewFailed: "Unable to open snapshot. Try again.",
     viewFailedNotFound: "This snapshot no longer exists. Refresh to see the latest snapshot list.",

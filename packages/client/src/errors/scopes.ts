@@ -230,7 +230,12 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     byStatus: { 404: STRINGS.snapshots.viewFailedNotFound },
   },
   "snapshot.list": {
-    fallback: STRINGS.snapshots.listFailedGeneric,
+    // I19 (review 2026-04-24): the old listFailed copy ("Try opening the
+    // panel again.") is more actionable than the sibling
+    // listFailedGeneric ("Try again.") and was dead after the scope
+    // migration. Reuse it here — deleting it would lose the actionable
+    // hint that tells the user what to do.
+    fallback: STRINGS.snapshots.listFailed,
     // S5: transient-retry copy on NETWORK — mirrors sibling GET scopes.
     network: STRINGS.snapshots.listFailedNetwork,
   },
