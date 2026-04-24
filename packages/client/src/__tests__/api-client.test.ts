@@ -360,6 +360,28 @@ describe("api.images", () => {
     });
   });
 
+  it("upload(projectId, file, signal) threads signal to fetch (I11)", async () => {
+    const uploaded = { id: "img-2", project_id: "p1", filename: "photo.jpg" };
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(uploaded),
+    });
+
+    const file = new File(["fake-image-data"], "photo.jpg", { type: "image/jpeg" });
+    const controller = new AbortController();
+    await api.images.upload("p1", file, controller.signal);
+
+    // Signal is threaded into the fetch options. Body is a FormData (we don't
+    // assert on its contents here — the sibling no-signal test pins that).
+    const call = mockFetch.mock.calls[0];
+    expect(call?.[0]).toBe("/api/projects/p1/images");
+    expect(call?.[1]).toMatchObject({
+      method: "POST",
+      signal: controller.signal,
+    });
+  });
+
   it("upload(projectId, file) sends POST multipart to /api/projects/:id/images", async () => {
     const uploaded = { id: "img-2", project_id: "p1", filename: "photo.jpg" };
     mockFetch.mockResolvedValue({
@@ -417,6 +439,16 @@ describe("api.images", () => {
     });
   });
 
+  it("references(id, signal) threads signal to fetch (I9)", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ chapters: [] }));
+    const controller = new AbortController();
+    await api.images.references("img-1", controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/images/img-1/references", {
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+    });
+  });
+
   it("update(id, data) sends PATCH /api/images/:id", async () => {
     const updated = { id: "img-1", alt_text: "A sunset", caption: "Beautiful sunset" };
     mockFetch.mockResolvedValue(jsonResponse(updated));
@@ -430,6 +462,18 @@ describe("api.images", () => {
       headers: { "Content-Type": "application/json" },
       method: "PATCH",
       body: JSON.stringify({ alt_text: "A sunset", caption: "Beautiful sunset" }),
+    });
+  });
+
+  it("update(id, data, signal) threads signal to fetch (I10)", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ id: "img-1" }));
+    const controller = new AbortController();
+    await api.images.update("img-1", { alt_text: "x" }, controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/images/img-1", {
+      headers: { "Content-Type": "application/json" },
+      method: "PATCH",
+      body: JSON.stringify({ alt_text: "x" }),
+      signal: controller.signal,
     });
   });
 

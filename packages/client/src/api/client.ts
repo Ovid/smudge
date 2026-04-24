@@ -365,7 +365,7 @@ export const api = {
       return apiFetch(`/projects/${enc(projectId)}/images`, signal ? { signal } : undefined);
     },
 
-    async upload(projectId: string, file: File): Promise<ImageRow> {
+    async upload(projectId: string, file: File, signal?: AbortSignal): Promise<ImageRow> {
       const formData = new FormData();
       formData.append("file", file);
       // I1: wrap fetch() in classifyFetchError so offline/DNS/CSP failures
@@ -377,6 +377,12 @@ export const api = {
         method: "POST",
         body: formData,
         // No Content-Type header — browser sets multipart boundary automatically
+        // I11 (review 2026-04-24): threading the signal here severs a
+        // multi-MB upload mid-flight on navigation / gallery close; the
+        // browser drops the request instead of running it to completion
+        // for a gone caller. Body-read abort is already classified by
+        // the inline catch below.
+        ...(signal ? { signal } : {}),
       }).catch((err: unknown) => {
         throw classifyFetchError(err);
       });
@@ -401,8 +407,11 @@ export const api = {
       });
     },
 
-    references(id: string): Promise<{ chapters: Array<{ id: string; title: string }> }> {
-      return apiFetch(`/images/${enc(id)}/references`);
+    references(
+      id: string,
+      signal?: AbortSignal,
+    ): Promise<{ chapters: Array<{ id: string; title: string }> }> {
+      return apiFetch(`/images/${enc(id)}/references`, signal ? { signal } : undefined);
     },
 
     update(
@@ -413,15 +422,20 @@ export const api = {
         source?: string;
         license?: string;
       },
+      signal?: AbortSignal,
     ): Promise<ImageRow> {
       return apiFetch(`/images/${enc(id)}`, {
         method: "PATCH",
         body: JSON.stringify(data),
+        ...(signal ? { signal } : {}),
       });
     },
 
-    delete(id: string): Promise<{ deleted: boolean }> {
-      return apiFetch(`/images/${enc(id)}`, { method: "DELETE" });
+    delete(id: string, signal?: AbortSignal): Promise<{ deleted: boolean }> {
+      return apiFetch(`/images/${enc(id)}`, {
+        method: "DELETE",
+        ...(signal ? { signal } : {}),
+      });
     },
   },
 
