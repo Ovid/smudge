@@ -1182,6 +1182,37 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  // I2 (review 2026-04-24): CLAUDE.md save-pipeline invariant #2 requires
+  // setEditable(false) around any mutation that can leave the server
+  // committed while the user cannot see the state. handleSave's terminal
+  // BAD_JSON / UPDATE_READ_FAILURE / CORRUPT_CONTENT branches set
+  // saveStatus="error" + the committed banner but did NOT request the
+  // editor lock. The hook now invokes onCommittedSaveFailure so
+  // EditorPage can pair applyReloadFailedLock with the banner.
+  it.each([
+    ["BAD_JSON", 200, STRINGS.editor.saveCommittedUnreadable],
+    ["UPDATE_READ_FAILURE", 500, STRINGS.editor.saveCommittedUnreadable],
+    ["CORRUPT_CONTENT", 500, STRINGS.editor.saveFailedCorrupt],
+  ])("handleSave fires onCommittedSaveFailure on terminal %s (I2)", async (code, status, msg) => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("terminal", status, code),
+    );
+    const onCommittedSaveFailure = vi.fn();
+
+    const { result } = renderHook(() =>
+      useProjectEditor("test-project", { onCommittedSaveFailure }),
+    );
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(onCommittedSaveFailure).toHaveBeenCalledWith(msg);
+    warnSpy.mockRestore();
+  });
+
   it("handleSave breaks immediately on 500 UPDATE_READ_FAILURE (I5)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.update).mockRejectedValue(

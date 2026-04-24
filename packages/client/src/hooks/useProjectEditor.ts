@@ -17,7 +17,20 @@ export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
 // chapter the mutation didn't touch (I5).
 export type ReloadOutcome = "reloaded" | "superseded" | "failed";
 
-export function useProjectEditor(slug: string | undefined) {
+export interface UseProjectEditorOptions {
+  // I2 (review 2026-04-24): fires when handleSave hits a terminal code
+  // (BAD_JSON / UPDATE_READ_FAILURE / CORRUPT_CONTENT) where the server
+  // has likely committed (or the row is unrecoverable) and the user
+  // must not keep typing. EditorPage pairs this with
+  // applyReloadFailedLock to honour CLAUDE.md save-pipeline invariant
+  // #2 (setEditable(false) + editorLockedMessage set together). Hook
+  // consumers that don't own an editor (tests, storybook) may omit it.
+  onCommittedSaveFailure?: (message: string) => void;
+}
+
+export function useProjectEditor(slug: string | undefined, options?: UseProjectEditorOptions) {
+  const onCommittedSaveFailureRef = useRef(options?.onCommittedSaveFailure);
+  onCommittedSaveFailureRef.current = options?.onCommittedSaveFailure;
   const [project, setProject] = useState<ProjectWithChapters | null>(null);
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
   const [chapterReloadKey, setChapterReloadKey] = useState(0);
@@ -364,6 +377,21 @@ export function useProjectEditor(slug: string | undefined) {
       if (activeChapterRef.current?.id === savingChapterId && !token.isStale()) {
         setSaveStatus("error");
         setSaveErrorMessage(rejected4xx ? rejected4xx.message : STRINGS.editor.saveFailed);
+        // I2 (review 2026-04-24): terminal committed/unrecoverable
+        // codes must also lock the editor — CLAUDE.md save-pipeline
+        // invariant #2 pairs setEditable(false) with editorLockedMessage.
+        // EditorPage subscribes via onCommittedSaveFailure so the
+        // invariant-pair helper (applyReloadFailedLock) fires alongside
+        // the banner. Bare 4xx (VALIDATION_ERROR, 413) are recoverable
+        // and keep the editor writable.
+        if (
+          rejected4xx &&
+          (rejected4xx.code === "BAD_JSON" ||
+            rejected4xx.code === "UPDATE_READ_FAILURE" ||
+            rejected4xx.code === "CORRUPT_CONTENT")
+        ) {
+          onCommittedSaveFailureRef.current?.(rejected4xx.message);
+        }
       }
       return false;
     },

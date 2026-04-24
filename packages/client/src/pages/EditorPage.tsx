@@ -70,6 +70,12 @@ function renderSnapshotContent(content: Record<string, unknown>): string {
 export function EditorPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  // I2 (review 2026-04-24): applyReloadFailedLock is defined below (it
+  // needs editorRef, which is in turn declared later in file order).
+  // The save-pipeline callback we pass into useProjectEditor needs to
+  // call it. Indirect through a ref assigned after the useCallback
+  // definition so the closure sees the current helper identity.
+  const applyReloadFailedLockRef = useRef<(msg: string) => void>(() => {});
   const {
     project,
     error,
@@ -94,7 +100,11 @@ export function EditorPage() {
     handleStatusChange,
     getActiveChapter,
     cancelPendingSaves,
-  } = useProjectEditor(slug);
+  } = useProjectEditor(slug, {
+    // I2: route terminal save-fail codes through the invariant-pair
+    // helper so the banner and setEditable(false) stay in lock-step.
+    onCommittedSaveFailure: (msg) => applyReloadFailedLockRef.current(msg),
+  });
 
   const { sidebarWidth, sidebarOpen, handleSidebarResize, toggleSidebar } = useSidebarState();
   const { panelWidth, panelOpen, setPanelOpen, handlePanelResize, togglePanel } =
@@ -337,6 +347,11 @@ export function EditorPage() {
     // follow-up bookkeeping (cache-clear, panel refresh) still runs.
     safeSetEditable(editorRef, false);
   }, []);
+  // I2 (review 2026-04-24): keep the ref used by useProjectEditor's
+  // onCommittedSaveFailure pointed at the current helper identity. The
+  // helper is memoized with [] so identity is stable, but the ref
+  // indirection lets us reference it here without circular declaration.
+  applyReloadFailedLockRef.current = applyReloadFailedLock;
 
   const handleRestoreSnapshot = useCallback(async () => {
     if (!viewingSnapshot || !activeChapter) return;
