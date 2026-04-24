@@ -94,11 +94,12 @@ message from an API error must route through `mapApiError(err, scope)` in
 `packages/client/src/errors/`. The mapper returns `{ message,
 possiblyCommitted, transient, extras? }`; it is the single owner of
 code/status-to-string translation and of the cross-cutting rules (ABORTED
-is silent, 2xx BAD_JSON is `possiblyCommitted`, NETWORK is `transient`).
-Raw `err.message` must never reach the UI. New API surfaces add a scope
-entry to `scopes.ts`; they do not write ad-hoc ladders at call sites.
-This invariant will be enforced by ESLint in Phase 4b.4; until then, it
-is enforced by review.
+is silent, 2xx BAD_JSON is `possiblyCommitted: true` when the scope declares
+`committed:` copy and `false` for read scopes that do not, NETWORK is
+`transient`). Raw `err.message` must never reach the UI. New API surfaces
+add a scope entry to `scopes.ts`; they do not write ad-hoc ladders at call
+sites. This invariant will be enforced by ESLint in Phase 4b.4; until then,
+it is enforced by review.
 
 **String externalization.** All UI strings in `packages/client/src/strings.ts` as constants, never raw literals in components. Prepares for future i18n without architectural changes.
 

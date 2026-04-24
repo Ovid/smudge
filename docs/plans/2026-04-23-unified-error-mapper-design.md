@@ -74,8 +74,9 @@ Single code path. This is the anti-drift machinery:
                                              possiblyCommitted: false, transient: false }
 2. If err.code === "ABORTED"            → { message: null,
                                              possiblyCommitted: false, transient: false }
-3. If err.code === "BAD_JSON" && 2xx    → { message: scope.committed ?? STRINGS.error.possiblyCommitted,
-                                             possiblyCommitted: true, transient: false }
+3. If err.code === "BAD_JSON" && 2xx    → { message: scope.committed ?? scope.fallback,
+                                             possiblyCommitted: scope.committed !== undefined,
+                                             transient: false }
 4. If err.code === "NETWORK"            → { message: scope.network ?? scope.fallback,
                                              possiblyCommitted: false, transient: true }
 5. If scope.byCode[err.code] defined    → { message: scope.byCode[err.code],
@@ -92,7 +93,7 @@ Single code path. This is the anti-drift machinery:
 ### Key invariants enforced by the single code path
 
 - **Aborted errors are always silent.** No scope can accidentally show one.
-- **2xx BAD_JSON is always `possiblyCommitted: true`.** No scope can forget this and show a toast when it should lock.
+- **2xx BAD_JSON is `possiblyCommitted: true` when the scope declares `committed:` copy; otherwise `false`.** Mutation scopes opt in to the committed-UX contract by declaring `committed:`; read scopes (GETs) have no committed state, so a 2xx with an unreadable body is not a "possibly committed" write. A scope author who forgets to declare `committed:` for a mutation will correctly get `possiblyCommitted: false` (and the generic fallback copy) rather than a misleading "your save may have gone through" on a read — the cost is a less-ideal mutation UX until the scope is completed, not a silent lock miss.
 - **NETWORK is always `transient: true`.** Callers that can retry in place detect transience by a field, not by inspecting `err.code`.
 - **Network errors use scope-specific network copy if declared, else the scope's generic fallback.** No bare "Network error" in the UI.
 - **`extras` is only computed when the scope declares an `extrasFrom`.** Typos in server envelope shape can't leak through.
