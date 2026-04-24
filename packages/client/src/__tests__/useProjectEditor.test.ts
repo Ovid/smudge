@@ -1878,6 +1878,11 @@ describe("useProjectEditor", () => {
     // New chapter shows up in state from the refresh so the user does not
     // need to click "Add chapter" again.
     expect(result.current.project?.chapters.find((c) => c.id === "ch3")).toBeDefined();
+    // I7: the happy path sets the new chapter active. The committed
+    // recovery path must match that intent — the user should not see
+    // the chapter appear in the sidebar but stay on the previously-
+    // active one.
+    expect(result.current.activeChapter?.id).toBe("ch3");
     expect(result.current.error).toBeNull();
     warnSpy.mockRestore();
   });
@@ -1961,6 +1966,9 @@ describe("useProjectEditor", () => {
     expect(api.projects.get).toHaveBeenCalledTimes(2);
     expect(onError).toHaveBeenCalledWith(STRINGS.error.createChapterReadAfterFailure);
     expect(result.current.project?.chapters.find((c) => c.id === "ch3")).toBeDefined();
+    // I7: recovery path sets the newly-created chapter active to match
+    // the happy path's setActiveChapter(newChapter).
+    expect(result.current.activeChapter?.id).toBe("ch3");
     warnSpy.mockRestore();
   });
 

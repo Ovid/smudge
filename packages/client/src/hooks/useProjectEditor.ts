@@ -414,6 +414,15 @@ export function useProjectEditor(slug: string | undefined) {
         const readAfterCreateFailed =
           err instanceof ApiRequestError && err.code === "READ_AFTER_CREATE_FAILURE";
         if (possiblyCommitted || readAfterCreateFailed) {
+          // I7: snapshot pre-POST chapter ids so we can identify the
+          // server-created row in the refreshed list. The happy path
+          // calls setActiveChapter(newChapter); the recovery path must
+          // match that intent or the user sees the new chapter appear
+          // in the sidebar but stays on the previously-active chapter,
+          // contradicting the committed-banner UX.
+          const previousChapterIds = new Set(
+            projectRef.current?.chapters.map((c) => c.id) ?? [],
+          );
           try {
             const refreshed = await api.projects.get(slug);
             if (
@@ -421,6 +430,17 @@ export function useProjectEditor(slug: string | undefined) {
               projectSlugRef.current === projectRef.current?.slug
             ) {
               setProject(refreshed);
+              const added = refreshed.chapters.filter((c) => !previousChapterIds.has(c.id));
+              if (added.length > 0) {
+                // Pick the highest sort_order: the server appends new
+                // chapters to the end. If somehow more than one row
+                // appeared (unexpected), the most-recently-appended
+                // one is still the best candidate for the user's
+                // intended click.
+                const newest = added.reduce((a, b) => (a.sort_order > b.sort_order ? a : b));
+                setActiveChapter(newest);
+                setChapterWordCount(countWords(newest.content));
+              }
             }
           } catch {
             // Refresh is best-effort; the error copy instructs the user
