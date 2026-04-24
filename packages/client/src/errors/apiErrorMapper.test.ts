@@ -229,6 +229,22 @@ describe("SCOPES — chapter.save", () => {
   });
 });
 
+describe("SCOPES — image.upload", () => {
+  const scope = SCOPES["image.upload"];
+  it("413 → fileTooLarge", () => {
+    const err = new ApiRequestError("big", 413, "PAYLOAD_TOO_LARGE");
+    expect(resolveError(err, scope).message).toBe(STRINGS.imageGallery.fileTooLarge);
+  });
+  it("PAYLOAD_TOO_LARGE (without 413 status) → fileTooLarge", () => {
+    const err = new ApiRequestError("big", 400, "PAYLOAD_TOO_LARGE");
+    expect(resolveError(err, scope).message).toBe(STRINGS.imageGallery.fileTooLarge);
+  });
+  it("500 → uploadFailedGeneric (fallback)", () => {
+    const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
+    expect(resolveError(err, scope).message).toBe(STRINGS.imageGallery.uploadFailedGeneric);
+  });
+});
+
 describe("SCOPES — image.delete", () => {
   const scope = SCOPES["image.delete"];
   it("IMAGE_IN_USE (no extras) → deleteBlockedInUse copy", () => {

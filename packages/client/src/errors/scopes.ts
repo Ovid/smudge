@@ -94,7 +94,11 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   "image.references": {
     fallback: STRINGS.imageGallery.referencesLoadFailed,
   },
-  "image.upload": { fallback: STRINGS.imageGallery.uploadFailedGeneric },
+  "image.upload": {
+    fallback: STRINGS.imageGallery.uploadFailedGeneric,
+    byStatus: { 413: STRINGS.imageGallery.fileTooLarge },
+    byCode: { PAYLOAD_TOO_LARGE: STRINGS.imageGallery.fileTooLarge },
+  },
   "image.delete": {
     fallback: STRINGS.imageGallery.deleteFailedGeneric,
     byCode: { IMAGE_IN_USE: STRINGS.imageGallery.deleteBlockedInUse },
