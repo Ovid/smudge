@@ -354,8 +354,11 @@ export const api = {
   },
 
   images: {
-    list(projectId: string): Promise<ImageRow[]> {
-      return apiFetch(`/projects/${enc(projectId)}/images`);
+    list(projectId: string, signal?: AbortSignal): Promise<ImageRow[]> {
+      return apiFetch(
+        `/projects/${enc(projectId)}/images`,
+        signal ? { signal } : undefined,
+      );
     },
 
     async upload(projectId: string, file: File): Promise<ImageRow> {

@@ -89,15 +89,14 @@ export function ExportDialog({
 
   useEffect(() => {
     if ((format === "epub" || format === "docx") && open) {
-      // Route cover-image list failures through mapApiError (review
-      // 2026-04-24 S3). A bare `.catch(() => setCoverImages([]))`
-      // silently swallowed every error kind — including ABORTED on
-      // dialog unmount, which would then fire setState on a torn-down
-      // component. Mapping treats ABORTED as null and lets real
-      // failures flow through an empty-list fallback.
+      // Thread controller.signal through api.images.list so abort()
+      // actually cancels the in-flight fetch, not just the setState
+      // callback. Without this the browser finishes every stale
+      // request on rapid format flips / dialog open-close; the
+      // mapper-ABORTED branch also could not fire (review 2026-04-24).
       const controller = new AbortController();
       api.images
-        .list(projectId)
+        .list(projectId, controller.signal)
         .then((imgs) => {
           if (controller.signal.aborted) return;
           setCoverImages(

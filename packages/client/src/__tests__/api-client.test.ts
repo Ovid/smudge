@@ -295,6 +295,18 @@ describe("api.images", () => {
     });
   });
 
+  it("list(projectId, signal) threads signal to fetch", async () => {
+    const images: unknown[] = [];
+    mockFetch.mockResolvedValue(jsonResponse(images));
+
+    const controller = new AbortController();
+    await api.images.list("p1", controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1/images", {
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+    });
+  });
+
   it("upload(projectId, file) sends POST multipart to /api/projects/:id/images", async () => {
     const uploaded = { id: "img-2", project_id: "p1", filename: "photo.jpg" };
     mockFetch.mockResolvedValue({

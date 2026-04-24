@@ -305,7 +305,7 @@ describe("ExportDialog", () => {
     await user.click(screen.getByLabelText("EPUB"));
 
     await waitFor(() => {
-      expect(api.images.list).toHaveBeenCalledWith("proj-1");
+      expect(api.images.list).toHaveBeenCalledWith("proj-1", expect.any(AbortSignal));
     });
 
     await waitFor(() => {
@@ -328,7 +328,7 @@ describe("ExportDialog", () => {
     await user.click(screen.getByLabelText("EPUB"));
 
     await waitFor(() => {
-      expect(api.images.list).toHaveBeenCalledWith("proj-1");
+      expect(api.images.list).toHaveBeenCalledWith("proj-1", expect.any(AbortSignal));
     });
 
     // Give it a tick to settle
@@ -346,7 +346,7 @@ describe("ExportDialog", () => {
     await user.click(screen.getByLabelText("EPUB"));
 
     await waitFor(() => {
-      expect(api.images.list).toHaveBeenCalledWith("proj-1");
+      expect(api.images.list).toHaveBeenCalledWith("proj-1", expect.any(AbortSignal));
     });
 
     await act(async () => {});
@@ -455,7 +455,7 @@ describe("ExportDialog", () => {
     await user.click(screen.getByLabelText("Word (.docx)"));
 
     await waitFor(() => {
-      expect(api.images.list).toHaveBeenCalledWith("proj-1");
+      expect(api.images.list).toHaveBeenCalledWith("proj-1", expect.any(AbortSignal));
     });
 
     expect(
