@@ -1,7 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { SNAPSHOT_ERROR_CODES } from "@smudge/shared";
-import { api, ApiRequestError } from "../api/client";
-import { mapApiError, isApiError } from "../errors";
+import { api } from "../api/client";
+// I16 (review 2026-04-24): import ApiRequestError via the errors
+// barrel so the file observes the boundary — only errors/ and
+// api/client are allowed to reach for the constructor.
+import { mapApiError, isApiError, ApiRequestError } from "../errors";
 import { clearCachedContent } from "./useContentCache";
 import { useAbortableSequence } from "./useAbortableSequence";
 import type { SnapshotPanelHandle } from "../components/SnapshotPanel";

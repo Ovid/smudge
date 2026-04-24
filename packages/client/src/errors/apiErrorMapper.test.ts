@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { MappedError } from "./apiErrorMapper";
 import {
-  resolveError,
+  _resolveErrorInternal as resolveError,
   mapApiError,
   ALL_SCOPES,
   isApiError,

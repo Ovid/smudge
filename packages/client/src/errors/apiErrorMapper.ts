@@ -69,7 +69,14 @@ export function isClientError(err: unknown): err is ApiRequestError {
   return isApiRequestError(err) && err.status >= 400 && err.status < 500;
 }
 
-export function resolveError(err: unknown, scope: ScopeEntry): MappedError {
+// I17 (review 2026-04-24): the `_resolveErrorInternal` name signals
+// test-only use. The public surface is `mapApiError` (see
+// scopes.ts-is-the-single-source-of-truth invariant); call sites that
+// want to bypass the scope registry by building an ad-hoc ScopeEntry
+// should go through mapApiError in tests too. The underscore prefix
+// is the convention for "intended to be internal but must be exported
+// for testing." The barrel does not re-export this.
+export function _resolveErrorInternal(err: unknown, scope: ScopeEntry): MappedError {
   if (!isApiRequestError(err)) {
     return { message: scope.fallback, possiblyCommitted: false, transient: false };
   }
@@ -171,7 +178,7 @@ function safeExtrasFrom(
 }
 
 export function mapApiError(err: unknown, scope: ApiErrorScope): MappedError {
-  return resolveError(err, SCOPES[scope]);
+  return _resolveErrorInternal(err, SCOPES[scope]);
 }
 
 export const ALL_SCOPES = Object.keys(SCOPES) as ApiErrorScope[];
