@@ -54,8 +54,13 @@ function classifyFetchError(err: unknown): ApiRequestError {
   if (err instanceof DOMException && err.name === "AbortError") {
     return new ApiRequestError("[dev] Request aborted", 0, "ABORTED");
   }
-  const message = err instanceof Error ? err.message : "[dev] Network request failed";
-  return new ApiRequestError(message, 0, "NETWORK");
+  // The browser's TypeError/etc. may carry a stable message like "Failed
+  // to fetch" — useful in logs, but we still force the `[dev]` prefix so
+  // the class-level invariant holds: every ApiRequestError.message
+  // produced inside this module is identifiable as developer-only copy
+  // and can't be mistaken for a user-facing string in a stray log.
+  const raw = err instanceof Error ? err.message : "Network request failed";
+  return new ApiRequestError(`[dev] ${raw}`, 0, "NETWORK");
 }
 
 // S4 (2026-04-23 review): defensive cap on how many non-code/non-message

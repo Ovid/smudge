@@ -765,6 +765,30 @@ describe("error handling", () => {
     expect((caught as Error).message).toMatch(/Failed to fetch/);
   });
 
+  it("prefixes NETWORK ApiRequestError.message with [dev] (developer-only copy guarantee)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    // Browser-raised fetch errors (TypeError "Failed to fetch", DNS
+    // failures, CSP blocks, etc.) must not masquerade as user-facing
+    // product copy when they surface in logs. classifyFetchError's
+    // NETWORK branch is the common landing zone for all such cases,
+    // so the [dev] prefix has to be applied regardless of whether the
+    // raw err was an Error instance or a bare string/undefined.
+    mockFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    try {
+      await api.projects.list();
+    } catch (e) {
+      expect((e as Error).message).toMatch(/^\[dev] /);
+      expect(e).toBeInstanceOf(ApiRequestError);
+    }
+
+    mockFetch.mockRejectedValueOnce("string rejection");
+    try {
+      await api.projects.list();
+    } catch (e) {
+      expect((e as Error).message).toMatch(/^\[dev] /);
+    }
+  });
+
   it("handles 204 No Content response", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
