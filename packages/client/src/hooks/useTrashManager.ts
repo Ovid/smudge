@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import type { Chapter, ProjectWithChapters } from "@smudge/shared";
 import { api } from "../api/client";
-import { mapApiError } from "../errors";
+import { mapApiError, isApiError } from "../errors";
 
 export function useTrashManager(
   project: ProjectWithChapters | null,
@@ -51,7 +51,19 @@ export function useTrashManager(
         }
       } catch (err) {
         console.error("Failed to restore chapter:", err);
-        const { message } = mapApiError(err, "trash.restoreChapter");
+        const { message, possiblyCommitted } = mapApiError(err, "trash.restoreChapter");
+        // I2 (2026-04-24 review): on a committed-but-unreadable response
+        // (2xx BAD_JSON ⇒ possiblyCommitted, or 500 RESTORE_READ_FAILURE)
+        // the server actually restored the chapter — the client just
+        // doesn't have the hydrated row. Optimistically remove it from
+        // the trash list so the user doesn't retry (retry would hit 409
+        // RESTORE_CONFLICT, the slug is already present) and surface a
+        // committed-specific message telling them to refresh. Same
+        // pattern as chapter.create's READ_AFTER_CREATE_FAILURE branch.
+        const restoreReadFailure = isApiError(err) && err.code === "RESTORE_READ_FAILURE";
+        if (possiblyCommitted || restoreReadFailure) {
+          setTrashedChapters((prev) => prev.filter((c) => c.id !== chapterId));
+        }
         if (message) setActionError(message);
       }
     },

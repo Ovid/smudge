@@ -319,6 +319,38 @@ describe("SCOPES — image.upload", () => {
   });
 });
 
+describe("SCOPES — trash.restoreChapter", () => {
+  const scope = SCOPES["trash.restoreChapter"];
+  // I2 (2026-04-24 review): server emits 500 RESTORE_READ_FAILURE *after*
+  // the restore has committed — the chapter is live again, the client
+  // just can't see the hydrated row. Without a byCode entry the user
+  // saw the generic "Unable to restore…" fallback, retried, and hit
+  // 409 RESTORE_CONFLICT (slug already present), which compounded the
+  // confusion while the chapter silently came back on reload. The
+  // mapper produces the committed string; consumers key on err.code to
+  // apply the committed-UX branch (same pattern as chapter.create's
+  // READ_AFTER_CREATE_FAILURE).
+  it("RESTORE_READ_FAILURE → restoreChapterCommitted", () => {
+    const err = new ApiRequestError("read failed", 500, "RESTORE_READ_FAILURE");
+    const result = resolveError(err, scope);
+    expect(result.message).toBe(STRINGS.error.restoreChapterCommitted);
+  });
+  it("2xx BAD_JSON → restoreChapterCommitted + possiblyCommitted:true", () => {
+    const err = new ApiRequestError("bad body", 200, "BAD_JSON");
+    const result = resolveError(err, scope);
+    expect(result.message).toBe(STRINGS.error.restoreChapterCommitted);
+    expect(result.possiblyCommitted).toBe(true);
+  });
+  it("PROJECT_PURGED → restoreChapterProjectPurged", () => {
+    const err = new ApiRequestError("gone", 409, "PROJECT_PURGED");
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterProjectPurged);
+  });
+  it("500 (non-RESTORE_READ_FAILURE) → restoreChapterFailed (fallback)", () => {
+    const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterFailed);
+  });
+});
+
 describe("SCOPES — image.delete", () => {
   const scope = SCOPES["image.delete"];
   it("IMAGE_IN_USE (no extras) → deleteBlockedInUse copy", () => {

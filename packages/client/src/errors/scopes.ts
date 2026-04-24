@@ -235,11 +235,21 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   },
   "trash.restoreChapter": {
     fallback: STRINGS.error.restoreChapterFailed,
-    committed: STRINGS.error.possiblyCommitted,
+    // I2 (2026-04-24 review): restore-committed UX. 2xx BAD_JSON and 500
+    // RESTORE_READ_FAILURE both mean "the chapter was actually restored,
+    // the client just can't see the hydrated row." Generic
+    // possiblyCommitted copy left users thinking the restore had failed;
+    // they retried and hit 409 RESTORE_CONFLICT (slug already present)
+    // while the chapter silently came back on reload. A restore-specific
+    // string tells them to refresh.
+    committed: STRINGS.error.restoreChapterCommitted,
     byCode: {
       PROJECT_PURGED: STRINGS.error.restoreChapterProjectPurged,
       CHAPTER_PURGED: STRINGS.error.restoreChapterAlreadyPurged,
       RESTORE_CONFLICT: STRINGS.error.restoreChapterSlugConflict,
+      // Same committed UX as 2xx BAD_JSON — the server did commit the
+      // restore; it just couldn't re-read the row for the response body.
+      RESTORE_READ_FAILURE: STRINGS.error.restoreChapterCommitted,
     },
   },
   "settings.update": {

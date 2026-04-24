@@ -73,6 +73,8 @@ export const STRINGS = {
     restoreChapterAlreadyPurged: "Can't restore — this chapter was permanently deleted.",
     restoreChapterSlugConflict:
       "Can't restore — another chapter is using this title. Rename the conflicting chapter and try again.",
+    restoreChapterCommitted:
+      "The chapter may have been restored but the server response was unreadable. Refresh to confirm.",
     loadDashboardFailed: "Failed to load dashboard",
     loadDashboardFailedNetwork: "Failed to load dashboard — check your connection and try again.",
     statusChangeFailed: "Failed to update chapter status",
