@@ -664,8 +664,8 @@ describe("SnapshotPanel", () => {
 
       // The mount-effect's controller is distinct from fetchAbortRef's;
       // capture index 1 (the imperative call) for the post-unmount check.
-      const imperativeSignal = capturedSignals[1];
-      expect(imperativeSignal).toBeDefined();
+      expect(capturedSignals.length).toBeGreaterThanOrEqual(2);
+      const imperativeSignal = capturedSignals[1]!;
       expect(imperativeSignal.aborted).toBe(false);
 
       unmount();
