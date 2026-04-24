@@ -433,27 +433,27 @@ export function EditorPage() {
         // path) — surface a persistent, non-dismissible lock banner so the
         // user-visible signal of the read-only state cannot be hidden (I1).
         setEditorLockedMessage(STRINGS.snapshots.restoreSucceededReloadFailed);
-        // I2 (review 2026-04-20): defense-in-depth cache-clear mirroring
-        // the possibly_committed branch below. The hook's stage:"reload"
-        // path normally handles cache-clear (including the C1 fix for the
-        // mid-remount re-lock bail), but without a redundant clear here
-        // the restore branch has no backstop if a future hook refactor
-        // introduces a gap between "server commit" and "cache wipe".
-        // The replace flow converges through finalizeReplaceSuccess which
-        // has its own convergence logic; restore has no equivalent, so
-        // mirror the possibly_committed branch's defense-in-depth.
-        clearCachedContent(activeChapter.id);
-        // Defensive re-lock to match finalizeReplaceSuccess's convergence
-        // rationale: restore's stage:"reload" currently relies on the
-        // hook's reloadFailed path keeping the editor read-only, but a
-        // future refactor of useEditorMutation's finally could let a
-        // mid-remount throw re-enable the editor after the banner is set.
-        // Applying safeSetEditable(false) here means both mutation callers
-        // (replace and restore) converge on the same invariant: lock
-        // banner and editor state never disagree. safeSetEditable swallows
-        // mid-remount throws so the follow-up refreshSnapshotCount still
-        // runs.
+        // S12 (2026-04-23 review): re-lock BEFORE the defense-in-depth
+        // cache-clear so the order matches invariants #2/#3: editor
+        // becomes read-only first, then the cache is wiped now that no
+        // typing can land against the cleared draft. The hook's
+        // reloadFailed path already kept the editor setEditable(false);
+        // this call is a belt-and-braces guard against a future hook
+        // refactor letting a mid-remount throw re-enable the editor
+        // after the banner is set. safeSetEditable swallows TipTap
+        // mid-remount throws so the follow-up cache-clear and snapshot
+        // panel refresh still run.
         safeSetEditable(editorRef, false);
+        // Defense-in-depth cache-clear mirroring the possibly_committed
+        // branch below. The hook's stage:"reload" path normally handles
+        // cache-clear (including the C1 fix for the mid-remount re-lock
+        // bail), but without a redundant clear here the restore branch
+        // has no backstop if a future hook refactor introduces a gap
+        // between "server commit" and "cache wipe". The replace flow
+        // converges through finalizeReplaceSuccess which has its own
+        // convergence logic; restore has no equivalent, so mirror the
+        // possibly_committed branch's defense-in-depth.
+        clearCachedContent(activeChapter.id);
         snapshotPanelRef.current?.refreshSnapshots();
         // Same rationale as the happy path: the server committed the
         // restore + pre-restore auto-snapshot. Without this, the toolbar
@@ -1974,8 +1974,15 @@ export function EditorPage() {
                   // button.
                   return { ok: false, reason: "unknown" };
                 }
-                // TODO(commit-4): drop this re-derivation once SnapshotPanel consumes MappedError directly.
-                // The branches below mirror logic mapApiError already applied; see scopes.ts['snapshot.view'].
+                // S1 (2026-04-23 review): the prior TODO tagged "commit-4"
+                // has long since merged; the three-hop translation
+                // (scopes → this translator → SnapshotPanel case ladder)
+                // is a drift risk. Collapsing it requires changing
+                // SnapshotPanel's props and its tests — explicitly out
+                // of scope for Phase 4b.3. Dropping this translator belongs
+                // with Phase 4b.4 (ESLint enforcement of the mapper
+                // contract) since that phase touches every call site
+                // anyway. Keeping the branches here until then.
                 const code = result.error.code;
                 if (result.error.status === 404) return { ok: false, reason: "not_found" };
                 if (code === SNAPSHOT_ERROR_CODES.CORRUPT_SNAPSHOT) {

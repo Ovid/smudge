@@ -38,8 +38,14 @@ export type ApiErrorScope =
   | "project.velocity";
 
 export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
-  "project.load": { fallback: STRINGS.error.loadProjectFailed },
-  "projectList.load": { fallback: STRINGS.error.loadFailed },
+  "project.load": {
+    fallback: STRINGS.error.loadProjectFailed,
+    network: STRINGS.error.loadProjectFailedNetwork,
+  },
+  "projectList.load": {
+    fallback: STRINGS.error.loadFailed,
+    network: STRINGS.error.loadFailedNetwork,
+  },
   "project.create": { fallback: STRINGS.error.createFailed },
   "project.delete": { fallback: STRINGS.error.deleteFailed },
   "project.updateTitle": {
@@ -53,7 +59,10 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     byCode: { VALIDATION_ERROR: STRINGS.projectSettings.saveInvalid },
     byStatus: { 404: STRINGS.projectSettings.saveNotFound },
   },
-  "chapter.load": { fallback: STRINGS.error.loadChapterFailed },
+  "chapter.load": {
+    fallback: STRINGS.error.loadChapterFailed,
+    network: STRINGS.error.loadChapterFailedNetwork,
+  },
   "chapter.save": {
     fallback: STRINGS.editor.saveFailed,
     byStatus: { 413: STRINGS.editor.saveFailedTooLarge },
@@ -74,7 +83,10 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     fallback: STRINGS.error.statusChangeFailed,
     committed: STRINGS.error.statusChangeResponseUnreadable,
   },
-  "chapterStatus.fetch": { fallback: STRINGS.error.statusesFetchFailed },
+  "chapterStatus.fetch": {
+    fallback: STRINGS.error.statusesFetchFailed,
+    network: STRINGS.error.statusesFetchFailedNetwork,
+  },
   "image.list": {
     fallback: STRINGS.imageGallery.loadFailed,
     network: STRINGS.imageGallery.loadFailedNetwork,
@@ -86,9 +98,22 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   "image.delete": {
     fallback: STRINGS.imageGallery.deleteFailedGeneric,
     byCode: { IMAGE_IN_USE: STRINGS.imageGallery.deleteBlockedInUse },
+    // S5 (2026-04-23 review): validate per-element shape, not just that
+    // `chapters` is an array. ImageGallery casts elements to
+    // {title: string; trashed?: boolean} — a hostile or malformed
+    // envelope with array-but-wrong-shape elements would otherwise slip
+    // through this narrowing and propagate to the UI via cast.
     extrasFrom: (err: ApiRequestError) => {
       const chapters = (err.extras as { chapters?: unknown } | undefined)?.chapters;
-      return Array.isArray(chapters) ? { chapters } : undefined;
+      if (!Array.isArray(chapters)) return undefined;
+      const valid = chapters.filter((c): c is { title: string; trashed?: boolean } => {
+        if (!c || typeof c !== "object") return false;
+        const obj = c as Record<string, unknown>;
+        if (typeof obj.title !== "string") return false;
+        if (obj.trashed !== undefined && typeof obj.trashed !== "boolean") return false;
+        return true;
+      });
+      return valid.length === chapters.length ? { chapters: valid } : undefined;
     },
   },
   "image.updateMetadata": { fallback: STRINGS.imageGallery.saveFailed },
@@ -147,10 +172,23 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     },
   },
   "export.run": { fallback: STRINGS.export.errorFailed },
-  "trash.load": { fallback: STRINGS.error.loadTrashFailed },
-  "trash.restoreChapter": { fallback: STRINGS.error.restoreChapterFailed },
+  "trash.load": {
+    fallback: STRINGS.error.loadTrashFailed,
+    network: STRINGS.error.loadTrashFailedNetwork,
+  },
+  "trash.restoreChapter": {
+    fallback: STRINGS.error.restoreChapterFailed,
+    byCode: {
+      PROJECT_PURGED: STRINGS.error.restoreChapterProjectPurged,
+      CHAPTER_PURGED: STRINGS.error.restoreChapterAlreadyPurged,
+      RESTORE_CONFLICT: STRINGS.error.restoreChapterSlugConflict,
+    },
+  },
   "settings.update": { fallback: STRINGS.error.settingsUpdateFailedGeneric },
-  "dashboard.load": { fallback: STRINGS.error.loadDashboardFailed },
+  "dashboard.load": {
+    fallback: STRINGS.error.loadDashboardFailed,
+    network: STRINGS.error.loadDashboardFailedNetwork,
+  },
   "project.velocity": {
     fallback: STRINGS.velocity.loadError,
     network: STRINGS.velocity.loadErrorNetwork,

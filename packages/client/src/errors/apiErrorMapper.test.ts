@@ -72,12 +72,16 @@ describe("mapApiError — 2xx BAD_JSON", () => {
       transient: false,
     });
   });
-  it("falls back to fallback when scope has no committed override", () => {
+  // S7 (2026-04-23 review): a scope without committed: copy does NOT
+  // flag possiblyCommitted. The scope hasn't opted into the committed
+  // contract, and setting possiblyCommitted: true would be misleading
+  // for GET-only scopes (reads don't commit server state).
+  it("does NOT flag possiblyCommitted when scope has no committed override", () => {
     const err = new ApiRequestError("bad json", 201, "BAD_JSON");
     const result = resolveError(err, testScope);
     expect(result).toEqual({
       message: "test-fallback",
-      possiblyCommitted: true,
+      possiblyCommitted: false,
       transient: false,
     });
   });
@@ -252,6 +256,27 @@ describe("SCOPES — image.delete extrasFrom", () => {
       chapters: "not-an-array",
     });
     expect(resolveError(err, scope).extras).toBeUndefined();
+  });
+  // S5 (2026-04-23 review): per-element validation, not just Array.isArray.
+  it("IMAGE_IN_USE with array-of-wrong-shape elements → extras undefined", () => {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: [{ title: "ok" }, { missingTitle: true }],
+    });
+    expect(resolveError(err, scope).extras).toBeUndefined();
+  });
+  it("IMAGE_IN_USE with wrong trashed type → extras undefined", () => {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: [{ title: "ok", trashed: "not-a-boolean" }],
+    });
+    expect(resolveError(err, scope).extras).toBeUndefined();
+  });
+  it("IMAGE_IN_USE with optional trashed absent → extras kept", () => {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: [{ title: "ok" }, { title: "also ok" }],
+    });
+    expect(resolveError(err, scope).extras).toEqual({
+      chapters: [{ title: "ok" }, { title: "also ok" }],
+    });
   });
 });
 
@@ -457,6 +482,53 @@ describe("mapApiError public API", () => {
   });
 });
 
+describe("mapper never surfaces raw err.message (S10)", () => {
+  // S10 (2026-04-23 review): the mapper must never forward a raw
+  // ApiRequestError.message to its MappedError.message output. Server
+  // messages are dev/log-only text (possibly hostile HTML, leaked
+  // stack traces, or just unlocalized English); every UI string must
+  // come from the scope registry. These tests pin that invariant so a
+  // future "pass the server message through when scope has nothing to
+  // say" regression surfaces immediately.
+  const hostileMessage = "<script>alert('xss')</script> plus an untranslated error";
+
+  it.each(ALL_SCOPES)(
+    "discards hostile err.message on a fallback-class error for %s",
+    (scopeName) => {
+      const err = new ApiRequestError(hostileMessage, 500, "INTERNAL_ERROR");
+      const result = mapApiError(err, scopeName);
+      if (result.message !== null) {
+        expect(result.message).not.toContain("<script>");
+        expect(result.message).not.toContain(hostileMessage);
+      }
+    },
+  );
+
+  it.each(ALL_SCOPES)(
+    "discards hostile err.message on a NETWORK classification for %s",
+    (scopeName) => {
+      const err = new ApiRequestError(hostileMessage, 0, "NETWORK");
+      const result = mapApiError(err, scopeName);
+      if (result.message !== null) {
+        expect(result.message).not.toContain("<script>");
+        expect(result.message).not.toContain(hostileMessage);
+      }
+    },
+  );
+
+  it.each(ALL_SCOPES)(
+    "discards hostile err.message on a 2xx BAD_JSON classification for %s",
+    (scopeName) => {
+      const err = new ApiRequestError(hostileMessage, 200, "BAD_JSON");
+      const result = mapApiError(err, scopeName);
+      if (result.message !== null) {
+        expect(result.message).not.toContain("<script>");
+        expect(result.message).not.toContain(hostileMessage);
+      }
+    },
+  );
+});
+
 describe("cross-cutting rules apply to every scope", () => {
   it.each(ALL_SCOPES)("ABORTED is silent for %s", (scope) => {
     expect(mapApiError(new ApiRequestError("aborted", 0, "ABORTED"), scope).message).toBeNull();
@@ -464,11 +536,21 @@ describe("cross-cutting rules apply to every scope", () => {
   it.each(ALL_SCOPES)("NETWORK flags transient for %s", (scope) => {
     expect(mapApiError(new ApiRequestError("offline", 0, "NETWORK"), scope).transient).toBe(true);
   });
-  it.each(ALL_SCOPES)("2xx BAD_JSON flags possiblyCommitted for %s", (scope) => {
-    expect(mapApiError(new ApiRequestError("bad", 200, "BAD_JSON"), scope).possiblyCommitted).toBe(
-      true,
-    );
-  });
+  // S7 (2026-04-23 review): gated on scope.committed being defined. A
+  // scope without committed: copy is a GET-only scope (reads don't
+  // commit) or a mutation scope that hasn't opted into the committed
+  // UX — possiblyCommitted should not fire unconditionally for every
+  // scope.
+  it.each(ALL_SCOPES)(
+    "2xx BAD_JSON possiblyCommitted flag matches scope.committed for %s",
+    (scopeName) => {
+      const scope = SCOPES[scopeName];
+      const hasCommitted = scope.committed !== undefined;
+      expect(
+        mapApiError(new ApiRequestError("bad", 200, "BAD_JSON"), scopeName).possiblyCommitted,
+      ).toBe(hasCommitted);
+    },
+  );
   it.each(ALL_SCOPES)("non-ApiRequestError falls through to scope.fallback for %s", (scope) => {
     const r = mapApiError(new Error("wtf"), scope);
     expect(r.message).toBeTruthy();

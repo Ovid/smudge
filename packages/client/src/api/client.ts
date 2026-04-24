@@ -19,6 +19,21 @@ export type { VelocityResponse };
 
 const BASE = "/api";
 
+// S9 (2026-04-23 review): defense-in-depth URL segment encoder. Slugs
+// are validated server-side to `[a-z0-9-]` and ids to UUIDs, so today
+// no character would alter the URL path. `enc` pins that guarantee at
+// the transport layer — if a future route adds a less-constrained path
+// param, `/` or `?` in the value cannot silently change the requested
+// route. Centralizing the call keeps the safety property uniform
+// across every endpoint template below.
+const enc = encodeURIComponent;
+
+// ApiRequestError.message is DEVELOPER-facing only. UI callers route
+// through mapApiError (errors/apiErrorMapper.ts) and never read .message
+// directly — the mapper owns string-selection for the UI. Fallback
+// messages populated here use a `[dev]` prefix (S3) so any log that
+// accidentally surfaces them is immediately recognizable as non-
+// user-facing copy instead of masquerading as product strings.
 export class ApiRequestError extends Error {
   constructor(
     message: string,
@@ -37,10 +52,30 @@ export class ApiRequestError extends Error {
 // the same ABORTED classification so every caller can rely on err.code.
 function classifyFetchError(err: unknown): ApiRequestError {
   if (err instanceof DOMException && err.name === "AbortError") {
-    return new ApiRequestError("Request aborted", 0, "ABORTED");
+    return new ApiRequestError("[dev] Request aborted", 0, "ABORTED");
   }
-  const message = err instanceof Error ? err.message : "Network request failed";
+  const message = err instanceof Error ? err.message : "[dev] Network request failed";
   return new ApiRequestError(message, 0, "NETWORK");
+}
+
+// S4 (2026-04-23 review): defensive cap on how many non-code/non-message
+// keys we lift off the error envelope into ApiRequestError.extras. The
+// server contract today ships at most 1-2 extras fields (e.g. `chapters`
+// on IMAGE_IN_USE), and express.json limits request bodies to 5 MB —
+// but a future server bug or hostile fixture could ship an envelope
+// with hundreds of keys. Bounded copy keeps a pathological payload
+// from bloating every subsequent log/toString of the error.
+const MAX_EXTRAS_KEYS = 16;
+
+function extractExtras(errorBody: unknown): Record<string, unknown> | undefined {
+  if (!errorBody || typeof errorBody !== "object") return undefined;
+  const { code: _c, message: _m, ...rest } = errorBody as Record<string, unknown>;
+  const keys = Object.keys(rest);
+  if (keys.length === 0) return undefined;
+  const kept = keys.slice(0, MAX_EXTRAS_KEYS);
+  const out: Record<string, unknown> = {};
+  for (const k of kept) out[k] = rest[k];
+  return out;
 }
 
 // Parse a !ok response's JSON error envelope into message/code/extras so
@@ -55,13 +90,7 @@ async function readErrorEnvelope(
     const body = (await res.json()) as ApiError;
     const message = body.error?.message ?? fallbackMessage;
     const code = body.error?.code;
-    let extras: Record<string, unknown> | undefined;
-    if (body.error) {
-      const { code: _c, message: _m, ...rest } = body.error;
-      if (Object.keys(rest).length > 0) {
-        extras = rest as Record<string, unknown>;
-      }
-    }
+    const extras = extractExtras(body.error);
     return { message, code, extras };
   } catch {
     return { message: fallbackMessage, code: undefined, extras: undefined };
@@ -83,7 +112,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
-    let message = `Request failed: ${res.status}`;
+    let message = `[dev] HTTP ${res.status}`;
     let code: string | undefined;
     let extras: Record<string, unknown> | undefined;
     try {
@@ -94,13 +123,8 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
       // callers can surface structured details (e.g. `chapters` on a 409
       // IMAGE_IN_USE). Keeping this generic means every new extras field
       // on the server becomes available on ApiRequestError without a
-      // transport change.
-      if (body.error) {
-        const { code: _c, message: _m, ...rest } = body.error;
-        if (Object.keys(rest).length > 0) {
-          extras = rest as Record<string, unknown>;
-        }
-      }
+      // transport change. Capped at MAX_EXTRAS_KEYS (S4).
+      extras = extractExtras(body.error);
     } catch (err: unknown) {
       // Body read can ALSO abort (e.g. controller cancelled after headers
       // arrived). Propagate as ABORTED so callers that key on err.code
@@ -125,7 +149,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     if (err instanceof DOMException && err.name === "AbortError") {
       throw classifyFetchError(err);
     }
-    const message = err instanceof Error ? err.message : "Malformed response body";
+    const message = err instanceof Error ? err.message : "[dev] Malformed response body";
     throw new ApiRequestError(message, res.status, "BAD_JSON");
   });
 }
@@ -134,7 +158,7 @@ export const api = {
   projects: {
     list: () => apiFetch<ProjectListItem[]>("/projects"),
 
-    get: (slug: string) => apiFetch<ProjectWithChapters>(`/projects/${slug}`),
+    get: (slug: string) => apiFetch<ProjectWithChapters>(`/projects/${enc(slug)}`),
 
     create: (input: CreateProjectInput) =>
       apiFetch<Project>("/projects", {
@@ -151,23 +175,23 @@ export const api = {
         author_name?: string | null;
       },
     ) =>
-      apiFetch<Project>(`/projects/${slug}`, {
+      apiFetch<Project>(`/projects/${enc(slug)}`, {
         method: "PATCH",
         body: JSON.stringify(data),
       }),
 
-    velocity: (slug: string) => apiFetch<VelocityResponse>(`/projects/${slug}/velocity`),
+    velocity: (slug: string) => apiFetch<VelocityResponse>(`/projects/${enc(slug)}/velocity`),
 
     delete: (slug: string) =>
-      apiFetch<{ message: string }>(`/projects/${slug}`, { method: "DELETE" }),
+      apiFetch<{ message: string }>(`/projects/${enc(slug)}`, { method: "DELETE" }),
 
     reorderChapters: (slug: string, chapterIds: string[]) =>
-      apiFetch<{ message: string }>(`/projects/${slug}/chapters/order`, {
+      apiFetch<{ message: string }>(`/projects/${enc(slug)}/chapters/order`, {
         method: "PUT",
         body: JSON.stringify({ chapter_ids: chapterIds }),
       }),
 
-    trash: (slug: string) => apiFetch<Chapter[]>(`/projects/${slug}/trash`),
+    trash: (slug: string) => apiFetch<Chapter[]>(`/projects/${enc(slug)}/trash`),
 
     dashboard: (slug: string) =>
       apiFetch<{
@@ -187,7 +211,7 @@ export const api = {
           most_recent_edit: string | null;
           least_recent_edit: string | null;
         };
-      }>(`/projects/${slug}/dashboard`),
+      }>(`/projects/${enc(slug)}/dashboard`),
 
     export: async (
       slug: string,
@@ -203,7 +227,7 @@ export const api = {
       // export errors flow through the same NETWORK/ABORTED classification
       // as apiFetch — the mapper contract breaks if a raw TypeError or
       // DOMException escapes here.
-      const res = await fetch(`${BASE}/projects/${slug}/export`, {
+      const res = await fetch(`${BASE}/projects/${enc(slug)}/export`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),
@@ -215,7 +239,7 @@ export const api = {
       if (!res.ok) {
         const { message, code, extras } = await readErrorEnvelope(
           res,
-          `Export failed: ${res.status}`,
+          `[dev] Export HTTP ${res.status}`,
         );
         throw new ApiRequestError(message, res.status, code, extras);
       }
@@ -225,10 +249,10 @@ export const api = {
   },
 
   chapters: {
-    get: (id: string) => apiFetch<Chapter>(`/chapters/${id}`),
+    get: (id: string) => apiFetch<Chapter>(`/chapters/${enc(id)}`),
 
     create: (projectSlug: string) =>
-      apiFetch<Chapter>(`/projects/${projectSlug}/chapters`, { method: "POST" }),
+      apiFetch<Chapter>(`/projects/${enc(projectSlug)}/chapters`, { method: "POST" }),
 
     update: (
       id: string,
@@ -239,7 +263,7 @@ export const api = {
       },
       signal?: AbortSignal,
     ) =>
-      apiFetch<Chapter>(`/chapters/${id}`, {
+      apiFetch<Chapter>(`/chapters/${enc(id)}`, {
         method: "PATCH",
         body: JSON.stringify(data),
         // Only include `signal` when one was actually provided; otherwise
@@ -249,10 +273,10 @@ export const api = {
         ...(signal ? { signal } : {}),
       }),
 
-    delete: (id: string) => apiFetch<{ message: string }>(`/chapters/${id}`, { method: "DELETE" }),
+    delete: (id: string) => apiFetch<{ message: string }>(`/chapters/${enc(id)}`, { method: "DELETE" }),
 
     restore: (id: string) =>
-      apiFetch<Chapter & { project_slug: string }>(`/chapters/${id}/restore`, { method: "POST" }),
+      apiFetch<Chapter & { project_slug: string }>(`/chapters/${enc(id)}/restore`, { method: "POST" }),
   },
 
   chapterStatuses: {
@@ -261,7 +285,7 @@ export const api = {
 
   images: {
     list(projectId: string): Promise<ImageRow[]> {
-      return apiFetch(`/projects/${projectId}/images`);
+      return apiFetch(`/projects/${enc(projectId)}/images`);
     },
 
     async upload(projectId: string, file: File): Promise<ImageRow> {
@@ -272,7 +296,7 @@ export const api = {
       // ApiRequestError (NETWORK/ABORTED) rather than raw TypeError/
       // DOMException — the mapper contract requires every caller to see
       // a typed ApiRequestError.
-      const res = await fetch(`${BASE}/projects/${projectId}/images`, {
+      const res = await fetch(`${BASE}/projects/${enc(projectId)}/images`, {
         method: "POST",
         body: formData,
         // No Content-Type header — browser sets multipart boundary automatically
@@ -282,7 +306,7 @@ export const api = {
       if (!res.ok) {
         const { message, code, extras } = await readErrorEnvelope(
           res,
-          `Upload failed (${res.status})`,
+          `[dev] Upload HTTP ${res.status}`,
         );
         throw new ApiRequestError(message, res.status, code, extras);
       }
@@ -294,13 +318,13 @@ export const api = {
         if (err instanceof DOMException && err.name === "AbortError") {
           throw classifyFetchError(err);
         }
-        const message = err instanceof Error ? err.message : "Malformed response body";
+        const message = err instanceof Error ? err.message : "[dev] Malformed response body";
         throw new ApiRequestError(message, res.status, "BAD_JSON");
       });
     },
 
     references(id: string): Promise<{ chapters: Array<{ id: string; title: string }> }> {
-      return apiFetch(`/images/${id}/references`);
+      return apiFetch(`/images/${enc(id)}/references`);
     },
 
     update(
@@ -312,33 +336,33 @@ export const api = {
         license?: string;
       },
     ): Promise<ImageRow> {
-      return apiFetch(`/images/${id}`, {
+      return apiFetch(`/images/${enc(id)}`, {
         method: "PATCH",
         body: JSON.stringify(data),
       });
     },
 
     delete(id: string): Promise<{ deleted: boolean }> {
-      return apiFetch(`/images/${id}`, { method: "DELETE" });
+      return apiFetch(`/images/${enc(id)}`, { method: "DELETE" });
     },
   },
 
   snapshots: {
-    list: (chapterId: string) => apiFetch<SnapshotListItem[]>(`/chapters/${chapterId}/snapshots`),
+    list: (chapterId: string) => apiFetch<SnapshotListItem[]>(`/chapters/${enc(chapterId)}/snapshots`),
 
     create: (chapterId: string, label?: string) =>
       apiFetch<
         { status: "created"; snapshot: SnapshotRow } | { status: "duplicate"; message: string }
-      >(`/chapters/${chapterId}/snapshots`, {
+      >(`/chapters/${enc(chapterId)}/snapshots`, {
         method: "POST",
         body: JSON.stringify(label ? { label } : {}),
       }),
 
-    get: (id: string) => apiFetch<SnapshotRow>(`/snapshots/${id}`),
+    get: (id: string) => apiFetch<SnapshotRow>(`/snapshots/${enc(id)}`),
 
-    delete: (id: string) => apiFetch<undefined>(`/snapshots/${id}`, { method: "DELETE" }),
+    delete: (id: string) => apiFetch<undefined>(`/snapshots/${enc(id)}`, { method: "DELETE" }),
 
-    restore: (id: string) => apiFetch<Chapter>(`/snapshots/${id}/restore`, { method: "POST" }),
+    restore: (id: string) => apiFetch<Chapter>(`/snapshots/${enc(id)}/restore`, { method: "POST" }),
   },
 
   search: {
@@ -348,7 +372,7 @@ export const api = {
       options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
       signal?: AbortSignal,
     ) =>
-      apiFetch<SearchResult>(`/projects/${projectSlug}/search`, {
+      apiFetch<SearchResult>(`/projects/${enc(projectSlug)}/search`, {
         method: "POST",
         body: JSON.stringify({ query, options }),
         ...(signal ? { signal } : {}),
@@ -362,7 +386,7 @@ export const api = {
       scope: { type: "project" } | { type: "chapter"; chapter_id: string; match_index?: number },
       signal?: AbortSignal,
     ) =>
-      apiFetch<ReplaceResult>(`/projects/${projectSlug}/replace`, {
+      apiFetch<ReplaceResult>(`/projects/${enc(projectSlug)}/replace`, {
         method: "POST",
         body: JSON.stringify({ search, replace, options, scope }),
         ...(signal ? { signal } : {}),

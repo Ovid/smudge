@@ -40,7 +40,9 @@ export const STRINGS = {
     projectNotFound: "Project not found",
     backToProjects: "Back to Projects",
     loadFailed: "Failed to load projects",
+    loadFailedNetwork: "Failed to load projects — check your connection and try again.",
     loadProjectFailed: "Failed to load project",
+    loadProjectFailedNetwork: "Failed to load project — check your connection and try again.",
     createFailed: "Failed to create project",
     createChapterFailed: "Failed to create chapter",
     createChapterResponseUnreadable:
@@ -48,6 +50,7 @@ export const STRINGS = {
     createChapterReadAfterFailure:
       "The chapter was created but could not be retrieved. Refresh to see the current chapter list — do not click Add chapter again.",
     loadChapterFailed: "Failed to load chapter",
+    loadChapterFailedNetwork: "Failed to load chapter — check your connection and try again.",
     deleteChapterFailed: "Failed to delete chapter",
     reorderFailed: "Failed to reorder chapters",
     updateTitleFailed: "Failed to update project title",
@@ -56,14 +59,24 @@ export const STRINGS = {
     renameChapterFailed: "Failed to rename chapter",
     deleteFailed: "Failed to delete project",
     loadTrashFailed: "Failed to load trash",
+    loadTrashFailedNetwork: "Failed to load trash — check your connection and try again.",
     restoreChapterFailed: "Failed to restore chapter",
+    restoreChapterProjectPurged:
+      "Can't restore — the parent project was permanently deleted.",
+    restoreChapterAlreadyPurged:
+      "Can't restore — this chapter was permanently deleted.",
+    restoreChapterSlugConflict:
+      "Can't restore — another chapter is using this title. Rename the conflicting chapter and try again.",
     loadDashboardFailed: "Failed to load dashboard",
+    loadDashboardFailedNetwork: "Failed to load dashboard — check your connection and try again.",
     statusChangeFailed: "Failed to update chapter status",
     statusChangeResponseUnreadable:
       "The status change may have been saved, but the server response was unreadable. Refresh to see the current status.",
     reorderResponseUnreadable:
       "The chapter reorder may have been saved, but the server response was unreadable. Refresh to see the current order.",
     statusesFetchFailed: "Failed to load chapter statuses — status changes unavailable",
+    statusesFetchFailedNetwork:
+      "Failed to load chapter statuses — check your connection and try again.",
     settingsUpdateFailedGeneric: "Unable to save settings.",
   },
   editor: {

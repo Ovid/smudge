@@ -278,7 +278,7 @@ describe("api.projects.export", () => {
     });
 
     await expect(api.projects.export("my-project", { format: "html" })).rejects.toThrow(
-      "Export failed: 500",
+      "[dev] Export HTTP 500",
     );
   });
 });
@@ -338,7 +338,7 @@ describe("api.images", () => {
     });
 
     const file = new File(["data"], "img.png", { type: "image/png" });
-    await expect(api.images.upload("p1", file)).rejects.toThrow("Upload failed (500)");
+    await expect(api.images.upload("p1", file)).rejects.toThrow("[dev] Upload HTTP 500");
   });
 
   it("references(id) fetches GET /api/images/:id/references", async () => {
@@ -429,7 +429,7 @@ describe("api.images", () => {
       json: () => Promise.resolve({}),
     });
 
-    await expect(api.images.delete("img-1")).rejects.toThrow("Request failed: 500");
+    await expect(api.images.delete("img-1")).rejects.toThrow("[dev] HTTP 500");
   });
 });
 
@@ -736,7 +736,7 @@ describe("error handling", () => {
   it("throws with fallback message when error body lacks message", async () => {
     mockFetch.mockResolvedValue(jsonResponse({ error: {} }, 500));
 
-    await expect(api.projects.list()).rejects.toThrow("Request failed: 500");
+    await expect(api.projects.list()).rejects.toThrow("[dev] HTTP 500");
   });
 
   it("throws with fallback message when error body is not JSON", async () => {
@@ -746,7 +746,7 @@ describe("error handling", () => {
       json: () => Promise.reject(new Error("not JSON")),
     });
 
-    await expect(api.projects.list()).rejects.toThrow("Request failed: 502");
+    await expect(api.projects.list()).rejects.toThrow("[dev] HTTP 502");
   });
 
   it("wraps fetch TypeError as ApiRequestError(0, NETWORK)", async () => {
@@ -841,6 +841,45 @@ describe("error handling", () => {
     expect((caught as InstanceType<typeof ApiRequestError>).extras).toEqual({
       chapters: [{ id: "c1", title: "Chapter 1" }],
     });
+  });
+
+  it("encodes slug path segments to defend against route-altering characters (S9)", async () => {
+    const project = { id: "p1", title: "Test", chapters: [] };
+    mockFetch.mockResolvedValue(jsonResponse(project));
+
+    await api.projects.get("weird/slug?x=1");
+
+    // "/" and "?" are encoded so they cannot traverse out of the path
+    // segment. The server's route validator still rejects bad input,
+    // but the encoder pins that safety at the transport layer too.
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/weird%2Fslug%3Fx%3D1", {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  it("caps envelope extras at MAX_EXTRAS_KEYS to bound pathological payloads (S4)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    // Build an envelope with more extras keys than the cap; only the
+    // first 16 (insertion order) should land on ApiRequestError.extras.
+    const manyExtras: Record<string, unknown> = {};
+    for (let i = 0; i < 64; i++) manyExtras[`k${i}`] = i;
+    mockFetch.mockResolvedValue(
+      jsonResponse({ error: { code: "X", message: "m", ...manyExtras } }, 500),
+    );
+
+    let caught: InstanceType<typeof ApiRequestError> | undefined;
+    try {
+      await api.projects.get("slug");
+    } catch (err) {
+      caught = err as InstanceType<typeof ApiRequestError>;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect(caught?.extras).toBeDefined();
+    expect(Object.keys(caught!.extras!).length).toBe(16);
+    // First-16 kept; the rest dropped.
+    expect(caught?.extras?.k0).toBe(0);
+    expect(caught?.extras?.k15).toBe(15);
+    expect(caught?.extras?.k16).toBeUndefined();
   });
 
   it("ApiRequestError.extras is undefined when envelope has only code and message", async () => {

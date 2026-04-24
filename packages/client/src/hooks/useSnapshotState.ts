@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { SNAPSHOT_ERROR_CODES } from "@smudge/shared";
 import { api, ApiRequestError } from "../api/client";
+import { mapApiError } from "../errors";
 import { clearCachedContent } from "./useContentCache";
 import { useAbortableSequence } from "./useAbortableSequence";
 import type { SnapshotPanelHandle } from "../components/SnapshotPanel";
@@ -21,8 +22,13 @@ import type { SnapshotPanelHandle } from "../components/SnapshotPanel";
 // Keeping the synthesis inside the hook means EditorPage never has to
 // reason about non-ApiRequestError throws — every failure arm carries a
 // real ApiRequestError that the scope registry knows how to classify.
+// S13 (2026-04-23 review): synthetic ApiRequestError.message values are
+// DEVELOPER-facing only. The mapper never reads them, but any future
+// log surface that does must not mistake them for user-facing copy.
+// The `[dev]` prefix pins that intent visually so a log leak is
+// immediately recognizable.
 function makeClientNetworkError(): ApiRequestError {
-  return new ApiRequestError("Client-side failure before request reached server.", 0, "NETWORK");
+  return new ApiRequestError("[dev] Client-side failure before request reached server", 0, "NETWORK");
 }
 // I2 (2026-04-23 review): synthesize a 200 BAD_JSON for post-success
 // throws (localStorage.removeItem in Safari private mode, setState on
@@ -31,14 +37,14 @@ function makeClientNetworkError(): ApiRequestError {
 // retrying would double-commit. Paired with restoreSnapshot's catch.
 function makeClientCommittedError(): ApiRequestError {
   return new ApiRequestError(
-    "Client-side failure after request reached server; response state unknown.",
+    "[dev] Client-side failure after request reached server; response state unknown",
     200,
     "BAD_JSON",
   );
 }
 function makeCorruptViewError(): ApiRequestError {
   return new ApiRequestError(
-    "Snapshot content could not be parsed as a TipTap document.",
+    "[dev] Snapshot content could not be parsed as a TipTap document",
     400,
     SNAPSHOT_ERROR_CODES.CORRUPT_SNAPSHOT,
   );
@@ -221,6 +227,15 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         const full = await api.snapshots.get(snapshot.id);
         if (cToken.isStale()) return { ok: true, superseded: "chapter" };
         if (vToken.isStale()) return { ok: true, superseded: "sameChapterNewer" };
+        // S11 (2026-04-23 review): defensive undefined guard. apiFetch
+        // returns `undefined as T` for 204 No Content, and while the
+        // snapshots GET route has never returned 204, a future handler
+        // change could. Reading `full.content` in that case would throw
+        // a TypeError, which the catch below would remap as NETWORK —
+        // misleading. Treat an empty body as a corrupt-snapshot response.
+        if (!full) {
+          return { ok: false, error: makeCorruptViewError() };
+        }
         // SnapshotRow.content is typed as a JSON string on the wire.
         // A parse failure, or a non-object payload (valid JSON like "42",
         // "null", or "[1,2,3]"), means the stored snapshot is not a TipTap
@@ -254,14 +269,18 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         if (cToken.isStale()) return { ok: true, superseded: "chapter" };
         if (vToken.isStale()) return { ok: true, superseded: "sameChapterNewer" };
         if (err instanceof ApiRequestError) {
-          // ABORTED is not a user-visible error — mirror the supersession
-          // path with sameChapterNewer (abort is always same-chapter-
-          // triggered in this hook; a chapter switch would have surfaced
-          // via cToken.isStale() above). mapApiError treats ABORTED as
-          // `message: null`, but returning it as the failure arm would
-          // require EditorPage to re-check the code; the supersession
-          // discriminant is cleaner and preserves the pre-refactor behavior.
-          if (err.code === "ABORTED") return { ok: true, superseded: "sameChapterNewer" };
+          // S14 (2026-04-23 review): use mapApiError's `message === null`
+          // signal as the canonical "silent bail" check, matching
+          // useFindReplaceState's convention. ABORTED is not a user-
+          // visible error — mirror the supersession path with
+          // sameChapterNewer (abort is always same-chapter-triggered in
+          // this hook; a chapter switch would have surfaced via
+          // cToken.isStale() above). Routing through the mapper means
+          // call sites don't need to know the specific "ABORTED" code
+          // string — the contract lives in the mapper.
+          if (mapApiError(err, "snapshot.view").message === null) {
+            return { ok: true, superseded: "sameChapterNewer" };
+          }
           // 2xx BAD_JSON on a GET has no "maybe committed" ambiguity —
           // GETs don't commit server-side state. Remap the synthetic code
           // to CORRUPT_SNAPSHOT so the snapshot.view scope routes it to the
