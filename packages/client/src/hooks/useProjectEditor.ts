@@ -187,15 +187,6 @@ export function useProjectEditor(slug: string | undefined) {
 
       setSaveStatus("saving");
       setSaveErrorMessage(null);
-      // Map server 4xx error code/status to a strings.ts entry. Never
-      // surface the raw err.message — that's server-authored English that
-      // bypasses the i18n-ready externalization (CLAUDE.md). Mirrors the
-      // discipline in errors/scopes.ts.
-      const mapSaveError = (err: ApiRequestError): string => {
-        if (err.status === 413) return STRINGS.editor.saveFailedTooLarge;
-        if (err.code === "VALIDATION_ERROR") return STRINGS.editor.saveFailedInvalid;
-        return STRINGS.editor.saveFailed;
-      };
       let rejected4xx: { message: string; code?: string } | null = null;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (token.isStale()) return false; // chapter changed, abort retries
@@ -252,9 +243,15 @@ export function useProjectEditor(slug: string | undefined) {
           }
           if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
             console.warn("Save failed with 4xx:", err);
-            // Map to strings.ts copy rather than forwarding the raw
-            // server-authored message — see mapSaveError above.
-            rejected4xx = { message: mapSaveError(err), code: err.code };
+            // I4 (2026-04-23 review): route through the unified mapper
+            // so chapter.save scope is the single source of truth. Raw
+            // err.message is never forwarded (CLAUDE.md invariant); the
+            // scope's byStatus[413] / byCode[VALIDATION_ERROR] / fallback
+            // produce the same strings.ts copy the inline mapSaveError
+            // duplicated. err.code is preserved separately for the
+            // cache-clear decision below.
+            const { message } = mapApiError(err, "chapter.save");
+            rejected4xx = { message: message ?? STRINGS.editor.saveFailed, code: err.code };
             break;
           }
           if (attempt < MAX_RETRIES) {
