@@ -2205,6 +2205,49 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("handleUpdateProjectTitle aborts in-flight PATCH when a newer rename fires (I1 2026-04-24)", async () => {
+    // Rapid title edits used to fire overlapping PATCHes. The S7 drift
+    // guard discarded the stale response but the older PATCH had
+    // already reached the server — SQLite's writer-lock ordering (not
+    // client dispatch order) decided which title won. Clip the wire
+    // by passing an AbortSignal to api.projects.update and aborting
+    // it before issuing the next rename.
+    const renamed1 = { ...mockProject, title: "First", slug: "test-project" };
+    const renamed2 = { ...mockProject, title: "Second", slug: "test-project" };
+
+    vi.mocked(api.projects.update).mockReset();
+    const signals: (AbortSignal | undefined)[] = [];
+    vi.mocked(api.projects.update)
+      .mockImplementationOnce(async (_slug, _data, signal) => {
+        signals.push(signal);
+        // Stay in flight forever so the second call can abort this one.
+        return new Promise<typeof renamed1>(() => {});
+      })
+      .mockImplementationOnce(async (_slug, _data, signal) => {
+        signals.push(signal);
+        return renamed2;
+      });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    // Kick off the first rename (stays in flight).
+    act(() => {
+      void result.current.handleUpdateProjectTitle("First");
+    });
+
+    // Wait for the first PATCH to be dispatched and its signal captured.
+    await waitFor(() => expect(signals.length).toBeGreaterThanOrEqual(1));
+
+    // Fire the second rename — should abort the first.
+    await act(async () => {
+      await result.current.handleUpdateProjectTitle("Second");
+    });
+
+    expect(signals[0]?.aborted).toBe(true);
+    expect(result.current.project?.title).toBe("Second");
+  });
+
   it("handleCreateChapter response survives a concurrent rename (S6)", async () => {
     // handleCreateChapter captured the slug at entry and compared it
     // against projectSlugRef after the POST. handleUpdateProjectTitle

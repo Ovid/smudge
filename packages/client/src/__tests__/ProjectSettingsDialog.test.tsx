@@ -106,7 +106,11 @@ describe("ProjectSettingsDialog", () => {
     await user.click(clearButtons[0] as HTMLElement);
 
     await waitFor(() => {
-      expect(api.projects.update).toHaveBeenCalledWith("test", { target_word_count: null });
+      expect(api.projects.update).toHaveBeenCalledWith(
+        "test",
+        { target_word_count: null },
+        expect.any(AbortSignal),
+      );
     });
     expect(onUpdate).toHaveBeenCalled();
   });
@@ -127,7 +131,11 @@ describe("ProjectSettingsDialog", () => {
     await user.type(deadlineInput, "2026-12-31");
 
     await waitFor(() => {
-      expect(api.projects.update).toHaveBeenCalledWith("test", { target_deadline: "2026-12-31" });
+      expect(api.projects.update).toHaveBeenCalledWith(
+        "test",
+        { target_deadline: "2026-12-31" },
+        expect.any(AbortSignal),
+      );
     });
     expect(onUpdate).toHaveBeenCalled();
   });
@@ -150,7 +158,11 @@ describe("ProjectSettingsDialog", () => {
     await user.click(clearButtons[1] as HTMLElement);
 
     await waitFor(() => {
-      expect(api.projects.update).toHaveBeenCalledWith("test", { target_deadline: null });
+      expect(api.projects.update).toHaveBeenCalledWith(
+        "test",
+        { target_deadline: null },
+        expect.any(AbortSignal),
+      );
     });
     expect(onUpdate).toHaveBeenCalled();
   });

@@ -44,6 +44,15 @@ export function ProjectSettingsDialog({
   const userChangedTimezoneRef = useRef(false);
   const timezoneAbortRef = useRef<AbortController | null>(null);
   const confirmedTimezoneRef = useRef<string>("UTC");
+  // I1 (review 2026-04-24): rapid edits (type → blur → type → blur)
+  // fired overlapping PATCHes with no client-side ordering. Without
+  // client abort, SQLite's writer-lock acquisition order determined
+  // which value won at the server — the UI's last-typed value and the
+  // persisted value could disagree. Mirror timezoneAbortRef: one
+  // controller per saveField issue, aborted on the next issue and on
+  // unmount, so every dispatch that has been superseded is also
+  // cancelled at the network layer.
+  const fieldAbortRef = useRef<AbortController | null>(null);
 
   // Track last confirmed values so reverts go to the right place after
   // successful save + failed second save (I5 fix).
@@ -131,6 +140,7 @@ export function ProjectSettingsDialog({
   useEffect(
     () => () => {
       timezoneAbortRef.current?.abort();
+      fieldAbortRef.current?.abort();
     },
     [],
   );
@@ -158,8 +168,14 @@ export function ProjectSettingsDialog({
 
   async function saveField(data: Parameters<typeof api.projects.update>[1]) {
     setFieldSaveError(null);
+    // I1: abort any prior in-flight field PATCH before issuing a new
+    // one so overlapping requests can't commit out of typing order.
+    fieldAbortRef.current?.abort();
+    const controller = new AbortController();
+    fieldAbortRef.current = controller;
     try {
-      await api.projects.update(project.slug, data);
+      await api.projects.update(project.slug, data, controller.signal);
+      if (controller.signal.aborted) return; // superseded by a newer save
       // Update confirmed values on success before triggering parent refresh
       if ("target_word_count" in data) {
         confirmedFieldsRef.current.wordCountTarget =
@@ -173,6 +189,7 @@ export function ProjectSettingsDialog({
       }
       onUpdate();
     } catch (err) {
+      if (controller.signal.aborted) return; // superseded by a newer save
       console.error("Failed to save project setting:", err);
       // I7 (2026-04-23): route through the unified mapper instead of
       // hardcoding STRINGS.projectSettings.saveError — VALIDATION_ERROR,

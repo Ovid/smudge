@@ -208,10 +208,16 @@ export const api = {
         target_deadline?: string | null;
         author_name?: string | null;
       },
+      signal?: AbortSignal,
     ) =>
       apiFetch<Project>(`/projects/${enc(slug)}`, {
         method: "PATCH",
         body: JSON.stringify(data),
+        // Only include `signal` when one was actually provided; otherwise
+        // the fetch options object differs from the no-signal callers in
+        // ways that break tests asserting the options shape (and can
+        // subtly differ in fetch polyfills). Matches chapters.update.
+        ...(signal ? { signal } : {}),
       }),
 
     velocity: (slug: string) => apiFetch<VelocityResponse>(`/projects/${enc(slug)}/velocity`),

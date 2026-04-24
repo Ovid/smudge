@@ -85,6 +85,14 @@ export function useProjectEditor(slug: string | undefined) {
   // before issuing a new one, and thread the signal into
   // api.chapters.update so the abort actually severs the request.
   const statusChangeAbortRef = useRef<AbortController | null>(null);
+  // I1 (review 2026-04-24): rapid title edits used to fire overlapping
+  // PATCHes. The S7 drift guard discarded the stale response but the
+  // SECOND PATCH had already reached the server — SQLite's writer-lock
+  // ordering determined which title won, not the client's last-typed
+  // value. Mirror statusChangeAbortRef: abort any prior in-flight
+  // rename before issuing a new one, and thread the signal into
+  // api.projects.update so the network request is actually severed.
+  const titleChangeAbortRef = useRef<AbortController | null>(null);
 
   // Shared cancel-in-flight-save helper. Aborts the save sequence (so the
   // retry loop short-circuits on its next iteration via token.isStale()),
@@ -119,6 +127,10 @@ export function useProjectEditor(slug: string | undefined) {
   useEffect(() => {
     return () => {
       cancelInFlightSave();
+      // I1: abort field PATCHes on unmount so a late-resolving rename
+      // can't fire setState on a torn-down hook.
+      titleChangeAbortRef.current?.abort();
+      statusChangeAbortRef.current?.abort();
     };
   }, [cancelInFlightSave]);
 
@@ -741,8 +753,14 @@ export function useProjectEditor(slug: string | undefined) {
       // S6 (review 2026-04-21) + C1 (review 2026-04-24): drift guard —
       // see handleCreateChapter for full rationale.
       setProjectTitleError(null);
+      // I1: abort any prior in-flight title PATCH before issuing a new
+      // one so overlapping renames can't commit out of typing order.
+      titleChangeAbortRef.current?.abort();
+      const controller = new AbortController();
+      titleChangeAbortRef.current = controller;
       try {
-        const updated = await api.projects.update(slug, { title });
+        const updated = await api.projects.update(slug, { title }, controller.signal);
+        if (controller.signal.aborted) return undefined;
         // C3 defense-in-depth: if the user navigated mid-PATCH, discard
         // the response. The primary C3 guard lives in useProjectTitleEditing
         // (refuses saveProjectTitle when project.slug !== slug), but this
@@ -755,6 +773,7 @@ export function useProjectEditor(slug: string | undefined) {
         setProject((prev) => (prev ? { ...prev, title: updated.title, slug: updated.slug } : prev));
         return updated.slug;
       } catch (err) {
+        if (controller.signal.aborted) return undefined; // superseded by a newer rename
         console.warn("Failed to update project title:", err);
         // Don't call setError — that triggers the full-page error overlay.
         // Returning undefined keeps the title edit mode open so the user can retry.
