@@ -9,6 +9,7 @@ export type ApiErrorScope =
   | "project.create"
   | "project.delete"
   | "project.updateTitle"
+  | "project.updateFields"
   | "chapter.load"
   | "chapter.save"
   | "chapter.create"
@@ -41,6 +42,13 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   "project.updateTitle": {
     fallback: STRINGS.error.updateTitleFailed,
     committed: STRINGS.error.updateTitleResponseUnreadable,
+  },
+  "project.updateFields": {
+    fallback: STRINGS.projectSettings.saveError,
+    network: STRINGS.projectSettings.saveNetworkError,
+    committed: STRINGS.projectSettings.saveResponseUnreadable,
+    byCode: { VALIDATION_ERROR: STRINGS.projectSettings.saveInvalid },
+    byStatus: { 404: STRINGS.projectSettings.saveNotFound },
   },
   "chapter.load": { fallback: STRINGS.error.loadChapterFailed },
   "chapter.save": {

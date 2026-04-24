@@ -144,7 +144,31 @@ export function ProjectSettingsDialog({
       onUpdate();
     } catch (err) {
       console.error("Failed to save project setting:", err);
-      setFieldSaveError(STRINGS.projectSettings.saveError);
+      // I7 (2026-04-23): route through the unified mapper instead of
+      // hardcoding STRINGS.projectSettings.saveError — VALIDATION_ERROR,
+      // 404, NETWORK, 2xx BAD_JSON were all collapsed to one string
+      // before, violating the CLAUDE.md invariant that every user-
+      // visible message goes through the scope registry.
+      const { message, possiblyCommitted } = mapApiError(err, "project.updateFields");
+      if (message) setFieldSaveError(message);
+      // On possiblyCommitted the server likely saved the value — a
+      // revert to the prior confirmed value would contradict the
+      // committed state. Promote the optimistic input to "confirmed"
+      // so later saves compare against the correct baseline; the
+      // committed copy in the banner tells the user to refresh.
+      if (possiblyCommitted) {
+        if ("target_word_count" in data) {
+          confirmedFieldsRef.current.wordCountTarget =
+            data.target_word_count != null ? String(data.target_word_count) : "";
+        }
+        if ("target_deadline" in data) {
+          confirmedFieldsRef.current.deadline = data.target_deadline ?? "";
+        }
+        if ("author_name" in data) {
+          confirmedFieldsRef.current.authorName = data.author_name ?? "";
+        }
+        return;
+      }
       // Revert to last confirmed value, not stale props
       if ("target_word_count" in data) {
         setWordCountTarget(confirmedFieldsRef.current.wordCountTarget);

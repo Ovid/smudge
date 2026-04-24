@@ -417,6 +417,7 @@ describe("SCOPES registry", () => {
       "project.create",
       "project.delete",
       "project.updateTitle",
+      "project.updateFields",
       "chapter.load",
       "chapter.save",
       "chapter.create",

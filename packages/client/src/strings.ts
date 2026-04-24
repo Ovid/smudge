@@ -221,6 +221,11 @@ export const STRINGS = {
     authorName: "Author name",
     authorNamePlaceholder: "e.g. Jane Doe",
     saveError: "Failed to save. Please try again.",
+    saveNetworkError: "Failed to save — check your connection and try again.",
+    saveResponseUnreadable:
+      "The setting may have been saved, but the server response was unreadable. Refresh to see the current values.",
+    saveInvalid: "The value you entered is not valid.",
+    saveNotFound: "This project is no longer available.",
   },
   export: {
     buttonLabel: "Export",
