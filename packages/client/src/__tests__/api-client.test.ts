@@ -630,6 +630,45 @@ describe("api.projects.export (additional)", () => {
     expect(caught).toBeInstanceOf(ApiRequestError);
     expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("VALIDATION_ERROR");
   });
+
+  it("maps 2xx AbortError blob-read to ABORTED (I3)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    const abort = new DOMException("aborted", "AbortError");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      blob: () => Promise.reject(abort),
+    });
+
+    let caught: unknown;
+    try {
+      await api.projects.export("p1", { format: "html" });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("ABORTED");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
+  it("maps 2xx non-abort blob-read failure to BAD_JSON (I3)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      blob: () => Promise.reject(new TypeError("truncated response")),
+    });
+
+    let caught: unknown;
+    try {
+      await api.projects.export("p1", { format: "html" });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("BAD_JSON");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(200);
+  });
 });
 
 describe("api.images.upload (I1 transport classification)", () => {

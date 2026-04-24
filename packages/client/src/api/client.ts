@@ -264,7 +264,19 @@ export const api = {
         throw new ApiRequestError(message, res.status, code, extras);
       }
 
-      return res.blob();
+      // I3: 2xx body-read can abort (caller cancelled the in-flight
+      // download) or fail on a truncated/non-binary response. Both
+      // must surface via ApiRequestError so the mapper contract holds
+      // — a raw DOMException/TypeError escaping here falls into the
+      // !isApiRequestError branch and returns scope.fallback instead
+      // of the ABORTED silence or BAD_JSON/possiblyCommitted arms.
+      return res.blob().catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          throw classifyFetchError(err);
+        }
+        const message = err instanceof Error ? err.message : "[dev] Malformed export response";
+        throw new ApiRequestError(message, res.status, "BAD_JSON");
+      });
     },
   },
 
