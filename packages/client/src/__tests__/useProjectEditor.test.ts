@@ -1106,7 +1106,11 @@ describe("useProjectEditor", () => {
   it("handleSave breaks immediately on 500 UPDATE_READ_FAILURE (I5)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.update).mockRejectedValue(
-      new ApiRequestError("Chapter was updated but could not be re-read.", 500, "UPDATE_READ_FAILURE"),
+      new ApiRequestError(
+        "Chapter was updated but could not be re-read.",
+        500,
+        "UPDATE_READ_FAILURE",
+      ),
     );
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -1128,7 +1132,11 @@ describe("useProjectEditor", () => {
   it("handleSave breaks immediately on 500 CORRUPT_CONTENT (I5)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.update).mockRejectedValue(
-      new ApiRequestError("Chapter content is corrupted and cannot be loaded.", 500, "CORRUPT_CONTENT"),
+      new ApiRequestError(
+        "Chapter content is corrupted and cannot be loaded.",
+        500,
+        "CORRUPT_CONTENT",
+      ),
     );
 
     const { result } = renderHook(() => useProjectEditor("test-project"));

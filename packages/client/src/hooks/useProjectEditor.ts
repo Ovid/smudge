@@ -428,9 +428,7 @@ export function useProjectEditor(slug: string | undefined) {
           // match that intent or the user sees the new chapter appear
           // in the sidebar but stays on the previously-active chapter,
           // contradicting the committed-banner UX.
-          const previousChapterIds = new Set(
-            projectRef.current?.chapters.map((c) => c.id) ?? [],
-          );
+          const previousChapterIds = new Set(projectRef.current?.chapters.map((c) => c.id) ?? []);
           try {
             const refreshed = await api.projects.get(slug);
             if (
