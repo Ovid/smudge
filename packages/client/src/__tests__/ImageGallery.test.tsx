@@ -600,7 +600,7 @@ describe("ImageGallery", () => {
     await user.click(screen.getByText(S.backToGrid));
     await user.click(screen.getByRole("button", { name: `b.png, ${S.unusedBadge}` }));
     await waitFor(() => {
-      expect(api.images.references).toHaveBeenCalledWith("img-B");
+      expect(api.images.references).toHaveBeenCalledWith("img-B", expect.any(AbortSignal));
     });
 
     // Now resolve the stale A-refresh with A's references.
@@ -673,6 +673,25 @@ describe("ImageGallery", () => {
       expect(screen.getByText(S.loadFailed)).toBeInTheDocument();
     });
     expect(screen.getByText(S.retryButton)).toBeInTheDocument();
+  });
+
+  // I9 (review 2026-04-24): the list useEffect no longer uses a
+  // `let cancelled` flag. An AbortController drops the request on
+  // unmount / projectId change so the browser does not waste work and
+  // the ABORTED → message:null guard is reachable.
+  it("aborts in-flight images.list on unmount (I9)", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    vi.mocked(api.images.list).mockImplementation((_id, signal) => {
+      capturedSignal = signal;
+      return new Promise(() => {});
+    });
+
+    const { unmount } = render(<ImageGallery {...defaultProps} />);
+    await waitFor(() => expect(api.images.list).toHaveBeenCalled());
+    expect(capturedSignal?.aborted).toBe(false);
+
+    unmount();
+    expect(capturedSignal?.aborted).toBe(true);
   });
 
   it("stays silent when list request is aborted (no loadError banner)", async () => {
@@ -876,7 +895,7 @@ describe("ImageGallery", () => {
 
   it("fetches images on mount with the correct project ID", () => {
     render(<ImageGallery {...defaultProps} projectId="proj-abc" />);
-    expect(api.images.list).toHaveBeenCalledWith("proj-abc");
+    expect(api.images.list).toHaveBeenCalledWith("proj-abc", expect.any(AbortSignal));
   });
 
   it("resets confirming-delete state when navigating back to grid", async () => {

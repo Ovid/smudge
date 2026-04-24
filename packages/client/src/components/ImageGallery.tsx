@@ -67,29 +67,33 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
   const [refreshKey, incrementRefreshKey] = useReducer((c: number) => c + 1, 0);
 
   useEffect(() => {
-    let cancelled = false;
+    // I9 (review 2026-04-24): migrate from `let cancelled = false` to
+    // AbortController. The previous flag stopped the .then/.catch from
+    // writing state, but the fetch kept running server-side. Wiring a
+    // signal lets the browser drop the request on unmount / projectId /
+    // refreshKey change and makes the ABORTED → message:null branch
+    // reachable via the mapper.
+    const controller = new AbortController();
     api.images
-      .list(projectId)
+      .list(projectId, controller.signal)
       .then((list) => {
-        if (!cancelled) {
-          setImages(list);
-          setLoadError(null);
-        }
+        if (controller.signal.aborted) return;
+        setImages(list);
+        setLoadError(null);
       })
       .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
         // I8 (2026-04-23): route through mapApiError so NETWORK vs 5xx
         // distinctions reach the user via the image.list scope instead
         // of collapsing to the generic loadFailed copy. ABORTED returns
         // message: null — treat as a no-op (the user cancelled; do not
         // surface a loadError banner for a cancelled request).
-        if (!cancelled) {
-          const { message } = mapApiError(err, "image.list");
-          if (message === null) return;
-          setLoadError(message);
-        }
+        const { message } = mapApiError(err, "image.list");
+        if (message === null) return;
+        setLoadError(message);
       });
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [projectId, refreshKey]);
 
@@ -111,17 +115,17 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
   }, [selectedImageId]);
   useEffect(() => {
     if (!selectedImageId) return;
-    let cancelled = false;
+    // I9 (review 2026-04-24): same migration as the list effect.
+    const controller = new AbortController();
     api.images
-      .references(selectedImageId)
+      .references(selectedImageId, controller.signal)
       .then((data) => {
-        if (!cancelled) {
-          setReferences(data.chapters);
-          setReferencesLoaded(true);
-        }
+        if (controller.signal.aborted) return;
+        setReferences(data.chapters);
+        setReferencesLoaded(true);
       })
       .catch((err: unknown) => {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         // I6: don't mark references as loaded on failure — the detail
         // view falls back to selectedImage.reference_count, which at
         // least preserves the "in use" confirm gate when the row is
@@ -132,7 +136,7 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
         if (message) announce(message);
       });
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [selectedImageId, announce]);
 
