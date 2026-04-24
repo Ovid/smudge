@@ -1,7 +1,8 @@
+import { createRef } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { SnapshotPanel } from "../components/SnapshotPanel";
+import { SnapshotPanel, type SnapshotPanelHandle } from "../components/SnapshotPanel";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
 import type { SnapshotListItem } from "@smudge/shared";
@@ -627,6 +628,49 @@ describe("SnapshotPanel", () => {
         expect(panel).toBeInTheDocument();
         expect(panel).toHaveFocus();
       });
+    });
+
+    it("aborts in-flight imperative fetchSnapshots on unmount (review 2026-04-24)", async () => {
+      // The imperative fetchSnapshots() path (triggered post-create and
+      // post-delete via the SnapshotPanelHandle ref) created an
+      // AbortController but had no unmount cleanup to abort it — the
+      // comment claimed "chapter switch / unmount severs the request"
+      // but only the mount useEffect wired unmount teardown. Without
+      // this, an unmount during a post-mutation refresh leaks the
+      // server request.
+      const capturedSignals: AbortSignal[] = [];
+      vi.mocked(api.snapshots.list).mockImplementation(
+        async (_chapterId: string, signal?: AbortSignal) => {
+          if (signal) capturedSignals.push(signal);
+          // Hang forever — the test only cares whether unmount aborts.
+          return new Promise<SnapshotListItem[]>(() => {});
+        },
+      );
+
+      const ref = createRef<SnapshotPanelHandle>();
+      const { unmount } = render(<SnapshotPanel {...defaultProps} ref={ref} />);
+
+      // Wait for the mount fetch to fire.
+      await waitFor(() => {
+        expect(api.snapshots.list).toHaveBeenCalledTimes(1);
+      });
+
+      // Imperative refresh — simulates the post-create / post-delete path
+      // that wires through useImperativeHandle.
+      ref.current?.refreshSnapshots();
+      await waitFor(() => {
+        expect(api.snapshots.list).toHaveBeenCalledTimes(2);
+      });
+
+      // The mount-effect's controller is distinct from fetchAbortRef's;
+      // capture index 1 (the imperative call) for the post-unmount check.
+      const imperativeSignal = capturedSignals[1];
+      expect(imperativeSignal).toBeDefined();
+      expect(imperativeSignal.aborted).toBe(false);
+
+      unmount();
+
+      expect(imperativeSignal.aborted).toBe(true);
     });
 
     it("moves focus to panel on first mount when already open", async () => {

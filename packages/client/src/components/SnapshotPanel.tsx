@@ -116,8 +116,18 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
     const chapterSeq = useAbortableSequence();
     // I2 (review 2026-04-24): controllers paired with the sequence
     // tokens so a chapter switch / unmount severs the request as well
-    // as discarding the response.
+    // as discarding the response. The mount useEffect aborts its own
+    // controller on cleanup, and the imperative fetchSnapshots path
+    // (post-create / post-delete via useImperativeHandle) is covered by
+    // the unmount-cleanup effect below — without that cleanup, an
+    // imperative refresh whose parent unmounts while it is in flight
+    // leaked the server request to completion.
     const fetchAbortRef = useRef<AbortController | null>(null);
+    useEffect(() => {
+      return () => {
+        fetchAbortRef.current?.abort();
+      };
+    }, []);
 
     const fetchSnapshots = useCallback(async () => {
       if (!chapterId) return;
