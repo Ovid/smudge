@@ -317,6 +317,27 @@ export function EditorPage() {
     isEditorLocked,
   ]);
 
+  // I6 (review 2026-04-24): invariant-pair helper. CLAUDE.md save-
+  // pipeline invariant #2 requires setEditable(false) around any
+  // mutation that can fail mid-typing; the persistent lock banner
+  // (editorLockedMessage) is the only user-visible signal of that
+  // read-only state. The two MUST be set together — a caller that
+  // flips one without the other leaves the UI and the editor-state
+  // disagreeing. Three call sites pair them today (restore stage:
+  // "reload", restore stage:"mutate" possiblyCommitted, and
+  // finalizeReplaceSuccess non-stale reloadFailed). Extracting the
+  // pair into a named helper makes the coupling explicit so a future
+  // refactor can't silently drop one half. Callers keep their
+  // surrounding refreshes / cache-clear / stale-chapter branching
+  // inline because those diverge between the restore and replace
+  // flows in non-mechanical ways.
+  const applyReloadFailedLock = useCallback((bannerMessage: string) => {
+    setEditorLockedMessage(bannerMessage);
+    // safeSetEditable swallows TipTap mid-remount throws so a caller's
+    // follow-up bookkeeping (cache-clear, panel refresh) still runs.
+    safeSetEditable(editorRef, false);
+  }, []);
+
   const handleRestoreSnapshot = useCallback(async () => {
     if (!viewingSnapshot || !activeChapter) return;
 
@@ -432,18 +453,9 @@ export function EditorPage() {
         // editor stays setEditable(false) (see useEditorMutation reloadFailed
         // path) — surface a persistent, non-dismissible lock banner so the
         // user-visible signal of the read-only state cannot be hidden (I1).
-        setEditorLockedMessage(STRINGS.snapshots.restoreSucceededReloadFailed);
-        // S12 (2026-04-23 review): re-lock BEFORE the defense-in-depth
-        // cache-clear so the order matches invariants #2/#3: editor
-        // becomes read-only first, then the cache is wiped now that no
-        // typing can land against the cleared draft. The hook's
-        // reloadFailed path already kept the editor setEditable(false);
-        // this call is a belt-and-braces guard against a future hook
-        // refactor letting a mid-remount throw re-enable the editor
-        // after the banner is set. safeSetEditable swallows TipTap
-        // mid-remount throws so the follow-up cache-clear and snapshot
-        // panel refresh still run.
-        safeSetEditable(editorRef, false);
+        // applyReloadFailedLock (I6) sets the banner AND safeSetEditable
+        // in one call so the two can't drift apart in a future refactor.
+        applyReloadFailedLock(STRINGS.snapshots.restoreSucceededReloadFailed);
         // Defense-in-depth cache-clear mirroring the possibly_committed
         // branch below. The hook's stage:"reload" path normally handles
         // cache-clear (including the C1 fix for the mid-remount re-lock
@@ -513,16 +525,16 @@ export function EditorPage() {
             refreshSnapshotCount();
             return;
           }
-          setEditorLockedMessage(message);
           // Lock-banner state doesn't enforce read-only by itself; the
           // hook's finally already re-enabled the editor after the
-          // mutate-stage throw. Re-apply setEditable(false) so auto-save
-          // cannot overwrite a possibly-committed restore. Wrapped in
-          // safeSetEditable (I2): TipTap can throw synchronously during the
-          // mid-remount window, and an unwrapped throw here would skip the
-          // snapshot panel refresh and leave the lock banner without its
-          // companion editor-state change.
-          safeSetEditable(editorRef, false);
+          // mutate-stage throw. applyReloadFailedLock (I6) sets the
+          // banner + safeSetEditable as an invariant pair so auto-save
+          // cannot overwrite a possibly-committed restore. Wrapped via
+          // safeSetEditable (I2): TipTap can throw synchronously during
+          // the mid-remount window, and an unwrapped throw here would
+          // skip the snapshot panel refresh and leave the lock banner
+          // without its companion editor-state change.
+          applyReloadFailedLock(message);
           snapshotPanelRef.current?.refreshSnapshots();
           // The server almost certainly just committed a restore + its
           // auto-snapshot. Drive the toolbar badge directly (I1) — the
@@ -584,6 +596,7 @@ export function EditorPage() {
     exitSnapshotView,
     refreshSnapshotCount,
     getActiveChapter,
+    applyReloadFailedLock,
   ]);
 
   // Shared post-replace bookkeeping for executeReplace and handleReplaceOne,
@@ -633,17 +646,16 @@ export function EditorPage() {
       const currentId = targetChapterId !== undefined ? getActiveChapter()?.id : undefined;
       const stale = targetChapterId !== undefined && currentId !== targetChapterId;
       if (reloadFailed && !stale) {
-        setEditorLockedMessage(lockMessage ?? STRINGS.findReplace.replaceSucceededReloadFailed);
-        // The lock banner is UI-only — it does not itself make the editor
-        // read-only. In the stage:"reload" path the hook kept the editor
-        // setEditable(false) (reloadFailed branch skips the finally's
-        // re-enable). In the stage:"mutate" 2xx BAD_JSON path the hook's
-        // finally already re-enabled it. Call setEditable(false) here so
-        // both callers converge on the same read-only invariant — the
-        // banner and the editor state never disagree (C1). Wrapped in
-        // safeSetEditable (I2) so a TipTap mid-remount throw does not
-        // skip the awaited search refresh below.
-        safeSetEditable(editorRef, false);
+        // I6: applyReloadFailedLock sets banner + safeSetEditable as an
+        // invariant pair. In the stage:"reload" path the hook kept the
+        // editor setEditable(false) (reloadFailed branch skips the
+        // finally's re-enable). In the stage:"mutate" 2xx BAD_JSON path
+        // the hook's finally already re-enabled it. The helper call
+        // converges both call sites on the same read-only invariant —
+        // the banner and the editor state never disagree (C1). The
+        // embedded safeSetEditable (I2) prevents a TipTap mid-remount
+        // throw from skipping the awaited search refresh below.
+        applyReloadFailedLock(lockMessage ?? STRINGS.findReplace.replaceSucceededReloadFailed);
       } else if (reloadFailed && stale) {
         // I1: the target chapter is no longer active. A persistent lock
         // banner here would be misattributed — the user is looking at a
@@ -668,7 +680,14 @@ export function EditorPage() {
         setActionInfo(STRINGS.findReplace.replaceSuccess(replacedCount));
       }
     },
-    [findReplace, snapshotPanelRef, refreshSnapshotCount, getActiveChapter, setActionError],
+    [
+      findReplace,
+      snapshotPanelRef,
+      refreshSnapshotCount,
+      getActiveChapter,
+      setActionError,
+      applyReloadFailedLock,
+    ],
   );
 
   const executeReplace = useCallback(
