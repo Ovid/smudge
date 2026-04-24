@@ -364,13 +364,17 @@ describe("useSnapshotState", () => {
     });
     expect(result.current.viewingSnapshot).not.toBeNull();
 
-    // Now restore
-    let r: { ok: boolean; reason?: string } = { ok: false };
+    // Now restore. I20 (review 2026-04-24): the prior annotation
+    // `{ ok: boolean; reason?: string }` reflected a pre-refactor
+    // RestoreResult shape — the current shape is discriminated with
+    // `error` on the failure arm. Drop the annotation; the assignment
+    // inside act() infers the return type directly from restoreSnapshot.
+    let r: Awaited<ReturnType<typeof result.current.restoreSnapshot>> | undefined;
     await act(async () => {
       r = await result.current.restoreSnapshot("snap-1");
     });
 
-    expect(r.ok).toBe(true);
+    expect(r?.ok).toBe(true);
     // I3 (review 2026-04-24): restore threads an AbortSignal so chapter
     // switch / unmount during the restore drops the fetch cleanly.
     expect(api.snapshots.restore).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
