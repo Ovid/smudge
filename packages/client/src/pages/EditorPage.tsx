@@ -497,11 +497,11 @@ export function EditorPage() {
           result.error.apiError,
           "snapshot.restore",
         );
-        // I7: ABORTED and silent no-ops surface as message:null. Mirrors
-        // RestoreAbortedError's silent return. No path triggers ABORTED on
-        // restore today (restoreSnapshot has no AbortController wired) —
-        // the early return is in place so a future wiring does not surface
-        // a misleading banner.
+        // I7 + I3 (review 2026-04-24): ABORTED and silent no-ops surface
+        // as message:null. Mirrors RestoreAbortedError's silent return.
+        // restoreSnapshot now wires a restoreAbortRef, so an unmount or
+        // newer restore mid-flight DOES trigger ABORTED — this branch is
+        // the live guard, not a future-proofing placeholder.
         if (message === null) return;
         if (possiblyCommitted) {
           // 2xx BAD_JSON on restore: server likely committed the restore

@@ -167,6 +167,12 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   // useEffect below).
   const viewAbortRef = useRef<AbortController | null>(null);
   const refreshCountAbortRef = useRef<AbortController | null>(null);
+  // I3 (review 2026-04-24): restore + follow-up list had no
+  // AbortController. A chapter switch or unmount mid-flight left the
+  // server fetching/writing for a caller that already discarded the
+  // response. Thread the signal through both calls and abort on
+  // unmount so the browser drops them cleanly.
+  const restoreAbortRef = useRef<AbortController | null>(null);
   // Mirror the current chapterId so async handlers can check the live value
   // against their captured one (needed for A→B→A restore detection).
   const currentChapterIdRef = useRef<string | null>(chapterId);
@@ -341,8 +347,14 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       // reset viewingSnapshot for the new chapter.
       const token = chapterSeq.capture();
       const restoringChapterId = chapterId;
+      // I3: abort any prior in-flight restore before issuing a new one
+      // and install the controller on the shared ref so the unmount
+      // effect can sever a mid-flight restore.
+      restoreAbortRef.current?.abort();
+      const controller = new AbortController();
+      restoreAbortRef.current = controller;
       try {
-        await api.snapshots.restore(snapshotId);
+        await api.snapshots.restore(snapshotId, controller.signal);
         // A→B→A round-trip: epoch moved but the current chapter is once
         // again the one we restored. Treat that as a NOT-stale completion
         // — the caller should reload the editor because the restore
@@ -367,8 +379,10 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
           // still needs to be keyed to the current chapter epoch so a
           // later switch can discard it.
           const freshToken = chapterSeq.capture();
+          // I3: thread the same restore controller so the follow-up list
+          // is aborted with the parent restore on unmount.
           api.snapshots
-            .list(restoringChapterId)
+            .list(restoringChapterId, controller.signal)
             .then((data) => {
               if (!freshToken.isStale()) setSnapshotCount(data.length);
             })
@@ -432,6 +446,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
     () => () => {
       viewAbortRef.current?.abort();
       refreshCountAbortRef.current?.abort();
+      restoreAbortRef.current?.abort();
     },
     [],
   );

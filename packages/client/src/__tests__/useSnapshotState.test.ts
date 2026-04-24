@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { renderHook, act, cleanup } from "@testing-library/react";
+import { renderHook, act, cleanup, waitFor } from "@testing-library/react";
 import { useSnapshotState } from "../hooks/useSnapshotState";
 import { api, ApiRequestError } from "../api/client";
 import { mapApiError } from "../errors";
@@ -371,8 +371,37 @@ describe("useSnapshotState", () => {
     });
 
     expect(r.ok).toBe(true);
-    expect(api.snapshots.restore).toHaveBeenCalledWith("snap-1");
+    // I3 (review 2026-04-24): restore threads an AbortSignal so chapter
+    // switch / unmount during the restore drops the fetch cleanly.
+    expect(api.snapshots.restore).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     expect(result.current.viewingSnapshot).toBeNull();
+  });
+
+  // I3 (review 2026-04-24): restore + follow-up list run past unmount
+  // if no signal is threaded. Hook now holds a restoreAbortRef which
+  // the unmount cleanup aborts so the browser drops the in-flight
+  // request instead of finishing it for a gone caller.
+  it("restoreSnapshot aborts in-flight restore on unmount (I3)", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    vi.mocked(api.snapshots.restore).mockImplementation((_id, signal) => {
+      capturedSignal = signal;
+      return new Promise(() => {}); // never resolves
+    });
+
+    const { result, unmount } = renderHook(() => useSnapshotState("ch-1"));
+
+    act(() => {
+      void result.current.restoreSnapshot("snap-1");
+    });
+
+    await waitFor(() => {
+      expect(api.snapshots.restore).toHaveBeenCalled();
+    });
+    expect(capturedSignal?.aborted).toBe(false);
+
+    unmount();
+
+    expect(capturedSignal?.aborted).toBe(true);
   });
 
   it("restoreSnapshot flags staleChapterSwitch when chapter changes mid-flight", async () => {
