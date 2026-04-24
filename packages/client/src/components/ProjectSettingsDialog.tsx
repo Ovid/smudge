@@ -167,6 +167,15 @@ export function ProjectSettingsDialog({
         if ("author_name" in data) {
           confirmedFieldsRef.current.authorName = data.author_name ?? "";
         }
+        // I8: fire onUpdate on the committed branch too. The happy path
+        // calls onUpdate, which refreshes the parent's project state
+        // (consumed by ProgressStrip, DashboardView, velocity). Without
+        // this, the dialog locally promotes the optimistic value but the
+        // parent keeps rendering pre-change values — the user closes the
+        // dialog and sees the old value elsewhere, concluding the save
+        // did not take. The parent GET failure case (404 → navigate home)
+        // is correct if the server state has actually diverged.
+        onUpdate();
         return;
       }
       // Revert to last confirmed value, not stale props

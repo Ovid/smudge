@@ -2,9 +2,18 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, cleanup, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ProjectSettingsDialog } from "../components/ProjectSettingsDialog";
-import { api } from "../api/client";
+import { api, ApiRequestError } from "../api/client";
 
-vi.mock("../api/client");
+vi.mock("../api/client", async () => {
+  const actual = await vi.importActual<typeof import("../api/client")>("../api/client");
+  return {
+    ...actual,
+    api: {
+      projects: { update: vi.fn() },
+      settings: { get: vi.fn(), update: vi.fn() },
+    },
+  };
+});
 
 const defaultProject = {
   id: "1",
@@ -166,6 +175,36 @@ describe("ProjectSettingsDialog", () => {
 
     // Negative value should be rejected — no update call
     expect(api.projects.update).not.toHaveBeenCalled();
+  });
+
+  it("fires onUpdate on possiblyCommitted (2xx BAD_JSON) branch (I8)", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(api.projects.update).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+    const user = userEvent.setup();
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+    const input = screen.getByLabelText(/word count target/i);
+    await user.clear(input);
+    await user.type(input, "50000");
+    fireEvent.blur(input, { relatedTarget: screen.getByLabelText(/deadline/i) });
+
+    await waitFor(() => {
+      expect(api.projects.update).toHaveBeenCalled();
+    });
+    // Parent refresh must fire so state consumed by ProgressStrip/dashboard
+    // does not render pre-change values after the dialog closes.
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalled();
+    });
+    errSpy.mockRestore();
   });
 
   it("logs error when save fails", async () => {
