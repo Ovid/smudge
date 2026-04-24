@@ -73,6 +73,66 @@
 
 # Tech Debt
 
+## Deferred from unified-error-mapper code review (2026-04-24)
+
+Suggestion-level findings that are not blocking. Enumerated here so they
+are not lost and can be picked up as small independent PRs.
+
+- `packages/client/src/api/client.ts:70-79` — `extractExtras`'s
+  `out[k] = rest[k]` is reparentable via the `__proto__` setter (scope-
+  local, not global pollution). Use `Object.create(null)` or skip
+  `__proto__` / `constructor` keys.
+- `packages/client/src/api/client.ts:68` — `MAX_EXTRAS_KEYS = 16`
+  truncates only top-level keys; nested arrays/strings are unbounded
+  (DoS-theoretical on `chapters` join).
+- `packages/client/src/api/client.ts:68` — `MAX_EXTRAS_KEYS` truncation
+  is order-sensitive; a padded envelope could drop `chapters` silently
+  with no warning.
+- `packages/client/src/errors/scopes.ts` `image.delete` `extrasFrom` is
+  all-or-nothing (one malformed chapter drops the full list);
+  consider returning the validated subset.
+- `packages/client/src/errors/scopes.ts` `trash.restoreChapter` missing
+  `RESTORE_READ_FAILURE` byCode → generic copy when the row was
+  actually restored.
+- `packages/client/src/errors/apiErrorMapper.ts:28-52` — reserved
+  synthetic codes `ABORTED`/`NETWORK`/`BAD_JSON` could collide with a
+  future server code; reserve with a prefix or require status
+  discriminant.
+- `packages/client/src/pages/EditorPage.tsx:~1465` — settings-update
+  follow-up GET uses `project.load` scope copy ("Failed to load the
+  project") — wrong attribution.
+- `packages/client/src/pages/EditorPage.tsx:~1441-1452` —
+  `handleProjectSettingsUpdate` post-await merge could stomp a
+  concurrent same-project field write; narrow window.
+- `packages/client/src/hooks/useTrashManager.ts:25, 53` and
+  `packages/client/src/components/ProjectSettingsDialog.tsx:146, 224`
+  — use `console.error` vs the `console.warn` convention used
+  elsewhere; test-noise risk per CLAUDE.md §Testing Philosophy.
+- `packages/client/src/hooks/useProjectEditor.ts:~639-650` —
+  `handleReorderChapters` possiblyCommitted branch does not fire a
+  project refresh (unlike sibling `handleCreateChapter` /
+  `handleUpdateProjectTitle`).
+- `packages/client/src/hooks/useProjectEditor.ts` — `handleStatusChange`
+  catch: on ABORTED follow-on the reload `projects.get` can still fire
+  under edge cases; tighten with an `isAborted` early-return on any
+  second-await path.
+- `packages/client/src/hooks/useProjectEditor.ts` — `handleRenameChapter`
+  has the same abort gap as the I11 handleStatusChange fix (lower
+  impact — blur-triggered). Add a renameAbortRef mirroring
+  statusChangeAbortRef.
+- `packages/client/src/hooks/useTimezoneDetection.ts:3-20` —
+  `detectAndSetTimezone` races against an explicit timezone choice in
+  the settings dialog; bounded to app-boot window.
+- `packages/client/src/components/ProjectSettingsDialog.tsx:~129-183`
+  — `saveField` lacks abort/seq; sibling `handleTimezoneChange` in
+  the same file has both.
+- `packages/client/src/components/SnapshotPanel.tsx:~292` and
+  `packages/client/src/components/ImageGallery.tsx:~212` — on ABORTED
+  the delete confirm dialog state is not reset; latent.
+- `packages/client/src/hooks/useProjectEditor.ts` — `console.warn(..., err)`
+  logs the full ApiRequestError with server message; console is one
+  click from the user.
+
 - EditorPage empty-chapters view and main editor view duplicate ~80-100 lines
   of JSX (header, sidebar, error banner, trash, dialogs, live regions). Extract
   shared chrome into a layout wrapper to reduce divergence risk.
