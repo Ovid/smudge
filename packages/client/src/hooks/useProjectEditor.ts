@@ -168,8 +168,11 @@ export function useProjectEditor(slug: string | undefined) {
           setChapterWordCount(countWords(effectiveChapter.content));
         }
       } catch (err) {
-        console.warn("Failed to load project:", err);
+        // Copilot review 2026-04-24 (wider occurrence of HomePage race):
+        // gate console.warn on `cancelled` so a late rejection on
+        // unmount/slug-change does not leak noise into test output.
         if (cancelled) return;
+        console.warn("Failed to load project:", err);
         const { message } = mapApiError(err, "project.load");
         if (message) setError(message);
       }

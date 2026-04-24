@@ -537,6 +537,27 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("does not console.warn when loadProject rejects after unmount", async () => {
+    // Copilot review 2026-04-24 (wider occurrence of the HomePage
+    // race): previously console.warn fired BEFORE the cancelled guard,
+    // producing test-output noise on navigation/unmount races.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let rejectFn: (err: Error) => void = () => {};
+    vi.mocked(api.projects.get).mockReturnValue(
+      new Promise((_, reject) => {
+        rejectFn = reject;
+      }),
+    );
+
+    const { unmount } = renderHook(() => useProjectEditor("some-slug"));
+    unmount();
+    rejectFn(new Error("Network error"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
   it("updates word count on content change", async () => {
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
