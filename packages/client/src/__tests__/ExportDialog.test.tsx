@@ -356,6 +356,26 @@ describe("ExportDialog", () => {
     errorSpy.mockRestore();
   });
 
+  // C4 (review 2026-04-24): a real 4xx/5xx on the cover-image fetch
+  // used to silently set coverImages=[], so the dropdown disappeared
+  // and the user assumed the project had no images — exporting without
+  // a cover and never knowing the list load failed. Surface the mapped
+  // message via the existing setError() banner so the failure is
+  // visible. ABORTED stays silent per the mapper contract.
+  it("surfaces cover-image list error in the alert banner (C4)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.images.list).mockRejectedValue(new ApiRequestError("boom", 500));
+
+    render(<ExportDialog {...defaultProps} />);
+    await user.click(screen.getByLabelText("EPUB"));
+
+    // The role="alert" paragraph above the format fieldset carries the
+    // mapped image.list fallback copy.
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(/failed to load images/i);
+    });
+  });
+
   it("includes epub_cover_image_id in export when cover image is selected", async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();

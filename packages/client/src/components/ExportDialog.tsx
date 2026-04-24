@@ -108,9 +108,15 @@ export function ExportDialog({
           const { message } = mapApiError(err, "image.list");
           // ABORTED surfaces as message === null; silent no-op.
           if (message === null) return;
-          // Non-abort failure: surface nothing in the dropdown so the
-          // user can still export without a cover.
+          // C4 (review 2026-04-24): previously setCoverImages([]) ran
+          // silently on any non-abort failure, so a real 4xx/5xx looked
+          // identical to "this project has no images" — the user
+          // exported without a cover assuming none existed. Surface the
+          // mapped scope copy in the existing error banner and leave
+          // coverImages empty so the dropdown stays hidden. The user
+          // sees the failure and can retry.
           setCoverImages([]);
+          setError(message);
         });
       return () => {
         controller.abort();
