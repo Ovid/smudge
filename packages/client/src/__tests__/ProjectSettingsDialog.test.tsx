@@ -326,8 +326,14 @@ describe("ProjectSettingsDialog", () => {
     spy.mockRestore();
   });
 
-  it("falls back to UTC when settings fetch fails", async () => {
-    vi.mocked(api.settings.get).mockRejectedValue(new Error("fetch failed"));
+  it("surfaces mapped error when settings fetch fails (I9)", async () => {
+    // I9: previously silently fell back to UTC, hiding real fetch
+    // failures. The user would change to their real timezone, save,
+    // and overwrite the stored value. Now surface the mapped message
+    // via the existing alert so the user can retry before saving.
+    vi.mocked(api.settings.get).mockRejectedValue(
+      new ApiRequestError("boom", 500, "INTERNAL_ERROR"),
+    );
     render(
       <ProjectSettingsDialog
         open={true}
@@ -338,7 +344,7 @@ describe("ProjectSettingsDialog", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/timezone/i)).toHaveValue("UTC");
+      expect(screen.getByRole("alert")).toHaveTextContent(/unable to load settings/i);
     });
   });
 });

@@ -84,6 +84,9 @@ export const STRINGS = {
     statusesFetchFailedNetwork:
       "Failed to load chapter statuses — check your connection and try again.",
     settingsUpdateFailedGeneric: "Unable to save settings.",
+    settingsLoadFailed: "Unable to load settings. Close and reopen the dialog to retry.",
+    settingsLoadFailedNetwork:
+      "Unable to load settings — check your connection. Close and reopen the dialog to retry.",
   },
   editor: {
     placeholder: "Start writing\u2026",

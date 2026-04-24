@@ -533,6 +533,7 @@ describe("SCOPES registry", () => {
       "trash.load",
       "trash.restoreChapter",
       "settings.update",
+      "settings.get",
       "dashboard.load",
       "project.velocity",
     ];

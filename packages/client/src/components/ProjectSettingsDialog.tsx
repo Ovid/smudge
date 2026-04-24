@@ -89,10 +89,19 @@ export function ProjectSettingsDialog({
             confirmedTimezoneRef.current = tz;
           }
         })
-        .catch(() => {
-          if (!cancelled && !userChangedTimezoneRef.current) {
-            setTimezone("UTC");
-            confirmedTimezoneRef.current = "UTC";
+        .catch((err: unknown) => {
+          if (cancelled || userChangedTimezoneRef.current) return;
+          // I9: a silent UTC fallback hid real GET failures — the user
+          // would see UTC in the dropdown, choose their real timezone,
+          // save, and overwrite whatever-was-stored with the new value.
+          // Surface the mapped failure instead so the user can close
+          // and retry rather than silently stomp stored state.
+          // ABORTED (message: null) stays silent per the mapper
+          // contract — a dialog-close triggered unmount is not a
+          // failure the user needs to see.
+          const { message } = mapApiError(err, "settings.get");
+          if (message) {
+            setTimezoneSaveError(message);
           }
         });
       return () => {

@@ -34,6 +34,7 @@ export type ApiErrorScope =
   | "trash.load"
   | "trash.restoreChapter"
   | "settings.update"
+  | "settings.get"
   | "dashboard.load"
   | "project.velocity";
 
@@ -230,6 +231,10 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   "settings.update": {
     fallback: STRINGS.error.settingsUpdateFailedGeneric,
     committed: STRINGS.error.possiblyCommitted,
+  },
+  "settings.get": {
+    fallback: STRINGS.error.settingsLoadFailed,
+    network: STRINGS.error.settingsLoadFailedNetwork,
   },
   "dashboard.load": {
     fallback: STRINGS.error.loadDashboardFailed,
