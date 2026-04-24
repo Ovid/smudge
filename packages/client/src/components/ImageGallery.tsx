@@ -49,6 +49,18 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
   // in-flight refresh would overwrite B's references on resolution,
   // mis-gating delete and surfacing A's "used in" list on B's detail.
   const selectedImageIdRef = useRef<string | null>(null);
+  // I10 + I11 (review 2026-04-24): single abort ref for all gallery
+  // mutations (upload, metadata update, delete). A new mutation aborts
+  // the prior one so overlapping clicks cannot race at the server; the
+  // unmount effect aborts any in-flight mutation so a multi-MB upload
+  // does not keep running server-side after the gallery closes.
+  const mutateAbortRef = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      mutateAbortRef.current?.abort();
+    },
+    [],
+  );
 
   const S = STRINGS.imageGallery;
 
@@ -152,13 +164,18 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
       return;
     }
 
+    mutateAbortRef.current?.abort();
+    const controller = new AbortController();
+    mutateAbortRef.current = controller;
     api.images
-      .upload(projectId, file)
+      .upload(projectId, file, controller.signal)
       .then((newImage) => {
+        if (controller.signal.aborted) return;
         announce(S.uploadSuccess(newImage.filename));
         incrementRefreshKey();
       })
       .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
         const { message, possiblyCommitted } = mapApiError(err, "image.upload");
         // I3 (2026-04-24 review): on 2xx BAD_JSON the server stored the
         // image but the client couldn't parse the response. Without the
@@ -197,12 +214,17 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
   async function handleSave() {
     if (!selectedImage) return;
     setSaveStatus("saving");
+    mutateAbortRef.current?.abort();
+    const controller = new AbortController();
+    mutateAbortRef.current = controller;
     try {
-      const updated = await api.images.update(selectedImage.id, formState);
+      const updated = await api.images.update(selectedImage.id, formState, controller.signal);
+      if (controller.signal.aborted) return;
       setSelectedImage(updated);
       setSaveStatus("saved");
       incrementRefreshKey();
     } catch (err: unknown) {
+      if (controller.signal.aborted) return;
       setSaveStatus("idle");
       const { message } = mapApiError(err, "image.updateMetadata");
       if (message) announce(message);
@@ -214,14 +236,19 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
     // Auto-save pending metadata changes before inserting so the DB stays in sync
     let imageToInsert = selectedImage;
     if (saveStatus !== "saved") {
+      mutateAbortRef.current?.abort();
+      const controller = new AbortController();
+      mutateAbortRef.current = controller;
       try {
         setSaveStatus("saving");
-        const updated = await api.images.update(selectedImage.id, formState);
+        const updated = await api.images.update(selectedImage.id, formState, controller.signal);
+        if (controller.signal.aborted) return;
         setSelectedImage(updated);
         setSaveStatus("saved");
         incrementRefreshKey();
         imageToInsert = updated;
       } catch (err: unknown) {
+        if (controller.signal.aborted) return;
         setSaveStatus("idle");
         const { message } = mapApiError(err, "image.updateMetadata");
         if (message) announce(message);
@@ -235,13 +262,18 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
   async function handleDelete() {
     if (!selectedImage) return;
 
+    mutateAbortRef.current?.abort();
+    const controller = new AbortController();
+    mutateAbortRef.current = controller;
     try {
-      await api.images.delete(selectedImage.id);
+      await api.images.delete(selectedImage.id, controller.signal);
+      if (controller.signal.aborted) return;
       announce(S.deleteSuccess(selectedImage.filename));
       setSelectedImage(null);
       setConfirmingDelete(false);
       incrementRefreshKey();
     } catch (err: unknown) {
+      if (controller.signal.aborted) return;
       const { message, possiblyCommitted, extras } = mapApiError(err, "image.delete");
       // ABORTED: silent (mapper returned message: null). Leave the detail
       // view and confirmation state as-is so the user can retry.

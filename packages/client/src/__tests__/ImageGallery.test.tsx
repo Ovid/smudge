@@ -335,12 +335,16 @@ describe("ImageGallery", () => {
     await waitFor(() => {
       expect(screen.getByText(S.saved)).toBeInTheDocument();
     });
-    expect(api.images.update).toHaveBeenCalledWith("img-1", {
-      alt_text: "Updated alt",
-      caption: "Photo caption",
-      source: "Photo source",
-      license: "MIT",
-    });
+    expect(api.images.update).toHaveBeenCalledWith(
+      "img-1",
+      {
+        alt_text: "Updated alt",
+        caption: "Photo caption",
+        source: "Photo source",
+        license: "MIT",
+      },
+      expect.any(AbortSignal),
+    );
   });
 
   it("shows saving text while save is in flight", async () => {
@@ -454,7 +458,7 @@ describe("ImageGallery", () => {
     await waitFor(() => {
       expect(screen.getByText(S.uploadButton)).toBeInTheDocument();
     });
-    expect(api.images.delete).toHaveBeenCalledWith("img-1");
+    expect(api.images.delete).toHaveBeenCalledWith("img-1", expect.any(AbortSignal));
   });
 
   it("announces deletion success for screen readers", async () => {
