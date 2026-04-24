@@ -41,6 +41,14 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const announcementTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Review 2026-04-24: stale-guard for the on-demand references refresh
+  // fired from the Delete button. The click handler captures the id at
+  // click time; this ref tracks the currently-selected id so the .then
+  // resolver can bail if the user has moved on (back to grid, or
+  // another image) before the response lands. Without this, A's
+  // in-flight refresh would overwrite B's references on resolution,
+  // mis-gating delete and surfacing A's "used in" list on B's detail.
+  const selectedImageIdRef = useRef<string | null>(null);
 
   const S = STRINGS.imageGallery;
 
@@ -95,6 +103,12 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
 
   // Load references when detail view opens
   const selectedImageId = selectedImage?.id ?? null;
+  // Keep the ref in sync with the currently-selected image id so the
+  // Delete-click refresh's resolver can detect a selection change and
+  // bail before clobbering a different image's references.
+  useEffect(() => {
+    selectedImageIdRef.current = selectedImageId;
+  }, [selectedImageId]);
   useEffect(() => {
     if (!selectedImageId) return;
     let cancelled = false;
@@ -484,14 +498,22 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
               onClick={() => {
                 // Re-fetch references to avoid stale state blocking a valid delete
                 if (selectedImage) {
+                  // Review 2026-04-24: capture id at click time and
+                  // compare against the current id in the resolvers so
+                  // a rapid navigate-away (back to grid, or another
+                  // image) before resolution doesn't clobber the new
+                  // image's references or announce an unrelated failure.
+                  const imageId = selectedImage.id;
                   setReferencesLoaded(false);
                   api.images
-                    .references(selectedImage.id)
+                    .references(imageId)
                     .then((data) => {
+                      if (selectedImageIdRef.current !== imageId) return;
                       setReferences(data.chapters);
                       setReferencesLoaded(true);
                     })
                     .catch((err: unknown) => {
+                      if (selectedImageIdRef.current !== imageId) return;
                       // I6: keep referencesLoaded=false (show the
                       // "Loading details…" gate when reference_count>0
                       // rather than the plain Delete confirm) and

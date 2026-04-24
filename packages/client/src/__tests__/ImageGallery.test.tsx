@@ -520,6 +520,73 @@ describe("ImageGallery", () => {
     expect(api.images.references).toHaveBeenCalledTimes(2);
   });
 
+  // Review 2026-04-24: the Delete-click references refresh had no
+  // stale-guard. User opens A, clicks Delete (starts A's refresh),
+  // navigates back to grid and opens B. When A's in-flight refresh
+  // finally resolves, it must NOT overwrite B's detail-view references
+  // (which could enable a delete that should have been blocked, or
+  // surface a stale "Used in" list for a different image).
+  it("delete-click references refresh does not leak across image-selection change", async () => {
+    const user = userEvent.setup();
+    const imageA = makeImage({ id: "img-A", filename: "a.png", reference_count: 2 });
+    const imageB = makeImage({ id: "img-B", filename: "b.png", reference_count: 0 });
+
+    vi.mocked(api.images.list).mockResolvedValue([imageA, imageB]);
+
+    // Hold the Delete-click refresh for A open so we can resolve it
+    // AFTER the user has navigated to a different image.
+    let resolveStaleRefresh!: (data: {
+      chapters: Array<{ id: string; title: string }>;
+    }) => void;
+    const deferredStaleRefresh = new Promise<{
+      chapters: Array<{ id: string; title: string }>;
+    }>((resolve) => {
+      resolveStaleRefresh = resolve;
+    });
+
+    vi.mocked(api.images.references)
+      // A's mount-load references
+      .mockResolvedValueOnce({ chapters: [{ id: "ch-A", title: "Chapter A" }] })
+      // A's Delete-click refresh — deferred
+      .mockReturnValueOnce(deferredStaleRefresh)
+      // B's mount-load references
+      .mockResolvedValueOnce({ chapters: [] });
+
+    render(<ImageGallery {...defaultProps} />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "a.png" })).toBeInTheDocument();
+    });
+
+    // Open A — mount-load fires and resolves with Chapter A
+    await user.click(screen.getByRole("button", { name: "a.png" }));
+    await waitFor(() => {
+      expect(screen.getByText("Chapter A")).toBeInTheDocument();
+    });
+
+    // Click Delete — starts the Delete-click refresh (still pending).
+    await user.click(screen.getByText(S.deleteButton));
+
+    // Navigate back to grid and open B before the stale refresh resolves.
+    await user.click(screen.getByText(S.backToGrid));
+    await user.click(screen.getByRole("button", { name: `b.png, ${S.unusedBadge}` }));
+    await waitFor(() => {
+      expect(api.images.references).toHaveBeenCalledWith("img-B");
+    });
+
+    // Now resolve the stale A-refresh with A's references.
+    resolveStaleRefresh({ chapters: [{ id: "ch-A-stale", title: "Chapter A stale" }] });
+    // Give React a tick to process the resolved promise.
+    await new Promise((r) => setTimeout(r, 10));
+
+    // B's detail view must not surface A's stale references, and must
+    // not mis-gate the Delete button by flipping into the "in use" path.
+    expect(screen.queryByText("Chapter A stale")).not.toBeInTheDocument();
+    expect(screen.queryByText(S.usedInChapters)).not.toBeInTheDocument();
+    // B has reference_count: 0, so Delete should remain the unblocked copy.
+    await user.click(screen.getByText(S.deleteButton));
+    expect(screen.getByText(S.deleteConfirm)).toBeInTheDocument();
+  });
+
   // --- Where-used / references ---
 
   it("shows chapters where image is used", async () => {
