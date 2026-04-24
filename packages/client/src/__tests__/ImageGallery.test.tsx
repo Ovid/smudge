@@ -535,9 +535,7 @@ describe("ImageGallery", () => {
 
     // Hold the Delete-click refresh for A open so we can resolve it
     // AFTER the user has navigated to a different image.
-    let resolveStaleRefresh!: (data: {
-      chapters: Array<{ id: string; title: string }>;
-    }) => void;
+    let resolveStaleRefresh!: (data: { chapters: Array<{ id: string; title: string }> }) => void;
     const deferredStaleRefresh = new Promise<{
       chapters: Array<{ id: string; title: string }>;
     }>((resolve) => {

@@ -116,9 +116,7 @@ export function resolveError(err: unknown, scope: ScopeEntry): MappedError {
   // "raw err.message must never reach the UI" invariant. Guard with an
   // own-property check and verify the value is a string.
   const byCodeMatch =
-    err.code !== undefined &&
-    scope.byCode !== undefined &&
-    Object.hasOwn(scope.byCode, err.code)
+    err.code !== undefined && scope.byCode !== undefined && Object.hasOwn(scope.byCode, err.code)
       ? scope.byCode[err.code]
       : undefined;
   if (typeof byCodeMatch === "string") {
