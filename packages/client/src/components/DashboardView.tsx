@@ -29,10 +29,13 @@ export function DashboardView({
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("sort_order");
   const [sortAsc, setSortAsc] = useState(true);
+  // I8 (2026-04-23): error was previously boolean → hardcoded generic
+  // copy in ProgressStrip. Carrying the mapped message here lets
+  // NETWORK vs 5xx distinctions reach the user.
   const [velocityWithSlug, setVelocityWithSlug] = useState<{
     slug: string;
     data: VelocityResponse | null;
-    error?: boolean;
+    error?: string | null;
   } | null>(null);
 
   useEffect(() => {
@@ -66,10 +69,15 @@ export function DashboardView({
           setVelocityWithSlug({ slug, data: result });
         }
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         if (!cancelled) {
           console.warn("Failed to load velocity:", err);
-          setVelocityWithSlug({ slug, data: null, error: true });
+          const { message } = mapApiError(err, "project.velocity");
+          setVelocityWithSlug({
+            slug,
+            data: null,
+            error: message ?? STRINGS.velocity.loadError,
+          });
         }
       });
     return () => {
@@ -93,7 +101,8 @@ export function DashboardView({
   const data = dataWithSlug?.slug === slug ? dataWithSlug.data : null;
   const velocityData = velocityWithSlug?.slug === slug ? velocityWithSlug.data : null;
   const velocityLoading = velocityWithSlug?.slug !== slug;
-  const velocityError = velocityWithSlug?.slug === slug && velocityWithSlug?.error === true;
+  const velocityError =
+    velocityWithSlug?.slug === slug ? (velocityWithSlug?.error ?? null) : null;
 
   if (error) {
     return (

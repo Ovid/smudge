@@ -18,6 +18,8 @@ export type ApiErrorScope =
   | "chapter.reorder"
   | "chapter.updateStatus"
   | "chapterStatus.fetch"
+  | "image.list"
+  | "image.references"
   | "image.upload"
   | "image.delete"
   | "image.updateMetadata"
@@ -32,7 +34,8 @@ export type ApiErrorScope =
   | "trash.load"
   | "trash.restoreChapter"
   | "settings.update"
-  | "dashboard.load";
+  | "dashboard.load"
+  | "project.velocity";
 
 export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   "project.load": { fallback: STRINGS.error.loadProjectFailed },
@@ -72,6 +75,13 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     committed: STRINGS.error.statusChangeResponseUnreadable,
   },
   "chapterStatus.fetch": { fallback: STRINGS.error.statusesFetchFailed },
+  "image.list": {
+    fallback: STRINGS.imageGallery.loadFailed,
+    network: STRINGS.imageGallery.loadFailedNetwork,
+  },
+  "image.references": {
+    fallback: STRINGS.imageGallery.referencesLoadFailed,
+  },
   "image.upload": { fallback: STRINGS.imageGallery.uploadFailedGeneric },
   "image.delete": {
     fallback: STRINGS.imageGallery.deleteFailedGeneric,
@@ -141,4 +151,8 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   "trash.restoreChapter": { fallback: STRINGS.error.restoreChapterFailed },
   "settings.update": { fallback: STRINGS.error.settingsUpdateFailedGeneric },
   "dashboard.load": { fallback: STRINGS.error.loadDashboardFailed },
+  "project.velocity": {
+    fallback: STRINGS.velocity.loadError,
+    network: STRINGS.velocity.loadErrorNetwork,
+  },
 };

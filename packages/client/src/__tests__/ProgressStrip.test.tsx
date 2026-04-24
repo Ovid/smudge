@@ -34,7 +34,10 @@ describe("ProgressStrip", () => {
   });
 
   it("shows error message on error (distinct from empty state)", () => {
-    render(<ProgressStrip data={null} loading={false} error={true} />);
+    // I8 (2026-04-23): error is now a message string (carries the
+    // mapped copy so NETWORK vs 5xx distinctions reach the user),
+    // not a boolean with hardcoded fallback.
+    render(<ProgressStrip data={null} loading={false} error="Unable to load progress data." />);
     const section = screen.getByRole("region", { name: /writing progress/i });
     expect(section).toBeInTheDocument();
     // Must NOT show the empty-state copy — that would be misleading

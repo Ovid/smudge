@@ -37,7 +37,7 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
   const [references, setReferences] = useState<Array<{ id: string; title: string }>>([]);
   const [referencesLoaded, setReferencesLoaded] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const announcementTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -65,11 +65,17 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
       .then((list) => {
         if (!cancelled) {
           setImages(list);
-          setLoadError(false);
+          setLoadError(null);
         }
       })
-      .catch(() => {
-        if (!cancelled) setLoadError(true);
+      .catch((err: unknown) => {
+        // I8 (2026-04-23): route through mapApiError so NETWORK vs 5xx
+        // distinctions reach the user via the image.list scope instead
+        // of collapsing to the generic loadFailed copy.
+        if (!cancelled) {
+          const { message } = mapApiError(err, "image.list");
+          setLoadError(message ?? STRINGS.imageGallery.loadFailed);
+        }
       });
     return () => {
       cancelled = true;
@@ -243,7 +249,7 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
 
         {loadError ? (
           <div className="p-4 space-y-2">
-            <p className="text-sm text-status-error">{S.loadFailed}</p>
+            <p className="text-sm text-status-error">{loadError}</p>
             <button
               onClick={incrementRefreshKey}
               className="text-sm text-accent hover:underline focus:outline-none focus:ring-2 focus:ring-focus-ring rounded px-1"

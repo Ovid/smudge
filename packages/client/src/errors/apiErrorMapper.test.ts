@@ -426,6 +426,8 @@ describe("SCOPES registry", () => {
       "chapter.reorder",
       "chapter.updateStatus",
       "chapterStatus.fetch",
+      "image.list",
+      "image.references",
       "image.upload",
       "image.delete",
       "image.updateMetadata",
@@ -441,6 +443,7 @@ describe("SCOPES registry", () => {
       "trash.restoreChapter",
       "settings.update",
       "dashboard.load",
+      "project.velocity",
     ];
     const actual = Object.keys(SCOPES).sort();
     expect(actual).toEqual(expected.sort());

@@ -4,14 +4,17 @@ import { STRINGS } from "../strings";
 interface ProgressStripProps {
   data: VelocityResponse | null;
   loading: boolean;
-  error?: boolean;
+  // I8 (2026-04-23): carry the mapped message from project.velocity so
+  // NETWORK vs 5xx distinctions reach the user instead of collapsing to
+  // hardcoded STRINGS.velocity.loadError.
+  error?: string | null;
 }
 
 export function ProgressStrip({ data, loading, error }: ProgressStripProps) {
   if (error && !data) {
     return (
       <section aria-label={STRINGS.velocity.progressLabel} className="mb-8">
-        <p className="text-text-muted text-sm font-sans">{STRINGS.velocity.loadError}</p>
+        <p className="text-text-muted text-sm font-sans">{error}</p>
       </section>
     );
   }
