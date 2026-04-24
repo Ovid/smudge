@@ -787,20 +787,16 @@ export function EditorPage() {
         }
         // stage === "mutate"
         const err = result.error;
-        // 2xx BAD_JSON: apiFetch throws an ApiRequestError(status=2xx,
-        // code="BAD_JSON") when a 2xx body fails to parse (client.ts:86-92).
-        // The server almost certainly committed the replace (and the
-        // auto-snapshot) and only the response body was unreadable. The
-        // previous handler only showed a dismissible banner and re-enabled
-        // the editor — auto-save's next debounced PATCH would then silently
-        // revert the committed replace (C1). Route to the persistent lock
-        // UX so the editor stays setEditable(false) until refresh.
-        if (
-          err instanceof ApiRequestError &&
-          err.code === "BAD_JSON" &&
-          err.status >= 200 &&
-          err.status < 300
-        ) {
+        const mapped = mapApiError(err, "findReplace.replace");
+        // 2xx BAD_JSON: the server almost certainly committed the replace
+        // (and the auto-snapshot) and only the response body was unreadable.
+        // Route to the persistent lock UX so the editor stays
+        // setEditable(false) until refresh; a retry would double-commit.
+        // I5 (2026-04-23): the scope-level mapper already applies the
+        // 2xx BAD_JSON predicate — consult possiblyCommitted instead of
+        // re-implementing the check inline so future broadening of the
+        // predicate propagates to every call site automatically.
+        if (mapped.possiblyCommitted) {
           // Clear caches for chapters the server may have replaced (C1). The
           // mutate callback threw, so the hook's directive-based cache-clear
           // never ran. The response body was unreadable, so
@@ -843,13 +839,12 @@ export function EditorPage() {
           await finalizeReplaceSuccess({
             replacedCount: null,
             reloadFailed: true,
-            lockMessage: STRINGS.findReplace.replaceResponseUnreadable,
+            lockMessage: mapped.message ?? STRINGS.findReplace.replaceResponseUnreadable,
             targetChapterId,
           });
           return;
         }
-        const { message } = mapApiError(err, "findReplace.replace");
-        if (message) setActionError(message);
+        if (mapped.message) setActionError(mapped.message);
       } finally {
         actionBusyRef.current = false;
       }
@@ -1040,16 +1035,15 @@ export function EditorPage() {
         }
         // stage === "mutate"
         const err = result.error;
+        const mapped = mapApiError(err, "findReplace.replace");
         // 2xx BAD_JSON: same C1 branch as executeReplace. The server likely
         // committed the replace-one (and its auto-snapshot) but the response
         // body was unreadable. Lock the editor until refresh so auto-save
         // cannot overwrite a possibly-committed server-side change.
-        if (
-          err instanceof ApiRequestError &&
-          err.code === "BAD_JSON" &&
-          err.status >= 200 &&
-          err.status < 300
-        ) {
+        // I5 (2026-04-23): consult mapped.possiblyCommitted rather than
+        // re-implementing the predicate inline — the scope mapper already
+        // applies it at apiErrorMapper.ts:31.
+        if (mapped.possiblyCommitted) {
           // Replace-one is single-chapter — clear that chapter's cached draft
           // (C1). The mutate callback threw before returning a directive, so
           // the hook's clearAllCachedContent never ran.
@@ -1057,7 +1051,7 @@ export function EditorPage() {
           await finalizeReplaceSuccess({
             replacedCount: null,
             reloadFailed: true,
-            lockMessage: STRINGS.findReplace.replaceResponseUnreadable,
+            lockMessage: mapped.message ?? STRINGS.findReplace.replaceResponseUnreadable,
             targetChapterId: chapterId,
           });
           return;
@@ -1075,8 +1069,7 @@ export function EditorPage() {
           await findReplace.search(slug);
           findReplace.clearError();
         }
-        const { message } = mapApiError(err, "findReplace.replace");
-        if (message) setActionError(message);
+        if (mapped.message) setActionError(mapped.message);
       } finally {
         actionBusyRef.current = false;
       }
