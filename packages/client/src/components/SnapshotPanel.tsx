@@ -123,9 +123,16 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
     // imperative refresh whose parent unmounts while it is in flight
     // leaked the server request to completion.
     const fetchAbortRef = useRef<AbortController | null>(null);
+    // I6 (review 2026-04-24): distinct controller for create/delete
+    // POST/DELETE. Kept separate from fetchAbortRef so a new list
+    // fetch does not sever an in-flight mutation, and a mutation
+    // supersede does not sever the list fetch. Both are covered by
+    // the unmount cleanup below.
+    const mutateAbortRef = useRef<AbortController | null>(null);
     useEffect(() => {
       return () => {
         fetchAbortRef.current?.abort();
+        mutateAbortRef.current?.abort();
       };
     }, []);
 
@@ -277,8 +284,16 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
           return;
         }
       }
+      mutateAbortRef.current?.abort();
+      const controller = new AbortController();
+      mutateAbortRef.current = controller;
       try {
-        const result = await api.snapshots.create(chapterId, createLabel.trim() || undefined);
+        const result = await api.snapshots.create(
+          chapterId,
+          createLabel.trim() || undefined,
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
         if (result.status === "duplicate") {
           setDuplicateMessage(true);
           return;
@@ -288,6 +303,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         setDuplicateMessage(false);
         await fetchSnapshots();
       } catch (err) {
+        if (controller.signal.aborted) return;
         const { message } = mapApiError(err, "snapshot.create");
         if (message) setCreateError(message);
       }
@@ -295,11 +311,16 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
 
     const handleDelete = async (id: string) => {
       setDeleteError(null);
+      mutateAbortRef.current?.abort();
+      const controller = new AbortController();
+      mutateAbortRef.current = controller;
       try {
-        await api.snapshots.delete(id);
+        await api.snapshots.delete(id, controller.signal);
+        if (controller.signal.aborted) return;
         setConfirmDeleteId(null);
         await fetchSnapshots();
       } catch (err) {
+        if (controller.signal.aborted) return;
         // 404 means the snapshot is already gone (deleted in another tab,
         // or the parent chapter was soft-deleted). The server already
         // agrees with the user's intent; refresh the list and close the

@@ -173,7 +173,11 @@ describe("SnapshotPanel", () => {
       await user.type(screen.getByPlaceholderText(S.labelPlaceholder), "My label");
       await user.click(screen.getByText(S.save));
 
-      expect(api.snapshots.create).toHaveBeenCalledWith("ch-1", "My label");
+      expect(api.snapshots.create).toHaveBeenCalledWith(
+        "ch-1",
+        "My label",
+        expect.any(AbortSignal),
+      );
     });
 
     it("surfaces createFailed when onBeforeCreate throws (I3 defense-in-depth)", async () => {
@@ -266,7 +270,11 @@ describe("SnapshotPanel", () => {
       await user.click(screen.getByText(S.createButton));
       await user.click(screen.getByText(S.save));
 
-      expect(api.snapshots.create).toHaveBeenCalledWith("ch-1", undefined);
+      expect(api.snapshots.create).toHaveBeenCalledWith(
+        "ch-1",
+        undefined,
+        expect.any(AbortSignal),
+      );
     });
 
     it("shows duplicate message when content unchanged", async () => {
@@ -549,8 +557,34 @@ describe("SnapshotPanel", () => {
       await user.click(screen.getByText(S.deleteConfirmButton));
 
       await waitFor(() => {
-        expect(api.snapshots.delete).toHaveBeenCalledWith("snap-del");
+        expect(api.snapshots.delete).toHaveBeenCalledWith("snap-del", expect.any(AbortSignal));
       });
+    });
+
+    // I6 (review 2026-04-24): create + delete now thread a distinct
+    // mutateAbortRef (separate from fetchAbortRef so a panel unmount
+    // mid-mutation severs the POST/DELETE without stomping the list
+    // fetch pathway).
+    it("aborts in-flight delete on panel unmount (I6)", async () => {
+      const user = userEvent.setup();
+      const snap = makeSnapshot({ id: "snap-abort" });
+      vi.mocked(api.snapshots.list).mockResolvedValue([snap]);
+      let capturedSignal: AbortSignal | undefined;
+      vi.mocked(api.snapshots.delete).mockImplementation((_id, signal) => {
+        capturedSignal = signal;
+        return new Promise(() => {}); // never resolves
+      });
+
+      const { unmount } = render(<SnapshotPanel {...defaultProps} />);
+      await waitFor(() => expect(screen.getByText(S.delete)).toBeInTheDocument());
+      await user.click(screen.getByText(S.delete));
+      await user.click(screen.getByText(S.deleteConfirmButton));
+
+      await waitFor(() => expect(api.snapshots.delete).toHaveBeenCalled());
+      expect(capturedSignal?.aborted).toBe(false);
+
+      unmount();
+      expect(capturedSignal?.aborted).toBe(true);
     });
 
     it("cancels delete when Cancel is clicked in confirmation", async () => {
