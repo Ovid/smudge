@@ -27,7 +27,9 @@ function getLinter(): ESLint {
 }
 
 async function lint(code: string): Promise<ESLint.LintResult[]> {
-  return getLinter().lintText(code, { filePath: resolve(REPO_ROOT, "packages/client/src/fixture.ts") });
+  return getLinter().lintText(code, {
+    filePath: resolve(REPO_ROOT, "packages/client/src/fixture.ts"),
+  });
 }
 
 beforeAll(async () => {
