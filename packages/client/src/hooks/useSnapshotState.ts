@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { SNAPSHOT_ERROR_CODES } from "@smudge/shared";
 import { api, ApiRequestError } from "../api/client";
-import { mapApiError } from "../errors";
+import { mapApiError, isApiError } from "../errors";
 import { clearCachedContent } from "./useContentCache";
 import { useAbortableSequence } from "./useAbortableSequence";
 import type { SnapshotPanelHandle } from "../components/SnapshotPanel";
@@ -272,7 +272,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         // "snapshot no longer exists" banner attributed to the new chapter.
         if (cToken.isStale()) return { ok: true, superseded: "chapter" };
         if (vToken.isStale()) return { ok: true, superseded: "sameChapterNewer" };
-        if (err instanceof ApiRequestError) {
+        if (isApiError(err)) {
           // S14 (2026-04-23 review): use mapApiError's `message === null`
           // signal as the canonical "silent bail" check, matching
           // useFindReplaceState's convention. ABORTED is not a user-
@@ -357,7 +357,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
           ...(restoringChapterId ? { restoredChapterId: restoringChapterId } : {}),
         };
       } catch (err) {
-        if (err instanceof ApiRequestError) {
+        if (isApiError(err)) {
           // I7: ABORTED stays a silent no-op. mapApiError already returns
           // `message: null` for ABORTED, so forwarding the error is enough —
           // the caller reads MappedError.message and bails when it's null

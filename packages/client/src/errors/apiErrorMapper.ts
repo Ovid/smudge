@@ -21,6 +21,44 @@ function isApiRequestError(err: unknown): err is ApiRequestError {
   return err instanceof ApiRequestError;
 }
 
+// I10 helpers: the DoD forbids `err instanceof ApiRequestError` for
+// control flow at call sites. These helpers centralize the common
+// predicates here so components/hooks depend on the errors module
+// rather than on ApiRequestError directly.
+
+/** Type guard. Narrows `unknown` to ApiRequestError — use when call sites
+ * need access to err.status / err.code / err.extras to route the error
+ * (e.g. returning the raw error to a caller, reading extras). Prefer
+ * `isAborted`/`isNotFound`/`isClientError` when those cover the predicate
+ * on their own. */
+export function isApiError(err: unknown): err is ApiRequestError {
+  return isApiRequestError(err);
+}
+
+/** True when the error is the transport-layer ABORTED signal. Prefer
+ * this over checking err.code === "ABORTED" at call sites; the mapper's
+ * message===null convention is the other canonical way to spot an abort
+ * and should continue to be used for catches that already call
+ * mapApiError. Type guard so callers can read err.status/err.code if
+ * needed after the check. */
+export function isAborted(err: unknown): err is ApiRequestError {
+  return isApiRequestError(err) && err.code === "ABORTED";
+}
+
+/** True when the error is an HTTP 404. Common short-circuit for GETs
+ * whose target has been deleted and for delete calls that idempotently
+ * succeed when the row is already gone. */
+export function isNotFound(err: unknown): err is ApiRequestError {
+  return isApiRequestError(err) && err.status === 404;
+}
+
+/** True when the error is a 4xx client error (not a transport wrap like
+ * ABORTED/NETWORK). Use to skip retries that cannot succeed against a
+ * malformed or rejected request. */
+export function isClientError(err: unknown): err is ApiRequestError {
+  return isApiRequestError(err) && err.status >= 400 && err.status < 500;
+}
+
 export function resolveError(err: unknown, scope: ScopeEntry): MappedError {
   if (!isApiRequestError(err)) {
     return { message: scope.fallback, possiblyCommitted: false, transient: false };

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from "react";
-import { api, ApiRequestError } from "../api/client";
+import { api } from "../api/client";
 import { useAbortableSequence } from "../hooks/useAbortableSequence";
 import { STRINGS } from "../strings";
-import { mapApiError } from "../errors";
+import { mapApiError, isNotFound } from "../errors";
 import type { SnapshotListItem } from "@smudge/shared";
 
 const S = STRINGS.snapshots;
@@ -281,7 +281,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         // or the parent chapter was soft-deleted). The server already
         // agrees with the user's intent; refresh the list and close the
         // dialog rather than looping on the same 404.
-        if (err instanceof ApiRequestError && err.status === 404) {
+        if (isNotFound(err)) {
           setConfirmDeleteId(null);
           await fetchSnapshots();
           return;

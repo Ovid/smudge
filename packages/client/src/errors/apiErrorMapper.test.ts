@@ -1,6 +1,14 @@
 import { describe, it, expect } from "vitest";
 import type { MappedError } from "./apiErrorMapper";
-import { resolveError, mapApiError, ALL_SCOPES } from "./apiErrorMapper";
+import {
+  resolveError,
+  mapApiError,
+  ALL_SCOPES,
+  isApiError,
+  isAborted,
+  isNotFound,
+  isClientError,
+} from "./apiErrorMapper";
 import { ApiRequestError } from "../api/client";
 import { SCOPES, type ApiErrorScope } from "./scopes";
 import { STRINGS } from "../strings";
@@ -539,6 +547,47 @@ describe("SCOPES registry", () => {
     ];
     const actual = Object.keys(SCOPES).sort();
     expect(actual).toEqual(expected.sort());
+  });
+});
+
+describe("I10 — error-predicate helpers", () => {
+  it("isApiError narrows unknown to ApiRequestError", () => {
+    const err: unknown = new ApiRequestError("x", 500);
+    expect(isApiError(err)).toBe(true);
+    if (isApiError(err)) {
+      // narrowing should expose .status
+      expect(err.status).toBe(500);
+    }
+    expect(isApiError(new Error("not an api error"))).toBe(false);
+    expect(isApiError(null)).toBe(false);
+    expect(isApiError(undefined)).toBe(false);
+    expect(isApiError("string")).toBe(false);
+  });
+
+  it("isAborted matches ABORTED ApiRequestError only", () => {
+    expect(isAborted(new ApiRequestError("a", 0, "ABORTED"))).toBe(true);
+    expect(isAborted(new ApiRequestError("n", 0, "NETWORK"))).toBe(false);
+    expect(isAborted(new ApiRequestError("x", 500))).toBe(false);
+    expect(isAborted(new Error("plain"))).toBe(false);
+    expect(isAborted(undefined)).toBe(false);
+  });
+
+  it("isNotFound matches status 404 ApiRequestError only", () => {
+    expect(isNotFound(new ApiRequestError("x", 404, "NOT_FOUND"))).toBe(true);
+    expect(isNotFound(new ApiRequestError("x", 404))).toBe(true);
+    expect(isNotFound(new ApiRequestError("x", 400))).toBe(false);
+    expect(isNotFound(new ApiRequestError("x", 500))).toBe(false);
+    expect(isNotFound(new Error("plain"))).toBe(false);
+  });
+
+  it("isClientError matches 4xx ApiRequestError only", () => {
+    expect(isClientError(new ApiRequestError("x", 400))).toBe(true);
+    expect(isClientError(new ApiRequestError("x", 404))).toBe(true);
+    expect(isClientError(new ApiRequestError("x", 413))).toBe(true);
+    expect(isClientError(new ApiRequestError("x", 499))).toBe(true);
+    expect(isClientError(new ApiRequestError("x", 500))).toBe(false);
+    expect(isClientError(new ApiRequestError("x", 0, "NETWORK"))).toBe(false);
+    expect(isClientError(new Error("plain"))).toBe(false);
   });
 });
 

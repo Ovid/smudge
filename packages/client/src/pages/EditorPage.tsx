@@ -33,7 +33,7 @@ import { useProjectTitleEditing } from "../hooks/useProjectTitleEditing";
 import { useTrashManager } from "../hooks/useTrashManager";
 import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcuts";
 import { api, ApiRequestError } from "../api/client";
-import { mapApiError } from "../errors";
+import { mapApiError, isNotFound } from "../errors";
 import { clearCachedContent, clearAllCachedContent } from "../hooks/useContentCache";
 import { safeSetEditable } from "../utils/editorSafeOps";
 import { Logo } from "../components/Logo";
@@ -1065,7 +1065,7 @@ export function EditorPage() {
         // clearError() call below suppresses the panel-local duplicate so
         // the action banner set by mapApiError is the single source of
         // truth for this click.
-        if (err instanceof ApiRequestError && err.status === 404) {
+        if (isNotFound(err)) {
           await findReplace.search(slug);
           findReplace.clearError();
         }
@@ -1458,7 +1458,7 @@ export function EditorPage() {
           // that can never succeed. Navigate home so the projects list
           // reflects the new reality. Transient network failures still
           // land on the dismissible banner.
-          if (err instanceof ApiRequestError && err.status === 404) {
+          if (isNotFound(err)) {
             navigate("/");
             return;
           }

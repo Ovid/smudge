@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { api, ApiRequestError } from "../api/client";
+import { api } from "../api/client";
 import { type SearchResult } from "@smudge/shared";
-import { mapApiError } from "../errors";
+import { mapApiError, isApiError } from "../errors";
 import { useAbortableSequence } from "./useAbortableSequence";
 
 export interface SearchOptionsShape {
@@ -226,10 +226,7 @@ export function useFindReplaceState(
           // Aborted: no banner, no state changes.
           return;
         }
-        if (
-          err instanceof ApiRequestError &&
-          (err.status === 400 || err.status === 404 || err.status === 413)
-        ) {
+        if (isApiError(err) && (err.status === 400 || err.status === 404 || err.status === 413)) {
           // 400s mean the CURRENT query is invalid; stale results no
           // longer correspond to anything the user typed.
           // 404s mean the project (or scope) has gone away — the prior

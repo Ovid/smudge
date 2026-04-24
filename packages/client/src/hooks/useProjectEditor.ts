@@ -1,11 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import type { ProjectWithChapters, Chapter } from "@smudge/shared";
 import { countWords } from "@smudge/shared";
-import { api, ApiRequestError } from "../api/client";
+import { api } from "../api/client";
 import { getCachedContent, setCachedContent, clearCachedContent } from "./useContentCache";
 import { useAbortableSequence } from "./useAbortableSequence";
 import { STRINGS } from "../strings";
-import { mapApiError } from "../errors";
+import { mapApiError, isApiError, isAborted, isClientError } from "../errors";
 
 export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
 
@@ -246,7 +246,7 @@ export function useProjectEditor(slug: string | undefined) {
           // Aborted: cancelPendingSaves intentionally cancelled this save
           // (e.g. before a snapshot restore). Exit cleanly without flagging
           // an error to the user.
-          if (err instanceof ApiRequestError && err.code === "ABORTED") {
+          if (isAborted(err)) {
             return false;
           }
           // I5: a 2xx BAD_JSON or a 5xx whose code identifies a specific
@@ -264,7 +264,7 @@ export function useProjectEditor(slug: string | undefined) {
           // Everything else under 500 (bare 500, transient NETWORK, etc.)
           // still retries with backoff.
           if (
-            err instanceof ApiRequestError &&
+            isApiError(err) &&
             (err.code === "BAD_JSON" ||
               err.code === "UPDATE_READ_FAILURE" ||
               err.code === "CORRUPT_CONTENT")
@@ -277,7 +277,7 @@ export function useProjectEditor(slug: string | undefined) {
             };
             break;
           }
-          if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
+          if (isClientError(err)) {
             console.warn("Save failed with 4xx:", err);
             // I4 (2026-04-23 review): route through the unified mapper
             // so chapter.save scope is the single source of truth. Raw
@@ -419,8 +419,7 @@ export function useProjectEditor(slug: string | undefined) {
         // chapter appears in the sidebar without another POST; surface
         // the committed-specific copy so the user knows not to click
         // Add chapter again.
-        const readAfterCreateFailed =
-          err instanceof ApiRequestError && err.code === "READ_AFTER_CREATE_FAILURE";
+        const readAfterCreateFailed = isApiError(err) && err.code === "READ_AFTER_CREATE_FAILURE";
         if (possiblyCommitted || readAfterCreateFailed) {
           // I7: snapshot pre-POST chapter ids so we can identify the
           // server-created row in the refreshed list. The happy path
