@@ -208,7 +208,15 @@ export function Editor({
       debouncedSave(ed);
     },
     onBlur: ({ editor: ed }) => {
-      if (!dirtyRef.current) return;
+      // C2 (review 2026-04-24): also gate on editor.isEditable.
+      // setEditable(false) is the mutation lock around restore /
+      // replace / reload-failure flows, but TipTap still dispatches
+      // blur events on a non-editable editor. Without this check, a
+      // click on Restore/Replace (which itself triggers blur) during
+      // the mutation window fires an immediate PATCH of pre-mutation
+      // content on top of the server-committed mutation, violating
+      // CLAUDE.md save-pipeline invariant #2.
+      if (!dirtyRef.current || !ed.isEditable) return;
       // Immediate save on blur (cancel pending debounce)
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);

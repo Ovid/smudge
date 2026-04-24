@@ -345,6 +345,54 @@ describe("Editor", () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
+  it("onBlur does not save while editor is non-editable (C2 2026-04-24)", async () => {
+    // The mutation gate (setEditable(false) around restore / replace /
+    // reload) relies on blur NOT committing a save with pre-mutation
+    // content. TipTap still dispatches blur events on a non-editable
+    // editor — e.g. the user clicks the Restore or Replace button after
+    // typing, which fires blur before the mutation's markClean() runs.
+    // Without an isEditable check, onBlur's immediate save PATCHes the
+    // stale draft on top of the committed mutation. Gate onBlur on
+    // editor.isEditable in addition to dirtyRef.
+    const onSave = vi.fn().mockResolvedValue(true);
+    const onContentChange = vi.fn();
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+
+    const { container } = render(
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={onSave}
+        onContentChange={onContentChange}
+        editorRef={editorRef}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(editorRef.current).not.toBeNull();
+    });
+
+    const editorEl = container.querySelector("[role='textbox']") as HTMLElement;
+
+    // Type to dirty the editor.
+    fireEvent.focus(editorEl);
+    editorEl.textContent = "pre-mutation draft";
+    fireEvent.input(editorEl);
+    await waitFor(() => {
+      expect(onContentChange).toHaveBeenCalled();
+    });
+
+    onSave.mockClear();
+
+    // A mutation path locks the editor; blur can still fire (e.g. the
+    // user's click on Restore is itself the blur trigger).
+    editorRef.current?.setEditable(false);
+    fireEvent.blur(editorEl);
+
+    await act(async () => {});
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it("flushSave is a no-op when not dirty", async () => {
     const onSave = vi.fn().mockResolvedValue(true);
     const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
