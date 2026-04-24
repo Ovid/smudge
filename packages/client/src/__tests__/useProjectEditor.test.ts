@@ -451,6 +451,64 @@ describe("useProjectEditor", () => {
     expect(result.current.project?.chapters[1]!.id).toBe("ch1");
   });
 
+  // C5 (review 2026-04-24): rapid drag-drop reorders used to issue
+  // overlapping PUTs with no client-side ordering guard. SQLite writer-
+  // lock ordering at the server determined the persisted order rather
+  // than the user's last drop. Mirror statusChangeAbortRef: each call
+  // aborts the prior controller and passes its signal into the
+  // transport, so the newer reorder severs the older one.
+  it("handleReorderChapters threads AbortSignal into reorderChapters (C5)", async () => {
+    vi.mocked(api.projects.reorderChapters).mockResolvedValue({ message: "ok" });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleReorderChapters(["ch2", "ch1"]);
+    });
+
+    const callArgs = vi.mocked(api.projects.reorderChapters).mock.calls[0];
+    expect(callArgs?.[2]).toBeInstanceOf(AbortSignal);
+  });
+
+  it("handleReorderChapters aborts prior in-flight reorder on supersede (C5)", async () => {
+    // Hold the first reorder PUT open; fire a second reorder; the first
+    // call's signal must be aborted by the second call's entry.
+    let firstResolve!: () => void;
+    let firstSignal: AbortSignal | undefined;
+    let secondSignal: AbortSignal | undefined;
+
+    vi.mocked(api.projects.reorderChapters)
+      .mockImplementationOnce((_slug, _ids, signal) => {
+        firstSignal = signal;
+        return new Promise<{ message: string }>((resolve) => {
+          firstResolve = () => resolve({ message: "ok" });
+        });
+      })
+      .mockImplementationOnce((_slug, _ids, signal) => {
+        secondSignal = signal;
+        return Promise.resolve({ message: "ok" });
+      });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    // First reorder — kept pending.
+    await act(async () => {
+      void result.current.handleReorderChapters(["ch2", "ch1"]);
+    });
+    // Second reorder — must abort the first signal before issuing its own.
+    await act(async () => {
+      await result.current.handleReorderChapters(["ch1", "ch2"]);
+    });
+
+    expect(firstSignal?.aborted).toBe(true);
+    expect(secondSignal?.aborted).toBe(false);
+
+    // Resolve the stranded first request so the hook unmounts cleanly.
+    firstResolve();
+  });
+
   it("updates the project title", async () => {
     const { chapters: _, ...projectWithoutChapters } = mockProject;
     vi.mocked(api.projects.update).mockResolvedValue({

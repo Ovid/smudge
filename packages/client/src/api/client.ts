@@ -240,10 +240,11 @@ export const api = {
     delete: (slug: string) =>
       apiFetch<{ message: string }>(`/projects/${enc(slug)}`, { method: "DELETE" }),
 
-    reorderChapters: (slug: string, chapterIds: string[]) =>
+    reorderChapters: (slug: string, chapterIds: string[], signal?: AbortSignal) =>
       apiFetch<{ message: string }>(`/projects/${enc(slug)}/chapters/order`, {
         method: "PUT",
         body: JSON.stringify({ chapter_ids: chapterIds }),
+        ...(signal ? { signal } : {}),
       }),
 
     trash: (slug: string) => apiFetch<Chapter[]>(`/projects/${enc(slug)}/trash`),

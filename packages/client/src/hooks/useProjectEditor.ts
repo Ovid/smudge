@@ -93,6 +93,14 @@ export function useProjectEditor(slug: string | undefined) {
   // rename before issuing a new one, and thread the signal into
   // api.projects.update so the network request is actually severed.
   const titleChangeAbortRef = useRef<AbortController | null>(null);
+  // C5 (review 2026-04-24): rapid drag-drop reorders used to issue
+  // overlapping PUTs to /chapters/order with no client-side ordering
+  // guard — the persisted order was whichever PUT SQLite's writer lock
+  // serialized last, not the user's last drop. Mirror
+  // statusChangeAbortRef: abort the prior in-flight PUT before issuing
+  // a new one, and thread the signal into api.projects.reorderChapters
+  // so the older request is actually severed.
+  const reorderAbortRef = useRef<AbortController | null>(null);
 
   // Shared cancel-in-flight-save helper. Aborts the save sequence (so the
   // retry loop short-circuits on its next iteration via token.isStale()),
@@ -131,6 +139,7 @@ export function useProjectEditor(slug: string | undefined) {
       // can't fire setState on a torn-down hook.
       titleChangeAbortRef.current?.abort();
       statusChangeAbortRef.current?.abort();
+      reorderAbortRef.current?.abort();
     };
   }, [cancelInFlightSave]);
 
@@ -692,10 +701,18 @@ export function useProjectEditor(slug: string | undefined) {
       const slug = projectSlugRef.current;
       const projectId = projectRef.current?.id;
       if (!slug || !projectId) return;
+      // C5 (review 2026-04-24): abort any prior in-flight reorder
+      // before issuing a new one so overlapping drag-drops cannot
+      // commit out of drop order. The signal is threaded through the
+      // transport so the browser actually drops the stale request.
+      reorderAbortRef.current?.abort();
+      const controller = new AbortController();
+      reorderAbortRef.current = controller;
       // S6 (review 2026-04-21) + C1 (review 2026-04-24): drift guard —
       // see handleCreateChapter for full rationale.
       try {
-        await api.projects.reorderChapters(slug, orderedIds);
+        await api.projects.reorderChapters(slug, orderedIds, controller.signal);
+        if (reorderAbortRef.current === controller) reorderAbortRef.current = null;
         // C2 + C1: discard if the user navigated away mid-PUT. Without
         // this, the reorder would apply Project A's ordered ids to
         // Project B's chapters array — the filter by id then drops
@@ -715,6 +732,11 @@ export function useProjectEditor(slug: string | undefined) {
           return { ...prev, chapters: reordered };
         });
       } catch (err) {
+        if (reorderAbortRef.current === controller) reorderAbortRef.current = null;
+        // C5: ABORTED means a newer reorder superseded this one and is
+        // driving its own PATCH. Reverting here would stomp the live
+        // call; stay silent and let the newer reorder land.
+        if (controller.signal.aborted) return;
         console.warn("Failed to reorder chapters:", err);
         if (projectRef.current?.id !== projectId) return;
         if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)

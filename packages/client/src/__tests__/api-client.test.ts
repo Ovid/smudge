@@ -89,6 +89,18 @@ describe("api.projects", () => {
     });
   });
 
+  it("reorderChapters threads signal to fetch (C5)", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ message: "ok" }));
+    const controller = new AbortController();
+    await api.projects.reorderChapters("p1", ["ch1"], controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1/chapters/order", {
+      headers: { "Content-Type": "application/json" },
+      method: "PUT",
+      body: JSON.stringify({ chapter_ids: ["ch1"] }),
+      signal: controller.signal,
+    });
+  });
+
   it("trash(slug) fetches GET /api/projects/:slug/trash", async () => {
     const trashed = [{ id: "ch1", title: "Deleted", deleted_at: "2026-01-01" }];
     mockFetch.mockResolvedValue(jsonResponse(trashed));
