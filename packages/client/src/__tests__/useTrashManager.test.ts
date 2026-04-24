@@ -165,9 +165,7 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
 
   it("on ABORTED error, does not log to console.error (I5)", async () => {
     const project = makeProject();
-    vi.mocked(api.projects.trash).mockRejectedValue(
-      new ApiRequestError("aborted", 0, "ABORTED"),
-    );
+    vi.mocked(api.projects.trash).mockRejectedValue(new ApiRequestError("aborted", 0, "ABORTED"));
 
     const { result } = renderHook(() =>
       useTrashManager(project, project.slug, vi.fn(), vi.fn(), vi.fn()),

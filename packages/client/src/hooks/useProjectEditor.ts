@@ -198,9 +198,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // server response. Every chapter's status here is server-truth
         // at load time; subsequent revert paths read from this ref so
         // they don't stomp to an optimistic value.
-        confirmedStatusRef.current = Object.fromEntries(
-          data.chapters.map((c) => [c.id, c.status]),
-        );
+        confirmedStatusRef.current = Object.fromEntries(data.chapters.map((c) => [c.id, c.status]));
         // If the cached activeChapter belongs to a different project (e.g.
         // in-place slug change that isn't a rename), the `!activeChapterRef`
         // guard would skip loading the new project's first chapter, and the

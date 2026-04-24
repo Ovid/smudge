@@ -270,11 +270,7 @@ describe("SnapshotPanel", () => {
       await user.click(screen.getByText(S.createButton));
       await user.click(screen.getByText(S.save));
 
-      expect(api.snapshots.create).toHaveBeenCalledWith(
-        "ch-1",
-        undefined,
-        expect.any(AbortSignal),
-      );
+      expect(api.snapshots.create).toHaveBeenCalledWith("ch-1", undefined, expect.any(AbortSignal));
     });
 
     it("shows duplicate message when content unchanged", async () => {

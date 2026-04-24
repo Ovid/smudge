@@ -1268,14 +1268,10 @@ describe("useProjectEditor", () => {
     ["CORRUPT_CONTENT", 500, STRINGS.editor.saveFailedCorrupt],
   ])("handleSave fires onRequestEditorLock on terminal %s (I2)", async (code, status, msg) => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.mocked(api.chapters.update).mockRejectedValue(
-      new ApiRequestError("terminal", status, code),
-    );
+    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("terminal", status, code));
     const onRequestEditorLock = vi.fn();
 
-    const { result } = renderHook(() =>
-      useProjectEditor("test-project", { onRequestEditorLock }),
-    );
+    const { result } = renderHook(() => useProjectEditor("test-project", { onRequestEditorLock }));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
     await act(async () => {
@@ -2246,9 +2242,7 @@ describe("useProjectEditor", () => {
       .mockRejectedValueOnce(new ApiRequestError("not found", 404)); // recovery 404 under dead slug
 
     const onRequestEditorLock = vi.fn();
-    const { result } = renderHook(() =>
-      useProjectEditor("test-project", { onRequestEditorLock }),
-    );
+    const { result } = renderHook(() => useProjectEditor("test-project", { onRequestEditorLock }));
     await waitFor(() => expect(result.current.project).toBeTruthy());
 
     await act(async () => {

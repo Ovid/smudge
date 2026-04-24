@@ -57,7 +57,8 @@ export const STRINGS = {
     // of collapsing to the generic fallback.
     createFailedNetwork: "Failed to create project — check your connection and try again.",
     deleteFailedNetwork: "Failed to delete project — check your connection and try again.",
-    updateTitleFailedNetwork: "Failed to update project title — check your connection and try again.",
+    updateTitleFailedNetwork:
+      "Failed to update project title — check your connection and try again.",
     createChapterFailedNetwork: "Failed to create chapter — check your connection and try again.",
     deleteChapterFailedNetwork: "Failed to delete chapter — check your connection and try again.",
     renameChapterFailedNetwork: "Failed to rename chapter — check your connection and try again.",
