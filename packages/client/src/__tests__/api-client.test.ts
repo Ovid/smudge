@@ -580,6 +580,148 @@ describe("api.projects.export (additional)", () => {
       signal: controller.signal,
     });
   });
+
+  // I1: transport-level error classification. Before I1, export threw
+  // a bare TypeError for offline/DNS/CSP, bubbled AbortError raw, and
+  // discarded err.code/extras from the envelope — breaking the unified
+  // mapper contract.
+  it("wraps fetch TypeError as ApiRequestError(0, NETWORK) (I1)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    let caught: unknown;
+    try {
+      await api.projects.export("p1", { format: "html" });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("NETWORK");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
+  it("wraps AbortError from fetch as ApiRequestError(0, ABORTED) (I1)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockRejectedValueOnce(new DOMException("aborted", "AbortError"));
+
+    let caught: unknown;
+    try {
+      await api.projects.export("p1", { format: "html" });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("ABORTED");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
+  it("populates code from envelope on !ok response (I1)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue(
+      jsonResponse({ error: { code: "VALIDATION_ERROR", message: "Invalid format" } }, 400),
+    );
+
+    let caught: unknown;
+    try {
+      await api.projects.export("p1", { format: "html" });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("VALIDATION_ERROR");
+  });
+});
+
+describe("api.images.upload (I1 transport classification)", () => {
+  it("wraps fetch TypeError as ApiRequestError(0, NETWORK)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    const file = new File(["x"], "a.png", { type: "image/png" });
+    let caught: unknown;
+    try {
+      await api.images.upload("p1", file);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("NETWORK");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
+  it("wraps AbortError from fetch as ApiRequestError(0, ABORTED)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockRejectedValueOnce(new DOMException("aborted", "AbortError"));
+
+    const file = new File(["x"], "a.png", { type: "image/png" });
+    let caught: unknown;
+    try {
+      await api.images.upload("p1", file);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("ABORTED");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
+  it("populates code from envelope on !ok response", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue(
+      jsonResponse({ error: { code: "FILE_TOO_LARGE", message: "too big" } }, 413),
+    );
+
+    const file = new File(["x"], "a.png", { type: "image/png" });
+    let caught: unknown;
+    try {
+      await api.images.upload("p1", file);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("FILE_TOO_LARGE");
+  });
+
+  it("maps 2xx AbortError body-read to ABORTED", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    const abort = new DOMException("aborted", "AbortError");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(abort),
+    });
+
+    const file = new File(["x"], "a.png", { type: "image/png" });
+    let caught: unknown;
+    try {
+      await api.images.upload("p1", file);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("ABORTED");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
+  it("maps 2xx non-abort body-read to BAD_JSON with real status", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(new SyntaxError("Unexpected token < in JSON")),
+    });
+
+    const file = new File(["x"], "a.png", { type: "image/png" });
+    let caught: unknown;
+    try {
+      await api.images.upload("p1", file);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("BAD_JSON");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(200);
+  });
 });
 
 describe("error handling", () => {

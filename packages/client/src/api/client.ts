@@ -43,6 +43,31 @@ function classifyFetchError(err: unknown): ApiRequestError {
   return new ApiRequestError(message, 0, "NETWORK");
 }
 
+// Parse a !ok response's JSON error envelope into message/code/extras so
+// blob and multipart transports can populate ApiRequestError with the
+// same fidelity as apiFetch (I1). Swallows JSON parse failures — the
+// caller already has a status-only fallback message.
+async function readErrorEnvelope(
+  res: Response,
+  fallbackMessage: string,
+): Promise<{ message: string; code: string | undefined; extras: Record<string, unknown> | undefined }> {
+  try {
+    const body = (await res.json()) as ApiError;
+    const message = body.error?.message ?? fallbackMessage;
+    const code = body.error?.code;
+    let extras: Record<string, unknown> | undefined;
+    if (body.error) {
+      const { code: _c, message: _m, ...rest } = body.error;
+      if (Object.keys(rest).length > 0) {
+        extras = rest as Record<string, unknown>;
+      }
+    }
+    return { message, code, extras };
+  } catch {
+    return { message: fallbackMessage, code: undefined, extras: undefined };
+  }
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -174,22 +199,25 @@ export const api = {
       },
       signal?: AbortSignal,
     ): Promise<Blob> => {
+      // I1: route offline/DNS/CSP/AbortError through classifyFetchError so
+      // export errors flow through the same NETWORK/ABORTED classification
+      // as apiFetch — the mapper contract breaks if a raw TypeError or
+      // DOMException escapes here.
       const res = await fetch(`${BASE}/projects/${slug}/export`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),
         signal,
+      }).catch((err: unknown) => {
+        throw classifyFetchError(err);
       });
 
       if (!res.ok) {
-        let message = `Export failed: ${res.status}`;
-        try {
-          const body = (await res.json()) as ApiError;
-          message = body.error?.message ?? message;
-        } catch {
-          // Response body wasn't JSON
-        }
-        throw new ApiRequestError(message, res.status);
+        const { message, code, extras } = await readErrorEnvelope(
+          res,
+          `Export failed: ${res.status}`,
+        );
+        throw new ApiRequestError(message, res.status, code, extras);
       }
 
       return res.blob();
@@ -239,19 +267,36 @@ export const api = {
     async upload(projectId: string, file: File): Promise<ImageRow> {
       const formData = new FormData();
       formData.append("file", file);
+      // I1: wrap fetch() in classifyFetchError so offline/DNS/CSP failures
+      // and abort from an upstream AbortController bubble as
+      // ApiRequestError (NETWORK/ABORTED) rather than raw TypeError/
+      // DOMException — the mapper contract requires every caller to see
+      // a typed ApiRequestError.
       const res = await fetch(`${BASE}/projects/${projectId}/images`, {
         method: "POST",
         body: formData,
         // No Content-Type header — browser sets multipart boundary automatically
+      }).catch((err: unknown) => {
+        throw classifyFetchError(err);
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        throw new ApiRequestError(
-          body?.error?.message ?? `Upload failed (${res.status})`,
-          res.status,
+        const { message, code, extras } = await readErrorEnvelope(
+          res,
+          `Upload failed (${res.status})`,
         );
+        throw new ApiRequestError(message, res.status, code, extras);
       }
-      return res.json();
+      // I1: body-read failures get the same ABORTED vs. BAD_JSON treatment
+      // as apiFetch. A 2xx whose JSON parse fails means the server may
+      // have stored the image but the client can't read the row — route
+      // through the BAD_JSON/possiblyCommitted UX instead of a raw throw.
+      return (res.json() as Promise<ImageRow>).catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          throw classifyFetchError(err);
+        }
+        const message = err instanceof Error ? err.message : "Malformed response body";
+        throw new ApiRequestError(message, res.status, "BAD_JSON");
+      });
     },
 
     references(id: string): Promise<{ chapters: Array<{ id: string; title: string }> }> {
