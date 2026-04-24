@@ -2133,7 +2133,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(viewBtn);
 
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
   });
 
@@ -2266,7 +2266,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
 
     // SnapshotBanner renders inside the editor's region with a "Restore"
@@ -2331,7 +2331,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
 
     const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
@@ -2397,7 +2397,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
 
     // Snapshot banner is on-screen before the failed restore.
@@ -2468,7 +2468,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
 
     const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
@@ -2527,7 +2527,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
 
     const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
@@ -2586,7 +2586,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-gone");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-gone", expect.any(AbortSignal));
     });
 
     // Confirm banner is on-screen before the 404.
@@ -2651,7 +2651,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
     // Close the panel via Escape (the toolbar Snapshots button unmounts
     // together with the Editor when viewingSnapshot is truthy).
@@ -2724,7 +2724,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
     await userEvent.keyboard("{Escape}");
 
@@ -2788,7 +2788,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
     await userEvent.keyboard("{Escape}");
 
@@ -2888,7 +2888,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-corrupt");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-corrupt", expect.any(AbortSignal));
     });
 
     const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
@@ -2947,7 +2947,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-xref");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-xref", expect.any(AbortSignal));
     });
 
     const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
@@ -3008,7 +3008,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
     await userEvent.keyboard("{Escape}");
     const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
@@ -3070,7 +3070,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
     await userEvent.keyboard("{Escape}");
     const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
@@ -3153,7 +3153,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
     await userEvent.keyboard("{Escape}");
     const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
@@ -3229,7 +3229,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
     await userEvent.keyboard("{Escape}");
     const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });

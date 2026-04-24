@@ -1987,11 +1987,20 @@ export function EditorPage() {
                 // with Phase 4b.4 (ESLint enforcement of the mapper
                 // contract) since that phase touches every call site
                 // anyway. Keeping the branches here until then.
+                // I4 (review 2026-04-24): check `code` before `status`
+                // to match the mapper's S8 byCode-beats-byStatus
+                // precedence. A hypothetical `{status:404,
+                // code:CORRUPT_SNAPSHOT}` response would otherwise
+                // show "not found" in the panel though the mapper
+                // picked "corrupt" — a drift between this translator
+                // and the scope registry. The translator itself will
+                // be removed in Phase 4b.4 (see S1 above); until then
+                // keep it consistent with the mapper.
                 const code = result.error.code;
-                if (result.error.status === 404) return { ok: false, reason: "not_found" };
                 if (code === SNAPSHOT_ERROR_CODES.CORRUPT_SNAPSHOT) {
                   return { ok: false, reason: "corrupt_snapshot" };
                 }
+                if (result.error.status === 404) return { ok: false, reason: "not_found" };
                 if (transient) return { ok: false, reason: "network" };
                 return { ok: false, reason: "unknown" };
               } catch (err) {
