@@ -49,15 +49,22 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   },
   "project.create": {
     fallback: STRINGS.error.createFailed,
+    // I12 (review 2026-04-24): add the transient-retry copy so NETWORK
+    // errors get the "check your connection" hint instead of the
+    // generic fallback. Applies to all mutation scopes that declare
+    // committed: — siblings below mirror this.
+    network: STRINGS.error.createFailedNetwork,
     committed: STRINGS.error.possiblyCommitted,
     byCode: { PROJECT_TITLE_EXISTS: STRINGS.error.projectTitleExists },
   },
   "project.delete": {
     fallback: STRINGS.error.deleteFailed,
+    network: STRINGS.error.deleteFailedNetwork,
     committed: STRINGS.error.possiblyCommitted,
   },
   "project.updateTitle": {
     fallback: STRINGS.error.updateTitleFailed,
+    network: STRINGS.error.updateTitleFailedNetwork,
     committed: STRINGS.error.updateTitleResponseUnreadable,
     byCode: { PROJECT_TITLE_EXISTS: STRINGS.error.projectTitleExists },
     // S4 (review 2026-04-24): the rename endpoint and project.updateFields
@@ -101,6 +108,7 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   },
   "chapter.create": {
     fallback: STRINGS.error.createChapterFailed,
+    network: STRINGS.error.createChapterFailedNetwork,
     committed: STRINGS.error.createChapterResponseUnreadable,
     byCode: { READ_AFTER_CREATE_FAILURE: STRINGS.error.createChapterReadAfterFailure },
     // S8 (review 2026-04-24): the server inserted the row but could
@@ -110,18 +118,22 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   },
   "chapter.delete": {
     fallback: STRINGS.error.deleteChapterFailed,
+    network: STRINGS.error.deleteChapterFailedNetwork,
     committed: STRINGS.error.possiblyCommitted,
   },
   "chapter.rename": {
     fallback: STRINGS.error.renameChapterFailed,
+    network: STRINGS.error.renameChapterFailedNetwork,
     committed: STRINGS.error.possiblyCommitted,
   },
   "chapter.reorder": {
     fallback: STRINGS.error.reorderFailed,
+    network: STRINGS.error.reorderFailedNetwork,
     committed: STRINGS.error.reorderResponseUnreadable,
   },
   "chapter.updateStatus": {
     fallback: STRINGS.error.statusChangeFailed,
+    network: STRINGS.error.statusChangeFailedNetwork,
     committed: STRINGS.error.statusChangeResponseUnreadable,
   },
   "chapterStatus.fetch": {
@@ -167,6 +179,7 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   },
   "image.delete": {
     fallback: STRINGS.imageGallery.deleteFailedGeneric,
+    network: STRINGS.imageGallery.deleteFailedNetwork,
     committed: STRINGS.error.possiblyCommitted,
     byCode: { IMAGE_IN_USE: STRINGS.imageGallery.deleteBlockedInUse },
     // S5 (2026-04-23 review): validate per-element shape, not just that
@@ -189,6 +202,7 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   },
   "image.updateMetadata": {
     fallback: STRINGS.imageGallery.saveFailed,
+    network: STRINGS.imageGallery.saveFailedNetwork,
     committed: STRINGS.error.possiblyCommitted,
   },
   "snapshot.restore": {
@@ -217,10 +231,12 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   },
   "snapshot.create": {
     fallback: STRINGS.snapshots.createFailedGeneric,
+    network: STRINGS.snapshots.createFailedNetwork,
     committed: STRINGS.error.possiblyCommitted,
   },
   "snapshot.delete": {
     fallback: STRINGS.snapshots.deleteFailed,
+    network: STRINGS.snapshots.deleteFailedNetwork,
     committed: STRINGS.error.possiblyCommitted,
   },
   "findReplace.search": {
@@ -262,6 +278,7 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   },
   "trash.restoreChapter": {
     fallback: STRINGS.error.restoreChapterFailed,
+    network: STRINGS.error.restoreChapterFailedNetwork,
     // I2 (2026-04-24 review): restore-committed UX. 2xx BAD_JSON and 500
     // RESTORE_READ_FAILURE both mean "the chapter was actually restored,
     // the client just can't see the hydrated row." Generic
@@ -284,6 +301,7 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   },
   "settings.update": {
     fallback: STRINGS.error.settingsUpdateFailedGeneric,
+    network: STRINGS.error.settingsUpdateFailedNetwork,
     committed: STRINGS.error.possiblyCommitted,
   },
   "settings.get": {

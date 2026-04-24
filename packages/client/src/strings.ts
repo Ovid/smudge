@@ -52,6 +52,20 @@ export const STRINGS = {
     loadProjectFailedNetwork: "Failed to load project — check your connection and try again.",
     createFailed: "Failed to create project",
     projectTitleExists: "A project with this title already exists. Choose a different title.",
+    // I12 (review 2026-04-24): network: overrides for mutation scopes
+    // so NETWORK errors surface a "check your connection" hint instead
+    // of collapsing to the generic fallback.
+    createFailedNetwork: "Failed to create project — check your connection and try again.",
+    deleteFailedNetwork: "Failed to delete project — check your connection and try again.",
+    updateTitleFailedNetwork: "Failed to update project title — check your connection and try again.",
+    createChapterFailedNetwork: "Failed to create chapter — check your connection and try again.",
+    deleteChapterFailedNetwork: "Failed to delete chapter — check your connection and try again.",
+    renameChapterFailedNetwork: "Failed to rename chapter — check your connection and try again.",
+    reorderFailedNetwork: "Failed to reorder chapters — check your connection and try again.",
+    statusChangeFailedNetwork:
+      "Failed to update chapter status — check your connection and try again.",
+    restoreChapterFailedNetwork: "Failed to restore chapter — check your connection and try again.",
+    settingsUpdateFailedNetwork: "Unable to save settings — check your connection and try again.",
     createChapterFailed: "Failed to create chapter",
     createChapterResponseUnreadable:
       "The chapter may have been created, but the server response was unreadable. Refresh to see the current chapter list.",
@@ -317,6 +331,7 @@ export const STRINGS = {
     fileTooLarge: "File too large. Maximum: 10MB.",
     deleteSuccess: (filename: string) => `Image deleted: ${filename}`,
     saveFailed: "Save failed. Your changes have not been saved.",
+    saveFailedNetwork: "Save failed — check your connection and try again.",
     deleteBlockedLoading: "This image is in use. Loading details...",
     inTrash: "in trash",
     loadFailed: "Failed to load images.",
@@ -332,6 +347,7 @@ export const STRINGS = {
     uploadCommittedRefresh:
       "The upload may have completed but the server response was unreadable. Check the image gallery — refresh if needed — before trying again.",
     deleteFailedGeneric: "Delete failed. Try again.",
+    deleteFailedNetwork: "Delete failed — check your connection and try again.",
     deleteBlockedInUse: "This image is in use. Remove it from those chapters first.",
   },
   snapshots: {
@@ -379,7 +395,9 @@ export const STRINGS = {
     duplicateSkipped: "Content unchanged since last snapshot.",
     createFailed: "Unable to create snapshot. Save your unsaved changes and try again.",
     createFailedGeneric: "Unable to create snapshot. Try again.",
+    createFailedNetwork: "Unable to create snapshot — check your connection and try again.",
     deleteFailed: "Unable to delete snapshot. Try again.",
+    deleteFailedNetwork: "Unable to delete snapshot — check your connection and try again.",
     listFailed: "Unable to load snapshots. Try opening the panel again.",
     listFailedGeneric: "Unable to load snapshots. Try again.",
     listFailedNetwork: "Unable to load snapshots — check your connection and try again.",
