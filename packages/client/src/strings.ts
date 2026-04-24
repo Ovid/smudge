@@ -64,6 +64,13 @@ export const STRINGS = {
     updateTitleFailed: "Failed to update project title",
     updateTitleResponseUnreadable:
       "The title change may have been saved, but the server response was unreadable. Refresh the page to see the current project title.",
+    // I4 (review 2026-04-24): shown when the rename-committed recovery
+    // GET 404s — the slug moved and the old slug is dead. The banner
+    // locks the editor (auto-save is disabled while it's non-null)
+    // because every subsequent PATCH/POST against projectSlugRef would
+    // 404 until the user reloads.
+    updateTitleProjectSlugLost:
+      "This project was renamed and moved to a new URL. Refresh the page to continue editing.",
     renameChapterFailed: "Failed to rename chapter",
     deleteFailed: "Failed to delete project",
     loadTrashFailed: "Failed to load trash",

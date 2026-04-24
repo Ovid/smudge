@@ -2288,7 +2288,7 @@ describe("EditorPage snapshot panel", () => {
     await waitFor(() => {
       expect(
         (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore,
-      ).toHaveBeenCalledWith("snap-1");
+      ).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
   });
 
@@ -2741,7 +2741,7 @@ describe("EditorPage snapshot panel", () => {
     await waitFor(() => {
       expect(
         (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore,
-      ).toHaveBeenCalledWith("snap-1");
+      ).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
     // refreshSnapshotCount() issues a fresh list() call — confirm it ran.
     await waitFor(() => {

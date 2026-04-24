@@ -18,19 +18,21 @@ export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
 export type ReloadOutcome = "reloaded" | "superseded" | "failed";
 
 export interface UseProjectEditorOptions {
-  // I2 (review 2026-04-24): fires when handleSave hits a terminal code
-  // (BAD_JSON / UPDATE_READ_FAILURE / CORRUPT_CONTENT) where the server
-  // has likely committed (or the row is unrecoverable) and the user
-  // must not keep typing. EditorPage pairs this with
+  // I2 + I4 (review 2026-04-24): fires when the hook detects a
+  // server/client state divergence the user must manually refresh to
+  // recover from (terminal save code, or rename-committed followed by
+  // a slug-lost recovery GET 404). EditorPage pairs this with
   // applyReloadFailedLock to honour CLAUDE.md save-pipeline invariant
-  // #2 (setEditable(false) + editorLockedMessage set together). Hook
-  // consumers that don't own an editor (tests, storybook) may omit it.
-  onCommittedSaveFailure?: (message: string) => void;
+  // #2 (setEditable(false) + editorLockedMessage set together) and the
+  // lock banner implicitly disables auto-save via handleSaveLockGated.
+  // Hook consumers that don't own an editor (tests, storybook) may
+  // omit it.
+  onRequestEditorLock?: (message: string) => void;
 }
 
 export function useProjectEditor(slug: string | undefined, options?: UseProjectEditorOptions) {
-  const onCommittedSaveFailureRef = useRef(options?.onCommittedSaveFailure);
-  onCommittedSaveFailureRef.current = options?.onCommittedSaveFailure;
+  const onRequestEditorLockRef = useRef(options?.onRequestEditorLock);
+  onRequestEditorLockRef.current = options?.onRequestEditorLock;
   const [project, setProject] = useState<ProjectWithChapters | null>(null);
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
   const [chapterReloadKey, setChapterReloadKey] = useState(0);
@@ -380,7 +382,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // I2 (review 2026-04-24): terminal committed/unrecoverable
         // codes must also lock the editor — CLAUDE.md save-pipeline
         // invariant #2 pairs setEditable(false) with editorLockedMessage.
-        // EditorPage subscribes via onCommittedSaveFailure so the
+        // EditorPage subscribes via onRequestEditorLock so the
         // invariant-pair helper (applyReloadFailedLock) fires alongside
         // the banner. Bare 4xx (VALIDATION_ERROR, 413) are recoverable
         // and keep the editor writable.
@@ -390,7 +392,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             rejected4xx.code === "UPDATE_READ_FAILURE" ||
             rejected4xx.code === "CORRUPT_CONTENT")
         ) {
-          onCommittedSaveFailureRef.current?.(rejected4xx.message);
+          onRequestEditorLockRef.current?.(rejected4xx.message);
         }
       }
       return false;
@@ -856,9 +858,21 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
               setProject(refreshed);
               projectSlugRef.current = refreshed.slug;
             }
-          } catch {
-            // Refresh failed (slug changed → 404, or network) — the
-            // committed copy below instructs the user to refresh manually.
+          } catch (recoveryErr) {
+            // I4 (review 2026-04-24): a 404 here means the server moved
+            // the project to a new slug but the unreadable body kept us
+            // from learning it. projectSlugRef still points at the dead
+            // slug; every subsequent save/create/reorder POSTs against
+            // it and 404s in a cascade. Fire onRequestEditorLock so the
+            // editor locks and auto-save short-circuits via
+            // handleSaveLockGated — the banner instructs the user to
+            // refresh. Network/other errors fall through to the generic
+            // committed banner below (auto-save still works because the
+            // slug didn't move; next attempt will succeed or surface its
+            // own error).
+            if (isApiError(recoveryErr) && recoveryErr.status === 404) {
+              onRequestEditorLockRef.current?.(STRINGS.error.updateTitleProjectSlugLost);
+            }
           }
         }
         if (message) setProjectTitleError(message);

@@ -1187,21 +1187,21 @@ describe("useProjectEditor", () => {
   // committed while the user cannot see the state. handleSave's terminal
   // BAD_JSON / UPDATE_READ_FAILURE / CORRUPT_CONTENT branches set
   // saveStatus="error" + the committed banner but did NOT request the
-  // editor lock. The hook now invokes onCommittedSaveFailure so
+  // editor lock. The hook now invokes onRequestEditorLock so
   // EditorPage can pair applyReloadFailedLock with the banner.
   it.each([
     ["BAD_JSON", 200, STRINGS.editor.saveCommittedUnreadable],
     ["UPDATE_READ_FAILURE", 500, STRINGS.editor.saveCommittedUnreadable],
     ["CORRUPT_CONTENT", 500, STRINGS.editor.saveFailedCorrupt],
-  ])("handleSave fires onCommittedSaveFailure on terminal %s (I2)", async (code, status, msg) => {
+  ])("handleSave fires onRequestEditorLock on terminal %s (I2)", async (code, status, msg) => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.update).mockRejectedValue(
       new ApiRequestError("terminal", status, code),
     );
-    const onCommittedSaveFailure = vi.fn();
+    const onRequestEditorLock = vi.fn();
 
     const { result } = renderHook(() =>
-      useProjectEditor("test-project", { onCommittedSaveFailure }),
+      useProjectEditor("test-project", { onRequestEditorLock }),
     );
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
 
@@ -1209,7 +1209,7 @@ describe("useProjectEditor", () => {
       await result.current.handleSave({ type: "doc", content: [] });
     });
 
-    expect(onCommittedSaveFailure).toHaveBeenCalledWith(msg);
+    expect(onRequestEditorLock).toHaveBeenCalledWith(msg);
     warnSpy.mockRestore();
   });
 
@@ -2151,6 +2151,38 @@ describe("useProjectEditor", () => {
     // active one.
     expect(result.current.activeChapter?.id).toBe("ch3");
     expect(result.current.error).toBeNull();
+    warnSpy.mockRestore();
+  });
+
+  // I4 (review 2026-04-24): on 2xx BAD_JSON of the title PATCH, the
+  // server may have committed a slug change. The recovery GET under
+  // the OLD slug then 404s because that slug is dead. Previously the
+  // recovery catch swallowed this silently; projectSlugRef stayed
+  // pointing at the dead slug and every subsequent save/create/reorder
+  // POSTed against it and 404d in a cascade. Fix: on recovery 404
+  // fire onRequestEditorLock so EditorPage applies the lock banner,
+  // disabling auto-save until the user refreshes.
+  it("handleUpdateProjectTitle requests editor lock when recovery GET 404s (I4)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.projects.update).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockRejectedValueOnce(new ApiRequestError("not found", 404)); // recovery 404 under dead slug
+
+    const onRequestEditorLock = vi.fn();
+    const { result } = renderHook(() =>
+      useProjectEditor("test-project", { onRequestEditorLock }),
+    );
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleUpdateProjectTitle("Renamed");
+    });
+
+    expect(onRequestEditorLock).toHaveBeenCalledWith(STRINGS.error.updateTitleProjectSlugLost);
     warnSpy.mockRestore();
   });
 

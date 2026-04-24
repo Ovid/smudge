@@ -103,7 +103,7 @@ export function EditorPage() {
   } = useProjectEditor(slug, {
     // I2: route terminal save-fail codes through the invariant-pair
     // helper so the banner and setEditable(false) stay in lock-step.
-    onCommittedSaveFailure: (msg) => applyReloadFailedLockRef.current(msg),
+    onRequestEditorLock: (msg) => applyReloadFailedLockRef.current(msg),
   });
 
   const { sidebarWidth, sidebarOpen, handleSidebarResize, toggleSidebar } = useSidebarState();
@@ -348,7 +348,7 @@ export function EditorPage() {
     safeSetEditable(editorRef, false);
   }, []);
   // I2 (review 2026-04-24): keep the ref used by useProjectEditor's
-  // onCommittedSaveFailure pointed at the current helper identity. The
+  // onRequestEditorLock pointed at the current helper identity. The
   // helper is memoized with [] so identity is stable, but the ref
   // indirection lets us reference it here without circular declaration.
   applyReloadFailedLockRef.current = applyReloadFailedLock;
