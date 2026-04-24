@@ -876,6 +876,31 @@ describe("api.images.upload (I1 transport classification)", () => {
     expect((caught as InstanceType<typeof ApiRequestError>).message).toMatch(/^\[dev\] /);
   });
 
+  // I14 (review 2026-04-24): a TypeError from res.json() indicates a
+  // stream-level network fault (e.g. TCP reset between headers and
+  // body) rather than a malformed-but-received body. Classifying that
+  // as BAD_JSON would surface "your save may have gone through" — but
+  // the server never flushed a body. Route it through NETWORK
+  // (transient) instead so consumers retry.
+  it("maps 2xx body-read TypeError to NETWORK (I14)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(new TypeError("Failed to fetch")),
+    });
+
+    let caught: unknown;
+    try {
+      await api.projects.get("p1");
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("NETWORK");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
   it("re-throws ABORTED when !ok error-body read aborts (I2)", async () => {
     const { ApiRequestError } = await import("../api/client");
     const abort = new DOMException("aborted", "AbortError");

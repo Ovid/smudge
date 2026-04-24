@@ -187,6 +187,19 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     if (err instanceof DOMException && err.name === "AbortError") {
       throw classifyFetchError(err);
     }
+    // I14 (review 2026-04-24): a TypeError here is a stream-level
+    // network fault (TCP reset between headers and body, fetch's body
+    // read bailing out). Classifying it as BAD_JSON drives the
+    // "possibly committed" UX — but the server never flushed a body
+    // and may not have committed either, so the lock banner would
+    // falsely hint at a committed save. Route it through NETWORK
+    // (transient) instead. SyntaxError (truncated/malformed JSON with
+    // a parseable prefix) and other Error subclasses keep the BAD_JSON
+    // treatment — there the server response did arrive, we just
+    // couldn't parse it, which IS the possiblyCommitted case.
+    if (err instanceof TypeError) {
+      throw classifyFetchError(err);
+    }
     // Force the `[dev]` prefix on BAD_JSON messages too (review
     // 2026-04-24). The raw JSON parser error (e.g. "Unexpected end of
     // JSON input") is useful in logs, but the class-level invariant
@@ -399,6 +412,14 @@ export const api = {
       // through the BAD_JSON/possiblyCommitted UX instead of a raw throw.
       return (res.json() as Promise<ImageRow>).catch((err: unknown) => {
         if (err instanceof DOMException && err.name === "AbortError") {
+          throw classifyFetchError(err);
+        }
+        // I14 (review 2026-04-24): TypeError here means the stream
+        // broke (TCP reset post-headers) rather than the body being
+        // unparseable. Route through NETWORK so the upload surfaces as
+        // transient instead of possiblyCommitted — symmetric with
+        // apiFetch's body-read branch.
+        if (err instanceof TypeError) {
           throw classifyFetchError(err);
         }
         // [dev] prefix on BAD_JSON — see apiFetch's body-read branch.
