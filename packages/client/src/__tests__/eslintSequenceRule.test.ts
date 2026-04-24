@@ -4,12 +4,22 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+// Monorepo root = four levels up from this test file
+// (packages/client/src/__tests__/ → repo root). The flat-config
+// `files: ["packages/client/**/*.{ts,tsx}"]` pattern is matched relative
+// to the ESLint cwd, so pinning cwd to the repo root is required for the
+// pattern to hit regardless of whether the test was invoked from the
+// repo root (`make test`) or the workspace directory (`npm test -w
+// packages/client`). Without this cwd the rule silently no-ops in the
+// workspace-scoped invocation and the test sees 0 messages.
+const REPO_ROOT = resolve(__dirname, "../../../..");
 
 async function lint(code: string): Promise<ESLint.LintResult[]> {
   const eslint = new ESLint({
-    overrideConfigFile: resolve(__dirname, "../../../../eslint.config.js"),
+    cwd: REPO_ROOT,
+    overrideConfigFile: resolve(REPO_ROOT, "eslint.config.js"),
   });
-  return eslint.lintText(code, { filePath: resolve(__dirname, "fixture.ts") });
+  return eslint.lintText(code, { filePath: resolve(REPO_ROOT, "packages/client/src/fixture.ts") });
 }
 
 describe("no-restricted-syntax sequence-ref rule", () => {
