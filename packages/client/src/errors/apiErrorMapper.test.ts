@@ -260,6 +260,24 @@ describe("mapApiError — extras", () => {
     const result = resolveError(err, scopeWithByCode);
     expect(result.extras).toBeUndefined();
   });
+
+  // I15 (review 2026-04-24): the mapper must never throw. A buggy
+  // extrasFrom would otherwise bubble out through every call site and
+  // flip the UI into a crash boundary. Wrap in try/catch: throw →
+  // extras:undefined, message still lands.
+  it("swallows extrasFrom throws and returns extras:undefined (I15)", () => {
+    const throwingScope = {
+      fallback: "fallback",
+      byCode: { CODE_X: "messsage" },
+      extrasFrom: () => {
+        throw new Error("extrasFrom bug");
+      },
+    } as const;
+    const err = new ApiRequestError("boom", 500, "CODE_X");
+    const result = resolveError(err, throwingScope);
+    expect(result.message).toBe("messsage");
+    expect(result.extras).toBeUndefined();
+  });
 });
 
 describe("SCOPES — chapter.save", () => {

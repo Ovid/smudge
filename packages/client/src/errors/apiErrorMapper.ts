@@ -128,7 +128,7 @@ export function resolveError(err: unknown, scope: ScopeEntry): MappedError {
       possiblyCommitted:
         err.code !== undefined && scope.committedCodes?.includes(err.code) === true,
       transient: false,
-      extras: scope.extrasFrom?.(err),
+      extras: safeExtrasFrom(scope, err),
     };
   }
   const byStatusMatch = scope.byStatus?.[err.status];
@@ -137,15 +137,37 @@ export function resolveError(err: unknown, scope: ScopeEntry): MappedError {
       message: byStatusMatch,
       possiblyCommitted: false,
       transient: false,
-      extras: scope.extrasFrom?.(err),
+      extras: safeExtrasFrom(scope, err),
     };
   }
   return {
     message: scope.fallback,
     possiblyCommitted: false,
     transient: false,
-    extras: scope.extrasFrom?.(err),
+    extras: safeExtrasFrom(scope, err),
   };
+}
+
+// I15 (review 2026-04-24): the mapper must never throw. Buggy
+// extrasFrom implementations (narrowing mistakes, typos, upstream
+// envelope shape drift) would otherwise bubble out through every
+// call site and flip the UI into a crash boundary. Wrap each
+// invocation so a throw becomes `undefined` extras and the mapped
+// message still lands. Dev-only console.error preserves debuggability
+// without leaking into production consoles.
+function safeExtrasFrom(
+  scope: ScopeEntry,
+  err: ApiRequestError,
+): Record<string, unknown> | undefined {
+  if (!scope.extrasFrom) return undefined;
+  try {
+    return scope.extrasFrom(err);
+  } catch (extrasErr) {
+    if (import.meta.env?.DEV) {
+      console.error("scope.extrasFrom threw; returning undefined:", extrasErr);
+    }
+    return undefined;
+  }
 }
 
 export function mapApiError(err: unknown, scope: ApiErrorScope): MappedError {
