@@ -2212,7 +2212,6 @@ describe("useProjectEditor", () => {
     // client dispatch order) decided which title won. Clip the wire
     // by passing an AbortSignal to api.projects.update and aborting
     // it before issuing the next rename.
-    const renamed1 = { ...mockProject, title: "First", slug: "test-project" };
     const renamed2 = { ...mockProject, title: "Second", slug: "test-project" };
 
     vi.mocked(api.projects.update).mockReset();
@@ -2221,7 +2220,7 @@ describe("useProjectEditor", () => {
       .mockImplementationOnce(async (_slug, _data, signal) => {
         signals.push(signal);
         // Stay in flight forever so the second call can abort this one.
-        return new Promise<typeof renamed1>(() => {});
+        return new Promise<typeof renamed2>(() => {});
       })
       .mockImplementationOnce(async (_slug, _data, signal) => {
         signals.push(signal);
