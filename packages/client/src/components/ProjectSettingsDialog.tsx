@@ -78,19 +78,25 @@ export function ProjectSettingsDialog({
         deadline: project.target_deadline ?? "",
         authorName: project.author_name ?? "",
       };
-      let cancelled = false;
+      // I4 (2026-04-24 review): wire an AbortController so the fetch
+      // actually drops on unmount. The previous `let cancelled = false`
+      // guard stopped the .then/.catch from writing state but left the
+      // browser-side fetch to finish and (on failure) still fire the
+      // promise — setTimezoneSaveError would run on an unmounted
+      // component, logging a setState-on-unmount warning in tests and
+      // violating CLAUDE.md's "zero warnings in test output" rule.
+      const controller = new AbortController();
       userChangedTimezoneRef.current = false;
       api.settings
-        .get()
+        .get(controller.signal)
         .then((settings) => {
-          if (!cancelled && !userChangedTimezoneRef.current) {
-            const tz = settings.timezone || "UTC";
-            setTimezone(tz);
-            confirmedTimezoneRef.current = tz;
-          }
+          if (controller.signal.aborted || userChangedTimezoneRef.current) return;
+          const tz = settings.timezone || "UTC";
+          setTimezone(tz);
+          confirmedTimezoneRef.current = tz;
         })
         .catch((err: unknown) => {
-          if (cancelled || userChangedTimezoneRef.current) return;
+          if (controller.signal.aborted || userChangedTimezoneRef.current) return;
           // I9: a silent UTC fallback hid real GET failures — the user
           // would see UTC in the dropdown, choose their real timezone,
           // save, and overwrite whatever-was-stored with the new value.
@@ -105,7 +111,7 @@ export function ProjectSettingsDialog({
           }
         });
       return () => {
-        cancelled = true;
+        controller.abort();
       };
     }
     // Intentionally only re-run when `open` changes — project props are read
@@ -113,6 +119,21 @@ export function ProjectSettingsDialog({
     // would reset fields the user is actively editing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // I4 (2026-04-24 review): the timezone PATCH is only cancelled by a
+  // newer timezone click. If the dialog unmounts mid-save (parent
+  // navigates away, `key={project.slug}` remount on rename), the
+  // in-flight PATCH continues and the .then/.catch runs setTimezone /
+  // setTimezoneSaveError on an unmounted component — setState-on-
+  // unmount warning in test output. Abort on unmount so the request
+  // drops cleanly and state updates cannot fire after teardown. Empty
+  // dep array: this is a true unmount-only cleanup, not tied to `open`.
+  useEffect(
+    () => () => {
+      timezoneAbortRef.current?.abort();
+    },
+    [],
+  );
 
   useEffect(() => {
     const dialog = dialogRef.current;

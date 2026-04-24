@@ -326,6 +326,80 @@ describe("ProjectSettingsDialog", () => {
     spy.mockRestore();
   });
 
+  // I4 (2026-04-24 review): the dialog unmounts mid-save (parent
+  // navigates, or `key={project.slug}` remounts on rename) while a
+  // timezone PATCH is in flight. Without an unmount-scoped abort, the
+  // promise continued, the `.then`/`.catch` ran setTimezone /
+  // setTimezoneSaveError on an unmounted component, and the test suite
+  // logged React's setState-on-unmount warning — violating the
+  // "zero warnings in test output" contract from CLAUDE.md.
+  it("aborts in-flight timezone PATCH on unmount (I4)", async () => {
+    const user = userEvent.setup();
+    let capturedSignal: AbortSignal | undefined;
+    vi.mocked(api.settings.update).mockImplementation(
+      (_settings: unknown, signal?: AbortSignal) => {
+        capturedSignal = signal;
+        return new Promise(() => {}); // never resolves — we care about abort only
+      },
+    );
+
+    const { unmount } = render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/timezone/i)).toBeInTheDocument();
+    });
+    await user.selectOptions(screen.getByLabelText(/timezone/i), "Europe/London");
+
+    await waitFor(() => {
+      expect(api.settings.update).toHaveBeenCalled();
+    });
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal?.aborted).toBe(false);
+
+    unmount();
+
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  // I4: same bottle applies to the settings GET. The prior guard used
+  // a `let cancelled = false` flag — it stopped the .then/.catch from
+  // writing state, but the fetch kept running server-side. Wiring an
+  // AbortController lets the browser drop the request on unmount and
+  // removes the only remaining setState-on-unmount path for this dialog.
+  it("aborts in-flight settings GET on unmount (I4)", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    vi.mocked(api.settings.get).mockImplementation((signal?: AbortSignal) => {
+      capturedSignal = signal;
+      return new Promise(() => {}); // never resolves
+    });
+
+    const { unmount } = render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(api.settings.get).toHaveBeenCalled();
+    });
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal?.aborted).toBe(false);
+
+    unmount();
+
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
   it("surfaces mapped error when settings fetch fails (I9)", async () => {
     // I9: previously silently fell back to UTC, hiding real fetch
     // failures. The user would change to their real timezone, save,

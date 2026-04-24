@@ -446,7 +446,14 @@ export const api = {
   settings: {
     // Server returns Record<string, string>; narrowed here to the fields the client uses.
     // Update this type when new settings are added.
-    get: () => apiFetch<{ timezone?: string }>("/settings"),
+    // I4 (2026-04-24 review): accept an optional AbortSignal so dialogs
+    // can cancel the GET on unmount instead of letting the browser-side
+    // fetch finish and the .then/.catch fire setState on an unmounted
+    // component. Only adds the options object when a signal is supplied
+    // so existing no-arg callers (useTimezoneDetection, tests) see the
+    // same fetch options shape they did before.
+    get: (signal?: AbortSignal) =>
+      apiFetch<{ timezone?: string }>("/settings", signal ? { signal } : undefined),
 
     update: (settings: Array<{ key: string; value: string }>, signal?: AbortSignal) =>
       apiFetch<{ message: string }>("/settings", {
