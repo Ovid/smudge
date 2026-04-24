@@ -543,6 +543,18 @@ describe("ImageGallery", () => {
     expect(screen.getByText(S.retryButton)).toBeInTheDocument();
   });
 
+  it("stays silent when list request is aborted (no loadError banner)", async () => {
+    vi.mocked(api.images.list).mockRejectedValue(new ApiRequestError("aborted", 0, "ABORTED"));
+
+    render(<ImageGallery {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(api.images.list).toHaveBeenCalled();
+    });
+    expect(screen.queryByText(S.loadFailed)).not.toBeInTheDocument();
+    expect(screen.queryByText(S.retryButton)).not.toBeInTheDocument();
+  });
+
   it("retries loading images when retry button is clicked", async () => {
     const user = userEvent.setup();
     vi.mocked(api.images.list)

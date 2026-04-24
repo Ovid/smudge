@@ -71,10 +71,13 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
       .catch((err: unknown) => {
         // I8 (2026-04-23): route through mapApiError so NETWORK vs 5xx
         // distinctions reach the user via the image.list scope instead
-        // of collapsing to the generic loadFailed copy.
+        // of collapsing to the generic loadFailed copy. ABORTED returns
+        // message: null — treat as a no-op (the user cancelled; do not
+        // surface a loadError banner for a cancelled request).
         if (!cancelled) {
           const { message } = mapApiError(err, "image.list");
-          setLoadError(message ?? STRINGS.imageGallery.loadFailed);
+          if (message === null) return;
+          setLoadError(message);
         }
       });
     return () => {
