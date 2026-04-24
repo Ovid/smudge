@@ -2484,16 +2484,18 @@ describe("EditorPage snapshot panel", () => {
     });
   });
 
-  it("shows a dismissible network banner for a pre-send non-ApiRequestError restore reject (I5)", async () => {
-    // I5: apiFetch wraps every real network/fetch error in
-    // ApiRequestError, so a bare non-ApiRequestError reject from
-    // api.snapshots.restore means the server never received the
-    // request. Before I5, useSnapshotState mapped this to "unknown"
-    // and EditorPage treated "unknown" as possibly_committed — wiping
-    // the cached draft and permanently locking the editor for what
-    // was a purely-client bug. After: the hook synthesizes a NETWORK
-    // ApiRequestError and the caller surfaces a dismissible retry
-    // banner via the snapshot.restore scope's `network:` copy.
+  it("shows a persistent lock banner for a non-ApiRequestError restore throw (I2)", async () => {
+    // I2 (2026-04-23 review): apiFetch wraps every real network/fetch
+    // error in ApiRequestError, so any non-ApiRequestError throw from
+    // the restore pipeline is overwhelmingly a POST-success bookkeeping
+    // throw (localStorage.removeItem in Safari private mode, setState
+    // on a torn-down boundary). The server likely committed the restore
+    // + its auto-snapshot by that point, so treating this as a transient
+    // NETWORK retry would invite the user to re-POST and double-restore.
+    // Conservative default: synthesize 200 BAD_JSON → possiblyCommitted
+    // → persistent lock banner. The earlier (I5) assumption that this
+    // meant "pre-send" is wrong — pre-send is vanishingly rare, post-
+    // success is realistic.
     vi.mocked(api.snapshots.list).mockResolvedValue([
       {
         id: "snap-1",
@@ -2536,11 +2538,14 @@ describe("EditorPage snapshot panel", () => {
     );
     await userEvent.click(confirmButton!);
 
-    // Dismissible network banner. The persistent lock banner MUST NOT
-    // appear for a pre-send failure — the server never committed.
-    expect(await screen.findByText(STRINGS.snapshots.restoreNetworkFailed)).toBeInTheDocument();
-    expect(screen.queryByText(STRINGS.snapshots.restoreResponseUnreadable)).toBeNull();
-    expect(screen.queryByRole("button", { name: STRINGS.editor.refreshButton })).toBeNull();
+    // Persistent lock banner: server likely committed the restore, the
+    // response was unreadable client-side. A dismissible retry banner
+    // would invite a double-restore.
+    expect(
+      await screen.findByText(STRINGS.snapshots.restoreResponseUnreadable),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(STRINGS.snapshots.restoreNetworkFailed)).toBeNull();
+    expect(screen.getByRole("button", { name: STRINGS.editor.refreshButton })).toBeInTheDocument();
   });
 
   it("exits snapshot view when restore returns not_found (I6)", async () => {

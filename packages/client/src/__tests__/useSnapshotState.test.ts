@@ -460,17 +460,17 @@ describe("useSnapshotState", () => {
     expect(r.restoredChapterId).toBe("ch-1");
   });
 
-  it("restoreSnapshot routes a non-ApiRequestError pre-send reject to a transient network error (I5)", async () => {
-    // I5: before this fix, any non-ApiRequestError throw from the restore
-    // pipeline was categorized as "unknown" and the caller treated that
-    // as possibly_committed — a TypeError before fetch left the client
-    // wiped the cached draft and permanently locked the editor. apiFetch
-    // now wraps every network error in ApiRequestError, so a bare
-    // non-ApiRequestError reject from api.snapshots.restore means the
-    // server never received the request. The hook synthesizes a NETWORK
-    // ApiRequestError so mapApiError routes it to the transient-retry
-    // copy (restoreNetworkFailed) with transient=true, not the committed
-    // lock banner.
+  it("restoreSnapshot routes a non-ApiRequestError throw as possiblyCommitted 200 BAD_JSON (I2)", async () => {
+    // I2 (2026-04-23 review): apiFetch wraps every network/fetch error
+    // in ApiRequestError, so a bare non-ApiRequestError throw from the
+    // restore pipeline is effectively post-success (e.g.
+    // localStorage.removeItem throwing in Safari private mode, an
+    // extension proxying storage, a setState on a torn-down boundary).
+    // The server almost certainly committed the restore + its auto-
+    // snapshot by that point, so synthesizing NETWORK (transient retry)
+    // would invite a double-restore on the user's next click. Synthesize
+    // 200 BAD_JSON instead so mapApiError routes through the
+    // possiblyCommitted arm → persistent lock banner → no retry.
     vi.mocked(api.snapshots.restore).mockRejectedValue(new Error("fail"));
 
     const { result } = renderHook(() => useSnapshotState("ch-1"));
@@ -487,11 +487,12 @@ describe("useSnapshotState", () => {
     expect(r.ok).toBe(false);
     if (!r.error) throw new Error("unreachable");
     expect(r.error).toBeInstanceOf(ApiRequestError);
-    expect(r.error.code).toBe("NETWORK");
+    expect(r.error.code).toBe("BAD_JSON");
+    expect(r.error.status).toBe(200);
     const mapped = mapApiError(r.error, "snapshot.restore");
-    expect(mapped.message).toBe(STRINGS.snapshots.restoreNetworkFailed);
-    expect(mapped.transient).toBe(true);
-    expect(mapped.possiblyCommitted).toBe(false);
+    expect(mapped.possiblyCommitted).toBe(true);
+    expect(mapped.transient).toBe(false);
+    expect(mapped.message).toBe(STRINGS.snapshots.restoreResponseUnreadable);
   });
 
   it("restoreSnapshot surfaces CORRUPT_SNAPSHOT via the failure arm on 400 CORRUPT_SNAPSHOT", async () => {

@@ -24,6 +24,18 @@ import type { SnapshotPanelHandle } from "../components/SnapshotPanel";
 function makeClientNetworkError(): ApiRequestError {
   return new ApiRequestError("Client-side failure before request reached server.", 0, "NETWORK");
 }
+// I2 (2026-04-23 review): synthesize a 200 BAD_JSON for post-success
+// throws (localStorage.removeItem in Safari private mode, setState on
+// a torn-down boundary, etc.) so mapApiError routes through the
+// possiblyCommitted arm — the server likely committed the mutation,
+// retrying would double-commit. Paired with restoreSnapshot's catch.
+function makeClientCommittedError(): ApiRequestError {
+  return new ApiRequestError(
+    "Client-side failure after request reached server; response state unknown.",
+    200,
+    "BAD_JSON",
+  );
+}
 function makeCorruptViewError(): ApiRequestError {
   return new ApiRequestError(
     "Snapshot content could not be parsed as a TipTap document.",
@@ -329,18 +341,19 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
           // without needing a dedicated discriminant.
           return { ok: false, error: err };
         }
-        // Non-ApiRequestError. apiFetch wraps every real network/fetch
-        // error in ApiRequestError, so a bare throw here means the request
-        // never reached the server: either a purely-client bug before the
-        // await resolved (routing mistake, undefined access) or a
-        // post-success bookkeeping throw that cannot actually fire today
-        // because every line after `await api.snapshots.restore(...)` is
-        // either ref access, a setState dispatch, or a Promise chain
-        // whose `.catch(() => {})` swallows its own failures. Synthesize
-        // a NETWORK ApiRequestError so the caller's mapApiError routes it
-        // to the dismissible transient-retry copy — the user can retry
-        // without risking a double-restore (I5).
-        return { ok: false, error: makeClientNetworkError() };
+        // I2 (2026-04-23): apiFetch wraps every real network/fetch error
+        // in ApiRequestError, so any bare throw here is either a pre-send
+        // client bug (vanishingly rare) or a post-success bookkeeping
+        // throw (realistic: localStorage.removeItem can throw in Safari
+        // private mode at line 299; setState on a torn-down boundary;
+        // extension-proxied storage). For restore the conservative default
+        // is post-success — the server likely committed the restore and
+        // its auto-snapshot. Synthesize 200 BAD_JSON so mapApiError routes
+        // through the possiblyCommitted arm → persistent lock banner, no
+        // retry prompt. This matches the EditorPage handler's comment at
+        // `handleRestoreSnapshot` ("hook synthesizes a 200 BAD_JSON
+        // ApiRequestError for non-ApiRequestError post-success throws").
+        return { ok: false, error: makeClientCommittedError() };
       }
     },
     [chapterId, chapterSeq],
