@@ -1874,7 +1874,11 @@ describe("useProjectEditor", () => {
     const refreshedProject = { ...mockProject, chapters: [mockChapter1, mockChapter2, newChapter] };
 
     vi.mocked(api.chapters.create).mockRejectedValue(
-      new ApiRequestError("Chapter was created but could not be retrieved.", 500, "READ_AFTER_CREATE_FAILURE"),
+      new ApiRequestError(
+        "Chapter was created but could not be retrieved.",
+        500,
+        "READ_AFTER_CREATE_FAILURE",
+      ),
     );
     vi.mocked(api.projects.get).mockReset();
     vi.mocked(api.projects.get)

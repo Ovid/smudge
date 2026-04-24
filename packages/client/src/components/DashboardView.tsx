@@ -101,8 +101,7 @@ export function DashboardView({
   const data = dataWithSlug?.slug === slug ? dataWithSlug.data : null;
   const velocityData = velocityWithSlug?.slug === slug ? velocityWithSlug.data : null;
   const velocityLoading = velocityWithSlug?.slug !== slug;
-  const velocityError =
-    velocityWithSlug?.slug === slug ? (velocityWithSlug?.error ?? null) : null;
+  const velocityError = velocityWithSlug?.slug === slug ? (velocityWithSlug?.error ?? null) : null;
 
   if (error) {
     return (

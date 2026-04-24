@@ -61,10 +61,8 @@ export const STRINGS = {
     loadTrashFailed: "Failed to load trash",
     loadTrashFailedNetwork: "Failed to load trash — check your connection and try again.",
     restoreChapterFailed: "Failed to restore chapter",
-    restoreChapterProjectPurged:
-      "Can't restore — the parent project was permanently deleted.",
-    restoreChapterAlreadyPurged:
-      "Can't restore — this chapter was permanently deleted.",
+    restoreChapterProjectPurged: "Can't restore — the parent project was permanently deleted.",
+    restoreChapterAlreadyPurged: "Can't restore — this chapter was permanently deleted.",
     restoreChapterSlugConflict:
       "Can't restore — another chapter is using this title. Rename the conflicting chapter and try again.",
     loadDashboardFailed: "Failed to load dashboard",

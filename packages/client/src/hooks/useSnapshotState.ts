@@ -28,7 +28,11 @@ import type { SnapshotPanelHandle } from "../components/SnapshotPanel";
 // The `[dev]` prefix pins that intent visually so a log leak is
 // immediately recognizable.
 function makeClientNetworkError(): ApiRequestError {
-  return new ApiRequestError("[dev] Client-side failure before request reached server", 0, "NETWORK");
+  return new ApiRequestError(
+    "[dev] Client-side failure before request reached server",
+    0,
+    "NETWORK",
+  );
 }
 // I2 (2026-04-23 review): synthesize a 200 BAD_JSON for post-success
 // throws (localStorage.removeItem in Safari private mode, setState on

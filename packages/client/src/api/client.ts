@@ -85,7 +85,11 @@ function extractExtras(errorBody: unknown): Record<string, unknown> | undefined 
 async function readErrorEnvelope(
   res: Response,
   fallbackMessage: string,
-): Promise<{ message: string; code: string | undefined; extras: Record<string, unknown> | undefined }> {
+): Promise<{
+  message: string;
+  code: string | undefined;
+  extras: Record<string, unknown> | undefined;
+}> {
   try {
     const body = (await res.json()) as ApiError;
     const message = body.error?.message ?? fallbackMessage;
@@ -273,10 +277,13 @@ export const api = {
         ...(signal ? { signal } : {}),
       }),
 
-    delete: (id: string) => apiFetch<{ message: string }>(`/chapters/${enc(id)}`, { method: "DELETE" }),
+    delete: (id: string) =>
+      apiFetch<{ message: string }>(`/chapters/${enc(id)}`, { method: "DELETE" }),
 
     restore: (id: string) =>
-      apiFetch<Chapter & { project_slug: string }>(`/chapters/${enc(id)}/restore`, { method: "POST" }),
+      apiFetch<Chapter & { project_slug: string }>(`/chapters/${enc(id)}/restore`, {
+        method: "POST",
+      }),
   },
 
   chapterStatuses: {
@@ -348,7 +355,8 @@ export const api = {
   },
 
   snapshots: {
-    list: (chapterId: string) => apiFetch<SnapshotListItem[]>(`/chapters/${enc(chapterId)}/snapshots`),
+    list: (chapterId: string) =>
+      apiFetch<SnapshotListItem[]>(`/chapters/${enc(chapterId)}/snapshots`),
 
     create: (chapterId: string, label?: string) =>
       apiFetch<
