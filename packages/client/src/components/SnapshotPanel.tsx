@@ -114,12 +114,19 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
     // imperative refreshSnapshots() path could overwrite a newer chapter's
     // list with a stale one.
     const chapterSeq = useAbortableSequence();
+    // I2 (review 2026-04-24): controllers paired with the sequence
+    // tokens so a chapter switch / unmount severs the request as well
+    // as discarding the response.
+    const fetchAbortRef = useRef<AbortController | null>(null);
 
     const fetchSnapshots = useCallback(async () => {
       if (!chapterId) return;
       const token = chapterSeq.capture();
+      fetchAbortRef.current?.abort();
+      const controller = new AbortController();
+      fetchAbortRef.current = controller;
       try {
-        const data = await api.snapshots.list(chapterId);
+        const data = await api.snapshots.list(chapterId, controller.signal);
         if (token.isStale()) return;
         setSnapshots(data);
         setListError(null);
@@ -143,8 +150,11 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
       chapterSeq.abort();
       if (!isOpen || !chapterId) return;
       const token = chapterSeq.capture();
+      fetchAbortRef.current?.abort();
+      const controller = new AbortController();
+      fetchAbortRef.current = controller;
       api.snapshots
-        .list(chapterId)
+        .list(chapterId, controller.signal)
         .then((data) => {
           if (token.isStale()) return;
           setSnapshots(data);
@@ -156,6 +166,9 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
           const { message } = mapApiError(err, "snapshot.list");
           if (message) setListError(message);
         });
+      return () => {
+        controller.abort();
+      };
     }, [isOpen, chapterId, onSnapshotsChange, chapterSeq]);
 
     // Focus management

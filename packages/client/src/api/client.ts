@@ -403,22 +403,44 @@ export const api = {
   },
 
   snapshots: {
-    list: (chapterId: string) =>
-      apiFetch<SnapshotListItem[]>(`/chapters/${enc(chapterId)}/snapshots`),
+    // I2 (review 2026-04-24): accept optional AbortSignal. The
+    // snapshot flow supersedes stale responses via sequence tokens in
+    // useSnapshotState, but without a signal threaded through to
+    // apiFetch the underlying fetches continue on the wire even after
+    // the caller has discarded them. Wasted server work + inconsistent
+    // with the rest of the transport (search, replace, chapter update
+    // all wire signals). Callers that don't need cancellation keep
+    // working — the guard inside apiFetch only adds the signal when
+    // one is supplied.
+    list: (chapterId: string, signal?: AbortSignal) =>
+      apiFetch<SnapshotListItem[]>(
+        `/chapters/${enc(chapterId)}/snapshots`,
+        signal ? { signal } : undefined,
+      ),
 
-    create: (chapterId: string, label?: string) =>
+    create: (chapterId: string, label?: string, signal?: AbortSignal) =>
       apiFetch<
         { status: "created"; snapshot: SnapshotRow } | { status: "duplicate"; message: string }
       >(`/chapters/${enc(chapterId)}/snapshots`, {
         method: "POST",
         body: JSON.stringify(label ? { label } : {}),
+        ...(signal ? { signal } : {}),
       }),
 
-    get: (id: string) => apiFetch<SnapshotRow>(`/snapshots/${enc(id)}`),
+    get: (id: string, signal?: AbortSignal) =>
+      apiFetch<SnapshotRow>(`/snapshots/${enc(id)}`, signal ? { signal } : undefined),
 
-    delete: (id: string) => apiFetch<undefined>(`/snapshots/${enc(id)}`, { method: "DELETE" }),
+    delete: (id: string, signal?: AbortSignal) =>
+      apiFetch<undefined>(`/snapshots/${enc(id)}`, {
+        method: "DELETE",
+        ...(signal ? { signal } : {}),
+      }),
 
-    restore: (id: string) => apiFetch<Chapter>(`/snapshots/${enc(id)}/restore`, { method: "POST" }),
+    restore: (id: string, signal?: AbortSignal) =>
+      apiFetch<Chapter>(`/snapshots/${enc(id)}/restore`, {
+        method: "POST",
+        ...(signal ? { signal } : {}),
+      }),
   },
 
   search: {

@@ -159,6 +159,14 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   // resolving out of order — an older response would otherwise land after
   // a newer one and pin the wrong snapshot as the current view.
   const viewSeq = useAbortableSequence();
+  // I2 (review 2026-04-24): controllers paired with the sequence
+  // tokens. Tokens discard the RESPONSE; the controller severs the
+  // REQUEST so the server isn't still reading a snapshot the user has
+  // already superseded. One controller per viewSnapshot / refreshCount
+  // call; aborted on the next call AND on unmount (via a cleanup
+  // useEffect below).
+  const viewAbortRef = useRef<AbortController | null>(null);
+  const refreshCountAbortRef = useRef<AbortController | null>(null);
   // Mirror the current chapterId so async handlers can check the live value
   // against their captured one (needed for A→B→A restore detection).
   const currentChapterIdRef = useRef<string | null>(chapterId);
@@ -191,8 +199,13 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
     // delegate the count update to its onSnapshotsChange callback rather
     // than firing a parallel GET.
     if (panelOpenRef.current) return;
+    // I2 (review 2026-04-24): abort on chapter-switch / unmount so the
+    // server isn't still reading snapshots for a chapter the user has
+    // already left. Sequence tokens already discard the RESPONSE; the
+    // AbortController actually severs the request.
+    const controller = new AbortController();
     api.snapshots
-      .list(chapterId)
+      .list(chapterId, controller.signal)
       .then((data) => {
         if (!token.isStale()) setSnapshotCount(data.length);
       })
@@ -200,6 +213,9 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         // Leave count as null so the badge stays hidden. The next panel
         // interaction will retry via refreshCount.
       });
+    return () => {
+      controller.abort();
+    };
   }, [chapterId, chapterSeq]);
 
   const setSnapshotPanelOpen = useCallback((open: boolean) => {
@@ -227,8 +243,14 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       // network resolve order. start() bumps so any in-flight View
       // response from an older click is invalidated.
       const vToken = viewSeq.start();
+      // I2: abort any prior in-flight View GET before issuing a new
+      // one so the server stops reading the old snapshot as soon as
+      // the user clicks a different entry.
+      viewAbortRef.current?.abort();
+      const controller = new AbortController();
+      viewAbortRef.current = controller;
       try {
-        const full = await api.snapshots.get(snapshot.id);
+        const full = await api.snapshots.get(snapshot.id, controller.signal);
         if (cToken.isStale()) return { ok: true, superseded: "chapter" };
         if (vToken.isStale()) return { ok: true, superseded: "sameChapterNewer" };
         // S11 (2026-04-23 review): defensive undefined guard. apiFetch
@@ -385,8 +407,13 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   const refreshCount = useCallback(() => {
     if (!chapterId) return;
     const token = chapterSeq.capture();
+    // I2: abort any prior in-flight count refresh before issuing a new
+    // one (and on unmount, via the cleanup useEffect below).
+    refreshCountAbortRef.current?.abort();
+    const controller = new AbortController();
+    refreshCountAbortRef.current = controller;
     api.snapshots
-      .list(chapterId)
+      .list(chapterId, controller.signal)
       .then((data) => {
         if (!token.isStale()) setSnapshotCount(data.length);
       })
@@ -398,6 +425,16 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   const onSnapshotsChange = useCallback((count: number) => {
     setSnapshotCount(count);
   }, []);
+
+  // I2: abort outstanding snapshot fetches on unmount so a late-
+  // resolving .then/.catch can't fire setState on a torn-down hook.
+  useEffect(
+    () => () => {
+      viewAbortRef.current?.abort();
+      refreshCountAbortRef.current?.abort();
+    },
+    [],
+  );
 
   // Refresh count on the open→closed transition (user may have created or
   // deleted snapshots while the panel was open). Tracking the previous

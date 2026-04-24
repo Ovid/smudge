@@ -110,7 +110,7 @@ describe("useSnapshotState", () => {
       });
     });
 
-    expect(api.snapshots.get).toHaveBeenCalledWith("snap-42");
+    expect(api.snapshots.get).toHaveBeenCalledWith("snap-42", expect.any(AbortSignal));
     expect(result.current.viewingSnapshot).not.toBeNull();
     expect(result.current.viewingSnapshot!.id).toBe("snap-42");
     expect(result.current.viewingSnapshot!.label).toBe("Test");
