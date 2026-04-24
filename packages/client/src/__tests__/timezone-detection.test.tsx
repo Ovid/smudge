@@ -14,9 +14,32 @@ describe("timezone auto-detection", () => {
     const { detectAndSetTimezone } = await import("../hooks/useTimezoneDetection");
     await detectAndSetTimezone();
 
-    expect(api.settings.update).toHaveBeenCalledWith([
-      { key: "timezone", value: expect.any(String) },
-    ]);
+    expect(api.settings.update).toHaveBeenCalledWith(
+      [{ key: "timezone", value: expect.any(String) }],
+      undefined,
+    );
+  });
+
+  it("threads the AbortSignal through to both GET and PATCH (I5 2026-04-24)", async () => {
+    const { detectAndSetTimezone } = await import("../hooks/useTimezoneDetection");
+    const controller = new AbortController();
+    await detectAndSetTimezone(controller.signal);
+
+    expect(api.settings.get).toHaveBeenCalledWith(controller.signal);
+    expect(api.settings.update).toHaveBeenCalledWith(
+      [{ key: "timezone", value: expect.any(String) }],
+      controller.signal,
+    );
+  });
+
+  it("short-circuits the PATCH when the signal is already aborted (I5 2026-04-24)", async () => {
+    const { detectAndSetTimezone } = await import("../hooks/useTimezoneDetection");
+    const controller = new AbortController();
+    controller.abort();
+    await detectAndSetTimezone(controller.signal);
+
+    // Detection aborts between GET and PATCH, so update is not issued.
+    expect(api.settings.update).not.toHaveBeenCalled();
   });
 
   it("silently catches errors without throwing", async () => {

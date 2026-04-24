@@ -220,7 +220,11 @@ export const api = {
         ...(signal ? { signal } : {}),
       }),
 
-    velocity: (slug: string) => apiFetch<VelocityResponse>(`/projects/${enc(slug)}/velocity`),
+    velocity: (slug: string, signal?: AbortSignal) =>
+      apiFetch<VelocityResponse>(
+        `/projects/${enc(slug)}/velocity`,
+        signal ? { signal } : undefined,
+      ),
 
     delete: (slug: string) =>
       apiFetch<{ message: string }>(`/projects/${enc(slug)}`, { method: "DELETE" }),
@@ -233,7 +237,7 @@ export const api = {
 
     trash: (slug: string) => apiFetch<Chapter[]>(`/projects/${enc(slug)}/trash`),
 
-    dashboard: (slug: string) =>
+    dashboard: (slug: string, signal?: AbortSignal) =>
       apiFetch<{
         chapters: Array<{
           id: string;
@@ -251,7 +255,7 @@ export const api = {
           most_recent_edit: string | null;
           least_recent_edit: string | null;
         };
-      }>(`/projects/${enc(slug)}/dashboard`),
+      }>(`/projects/${enc(slug)}/dashboard`, signal ? { signal } : undefined),
 
     export: async (
       slug: string,

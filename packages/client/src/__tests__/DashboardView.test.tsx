@@ -141,7 +141,7 @@ describe("DashboardView", () => {
     });
 
     // Verify velocity API was called
-    expect(api.projects.velocity).toHaveBeenCalledWith("test-project");
+    expect(api.projects.velocity).toHaveBeenCalledWith("test-project", expect.any(AbortSignal));
   });
 
   it("renders health bar with word count and chapter count", async () => {
