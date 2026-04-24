@@ -744,9 +744,7 @@ describe("Editor", () => {
       expect(api.images.upload).toHaveBeenCalled();
     });
     await waitFor(() => {
-      expect(onImageAnnouncement).toHaveBeenCalledWith(
-        STRINGS.imageGallery.uploadCommittedRefresh,
-      );
+      expect(onImageAnnouncement).toHaveBeenCalledWith(STRINGS.imageGallery.uploadCommittedRefresh);
     });
     // No insert happened — the editor content is unchanged. Retrying
     // by pasting again would upload the file a second time and create

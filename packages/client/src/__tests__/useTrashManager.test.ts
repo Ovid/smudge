@@ -4,6 +4,9 @@ import type { Chapter, ProjectWithChapters } from "@smudge/shared";
 import { ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
 
+import { api } from "../api/client";
+import { useTrashManager } from "../hooks/useTrashManager";
+
 vi.mock("../api/client", async () => {
   const actual = await vi.importActual<typeof import("../api/client")>("../api/client");
   return {
@@ -14,9 +17,6 @@ vi.mock("../api/client", async () => {
     },
   };
 });
-
-import { api } from "../api/client";
-import { useTrashManager } from "../hooks/useTrashManager";
 
 function makeChapter(overrides: Partial<Chapter> = {}): Chapter {
   return {
