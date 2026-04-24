@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { beforeAll, describe, it, expect } from "vitest";
 import { ESLint } from "eslint";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -14,13 +14,25 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // workspace-scoped invocation and the test sees 0 messages.
 const REPO_ROOT = resolve(__dirname, "../../../..");
 
-async function lint(code: string): Promise<ESLint.LintResult[]> {
-  const eslint = new ESLint({
+// ESLint's flat-config load + TypeScript parser init is several seconds on a
+// cold run. Share one instance and warm it in beforeAll so the 5s per-test
+// default covers actual linting, not first-call init.
+let linter: ESLint | null = null;
+function getLinter(): ESLint {
+  linter ??= new ESLint({
     cwd: REPO_ROOT,
     overrideConfigFile: resolve(REPO_ROOT, "eslint.config.js"),
   });
-  return eslint.lintText(code, { filePath: resolve(REPO_ROOT, "packages/client/src/fixture.ts") });
+  return linter;
 }
+
+async function lint(code: string): Promise<ESLint.LintResult[]> {
+  return getLinter().lintText(code, { filePath: resolve(REPO_ROOT, "packages/client/src/fixture.ts") });
+}
+
+beforeAll(async () => {
+  await lint("export {};");
+}, 30_000);
 
 describe("no-restricted-syntax sequence-ref rule", () => {
   it("rejects `seq !== xSeqRef.current` — the classic staleness pattern", async () => {
