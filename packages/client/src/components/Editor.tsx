@@ -46,6 +46,13 @@ interface EditorProps {
   onEditorReady?: (editor: TipTapEditor | null) => void;
   projectId: string;
   onImageAnnouncement?: (message: string) => void;
+  // I8 (review 2026-04-24): fires when a paste/drop upload's response
+  // body is unreadable (2xx BAD_JSON) — the server stored the image
+  // but the client can't confirm. EditorPage bumps a shared refresh
+  // key that ImageGallery listens to, so the authoritative list is
+  // re-fetched and a retry sees the already-stored row instead of
+  // uploading the same file again.
+  onImageUploadCommitted?: () => void;
 }
 
 const AUTO_SAVE_DEBOUNCE_MS = 1500;
@@ -107,9 +114,11 @@ export function Editor({
   onEditorReady,
   projectId,
   onImageAnnouncement,
+  onImageUploadCommitted,
 }: EditorProps) {
   const onSaveRef = useRef(onSave);
   const onContentChangeRef = useRef(onContentChange);
+  const onImageUploadCommittedRef = useRef(onImageUploadCommitted);
   const projectIdRef = useRef(projectId);
   const onImageAnnouncementRef = useRef(onImageAnnouncement);
   const editorIdRef = useRef(nextEditorId++);
@@ -134,6 +143,9 @@ export function Editor({
   useEffect(() => {
     onImageAnnouncementRef.current = onImageAnnouncement;
   }, [onImageAnnouncement]);
+  useEffect(() => {
+    onImageUploadCommittedRef.current = onImageUploadCommitted;
+  }, [onImageUploadCommitted]);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyRef = useRef(false);
   const editorInstanceRef = useRef<{ getJSON: () => Record<string, unknown> } | null>(null);
@@ -266,7 +278,17 @@ export function Editor({
           onImageAnnouncementRef.current?.(STRINGS.imageGallery.insertSuccess(image.filename));
         }
       } catch (err: unknown) {
-        const { message } = mapApiError(err, "image.upload");
+        const { message, possiblyCommitted } = mapApiError(err, "image.upload");
+        // I8 (review 2026-04-24): ImageGallery.handleFileSelect already
+        // refreshes on possiblyCommitted, but the paste/drop path fed
+        // through this catch only surfaced the message — the gallery
+        // kept its stale list and a user retry uploaded the same file
+        // again (server does not dedupe), creating a second row per
+        // intended upload. Fire the shared refresh callback so the
+        // authoritative list reloads on the committed branch too.
+        if (possiblyCommitted) {
+          onImageUploadCommittedRef.current?.();
+        }
         if (message) onImageAnnouncementRef.current?.(message);
       }
     });

@@ -1163,6 +1163,11 @@ export function EditorPage() {
   const [imageAnnouncement, setImageAnnouncement] = useState("");
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const imageAnnouncementTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // I8 (review 2026-04-24): shared counter bumped when a paste/drop
+  // upload falls into the possiblyCommitted branch; ImageGallery
+  // re-fetches its list so a retry sees the already-stored row rather
+  // than uploading the same file again.
+  const [galleryExternalRefreshKey, setGalleryExternalRefreshKey] = useState(0);
   const [toolbarEditor, setToolbarEditor] = useState<TipTapEditor | null>(null);
 
   // Clean up image announcement timer on unmount
@@ -1871,6 +1876,7 @@ export function EditorPage() {
                           3000,
                         );
                       }}
+                      onImageUploadCommitted={() => setGalleryExternalRefreshKey((k) => k + 1)}
                     />
                   </>
                 )}
@@ -1892,6 +1898,7 @@ export function EditorPage() {
           <ReferencePanel width={panelWidth} onResize={handlePanelResize}>
             <ImageGallery
               projectId={project.id}
+              externalRefreshKey={galleryExternalRefreshKey}
               onInsertImage={(url, alt) => {
                 // I4: gate behind isActionBusy() like every other editor-
                 // modifying entry point. Inserting during an in-flight

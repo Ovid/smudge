@@ -8,6 +8,11 @@ interface ImageGalleryProps {
   projectId: string;
   onInsertImage: (imageUrl: string, altText: string) => void;
   onNavigateToChapter: (chapterId: string) => void;
+  // I8 (review 2026-04-24): external bump signal the Editor uses to
+  // refresh the list on paste-upload possiblyCommitted. EditorPage
+  // holds the counter and passes it to both the Editor (via a
+  // callback) and the gallery (via this prop).
+  externalRefreshKey?: number;
 }
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -23,7 +28,12 @@ interface DetailFormState {
 
 type SaveStatus = "idle" | "saving" | "saved";
 
-export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: ImageGalleryProps) {
+export function ImageGallery({
+  projectId,
+  onInsertImage,
+  onNavigateToChapter,
+  externalRefreshKey = 0,
+}: ImageGalleryProps) {
   const [images, setImages] = useState<ImageRow[]>([]);
   const [selectedImage, setSelectedImage] = useState<ImageRow | null>(null);
   const [formState, setFormState] = useState<DetailFormState>({
@@ -107,7 +117,7 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
     return () => {
       controller.abort();
     };
-  }, [projectId, refreshKey]);
+  }, [projectId, refreshKey, externalRefreshKey]);
 
   useEffect(() => {
     return () => {

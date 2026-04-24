@@ -801,6 +801,46 @@ describe("Editor", () => {
     expect(JSON.stringify(editor.getJSON())).toBe(initialJsonBeforePaste);
   });
 
+  // I8 (review 2026-04-24): ImageGallery.handleFileSelect already bumps
+  // its own refresh on possiblyCommitted, but the Editor's paste/drop
+  // path runs through this component. Without the callback, the gallery
+  // kept its stale list and a user retry uploaded the same file again.
+  // The callback lets EditorPage bump a shared external refresh key
+  // that drives the gallery to re-fetch.
+  it("image paste handler fires onImageUploadCommitted on 2xx BAD_JSON (I8)", async () => {
+    const onImageUploadCommitted = vi.fn();
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+    vi.mocked(api.images.upload).mockRejectedValue(
+      new ApiRequestError("[dev] bad body", 200, "BAD_JSON"),
+    );
+
+    render(
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={mockOnSave()}
+        editorRef={editorRef}
+        onImageUploadCommitted={onImageUploadCommitted}
+      />,
+    );
+
+    await waitFor(() => expect(editorRef.current?.editor).not.toBeNull());
+    const editor = editorRef.current!.editor!;
+    const file = new File(["pixels"], "x.png", { type: "image/png" });
+    const imagePastePlugin = findImagePastePlugin(editor);
+
+    (imagePastePlugin.props.handlePaste as (...args: unknown[]) => unknown)(
+      editor.view,
+      {
+        preventDefault: vi.fn(),
+        clipboardData: { items: [{ type: "image/png", getAsFile: () => file }] },
+      },
+      editor.view.state.doc.slice(0),
+    );
+
+    await waitFor(() => expect(onImageUploadCommitted).toHaveBeenCalled());
+  });
+
   it("image drop handler calls api.images.upload", async () => {
     const onImageAnnouncement = vi.fn();
     const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
