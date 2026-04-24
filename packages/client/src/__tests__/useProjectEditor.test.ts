@@ -886,6 +886,47 @@ describe("useProjectEditor", () => {
     expect(callArgs?.[2]).toBeInstanceOf(AbortSignal);
   });
 
+  // I21 (review 2026-04-24): rapid X→A→B click sequence must NOT
+  // revert B's failure to A. Before the confirmed-status ref,
+  // `previousStatus` read projectRef, which held the optimistic A
+  // already. If the fallback reload also failed, B's revert would
+  // restore A — a status the server never persisted. Now the revert
+  // reads from confirmedStatusRef, which only advances after a
+  // server-confirmed PATCH.
+  it("handleStatusChange reverts to the last confirmed status, not the last optimistic (I21)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // X = "outline" (from mockChapter1); A success; B fail.
+    vi.mocked(api.chapters.update)
+      .mockResolvedValueOnce({ ...mockChapter1, status: "drafting" }) // A succeeds
+      .mockRejectedValueOnce(new Error("B boom")); // B fails
+    // Fallback GET after B's failure also fails, forcing the local revert.
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockRejectedValueOnce(new Error("reload boom")); // revert-reload fails
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    // A: X → drafting (succeeds)
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "drafting");
+    });
+    expect(result.current.project?.chapters.find((c) => c.id === "ch1")?.status).toBe("drafting");
+
+    // B: drafting → revised (fails; fallback reload also fails)
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "revised");
+    });
+
+    // Local revert restores the LAST CONFIRMED status ("drafting" from
+    // A's success), NOT the optimistic value that was on screen when B
+    // entered. Before the fix this would have restored "outline" or
+    // failed differently depending on the closure read.
+    expect(result.current.project?.chapters.find((c) => c.id === "ch1")?.status).toBe("drafting");
+    warnSpy.mockRestore();
+  });
+
   it("handleStatusChange does not revert on ABORTED (I11 follow-on)", async () => {
     // Rapid A→B→C: B's PATCH gets aborted when C's click fires. B's
     // catch must not revert (that would stomp C's optimistic state).

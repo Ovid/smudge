@@ -124,6 +124,15 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // on unmount.
   const renameChapterAbortRef = useRef<AbortController | null>(null);
   const deleteChapterAbortRef = useRef<AbortController | null>(null);
+  // I21 (review 2026-04-24): per-chapter cache of the last server-
+  // confirmed status. Rapid X→A→B clicks used to capture
+  // `previousStatus = A` for B because A's optimistic setProject had
+  // landed; if B's PATCH failed AND the fallback GET silent-catch
+  // also failed, the revert restored A — a status the server never
+  // persisted. Tracking confirmed commits separately lets the revert
+  // target the actual server-side value. Parallels
+  // confirmedTimezoneRef / confirmedFieldsRef in ProjectSettingsDialog.
+  const confirmedStatusRef = useRef<Record<string, string | undefined>>({});
 
   // Shared cancel-in-flight-save helper. Aborts the save sequence (so the
   // retry loop short-circuits on its next iteration via token.isStale()),
@@ -177,6 +186,13 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         const data = await api.projects.get(slug);
         if (cancelled) return;
         setProject(data);
+        // I21: seed the confirmed-status cache from the authoritative
+        // server response. Every chapter's status here is server-truth
+        // at load time; subsequent revert paths read from this ref so
+        // they don't stomp to an optimistic value.
+        confirmedStatusRef.current = Object.fromEntries(
+          data.chapters.map((c) => [c.id, c.status]),
+        );
         // If the cached activeChapter belongs to a different project (e.g.
         // in-place slug change that isn't a rename), the `!activeChapterRef`
         // guard would skip loading the new project's first chapter, and the
@@ -916,8 +932,14 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       statusChangeAbortRef.current?.abort();
       const controller = new AbortController();
       statusChangeAbortRef.current = controller;
-      // Save previous status for revert
-      const previousStatus = projectRef.current?.chapters.find((c) => c.id === chapterId)?.status;
+      // I21 (review 2026-04-24): read previousStatus from the confirmed
+      // cache, not projectRef. A rapid X→A→B click sequence would
+      // otherwise capture `previousStatus = A` for B (A's optimistic
+      // setProject has landed but A's PATCH has not confirmed) — a
+      // later B-failure revert would restore A, a status the server
+      // never saw. The confirmed ref only advances after a successful
+      // PATCH, so it holds the authoritative value.
+      const previousStatus = confirmedStatusRef.current[chapterId];
 
       // Optimistic update
       setProject((prev) => {
@@ -933,6 +955,10 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       try {
         await api.chapters.update(chapterId, { status }, controller.signal);
         if (statusChangeAbortRef.current === controller) statusChangeAbortRef.current = null;
+        // I21: advance the confirmed cache only on server-confirmed
+        // success so the next call's previousStatus reads the right
+        // value.
+        confirmedStatusRef.current[chapterId] = status;
       } catch (err) {
         if (statusChangeAbortRef.current === controller) statusChangeAbortRef.current = null;
         if (token.isStale()) return; // newer call owns state
@@ -951,6 +977,11 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // committed copy below tells the user the response was
         // ambiguous, and the next chapter load will reconcile state.
         if (possiblyCommitted) {
+          // I21: the server likely committed the new status despite
+          // the unreadable body. Advance the confirmed cache so a
+          // later status change captures this value, not the previous
+          // one, as the baseline.
+          confirmedStatusRef.current[chapterId] = status;
           if (message) onError?.(message);
           return;
         }
@@ -969,6 +1000,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             if (token.isStale()) return;
             const revertedChapter = data.chapters.find((c) => c.id === chapterId);
             if (revertedChapter) {
+              // I21: advance confirmed cache to the server's truth so
+              // subsequent calls don't capture a stale baseline.
+              confirmedStatusRef.current[chapterId] = revertedChapter.status;
               // Surgically revert only the status field to avoid overwriting
               // concurrent optimistic updates (reorder, rename, create).
               setProject((prev) => {
