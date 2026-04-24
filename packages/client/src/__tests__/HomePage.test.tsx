@@ -3,13 +3,14 @@ import { render, screen, waitFor, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HomePage } from "../pages/HomePage";
 import { MemoryRouter } from "react-router-dom";
-import { api } from "../api/client";
+import { api, ApiRequestError } from "../api/client";
 
 vi.mock("../api/client", () => ({
   ApiRequestError: class ApiRequestError extends Error {
     constructor(
       message: string,
       public readonly status: number,
+      public readonly code?: string,
     ) {
       super(message);
       this.name = "ApiRequestError";
@@ -294,6 +295,45 @@ describe("HomePage", () => {
       expect.stringContaining("Failed to create project:"),
       expect.any(Error),
     );
+    warnSpy.mockRestore();
+  });
+
+  // I1 (review 2026-04-24): handleDelete ignored possiblyCommitted. On
+  // 2xx BAD_JSON the server deleted the project but the row stayed in
+  // the local list — the user saw a phantom project, a retry 404d, and
+  // the committed copy that warns about refreshing was never shown.
+  // Mirror siblings: on possiblyCommitted, optimistically drop the row
+  // from state and surface the committed copy via setError.
+  it("on 2xx BAD_JSON delete, drops row and surfaces committed copy (I1)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.projects.list).mockResolvedValue([
+      {
+        id: "p1",
+        slug: "novel-one",
+        title: "Novel One",
+        mode: "fiction",
+        total_word_count: 0,
+        updated_at: "",
+      },
+    ]);
+    vi.mocked(api.projects.delete).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+    renderHomePage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Novel One")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /delete/i }));
+    await userEvent.click(screen.getByRole("button", { name: /confirm/i }));
+
+    // Row is optimistically dropped — the server likely deleted it.
+    await waitFor(() => {
+      expect(screen.queryByText("Novel One")).not.toBeInTheDocument();
+    });
+    // Committed copy in the alert banner tells the user to refresh.
+    expect(screen.getByRole("alert")).toHaveTextContent(/may have completed/i);
     warnSpy.mockRestore();
   });
 
