@@ -1,5 +1,5 @@
 import { describe, it, expect, expectTypeOf } from "vitest";
-import type { ApiError } from "./types";
+import type { ApiError } from "../types";
 
 describe("ApiError envelope", () => {
   // The contract is a TYPE contract: the envelope's `error` object must
