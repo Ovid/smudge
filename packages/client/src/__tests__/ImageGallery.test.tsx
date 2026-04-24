@@ -471,6 +471,38 @@ describe("ImageGallery", () => {
     });
   });
 
+  // C3 (review 2026-04-24): handleDelete ignored possiblyCommitted. On
+  // 2xx BAD_JSON the server already deleted but the detail view stayed
+  // open, confirmingDelete stayed true, and incrementRefreshKey was not
+  // called. User retried → server 409'd because the image was gone.
+  // Mirror handleFileSelect's committed branch: close the detail view,
+  // reset confirmation, bump the refresh key, and surface the mapped
+  // committed copy.
+  it("on 2xx BAD_JSON delete, closes detail view and re-fetches gallery (C3)", async () => {
+    const user = userEvent.setup();
+    const image = makeImage({ reference_count: 0, filename: "gone.png" });
+    vi.mocked(api.images.delete).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+    await renderAndOpenDetail(image, user);
+
+    await waitFor(() => {
+      expect(api.images.list).toHaveBeenCalledTimes(1);
+    });
+    await user.click(screen.getByText(S.deleteButton));
+    await user.click(screen.getByText(S.deleteButton));
+
+    // Detail view closes → grid (upload button visible again)
+    await waitFor(() => {
+      expect(screen.getByText(S.uploadButton)).toBeInTheDocument();
+    });
+    // Gallery re-fetched so the deleted image disappears from the grid
+    // and a retry can't 409 against a stale row.
+    await waitFor(() => {
+      expect(api.images.list).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it("shows delete-blocked message for images in use", async () => {
     const user = userEvent.setup();
     const image = makeImage({ reference_count: 2 });

@@ -238,10 +238,24 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
       setConfirmingDelete(false);
       incrementRefreshKey();
     } catch (err: unknown) {
-      const { message, extras } = mapApiError(err, "image.delete");
+      const { message, possiblyCommitted, extras } = mapApiError(err, "image.delete");
       // ABORTED: silent (mapper returned message: null). Leave the detail
       // view and confirmation state as-is so the user can retry.
       if (!message) return;
+      // C3 (review 2026-04-24): on 2xx BAD_JSON the server already
+      // deleted the row but the client couldn't parse the response.
+      // Without the refresh the detail view stays on a phantom image
+      // and a user retry 409s because the image is gone. Close the
+      // detail view, reset the confirm gate, and bump the refresh key
+      // so the authoritative gallery list is fetched. The mapped
+      // committed copy is announced so the user knows to refresh.
+      if (possiblyCommitted) {
+        announce(message);
+        setSelectedImage(null);
+        setConfirmingDelete(false);
+        incrementRefreshKey();
+        return;
+      }
       if (extras?.chapters) {
         const chapters = (extras.chapters as Array<{ title: string; trashed?: boolean }>).map(
           (c) => (c.trashed ? `${c.title} (${S.inTrash})` : c.title),
