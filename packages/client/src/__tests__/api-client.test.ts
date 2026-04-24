@@ -980,4 +980,69 @@ describe("error handling", () => {
     expect(caught).toBeInstanceOf(ClientModule.ApiRequestError);
     expect(caught?.extras).toBeUndefined();
   });
+
+  // C1 (2026-04-24 review): a hostile (or compromised) server response
+  // can include `__proto__` as an own key in the error envelope. Naive
+  // `out[k] = value` on a plain object invokes Object.prototype's
+  // `__proto__` setter and pollutes the extras object's prototype chain
+  // instead of creating an own property. The extras object must have a
+  // null prototype and must never carry `__proto__`/`constructor`/
+  // `prototype` as own keys.
+  it("does not pollute extras prototype via __proto__ in error envelope (C1)", async () => {
+    const ClientModule = await import("../api/client");
+    // JSON.parse creates `__proto__` as an own data property (ES2017+);
+    // a raw object literal would instead be interpreted as setting the
+    // prototype, so we construct the hostile envelope via JSON.parse
+    // to mirror what fetch/res.json() actually yields on the wire.
+    const hostile = JSON.parse(
+      '{"error":{"code":"IMAGE_IN_USE","message":"in use","__proto__":{"chapters":[{"title":"X"}]}}}',
+    ) as unknown;
+    mockFetch.mockResolvedValue(jsonResponse(hostile, 409));
+
+    let caught: InstanceType<typeof ClientModule.ApiRequestError> | undefined;
+    try {
+      await api.projects.get("slug");
+    } catch (err) {
+      caught = err as InstanceType<typeof ClientModule.ApiRequestError>;
+    }
+    expect(caught).toBeInstanceOf(ClientModule.ApiRequestError);
+    // The envelope had only `__proto__` as a non-code/non-message key, so
+    // after filtering it out there are no extras. The contract: either
+    // (a) extras is undefined, or (b) extras is a null-prototype object
+    // with no polluted keys.
+    if (caught?.extras !== undefined) {
+      expect(Object.getPrototypeOf(caught.extras)).toBeNull();
+      expect(Object.prototype.hasOwnProperty.call(caught.extras, "__proto__")).toBe(false);
+      expect((caught.extras as Record<string, unknown>).chapters).toBeUndefined();
+    } else {
+      expect(caught?.extras).toBeUndefined();
+    }
+  });
+
+  it("drops __proto__/constructor/prototype keys but keeps benign extras (C1)", async () => {
+    const ClientModule = await import("../api/client");
+    const hostile = JSON.parse(
+      '{"error":{"code":"IMAGE_IN_USE","message":"m","chapters":[{"id":"c1","title":"Chapter 1"}],"__proto__":{"polluted":true},"constructor":{"x":1},"prototype":{"y":2}}}',
+    ) as unknown;
+    mockFetch.mockResolvedValue(jsonResponse(hostile, 409));
+
+    let caught: InstanceType<typeof ClientModule.ApiRequestError> | undefined;
+    try {
+      await api.projects.get("slug");
+    } catch (err) {
+      caught = err as InstanceType<typeof ClientModule.ApiRequestError>;
+    }
+    expect(caught).toBeInstanceOf(ClientModule.ApiRequestError);
+    expect(caught?.extras).toBeDefined();
+    expect(Object.getPrototypeOf(caught!.extras!)).toBeNull();
+    // Benign key survives.
+    expect(caught?.extras?.chapters).toEqual([{ id: "c1", title: "Chapter 1" }]);
+    // Dangerous keys are not own properties.
+    const extras = caught!.extras!;
+    expect(Object.prototype.hasOwnProperty.call(extras, "__proto__")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(extras, "constructor")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(extras, "prototype")).toBe(false);
+    // Confirm prototype is not polluted.
+    expect((extras as Record<string, unknown>).polluted).toBeUndefined();
+  });
 });

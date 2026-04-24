@@ -72,13 +72,27 @@ function classifyFetchError(err: unknown): ApiRequestError {
 // from bloating every subsequent log/toString of the error.
 const MAX_EXTRAS_KEYS = 16;
 
+// C1 (2026-04-24 review): guard against prototype pollution via
+// `__proto__` / `constructor` / `prototype` keys in the error envelope.
+// `JSON.parse` materializes `__proto__` as an *own* data property (ES2017+),
+// so the spread above lifts it into `rest`. Assigning it into a plain
+// `{}` via `out[k] = value` invokes Object.prototype's `__proto__` setter
+// and mutates the extras object's prototype chain instead of creating an
+// own property — consumers that read extras via normal property access
+// would observe attacker-controlled data through the polluted prototype.
+// Defenses: (1) skip the dangerous keys before copy, (2) construct `out`
+// with a null prototype so even a missed key cannot reach a setter on
+// Object.prototype. Threat model is narrow (requires a compromised
+// server or hostile proxy), but the invariant must hold unconditionally.
 function extractExtras(errorBody: unknown): Record<string, unknown> | undefined {
   if (!errorBody || typeof errorBody !== "object") return undefined;
   const { code: _c, message: _m, ...rest } = errorBody as Record<string, unknown>;
-  const keys = Object.keys(rest);
+  const keys = Object.keys(rest).filter(
+    (k) => k !== "__proto__" && k !== "constructor" && k !== "prototype",
+  );
   if (keys.length === 0) return undefined;
   const kept = keys.slice(0, MAX_EXTRAS_KEYS);
-  const out: Record<string, unknown> = {};
+  const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   for (const k of kept) out[k] = rest[k];
   return out;
 }
