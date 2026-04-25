@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 When you have finished reading this file, announce "CLAUDE.md loaded"
 
+Always address me as "Ovid" in your responses. This lets me know that you have read this file, even if I don't see the previous announcement.
+
 ## Project Overview
 
 Smudge is a web-based writing application for long-form fiction and non-fiction, organized as projects containing chapters. It replaces Google Docs for book-length work. Single-user, no auth. The full MVP spec lives in `docs/plans/mvp.md`.
