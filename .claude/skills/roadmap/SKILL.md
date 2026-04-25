@@ -7,6 +7,8 @@ description: Read the feature roadmap, find the next unplanned phase, brainstorm
 
 Announce: **"Checking roadmap for next unplanned phase…"**
 
+Read @CLAUDE.md.
+
 ## 1. Read the Roadmap
 
 Read `docs/roadmap.md` in full. Each phase heading (## Phase N: …) may have a `<!-- plan: filename.md -->` comment on the line immediately after the `---` separator that follows that phase's section. This comment marks the phase as already brainstormed.
