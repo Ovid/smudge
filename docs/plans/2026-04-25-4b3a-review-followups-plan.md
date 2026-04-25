@@ -907,16 +907,24 @@ git commit -m "fix(snapshots): only synthesize 200 BAD_JSON for dispatched resto
 
 ### Task 4.7: [S8] `image.delete` `extrasFrom` returns valid subset
 
-**Files:** `scopes.ts:195–206`, scopes.test.ts.
+**Files:** `scopes.ts` (image.delete `extrasFrom`), `apiErrorMapper.test.ts`.
 
-**Step 1: Failing test** — supply `chapters` with mixed valid/invalid entries; assert valid subset returned, not `undefined`.
+**Conflict with Cluster D's [I1] — read this before implementing.** Cluster D landed an all-or-nothing guard at `scopes.ts` (the `if (valid.length !== chapters.length) return undefined;` line in `image.delete.extrasFrom`). That guard was added as a hardening fix: a hostile envelope with `[50 valid, N invalid past the cap]` would otherwise have silently surfaced 50 chapters, defeating the per-element validation [S5] introduced. [S8]'s "return `{ chapters: valid }` whenever `valid.length > 0`" reverts that hardening. Before implementing, decide:
 
-**Step 2–4:** Implement: `return valid.length > 0 ? { chapters: valid } : undefined`.
+1. **Drop [S8].** The all-or-nothing guard from [I1] is the right behavior — graceful degradation here means leaking partially-validated data on a malformed envelope. Document the decision and close the [S8] task without code changes.
+2. **Reconcile.** Keep the all-or-nothing guard for envelopes whose *invalid* elements appear *within* the 50-cap (the Cluster D attack surface), but return the valid subset when invalid elements appear *beyond* the cap (where they're already discarded). This is more code than [S8] originally proposed; document why it's worth the complexity.
+3. **Replace [I1] with [S8].** Remove the Cluster D guard and accept the partial-leak risk in exchange for graceful degradation. Requires re-justifying why the original [I1] hardening is no longer needed (e.g. server contract is now Zod-validated end-to-end).
+
+The [I1] guard was added in commit `c1d90ef` (2026-04-25); the test pinning it lives at `apiErrorMapper.test.ts` "returns undefined when an entry beyond the 50-cap has wrong shape (I1)". Either reconciliation path requires updating that test.
+
+**Step 1: Failing test** (only if reconciling) — supply `chapters` with mixed valid/invalid entries; assert valid subset returned, not `undefined`.
+
+**Step 2–4:** Implement the chosen reconciliation; do not implement the original `return valid.length > 0 ? { chapters: valid } : undefined` form, which would directly revert [I1].
 
 **Step 5: Commit**
 
 ```bash
-git commit -m "fix(scopes): image.delete extrasFrom returns valid subset on partial malformed (S8)"
+git commit -m "fix(scopes): reconcile image.delete extrasFrom partial-malformed handling (S8 vs I1)"
 ```
 
 ### Task 4.8: [S11] `chapter.create` 404 redirect
@@ -1115,17 +1123,20 @@ git commit -m "fix(errors): wrap safeExtrasFrom dev-log in try/catch (S6)"
 
 ### Task 5.2: [S9] verify and drop `ImageGallery` extras cast
 
-**Files:** `packages/client/src/components/ImageGallery.tsx:334–338`, test.
+**Files:** `packages/client/src/components/ImageGallery.tsx`, `packages/client/src/errors/apiErrorMapper.test.ts`.
+
+**Note (Cluster D 2026-04-25):** The `id` field was dropped from the output shape in commit `4a6ae36` (I1+S2 follow-up), so the type-test below must use `{ title: "y" }` and optional `trashed`, not `{ id, title }`. The `id?` lives only on the validator's *input* narrowing now, not on the output type.
 
 **Step 1:** Run `npm run typecheck` — confirm `ScopeExtras<S>` (introduced by Cluster C) makes the existing cast unnecessary. If the cast is still load-bearing, fix the underlying narrowing in `errors/`.
 
 **Step 2: Drop the cast** and run `npm run typecheck`. Expect green.
 
-**Step 3:** Add a type-test in `errors/scopes.test.ts` that asserts `ScopeExtras<"image.delete">["chapters"]` is the expected shape:
+**Step 3:** Add a type-test in `errors/apiErrorMapper.test.ts` that asserts `ScopeExtras<"image.delete">["chapters"]` is the expected shape:
 
 ```ts
 type _Test = ScopeExtras<"image.delete">["chapters"][number];
-const _check: _Test = { id: "x", title: "y" }; // compile-time only
+const _check: _Test = { title: "y" }; // compile-time only
+const _withTrashed: _Test = { title: "y", trashed: true };
 ```
 
 **Step 5: Commit**
