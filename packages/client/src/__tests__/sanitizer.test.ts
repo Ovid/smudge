@@ -116,4 +116,42 @@ describe("sanitizeEditorHtml", () => {
     const out = sanitizeEditorHtml(input);
     expect(out).not.toContain("example.com");
   });
+
+  // I2 (review 2026-04-25): pin the implicit-allowlist contract for the
+  // mXSS-relevant <svg>/<math> namespaces and the media tags whose src/srcset
+  // would otherwise hit the new URI hook. These tags are not in ALLOWED_TAGS,
+  // so DOMPurify strips them today — but a future config tweak (e.g. switching
+  // to FORBID_TAGS, widening to include media) would silently lift the
+  // restriction with no failing test. These cases lock down the contract.
+  it("strips <svg> tags (mXSS namespace)", () => {
+    const input = `<p>before</p><svg><script>alert(1)</script></svg><p>after</p>`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).not.toContain("<svg");
+    expect(out).not.toContain("alert(1)");
+  });
+
+  it("strips <math> tags (mXSS namespace)", () => {
+    const input = `<p>before</p><math><mtext></mtext></math><p>after</p>`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).not.toContain("<math");
+    expect(out).not.toContain("<mtext");
+  });
+
+  it("strips media tags <audio>/<video>/<source>/<track>", () => {
+    const input =
+      `<audio src="/api/images/a"></audio>` +
+      `<video src="/api/images/v"><source src="/api/images/s"><track src="/api/images/t"></video>`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).not.toContain("<audio");
+    expect(out).not.toContain("<video");
+    expect(out).not.toContain("<source");
+    expect(out).not.toContain("<track");
+  });
+
+  it("strips <base> (would otherwise rebase relative URIs)", () => {
+    const input = `<base href="https://evil.example/"><p>after</p>`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).not.toContain("<base");
+    expect(out).not.toContain("evil.example");
+  });
 });
