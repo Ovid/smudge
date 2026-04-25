@@ -23,27 +23,22 @@ const TIPTAP_CONTENT = {
 };
 
 async function createTestProject(request: APIRequestContext): Promise<TestProject> {
+  // S6 (review 2026-04-25): Date.now() millisecond resolution can collide
+  // under Playwright sharding; append crypto.randomUUID() for hard uniqueness.
   const res = await request.post("/api/projects", {
-    data: { title: `Export Test ${Date.now()}`, mode: "fiction" },
+    data: { title: `Export Test ${Date.now()}-${crypto.randomUUID()}`, mode: "fiction" },
   });
   expect(res.ok()).toBeTruthy();
   return res.json();
 }
 
-async function addChapter(
-  request: APIRequestContext,
-  slug: string,
-): Promise<TestChapter> {
+async function addChapter(request: APIRequestContext, slug: string): Promise<TestChapter> {
   const res = await request.post(`/api/projects/${slug}/chapters`);
   expect(res.ok()).toBeTruthy();
   return res.json();
 }
 
-async function setChapterContent(
-  request: APIRequestContext,
-  chapterId: string,
-  content: object,
-) {
+async function setChapterContent(request: APIRequestContext, chapterId: string, content: object) {
   const res = await request.patch(`/api/chapters/${chapterId}`, {
     data: { content },
   });
@@ -208,9 +203,7 @@ test.describe("Export E2e Tests", () => {
 
     // Exclude color-contrast: Tailwind v4 uses oklab() color space which aXe
     // cannot parse, producing false-positive contrast failures.
-    const results = await new AxeBuilder({ page })
-      .disableRules(["color-contrast"])
-      .analyze();
+    const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
     expect(results.violations).toEqual([]);
   });
 });

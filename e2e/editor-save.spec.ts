@@ -7,8 +7,10 @@ interface TestProject {
 }
 
 async function createTestProject(request: APIRequestContext): Promise<TestProject> {
+  // S6 (review 2026-04-25): Date.now() millisecond resolution can collide
+  // under Playwright sharding; append crypto.randomUUID() for hard uniqueness.
   const res = await request.post("/api/projects", {
-    data: { title: `Save Test ${Date.now()}`, mode: "fiction" },
+    data: { title: `Save Test ${Date.now()}-${crypto.randomUUID()}`, mode: "fiction" },
   });
   expect(res.ok()).toBeTruthy();
   const json = (await res.json()) as TestProject;

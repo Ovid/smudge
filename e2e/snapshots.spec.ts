@@ -7,8 +7,10 @@ interface TestProject {
 }
 
 async function createTestProject(request: APIRequestContext): Promise<TestProject> {
+  // S6 (review 2026-04-25): Date.now() millisecond resolution can collide
+  // under Playwright sharding; append crypto.randomUUID() for hard uniqueness.
   const res = await request.post("/api/projects", {
-    data: { title: `Snapshot Test ${Date.now()}`, mode: "fiction" },
+    data: { title: `Snapshot Test ${Date.now()}-${crypto.randomUUID()}`, mode: "fiction" },
   });
   expect(res.ok()).toBeTruthy();
   const json = (await res.json()) as TestProject;
@@ -23,10 +25,7 @@ async function deleteProject(request: APIRequestContext, slug: string) {
 }
 
 /** Type content into the editor and wait for it to be saved. */
-async function typeAndWaitForSave(
-  page: import("@playwright/test").Page,
-  text: string,
-) {
+async function typeAndWaitForSave(page: import("@playwright/test").Page, text: string) {
   const editor = page.getByRole("textbox");
   await editor.click();
   await editor.pressSequentially(text, { delay: 20 });
@@ -38,9 +37,7 @@ async function typeAndWaitForSave(
 async function openSnapshotPanel(page: import("@playwright/test").Page) {
   const btn = page.getByRole("button", { name: /^Snapshots/ });
   await btn.click();
-  await expect(
-    page.getByRole("complementary", { name: "Chapter snapshots" }),
-  ).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Chapter snapshots" })).toBeVisible();
 }
 
 test.describe("Snapshot E2e Tests", () => {

@@ -8,8 +8,10 @@ interface TestProject {
 }
 
 async function createTestProject(request: APIRequestContext): Promise<TestProject> {
+  // S6 (review 2026-04-25): Date.now() millisecond resolution can collide
+  // under Playwright sharding; append crypto.randomUUID() for hard uniqueness.
   const res = await request.post("/api/projects", {
-    data: { title: `Test ${Date.now()}`, mode: "fiction" },
+    data: { title: `Test ${Date.now()}-${crypto.randomUUID()}`, mode: "fiction" },
   });
   expect(res.ok()).toBeTruthy();
   return res.json();
@@ -130,9 +132,7 @@ test.describe("Dashboard and Status E2e Tests", () => {
     // Exclude color-contrast: Tailwind v4 uses oklab() color space which aXe
     // cannot parse, producing false-positive contrast failures. Actual contrast
     // ratios have been verified manually against WCAG 2.1 AA thresholds.
-    const results = await new AxeBuilder({ page })
-      .disableRules(["color-contrast"])
-      .analyze();
+    const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
     expect(results.violations).toEqual([]);
   });
 
@@ -144,9 +144,7 @@ test.describe("Dashboard and Status E2e Tests", () => {
 
     // Exclude color-contrast: Tailwind v4 uses oklab() color space which aXe
     // cannot parse, producing false-positive contrast failures.
-    const results = await new AxeBuilder({ page })
-      .disableRules(["color-contrast"])
-      .analyze();
+    const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
     expect(results.violations).toEqual([]);
   });
 });

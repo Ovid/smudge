@@ -29,17 +29,16 @@ const TEST_PNG = Buffer.from(
 );
 
 async function createTestProject(request: APIRequestContext): Promise<TestProject> {
+  // S6 (review 2026-04-25): Date.now() millisecond resolution can collide
+  // under Playwright sharding; append crypto.randomUUID() for hard uniqueness.
   const res = await request.post("/api/projects", {
-    data: { title: `Images Test ${Date.now()}`, mode: "fiction" },
+    data: { title: `Images Test ${Date.now()}-${crypto.randomUUID()}`, mode: "fiction" },
   });
   expect(res.ok()).toBeTruthy();
   return res.json();
 }
 
-async function getFirstChapter(
-  request: APIRequestContext,
-  slug: string,
-): Promise<TestChapter> {
+async function getFirstChapter(request: APIRequestContext, slug: string): Promise<TestChapter> {
   const res = await request.get(`/api/projects/${slug}`);
   expect(res.ok()).toBeTruthy();
   const detail = await res.json();
@@ -249,10 +248,7 @@ test.describe("Image Gallery & Reference Panel E2e Tests", () => {
     await expect(panelAfterReload.getByLabel("License")).toHaveValue("CC BY 4.0");
   });
 
-  test("delete is blocked when image is referenced in a chapter", async ({
-    page,
-    request,
-  }) => {
+  test("delete is blocked when image is referenced in a chapter", async ({ page, request }) => {
     const image = await uploadTestImage(request, project.id, "referenced.png");
     const chapter = await getFirstChapter(request, project.slug);
 
@@ -315,9 +311,7 @@ test.describe("Image Gallery & Reference Panel E2e Tests", () => {
     await expect(panel).toBeVisible();
 
     // Check initial width is stored in localStorage
-    const initialWidth = await page.evaluate(() =>
-      localStorage.getItem("smudge:ref-panel-width"),
-    );
+    const initialWidth = await page.evaluate(() => localStorage.getItem("smudge:ref-panel-width"));
 
     // Use keyboard to resize (ArrowLeft increases width from the resize handle)
     const resizeHandle = panel.getByRole("separator", {
@@ -329,9 +323,7 @@ test.describe("Image Gallery & Reference Panel E2e Tests", () => {
     await resizeHandle.press("ArrowLeft");
 
     // Verify width changed in localStorage
-    const newWidth = await page.evaluate(() =>
-      localStorage.getItem("smudge:ref-panel-width"),
-    );
+    const newWidth = await page.evaluate(() => localStorage.getItem("smudge:ref-panel-width"));
     expect(Number(newWidth)).toBeGreaterThan(Number(initialWidth ?? "320"));
   });
 
@@ -354,9 +346,7 @@ test.describe("Image Gallery & Reference Panel E2e Tests", () => {
     await expect(panel.getByRole("button", { name: /a11y-test-2\.png/ })).toBeVisible();
 
     // Exclude color-contrast: Tailwind v4 uses oklab() which aXe cannot parse
-    const results = await new AxeBuilder({ page })
-      .disableRules(["color-contrast"])
-      .analyze();
+    const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
     expect(results.violations).toEqual([]);
   });
 
@@ -376,9 +366,7 @@ test.describe("Image Gallery & Reference Panel E2e Tests", () => {
     await expect(panel.getByLabel("Alt text")).toBeVisible();
 
     // Exclude color-contrast: Tailwind v4 uses oklab() which aXe cannot parse
-    const results = await new AxeBuilder({ page })
-      .disableRules(["color-contrast"])
-      .analyze();
+    const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
     expect(results.violations).toEqual([]);
   });
 });

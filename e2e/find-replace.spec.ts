@@ -13,8 +13,10 @@ interface TestChapter {
 }
 
 async function createTestProject(request: APIRequestContext): Promise<TestProject> {
+  // S6 (review 2026-04-25): Date.now() millisecond resolution can collide
+  // under Playwright sharding; append crypto.randomUUID() for hard uniqueness.
   const res = await request.post("/api/projects", {
-    data: { title: `FindReplace Test ${Date.now()}`, mode: "fiction" },
+    data: { title: `FindReplace Test ${Date.now()}-${crypto.randomUUID()}`, mode: "fiction" },
   });
   expect(res.ok()).toBeTruthy();
   const json = (await res.json()) as TestProject;
@@ -64,18 +66,14 @@ async function typeAndWaitForSave(page: Page, text: string) {
 /** Open the find-and-replace panel via the keyboard shortcut (Ctrl+H). */
 async function openFindReplaceViaKeyboard(page: Page) {
   await page.keyboard.press("Control+H");
-  await expect(
-    page.getByRole("complementary", { name: "Find and replace" }),
-  ).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Find and replace" })).toBeVisible();
 }
 
 /** Open the find-and-replace panel via the toolbar button. */
 async function openFindReplaceViaToolbar(page: Page) {
   const btn = page.getByRole("button", { name: /^Find and replace/ });
   await btn.click();
-  await expect(
-    page.getByRole("complementary", { name: "Find and replace" }),
-  ).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Find and replace" })).toBeVisible();
 }
 
 /** Fill the search input within the panel. */
@@ -126,9 +124,7 @@ test.describe("Find-and-Replace E2e Tests", () => {
     await openFindReplaceViaKeyboard(page);
     await page.keyboard.press("Escape");
 
-    await expect(
-      page.getByRole("complementary", { name: "Find and replace" }),
-    ).not.toBeVisible();
+    await expect(page.getByRole("complementary", { name: "Find and replace" })).not.toBeVisible();
   });
 
   test("search finds matches in a single chapter", async ({ page }) => {
@@ -235,9 +231,7 @@ test.describe("Find-and-Replace E2e Tests", () => {
     await expect(panel.getByText("No matches found")).toBeVisible({ timeout: 5000 });
   });
 
-  test("Replace All in Manuscript replaces every match and refreshes results", async ({
-    page,
-  }) => {
+  test("Replace All in Manuscript replaces every match and refreshes results", async ({ page }) => {
     await page.goto(`/projects/${project.slug}`);
     await expect(page.getByRole("textbox")).toBeVisible();
 

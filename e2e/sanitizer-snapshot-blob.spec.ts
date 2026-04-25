@@ -15,8 +15,12 @@ interface ProjectWithChapters extends TestProject {
 }
 
 async function createTestProject(request: APIRequestContext): Promise<TestProject> {
+  // S6 (review 2026-04-25): Date.now() millisecond resolution can collide
+  // under Playwright sharding/parallel workers. Append crypto.randomUUID()
+  // for hard uniqueness so two concurrent project creates can't generate
+  // the same slug.
   const res = await request.post("/api/projects", {
-    data: { title: `Sanitizer Test ${Date.now()}`, mode: "fiction" },
+    data: { title: `Sanitizer Test ${Date.now()}-${crypto.randomUUID()}`, mode: "fiction" },
   });
   expect(res.ok()).toBeTruthy();
   const json = (await res.json()) as TestProject;
@@ -41,10 +45,7 @@ test.describe("Sanitizer e2e (I14)", () => {
     await deleteProject(request, project.slug);
   });
 
-  test("snapshot view sanitizes malicious img src URIs (I14)", async ({
-    page,
-    request,
-  }) => {
+  test("snapshot view sanitizes malicious img src URIs (I14)", async ({ page, request }) => {
     // Locate the auto-created chapter for the project.
     const projectRes = await request.get(`/api/projects/${project.slug}`);
     expect(projectRes.ok()).toBeTruthy();
