@@ -48,7 +48,7 @@ const ALLOWED_URI_REGEXP = /^\/api\/images\//i;
 
 ### [S21] Bound `extrasFrom` chapters validation (`scopes.ts`)
 
-`image.delete`'s `extrasFrom` validates that each `chapters[].title` is a string but applies no length cap. A malicious server response could blow up rendering with megabyte titles. Cap at 50 entries; truncate per-title to 200 chars; dev-warn on truncation.
+`image.delete`'s `extrasFrom` validates that each `chapters[].title` is a string but applies no length cap. A malicious server response could blow up rendering with megabyte titles. Cap at 50 entries; truncate per-title to 200 chars. **Truncation is silent** — no dev-warn. (Avoids re-introducing the bug [S6] in Cluster E fixes, where `import.meta.env?.DEV` access can throw in some test environments. The defensive bound is the value; observability of an attacker-shaped server response is not.)
 
 ### Cluster D tests
 
@@ -193,7 +193,25 @@ Single PR by deliberate decision, including [S15]'s 30-site refactor. The items 
 
 #### Helper extraction (refactor)
 
-- **[S15] `applyMappedError` helper.** Add `applyMappedError(mapped, { onMessage, onTransient?, onCommitted? })` to `errors/`. Apply at all ~30 call sites that currently write `if (message === null) return; if (message) setX(message)`. Pure refactor; existing tests pin behavior.
+- **[S15] `applyMappedError` helper.** Add to `errors/`:
+  ```ts
+  applyMappedError<S extends keyof Scopes>(
+    mapped: MappedError<S>,
+    handlers: {
+      onMessage: (message: string) => void;
+      onTransient?: (transient: boolean) => void;
+      onCommitted?: (possiblyCommitted: boolean) => void;
+      onExtras?: (extras: ScopeExtras<S>) => void;
+    },
+  ): void
+  ```
+  All four mapper outputs (`message`, `transient`, `possiblyCommitted`, `extras`) are reachable by callback. **`ScopeExtras<S>` is introduced here as part of [S15]** (Cluster E's [S9] becomes "verify the cast at `ImageGallery.tsx:334–338` is unnecessary and drop it" — the type already exists by the time E ships).
+
+  **Migration discipline (per pushback Issue 4):**
+  - Land `applyMappedError` itself with **dedicated unit tests covering all callback combinations** (null-message, transient, possiblyCommitted, extras-with-and-without scope entry, every callback omitted, etc.) **before** migrating any site.
+  - Migrate sites incrementally — **one commit per site**, so a regression bisects to a single migration.
+  - Sites with mixed catch logic (e.g. `useTrashManager.handleRestore` interleaving `confirmedStatusRef` updates with `setActionError`) are flagged in the implementation plan for closer review; do not assume "existing tests pin behavior" — verify the behavior surface explicitly per site.
+  - Helper is observably-equivalent to the manual ladder for sites with simple `setX(message)` shape; the existing tests do pin those.
 
 ### Cluster C tests
 
@@ -212,9 +230,9 @@ Any AbortSignal *threading* changes (those are Cluster B). New scopes other than
 
 `import.meta.env?.DEV` access can throw in some test environments, which inverts `safeExtrasFrom`'s must-never-throw guard. Wrap the `console.warn` block in `try {} catch {}`. Regression test uses a `Proxy` that throws on `import.meta` access.
 
-### [S9] `ScopeExtras<S>` type (`errors/`)
+### [S9] Verify and drop the `ImageGallery` `extras.chapters` cast
 
-`ImageGallery.tsx:334–338` casts `extras.chapters` bypassing the mapper's narrowed shape. Add a typed accessor — e.g. `type ScopeExtras<S extends keyof Scopes> = Scopes[S]['extras']` — and drop the cast. Type-only change; verifies via `npm run typecheck` plus a type-test in `errors/scopes.test.ts`.
+`ScopeExtras<S>` is introduced by Cluster C's [S15] (it's required by the helper signature). By the time Cluster E ships, the type exists. [S9] in this cluster is the consumer-side cleanup: **verify the cast at `ImageGallery.tsx:334–338` is no longer necessary and drop it**, replacing it with the typed accessor. Type-only change; verifies via `npm run typecheck` plus a type-test in `errors/scopes.test.ts`.
 
 ### [S13] Extract `refreshTrashList()` (`useTrashManager.ts`)
 
@@ -282,8 +300,8 @@ Each cluster's PR description references this design doc, lists the items it clo
 
 - D → A: independent; D first because of security priority.
 - A → B: independent.
-- **B → C:** [S10] (`!signal.aborted` dev-warn) and [S17]/[S19] (ref-nulling around AbortControllers) assume B's signal threading is in place.
-- C → E: [S9]'s `ScopeExtras<S>` type is most useful after Cluster A's new scope entries exist; CLAUDE.md updates ([S2], [F retrospective]) reference patterns landed in earlier clusters.
+- **B → C:** Only [S10] in Cluster C depends on Cluster B (the `!signal.aborted` dev-warn requires the signals threaded by [I8] in B). [S17] and [S19] are independent ref-nulling on `createRecoveryAbortRef` / `viewAbortRef` — both refs already exist in the code today; the fix is hygiene on success paths and does not depend on Cluster B.
+- **C → E:** Cluster C's [S15] introduces `ScopeExtras<S>`; Cluster E's [S9] consumes it (drops the existing `ImageGallery` cast). CLAUDE.md updates in E ([S2], [F retrospective]) reference patterns landed in prior clusters.
 
 ### Risks
 

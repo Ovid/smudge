@@ -736,8 +736,13 @@ Each cluster is a separate PR per the CLAUDE.md one-feature rule. The phase clos
 ### Out of Scope
 
 - Phase 4b.4 work (raw-strings ESLint rule). 4b.4 may land in parallel; clusters above do not block it and it does not block them.
+- Phase 4b.5 work (Editor State Machine).
 - New API error codes or HTTP status codes (allowlist stays per CLAUDE.md §API Design).
-- Behavior changes visible to the user beyond fixing the misleading copy in [I1]/[I2].
+- Behavior changes visible to the user beyond:
+  - Fixing misleading copy ([I1], [I2], [S1], [S16]).
+  - Defense-in-depth rejection of malicious image src ([I14]).
+  - Graceful navigation on stale-project state ([S11]) — explicitly logged as consistency with the existing `EditorPage:1552` convention.
+  - Surfacing previously-silent failures ([I5], [S10]).
 
 ### Definition of Done
 
