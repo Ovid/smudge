@@ -2338,6 +2338,89 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("create-recovery is not aborted by a sibling status-revert recovery (C1 2026-04-25)", async () => {
+    // Before the fix, handleCreateChapter, handleStatusChange and
+    // handleUpdateProjectTitle all wrote their recovery AbortController
+    // to a single shared `recoveryGetAbortRef`. If a status-revert
+    // recovery fired while a create-recovery GET was in flight, the
+    // status path's `recoveryGetAbortRef.current?.abort()` aborted the
+    // create's controller. The create's recovery body wraps everything
+    // in `try { ... } catch {}`, so the abort was silently swallowed,
+    // the new chapter never landed in the sidebar, and the user saw
+    // the committed banner with no actionable state change.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const newChapter = {
+      ...mockChapter2,
+      id: "ch3",
+      sort_order: 2,
+    };
+    const refreshedProject = {
+      ...mockProject,
+      chapters: [mockChapter1, mockChapter2, newChapter],
+    };
+
+    // Create POST → 2xx BAD_JSON ⇒ recovery GET path.
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+    // Status PATCH → bare 5xx ⇒ status-revert recovery GET path
+    // (non-committed, so it walks the revert branch).
+    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("server error", 500));
+
+    // Capture each api.projects.get call's signal so we can assert
+    // the create's recovery controller was NOT aborted by the status
+    // recovery.
+    let resolveCreateRecovery!: (val: typeof refreshedProject) => void;
+    const createRecoveryPromise = new Promise<typeof refreshedProject>((res) => {
+      resolveCreateRecovery = res;
+    });
+    const capturedSignals: Array<AbortSignal | undefined> = [];
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get).mockImplementation(async (_slug, signal) => {
+      capturedSignals.push(signal);
+      // Calls in order: 1=initial load, 2=create recovery (deferred),
+      // 3=status revert recovery (resolves immediately).
+      if (capturedSignals.length === 1) return mockProject;
+      if (capturedSignals.length === 2) return createRecoveryPromise;
+      return mockProject;
+    });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    // Kick off create. Its recovery GET will be parked on createRecoveryPromise.
+    let createPromise!: Promise<unknown>;
+    act(() => {
+      createPromise = result.current.handleCreateChapter();
+    });
+    // Wait until the recovery GET has been dispatched (capturedSignals.length === 2).
+    await waitFor(() => expect(capturedSignals.length).toBe(2));
+
+    // Now fire a status change — its catch path will start its own
+    // recovery GET. With per-handler refs, the create's signal must
+    // remain un-aborted.
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "drafting");
+    });
+
+    // Status recovery dispatched.
+    expect(capturedSignals.length).toBeGreaterThanOrEqual(3);
+    // Create's recovery signal must NOT be aborted by the status path.
+    expect(capturedSignals[1]?.aborted).toBe(false);
+
+    // Resolve the create recovery so the post-await branch can run.
+    await act(async () => {
+      resolveCreateRecovery(refreshedProject);
+      await createPromise;
+    });
+
+    // The create's recovery setProject must have run — chapter ch3 lands.
+    expect(result.current.project?.chapters.find((c) => c.id === "ch3")).toBeDefined();
+    expect(result.current.activeChapter?.id).toBe("ch3");
+    warnSpy.mockRestore();
+  });
+
   it("handleStatusChange preserves optimistic status on 2xx BAD_JSON + surfaces committed copy (I6)", async () => {
     // 2xx BAD_JSON means the server committed the new status but the
     // response body was unreadable. Reverting (locally or from the

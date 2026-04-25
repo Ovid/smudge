@@ -135,11 +135,19 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   const confirmedStatusRef = useRef<Record<string, string | undefined>>({});
   // I22 (review 2026-04-24): recovery GETs fired by BAD_JSON catches
   // in handleCreateChapter / handleUpdateProjectTitle / handleStatusChange
-  // had no AbortController. Each call replaces the prior controller
-  // on this ref so unmount aborts the latest in-flight recovery.
-  // Earlier recoveries are superseded by their caller's next entry
-  // anyway; a per-mutation ref pool would be overkill.
-  const recoveryGetAbortRef = useRef<AbortController | null>(null);
+  // need an AbortController so unmount drops the in-flight recovery.
+  // C1 (review 2026-04-25): each handler owns its own ref. Earlier we
+  // tried a single shared ref ("only the latest matters" — superseded
+  // recoveries from the SAME handler are fine to abort), but a status
+  // revert that fires while a create-recovery GET is in flight would
+  // abort the create's controller. The create's recovery body wraps
+  // the GET in `try { ... } catch {}`, so the cross-handler abort
+  // was silently swallowed and the new chapter never landed in the
+  // sidebar. Per-handler refs scope the "latest wins" rule to its own
+  // handler and leave siblings untouched.
+  const createRecoveryAbortRef = useRef<AbortController | null>(null);
+  const statusRecoveryAbortRef = useRef<AbortController | null>(null);
+  const titleRecoveryAbortRef = useRef<AbortController | null>(null);
 
   // Shared cancel-in-flight-save helper. Aborts the save sequence (so the
   // retry loop short-circuits on its next iteration via token.isStale()),
@@ -181,7 +189,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       reorderAbortRef.current?.abort();
       renameChapterAbortRef.current?.abort();
       deleteChapterAbortRef.current?.abort();
-      recoveryGetAbortRef.current?.abort();
+      createRecoveryAbortRef.current?.abort();
+      statusRecoveryAbortRef.current?.abort();
+      titleRecoveryAbortRef.current?.abort();
     };
   }, [cancelInFlightSave]);
 
@@ -535,9 +545,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           // in the sidebar but stays on the previously-active chapter,
           // contradicting the committed-banner UX.
           const previousChapterIds = new Set(projectRef.current?.chapters.map((c) => c.id) ?? []);
-          recoveryGetAbortRef.current?.abort();
+          createRecoveryAbortRef.current?.abort();
           const recoveryController = new AbortController();
-          recoveryGetAbortRef.current = recoveryController;
+          createRecoveryAbortRef.current = recoveryController;
           try {
             const refreshed = await api.projects.get(slug, recoveryController.signal);
             if (recoveryController.signal.aborted) return;
@@ -902,9 +912,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // in place. If the slug did change the GET 404s; the committed
         // copy alone tells the user to refresh the page.
         if (possiblyCommitted) {
-          recoveryGetAbortRef.current?.abort();
+          titleRecoveryAbortRef.current?.abort();
           const recoveryController = new AbortController();
-          recoveryGetAbortRef.current = recoveryController;
+          titleRecoveryAbortRef.current = recoveryController;
           try {
             const refreshed = await api.projects.get(slug, recoveryController.signal);
             if (recoveryController.signal.aborted) return undefined;
@@ -1003,9 +1013,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         let reverted = false;
         const slug = projectSlugRef.current;
         if (slug) {
-          recoveryGetAbortRef.current?.abort();
+          statusRecoveryAbortRef.current?.abort();
           const recoveryController = new AbortController();
-          recoveryGetAbortRef.current = recoveryController;
+          statusRecoveryAbortRef.current = recoveryController;
           try {
             const data = await api.projects.get(slug, recoveryController.signal);
             if (recoveryController.signal.aborted) return;
