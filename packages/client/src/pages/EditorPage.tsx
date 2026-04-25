@@ -544,7 +544,9 @@ export function EditorPage() {
             // they're now looking at and refresh against the wrong
             // context. Override with a chapter-attributed string so
             // the banner identifies which chapter's state is unverified.
-            setActionError(STRINGS.snapshots.restoreResponseUnreadableOnOtherChapter(activeChapter.title));
+            setActionError(
+              STRINGS.snapshots.restoreResponseUnreadableOnOtherChapter(activeChapter.title),
+            );
             // I4 (review 2026-04-21): leave snapshot view — the banner
             // that prompted this restore is still pointing at a chapter
             // the user has navigated away from. Without this, Restore

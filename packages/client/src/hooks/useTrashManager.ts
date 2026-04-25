@@ -21,7 +21,9 @@ export function useTrashManager(
   options?: UseTrashManagerOptions,
 ) {
   const seedConfirmedStatusRef = useRef(options?.seedConfirmedStatus);
-  seedConfirmedStatusRef.current = options?.seedConfirmedStatus;
+  useEffect(() => {
+    seedConfirmedStatusRef.current = options?.seedConfirmedStatus;
+  }, [options?.seedConfirmedStatus]);
   const [trashOpen, setTrashOpen] = useState(false);
   const [trashedChapters, setTrashedChapters] = useState<Chapter[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<Chapter | null>(null);
