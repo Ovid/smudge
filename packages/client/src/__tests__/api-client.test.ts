@@ -770,7 +770,15 @@ describe("api.projects.export (additional)", () => {
     expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
   });
 
-  it("maps 2xx non-abort blob-read failure to BAD_JSON (I3)", async () => {
+  it("maps 2xx blob-read TypeError to NETWORK (I1 2026-04-25)", async () => {
+    // I1 in the 2026-04-25 review: a stream-level TypeError from
+    // res.blob() (TCP reset post-headers, fetch's body read bailing
+    // out) is the same fault apiFetch's I14 fix handles. The earlier
+    // BAD_JSON treatment told the user "your export may have completed"
+    // when the server never flushed a body. Mirror apiFetch and the
+    // images.upload path: TypeError → NETWORK/transient. SyntaxError
+    // and other Error subclasses keep BAD_JSON treatment if the body
+    // arrived but couldn't be parsed.
     const { ApiRequestError } = await import("../api/client");
     mockFetch.mockResolvedValue({
       ok: true,
@@ -785,9 +793,31 @@ describe("api.projects.export (additional)", () => {
       caught = e;
     }
     expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("NETWORK");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+    expect((caught as InstanceType<typeof ApiRequestError>).message).toMatch(/^\[dev\] /);
+  });
+
+  it("preserves BAD_JSON for non-TypeError blob-read failures (I1 2026-04-25)", async () => {
+    // SyntaxError and other Error subclasses indicate the body did
+    // arrive but couldn't be parsed — that IS the possiblyCommitted
+    // case. Only TypeError flips to NETWORK.
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      blob: () => Promise.reject(new SyntaxError("unexpected token")),
+    });
+
+    let caught: unknown;
+    try {
+      await api.projects.export("p1", { format: "html" });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
     expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("BAD_JSON");
     expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(200);
-    expect((caught as InstanceType<typeof ApiRequestError>).message).toMatch(/^\[dev\] /);
   });
 });
 
@@ -897,6 +927,55 @@ describe("api.images.upload (I1 transport classification)", () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
+      json: () => Promise.reject(new TypeError("Failed to fetch")),
+    });
+
+    let caught: unknown;
+    try {
+      await api.projects.get("p1");
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("NETWORK");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
+  it("re-throws NETWORK when !ok error-body read fails with TypeError (I3 2026-04-25)", async () => {
+    // I3 in the 2026-04-25 review: the 2xx body-read I14 fix
+    // distinguished TypeError (NETWORK/transient) from SyntaxError
+    // (BAD_JSON/possiblyCommitted). The 4xx/5xx body-read in
+    // readErrorEnvelope only caught AbortError; a TypeError fell
+    // through to a status-only error with no code, losing the
+    // stream-level classification. Mirror the 2xx body-read pattern
+    // so a TCP reset mid-error-body shows the network hint instead
+    // of a generic "HTTP 5xx".
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.reject(new TypeError("Failed to fetch")),
+    });
+
+    const file = new File(["x"], "a.png", { type: "image/png" });
+    let caught: unknown;
+    try {
+      await api.images.upload("p1", file);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("NETWORK");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
+  it("apiFetch !ok body-read TypeError reclassifies as NETWORK (I3 2026-04-25)", async () => {
+    // Same I3 invariant against apiFetch's own !ok branch (separate
+    // catch from readErrorEnvelope, used by JSON-only endpoints).
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 502,
       json: () => Promise.reject(new TypeError("Failed to fetch")),
     });
 

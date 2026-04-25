@@ -131,6 +131,16 @@ async function readErrorEnvelope(
     if (err instanceof DOMException && err.name === "AbortError") {
       throw classifyFetchError(err);
     }
+    // I3 (review 2026-04-25): a TypeError here means the stream broke
+    // mid-error-body (TCP reset post-headers). Falling through to a
+    // status-only ApiRequestError with no code would lose the stream-
+    // level classification — the mapper's NETWORK branch becomes
+    // unreachable and the user sees a generic "HTTP 5xx" instead of
+    // the actionable "check your connection" hint. Mirror apiFetch's
+    // 2xx body-read I14 pattern.
+    if (err instanceof TypeError) {
+      throw classifyFetchError(err);
+    }
     return { message: fallbackMessage, code: undefined, extras: undefined };
   }
 }
@@ -171,6 +181,15 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
       // parse failure (e.g. proxy HTML error page) falls through to the
       // status-only envelope below.
       if (err instanceof DOMException && err.name === "AbortError") {
+        throw classifyFetchError(err);
+      }
+      // I3 (review 2026-04-25): a TypeError mid-error-body (TCP reset
+      // post-headers) is a stream-level network fault — same fault
+      // class as the 2xx body-read I14 branch handles. Falling through
+      // to a status-only ApiRequestError would strip the NETWORK code
+      // and the mapper's network branch becomes unreachable for this
+      // path. Symmetry with apiFetch's 2xx branch and readErrorEnvelope.
+      if (err instanceof TypeError) {
         throw classifyFetchError(err);
       }
     }
@@ -323,6 +342,16 @@ export const api = {
       // of the ABORTED silence or BAD_JSON/possiblyCommitted arms.
       return res.blob().catch((err: unknown) => {
         if (err instanceof DOMException && err.name === "AbortError") {
+          throw classifyFetchError(err);
+        }
+        // I1 (review 2026-04-25): a TypeError from res.blob() means
+        // the stream broke (TCP reset post-headers, fetch's body read
+        // bailing out) — the server never flushed a body, so the
+        // export did NOT commit a usable response. Route through
+        // NETWORK (transient) to mirror apiFetch's I14 fix and the
+        // images.upload path. Falling into BAD_JSON would feed a
+        // future committed-export UX false signal.
+        if (err instanceof TypeError) {
           throw classifyFetchError(err);
         }
         // [dev] prefix on BAD_JSON — see apiFetch's body-read branch.
