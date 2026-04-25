@@ -298,6 +298,59 @@ describe("HomePage", () => {
     warnSpy.mockRestore();
   });
 
+  it("on 2xx BAD_JSON create, refreshes list and closes dialog to prevent duplicate (I5 2026-04-25)", async () => {
+    // I5 (review 2026-04-25): handleCreate destructured only { message }
+    // from mapApiError. The project.create scope declares
+    // committed: STRINGS.error.possiblyCommitted, so 2xx BAD_JSON returns
+    // possiblyCommitted: true. project.create is non-idempotent: the
+    // dialog stayed open with the user's input, the row never appeared
+    // in the list, and a retry click would create a duplicate project.
+    // Mirror siblings: refresh the list (so the just-created row is
+    // visible) and close the dialog (so the live "Create" button can't
+    // re-fire) before showing the committed banner. The slug isn't
+    // available in the unreadable response, so navigation can't be
+    // performed automatically — refresh-and-close is the safe default.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.projects.list)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: "p1",
+          slug: "my-book",
+          title: "My Book",
+          mode: "fiction",
+          total_word_count: 0,
+          updated_at: "",
+        },
+      ]);
+    vi.mocked(api.projects.create).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+    renderHomePage();
+    await waitFor(() => {
+      expect(screen.getByText("No projects yet. Create one to start writing.")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "New Project" }));
+    const input = screen.getByRole("textbox");
+    await userEvent.type(input, "My Book");
+    const form = input.closest("form") as HTMLFormElement;
+    const submitButton = form.querySelector("button[type='submit']") as HTMLButtonElement;
+    await userEvent.click(submitButton);
+
+    // List re-fetched so the just-created row appears in state without
+    // another POST.
+    await waitFor(() => expect(api.projects.list).toHaveBeenCalledTimes(2));
+    // Newly-created row appears in the list.
+    await waitFor(() => expect(screen.getByText("My Book")).toBeInTheDocument());
+    // Dialog closed → no live "Create" button to re-fire (the form input
+    // is no longer in the document).
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    // Committed banner instructs the user to refresh.
+    expect(screen.getByRole("alert")).toHaveTextContent(/may have completed/i);
+    warnSpy.mockRestore();
+  });
+
   // I1 (review 2026-04-24): handleDelete ignored possiblyCommitted. On
   // 2xx BAD_JSON the server deleted the project but the row stayed in
   // the local list — the user saw a phantom project, a retry 404d, and

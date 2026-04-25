@@ -48,7 +48,23 @@ export function HomePage() {
       navigate(`/projects/${project.slug}`);
     } catch (err) {
       console.warn("Failed to create project:", err);
-      const { message } = mapApiError(err, "project.create");
+      const { message, possiblyCommitted } = mapApiError(err, "project.create");
+      // I5 (review 2026-04-25): project.create is non-idempotent — the
+      // server assigns a new row per POST. On 2xx BAD_JSON the row may
+      // already exist on the server and a retry would create a duplicate.
+      // The slug isn't available in the unreadable response, so we can't
+      // navigate to it; the safe default is to refresh the project list
+      // (the just-created row will appear) and close the dialog (so the
+      // live "Create" button can't re-fire) before announcing the
+      // committed copy. A failed list refresh is best-effort — the
+      // committed banner alone tells the user to refresh manually.
+      if (possiblyCommitted) {
+        setDialogOpen(false);
+        api.projects
+          .list()
+          .then((data) => setProjects(data))
+          .catch(() => {});
+      }
       if (message) setError(message);
     }
   }
