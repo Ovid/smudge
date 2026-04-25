@@ -481,14 +481,14 @@ describe("SCOPES — image.delete extrasFrom", () => {
     expect(extras.chapters).toHaveLength(50);
   });
   it("truncates per-title to 200 chars (S21)", () => {
+    const longTitle = "x".repeat(500);
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
-      chapters: [{ id: "c-1", title: "x".repeat(500) }],
+      chapters: [{ id: "c-1", title: longTitle }],
     });
     const extras = resolveError(err, scope).extras as {
       chapters: Array<{ id: string; title: string }>;
     };
-    expect(extras.chapters[0].title).toHaveLength(200);
-    expect(extras.chapters[0].id).toBe("c-1");
+    expect(extras.chapters).toEqual([{ id: "c-1", title: longTitle.slice(0, 200) }]);
   });
 });
 
