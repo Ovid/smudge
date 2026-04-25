@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import DOMPurify from "dompurify";
 import { sanitizeEditorHtml } from "../sanitizer";
 
 // I18 (review 2026-04-24): sanitizer is the app's defense-in-depth
@@ -153,5 +154,18 @@ describe("sanitizeEditorHtml", () => {
     const out = sanitizeEditorHtml(input);
     expect(out).not.toContain("<base");
     expect(out).not.toContain("evil.example");
+  });
+
+  // S2 (review 2026-04-25): the URI-validation hook must live on a private
+  // DOMPurify instance, not on the package-level singleton. Importing
+  // DOMPurify directly elsewhere (or in a test, or under Vite HMR) must
+  // see the unmodified default behavior — including DOMPurify 3.x's
+  // DATA_URI_TAGS carve-out that lets data: URIs through <img src>. If
+  // sanitizer.ts mutates the singleton via addHook, this test fails
+  // because the directly-imported DOMPurify also strips data: URIs.
+  it("does not pollute the global DOMPurify singleton (S2)", () => {
+    const malicious = `<img src="data:image/svg+xml;base64,PHN2Zy8+" alt="x">`;
+    const out = DOMPurify.sanitize(malicious);
+    expect(out).toContain("data:image/svg+xml");
   });
 });

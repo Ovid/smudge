@@ -1,5 +1,16 @@
 import DOMPurify from "dompurify";
 
+// S2 (review 2026-04-25): scope our hook registration to a private
+// DOMPurify instance rather than the package-level singleton. Without
+// this, every other importer of `dompurify` (today none, but trivially
+// possible in the future) — including bare `DOMPurify.sanitize` calls
+// in tests, Vite HMR re-imports, and any code path that does not route
+// through `sanitizeEditorHtml` — would inherit our `uponSanitizeAttribute`
+// hook unintentionally. Calling `DOMPurify(window)` constructs a fresh
+// instance bound to this realm; the global default singleton stays
+// untouched.
+const purifier = DOMPurify(window);
+
 // S11 (review 2026-04-24): defense-in-depth against a hostile
 // backup/snapshot/server payload. TipTap's generateHTML always
 // produces HTML bounded by editorExtensions (StarterKit + Heading
@@ -48,9 +59,9 @@ const ALLOWED_URI_REGEXP = /^\/api\/images\//i;
 // carve-out (img/audio/video/source/track) that lets `data:` URIs through
 // `<img src>` even when ALLOWED_URI_REGEXP would otherwise reject them.
 // This hook closes that carve-out by dropping any src/href/xlink:href whose
-// value does not match ALLOWED_URI_REGEXP. Registered once at module load
-// (ES module evaluation is cached, so the singleton picks it up exactly once).
-DOMPurify.addHook("uponSanitizeAttribute", (_node, data) => {
+// value does not match ALLOWED_URI_REGEXP. Registered on the private
+// instance (S2), not the package-level singleton.
+purifier.addHook("uponSanitizeAttribute", (_node, data) => {
   if (data.attrName !== "src" && data.attrName !== "href" && data.attrName !== "xlink:href") {
     return;
   }
@@ -60,7 +71,7 @@ DOMPurify.addHook("uponSanitizeAttribute", (_node, data) => {
 });
 
 export function sanitizeEditorHtml(html: string): string {
-  return DOMPurify.sanitize(html, {
+  return purifier.sanitize(html, {
     ALLOWED_TAGS,
     ALLOWED_ATTR,
     ALLOWED_URI_REGEXP,
