@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { MappedError } from "./apiErrorMapper";
 import {
   _resolveErrorInternal as resolveError,
@@ -264,8 +264,11 @@ describe("mapApiError — extras", () => {
   // I15 (review 2026-04-24): the mapper must never throw. A buggy
   // extrasFrom would otherwise bubble out through every call site and
   // flip the UI into a crash boundary. Wrap in try/catch: throw →
-  // extras:undefined, message still lands.
+  // extras:undefined, message still lands. The dev-mode console.error
+  // is suppressed and asserted on so the zero-warnings invariant from
+  // CLAUDE.md holds.
   it("swallows extrasFrom throws and returns extras:undefined (I15)", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const throwingScope = {
       fallback: "fallback",
       byCode: { CODE_X: "messsage" },
@@ -277,6 +280,11 @@ describe("mapApiError — extras", () => {
     const result = resolveError(err, throwingScope);
     expect(result.message).toBe("messsage");
     expect(result.extras).toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledWith(
+      "scope.extrasFrom threw; returning undefined:",
+      expect.any(Error),
+    );
+    errorSpy.mockRestore();
   });
 });
 
