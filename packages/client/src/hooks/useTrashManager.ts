@@ -32,9 +32,18 @@ export function useTrashManager(
   // request rather than setState-ing into a torn-down hook. Gate
   // console.error on !aborted to uphold the zero-warnings invariant.
   const trashAbortRef = useRef<AbortController | null>(null);
+  // User callout (2026-04-25 review): handleRestore had no
+  // cancellation/unmount guard (unlike openTrash). If the hook's
+  // owner unmounts (navigation / chapter switch) while
+  // api.chapters.restore() is in flight, the catch path could log
+  // and setState on a torn-down hook. Mirror the trashAbortRef
+  // pattern: one controller per restore call, threaded into
+  // api.chapters.restore, aborted on the next call AND on unmount.
+  const restoreAbortRef = useRef<AbortController | null>(null);
   useEffect(
     () => () => {
       trashAbortRef.current?.abort();
+      restoreAbortRef.current?.abort();
     },
     [],
   );
@@ -61,8 +70,18 @@ export function useTrashManager(
 
   const handleRestore = useCallback(
     async (chapterId: string) => {
+      // User callout (2026-04-25): abort any prior in-flight restore
+      // and install the controller on the shared ref so the unmount
+      // cleanup can sever a mid-flight restore. Threading the signal
+      // into api.chapters.restore makes the abort propagate to the
+      // network layer, not just gate the client-side response handler.
+      restoreAbortRef.current?.abort();
+      const controller = new AbortController();
+      restoreAbortRef.current = controller;
       try {
-        const restored = await api.chapters.restore(chapterId);
+        const restored = await api.chapters.restore(chapterId, controller.signal);
+        if (controller.signal.aborted) return;
+        if (restoreAbortRef.current === controller) restoreAbortRef.current = null;
         setTrashedChapters((prev) => prev.filter((c) => c.id !== chapterId));
         setProject((prev) => {
           if (!prev) return prev;
@@ -86,8 +105,18 @@ export function useTrashManager(
           navigate(`/projects/${restored.project_slug}`, { replace: true });
         }
       } catch (err) {
-        console.error("Failed to restore chapter:", err);
+        if (restoreAbortRef.current === controller) restoreAbortRef.current = null;
+        // User callout (2026-04-25): unmount/supersession abort stays
+        // silent. Without this guard the catch would log and setState
+        // on a torn-down hook, polluting test output (CLAUDE.md zero-
+        // warnings invariant) and risking React's setState-on-unmount
+        // warning.
+        if (controller.signal.aborted) return;
         const { message, possiblyCommitted } = mapApiError(err, "trash.restoreChapter");
+        // ABORTED returns message: null. Skip log + state update so a
+        // late abort does not surface noise.
+        if (message === null) return;
+        console.error("Failed to restore chapter:", err);
         // I2 (2026-04-24 review) + S8 (2026-04-24 review): on a
         // committed-but-unreadable response (2xx BAD_JSON or 500
         // RESTORE_READ_FAILURE) the server actually restored the
@@ -103,7 +132,7 @@ export function useTrashManager(
         if (possiblyCommitted) {
           setTrashedChapters((prev) => prev.filter((c) => c.id !== chapterId));
         }
-        if (message) setActionError(message);
+        setActionError(message);
       }
     },
     [slug, setProject, navigate],

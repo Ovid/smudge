@@ -393,9 +393,13 @@ export const api = {
         ...(signal ? { signal } : {}),
       }),
 
-    restore: (id: string) =>
+    restore: (id: string, signal?: AbortSignal) =>
       apiFetch<Chapter & { project_slug: string }>(`/chapters/${enc(id)}/restore`, {
         method: "POST",
+        // Only include `signal` when one was actually provided, so existing
+        // no-arg callers see the same fetch options shape they did before.
+        // Mirrors chapters.update / chapters.delete.
+        ...(signal ? { signal } : {}),
       }),
   },
 

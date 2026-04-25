@@ -181,6 +181,70 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     expect(errorSpy).not.toHaveBeenCalledWith("Failed to load trash:", expect.anything());
   });
 
+  it("aborts in-flight restore on unmount (User callout 2026-04-25)", async () => {
+    // The 2026-04-25 review note: handleRestore had no
+    // cancellation/unmount guard (unlike openTrash). If the hook's
+    // owner unmounts (navigation / chapter switch) while
+    // api.chapters.restore() is in flight, the catch path can still
+    // log and setState on a torn-down hook. Mirror the openTrash
+    // pattern: AbortController stored in a ref + unmount cleanup,
+    // signal threaded into api.chapters.restore, early-return from
+    // success and error paths on aborted/stale.
+    let capturedSignal: AbortSignal | undefined;
+    vi.mocked(api.chapters.restore).mockImplementation((_id, signal) => {
+      capturedSignal = signal;
+      return new Promise(() => {}); // never resolves — we care about abort only
+    });
+    vi.mocked(api.projects.trash).mockResolvedValue([makeChapter({ id: "ch-restored" })]);
+
+    const project = makeProject();
+    const { result, unmount } = renderHook(() =>
+      useTrashManager(project, project.slug, vi.fn(), vi.fn(), vi.fn()),
+    );
+    await act(async () => {
+      await result.current.openTrash();
+    });
+
+    act(() => {
+      void result.current.handleRestore("ch-restored");
+    });
+    await waitFor(() => expect(api.chapters.restore).toHaveBeenCalled());
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal?.aborted).toBe(false);
+
+    unmount();
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  it("on ABORTED restore error, does not log or surface state (User callout 2026-04-25)", async () => {
+    // The mapper returns message: null for ABORTED. The hook must
+    // honor that: no console.error, no actionError set, no optimistic
+    // trash-list mutation. Otherwise an unmount/supersession abort
+    // logs noise (CLAUDE.md zero-warnings invariant) and risks state
+    // updates on a torn-down hook.
+    const deleted = makeChapter({ id: "ch-aborted" });
+    vi.mocked(api.chapters.restore).mockRejectedValue(
+      new ApiRequestError("[dev] aborted", 0, "ABORTED"),
+    );
+    vi.mocked(api.projects.trash).mockResolvedValue([deleted]);
+    const project = makeProject();
+    const setProject = vi.fn();
+    const { result } = renderHook(() =>
+      useTrashManager(project, project.slug, setProject, vi.fn(), vi.fn()),
+    );
+    await act(async () => {
+      await result.current.openTrash();
+    });
+    await act(async () => {
+      await result.current.handleRestore("ch-aborted");
+    });
+
+    expect(result.current.actionError).toBeNull();
+    expect(setProject).not.toHaveBeenCalled();
+    // Aborted superseded restore must not pollute the console.
+    expect(errorSpy).not.toHaveBeenCalledWith("Failed to restore chapter:", expect.anything());
+  });
+
   it("seeds confirmed-status cache for the restored chapter (C2 2026-04-25)", async () => {
     // Restored chapters land in project state via setProject(prev =>
     // …). Without seeding the confirmed-status cache, a later status
