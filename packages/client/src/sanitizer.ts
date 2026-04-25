@@ -46,7 +46,11 @@ const ALLOWED_TAGS = [
   "img",
 ];
 
-const ALLOWED_ATTR = ["src", "alt"];
+// S3 (review 2026-04-25): exported so a regression test can pin the exact
+// shape. The URI-validation hook below only inspects src/href/xlink:href —
+// adding any other URI-bearing attribute (srcset, longdesc) would let a
+// hostile URI through without going through ALLOWED_URI_REGEXP.
+export const ALLOWED_ATTR = ["src", "alt"];
 
 // I14 (review 2026-04-25): pin every URI-bearing attribute to Smudge's
 // own image endpoint. The regex below rejects data:, javascript:, vbscript:,

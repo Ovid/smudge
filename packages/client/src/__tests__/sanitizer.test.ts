@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import DOMPurify from "dompurify";
-import { sanitizeEditorHtml } from "../sanitizer";
+import { sanitizeEditorHtml, ALLOWED_ATTR } from "../sanitizer";
 
 // I18 (review 2026-04-24): sanitizer is the app's defense-in-depth
 // against hostile backup / snapshot / server payloads. Without
@@ -154,6 +154,17 @@ describe("sanitizeEditorHtml", () => {
     const out = sanitizeEditorHtml(input);
     expect(out).not.toContain("<base");
     expect(out).not.toContain("evil.example");
+  });
+
+  // S3 (review 2026-04-25): pin ALLOWED_ATTR's exact shape so a future
+  // widening (e.g. adding `srcset`, `href`, `title`) is caught at test
+  // time. The URI-validation hook in sanitizer.ts only inspects src,
+  // href, and xlink:href — adding any other URI-bearing attribute to
+  // ALLOWED_ATTR would let a hostile URI through without going through
+  // ALLOWED_URI_REGEXP. This test fails if ALLOWED_ATTR drifts from the
+  // declared contract; intentional widening must update both.
+  it("pins ALLOWED_ATTR to exactly ['src', 'alt'] (S3)", () => {
+    expect(ALLOWED_ATTR).toEqual(["src", "alt"]);
   });
 
   // S2 (review 2026-04-25): the URI-validation hook must live on a private
