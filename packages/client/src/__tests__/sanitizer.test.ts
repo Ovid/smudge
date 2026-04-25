@@ -110,4 +110,10 @@ describe("sanitizeEditorHtml", () => {
     const out = sanitizeEditorHtml(malicious);
     expect(out).not.toContain("data:");
   });
+
+  it("rejects http(s) URIs not under /api/images/ in img src (I14)", () => {
+    const input = `<img src="http://example.com/x.png" alt="x">`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).not.toContain("example.com");
+  });
 });
