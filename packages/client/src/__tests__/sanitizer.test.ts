@@ -30,6 +30,7 @@ describe("sanitizeEditorHtml", () => {
   it("strips javascript: URIs from img src", () => {
     const input = `<img src="javascript:alert(1)" alt="x">`;
     const out = sanitizeEditorHtml(input);
+    expect(out).not.toMatch(/<img[^>]*\bsrc=/i);
     expect(out).not.toMatch(/javascript:/i);
   });
 
@@ -106,15 +107,22 @@ describe("sanitizeEditorHtml", () => {
     expect(sanitizeEditorHtml("")).toBe("");
   });
 
+  // S5 (review 2026-04-25): the regex `not.toMatch(/<img[^>]*\bsrc=/i)` is
+  // strictly stronger than substring assertions because it also catches
+  // partially-stripped attributes (e.g. an empty `src=""` survivor or a
+  // residual `src` with a different hostile value). Mirrors the e2e
+  // assertion in sanitizer-snapshot-blob.spec.ts.
   it("rejects data: URIs in img src (XSS vector — I14)", () => {
     const malicious = `<img src="data:image/svg+xml;base64,PHN2Zy8+" alt="x">`;
     const out = sanitizeEditorHtml(malicious);
+    expect(out).not.toMatch(/<img[^>]*\bsrc=/i);
     expect(out).not.toContain("data:");
   });
 
   it("rejects http(s) URIs not under /api/images/ in img src (I14)", () => {
     const input = `<img src="http://example.com/x.png" alt="x">`;
     const out = sanitizeEditorHtml(input);
+    expect(out).not.toMatch(/<img[^>]*\bsrc=/i);
     expect(out).not.toContain("example.com");
   });
 
