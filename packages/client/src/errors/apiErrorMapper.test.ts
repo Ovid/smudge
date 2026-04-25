@@ -467,6 +467,29 @@ describe("SCOPES — image.delete extrasFrom", () => {
       chapters: [{ title: "ok" }, { title: "also ok" }],
     });
   });
+  // S21 (review 2026-04-25): bound chapters list against a hostile/malformed
+  // server response so the UI cannot be blown up by an oversized payload or
+  // very long titles.
+  it("caps chapters at 50 entries (S21)", () => {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: Array.from({ length: 200 }, (_, i) => ({
+        id: `c-${i}`,
+        title: `t-${i}`,
+      })),
+    });
+    const extras = resolveError(err, scope).extras as { chapters: unknown[] };
+    expect(extras.chapters).toHaveLength(50);
+  });
+  it("truncates per-title to 200 chars (S21)", () => {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: [{ id: "c-1", title: "x".repeat(500) }],
+    });
+    const extras = resolveError(err, scope).extras as {
+      chapters: Array<{ id: string; title: string }>;
+    };
+    expect(extras.chapters[0].title).toHaveLength(200);
+    expect(extras.chapters[0].id).toBe("c-1");
+  });
 });
 
 describe("SCOPES — snapshot.restore", () => {

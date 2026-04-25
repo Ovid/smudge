@@ -192,17 +192,29 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     // {title: string; trashed?: boolean} — a hostile or malformed
     // envelope with array-but-wrong-shape elements would otherwise slip
     // through this narrowing and propagate to the UI via cast.
+    // S21 (security review): bound the list against a hostile or malformed
+    // server payload — cap at 50 entries and truncate each title at 200
+    // chars so a runaway response cannot blow up the UI. Truncation is
+    // silent by design; preserves all-or-nothing semantic on per-element
+    // shape validation (subset-return is a separate item).
     extrasFrom: (err: ApiRequestError) => {
       const chapters = (err.extras as { chapters?: unknown } | undefined)?.chapters;
       if (!Array.isArray(chapters)) return undefined;
-      const valid = chapters.filter((c): c is { title: string; trashed?: boolean } => {
-        if (!c || typeof c !== "object") return false;
-        const obj = c as Record<string, unknown>;
-        if (typeof obj.title !== "string") return false;
-        if (obj.trashed !== undefined && typeof obj.trashed !== "boolean") return false;
-        return true;
-      });
-      return valid.length === chapters.length ? { chapters: valid } : undefined;
+      const bounded = chapters.slice(0, 50);
+      const valid = bounded
+        .filter((c): c is { title: string; trashed?: boolean } => {
+          if (!c || typeof c !== "object") return false;
+          const obj = c as Record<string, unknown>;
+          if (typeof obj.title !== "string") return false;
+          if (obj.trashed !== undefined && typeof obj.trashed !== "boolean") return false;
+          return true;
+        })
+        .map((c) => {
+          const obj = c as Record<string, unknown>;
+          const title = obj.title as string;
+          return title.length > 200 ? { ...obj, title: title.slice(0, 200) } : c;
+        });
+      return valid.length === bounded.length ? { chapters: valid } : undefined;
     },
   },
   "image.updateMetadata": {
