@@ -1176,6 +1176,14 @@ export function EditorPage() {
   const [imageAnnouncement, setImageAnnouncement] = useState("");
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const imageAnnouncementTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // I11 (review 2026-04-25): the post-update settings GET in
+  // handleProjectSettingsUpdate had no AbortController. Component
+  // unmount (cross-project nav, project delete) between dispatch and
+  // resolve would let setProject / navigate("/") run on a torn-down
+  // hook. Mirror the abort-on-unmount discipline used everywhere else
+  // on this branch — one controller per call, aborted on the next
+  // call AND on unmount.
+  const settingsRefreshAbortRef = useRef<AbortController | null>(null);
   // I8 (review 2026-04-24): shared counter bumped when a paste/drop
   // upload falls into the possiblyCommitted branch; ImageGallery
   // re-fetches its list so a retry sees the already-stored row rather
@@ -1189,6 +1197,10 @@ export function EditorPage() {
       if (imageAnnouncementTimerRef.current) {
         clearTimeout(imageAnnouncementTimerRef.current);
       }
+      // I11 (review 2026-04-25): drop any in-flight settings refresh GET
+      // so the .then/.catch can't fire setProject / navigate("/") on a
+      // torn-down hook.
+      settingsRefreshAbortRef.current?.abort();
     };
   }, []);
 
@@ -1482,9 +1494,15 @@ export function EditorPage() {
     }
     setDashboardRefreshKey((k) => k + 1);
     if (slug) {
+      // I11 (review 2026-04-25): abort prior in-flight refresh and
+      // thread the signal so the .then/.catch can drop on unmount.
+      settingsRefreshAbortRef.current?.abort();
+      const controller = new AbortController();
+      settingsRefreshAbortRef.current = controller;
       api.projects
-        .get(slug)
+        .get(slug, controller.signal)
         .then((data) => {
+          if (controller.signal.aborted) return;
           // S7 (review 2026-04-21): re-check busy before merging. The
           // entry gate above guarantees no mutation was in flight when
           // we dispatched the GET, but a mutation can start during the
@@ -1508,6 +1526,15 @@ export function EditorPage() {
           });
         })
         .catch((err: unknown) => {
+          // I11: drop on unmount or supersession.
+          if (controller.signal.aborted) return;
+          // I12 (review 2026-04-25): mirror the success-path busy gate
+          // in the catch branch. A settings GET that fails while the
+          // editor is mid-mutation would otherwise surface a banner
+          // that fights with the mutation's own UI state. Skip the
+          // banner; a subsequent refresh after the mutation settles
+          // can re-surface a real failure.
+          if (mutation.isBusy() || isActionBusy()) return;
           // 404 after a settings update means the project was deleted
           // (or purged) from another tab/request — refreshing here would
           // leave the user staring at a stale editor with a retry banner
