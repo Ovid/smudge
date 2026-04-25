@@ -372,6 +372,56 @@ describe("ImageGallery", () => {
     });
   });
 
+  it("on 2xx BAD_JSON metadata save, re-fetches gallery and surfaces committed copy (I4 2026-04-25)", async () => {
+    // I4 (review 2026-04-25): handleSave destructured only { message }
+    // from mapApiError. The image.updateMetadata scope declares
+    // committed: STRINGS.error.possiblyCommitted, so a 2xx BAD_JSON
+    // returns possiblyCommitted: true. Without acting on it, the
+    // detail view stayed pinned to pre-save metadata while the server
+    // had the new metadata; a retry could 404 (already committed) and
+    // the user had no path to learn the committed state. Mirror
+    // handleFileSelect's committed branch: bump the refresh key so the
+    // gallery re-fetches authoritative data and announce the committed
+    // copy.
+    const user = userEvent.setup();
+    vi.mocked(api.images.update).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+    await renderAndOpenDetail(makeImage(), user);
+    await waitFor(() => expect(api.images.list).toHaveBeenCalledTimes(1));
+
+    // Edit a field to transition from "saved" to dirty, then save.
+    const altInput = screen.getByLabelText(S.altTextLabel);
+    await user.clear(altInput);
+    await user.type(altInput, "Updated alt");
+    await user.click(screen.getByText(S.saveButton));
+
+    // Gallery re-fetched → list called a second time.
+    await waitFor(() => expect(api.images.list).toHaveBeenCalledTimes(2));
+  });
+
+  it("on 2xx BAD_JSON during handleInsert auto-save, re-fetches gallery and surfaces committed copy (I4 2026-04-25)", async () => {
+    // Same I4 invariant against handleInsert's auto-save-before-insert
+    // branch (also destructured only { message } before the fix).
+    const user = userEvent.setup();
+    const onInsertImage = vi.fn();
+    vi.mocked(api.images.update).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+    await renderAndOpenDetail(makeImage(), user, { onInsertImage });
+    await waitFor(() => expect(api.images.list).toHaveBeenCalledTimes(1));
+
+    // Edit a field so saveStatus !== "saved" → handleInsert's auto-save
+    // branch fires.
+    await user.type(screen.getByLabelText(S.captionLabel), "x");
+    await user.click(screen.getByText(S.insertButton));
+
+    await waitFor(() => expect(api.images.list).toHaveBeenCalledTimes(2));
+    // Insert is skipped because the save returned committed-but-unreadable;
+    // the user must refresh and re-open before inserting.
+    expect(onInsertImage).not.toHaveBeenCalled();
+  });
+
   it("reverts save status to idle on save failure", async () => {
     const user = userEvent.setup();
     vi.mocked(api.images.update).mockRejectedValue(new Error("Save failed"));

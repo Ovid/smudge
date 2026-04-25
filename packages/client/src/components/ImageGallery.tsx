@@ -236,7 +236,20 @@ export function ImageGallery({
     } catch (err: unknown) {
       if (controller.signal.aborted) return;
       setSaveStatus("idle");
-      const { message } = mapApiError(err, "image.updateMetadata");
+      const { message, possiblyCommitted } = mapApiError(err, "image.updateMetadata");
+      // I4 (review 2026-04-25): on 2xx BAD_JSON the server stored the
+      // metadata change but the client couldn't parse the response.
+      // Without the refresh, the detail view stays on the pre-save
+      // values while the server has the new ones; a retry could 404
+      // (the field already committed) and the user has no path to
+      // learn the committed state. Mirror handleFileSelect's committed
+      // branch: bump the refresh key so the gallery re-fetches the
+      // authoritative row, and clear the detail view so the user
+      // re-opens the row (or sees the fresh values on grid hover).
+      if (possiblyCommitted) {
+        incrementRefreshKey();
+        setSelectedImage(null);
+      }
       if (message) announce(message);
     }
   }
@@ -260,7 +273,16 @@ export function ImageGallery({
       } catch (err: unknown) {
         if (controller.signal.aborted) return;
         setSaveStatus("idle");
-        const { message } = mapApiError(err, "image.updateMetadata");
+        const { message, possiblyCommitted } = mapApiError(err, "image.updateMetadata");
+        // I4 (review 2026-04-25): same possiblyCommitted handling as
+        // handleSave. The server stored the metadata but the client
+        // can't see it; the in-progress insert must abort because
+        // imageToInsert still carries the pre-save values, which
+        // would render with stale alt-text in the chapter.
+        if (possiblyCommitted) {
+          incrementRefreshKey();
+          setSelectedImage(null);
+        }
         if (message) announce(message);
         return;
       }
