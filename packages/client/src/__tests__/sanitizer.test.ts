@@ -104,4 +104,10 @@ describe("sanitizeEditorHtml", () => {
   it("handles empty string without throwing", () => {
     expect(sanitizeEditorHtml("")).toBe("");
   });
+
+  it("rejects data: URIs in img src (XSS vector — I14)", () => {
+    const malicious = `<img src="data:image/svg+xml;base64,PHN2Zy8+" alt="x">`;
+    const out = sanitizeEditorHtml(malicious);
+    expect(out).not.toContain("data:");
+  });
 });

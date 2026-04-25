@@ -37,6 +37,36 @@ const ALLOWED_TAGS = [
 
 const ALLOWED_ATTR = ["src", "alt"];
 
+// I14 (review 2026-04-25): pin every URI-bearing attribute to Smudge's
+// own image endpoint. The regex below rejects data:, javascript:, vbscript:,
+// http(s): externals, and anything else that isn't a relative
+// `/api/images/...` path. We pass it as DOMPurify's ALLOWED_URI_REGEXP
+// option for defense in depth.
+const ALLOWED_URI_REGEXP = /^\/api\/images\//i;
+
+// I14 (review 2026-04-25): DOMPurify 3.x ships a hardcoded DATA_URI_TAGS
+// carve-out (img/audio/video/source/track) that lets `data:` URIs through
+// `<img src>` even when ALLOWED_URI_REGEXP would otherwise reject them.
+// This hook closes that carve-out by dropping any src/href/xlink:href whose
+// value does not match ALLOWED_URI_REGEXP. Registered once at module load
+// (ES module evaluation is cached, so the singleton picks it up exactly once).
+DOMPurify.addHook("uponSanitizeAttribute", (_node, data) => {
+  if (
+    data.attrName !== "src" &&
+    data.attrName !== "href" &&
+    data.attrName !== "xlink:href"
+  ) {
+    return;
+  }
+  if (!ALLOWED_URI_REGEXP.test(data.attrValue)) {
+    data.keepAttr = false;
+  }
+});
+
 export function sanitizeEditorHtml(html: string): string {
-  return DOMPurify.sanitize(html, { ALLOWED_TAGS, ALLOWED_ATTR });
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS,
+    ALLOWED_ATTR,
+    ALLOWED_URI_REGEXP,
+  });
 }
