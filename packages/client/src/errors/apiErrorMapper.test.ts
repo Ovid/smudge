@@ -437,7 +437,7 @@ describe("SCOPES — image.delete extrasFrom", () => {
       chapters: [{ id: "c1", title: "Chapter 1" }],
     });
     expect(resolveError(err, scope).extras).toEqual({
-      chapters: [{ id: "c1", title: "Chapter 1" }],
+      chapters: [{ title: "Chapter 1" }],
     });
   });
   it("IMAGE_IN_USE with malformed extras → extras undefined", () => {
@@ -486,9 +486,9 @@ describe("SCOPES — image.delete extrasFrom", () => {
       chapters: [{ id: "c-1", title: longTitle }],
     });
     const extras = resolveError(err, scope).extras as {
-      chapters: Array<{ id: string; title: string }>;
+      chapters: Array<{ title: string }>;
     };
-    expect(extras.chapters).toEqual([{ id: "c-1", title: longTitle.slice(0, 200) }]);
+    expect(extras.chapters).toEqual([{ title: longTitle.slice(0, 200) }]);
   });
 
   // I1 (review 2026-04-25): a hostile envelope of [50 valid, 1 invalid]
@@ -526,9 +526,10 @@ describe("SCOPES — image.delete extrasFrom", () => {
     const extras = resolveError(err, scope).extras as {
       chapters: Array<Record<string, unknown>>;
     };
-    expect(extras.chapters).toEqual([{ id: "c1", title: "Chapter 1", trashed: false }]);
+    expect(extras.chapters).toEqual([{ title: "Chapter 1", trashed: false }]);
     expect(extras.chapters[0]).not.toHaveProperty("description");
     expect(extras.chapters[0]).not.toHaveProperty("random");
+    expect(extras.chapters[0]).not.toHaveProperty("id");
   });
 
   // S4 (review 2026-04-25): a naive `title.slice(0, 200)` operates on
@@ -553,6 +554,37 @@ describe("SCOPES — image.delete extrasFrom", () => {
   it("returns undefined when id is present but not a string (S3)", () => {
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
       chapters: [{ id: 42, title: "ok" }],
+    });
+    expect(resolveError(err, scope).extras).toBeUndefined();
+  });
+
+  // I1 + S2 (review 2026-04-25): `id` is dead plumbing — ImageGallery only
+  // reads `title` and `trashed`. Leaving `id` in the output left an
+  // unbounded copy-through that bypassed the S21 "30KB max" intent (a
+  // hostile envelope of 50 entries × 1MB ids = ~50MB extras). Drop `id`
+  // entirely from the output shape; the S3 input-side rejection above
+  // still guards against wrong-type `id` for defense-in-depth.
+  it("strips id from chapter entries (I1, S2)", () => {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: [{ id: "c1", title: "Chapter 1", trashed: false }],
+    });
+    const extras = resolveError(err, scope).extras as {
+      chapters: Array<Record<string, unknown>>;
+    };
+    expect(extras.chapters).toEqual([{ title: "Chapter 1", trashed: false }]);
+    expect(extras.chapters[0]).not.toHaveProperty("id");
+  });
+
+  // I2 (review 2026-04-25): an empty `chapters: []` envelope passes
+  // shape narrowing (`Array.isArray` is true, `valid.length ===
+  // chapters.length` is `0 === 0`) but produces a malformed
+  // `S.deleteBlocked([])` announcement ("This image is used in: .
+  // Remove..."). Server contract only emits the envelope when
+  // `referencingChapters.length > 0`, so this is hostile/malformed
+  // territory — but the validator is the right place to reject it.
+  it("returns undefined for empty chapters array (I2)", () => {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: [],
     });
     expect(resolveError(err, scope).extras).toBeUndefined();
   });
