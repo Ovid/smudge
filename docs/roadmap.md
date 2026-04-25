@@ -31,6 +31,7 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.1 | Editor Orchestration Helper | Extract shared save-flush/markClean/setEditable/reload shape into one helper | Done |
 | 4b.2 | Abortable Sequence Hook | Unify ad-hoc seq-refs into a single `useAbortableSequence()` primitive | Done |
 | 4b.3 | Unified API Error Mapper | Single module mapping API errors to UI strings; no raw server text in UI | In Progress |
+| 4b.3a | 4b.3 Review Follow-ups | Validated-but-unfixed items from the 4b.3 code review (scope coverage, abort discipline, sanitizer, recovery completeness) | Planned |
 | 4b.4 | Raw-Strings ESLint Rule | Enforce strings.ts externalization via lint; fix existing violations | Planned |
 | 4b.5 | Editor State Machine | Unify `editable`/`locked`/`busy` editor state into one machine; add `committed_but_unreloaded` mutation stage for ambiguous server responses | Planned |
 | 4c | Notes, Tags & Outtakes | Inline notes, paragraph tags, scratchpad for cut text | Planned |
@@ -661,6 +662,92 @@ One module responsible for all API-error-to-UI-string mapping in the client. All
 ### Dependencies
 
 - Phase 4b (merged 2026-04-19). Independent of 4b.1 and 4b.2.
+
+---
+
+## Phase 4b.3a: 4b.3 Review Follow-ups
+
+### Goal
+
+Address the validated-but-unfixed items from the Phase 4b.3 code review (`paad/code-reviews/ovid-unified-error-mapper-2026-04-25-10-32-46-a68afd1.md`). [I13] was fixed on the 4b.3 branch (commit `3a3728f`); the items below were verified as real problems but were out of scope for the narrow review-comment fix.
+
+### Why Now
+
+Each cluster below is a coherent follow-up to 4b.3. Letting them rot risks the same drift the unified-error-mapper migration was meant to eliminate (consumer-ladder duplication, partial abort discipline, generic copy where specific copy is owed). Landing them before Phase 4b.4 also ensures the raw-strings ESLint rule has a clean baseline (no scope-coverage gaps that would be papered over by lint noise).
+
+### Scope
+
+Each cluster is a separate PR per the CLAUDE.md one-feature rule. The phase closes when every cluster has merged.
+
+**Cluster A — Scope-coverage gaps (`packages/client/src/errors/scopes.ts`)**
+
+- [I1] `chapter.reorder` missing `byCode: { REORDER_MISMATCH: ... }`. Server emits this from `packages/server/src/projects/projects.routes.ts:132`; users currently see the generic reorder fallback.
+- [I2] `chapter.save` lacks both a `network:` field and a `byStatus: { 404: ... }` entry. Save-failure copy currently misleads when a chapter is soft-deleted in another tab.
+- [S1] `trash.restoreChapter` lacks `byStatus: { 404: ... }` for hard-purged rows.
+
+**Cluster B — AbortSignal API surface (`packages/client/src/api/client.ts`) + call-site threading**
+
+- [I7] `api.projects.create` and `api.projects.delete` don't accept `signal?: AbortSignal`. Required to finish the [I13] fix on the create POST itself, and to enable abortable delete from `HomePage`.
+- [I8] `api.chapters.create` doesn't accept signal. Caller `useProjectEditor.handleCreateChapter` already does abort discipline elsewhere; the create POST itself remains uncancellable.
+- [I9] `api.chapterStatuses.list` doesn't accept signal. `EditorPage` retry-with-backoff currently uses a `cancelled` flag.
+- [I6] `Editor.tsx` paste/drop image upload doesn't thread a signal (`Editor.tsx:281`).
+- [I10] `loadProject` uses `cancelled` flag instead of AbortController (`useProjectEditor.ts:198`); both `api.projects.get` and `api.chapters.get` skip the signal.
+- [I11] `api.search.replace` issued without signal at `EditorPage.tsx:775,1018`.
+- [I12] `ExportDialog` has no unmount cleanup for in-flight export blob (`ExportDialog.tsx:38`).
+- [S12] `api.chapters.get` skipped at `useProjectEditor.ts:239,635,688` (partial migration — `handleDeleteChapter` does pass it).
+
+**Cluster C — Consumer recovery completeness**
+
+- [I3] `snapshot.create` declares `committed:` but `SnapshotPanel.tsx:305` only destructures `{ message }`; the `possiblyCommitted` flag is dropped.
+- [I4] `useTrashManager.handleRestore` possiblyCommitted only filters from the trash list; doesn't refresh `project.chapters` or re-seed `confirmedStatusRef`.
+- [I5] `useTrashManager.confirmDeleteChapter` silently dismisses the dialog on unexpected throw.
+- [S3]/[S7] `chapter.save` non-2xx BAD_JSON locks editor with generic copy; move dispatch into the scope.
+- [S4] `handleStatusChange` possiblyCommitted drops message when caller omits `onError`.
+- [S5] `restoreSnapshot` synthesizes 200 BAD_JSON for ALL non-`ApiRequestError` throws; needs a `dispatched` flag.
+- [S8] `image.delete` `extrasFrom` returns `undefined` when any chapter element is malformed; should return the valid subset.
+- [S10] Silent recovery-catches in `handleStatusChange:1079` and `handleCreateChapter:604` hide observability; add dev-only `console.warn` gated on `!signal.aborted`.
+- [S11] `chapter.create` 404 surfaces correct copy but no UI affordance navigates; gate `isNotFound(err)` and call `navigate("/")`.
+- [S15] Consumer-ladder duplication of `if (message === null) return; if (message) setX(message)` 30+ times — extract `applyMappedError` helper.
+- [S16] `handleSelectChapterWithFlush` uses `chapter.load` scope for flush failure; add `chapter.flushBeforeNavigate`.
+- [S17] `createRecoveryAbortRef` not nulled on success; latent staleness.
+- [S18] `Editor.tsx` paste upload announcement fires on cross-chapter switch within same project.
+- [S19] `useSnapshotState.viewSnapshot` `viewAbortRef` not nulled on success.
+- [S20] `handleReorderChapters` possiblyCommitted branch lacks epoch re-check before `setProject`.
+
+**Cluster D — Sanitizer hardening (`packages/client/src/sanitizer.ts`)**
+
+- [I14] `ALLOWED_URI_REGEXP` not pinned. DOMPurify's default permits `data:` URIs in `img` tags; the only legitimate `<img src>` value in Smudge is `/api/images/{uuid}`. Add `const ALLOWED_URI_REGEXP = /^\/api\/images\//i;` and a regression test covering `data:image/svg+xml;…` and `javascript:`.
+- [S21] `extrasFrom` validates `chapters[].title` is string but not bounded; cap entries and per-title length.
+
+**Cluster E — Mapper internals & duplication**
+
+- [S2] CLAUDE.md "Unified API error mapping" doesn't describe the `committedCodes` extension; update the doc.
+- [S6] `import.meta.env?.DEV` access can throw in some test environments — `safeExtrasFrom`'s must-never-throw guard is inverted by its own dev-log; wrap dev-log in try/catch.
+- [S9] `ImageGallery` casts `extras.chapters` bypassing the mapper's narrowed shape; introduce `ScopeExtras<S>` type.
+- [S13] `confirmDeleteChapter` duplicates `openTrash` body; extract `refreshTrashList()` or call `openTrash()` directly.
+- [S14] `SnapshotPanel` mount effect duplicates `fetchSnapshots`.
+- [S22]/[S23] PR-shape transparency: `vitest.config.ts` worker cap and ESLint sequence-rule test infra adjustments need either justification in PR description or splitting.
+
+**Cluster F — PR-shape retrospective (meta)**
+
+- [I15] One-feature rule violation in 4b.3: sanitizer hardening + CONTRIBUTING.md + Node-engines pin were bundled with the error-mapper migration. Decide: retro-split, or accept and document as a learned exception. If the sanitizer + dev-environment housekeeping are kept as part of the codebase without a phase, add one to this roadmap.
+
+### Out of Scope
+
+- Phase 4b.4 work (raw-strings ESLint rule). 4b.4 may land in parallel; clusters above do not block it and it does not block them.
+- New API error codes or HTTP status codes (allowlist stays per CLAUDE.md §API Design).
+- Behavior changes visible to the user beyond fixing the misleading copy in [I1]/[I2].
+
+### Definition of Done
+
+- Each of clusters A–F has either landed (linked PR + commit on this branch) or been explicitly deferred via an updated entry in this section noting the destination phase.
+- No regression in test coverage; new tests added for every fix per CLAUDE.md §Testing Philosophy.
+- `make all` green at the close of each cluster's PR.
+
+### Dependencies
+
+- Phase 4b.3 (Unified API Error Mapper) merged. Cluster B's call-site threading depends on the [I13] `handleCreate` recovery fix (landed in 4b.3 commit `3a3728f`).
+- Independent of Phase 4b.4; may land before, after, or interleaved.
 
 ---
 
