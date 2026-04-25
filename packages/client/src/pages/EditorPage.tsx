@@ -532,7 +532,14 @@ export function EditorPage() {
           clearCachedContent(activeChapter.id);
           const currentId = getActiveChapter()?.id;
           if (currentId !== undefined && currentId !== activeChapter.id) {
-            setActionError(message);
+            // I6 (review 2026-04-25): the user is no longer on the
+            // chapter the restore targeted. The mapped message is
+            // chapter-agnostic ("the restore was committed; refresh"),
+            // which the user can mistakenly attribute to the chapter
+            // they're now looking at and refresh against the wrong
+            // context. Override with a chapter-attributed string so
+            // the banner identifies which chapter's state is unverified.
+            setActionError(STRINGS.snapshots.restoreResponseUnreadableOnOtherChapter(activeChapter.title));
             // I4 (review 2026-04-21): leave snapshot view — the banner
             // that prompted this restore is still pointing at a chapter
             // the user has navigated away from. Without this, Restore

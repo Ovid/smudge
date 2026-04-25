@@ -402,6 +402,14 @@ export const STRINGS = {
       "Snapshot restored, but reloading the chapter failed. Refresh the page before editing — editing now would overwrite the restore.",
     restoreResponseUnreadable:
       "The restore may have completed, but the server response was unreadable. Refresh the page to see the current state — editing now could overwrite the restored content.",
+    // I6 (review 2026-04-25): chapter-attributed copy for the case
+    // where the user has navigated away from the chapter the restore
+    // targeted. Without naming the originating chapter, the banner
+    // looked like it referred to the chapter the user is now reading;
+    // they would refresh against the wrong context and lose track of
+    // which chapter has unverified state.
+    restoreResponseUnreadableOnOtherChapter: (chapterTitle: string) =>
+      `The restore of "${chapterTitle}" may have completed, but the server response was unreadable. Switch back to that chapter and refresh the page before editing it — editing now could overwrite the restored content.`,
     renderError: "Unable to render snapshot content",
     backToEditing: "Back to editing",
     viewingBanner: (label: string, date: string) => `Viewing snapshot: ${label} — ${date}`,
