@@ -100,6 +100,7 @@ export function EditorPage() {
     handleStatusChange,
     getActiveChapter,
     cancelPendingSaves,
+    seedConfirmedStatus,
   } = useProjectEditor(slug, {
     // I2: route terminal save-fail codes through the invariant-pair
     // helper so the banner and setEditable(false) stay in lock-step.
@@ -137,7 +138,12 @@ export function EditorPage() {
     openTrash,
     handleRestore,
     confirmDeleteChapter,
-  } = useTrashManager(project, slug, setProject, handleDeleteChapter, navigate);
+  } = useTrashManager(project, slug, setProject, handleDeleteChapter, navigate, {
+    // C2 (review 2026-04-25): a chapter restored from trash needs a
+    // baseline in the confirmed-status cache so a later status PATCH
+    // double-failure can fall back to a real value rather than skipping.
+    seedConfirmedStatus,
+  });
 
   // Refs on the toolbar buttons so each panel can return focus to its
   // trigger when closed via Escape (WCAG focus management).

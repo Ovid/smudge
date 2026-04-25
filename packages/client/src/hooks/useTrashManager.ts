@@ -3,13 +3,25 @@ import type { Chapter, ProjectWithChapters } from "@smudge/shared";
 import { api } from "../api/client";
 import { mapApiError } from "../errors";
 
+export interface UseTrashManagerOptions {
+  // C2 (review 2026-04-25): wire through to useProjectEditor's
+  // seedConfirmedStatus so a chapter restored via this hook seeds the
+  // cache that handleStatusChange's local-revert fallback reads. Without
+  // it, a later status PATCH on the restored row double-failing would
+  // skip the local revert and leave the optimistic status on screen.
+  seedConfirmedStatus?: (id: string, status: string) => void;
+}
+
 export function useTrashManager(
   project: ProjectWithChapters | null,
   slug: string | undefined,
   setProject: (updater: (prev: ProjectWithChapters | null) => ProjectWithChapters | null) => void,
   handleDeleteChapter: (chapter: Chapter, onError?: (message: string) => void) => Promise<boolean>,
   navigate: (path: string, options?: { replace: boolean }) => void,
+  options?: UseTrashManagerOptions,
 ) {
+  const seedConfirmedStatusRef = useRef(options?.seedConfirmedStatus);
+  seedConfirmedStatusRef.current = options?.seedConfirmedStatus;
   const [trashOpen, setTrashOpen] = useState(false);
   const [trashedChapters, setTrashedChapters] = useState<Chapter[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<Chapter | null>(null);
@@ -64,6 +76,11 @@ export function useTrashManager(
           }
           return updatedProject;
         });
+        // C2 (review 2026-04-25): seed the confirmed-status cache for
+        // the restored chapter so a later status PATCH that double-fails
+        // (PATCH + recovery GET) can fall back to the actual server-truth
+        // baseline rather than silently skipping the revert.
+        seedConfirmedStatusRef.current?.(restored.id, restored.status);
         // If the slug changed (project was also restored), update the URL
         if (restored.project_slug && restored.project_slug !== slug) {
           navigate(`/projects/${restored.project_slug}`, { replace: true });

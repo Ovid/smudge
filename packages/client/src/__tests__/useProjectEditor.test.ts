@@ -2338,6 +2338,108 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("seeds confirmedStatusRef for newly-created chapters so a later revert can find a baseline (C2 2026-04-25)", async () => {
+    // confirmedStatusRef is consulted by handleStatusChange's local-revert
+    // fallback when both the PATCH and the recovery GET fail. Before the
+    // fix, the ref was only seeded inside loadProject's success path —
+    // newly-created chapters never seeded a baseline, so the fallback at
+    //   if (!reverted && previousStatus !== undefined) { ... }
+    // silently skipped, leaving the optimistic status on screen even
+    // though the server never accepted it.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const newChapter = {
+      id: "ch3",
+      project_id: "p1",
+      title: UNTITLED_CHAPTER,
+      content: null,
+      sort_order: 2,
+      word_count: 0,
+      status: "outline" as const,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+      deleted_at: null,
+    };
+    vi.mocked(api.chapters.create).mockResolvedValue(newChapter);
+    // PATCH rejects with bare 5xx → walks the local-revert fallback
+    // (non-committed code, no possiblyCommitted shortcut).
+    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("server error", 500));
+    // Recovery GET rejects so the surgical-revert branch falls through
+    // to the local-revert branch that reads previousStatus from the
+    // confirmed-status cache.
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject)
+      .mockRejectedValueOnce(new Error("get boom"));
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleCreateChapter();
+    });
+    expect(result.current.project?.chapters.find((c) => c.id === "ch3")).toBeDefined();
+
+    await act(async () => {
+      await result.current.handleStatusChange("ch3", "drafting");
+    });
+
+    // After the double-failure, the optimistic "drafting" must be
+    // reverted to the seeded baseline ("outline") rather than left
+    // on screen — the server never accepted "drafting".
+    const ch3 = result.current.project?.chapters.find((c) => c.id === "ch3");
+    expect(ch3?.status).toBe("outline");
+    warnSpy.mockRestore();
+  });
+
+  it("seeds confirmedStatusRef for chapters created via the BAD_JSON recovery path (C2 2026-04-25)", async () => {
+    // Same invariant as above, but the chapter arrives via
+    // handleCreateChapter's possiblyCommitted recovery branch (the
+    // setActiveChapter(newest) path). Before the fix, the recovery
+    // branch only setProject(refreshed) — confirmedStatusRef was
+    // never seeded, so a later status revert would read undefined.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const newChapter = {
+      id: "ch3",
+      project_id: "p1",
+      title: UNTITLED_CHAPTER,
+      content: null,
+      sort_order: 2,
+      word_count: 0,
+      status: "revised" as const,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+      deleted_at: null,
+    };
+    const refreshedProject = { ...mockProject, chapters: [mockChapter1, mockChapter2, newChapter] };
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError("bad json", 200, "BAD_JSON"),
+    );
+    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("server error", 500));
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject)
+      .mockResolvedValueOnce(refreshedProject)
+      .mockRejectedValueOnce(new Error("get boom"));
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleCreateChapter();
+    });
+    expect(result.current.project?.chapters.find((c) => c.id === "ch3")).toBeDefined();
+
+    await act(async () => {
+      await result.current.handleStatusChange("ch3", "drafting");
+    });
+
+    // The recovery-path-seeded baseline ("revised") restores after
+    // the double-failure revert.
+    const ch3 = result.current.project?.chapters.find((c) => c.id === "ch3");
+    expect(ch3?.status).toBe("revised");
+    warnSpy.mockRestore();
+  });
+
   it("create-recovery is not aborted by a sibling status-revert recovery (C1 2026-04-25)", async () => {
     // Before the fix, handleCreateChapter, handleStatusChange and
     // handleUpdateProjectTitle all wrote their recovery AbortController

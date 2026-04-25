@@ -181,6 +181,45 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     expect(errorSpy).not.toHaveBeenCalledWith("Failed to load trash:", expect.anything());
   });
 
+  it("seeds confirmed-status cache for the restored chapter (C2 2026-04-25)", async () => {
+    // Restored chapters land in project state via setProject(prev =>
+    // …). Without seeding the confirmed-status cache, a later status
+    // PATCH on this chapter that double-fails (PATCH + recovery GET)
+    // reads previousStatus = undefined and silently skips the local
+    // revert, leaving the optimistic status on screen even though the
+    // server never accepted it. The hook accepts an optional
+    // seedConfirmedStatus callback so EditorPage can wire it through
+    // to useProjectEditor's seeder.
+    const restored = makeChapter({ id: "ch-restored", status: "drafting" });
+    const project = makeProject();
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    const handleDeleteChapter = vi.fn();
+    const seedConfirmedStatus = vi.fn();
+
+    vi.mocked(api.chapters.restore).mockResolvedValue({
+      ...restored,
+      project_slug: project.slug,
+    });
+    vi.mocked(api.projects.trash).mockResolvedValue([restored]);
+
+    const { result } = renderHook(() =>
+      useTrashManager(project, project.slug, setProject, handleDeleteChapter, navigate, {
+        seedConfirmedStatus,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.openTrash();
+    });
+
+    await act(async () => {
+      await result.current.handleRestore("ch-restored");
+    });
+
+    expect(seedConfirmedStatus).toHaveBeenCalledWith("ch-restored", "drafting");
+  });
+
   it("on PROJECT_PURGED (non-committed failure), keeps the chapter in trash and shows error", async () => {
     // Regression guard: non-committed errors keep the chapter visible in
     // the trash list so the user can try a different action — only the

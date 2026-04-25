@@ -508,6 +508,14 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         setActiveChapter(newChapter);
         setChapterWordCount(0);
         setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
+        // C2 (review 2026-04-25): seed the confirmed-status cache for the
+        // newly-inserted row. Without this, a later status PATCH on this
+        // chapter that fails (PATCH + recovery GET both failing) reads
+        // previousStatus = undefined and silently skips the local-revert
+        // fallback at line "if (!reverted && previousStatus !== undefined)",
+        // leaving the optimistic status on screen even though the server
+        // never accepted it. Mirrors loadProject's seed.
+        confirmedStatusRef.current[newChapter.id] = newChapter.status;
       } catch (err) {
         console.warn("Failed to create chapter:", err);
         if (projectRef.current?.id !== projectId) return;
@@ -560,6 +568,17 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             // slug, making the OR evaluate true).
             if (projectRef.current?.id === projectId) {
               setProject(refreshed);
+              // C2 (review 2026-04-25): re-seed the confirmed-status cache
+              // from the refreshed project. The recovery branch is a fresh
+              // server snapshot, so it carries the authoritative status
+              // for every chapter — same discipline as loadProject's seed.
+              // Without this, the newly-created chapter (and any other row
+              // whose status changed server-side between initial load and
+              // recovery) has no cache entry, and a later revert silently
+              // skips.
+              confirmedStatusRef.current = Object.fromEntries(
+                refreshed.chapters.map((c) => [c.id, c.status]),
+              );
               const added = refreshed.chapters.filter((c) => !previousChapterIds.has(c.id));
               if (added.length > 0) {
                 // Pick the highest sort_order: the server appends new
@@ -1142,6 +1161,15 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
     handleUpdateProjectTitle,
     handleRenameChapter,
     handleStatusChange,
+    // C2 (review 2026-04-25): sibling hooks (useTrashManager) that
+    // insert rows into project state must seed the confirmed-status
+    // cache so a later status PATCH on those rows can fall back to a
+    // baseline if both the PATCH and the recovery GET fail. Exposed as
+    // a function rather than the ref itself so call sites cannot mutate
+    // the cache to arbitrary values — only seed (id, status) pairs.
+    seedConfirmedStatus: (id: string, status: string) => {
+      confirmedStatusRef.current[id] = status;
+    },
     // Getter for reading the current active chapter from inside async
     // callbacks whose closure would otherwise see a stale value.
     getActiveChapter: () => activeChapterRef.current,
