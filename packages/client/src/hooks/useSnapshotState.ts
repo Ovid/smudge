@@ -176,6 +176,14 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   // response. Thread the signal through both calls and abort on
   // unmount so the browser drops them cleanly.
   const restoreAbortRef = useRef<AbortController | null>(null);
+  // I8 (review 2026-04-25): the follow-up snapshot list after a successful
+  // restore must NOT share the restore POST's controller. Sharing meant
+  // a subsequent restore aborted the prior follow-up list (the new
+  // restore re-aborts the same ref), leaving the toolbar badge stale
+  // through rapid restore-then-restore until the next chapter-switch
+  // refetch. Allocating its own controller scopes "latest wins" to the
+  // follow-up list itself, not to the parent restore.
+  const restoreFollowupAbortRef = useRef<AbortController | null>(null);
   // Mirror the current chapterId so async handlers can check the live value
   // against their captured one (needed for A→B→A restore detection).
   const currentChapterIdRef = useRef<string | null>(chapterId);
@@ -382,10 +390,18 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
           // still needs to be keyed to the current chapter epoch so a
           // later switch can discard it.
           const freshToken = chapterSeq.capture();
-          // I3: thread the same restore controller so the follow-up list
-          // is aborted with the parent restore on unmount.
+          // I8 (review 2026-04-25): allocate a separate controller for
+          // the follow-up list. Sharing the restore POST's controller
+          // meant the next restore (which abort()s restoreAbortRef)
+          // also aborted the prior follow-up list, leaving the badge
+          // stale until a chapter-switch refetch. The unmount cleanup
+          // covers this ref too so a torn-down hook drops the list
+          // cleanly.
+          restoreFollowupAbortRef.current?.abort();
+          const followupController = new AbortController();
+          restoreFollowupAbortRef.current = followupController;
           api.snapshots
-            .list(restoringChapterId, controller.signal)
+            .list(restoringChapterId, followupController.signal)
             .then((data) => {
               if (!freshToken.isStale()) setSnapshotCount(data.length);
             })
@@ -450,6 +466,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       viewAbortRef.current?.abort();
       refreshCountAbortRef.current?.abort();
       restoreAbortRef.current?.abort();
+      restoreFollowupAbortRef.current?.abort();
     },
     [],
   );
