@@ -267,8 +267,19 @@ export function Editor({
     const id = editorIdRef.current;
     activeEditorId = id;
     imageUploadHandlers.set(id, async (file: File) => {
+      // I9 (review 2026-04-25): capture the project id at upload-start.
+      // The Editor component does not necessarily remount on cross-project
+      // navigation, so projectIdRef.current can advance during the in-flight
+      // upload. Reading it inside the response handlers fired the gallery
+      // refresh / committed callback against whatever project was active
+      // at response-time — a B-project gallery refresh for an A-project
+      // upload, with the user seeing no evidence and the new image hidden
+      // until they navigate back. Gate the committed callback and the
+      // success announcement on the captured project id still being live.
+      const uploadProjectId = projectIdRef.current;
       try {
-        const image = await api.images.upload(projectIdRef.current, file);
+        const image = await api.images.upload(uploadProjectId, file);
+        if (projectIdRef.current !== uploadProjectId) return;
         if (editor && !editor.isDestroyed) {
           editor
             .chain()
@@ -286,10 +297,17 @@ export function Editor({
         // again (server does not dedupe), creating a second row per
         // intended upload. Fire the shared refresh callback so the
         // authoritative list reloads on the committed branch too.
-        if (possiblyCommitted) {
+        // I9: only fire the gallery-refresh if the user is still on
+        // the project the upload targeted; otherwise we'd refresh a
+        // stale gallery for the wrong project. The image landed
+        // against uploadProjectId; on cross-project nav, the user
+        // will see it the next time they open project A's gallery.
+        if (possiblyCommitted && projectIdRef.current === uploadProjectId) {
           onImageUploadCommittedRef.current?.();
         }
-        if (message) onImageAnnouncementRef.current?.(message);
+        if (message && projectIdRef.current === uploadProjectId) {
+          onImageAnnouncementRef.current?.(message);
+        }
       }
     });
     return () => {
