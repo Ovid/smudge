@@ -197,6 +197,16 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
 
   useEffect(() => {
     let cancelled = false;
+    // I7 (review 2026-04-25): reset the confirmed-status cache at the
+    // start of every loadProject. The hook persists across slug changes
+    // (refs survive), so on a failed loadProject (network, 5xx) the
+    // ref retained the previous project's status table and a status
+    // revert on the new (partially-rendered) project would read against
+    // the wrong baseline. Resetting up-front guarantees the cache only
+    // ever holds the current project's state — the success branch
+    // re-seeds from the fresh server snapshot below, and a failure
+    // leaves the cache empty (correct: there's no project to revert).
+    confirmedStatusRef.current = {};
 
     async function loadProject() {
       if (!slug) return;

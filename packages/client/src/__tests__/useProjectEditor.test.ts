@@ -2449,6 +2449,52 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("resets confirmedStatusRef when loadProject fires (I7 2026-04-25)", async () => {
+    // I7: the hook persists across slug changes (refs survive). On a
+    // failed loadProject, the prior project's confirmed-status cache
+    // would otherwise persist, and a later status revert against the
+    // partially-rendered new project would read the wrong baseline.
+    // Reset the cache up-front so it only ever holds the current
+    // project's state. This test covers the invariant by chaining:
+    // (1) seed via initial load, (2) overwrite via successful PATCH,
+    // (3) switch to a slug whose load fails, (4) trigger a revert path
+    // and verify the local-revert fallback skips (cache empty →
+    // previousStatus undefined → optimistic value remains).
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load: p1 with ch1=outline
+      .mockRejectedValueOnce(new Error("p2 load boom")) // p2 load fails
+      .mockRejectedValueOnce(new Error("revert recovery boom")); // status revert recovery
+
+    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("server error", 500));
+
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+    // Cache seeded: ch1=outline.
+
+    // Switch to other-project; its load fails. project state stays at p1.
+    rerender({ slug: "other-project" });
+    await waitFor(() => expect(api.projects.get).toHaveBeenCalledTimes(2));
+
+    // Trigger a status PATCH on ch1 (still rendered from p1's state).
+    // PATCH fails, recovery GET fails, falls through to local-revert.
+    // Without I7: cache returns "outline", revert lands on "outline".
+    // With I7: cache was wiped at the second loadProject's start, so
+    // previousStatus is undefined, the local-revert fallback skips,
+    // and the optimistic "revised" remains on screen.
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "revised");
+    });
+
+    const ch1 = result.current.project?.chapters.find((c) => c.id === "ch1");
+    expect(ch1?.status).toBe("revised");
+    warnSpy.mockRestore();
+  });
+
   it("seeds confirmedStatusRef for chapters created via the BAD_JSON recovery path (C2 2026-04-25)", async () => {
     // Same invariant as above, but the chapter arrives via
     // handleCreateChapter's possiblyCommitted recovery branch (the
