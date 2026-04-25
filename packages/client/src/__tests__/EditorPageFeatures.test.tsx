@@ -356,7 +356,7 @@ describe("EditorPage trash view", () => {
     await userEvent.click(screen.getByText("Restore"));
 
     await waitFor(() => {
-      expect(api.chapters.restore).toHaveBeenCalledWith("ch-trashed");
+      expect(api.chapters.restore).toHaveBeenCalledWith("ch-trashed", expect.any(AbortSignal));
     });
   });
 
@@ -567,7 +567,7 @@ describe("EditorPage restore with slug change", () => {
     await userEvent.click(screen.getByText("Restore"));
 
     await waitFor(() => {
-      expect(api.chapters.restore).toHaveBeenCalledWith("ch-trashed");
+      expect(api.chapters.restore).toHaveBeenCalledWith("ch-trashed", expect.any(AbortSignal));
     });
   });
 
