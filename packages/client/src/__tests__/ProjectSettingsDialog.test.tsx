@@ -420,6 +420,63 @@ describe("ProjectSettingsDialog", () => {
     expect(capturedSignal?.aborted).toBe(true);
   });
 
+  it("aborts in-flight field PATCH on dialog close→reopen (I10 2026-04-25)", async () => {
+    // I10 (review 2026-04-25): fieldAbortRef and timezoneAbortRef were
+    // only aborted on unmount. The dialog can close→reopen within the
+    // same component lifetime; an in-flight PATCH from the prior
+    // open-cycle would land after re-open and stomp confirmedFieldsRef
+    // with a stale baseline. The next save's revert would restore the
+    // wrong value. Abort on the open-true transition so the prior
+    // cycle's PATCH cannot affect the fresh open-cycle's baseline.
+    const user = userEvent.setup();
+    let capturedSignal: AbortSignal | undefined;
+    vi.mocked(api.projects.update).mockImplementation((_slug, _data, signal) => {
+      capturedSignal = signal;
+      return new Promise(() => {}); // never resolves
+    });
+
+    const { rerender } = render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    // Type in a field and blur to fire a field PATCH.
+    const wordCountInput = screen.getByLabelText(/word count target/i);
+    await user.type(wordCountInput, "1000");
+    fireEvent.blur(wordCountInput);
+
+    await waitFor(() => expect(api.projects.update).toHaveBeenCalled());
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal?.aborted).toBe(false);
+
+    // Close the dialog. Then reopen it.
+    rerender(
+      <ProjectSettingsDialog
+        open={false}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+    rerender(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+
+    // The prior-cycle's PATCH must be aborted at the open-true
+    // transition so its eventual response cannot land against this
+    // fresh open-cycle's baseline.
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
   // I4: same bottle applies to the settings GET. The prior guard used
   // a `let cancelled = false` flag — it stopped the .then/.catch from
   // writing state, but the fetch kept running server-side. Wiring an

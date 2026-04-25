@@ -81,6 +81,18 @@ export function ProjectSettingsDialog({
 
   useEffect(() => {
     if (open) {
+      // I10 (review 2026-04-25): abort any field/timezone PATCHes
+      // left in flight from the previous open cycle. Dialog close→
+      // reopen within the same component lifetime would otherwise let
+      // a stale PATCH's success handler write
+      // confirmedFieldsRef.current.X = data.X against this fresh
+      // baseline; the next save's revert would restore the wrong
+      // value. The unmount cleanup at the bottom of this file covers
+      // teardown; this open-transition abort covers re-open.
+      fieldAbortRef.current?.abort();
+      fieldAbortRef.current = null;
+      timezoneAbortRef.current?.abort();
+      timezoneAbortRef.current = null;
       // Re-sync confirmed-values baseline from props when dialog opens
       confirmedFieldsRef.current = {
         wordCountTarget: project.target_word_count != null ? String(project.target_word_count) : "",
