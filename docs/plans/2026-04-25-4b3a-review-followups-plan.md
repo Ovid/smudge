@@ -24,18 +24,18 @@
 ### Task 1.1: [I14] Failing test for `data:image/svg+xml` rejection
 
 **Files:**
-- Test: `packages/client/src/sanitizer.test.ts` (modify; create the file if it does not exist — verify with `ls`)
+- Test: `packages/client/src/__tests__/sanitizer.test.ts` (modify; create the file if it does not exist — verify with `ls`)
 
 **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect } from "vitest";
-import { sanitizeHtml } from "./sanitizer";
+import { sanitizeEditorHtml } from "../sanitizer";
 
 describe("sanitizer ALLOWED_URI_REGEXP", () => {
   it("rejects data: URIs in img src (XSS vector)", () => {
     const malicious = `<img src="data:image/svg+xml;base64,PHN2Zy8+" alt="x">`;
-    const out = sanitizeHtml(malicious);
+    const out = sanitizeEditorHtml(malicious);
     expect(out).not.toContain("data:");
   });
 });
@@ -56,7 +56,7 @@ Expected: FAIL — DOMPurify defaults pass `data:` URIs through.
 ```ts
 const ALLOWED_URI_REGEXP = /^\/api\/images\//i;
 
-export function sanitizeHtml(html: string): string {
+export function sanitizeEditorHtml(html: string): string {
   return DOMPurify.sanitize(html, {
     ALLOWED_TAGS,
     ALLOWED_ATTR,
@@ -74,30 +74,30 @@ Same command; expect PASS.
 **Step 5: Commit**
 
 ```bash
-git add packages/client/src/sanitizer.ts packages/client/src/sanitizer.test.ts
+git add packages/client/src/sanitizer.ts packages/client/src/__tests__/sanitizer.test.ts
 git commit -m "fix(sanitizer): pin ALLOWED_URI_REGEXP to reject data: URIs (I14)"
 ```
 
 ### Task 1.2: [I14] Add `javascript:` and non-Smudge URI rejection tests
 
-**Files:** Test: `packages/client/src/sanitizer.test.ts`
+**Files:** Test: `packages/client/src/__tests__/sanitizer.test.ts`
 
 **Step 1: Add tests**
 
 ```ts
 it("rejects javascript: URIs in img src", () => {
   const m = `<img src="javascript:alert(1)" alt="x">`;
-  expect(sanitizeHtml(m)).not.toMatch(/javascript:/i);
+  expect(sanitizeEditorHtml(m)).not.toMatch(/javascript:/i);
 });
 
 it("rejects http(s) URIs not under /api/images/", () => {
   const m = `<img src="http://example.com/x.png" alt="x">`;
-  expect(sanitizeHtml(m)).not.toContain("example.com");
+  expect(sanitizeEditorHtml(m)).not.toContain("example.com");
 });
 
 it("accepts /api/images/{uuid} URIs", () => {
   const m = `<img src="/api/images/123e4567-e89b-12d3-a456-426614174000" alt="x">`;
-  expect(sanitizeHtml(m)).toContain("/api/images/");
+  expect(sanitizeEditorHtml(m)).toContain("/api/images/");
 });
 ```
 
@@ -110,7 +110,7 @@ npm test -w packages/client -- sanitizer.test.ts
 **Step 3: Commit**
 
 ```bash
-git add packages/client/src/sanitizer.test.ts
+git add packages/client/src/__tests__/sanitizer.test.ts
 git commit -m "test(sanitizer): cover javascript: and non-Smudge URI rejection (I14)"
 ```
 
@@ -124,7 +124,7 @@ git commit -m "test(sanitizer): cover javascript: and non-Smudge URI rejection (
 describe("image.delete extrasFrom (S21 bounds)", () => {
   it("caps chapters at 50 entries", () => {
     const body = {
-      error: { code: "IMAGE_REFERENCED", message: "x" },
+      error: { code: "IMAGE_IN_USE", message: "x" },
       chapters: Array.from({ length: 200 }, (_, i) => ({
         id: `c-${i}`,
         title: `t-${i}`,
@@ -136,7 +136,7 @@ describe("image.delete extrasFrom (S21 bounds)", () => {
 
   it("truncates per-title to 200 chars", () => {
     const body = {
-      error: { code: "IMAGE_REFERENCED", message: "x" },
+      error: { code: "IMAGE_IN_USE", message: "x" },
       chapters: [{ id: "c-1", title: "x".repeat(500) }],
     };
     const extras = scopeFor("image.delete").extrasFrom?.(body);
@@ -206,9 +206,9 @@ test("snapshot view rejects malicious img src URIs", async ({ page }) => {
 make e2e
 ```
 
-If the fixture is set up correctly and Task 1.1's sanitizer fix is applied, this should PASS. If FAIL, the sanitizer is not actually wired into the snapshot-rendering path — investigate before declaring [I14] complete (the unit test alone is insufficient if the rendering path bypasses `sanitizeHtml`).
+If the fixture is set up correctly and Task 1.1's sanitizer fix is applied, this should PASS. If FAIL, the sanitizer is not actually wired into the snapshot-rendering path — investigate before declaring [I14] complete (the unit test alone is insufficient if the rendering path bypasses `sanitizeEditorHtml`).
 
-**Step 3: If wiring gap discovered:** trace `SnapshotPanel` / `SnapshotView` HTML rendering to confirm `sanitizeHtml` is called on snapshot content. Add the call if missing. (This is a separate concern from the regex pin — flag clearly in the commit if applicable.)
+**Step 3: If wiring gap discovered:** trace `SnapshotPanel` / `SnapshotView` HTML rendering to confirm `sanitizeEditorHtml` is called on snapshot content. Add the call if missing. (This is a separate concern from the regex pin — flag clearly in the commit if applicable.)
 
 **Step 4: Run, expect pass.**
 

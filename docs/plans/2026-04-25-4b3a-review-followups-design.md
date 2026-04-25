@@ -59,7 +59,7 @@ Unit tests for the sanitizer regression cases:
 - `http://example.com/foo.png` rejected (legitimate-looking but not Smudge-issued).
 - `/api/images/<uuid>` accepted.
 
-Unit tests for `extrasFrom` 50-chapter cap and 200-char title truncation. No e2e — neither item is observable through the UI under normal use.
+Unit tests for `extrasFrom` 50-chapter cap and 200-char title truncation. Cluster D also adds targeted e2e coverage via `e2e/sanitizer-snapshot-blob.spec.ts` to verify hostile snapshot content is sanitized end-to-end through the rendered app flow (the [I14] regex alone is unit-tested, but the full PATCH → snapshot → render path warrants e2e proof since the sanitizer call site lives in `EditorPage.renderSnapshotContent`).
 
 ### Cluster D out-of-scope
 
