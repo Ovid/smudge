@@ -53,6 +53,20 @@ const ALLOWED_ATTR = ["src", "alt"];
 // http(s): externals, and anything else that isn't a relative
 // `/api/images/...` path. We pass it as DOMPurify's ALLOWED_URI_REGEXP
 // option for defense in depth.
+//
+// S1 (review 2026-04-25): intentionally narrower than the server's
+// IMAGE_SRC_RE in `packages/server/src/images/images.references.ts`,
+// which accepts `^(?:https?://[^/]+)?/api/images/<uuid>` so that pasted
+// absolute URLs still increment the reference count. The sanitizer's
+// threat model is XSS in the rendered DOM, not server-side reference
+// counting — every writer Smudge ships today (`onInsertImage` in
+// `ImageGallery.tsx`) emits the relative form, so accepting only the
+// relative form here is correct and tight. If a future writer ever
+// emits an absolute same-origin URL, the server will count the
+// reference (block delete with IMAGE_IN_USE) while the sanitizer
+// strips the src — the broken `<img>` is a deliberate fail-closed
+// signal that lets us catch the divergence rather than silently
+// accept new sources of `<img src>` in editor content.
 const ALLOWED_URI_REGEXP = /^\/api\/images\//i;
 
 // I14 (review 2026-04-25): DOMPurify 3.x ships a hardcoded DATA_URI_TAGS
