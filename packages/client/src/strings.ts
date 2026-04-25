@@ -302,6 +302,16 @@ export const STRINGS = {
     cancelButton: "Cancel",
     success: (title: string) => `Exported "${title}"`,
     errorFailed: "Export failed. Please try again.",
+    // I2 (review 2026-04-25): a NETWORK classification yielded the
+    // generic errorFailed copy because the export.run scope only
+    // declared a fallback. Mirror sibling mutation/GET scopes:
+    // network gets the actionable "check your connection" hint.
+    errorFailedNetwork: "Export failed — check your connection and try again.",
+    // I2 (review 2026-04-25): a 413 export-too-large was indistinguishable
+    // from a server error. Surface the actionable "select fewer chapters"
+    // hint so the user can recover without retrying the same too-large
+    // request.
+    errorTooLarge: "Export is too large. Try selecting fewer chapters and exporting again.",
     close: "Close export dialog",
     epubCoverImageLabel: "Cover image",
     epubCoverImageNone: "None",

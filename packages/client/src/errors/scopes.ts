@@ -281,7 +281,15 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
       404: STRINGS.findReplace.replaceProjectNotFound,
     },
   },
-  "export.run": { fallback: STRINGS.export.errorFailed },
+  "export.run": {
+    fallback: STRINGS.export.errorFailed,
+    // I2 (review 2026-04-25): mirror sibling scopes — NETWORK gets a
+    // "check your connection" hint, 413 gets a "too large" hint with
+    // recovery guidance. Without these, both paths surfaced the
+    // generic errorFailed and the user had no actionable next step.
+    network: STRINGS.export.errorFailedNetwork,
+    byStatus: { 413: STRINGS.export.errorTooLarge },
+  },
   "trash.load": {
     fallback: STRINGS.error.loadTrashFailed,
     network: STRINGS.error.loadTrashFailedNetwork,

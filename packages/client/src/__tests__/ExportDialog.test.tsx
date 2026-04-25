@@ -170,6 +170,45 @@ describe("ExportDialog", () => {
     });
   });
 
+  it("surfaces the network-specific copy when export fails with NETWORK (I2 2026-04-25)", async () => {
+    // Before the export.run scope grew a `network:` entry, a NETWORK
+    // classification fell back to the generic "Export failed. Please
+    // try again." copy — same as a server error. Users had no hint
+    // that a connection retry would help.
+    const user = userEvent.setup();
+    vi.mocked(api.projects.export).mockRejectedValue(
+      new ApiRequestError("[dev] Failed to fetch", 0, "NETWORK"),
+    );
+
+    render(<ExportDialog {...defaultProps} />);
+    await user.click(screen.getByText("Export"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Export failed — check your connection and try again.",
+      );
+    });
+  });
+
+  it("surfaces the too-large copy on 413 (I2 2026-04-25)", async () => {
+    // 413 was indistinguishable from a server error before
+    // export.run grew a byStatus[413] entry. The "select fewer
+    // chapters" hint is the only actionable response.
+    const user = userEvent.setup();
+    vi.mocked(api.projects.export).mockRejectedValue(
+      new ApiRequestError("[dev] Export HTTP 413", 413, "PAYLOAD_TOO_LARGE"),
+    );
+
+    render(<ExportDialog {...defaultProps} />);
+    await user.click(screen.getByText("Export"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Export is too large. Try selecting fewer chapters and exporting again.",
+      );
+    });
+  });
+
   it("stays silent when export is aborted by ABORTED error code", async () => {
     const user = userEvent.setup();
     vi.mocked(api.projects.export).mockRejectedValue(new ApiRequestError("aborted", 0, "ABORTED"));
