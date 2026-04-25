@@ -351,6 +351,58 @@ describe("HomePage", () => {
     warnSpy.mockRestore();
   });
 
+  it("aborts the create-recovery list refetch on unmount (I13 2026-04-25)", async () => {
+    // I13 (review 2026-04-25): the possiblyCommitted recovery branch in
+    // handleCreate did a fire-and-forget api.projects.list().then(setProjects)
+    // with no AbortController/unmount guard. If the user navigates away
+    // before the refetch resolves, setProjects fires on an unmounted
+    // component — the same shape the loadProjects-effect abort pattern
+    // was introduced to silence. Verify the recovery list receives a
+    // signal that is aborted on unmount.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const listSignals: (AbortSignal | undefined)[] = [];
+    vi.mocked(api.projects.list).mockImplementation((signal?: AbortSignal) => {
+      listSignals.push(signal);
+      // Initial load resolves immediately so the page can render.
+      if (listSignals.length === 1) return Promise.resolve([]);
+      // Recovery refetch never resolves — we only need to inspect the signal.
+      return new Promise<never>(() => {});
+    });
+    vi.mocked(api.projects.create).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+
+    const { unmount } = renderHomePage();
+    await waitFor(
+      () => {
+        expect(
+          screen.getByText("No projects yet. Create one to start writing."),
+        ).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "New Project" }));
+    const input = screen.getByRole("textbox");
+    await userEvent.type(input, "My Book");
+    const form = input.closest("form") as HTMLFormElement;
+    const submitButton = form.querySelector("button[type='submit']") as HTMLButtonElement;
+    await userEvent.click(submitButton);
+
+    // Recovery list refetch fires after the BAD_JSON catch.
+    await waitFor(() => expect(listSignals).toHaveLength(2), { timeout: 3000 });
+    // Recovery call receives an AbortSignal (the abort plumbing).
+    expect(listSignals[1]).toBeInstanceOf(AbortSignal);
+    expect(listSignals[1]?.aborted).toBe(false);
+
+    unmount();
+
+    // Unmount cleanup must abort the recovery signal so the .then
+    // handler bails before calling setProjects on a torn-down tree.
+    expect(listSignals[1]?.aborted).toBe(true);
+    warnSpy.mockRestore();
+  });
+
   // I1 (review 2026-04-24): handleDelete ignored possiblyCommitted. On
   // 2xx BAD_JSON the server deleted the project but the row stayed in
   // the local list — the user saw a phantom project, a retry 404d, and

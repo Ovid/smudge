@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ProjectListItem, ProjectModeType as ProjectMode } from "@smudge/shared";
 import { api } from "../api/client";
@@ -14,6 +14,21 @@ export function HomePage() {
   const [deleteTarget, setDeleteTarget] = useState<ProjectListItem | null>(null);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  // I13 (review 2026-04-25): the possiblyCommitted recovery branch in
+  // handleCreate fires a best-effort api.projects.list().then(setProjects)
+  // that previously had no unmount guard. If the user navigates away
+  // before the refetch resolves, setProjects fires on a torn-down tree.
+  // Mirror the createRecoveryAbortRef pattern in useProjectEditor: hold
+  // the controller in a ref so unmount cleanup can abort it, and gate
+  // the .then on signal.aborted.
+  const createRecoveryAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(
+    () => () => {
+      createRecoveryAbortRef.current?.abort();
+    },
+    [],
+  );
 
   useEffect(() => {
     // Copilot review 2026-04-24: mirror DashboardView's abort pattern.
@@ -60,10 +75,23 @@ export function HomePage() {
       // committed banner alone tells the user to refresh manually.
       if (possiblyCommitted) {
         setDialogOpen(false);
+        createRecoveryAbortRef.current?.abort();
+        const recoveryController = new AbortController();
+        createRecoveryAbortRef.current = recoveryController;
         api.projects
-          .list()
-          .then((data) => setProjects(data))
-          .catch(() => {});
+          .list(recoveryController.signal)
+          .then((data) => {
+            if (recoveryController.signal.aborted) return;
+            setProjects(data);
+            if (createRecoveryAbortRef.current === recoveryController) {
+              createRecoveryAbortRef.current = null;
+            }
+          })
+          .catch(() => {
+            if (createRecoveryAbortRef.current === recoveryController) {
+              createRecoveryAbortRef.current = null;
+            }
+          });
       }
       if (message) setError(message);
     }
