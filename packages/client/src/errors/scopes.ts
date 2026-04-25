@@ -195,26 +195,43 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     // S21 (security review): bound the list against a hostile or malformed
     // server payload — cap at 50 entries and truncate each title at 200
     // chars so a runaway response cannot blow up the UI. Truncation is
-    // silent by design; preserves all-or-nothing semantic on per-element
-    // shape validation (subset-return is a separate item).
+    // silent by design; the cap is defense-in-depth (real-world
+    // image.references payloads from `scanImageReferences` filter to
+    // non-deleted chapters in a single project, so >50 referencing
+    // chapters is unreachable in normal Smudge use).
+    // I1 (review 2026-04-25): validate the *full* chapters array before
+    // bounding — pre-I1 the comparison was `valid.length ===
+    // bounded.length` (post-slice), which let an envelope of [50 valid,
+    // N invalid past the cap] silently surface 50 chapters instead of
+    // triggering the all-or-nothing fallback that S5 was added to enforce.
+    // S3 (review 2026-04-25): construct an explicit allowlisted shape per
+    // entry (`id?`, `title`, `trashed?`). The previous spread propagated
+    // every non-allowlisted server field — a hostile `description` field
+    // bypassed the API client's per-key MAX_EXTRAS_KEYS cap because that
+    // cap does not recurse into `chapters[i]`.
+    // S4 (review 2026-04-25): code-point slice via Array.from so the cap
+    // cannot split a surrogate pair into a lone surrogate (which the DOM
+    // would render as U+FFFD). ASCII inputs are unaffected.
     extrasFrom: (err: ApiRequestError) => {
       const chapters = (err.extras as { chapters?: unknown } | undefined)?.chapters;
       if (!Array.isArray(chapters)) return undefined;
-      const bounded = chapters.slice(0, 50);
-      const valid = bounded
-        .filter((c): c is { title: string; trashed?: boolean } => {
+      const valid = chapters.filter(
+        (c): c is { id?: string; title: string; trashed?: boolean } => {
           if (!c || typeof c !== "object") return false;
           const obj = c as Record<string, unknown>;
+          if (obj.id !== undefined && typeof obj.id !== "string") return false;
           if (typeof obj.title !== "string") return false;
           if (obj.trashed !== undefined && typeof obj.trashed !== "boolean") return false;
           return true;
-        })
-        .map((c) => {
-          const obj = c as Record<string, unknown>;
-          const title = obj.title as string;
-          return title.length > 200 ? { ...obj, title: title.slice(0, 200) } : c;
-        });
-      return valid.length === bounded.length ? { chapters: valid } : undefined;
+        },
+      );
+      if (valid.length !== chapters.length) return undefined;
+      const bounded = valid.slice(0, 50).map((c) => ({
+        ...(c.id !== undefined ? { id: c.id } : {}),
+        title: Array.from(c.title).slice(0, 200).join(""),
+        ...(c.trashed !== undefined ? { trashed: c.trashed } : {}),
+      }));
+      return { chapters: bounded };
     },
   },
   "image.updateMetadata": {

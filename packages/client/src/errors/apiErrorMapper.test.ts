@@ -490,6 +490,72 @@ describe("SCOPES — image.delete extrasFrom", () => {
     };
     expect(extras.chapters).toEqual([{ id: "c-1", title: longTitle.slice(0, 200) }]);
   });
+
+  // I1 (review 2026-04-25): a hostile envelope of [50 valid, 1 invalid]
+  // would otherwise pass shape narrowing because the pre-fix code compared
+  // valid.length against the post-slice bounded.length (50), not the
+  // original chapters.length. Validate the full array before bounding
+  // so the all-or-nothing fallback fires.
+  it("returns undefined when an entry beyond the 50-cap has wrong shape (I1)", () => {
+    const chapters: unknown[] = [
+      ...Array.from({ length: 50 }, (_, i) => ({ id: `c-${i}`, title: `t-${i}` })),
+      { missingTitle: true },
+    ];
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", { chapters });
+    expect(resolveError(err, scope).extras).toBeUndefined();
+  });
+
+  // S3 (review 2026-04-25): the previous spread `{ ...obj, title: ... }`
+  // propagated every non-allowlisted server field into the UI payload. A
+  // hostile envelope could include a multi-MB `description` per chapter
+  // and bypass the API client's per-key MAX_EXTRAS_KEYS cap, since that
+  // cap does not recurse into the `chapters` array. Build an explicit
+  // allowlisted shape: `id?`, `title`, `trashed?` only.
+  it("strips non-allowlisted fields from chapter entries (S3)", () => {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: [
+        {
+          id: "c1",
+          title: "Chapter 1",
+          trashed: false,
+          description: "x".repeat(10_000),
+          random: "data",
+        },
+      ],
+    });
+    const extras = resolveError(err, scope).extras as {
+      chapters: Array<Record<string, unknown>>;
+    };
+    expect(extras.chapters).toEqual([{ id: "c1", title: "Chapter 1", trashed: false }]);
+    expect(extras.chapters[0]).not.toHaveProperty("description");
+    expect(extras.chapters[0]).not.toHaveProperty("random");
+  });
+
+  // S4 (review 2026-04-25): a naive `title.slice(0, 200)` operates on
+  // UTF-16 code units and can split a surrogate pair, leaving a lone
+  // surrogate that the DOM renders as U+FFFD. Use `Array.from` so the
+  // truncation happens on code points instead.
+  it("truncates titles by code points, not UTF-16 code units (S4)", () => {
+    const emoji = "\u{1F984}"; // U+1F984 unicorn — surrogate pair in UTF-16
+    const longTitle = emoji.repeat(250);
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: [{ id: "c1", title: longTitle }],
+    });
+    const extras = resolveError(err, scope).extras as {
+      chapters: Array<{ title: string }>;
+    };
+    expect(extras.chapters[0]?.title).toBe(emoji.repeat(200));
+    expect(extras.chapters[0]?.title).not.toMatch(/�/);
+  });
+
+  // S3 corollary: rejects entries whose `id` is the wrong type, so the
+  // narrowed shape stays honest.
+  it("returns undefined when id is present but not a string (S3)", () => {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: [{ id: 42, title: "ok" }],
+    });
+    expect(resolveError(err, scope).extras).toBeUndefined();
+  });
 });
 
 describe("SCOPES — snapshot.restore", () => {
