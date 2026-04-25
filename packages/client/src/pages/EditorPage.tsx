@@ -32,7 +32,12 @@ import { useChapterTitleEditing } from "../hooks/useChapterTitleEditing";
 import { useProjectTitleEditing } from "../hooks/useProjectTitleEditing";
 import { useTrashManager } from "../hooks/useTrashManager";
 import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcuts";
-import { api, ApiRequestError } from "../api/client";
+import { api } from "../api/client";
+// S1 (review 2026-04-25): import ApiRequestError from the errors
+// barrel rather than directly from ../api/client so the I16 barrel-
+// only invariant holds at every call site. The barrel re-exports
+// the same class.
+import { ApiRequestError } from "../errors";
 import { mapApiError, isNotFound } from "../errors";
 import { clearCachedContent, clearAllCachedContent } from "../hooks/useContentCache";
 import { safeSetEditable } from "../utils/editorSafeOps";

@@ -154,11 +154,24 @@ export function useTrashManager(
     setDeleteTarget(null);
     if (!success) return;
     if (trashOpen && project) {
+      // S4 + S5 (review 2026-04-25): thread a signal so an unmount
+      // between the successful delete and the trash refresh drops the
+      // GET cleanly (was risking setTrashedChapters on a torn-down
+      // hook), and route the catch through mapApiError so a non-
+      // ABORTED failure surfaces an actionable banner instead of being
+      // silently swallowed by `catch {}`. ABORTED stays silent
+      // (mapper returns message: null).
+      trashAbortRef.current?.abort();
+      const controller = new AbortController();
+      trashAbortRef.current = controller;
       try {
-        const trashed = await api.projects.trash(project.slug);
+        const trashed = await api.projects.trash(project.slug, controller.signal);
+        if (controller.signal.aborted) return;
         setTrashedChapters(trashed);
-      } catch {
-        // Trash refresh failed — stale list is acceptable
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        const { message } = mapApiError(err, "trash.load");
+        if (message) setActionError(message);
       }
     }
   }, [deleteTarget, handleDeleteChapter, trashOpen, project]);

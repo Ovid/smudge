@@ -65,9 +65,16 @@ export function ImageGallery({
   // unmount effect aborts any in-flight mutation so a multi-MB upload
   // does not keep running server-side after the gallery closes.
   const mutateAbortRef = useRef<AbortController | null>(null);
+  // S2 (review 2026-04-25): the click-time references refresh on the
+  // delete button did not thread an AbortSignal (the load effect at
+  // line 138 does). A late refresh resolving after the user
+  // navigated back to grid would announce a stale failure or set
+  // references for a vanished image. Mirror mutateAbortRef.
+  const refsAbortRef = useRef<AbortController | null>(null);
   useEffect(
     () => () => {
       mutateAbortRef.current?.abort();
+      refsAbortRef.current?.abort();
     },
     [],
   );
@@ -587,14 +594,21 @@ export function ImageGallery({
                   // image's references or announce an unrelated failure.
                   const imageId = selectedImage.id;
                   setReferencesLoaded(false);
+                  // S2 (review 2026-04-25): thread a signal so unmount
+                  // / new click cleanly drops the in-flight refresh.
+                  refsAbortRef.current?.abort();
+                  const controller = new AbortController();
+                  refsAbortRef.current = controller;
                   api.images
-                    .references(imageId)
+                    .references(imageId, controller.signal)
                     .then((data) => {
+                      if (controller.signal.aborted) return;
                       if (selectedImageIdRef.current !== imageId) return;
                       setReferences(data.chapters);
                       setReferencesLoaded(true);
                     })
                     .catch((err: unknown) => {
+                      if (controller.signal.aborted) return;
                       if (selectedImageIdRef.current !== imageId) return;
                       // I6: keep referencesLoaded=false (show the
                       // "Loading details…" gate when reference_count>0
