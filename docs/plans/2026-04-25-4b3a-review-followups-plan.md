@@ -181,12 +181,50 @@ git add packages/client/src/errors/scopes.ts packages/client/src/errors/scopes.t
 git commit -m "fix(scopes): bound image.delete chapters to 50 entries / 200 chars (S21)"
 ```
 
-### Task 1.4: PR 1 finalization
+### Task 1.4: [I14] e2e — sanitizer rejects malicious URI in rendered snapshot content
+
+**Files:** Create `e2e/sanitizer-snapshot-blob.spec.ts`. Server-side fixture support: identify the existing seed mechanism for snapshots (likely `packages/server/src/db/migrations/seeds` or a test-only insertion path); add a fixture snapshot whose content blob contains `<img src="data:image/svg+xml;base64,PHN2Zy8+">` and a second `<img src="javascript:alert(1)">` in TipTap JSON form.
+
+**Step 1: Write the e2e**
+
+```ts
+import { test, expect } from "@playwright/test";
+
+test("snapshot view rejects malicious img src URIs", async ({ page }) => {
+  // The fixture seeds a snapshot whose content includes data:image/svg+xml
+  // and javascript: URIs in <img> tags. The sanitizer must strip them.
+  await page.goto("/projects/<seed-slug>/snapshots/<malicious-snapshot-id>");
+  const html = await page.content();
+  expect(html).not.toMatch(/data:image/i);
+  expect(html).not.toMatch(/javascript:/i);
+});
+```
+
+**Step 2: Run, expect fail or pass**
+
+```bash
+make e2e
+```
+
+If the fixture is set up correctly and Task 1.1's sanitizer fix is applied, this should PASS. If FAIL, the sanitizer is not actually wired into the snapshot-rendering path — investigate before declaring [I14] complete (the unit test alone is insufficient if the rendering path bypasses `sanitizeHtml`).
+
+**Step 3: If wiring gap discovered:** trace `SnapshotPanel` / `SnapshotView` HTML rendering to confirm `sanitizeHtml` is called on snapshot content. Add the call if missing. (This is a separate concern from the regex pin — flag clearly in the commit if applicable.)
+
+**Step 4: Run, expect pass.**
+
+**Step 5: Commit**
+
+```bash
+git add e2e/sanitizer-snapshot-blob.spec.ts <fixture-paths>
+git commit -m "test(e2e): sanitizer strips malicious URIs from snapshot content (I14)"
+```
+
+### Task 1.5: PR 1 finalization
 
 **Step 1: Run full test suite + coverage**
 
 ```bash
-make cover
+make cover && make e2e
 ```
 
 Expected: all tests pass; coverage at or above thresholds.
@@ -204,8 +242,8 @@ Closes [I14], [S21] from the 4b.3 code review (`paad/code-reviews/ovid-unified-e
 - `scopes.ts`: bound `image.delete`'s `extrasFrom` chapters at 50 entries / 200 chars per title.
 
 ## Test plan
-- [ ] Sanitizer rejects `data:image/svg+xml`
-- [ ] Sanitizer rejects `javascript:`
+- [ ] Sanitizer rejects `data:image/svg+xml` (unit + e2e via snapshot blob)
+- [ ] Sanitizer rejects `javascript:` (unit + e2e via snapshot blob)
 - [ ] Sanitizer accepts `/api/images/{uuid}`
 - [ ] `extrasFrom` cap and truncation verified
 EOF
