@@ -153,6 +153,8 @@ The save pipeline gets the most rigorous coverage — it's the core trust promis
 
 **Zero warnings in test output.** Tests must not produce noisy `console.warn`, `console.error`, or logger output in stderr. When a test deliberately triggers an error path that logs a warning, spy on the output, suppress it, and assert the expected message — e.g. `const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {}); ... expect(warnSpy).toHaveBeenCalledWith(...); warnSpy.mockRestore();`. Noisy test output masks real problems; if every test run has 30 "expected" warnings, developers stop reading them and miss the 31st that signals a real bug.
 
+The only thing worse than a failing test is a reduction in test coverage.
+
 ## Pull Request Scope
 
 The `ovid/snapshots-find-and-replace` branch (merged 2026-04-19) bundled two features across 17,000 insertions and required 16 rounds of review. To prevent recurrence, PRs must obey two rules:
