@@ -247,7 +247,8 @@ Any AbortSignal *threading* changes (those are Cluster B). New scopes other than
 Edit **§Key Architecture Decisions / "Unified API error mapping"** to:
 
 1. Describe both `possiblyCommitted` mechanisms — 2xx BAD_JSON for `committed:`-declaring scopes **and** the `committedCodes` extension that maps specific server codes (`UPDATE_READ_FAILURE`, `READ_AFTER_CREATE_FAILURE`, `RESTORE_READ_FAILURE`) to the same flag.
-2. Reference `ScopeExtras<S>` (introduced by [S9]) as the typed accessor for `extras`.
+2. Reference `ScopeExtras<S>` (introduced by Cluster C's [S15]) as the typed accessor for `extras`.
+3. Reference `applyMappedError(mapped, handlers)` (introduced by [S15]) as the canonical consumer pattern for routing mapper output into UI state — parallel with how the doc already names `useEditorMutation` for save-pipeline invariants and `useAbortableSequence` for the bump-before-request contract. Hand-rolled `if (message === null) return; if (message) setX(message)` ladders are the deprecated form.
 
 Edit **§Pull Request Scope** to add a one-line note acknowledging the 4b.3 bundling as a logged exception:
 
