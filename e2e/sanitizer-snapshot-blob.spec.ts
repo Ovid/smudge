@@ -142,5 +142,12 @@ test.describe("Sanitizer e2e (I14)", () => {
     const innerHtml = await snapshotDiv.innerHTML();
     expect(innerHtml.toLowerCase()).not.toContain("data:image");
     expect(innerHtml.toLowerCase()).not.toContain("javascript:");
+    // S6 (review 2026-04-25): tighten the contract — no `<img>` may
+    // survive with a `src` attribute at all (the sanitizer drops the
+    // attribute outright when the URI is rejected). The negative-
+    // presence checks above would also pass if a regression left an
+    // empty `src=""` or partially-stripped attribute, so the regex
+    // assertion catches that gap.
+    expect(innerHtml).not.toMatch(/<img[^>]*\bsrc=/i);
   });
 });
