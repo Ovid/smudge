@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { STRINGS } from "../strings";
 import { STATUS_COLORS } from "../statusColors";
 import { ProgressStrip } from "./ProgressStrip";
+import { mapApiError } from "../errors";
 
 type DashboardData = Awaited<ReturnType<typeof api.projects.dashboard>>;
 
@@ -28,50 +29,73 @@ export function DashboardView({
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("sort_order");
   const [sortAsc, setSortAsc] = useState(true);
+  // I8 (2026-04-23): error was previously boolean → hardcoded generic
+  // copy in ProgressStrip. Carrying the mapped message here lets
+  // NETWORK vs 5xx distinctions reach the user.
   const [velocityWithSlug, setVelocityWithSlug] = useState<{
     slug: string;
     data: VelocityResponse | null;
-    error?: boolean;
+    error?: string | null;
   } | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    // I5 (review 2026-04-24): controller replaces the `cancelled` flag.
+    // With a bare flag the server still finishes the GET for a slug
+    // the user has already navigated away from, and the `console.warn`
+    // on a late-resolving rejection fires BEFORE the gate — which
+    // violates CLAUDE.md's zero-warnings-in-test-output rule. Abort
+    // severs the request AND we short-circuit warn/mapApiError when
+    // the signal is already aborted.
+    const controller = new AbortController();
     api.projects
-      .dashboard(slug)
+      .dashboard(slug, controller.signal)
       .then((result) => {
-        if (!cancelled) {
-          setDataWithSlug({ slug, data: result });
-          setError(null);
-        }
+        if (controller.signal.aborted) return;
+        setDataWithSlug({ slug, data: result });
+        setError(null);
       })
       .catch((err) => {
-        if (!cancelled) {
-          console.warn("Failed to load dashboard:", err);
-          setError(STRINGS.error.loadDashboardFailed);
-        }
+        if (controller.signal.aborted) return;
+        console.warn("Failed to load dashboard:", err);
+        const { message } = mapApiError(err, "dashboard.load");
+        if (message) setError(message);
       });
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [slug, refreshKey]);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     api.projects
-      .velocity(slug)
+      .velocity(slug, controller.signal)
       .then((result) => {
-        if (!cancelled) {
-          setVelocityWithSlug({ slug, data: result });
-        }
+        if (controller.signal.aborted) return;
+        setVelocityWithSlug({ slug, data: result });
       })
-      .catch((err) => {
-        if (!cancelled) {
-          console.warn("Failed to load velocity:", err);
-          setVelocityWithSlug({ slug, data: null, error: true });
-        }
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
+        console.warn("Failed to load velocity:", err);
+        const { message } = mapApiError(err, "project.velocity");
+        // ABORTED → message: null: the caller cancelled (navigation/
+        // unmount), so leave the previous velocity state in place and
+        // do not surface an error banner.
+        if (message === null) return;
+        // I3 (review 2026-04-24): preserve prior good data on a
+        // transient refresh failure so the progress strip doesn't
+        // blank on a network blip (the error banner renders below
+        // the strip, but only if data is null). Mirrors the
+        // useFindReplaceState convention of keeping prior results on
+        // transient errors. Preserve only when the slug matches —
+        // stale data from a different project is not worth keeping.
+        setVelocityWithSlug((prev) => ({
+          slug,
+          data: prev?.slug === slug ? prev.data : null,
+          error: message,
+        }));
       });
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [slug, refreshKey]);
 
@@ -91,7 +115,7 @@ export function DashboardView({
   const data = dataWithSlug?.slug === slug ? dataWithSlug.data : null;
   const velocityData = velocityWithSlug?.slug === slug ? velocityWithSlug.data : null;
   const velocityLoading = velocityWithSlug?.slug !== slug;
-  const velocityError = velocityWithSlug?.slug === slug && velocityWithSlug?.error === true;
+  const velocityError = velocityWithSlug?.slug === slug ? (velocityWithSlug?.error ?? null) : null;
 
   if (error) {
     return (

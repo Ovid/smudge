@@ -6,6 +6,19 @@ import { api } from "../api/client";
 import type { ChapterStatusRow } from "@smudge/shared";
 
 vi.mock("../api/client", () => ({
+  // Needed by errors/apiErrorMapper — `err instanceof ApiRequestError`
+  // checks reach through this mock. Without the class export, the unified
+  // mapper throws during tests that trigger the catch path.
+  ApiRequestError: class ApiRequestError extends Error {
+    constructor(
+      message: string,
+      public readonly status: number,
+      public readonly code?: string,
+    ) {
+      super(message);
+      this.name = "ApiRequestError";
+    }
+  },
   api: {
     projects: {
       dashboard: vi.fn(),
@@ -128,7 +141,7 @@ describe("DashboardView", () => {
     });
 
     // Verify velocity API was called
-    expect(api.projects.velocity).toHaveBeenCalledWith("test-project");
+    expect(api.projects.velocity).toHaveBeenCalledWith("test-project", expect.any(AbortSignal));
   });
 
   it("renders health bar with word count and chapter count", async () => {
@@ -470,6 +483,95 @@ describe("DashboardView", () => {
       expect.any(Error),
     );
     errorSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it("preserves prior velocity data when a refresh fetch fails (I3 2026-04-24)", async () => {
+    // On error the handler used to overwrite prior data with null,
+    // which blanks the progress strip after any transient blip — the
+    // user reading the progress bar sees it vanish after a silent
+    // refreshKey bump. useFindReplaceState keeps prior results on
+    // transient errors; this should match.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
+    // First call succeeds; second fails.
+    vi.mocked(api.projects.velocity)
+      .mockResolvedValueOnce({
+        words_today: 500,
+        daily_average_7d: 420,
+        daily_average_30d: 350,
+        current_total: 1700,
+        target_word_count: 50000,
+        remaining_words: 48300,
+        target_deadline: "2027-03-01",
+        days_until_deadline: 322,
+        required_pace: 150,
+        projected_completion_date: "2027-02-15",
+        today: "2026-04-12",
+      })
+      .mockRejectedValueOnce(new Error("Network failure"));
+
+    const { rerender } = render(
+      <DashboardView
+        slug="test-project"
+        statuses={statuses}
+        onNavigateToChapter={vi.fn()}
+        refreshKey={0}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("progressbar")).toBeInTheDocument();
+    });
+
+    // Bump refreshKey to trigger a re-fetch that will fail.
+    rerender(
+      <DashboardView
+        slug="test-project"
+        statuses={statuses}
+        onNavigateToChapter={vi.fn()}
+        refreshKey={1}
+      />,
+    );
+
+    // Wait long enough for the re-fetch to reject and setState to run.
+    await waitFor(() => {
+      expect(api.projects.velocity).toHaveBeenCalledTimes(2);
+    });
+    // Flush the microtask for the rejection's setState.
+    await waitFor(() => {
+      // Progress bar must still be on-screen (data preserved).
+      expect(screen.getByRole("progressbar")).toBeInTheDocument();
+    });
+
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it("stays silent when velocity fetch is aborted (no error banner)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
+    const { ApiRequestError } = await import("../api/client");
+    vi.mocked(api.projects.velocity).mockRejectedValue(
+      new ApiRequestError("aborted", 0, "ABORTED"),
+    );
+
+    render(
+      <DashboardView
+        slug="test-project"
+        statuses={statuses}
+        onNavigateToChapter={vi.fn()}
+        refreshKey={0}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Chapter One")).toBeInTheDocument();
+    });
+
+    // No error banner — ABORTED from mapApiError returns message: null
+    expect(screen.queryByText(/unable to load/i)).not.toBeInTheDocument();
     warnSpy.mockRestore();
   });
 

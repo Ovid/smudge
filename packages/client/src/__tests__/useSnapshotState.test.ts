@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { renderHook, act, cleanup } from "@testing-library/react";
+import { renderHook, act, cleanup, waitFor } from "@testing-library/react";
 import { useSnapshotState } from "../hooks/useSnapshotState";
-import { api } from "../api/client";
+import { api, ApiRequestError } from "../api/client";
+import { mapApiError } from "../errors";
+import { STRINGS } from "../strings";
+import { SNAPSHOT_ERROR_CODES } from "@smudge/shared";
 import type { Chapter, SnapshotListItem, SnapshotRow } from "@smudge/shared";
 
 vi.mock("../hooks/useContentCache", () => ({
@@ -107,7 +110,7 @@ describe("useSnapshotState", () => {
       });
     });
 
-    expect(api.snapshots.get).toHaveBeenCalledWith("snap-42");
+    expect(api.snapshots.get).toHaveBeenCalledWith("snap-42", expect.any(AbortSignal));
     expect(result.current.viewingSnapshot).not.toBeNull();
     expect(result.current.viewingSnapshot!.id).toBe("snap-42");
     expect(result.current.viewingSnapshot!.label).toBe("Test");
@@ -117,14 +120,13 @@ describe("useSnapshotState", () => {
     });
   });
 
-  it("viewSnapshot returns not_found when snapshot is gone (404)", async () => {
-    const { ApiRequestError } = await import("../api/client");
+  it("viewSnapshot returns not-found error when snapshot is gone (404)", async () => {
     vi.mocked(api.snapshots.get).mockRejectedValue(
       new ApiRequestError("missing", 404, "NOT_FOUND"),
     );
 
     const { result } = renderHook(() => useSnapshotState("ch-1"));
-    let r: { ok: boolean; reason?: string } = { ok: true };
+    let r: { ok: boolean; error?: ApiRequestError; superseded?: string } = { ok: true };
     await act(async () => {
       r = await result.current.viewSnapshot({
         id: "snap-gone",
@@ -134,11 +136,19 @@ describe("useSnapshotState", () => {
     });
 
     expect(r.ok).toBe(false);
-    expect(r.reason).toBe("not_found");
+    if (!r.error) throw new Error("unreachable");
+    expect(r.error).toBeInstanceOf(ApiRequestError);
+    expect(r.error.status).toBe(404);
+    // Feeds the new "snapshot.view" scope: 404 → viewFailedNotFound copy
+    // via byStatus. Regression guard that the failure arm stays shaped
+    // for mapApiError (no raw string copy leaks into the hook contract).
+    expect(mapApiError(r.error, "snapshot.view").message).toBe(
+      STRINGS.snapshots.viewFailedNotFound,
+    );
     expect(result.current.viewingSnapshot).toBeNull();
   });
 
-  it("viewSnapshot returns corrupt_snapshot when full.content is malformed JSON", async () => {
+  it("viewSnapshot returns corrupt-snapshot error when full.content is malformed JSON", async () => {
     vi.mocked(api.snapshots.get).mockResolvedValue({
       id: "snap-1",
       chapter_id: "ch-1",
@@ -150,7 +160,7 @@ describe("useSnapshotState", () => {
     });
 
     const { result } = renderHook(() => useSnapshotState("ch-1"));
-    let r: { ok: boolean; reason?: string } = { ok: true };
+    let r: { ok: boolean; error?: ApiRequestError; superseded?: string } = { ok: true };
     await act(async () => {
       r = await result.current.viewSnapshot({
         id: "snap-1",
@@ -160,7 +170,9 @@ describe("useSnapshotState", () => {
     });
 
     expect(r.ok).toBe(false);
-    expect(r.reason).toBe("corrupt_snapshot");
+    if (!r.error) throw new Error("unreachable");
+    expect(r.error.code).toBe(SNAPSHOT_ERROR_CODES.CORRUPT_SNAPSHOT);
+    expect(mapApiError(r.error, "snapshot.view").message).toBe(STRINGS.snapshots.viewFailedCorrupt);
   });
 
   it.each([
@@ -169,7 +181,7 @@ describe("useSnapshotState", () => {
     ["string literal", '"hello"'],
     ["array literal", "[1,2,3]"],
   ])(
-    "viewSnapshot returns corrupt_snapshot when content parses as %s (not a TipTap doc)",
+    "viewSnapshot returns corrupt-snapshot error when content parses as %s (not a TipTap doc)",
     async (_label, payload) => {
       // Server-side restoreSnapshot gates on TipTapDocSchema.safeParse;
       // the client view path used to accept any valid JSON here, so a
@@ -187,7 +199,7 @@ describe("useSnapshotState", () => {
       });
 
       const { result } = renderHook(() => useSnapshotState("ch-1"));
-      let r: { ok: boolean; reason?: string } = { ok: true };
+      let r: { ok: boolean; error?: ApiRequestError; superseded?: string } = { ok: true };
       await act(async () => {
         r = await result.current.viewSnapshot({
           id: "snap-1",
@@ -197,23 +209,23 @@ describe("useSnapshotState", () => {
       });
 
       expect(r.ok).toBe(false);
-      expect(r.reason).toBe("corrupt_snapshot");
+      if (!r.error) throw new Error("unreachable");
+      expect(r.error.code).toBe(SNAPSHOT_ERROR_CODES.CORRUPT_SNAPSHOT);
     },
   );
 
-  it("viewSnapshot maps 2xx BAD_JSON to corrupt_snapshot, not network", async () => {
+  it("viewSnapshot maps 2xx BAD_JSON to corrupt-snapshot error, not network", async () => {
     // GET-side BAD_JSON means the snapshot response body was unreadable —
     // no "maybe committed" ambiguity (GETs don't commit). Previously this
     // surfaced as reason:"network", inviting a pointless retry. Mapping
-    // to corrupt_snapshot lets the caller render "this snapshot is
-    // corrupt" copy instead of "check your connection."
-    const { ApiRequestError } = await import("../api/client");
+    // to a CORRUPT_SNAPSHOT synthetic error lets the view scope render
+    // "this snapshot is corrupt" copy instead of "check your connection."
     vi.mocked(api.snapshots.get).mockRejectedValue(
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
     );
 
     const { result } = renderHook(() => useSnapshotState("ch-1"));
-    let r: { ok: boolean; reason?: string } = { ok: true };
+    let r: { ok: boolean; error?: ApiRequestError; superseded?: string } = { ok: true };
     await act(async () => {
       r = await result.current.viewSnapshot({
         id: "snap-1",
@@ -223,7 +235,12 @@ describe("useSnapshotState", () => {
     });
 
     expect(r.ok).toBe(false);
-    expect(r.reason).toBe("corrupt_snapshot");
+    if (!r.error) throw new Error("unreachable");
+    expect(r.error.code).toBe(SNAPSHOT_ERROR_CODES.CORRUPT_SNAPSHOT);
+    expect(mapApiError(r.error, "snapshot.view").message).toBe(STRINGS.snapshots.viewFailedCorrupt);
+    // The transient/connection branch MUST NOT fire — retrying a BAD_JSON
+    // GET just re-reads the same garbled bytes.
+    expect(mapApiError(r.error, "snapshot.view").transient).toBe(false);
   });
 
   it("viewSnapshot returns superseded='chapter' on chapter switch (S6)", async () => {
@@ -246,7 +263,7 @@ describe("useSnapshotState", () => {
     );
 
     let viewPromise: ReturnType<typeof result.current.viewSnapshot> = Promise.resolve({
-      ok: false,
+      ok: true,
     });
     act(() => {
       viewPromise = result.current.viewSnapshot({
@@ -259,7 +276,7 @@ describe("useSnapshotState", () => {
     // chapterSeq.abort() so the captured cToken becomes stale.
     rerender({ chapterId: "ch-2" });
 
-    let r: Awaited<ReturnType<typeof result.current.viewSnapshot>> = { ok: false };
+    let r: { ok: boolean; error?: ApiRequestError; superseded?: string } = { ok: false };
     await act(async () => {
       resolveGet(makeSnapshotRow());
       r = await viewPromise;
@@ -287,7 +304,7 @@ describe("useSnapshotState", () => {
     const { result } = renderHook(() => useSnapshotState("ch-1"));
 
     let firstPromise: ReturnType<typeof result.current.viewSnapshot> = Promise.resolve({
-      ok: false,
+      ok: true,
     });
     act(() => {
       firstPromise = result.current.viewSnapshot({
@@ -307,7 +324,7 @@ describe("useSnapshotState", () => {
       });
     });
 
-    let r: Awaited<ReturnType<typeof result.current.viewSnapshot>> = { ok: false };
+    let r: { ok: boolean; error?: ApiRequestError; superseded?: string } = { ok: false };
     await act(async () => {
       resolveFirstGet(makeSnapshotRow({ id: "snap-1" }));
       r = await firstPromise;
@@ -347,15 +364,48 @@ describe("useSnapshotState", () => {
     });
     expect(result.current.viewingSnapshot).not.toBeNull();
 
-    // Now restore
-    let r: { ok: boolean; reason?: string } = { ok: false };
+    // Now restore. I20 (review 2026-04-24): the prior annotation
+    // `{ ok: boolean; reason?: string }` reflected a pre-refactor
+    // RestoreResult shape — the current shape is discriminated with
+    // `error` on the failure arm. Drop the annotation; the assignment
+    // inside act() infers the return type directly from restoreSnapshot.
+    let r: Awaited<ReturnType<typeof result.current.restoreSnapshot>> | undefined;
     await act(async () => {
       r = await result.current.restoreSnapshot("snap-1");
     });
 
-    expect(r.ok).toBe(true);
-    expect(api.snapshots.restore).toHaveBeenCalledWith("snap-1");
+    expect(r?.ok).toBe(true);
+    // I3 (review 2026-04-24): restore threads an AbortSignal so chapter
+    // switch / unmount during the restore drops the fetch cleanly.
+    expect(api.snapshots.restore).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     expect(result.current.viewingSnapshot).toBeNull();
+  });
+
+  // I3 (review 2026-04-24): restore + follow-up list run past unmount
+  // if no signal is threaded. Hook now holds a restoreAbortRef which
+  // the unmount cleanup aborts so the browser drops the in-flight
+  // request instead of finishing it for a gone caller.
+  it("restoreSnapshot aborts in-flight restore on unmount (I3)", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    vi.mocked(api.snapshots.restore).mockImplementation((_id, signal) => {
+      capturedSignal = signal;
+      return new Promise(() => {}); // never resolves
+    });
+
+    const { result, unmount } = renderHook(() => useSnapshotState("ch-1"));
+
+    act(() => {
+      void result.current.restoreSnapshot("snap-1");
+    });
+
+    await waitFor(() => {
+      expect(api.snapshots.restore).toHaveBeenCalled();
+    });
+    expect(capturedSignal?.aborted).toBe(false);
+
+    unmount();
+
+    expect(capturedSignal?.aborted).toBe(true);
   });
 
   it("restoreSnapshot flags staleChapterSwitch when chapter changes mid-flight", async () => {
@@ -443,102 +493,152 @@ describe("useSnapshotState", () => {
     expect(r.restoredChapterId).toBe("ch-1");
   });
 
-  it("restoreSnapshot routes a non-ApiRequestError pre-send reject to network (I5)", async () => {
-    // I5: before this fix, any non-ApiRequestError throw from the restore
-    // pipeline was categorized as "unknown" and the caller treated that
-    // as possibly_committed — a TypeError before fetch left the client
-    // wiped the cached draft and permanently locked the editor. apiFetch
-    // now wraps every network error in ApiRequestError, so a bare
-    // non-ApiRequestError reject from api.snapshots.restore means the
-    // server never received the request. Route to "network" so the
-    // caller can surface a dismissible retry banner.
+  it("restoreSnapshot routes a non-ApiRequestError throw as possiblyCommitted 200 BAD_JSON (I2)", async () => {
+    // I2 (2026-04-23 review): apiFetch wraps every network/fetch error
+    // in ApiRequestError, so a bare non-ApiRequestError throw from the
+    // restore pipeline is effectively post-success (e.g.
+    // localStorage.removeItem throwing in Safari private mode, an
+    // extension proxying storage, a setState on a torn-down boundary).
+    // The server almost certainly committed the restore + its auto-
+    // snapshot by that point, so synthesizing NETWORK (transient retry)
+    // would invite a double-restore on the user's next click. Synthesize
+    // 200 BAD_JSON instead so mapApiError routes through the
+    // possiblyCommitted arm → persistent lock banner → no retry.
     vi.mocked(api.snapshots.restore).mockRejectedValue(new Error("fail"));
 
     const { result } = renderHook(() => useSnapshotState("ch-1"));
-    let r: { ok: boolean; reason?: string } = { ok: true };
+    let r: {
+      ok: boolean;
+      error?: ApiRequestError;
+      staleChapterSwitch?: boolean;
+      restoredChapterId?: string;
+    } = { ok: true };
     await act(async () => {
       r = await result.current.restoreSnapshot("snap-1");
     });
 
     expect(r.ok).toBe(false);
-    expect(r.reason).toBe("network");
+    if (!r.error) throw new Error("unreachable");
+    expect(r.error).toBeInstanceOf(ApiRequestError);
+    expect(r.error.code).toBe("BAD_JSON");
+    expect(r.error.status).toBe(200);
+    const mapped = mapApiError(r.error, "snapshot.restore");
+    expect(mapped.possiblyCommitted).toBe(true);
+    expect(mapped.transient).toBe(false);
+    expect(mapped.message).toBe(STRINGS.snapshots.restoreResponseUnreadable);
   });
 
-  it("restoreSnapshot surfaces corrupt_snapshot reason on 400 CORRUPT_SNAPSHOT", async () => {
-    const { ApiRequestError } = await import("../api/client");
+  it("restoreSnapshot surfaces CORRUPT_SNAPSHOT via the failure arm on 400 CORRUPT_SNAPSHOT", async () => {
     vi.mocked(api.snapshots.restore).mockRejectedValue(
       new ApiRequestError("Corrupt", 400, "CORRUPT_SNAPSHOT"),
     );
 
     const { result } = renderHook(() => useSnapshotState("ch-1"));
-    let r: { ok: boolean; reason?: string; message?: string } = { ok: true };
+    let r: {
+      ok: boolean;
+      error?: ApiRequestError;
+      staleChapterSwitch?: boolean;
+      restoredChapterId?: string;
+    } = { ok: true };
     await act(async () => {
       r = await result.current.restoreSnapshot("snap-1");
     });
 
     expect(r.ok).toBe(false);
-    expect(r.reason).toBe("corrupt_snapshot");
+    if (!r.error) throw new Error("unreachable");
+    expect(r.error.code).toBe(SNAPSHOT_ERROR_CODES.CORRUPT_SNAPSHOT);
+    expect(mapApiError(r.error, "snapshot.restore").message).toBe(
+      STRINGS.snapshots.restoreFailedCorrupt,
+    );
   });
 
-  it("restoreSnapshot surfaces not_found reason on 404", async () => {
-    const { ApiRequestError } = await import("../api/client");
+  it("restoreSnapshot surfaces a 404 via the failure arm", async () => {
     vi.mocked(api.snapshots.restore).mockRejectedValue(
       new ApiRequestError("Snapshot or chapter not found.", 404, "NOT_FOUND"),
     );
 
     const { result } = renderHook(() => useSnapshotState("ch-1"));
-    let r: { ok: boolean; reason?: string; message?: string } = { ok: true };
+    let r: {
+      ok: boolean;
+      error?: ApiRequestError;
+      staleChapterSwitch?: boolean;
+      restoredChapterId?: string;
+    } = { ok: true };
     await act(async () => {
       r = await result.current.restoreSnapshot("snap-1");
     });
 
     expect(r.ok).toBe(false);
-    expect(r.reason).toBe("not_found");
+    if (!r.error) throw new Error("unreachable");
+    expect(r.error.status).toBe(404);
+    expect(mapApiError(r.error, "snapshot.restore").message).toBe(
+      STRINGS.snapshots.restoreFailedNotFound,
+    );
   });
 
-  it("restoreSnapshot surfaces possibly_committed reason on 2xx BAD_JSON (C2)", async () => {
+  it("restoreSnapshot surfaces a possibly-committed error on 2xx BAD_JSON (C2)", async () => {
     // apiFetch throws ApiRequestError(status=2xx, code="BAD_JSON") when a
     // 2xx response body fails to parse. The server almost certainly
     // committed the restore (and its auto-snapshot) but the client cannot
     // verify. Previously this fell through to reason:"network" — the
     // EditorPage handler then surfaced the generic "retry" banner and
     // re-enabled the editor. Auto-save would then silently revert the
-    // committed restore. The dedicated "possibly_committed" reason lets
-    // the caller route to a persistent lock banner instead.
-    const { ApiRequestError } = await import("../api/client");
+    // committed restore. With the failure arm carrying the ApiRequestError
+    // directly, mapApiError("snapshot.restore") classifies this as
+    // possiblyCommitted=true, which the caller routes to a persistent
+    // lock banner.
     vi.mocked(api.snapshots.restore).mockRejectedValue(
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
     );
 
     const { result } = renderHook(() => useSnapshotState("ch-1"));
-    let r: { ok: boolean; reason?: string; message?: string } = { ok: true };
+    let r: {
+      ok: boolean;
+      error?: ApiRequestError;
+      staleChapterSwitch?: boolean;
+      restoredChapterId?: string;
+    } = { ok: true };
     await act(async () => {
       r = await result.current.restoreSnapshot("snap-1");
     });
 
     expect(r.ok).toBe(false);
-    expect(r.reason).toBe("possibly_committed");
+    if (!r.error) throw new Error("unreachable");
+    expect(r.error.code).toBe("BAD_JSON");
+    expect(r.error.status).toBe(200);
+    const mapped = mapApiError(r.error, "snapshot.restore");
+    expect(mapped.possiblyCommitted).toBe(true);
+    expect(mapped.transient).toBe(false);
+    expect(mapped.message).toBe(STRINGS.snapshots.restoreResponseUnreadable);
   });
 
-  it("restoreSnapshot surfaces aborted reason on ApiRequestError ABORTED (I7)", async () => {
-    // viewSnapshot already treats ABORTED as a silent no-op. Mirror it
-    // for restoreSnapshot — without the dedicated reason, ABORTED falls
-    // through to the network branch and the caller's banner says "check
-    // your connection", which is misleading. No path triggers ABORTED on
-    // restore today; this test guards the contract for future wiring.
-    const { ApiRequestError } = await import("../api/client");
+  it("restoreSnapshot surfaces ABORTED via the failure arm (mapApiError returns message:null) (I7)", async () => {
+    // viewSnapshot already treats ABORTED as a silent no-op via its
+    // supersession discriminant. restoreSnapshot forwards the
+    // ApiRequestError verbatim — the caller runs it through mapApiError
+    // which returns message:null for ABORTED, the agreed-upon silent-bail
+    // signal. No path triggers ABORTED on restore today; this test guards
+    // the contract for future wiring (e.g., AbortController wiring for
+    // cancellable restores).
     vi.mocked(api.snapshots.restore).mockRejectedValue(
       new ApiRequestError("Request aborted", 0, "ABORTED"),
     );
 
     const { result } = renderHook(() => useSnapshotState("ch-1"));
-    let r: { ok: boolean; reason?: string } = { ok: true };
+    let r: {
+      ok: boolean;
+      error?: ApiRequestError;
+      staleChapterSwitch?: boolean;
+      restoredChapterId?: string;
+    } = { ok: true };
     await act(async () => {
       r = await result.current.restoreSnapshot("snap-1");
     });
 
     expect(r.ok).toBe(false);
-    expect(r.reason).toBe("aborted");
+    if (!r.error) throw new Error("unreachable");
+    expect(r.error.code).toBe("ABORTED");
+    expect(mapApiError(r.error, "snapshot.restore").message).toBeNull();
   });
 
   it("leaves count null when list fetch fails so badge stays hidden", async () => {

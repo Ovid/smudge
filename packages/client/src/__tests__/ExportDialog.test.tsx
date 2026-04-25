@@ -17,6 +17,8 @@ vi.mock("../api/client", () => ({
     constructor(
       message: string,
       public readonly status: number,
+      public readonly code?: string,
+      public readonly extras?: Record<string, unknown>,
     ) {
       super(message);
       this.name = "ApiRequestError";
@@ -154,7 +156,7 @@ describe("ExportDialog", () => {
     });
   });
 
-  it("shows specific server error message for ApiRequestError", async () => {
+  it("shows generic error message for ApiRequestError (no raw message leak)", async () => {
     const user = userEvent.setup();
     vi.mocked(api.projects.export).mockRejectedValue(
       new ApiRequestError("One or more chapter IDs do not belong to this project.", 400),
@@ -164,10 +166,60 @@ describe("ExportDialog", () => {
     await user.click(screen.getByText("Export"));
 
     await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("Export failed. Please try again.");
+    });
+  });
+
+  it("surfaces the network-specific copy when export fails with NETWORK (I2 2026-04-25)", async () => {
+    // Before the export.run scope grew a `network:` entry, a NETWORK
+    // classification fell back to the generic "Export failed. Please
+    // try again." copy — same as a server error. Users had no hint
+    // that a connection retry would help.
+    const user = userEvent.setup();
+    vi.mocked(api.projects.export).mockRejectedValue(
+      new ApiRequestError("[dev] Failed to fetch", 0, "NETWORK"),
+    );
+
+    render(<ExportDialog {...defaultProps} />);
+    await user.click(screen.getByText("Export"));
+
+    await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent(
-        "One or more chapter IDs do not belong to this project.",
+        "Export failed — check your connection and try again.",
       );
     });
+  });
+
+  it("surfaces the too-large copy on 413 (I2 2026-04-25)", async () => {
+    // 413 was indistinguishable from a server error before
+    // export.run grew a byStatus[413] entry. The "select fewer
+    // chapters" hint is the only actionable response.
+    const user = userEvent.setup();
+    vi.mocked(api.projects.export).mockRejectedValue(
+      new ApiRequestError("[dev] Export HTTP 413", 413, "PAYLOAD_TOO_LARGE"),
+    );
+
+    render(<ExportDialog {...defaultProps} />);
+    await user.click(screen.getByText("Export"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Export is too large. Try selecting fewer chapters and exporting again.",
+      );
+    });
+  });
+
+  it("stays silent when export is aborted by ABORTED error code", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.projects.export).mockRejectedValue(new ApiRequestError("aborted", 0, "ABORTED"));
+
+    render(<ExportDialog {...defaultProps} />);
+    await user.click(screen.getByText("Export"));
+
+    // The ABORTED mapping returns message: null — no alert should appear.
+    // Wait a tick for the catch to run.
+    await act(async () => {});
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("exports with markdown format when selected", async () => {
@@ -292,7 +344,7 @@ describe("ExportDialog", () => {
     await user.click(screen.getByLabelText("EPUB"));
 
     await waitFor(() => {
-      expect(api.images.list).toHaveBeenCalledWith("proj-1");
+      expect(api.images.list).toHaveBeenCalledWith("proj-1", expect.any(AbortSignal));
     });
 
     await waitFor(() => {
@@ -315,7 +367,7 @@ describe("ExportDialog", () => {
     await user.click(screen.getByLabelText("EPUB"));
 
     await waitFor(() => {
-      expect(api.images.list).toHaveBeenCalledWith("proj-1");
+      expect(api.images.list).toHaveBeenCalledWith("proj-1", expect.any(AbortSignal));
     });
 
     // Give it a tick to settle
@@ -333,7 +385,7 @@ describe("ExportDialog", () => {
     await user.click(screen.getByLabelText("EPUB"));
 
     await waitFor(() => {
-      expect(api.images.list).toHaveBeenCalledWith("proj-1");
+      expect(api.images.list).toHaveBeenCalledWith("proj-1", expect.any(AbortSignal));
     });
 
     await act(async () => {});
@@ -341,6 +393,26 @@ describe("ExportDialog", () => {
 
     warnSpy.mockRestore();
     errorSpy.mockRestore();
+  });
+
+  // C4 (review 2026-04-24): a real 4xx/5xx on the cover-image fetch
+  // used to silently set coverImages=[], so the dropdown disappeared
+  // and the user assumed the project had no images — exporting without
+  // a cover and never knowing the list load failed. Surface the mapped
+  // message via the existing setError() banner so the failure is
+  // visible. ABORTED stays silent per the mapper contract.
+  it("surfaces cover-image list error in the alert banner (C4)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.images.list).mockRejectedValue(new ApiRequestError("boom", 500));
+
+    render(<ExportDialog {...defaultProps} />);
+    await user.click(screen.getByLabelText("EPUB"));
+
+    // The role="alert" paragraph above the format fieldset carries the
+    // mapped image.list fallback copy.
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(/failed to load images/i);
+    });
   });
 
   it("includes epub_cover_image_id in export when cover image is selected", async () => {
@@ -442,7 +514,7 @@ describe("ExportDialog", () => {
     await user.click(screen.getByLabelText("Word (.docx)"));
 
     await waitFor(() => {
-      expect(api.images.list).toHaveBeenCalledWith("proj-1");
+      expect(api.images.list).toHaveBeenCalledWith("proj-1", expect.any(AbortSignal));
     });
 
     expect(

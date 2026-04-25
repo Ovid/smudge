@@ -6,6 +6,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { editorExtensions } from "../editorExtensions";
 import { STRINGS } from "../strings";
 import { api } from "../api/client";
+import { mapApiError } from "../errors";
 
 export interface EditorHandle {
   flushSave: () => Promise<boolean>;
@@ -45,6 +46,13 @@ interface EditorProps {
   onEditorReady?: (editor: TipTapEditor | null) => void;
   projectId: string;
   onImageAnnouncement?: (message: string) => void;
+  // I8 (review 2026-04-24): fires when a paste/drop upload's response
+  // body is unreadable (2xx BAD_JSON) — the server stored the image
+  // but the client can't confirm. EditorPage bumps a shared refresh
+  // key that ImageGallery listens to, so the authoritative list is
+  // re-fetched and a retry sees the already-stored row instead of
+  // uploading the same file again.
+  onImageUploadCommitted?: () => void;
 }
 
 const AUTO_SAVE_DEBOUNCE_MS = 1500;
@@ -106,9 +114,11 @@ export function Editor({
   onEditorReady,
   projectId,
   onImageAnnouncement,
+  onImageUploadCommitted,
 }: EditorProps) {
   const onSaveRef = useRef(onSave);
   const onContentChangeRef = useRef(onContentChange);
+  const onImageUploadCommittedRef = useRef(onImageUploadCommitted);
   const projectIdRef = useRef(projectId);
   const onImageAnnouncementRef = useRef(onImageAnnouncement);
   const editorIdRef = useRef(nextEditorId++);
@@ -133,6 +143,9 @@ export function Editor({
   useEffect(() => {
     onImageAnnouncementRef.current = onImageAnnouncement;
   }, [onImageAnnouncement]);
+  useEffect(() => {
+    onImageUploadCommittedRef.current = onImageUploadCommitted;
+  }, [onImageUploadCommitted]);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyRef = useRef(false);
   const editorInstanceRef = useRef<{ getJSON: () => Record<string, unknown> } | null>(null);
@@ -207,7 +220,15 @@ export function Editor({
       debouncedSave(ed);
     },
     onBlur: ({ editor: ed }) => {
-      if (!dirtyRef.current) return;
+      // C2 (review 2026-04-24): also gate on editor.isEditable.
+      // setEditable(false) is the mutation lock around restore /
+      // replace / reload-failure flows, but TipTap still dispatches
+      // blur events on a non-editable editor. Without this check, a
+      // click on Restore/Replace (which itself triggers blur) during
+      // the mutation window fires an immediate PATCH of pre-mutation
+      // content on top of the server-committed mutation, violating
+      // CLAUDE.md save-pipeline invariant #2.
+      if (!dirtyRef.current || !ed.isEditable) return;
       // Immediate save on blur (cancel pending debounce)
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
@@ -246,8 +267,19 @@ export function Editor({
     const id = editorIdRef.current;
     activeEditorId = id;
     imageUploadHandlers.set(id, async (file: File) => {
+      // I9 (review 2026-04-25): capture the project id at upload-start.
+      // The Editor component does not necessarily remount on cross-project
+      // navigation, so projectIdRef.current can advance during the in-flight
+      // upload. Reading it inside the response handlers fired the gallery
+      // refresh / committed callback against whatever project was active
+      // at response-time — a B-project gallery refresh for an A-project
+      // upload, with the user seeing no evidence and the new image hidden
+      // until they navigate back. Gate the committed callback and the
+      // success announcement on the captured project id still being live.
+      const uploadProjectId = projectIdRef.current;
       try {
-        const image = await api.images.upload(projectIdRef.current, file);
+        const image = await api.images.upload(uploadProjectId, file);
+        if (projectIdRef.current !== uploadProjectId) return;
         if (editor && !editor.isDestroyed) {
           editor
             .chain()
@@ -256,9 +288,26 @@ export function Editor({
             .run();
           onImageAnnouncementRef.current?.(STRINGS.imageGallery.insertSuccess(image.filename));
         }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Unknown error";
-        onImageAnnouncementRef.current?.(STRINGS.imageGallery.uploadFailed(message));
+      } catch (err: unknown) {
+        const { message, possiblyCommitted } = mapApiError(err, "image.upload");
+        // I8 (review 2026-04-24): ImageGallery.handleFileSelect already
+        // refreshes on possiblyCommitted, but the paste/drop path fed
+        // through this catch only surfaced the message — the gallery
+        // kept its stale list and a user retry uploaded the same file
+        // again (server does not dedupe), creating a second row per
+        // intended upload. Fire the shared refresh callback so the
+        // authoritative list reloads on the committed branch too.
+        // I9: only fire the gallery-refresh if the user is still on
+        // the project the upload targeted; otherwise we'd refresh a
+        // stale gallery for the wrong project. The image landed
+        // against uploadProjectId; on cross-project nav, the user
+        // will see it the next time they open project A's gallery.
+        if (possiblyCommitted && projectIdRef.current === uploadProjectId) {
+          onImageUploadCommittedRef.current?.();
+        }
+        if (message && projectIdRef.current === uploadProjectId) {
+          onImageAnnouncementRef.current?.(message);
+        }
       }
     });
     return () => {

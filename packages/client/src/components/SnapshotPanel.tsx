@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from "react";
-import { api, ApiRequestError } from "../api/client";
+import { api } from "../api/client";
 import { useAbortableSequence } from "../hooks/useAbortableSequence";
 import { STRINGS } from "../strings";
+import { mapApiError, isNotFound } from "../errors";
 import type { SnapshotListItem } from "@smudge/shared";
 
 const S = STRINGS.snapshots;
@@ -113,22 +114,47 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
     // imperative refreshSnapshots() path could overwrite a newer chapter's
     // list with a stale one.
     const chapterSeq = useAbortableSequence();
+    // I2 (review 2026-04-24): controllers paired with the sequence
+    // tokens so a chapter switch / unmount severs the request as well
+    // as discarding the response. The mount useEffect aborts its own
+    // controller on cleanup, and the imperative fetchSnapshots path
+    // (post-create / post-delete via useImperativeHandle) is covered by
+    // the unmount-cleanup effect below — without that cleanup, an
+    // imperative refresh whose parent unmounts while it is in flight
+    // leaked the server request to completion.
+    const fetchAbortRef = useRef<AbortController | null>(null);
+    // I6 (review 2026-04-24): distinct controller for create/delete
+    // POST/DELETE. Kept separate from fetchAbortRef so a new list
+    // fetch does not sever an in-flight mutation, and a mutation
+    // supersede does not sever the list fetch. Both are covered by
+    // the unmount cleanup below.
+    const mutateAbortRef = useRef<AbortController | null>(null);
+    useEffect(() => {
+      return () => {
+        fetchAbortRef.current?.abort();
+        mutateAbortRef.current?.abort();
+      };
+    }, []);
 
     const fetchSnapshots = useCallback(async () => {
       if (!chapterId) return;
       const token = chapterSeq.capture();
+      fetchAbortRef.current?.abort();
+      const controller = new AbortController();
+      fetchAbortRef.current = controller;
       try {
-        const data = await api.snapshots.list(chapterId);
+        const data = await api.snapshots.list(chapterId, controller.signal);
         if (token.isStale()) return;
         setSnapshots(data);
         setListError(null);
         onSnapshotsChange?.(data.length);
-      } catch {
+      } catch (err) {
         if (token.isStale()) return;
         // Surface the failure instead of silently showing an empty panel;
         // otherwise a network blip makes the user think a chapter with
         // snapshots has none.
-        setListError(S.listFailed);
+        const { message } = mapApiError(err, "snapshot.list");
+        if (message) setListError(message);
       }
     }, [chapterId, onSnapshotsChange, chapterSeq]);
 
@@ -141,18 +167,25 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
       chapterSeq.abort();
       if (!isOpen || !chapterId) return;
       const token = chapterSeq.capture();
+      fetchAbortRef.current?.abort();
+      const controller = new AbortController();
+      fetchAbortRef.current = controller;
       api.snapshots
-        .list(chapterId)
+        .list(chapterId, controller.signal)
         .then((data) => {
           if (token.isStale()) return;
           setSnapshots(data);
           setListError(null);
           onSnapshotsChange?.(data.length);
         })
-        .catch(() => {
+        .catch((err) => {
           if (token.isStale()) return;
-          setListError(S.listFailed);
+          const { message } = mapApiError(err, "snapshot.list");
+          if (message) setListError(message);
         });
+      return () => {
+        controller.abort();
+      };
     }, [isOpen, chapterId, onSnapshotsChange, chapterSeq]);
 
     // Focus management
@@ -251,8 +284,16 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
           return;
         }
       }
+      mutateAbortRef.current?.abort();
+      const controller = new AbortController();
+      mutateAbortRef.current = controller;
       try {
-        const result = await api.snapshots.create(chapterId, createLabel.trim() || undefined);
+        const result = await api.snapshots.create(
+          chapterId,
+          createLabel.trim() || undefined,
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
         if (result.status === "duplicate") {
           setDuplicateMessage(true);
           return;
@@ -261,23 +302,30 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         setCreateLabel("");
         setDuplicateMessage(false);
         await fetchSnapshots();
-      } catch {
-        setCreateError(S.createFailed);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        const { message } = mapApiError(err, "snapshot.create");
+        if (message) setCreateError(message);
       }
     };
 
     const handleDelete = async (id: string) => {
       setDeleteError(null);
+      mutateAbortRef.current?.abort();
+      const controller = new AbortController();
+      mutateAbortRef.current = controller;
       try {
-        await api.snapshots.delete(id);
+        await api.snapshots.delete(id, controller.signal);
+        if (controller.signal.aborted) return;
         setConfirmDeleteId(null);
         await fetchSnapshots();
       } catch (err) {
+        if (controller.signal.aborted) return;
         // 404 means the snapshot is already gone (deleted in another tab,
         // or the parent chapter was soft-deleted). The server already
         // agrees with the user's intent; refresh the list and close the
         // dialog rather than looping on the same 404.
-        if (err instanceof ApiRequestError && err.status === 404) {
+        if (isNotFound(err)) {
           setConfirmDeleteId(null);
           await fetchSnapshots();
           return;
@@ -285,7 +333,8 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         // Keep the confirm dialog open and surface an error so the user
         // knows the delete didn't land — silently swallowing it makes
         // users believe a destructive action succeeded when it hadn't.
-        setDeleteError(S.deleteFailed);
+        const { message } = mapApiError(err, "snapshot.delete");
+        if (message) setDeleteError(message);
       }
     };
 

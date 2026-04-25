@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 When you have finished reading this file, announce "CLAUDE.md loaded"
 
+Always address me as "Ovid" in your responses. This lets me know that you have read this file, even if I don't see the previous announcement.
+
 ## Project Overview
 
 Smudge is a web-based writing application for long-form fiction and non-fiction, organized as projects containing chapters. It replaces Google Docs for book-length work. Single-user, no auth. The full MVP spec lives in `docs/plans/mvp.md`.
@@ -14,7 +16,7 @@ Smudge is a web-based writing application for long-form fiction and non-fiction,
 
 - **Monorepo:** npm workspaces with three packages: `shared`, `server`, `client`
 - **Language:** TypeScript everywhere (frontend + backend + shared)
-- **Backend:** Node.js 20 LTS, Express 4.x, better-sqlite3 (synchronous), Knex.js (migrations/queries), Zod (validation)
+- **Backend:** Node.js 22 LTS (Jod; see CONTRIBUTING.md for the DEP0040 workaround), Express 4.x, better-sqlite3 (synchronous), Knex.js (migrations/queries), Zod (validation)
 - **Frontend:** React 18+, Vite, TipTap v2 (rich text editor, stores content as JSON not HTML), Tailwind CSS, @dnd-kit/sortable v10
 - **Testing:** Vitest (unit + integration with Supertest), Playwright (e2e + aXe-core a11y)
 - **Deployment:** Single Docker container, Express serves API + static frontend on port 3456, SQLite persisted via Docker volume
@@ -32,7 +34,7 @@ packages/
       settings/           # routes, service, repository, types
       chapter-statuses/   # routes, service, repository, types
       db/                 # connection singleton, migrations/
-  client/       # React SPA, components/, hooks/, pages/, api/, strings.ts
+  client/       # React SPA, components/, hooks/, pages/, api/, errors/, strings.ts
 e2e/            # Playwright tests
 ```
 
@@ -89,6 +91,18 @@ make help                            # Show all available make targets
 
 For mutation-via-server flows (snapshot restore, project-wide replace, and future similar operations), route through `useEditorMutation` in `packages/client/src/hooks/useEditorMutation.ts` — it enforces invariants 1–4 by construction. Hand-composing these steps is reserved for flows outside its scope (e.g. snapshot view, which does not mutate content). For any client flow whose response must be discarded when superseded by a newer request or an external epoch change (chapter switch, project switch, unmount), route through `useAbortableSequence` — it encodes the "bump before, check after" contract as tokens, auto-aborts on unmount, and is enforced by ESLint.
 
+**Unified API error mapping.** All client code that surfaces a user-visible
+message from an API error must route through `mapApiError(err, scope)` in
+`packages/client/src/errors/`. The mapper returns `{ message,
+possiblyCommitted, transient, extras? }`; it is the single owner of
+code/status-to-string translation and of the cross-cutting rules (ABORTED
+is silent, 2xx BAD_JSON is `possiblyCommitted: true` when the scope declares
+`committed:` copy and `false` for read scopes that do not, NETWORK is
+`transient`). Raw `err.message` must never reach the UI. New API surfaces
+add a scope entry to `scopes.ts`; they do not write ad-hoc ladders at call
+sites. This invariant will be enforced by ESLint in Phase 4b.4; until then,
+it is enforced by review.
+
 **String externalization.** All UI strings in `packages/client/src/strings.ts` as constants, never raw literals in components. Prepares for future i18n without architectural changes.
 
 ## API Design
@@ -140,6 +154,8 @@ The save pipeline gets the most rigorous coverage — it's the core trust promis
 **Coverage thresholds are enforced in `vitest.config.ts` (95% statements, 85% branches, 90% functions, 95% lines).** If coverage drops below these thresholds, the goal is always to increase coverage as much as possible by writing meaningful tests for the uncovered code — never simply adjust the thresholds downward or write minimal/trivial tests just to meet the minimum. Aim to push coverage higher, not coast at the floor.
 
 **Zero warnings in test output.** Tests must not produce noisy `console.warn`, `console.error`, or logger output in stderr. When a test deliberately triggers an error path that logs a warning, spy on the output, suppress it, and assert the expected message — e.g. `const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {}); ... expect(warnSpy).toHaveBeenCalledWith(...); warnSpy.mockRestore();`. Noisy test output masks real problems; if every test run has 30 "expected" warnings, developers stop reading them and miss the 31st that signals a real bug.
+
+The only thing worse than a failing test is a reduction in test coverage.
 
 ## Pull Request Scope
 

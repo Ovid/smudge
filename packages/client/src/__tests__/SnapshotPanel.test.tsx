@@ -1,7 +1,8 @@
+import { createRef } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { SnapshotPanel } from "../components/SnapshotPanel";
+import { SnapshotPanel, type SnapshotPanelHandle } from "../components/SnapshotPanel";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
 import type { SnapshotListItem } from "@smudge/shared";
@@ -172,7 +173,11 @@ describe("SnapshotPanel", () => {
       await user.type(screen.getByPlaceholderText(S.labelPlaceholder), "My label");
       await user.click(screen.getByText(S.save));
 
-      expect(api.snapshots.create).toHaveBeenCalledWith("ch-1", "My label");
+      expect(api.snapshots.create).toHaveBeenCalledWith(
+        "ch-1",
+        "My label",
+        expect.any(AbortSignal),
+      );
     });
 
     it("surfaces createFailed when onBeforeCreate throws (I3 defense-in-depth)", async () => {
@@ -265,7 +270,7 @@ describe("SnapshotPanel", () => {
       await user.click(screen.getByText(S.createButton));
       await user.click(screen.getByText(S.save));
 
-      expect(api.snapshots.create).toHaveBeenCalledWith("ch-1", undefined);
+      expect(api.snapshots.create).toHaveBeenCalledWith("ch-1", undefined, expect.any(AbortSignal));
     });
 
     it("shows duplicate message when content unchanged", async () => {
@@ -548,8 +553,34 @@ describe("SnapshotPanel", () => {
       await user.click(screen.getByText(S.deleteConfirmButton));
 
       await waitFor(() => {
-        expect(api.snapshots.delete).toHaveBeenCalledWith("snap-del");
+        expect(api.snapshots.delete).toHaveBeenCalledWith("snap-del", expect.any(AbortSignal));
       });
+    });
+
+    // I6 (review 2026-04-24): create + delete now thread a distinct
+    // mutateAbortRef (separate from fetchAbortRef so a panel unmount
+    // mid-mutation severs the POST/DELETE without stomping the list
+    // fetch pathway).
+    it("aborts in-flight delete on panel unmount (I6)", async () => {
+      const user = userEvent.setup();
+      const snap = makeSnapshot({ id: "snap-abort" });
+      vi.mocked(api.snapshots.list).mockResolvedValue([snap]);
+      let capturedSignal: AbortSignal | undefined;
+      vi.mocked(api.snapshots.delete).mockImplementation((_id, signal) => {
+        capturedSignal = signal;
+        return new Promise(() => {}); // never resolves
+      });
+
+      const { unmount } = render(<SnapshotPanel {...defaultProps} />);
+      await waitFor(() => expect(screen.getByText(S.delete)).toBeInTheDocument());
+      await user.click(screen.getByText(S.delete));
+      await user.click(screen.getByText(S.deleteConfirmButton));
+
+      await waitFor(() => expect(api.snapshots.delete).toHaveBeenCalled());
+      expect(capturedSignal?.aborted).toBe(false);
+
+      unmount();
+      expect(capturedSignal?.aborted).toBe(true);
     });
 
     it("cancels delete when Cancel is clicked in confirmation", async () => {
@@ -627,6 +658,49 @@ describe("SnapshotPanel", () => {
         expect(panel).toBeInTheDocument();
         expect(panel).toHaveFocus();
       });
+    });
+
+    it("aborts in-flight imperative fetchSnapshots on unmount (review 2026-04-24)", async () => {
+      // The imperative fetchSnapshots() path (triggered post-create and
+      // post-delete via the SnapshotPanelHandle ref) created an
+      // AbortController but had no unmount cleanup to abort it — the
+      // comment claimed "chapter switch / unmount severs the request"
+      // but only the mount useEffect wired unmount teardown. Without
+      // this, an unmount during a post-mutation refresh leaks the
+      // server request.
+      const capturedSignals: AbortSignal[] = [];
+      vi.mocked(api.snapshots.list).mockImplementation(
+        async (_chapterId: string, signal?: AbortSignal) => {
+          if (signal) capturedSignals.push(signal);
+          // Hang forever — the test only cares whether unmount aborts.
+          return new Promise<SnapshotListItem[]>(() => {});
+        },
+      );
+
+      const ref = createRef<SnapshotPanelHandle>();
+      const { unmount } = render(<SnapshotPanel {...defaultProps} ref={ref} />);
+
+      // Wait for the mount fetch to fire.
+      await waitFor(() => {
+        expect(api.snapshots.list).toHaveBeenCalledTimes(1);
+      });
+
+      // Imperative refresh — simulates the post-create / post-delete path
+      // that wires through useImperativeHandle.
+      ref.current?.refreshSnapshots();
+      await waitFor(() => {
+        expect(api.snapshots.list).toHaveBeenCalledTimes(2);
+      });
+
+      // The mount-effect's controller is distinct from fetchAbortRef's;
+      // capture index 1 (the imperative call) for the post-unmount check.
+      expect(capturedSignals.length).toBeGreaterThanOrEqual(2);
+      const imperativeSignal = capturedSignals[1]!;
+      expect(imperativeSignal.aborted).toBe(false);
+
+      unmount();
+
+      expect(imperativeSignal.aborted).toBe(true);
     });
 
     it("moves focus to panel on first mount when already open", async () => {

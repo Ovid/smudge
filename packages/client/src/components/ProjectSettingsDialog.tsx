@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
+import { mapApiError } from "../errors";
 
 const TIMEZONES = (() => {
   try {
@@ -43,6 +44,15 @@ export function ProjectSettingsDialog({
   const userChangedTimezoneRef = useRef(false);
   const timezoneAbortRef = useRef<AbortController | null>(null);
   const confirmedTimezoneRef = useRef<string>("UTC");
+  // I1 (review 2026-04-24): rapid edits (type → blur → type → blur)
+  // fired overlapping PATCHes with no client-side ordering. Without
+  // client abort, SQLite's writer-lock acquisition order determined
+  // which value won at the server — the UI's last-typed value and the
+  // persisted value could disagree. Mirror timezoneAbortRef: one
+  // controller per saveField issue, aborted on the next issue and on
+  // unmount, so every dispatch that has been superseded is also
+  // cancelled at the network layer.
+  const fieldAbortRef = useRef<AbortController | null>(null);
 
   // Track last confirmed values so reverts go to the right place after
   // successful save + failed second save (I5 fix).
@@ -71,31 +81,58 @@ export function ProjectSettingsDialog({
 
   useEffect(() => {
     if (open) {
+      // I10 (review 2026-04-25): abort any field/timezone PATCHes
+      // left in flight from the previous open cycle. Dialog close→
+      // reopen within the same component lifetime would otherwise let
+      // a stale PATCH's success handler write
+      // confirmedFieldsRef.current.X = data.X against this fresh
+      // baseline; the next save's revert would restore the wrong
+      // value. The unmount cleanup at the bottom of this file covers
+      // teardown; this open-transition abort covers re-open.
+      fieldAbortRef.current?.abort();
+      fieldAbortRef.current = null;
+      timezoneAbortRef.current?.abort();
+      timezoneAbortRef.current = null;
       // Re-sync confirmed-values baseline from props when dialog opens
       confirmedFieldsRef.current = {
         wordCountTarget: project.target_word_count != null ? String(project.target_word_count) : "",
         deadline: project.target_deadline ?? "",
         authorName: project.author_name ?? "",
       };
-      let cancelled = false;
+      // I4 (2026-04-24 review): wire an AbortController so the fetch
+      // actually drops on unmount. The previous `let cancelled = false`
+      // guard stopped the .then/.catch from writing state but left the
+      // browser-side fetch to finish and (on failure) still fire the
+      // promise — setTimezoneSaveError would run on an unmounted
+      // component, logging a setState-on-unmount warning in tests and
+      // violating CLAUDE.md's "zero warnings in test output" rule.
+      const controller = new AbortController();
       userChangedTimezoneRef.current = false;
       api.settings
-        .get()
+        .get(controller.signal)
         .then((settings) => {
-          if (!cancelled && !userChangedTimezoneRef.current) {
-            const tz = settings.timezone || "UTC";
-            setTimezone(tz);
-            confirmedTimezoneRef.current = tz;
-          }
+          if (controller.signal.aborted || userChangedTimezoneRef.current) return;
+          const tz = settings.timezone || "UTC";
+          setTimezone(tz);
+          confirmedTimezoneRef.current = tz;
         })
-        .catch(() => {
-          if (!cancelled && !userChangedTimezoneRef.current) {
-            setTimezone("UTC");
-            confirmedTimezoneRef.current = "UTC";
+        .catch((err: unknown) => {
+          if (controller.signal.aborted || userChangedTimezoneRef.current) return;
+          // I9: a silent UTC fallback hid real GET failures — the user
+          // would see UTC in the dropdown, choose their real timezone,
+          // save, and overwrite whatever-was-stored with the new value.
+          // Surface the mapped failure instead so the user can close
+          // and retry rather than silently stomp stored state.
+          // ABORTED (message: null) stays silent per the mapper
+          // contract — a dialog-close triggered unmount is not a
+          // failure the user needs to see.
+          const { message } = mapApiError(err, "settings.get");
+          if (message) {
+            setTimezoneSaveError(message);
           }
         });
       return () => {
-        cancelled = true;
+        controller.abort();
       };
     }
     // Intentionally only re-run when `open` changes — project props are read
@@ -103,6 +140,22 @@ export function ProjectSettingsDialog({
     // would reset fields the user is actively editing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // I4 (2026-04-24 review): the timezone PATCH is only cancelled by a
+  // newer timezone click. If the dialog unmounts mid-save (parent
+  // navigates away, `key={project.slug}` remount on rename), the
+  // in-flight PATCH continues and the .then/.catch runs setTimezone /
+  // setTimezoneSaveError on an unmounted component — setState-on-
+  // unmount warning in test output. Abort on unmount so the request
+  // drops cleanly and state updates cannot fire after teardown. Empty
+  // dep array: this is a true unmount-only cleanup, not tied to `open`.
+  useEffect(
+    () => () => {
+      timezoneAbortRef.current?.abort();
+      fieldAbortRef.current?.abort();
+    },
+    [],
+  );
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -127,8 +180,14 @@ export function ProjectSettingsDialog({
 
   async function saveField(data: Parameters<typeof api.projects.update>[1]) {
     setFieldSaveError(null);
+    // I1: abort any prior in-flight field PATCH before issuing a new
+    // one so overlapping requests can't commit out of typing order.
+    fieldAbortRef.current?.abort();
+    const controller = new AbortController();
+    fieldAbortRef.current = controller;
     try {
-      await api.projects.update(project.slug, data);
+      await api.projects.update(project.slug, data, controller.signal);
+      if (controller.signal.aborted) return; // superseded by a newer save
       // Update confirmed values on success before triggering parent refresh
       if ("target_word_count" in data) {
         confirmedFieldsRef.current.wordCountTarget =
@@ -142,8 +201,42 @@ export function ProjectSettingsDialog({
       }
       onUpdate();
     } catch (err) {
+      if (controller.signal.aborted) return; // superseded by a newer save
       console.error("Failed to save project setting:", err);
-      setFieldSaveError(STRINGS.projectSettings.saveError);
+      // I7 (2026-04-23): route through the unified mapper instead of
+      // hardcoding STRINGS.projectSettings.saveError — VALIDATION_ERROR,
+      // 404, NETWORK, 2xx BAD_JSON were all collapsed to one string
+      // before, violating the CLAUDE.md invariant that every user-
+      // visible message goes through the scope registry.
+      const { message, possiblyCommitted } = mapApiError(err, "project.updateFields");
+      if (message) setFieldSaveError(message);
+      // On possiblyCommitted the server likely saved the value — a
+      // revert to the prior confirmed value would contradict the
+      // committed state. Promote the optimistic input to "confirmed"
+      // so later saves compare against the correct baseline; the
+      // committed copy in the banner tells the user to refresh.
+      if (possiblyCommitted) {
+        if ("target_word_count" in data) {
+          confirmedFieldsRef.current.wordCountTarget =
+            data.target_word_count != null ? String(data.target_word_count) : "";
+        }
+        if ("target_deadline" in data) {
+          confirmedFieldsRef.current.deadline = data.target_deadline ?? "";
+        }
+        if ("author_name" in data) {
+          confirmedFieldsRef.current.authorName = data.author_name ?? "";
+        }
+        // I8: fire onUpdate on the committed branch too. The happy path
+        // calls onUpdate, which refreshes the parent's project state
+        // (consumed by ProgressStrip, DashboardView, velocity). Without
+        // this, the dialog locally promotes the optimistic value but the
+        // parent keeps rendering pre-change values — the user closes the
+        // dialog and sees the old value elsewhere, concluding the save
+        // did not take. The parent GET failure case (404 → navigate home)
+        // is correct if the server state has actually diverged.
+        onUpdate();
+        return;
+      }
       // Revert to last confirmed value, not stale props
       if ("target_word_count" in data) {
         setWordCountTarget(confirmedFieldsRef.current.wordCountTarget);
@@ -197,7 +290,19 @@ export function ProjectSettingsDialog({
     } catch (err) {
       if (controller.signal.aborted) return; // superseded by a newer request
       console.error("Failed to save timezone:", err);
-      setTimezoneSaveError(STRINGS.projectSettings.saveError);
+      const { message, possiblyCommitted } = mapApiError(err, "settings.update");
+      if (message) setTimezoneSaveError(message);
+      // C2 (review 2026-04-24): on possiblyCommitted the server likely
+      // stored the new timezone; reverting would contradict committed
+      // state and leave the parent (dashboard, velocity, ProgressStrip)
+      // rendering the old value. Mirror saveField: promote the optimistic
+      // value to confirmed, surface the committed copy (already set via
+      // setTimezoneSaveError), and fire onUpdate so the parent refreshes.
+      if (possiblyCommitted) {
+        confirmedTimezoneRef.current = value;
+        onUpdate();
+        return;
+      }
       setTimezone(confirmedTimezoneRef.current);
     }
   }

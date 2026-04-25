@@ -1,3 +1,8 @@
+# Suppress DEP0040 (built-in `punycode`) warnings from `tr46` and `uri-js`.
+# See CONTRIBUTING.md for the rationale; remove when those deps ship
+# userland-punycode fixes.
+export NODE_OPTIONS := --disable-warning=DEP0040 ${NODE_OPTIONS}
+
 .PHONY: all test cover e2e lint format format-check typecheck dev build clean loc help
 
 all: lint format-check typecheck cover e2e ## Full CI pass: lint, format-check, typecheck, test+coverage, e2e

@@ -1,13 +1,26 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, within, fireEvent, waitFor, cleanup, act } from "@testing-library/react";
 import { Editor, type EditorHandle } from "../components/Editor";
-import { api } from "../api/client";
+import { api, ApiRequestError } from "../api/client";
+import { STRINGS } from "../strings";
+import type { ImageRow } from "@smudge/shared";
 
 vi.mock("../api/client", () => ({
   api: {
     images: {
       upload: vi.fn(),
     },
+  },
+  ApiRequestError: class ApiRequestError extends Error {
+    constructor(
+      message: string,
+      public readonly status: number,
+      public readonly code?: string,
+      public readonly extras?: Record<string, unknown>,
+    ) {
+      super(message);
+      this.name = "ApiRequestError";
+    }
   },
 }));
 
@@ -330,6 +343,54 @@ describe("Editor", () => {
     await act(async () => {});
     expect(onContentChange).not.toHaveBeenCalled();
     await editorRef.current?.flushSave();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("onBlur does not save while editor is non-editable (C2 2026-04-24)", async () => {
+    // The mutation gate (setEditable(false) around restore / replace /
+    // reload) relies on blur NOT committing a save with pre-mutation
+    // content. TipTap still dispatches blur events on a non-editable
+    // editor — e.g. the user clicks the Restore or Replace button after
+    // typing, which fires blur before the mutation's markClean() runs.
+    // Without an isEditable check, onBlur's immediate save PATCHes the
+    // stale draft on top of the committed mutation. Gate onBlur on
+    // editor.isEditable in addition to dirtyRef.
+    const onSave = vi.fn().mockResolvedValue(true);
+    const onContentChange = vi.fn();
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+
+    const { container } = render(
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={onSave}
+        onContentChange={onContentChange}
+        editorRef={editorRef}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(editorRef.current).not.toBeNull();
+    });
+
+    const editorEl = container.querySelector("[role='textbox']") as HTMLElement;
+
+    // Type to dirty the editor.
+    fireEvent.focus(editorEl);
+    editorEl.textContent = "pre-mutation draft";
+    fireEvent.input(editorEl);
+    await waitFor(() => {
+      expect(onContentChange).toHaveBeenCalled();
+    });
+
+    onSave.mockClear();
+
+    // A mutation path locks the editor; blur can still fire (e.g. the
+    // user's click on Restore is itself the blur trigger).
+    editorRef.current?.setEditable(false);
+    fireEvent.blur(editorEl);
+
+    await act(async () => {});
     expect(onSave).not.toHaveBeenCalled();
   });
 
@@ -677,8 +738,192 @@ describe("Editor", () => {
     });
 
     await waitFor(() => {
-      expect(onImageAnnouncement).toHaveBeenCalledWith("Upload failed: File too large");
+      expect(onImageAnnouncement).toHaveBeenCalledWith(STRINGS.imageGallery.uploadFailedGeneric);
     });
+  });
+
+  // I3 (2026-04-24 review): on 2xx BAD_JSON (server stored the blob but
+  // the client can't parse the response) the editor paste path must
+  // surface the committed copy — user needs to know to check the gallery.
+  // The insert is *not* attempted because there's no server-assigned id;
+  // if the user retried by pasting again, the server would store a
+  // second blob for one intended insertion. The current try/catch
+  // already skips the insert on error; this test pins the behavior so
+  // a future refactor can't regress it into a silent failure.
+  it("image paste handler announces committed copy on 2xx BAD_JSON and does not insert (I3)", async () => {
+    const onImageAnnouncement = vi.fn();
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+    vi.mocked(api.images.upload).mockRejectedValue(
+      new ApiRequestError("[dev] bad body", 200, "BAD_JSON"),
+    );
+
+    render(
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={mockOnSave()}
+        editorRef={editorRef}
+        onImageAnnouncement={onImageAnnouncement}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(editorRef.current?.editor).not.toBeNull();
+    });
+
+    const editor = editorRef.current!.editor!;
+    const initialJsonBeforePaste = JSON.stringify(editor.getJSON());
+    const file = new File(["pixels"], "committed.png", { type: "image/png" });
+    const imagePastePlugin = findImagePastePlugin(editor);
+
+    const fakeEvent = {
+      preventDefault: vi.fn(),
+      clipboardData: {
+        items: [{ type: "image/png", getAsFile: () => file }],
+      },
+    };
+
+    (imagePastePlugin.props.handlePaste as (...args: unknown[]) => unknown)(
+      editor.view,
+      fakeEvent,
+      editor.view.state.doc.slice(0),
+    );
+
+    await waitFor(() => {
+      expect(api.images.upload).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(onImageAnnouncement).toHaveBeenCalledWith(STRINGS.imageGallery.uploadCommittedRefresh);
+    });
+    // No insert happened — the editor content is unchanged. Retrying
+    // by pasting again would upload the file a second time and create
+    // a duplicate server row, so the committed copy is the signal to
+    // check the gallery instead.
+    expect(JSON.stringify(editor.getJSON())).toBe(initialJsonBeforePaste);
+  });
+
+  // I8 (review 2026-04-24): ImageGallery.handleFileSelect already bumps
+  // its own refresh on possiblyCommitted, but the Editor's paste/drop
+  // path runs through this component. Without the callback, the gallery
+  // kept its stale list and a user retry uploaded the same file again.
+  // The callback lets EditorPage bump a shared external refresh key
+  // that drives the gallery to re-fetch.
+  it("image paste handler fires onImageUploadCommitted on 2xx BAD_JSON (I8)", async () => {
+    const onImageUploadCommitted = vi.fn();
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+    vi.mocked(api.images.upload).mockRejectedValue(
+      new ApiRequestError("[dev] bad body", 200, "BAD_JSON"),
+    );
+
+    render(
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={mockOnSave()}
+        editorRef={editorRef}
+        onImageUploadCommitted={onImageUploadCommitted}
+      />,
+    );
+
+    await waitFor(() => expect(editorRef.current?.editor).not.toBeNull());
+    const editor = editorRef.current!.editor!;
+    const file = new File(["pixels"], "x.png", { type: "image/png" });
+    const imagePastePlugin = findImagePastePlugin(editor);
+
+    (imagePastePlugin.props.handlePaste as (...args: unknown[]) => unknown)(
+      editor.view,
+      {
+        preventDefault: vi.fn(),
+        clipboardData: { items: [{ type: "image/png", getAsFile: () => file }] },
+      },
+      editor.view.state.doc.slice(0),
+    );
+
+    await waitFor(() => expect(onImageUploadCommitted).toHaveBeenCalled());
+  });
+
+  it("paste-upload does not fire gallery refresh after a project switch (I9 2026-04-25)", async () => {
+    // I9 (review 2026-04-25): the Editor doesn't necessarily remount on
+    // cross-project navigation, so projectIdRef.current can advance
+    // during the in-flight upload. Reading it inside the response
+    // handlers fired the gallery refresh / committed callback against
+    // whatever project was active at response-time — a project-B
+    // gallery refresh for a project-A upload, with the user seeing no
+    // evidence and the new image hidden until they navigate back.
+    // Capture the project id at upload-start and gate the response
+    // callbacks on it still being live.
+    const onImageUploadCommitted = vi.fn();
+    const onImageAnnouncement = vi.fn();
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+
+    let resolveUpload!: (img: ImageRow) => void;
+    vi.mocked(api.images.upload).mockImplementation(
+      () =>
+        new Promise<ImageRow>((res) => {
+          resolveUpload = res;
+        }),
+    );
+
+    const { rerender } = render(
+      <Editor
+        projectId="project-a"
+        content={null}
+        onSave={mockOnSave()}
+        editorRef={editorRef}
+        onImageUploadCommitted={onImageUploadCommitted}
+        onImageAnnouncement={onImageAnnouncement}
+      />,
+    );
+    await waitFor(() => expect(editorRef.current?.editor).not.toBeNull());
+    const editor = editorRef.current!.editor!;
+    const file = new File(["pixels"], "x.png", { type: "image/png" });
+    const imagePastePlugin = findImagePastePlugin(editor);
+
+    (imagePastePlugin.props.handlePaste as (...args: unknown[]) => unknown)(
+      editor.view,
+      {
+        preventDefault: vi.fn(),
+        clipboardData: { items: [{ type: "image/png", getAsFile: () => file }] },
+      },
+      editor.view.state.doc.slice(0),
+    );
+    await waitFor(() => expect(api.images.upload).toHaveBeenCalled());
+
+    // User navigates to a different project mid-upload.
+    rerender(
+      <Editor
+        projectId="project-b"
+        content={null}
+        onSave={mockOnSave()}
+        editorRef={editorRef}
+        onImageUploadCommitted={onImageUploadCommitted}
+        onImageAnnouncement={onImageAnnouncement}
+      />,
+    );
+
+    // Now resolve the upload — it landed against project A.
+    resolveUpload({
+      id: "img-1",
+      project_id: "project-a",
+      filename: "x.png",
+      alt_text: "",
+      caption: "",
+      source: "",
+      license: "",
+      mime_type: "image/png",
+      size_bytes: 100,
+      created_at: "2026-01-01T00:00:00Z",
+      reference_count: 0,
+    });
+
+    // Give the response handler a tick to run.
+    await new Promise((r) => setTimeout(r, 10));
+
+    // No gallery refresh fired — would have been against project B.
+    expect(onImageUploadCommitted).not.toHaveBeenCalled();
+    // No announcement either — the project the user is now looking at
+    // didn't generate this upload, so they shouldn't see it announced.
+    expect(onImageAnnouncement).not.toHaveBeenCalled();
   });
 
   it("image drop handler calls api.images.upload", async () => {

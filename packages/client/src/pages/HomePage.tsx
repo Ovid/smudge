@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ProjectListItem, ProjectModeType as ProjectMode } from "@smudge/shared";
 import { api } from "../api/client";
@@ -6,6 +6,7 @@ import { NewProjectDialog } from "../components/NewProjectDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { STRINGS } from "../strings";
 import { Logo } from "../components/Logo";
+import { mapApiError } from "../errors";
 
 export function HomePage() {
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
@@ -13,26 +14,44 @@ export function HomePage() {
   const [deleteTarget, setDeleteTarget] = useState<ProjectListItem | null>(null);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  // I13 (review 2026-04-25): the possiblyCommitted recovery branch in
+  // handleCreate fires a best-effort api.projects.list().then(setProjects)
+  // that previously had no unmount guard. If the user navigates away
+  // before the refetch resolves, setProjects fires on a torn-down tree.
+  // Mirror the createRecoveryAbortRef pattern in useProjectEditor: hold
+  // the controller in a ref so unmount cleanup can abort it, and gate
+  // the .then on signal.aborted.
+  const createRecoveryAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(
+    () => () => {
+      createRecoveryAbortRef.current?.abort();
+    },
+    [],
+  );
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadProjects() {
-      try {
-        const data = await api.projects.list();
-        if (!cancelled) setProjects(data);
-      } catch (err) {
+    // Copilot review 2026-04-24: mirror DashboardView's abort pattern.
+    // The previous `cancelled` flag left console.warn firing BEFORE the
+    // guard on unmount rejections, violating CLAUDE.md's zero-warnings
+    // rule. Using AbortController and gating warn on signal.aborted
+    // keeps navigation/unmount races silent.
+    const controller = new AbortController();
+    api.projects
+      .list(controller.signal)
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        setProjects(data);
+      })
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
         console.warn("Failed to load projects:", err);
-        if (!cancelled) {
-          setError(STRINGS.error.loadFailed);
-        }
-      }
-    }
-
-    loadProjects();
+        const { message } = mapApiError(err, "projectList.load");
+        if (message) setError(message);
+      });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, []);
 
@@ -44,7 +63,37 @@ export function HomePage() {
       navigate(`/projects/${project.slug}`);
     } catch (err) {
       console.warn("Failed to create project:", err);
-      setError(STRINGS.error.createFailed);
+      const { message, possiblyCommitted } = mapApiError(err, "project.create");
+      // I5 (review 2026-04-25): project.create is non-idempotent — the
+      // server assigns a new row per POST. On 2xx BAD_JSON the row may
+      // already exist on the server and a retry would create a duplicate.
+      // The slug isn't available in the unreadable response, so we can't
+      // navigate to it; the safe default is to refresh the project list
+      // (the just-created row will appear) and close the dialog (so the
+      // live "Create" button can't re-fire) before announcing the
+      // committed copy. A failed list refresh is best-effort — the
+      // committed banner alone tells the user to refresh manually.
+      if (possiblyCommitted) {
+        setDialogOpen(false);
+        createRecoveryAbortRef.current?.abort();
+        const recoveryController = new AbortController();
+        createRecoveryAbortRef.current = recoveryController;
+        api.projects
+          .list(recoveryController.signal)
+          .then((data) => {
+            if (recoveryController.signal.aborted) return;
+            setProjects(data);
+            if (createRecoveryAbortRef.current === recoveryController) {
+              createRecoveryAbortRef.current = null;
+            }
+          })
+          .catch(() => {
+            if (createRecoveryAbortRef.current === recoveryController) {
+              createRecoveryAbortRef.current = null;
+            }
+          });
+      }
+      if (message) setError(message);
     }
   }
 
@@ -57,7 +106,16 @@ export function HomePage() {
       setDeleteTarget(null);
     } catch (err) {
       console.warn("Failed to delete project:", err);
-      setError(STRINGS.error.deleteFailed);
+      const { message, possiblyCommitted } = mapApiError(err, "project.delete");
+      // I1 (review 2026-04-24): on possiblyCommitted (2xx BAD_JSON) the
+      // server already deleted the project; leaving the row in state
+      // would show a phantom and a user retry would 404. Drop the row
+      // optimistically so the list matches the committed server state
+      // and surface the committed copy so the user knows to refresh.
+      if (possiblyCommitted) {
+        setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
+      }
+      if (message) setError(message);
       setDeleteTarget(null);
     }
   }

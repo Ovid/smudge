@@ -225,9 +225,11 @@ describe("Chapter title editing", () => {
     await userEvent.type(input, "Renamed Chapter{Enter}");
 
     await waitFor(() => {
-      expect(api.chapters.update).toHaveBeenCalledWith("ch-1", {
-        title: "Renamed Chapter",
-      });
+      expect(api.chapters.update).toHaveBeenCalledWith(
+        "ch-1",
+        { title: "Renamed Chapter" },
+        expect.any(AbortSignal),
+      );
     });
   });
 
@@ -355,9 +357,11 @@ describe("Project title editing", () => {
     await userEvent.type(input, "Renamed Project{Enter}");
 
     await waitFor(() => {
-      expect(api.projects.update).toHaveBeenCalledWith("test-project", {
-        title: "Renamed Project",
-      });
+      expect(api.projects.update).toHaveBeenCalledWith(
+        "test-project",
+        { title: "Renamed Project" },
+        expect.any(AbortSignal),
+      );
     });
   });
 });

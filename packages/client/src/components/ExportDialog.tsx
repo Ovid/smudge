@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { EXPORT_FILE_EXTENSIONS, type ExportFormatType } from "@smudge/shared";
-import { api, ApiRequestError } from "../api/client";
+import { api } from "../api/client";
+import { mapApiError } from "../errors";
 import { STRINGS } from "../strings";
 
 interface ExportDialogProps {
@@ -88,16 +89,38 @@ export function ExportDialog({
 
   useEffect(() => {
     if ((format === "epub" || format === "docx") && open) {
+      // Thread controller.signal through api.images.list so abort()
+      // actually cancels the in-flight fetch, not just the setState
+      // callback. Without this the browser finishes every stale
+      // request on rapid format flips / dialog open-close; the
+      // mapper-ABORTED branch also could not fire (review 2026-04-24).
+      const controller = new AbortController();
       api.images
-        .list(projectId)
+        .list(projectId, controller.signal)
         .then((imgs) => {
+          if (controller.signal.aborted) return;
           setCoverImages(
             imgs.map((i) => ({ id: i.id, filename: i.filename, mime_type: i.mime_type })),
           );
         })
-        .catch(() => {
+        .catch((err: unknown) => {
+          if (controller.signal.aborted) return;
+          const { message } = mapApiError(err, "image.list");
+          // ABORTED surfaces as message === null; silent no-op.
+          if (message === null) return;
+          // C4 (review 2026-04-24): previously setCoverImages([]) ran
+          // silently on any non-abort failure, so a real 4xx/5xx looked
+          // identical to "this project has no images" — the user
+          // exported without a cover assuming none existed. Surface the
+          // mapped scope copy in the existing error banner and leave
+          // coverImages empty so the dropdown stays hidden. The user
+          // sees the failure and can retry.
           setCoverImages([]);
+          setError(message);
         });
+      return () => {
+        controller.abort();
+      };
     }
   }, [format, open, projectId]);
 
@@ -147,7 +170,8 @@ export function ExportDialog({
       onClose();
     } catch (err) {
       if (controller.signal.aborted) return;
-      setError(err instanceof ApiRequestError ? err.message : STRINGS.export.errorFailed);
+      const { message } = mapApiError(err, "export.run");
+      if (message) setError(message);
     } finally {
       exportingRef.current = false;
       setExporting(false);

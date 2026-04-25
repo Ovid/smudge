@@ -6,7 +6,14 @@ import { detectAndSetTimezone } from "./hooks/useTimezoneDetection";
 
 export function App() {
   useEffect(() => {
-    detectAndSetTimezone();
+    // I5 (review 2026-04-24): abort the detection on unmount so a
+    // late-resolving GET/PATCH can't land after the app has torn down
+    // (matters for tests and for tab/window teardown during startup).
+    const controller = new AbortController();
+    detectAndSetTimezone(controller.signal);
+    return () => {
+      controller.abort();
+    };
   }, []);
 
   return (

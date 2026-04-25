@@ -2,21 +2,25 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ImageGallery } from "../components/ImageGallery";
-import { api } from "../api/client";
+import { api, ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
 import type { ImageRow } from "@smudge/shared";
 
-vi.mock("../api/client", () => ({
-  api: {
-    images: {
-      list: vi.fn(),
-      upload: vi.fn(),
-      references: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
+vi.mock("../api/client", async () => {
+  const actual = await vi.importActual<typeof import("../api/client")>("../api/client");
+  return {
+    ...actual,
+    api: {
+      images: {
+        list: vi.fn(),
+        upload: vi.fn(),
+        references: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+      },
     },
-  },
-}));
+  };
+});
 
 const S = STRINGS.imageGallery;
 
@@ -148,9 +152,9 @@ describe("ImageGallery", () => {
     });
   });
 
-  it("announces error when upload fails", async () => {
+  it("announces generic error when upload fails with ApiRequestError", async () => {
     const user = userEvent.setup();
-    vi.mocked(api.images.upload).mockRejectedValue(new Error("Server error"));
+    vi.mocked(api.images.upload).mockRejectedValue(new ApiRequestError("Server error", 500));
 
     render(<ImageGallery {...defaultProps} />);
 
@@ -159,11 +163,11 @@ describe("ImageGallery", () => {
     await user.upload(fileInput, file);
 
     await waitFor(() => {
-      expect(screen.getByText(S.uploadFailed("Server error"))).toBeInTheDocument();
+      expect(screen.getByText(S.uploadFailedGeneric)).toBeInTheDocument();
     });
   });
 
-  it("announces error for non-Error upload failures", async () => {
+  it("announces generic error for non-Error upload failures", async () => {
     const user = userEvent.setup();
     vi.mocked(api.images.upload).mockRejectedValue("something weird");
 
@@ -174,8 +178,59 @@ describe("ImageGallery", () => {
     await user.upload(fileInput, file);
 
     await waitFor(() => {
-      expect(screen.getByText(S.uploadFailed("Unknown error"))).toBeInTheDocument();
+      expect(screen.getByText(S.uploadFailedGeneric)).toBeInTheDocument();
     });
+  });
+
+  // I3 (2026-04-24 review): 2xx BAD_JSON on upload means the server stored
+  // the image but the client couldn't parse the response. Without special
+  // handling the gallery kept its stale list, the user retried, and the
+  // server created a second row for the same file (no server-side dedupe).
+  // The fix: surface the committed copy and call incrementRefreshKey so
+  // the authoritative list is fetched — future retry sees the row and
+  // stops duplicating uploads.
+  it("on 2xx BAD_JSON, announces committed copy and re-fetches gallery (I3)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.images.list).mockResolvedValue([]);
+    vi.mocked(api.images.upload).mockRejectedValue(
+      new ApiRequestError("[dev] bad body", 200, "BAD_JSON"),
+    );
+
+    render(<ImageGallery {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(api.images.list).toHaveBeenCalledTimes(1);
+    });
+
+    const file = new File(["pixels"], "committed.png", { type: "image/png" });
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(fileInput, file);
+
+    await waitFor(() => {
+      expect(screen.getByText(S.uploadCommittedRefresh)).toBeInTheDocument();
+    });
+    // Gallery re-fetches after possiblyCommitted so the authoritative
+    // list includes the newly-stored image and prevents duplicate
+    // uploads on retry.
+    await waitFor(() => {
+      expect(api.images.list).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("stays silent when upload is aborted", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.images.upload).mockRejectedValue(new ApiRequestError("aborted", 0, "ABORTED"));
+
+    render(<ImageGallery {...defaultProps} />);
+
+    const file = new File(["pixels"], "bad.png", { type: "image/png" });
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(fileInput, file);
+
+    await waitFor(() => {
+      expect(api.images.upload).toHaveBeenCalled();
+    });
+    expect(screen.queryByText(S.uploadFailedGeneric)).not.toBeInTheDocument();
   });
 
   it("rejects files larger than 10MB", async () => {
@@ -280,12 +335,16 @@ describe("ImageGallery", () => {
     await waitFor(() => {
       expect(screen.getByText(S.saved)).toBeInTheDocument();
     });
-    expect(api.images.update).toHaveBeenCalledWith("img-1", {
-      alt_text: "Updated alt",
-      caption: "Photo caption",
-      source: "Photo source",
-      license: "MIT",
-    });
+    expect(api.images.update).toHaveBeenCalledWith(
+      "img-1",
+      {
+        alt_text: "Updated alt",
+        caption: "Photo caption",
+        source: "Photo source",
+        license: "MIT",
+      },
+      expect.any(AbortSignal),
+    );
   });
 
   it("shows saving text while save is in flight", async () => {
@@ -311,6 +370,56 @@ describe("ImageGallery", () => {
     await waitFor(() => {
       expect(screen.getByText(S.saved)).toBeInTheDocument();
     });
+  });
+
+  it("on 2xx BAD_JSON metadata save, re-fetches gallery and surfaces committed copy (I4 2026-04-25)", async () => {
+    // I4 (review 2026-04-25): handleSave destructured only { message }
+    // from mapApiError. The image.updateMetadata scope declares
+    // committed: STRINGS.error.possiblyCommitted, so a 2xx BAD_JSON
+    // returns possiblyCommitted: true. Without acting on it, the
+    // detail view stayed pinned to pre-save metadata while the server
+    // had the new metadata; a retry could 404 (already committed) and
+    // the user had no path to learn the committed state. Mirror
+    // handleFileSelect's committed branch: bump the refresh key so the
+    // gallery re-fetches authoritative data and announce the committed
+    // copy.
+    const user = userEvent.setup();
+    vi.mocked(api.images.update).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+    await renderAndOpenDetail(makeImage(), user);
+    await waitFor(() => expect(api.images.list).toHaveBeenCalledTimes(1));
+
+    // Edit a field to transition from "saved" to dirty, then save.
+    const altInput = screen.getByLabelText(S.altTextLabel);
+    await user.clear(altInput);
+    await user.type(altInput, "Updated alt");
+    await user.click(screen.getByText(S.saveButton));
+
+    // Gallery re-fetched → list called a second time.
+    await waitFor(() => expect(api.images.list).toHaveBeenCalledTimes(2));
+  });
+
+  it("on 2xx BAD_JSON during handleInsert auto-save, re-fetches gallery and surfaces committed copy (I4 2026-04-25)", async () => {
+    // Same I4 invariant against handleInsert's auto-save-before-insert
+    // branch (also destructured only { message } before the fix).
+    const user = userEvent.setup();
+    const onInsertImage = vi.fn();
+    vi.mocked(api.images.update).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+    await renderAndOpenDetail(makeImage(), user, { onInsertImage });
+    await waitFor(() => expect(api.images.list).toHaveBeenCalledTimes(1));
+
+    // Edit a field so saveStatus !== "saved" → handleInsert's auto-save
+    // branch fires.
+    await user.type(screen.getByLabelText(S.captionLabel), "x");
+    await user.click(screen.getByText(S.insertButton));
+
+    await waitFor(() => expect(api.images.list).toHaveBeenCalledTimes(2));
+    // Insert is skipped because the save returned committed-but-unreadable;
+    // the user must refresh and re-open before inserting.
+    expect(onInsertImage).not.toHaveBeenCalled();
   });
 
   it("reverts save status to idle on save failure", async () => {
@@ -399,7 +508,7 @@ describe("ImageGallery", () => {
     await waitFor(() => {
       expect(screen.getByText(S.uploadButton)).toBeInTheDocument();
     });
-    expect(api.images.delete).toHaveBeenCalledWith("img-1");
+    expect(api.images.delete).toHaveBeenCalledWith("img-1", expect.any(AbortSignal));
   });
 
   it("announces deletion success for screen readers", async () => {
@@ -413,6 +522,38 @@ describe("ImageGallery", () => {
 
     await waitFor(() => {
       expect(screen.getByText(S.deleteSuccess("sunset.png"))).toBeInTheDocument();
+    });
+  });
+
+  // C3 (review 2026-04-24): handleDelete ignored possiblyCommitted. On
+  // 2xx BAD_JSON the server already deleted but the detail view stayed
+  // open, confirmingDelete stayed true, and incrementRefreshKey was not
+  // called. User retried → server 409'd because the image was gone.
+  // Mirror handleFileSelect's committed branch: close the detail view,
+  // reset confirmation, bump the refresh key, and surface the mapped
+  // committed copy.
+  it("on 2xx BAD_JSON delete, closes detail view and re-fetches gallery (C3)", async () => {
+    const user = userEvent.setup();
+    const image = makeImage({ reference_count: 0, filename: "gone.png" });
+    vi.mocked(api.images.delete).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+    await renderAndOpenDetail(image, user);
+
+    await waitFor(() => {
+      expect(api.images.list).toHaveBeenCalledTimes(1);
+    });
+    await user.click(screen.getByText(S.deleteButton));
+    await user.click(screen.getByText(S.deleteButton));
+
+    // Detail view closes → grid (upload button visible again)
+    await waitFor(() => {
+      expect(screen.getByText(S.uploadButton)).toBeInTheDocument();
+    });
+    // Gallery re-fetched so the deleted image disappears from the grid
+    // and a retry can't 409 against a stale row.
+    await waitFor(() => {
+      expect(api.images.list).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -463,6 +604,71 @@ describe("ImageGallery", () => {
       expect(screen.getByText(S.deleteConfirm)).toBeInTheDocument();
     });
     expect(api.images.references).toHaveBeenCalledTimes(2);
+  });
+
+  // Review 2026-04-24: the Delete-click references refresh had no
+  // stale-guard. User opens A, clicks Delete (starts A's refresh),
+  // navigates back to grid and opens B. When A's in-flight refresh
+  // finally resolves, it must NOT overwrite B's detail-view references
+  // (which could enable a delete that should have been blocked, or
+  // surface a stale "Used in" list for a different image).
+  it("delete-click references refresh does not leak across image-selection change", async () => {
+    const user = userEvent.setup();
+    const imageA = makeImage({ id: "img-A", filename: "a.png", reference_count: 2 });
+    const imageB = makeImage({ id: "img-B", filename: "b.png", reference_count: 0 });
+
+    vi.mocked(api.images.list).mockResolvedValue([imageA, imageB]);
+
+    // Hold the Delete-click refresh for A open so we can resolve it
+    // AFTER the user has navigated to a different image.
+    let resolveStaleRefresh!: (data: { chapters: Array<{ id: string; title: string }> }) => void;
+    const deferredStaleRefresh = new Promise<{
+      chapters: Array<{ id: string; title: string }>;
+    }>((resolve) => {
+      resolveStaleRefresh = resolve;
+    });
+
+    vi.mocked(api.images.references)
+      // A's mount-load references
+      .mockResolvedValueOnce({ chapters: [{ id: "ch-A", title: "Chapter A" }] })
+      // A's Delete-click refresh — deferred
+      .mockReturnValueOnce(deferredStaleRefresh)
+      // B's mount-load references
+      .mockResolvedValueOnce({ chapters: [] });
+
+    render(<ImageGallery {...defaultProps} />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "a.png" })).toBeInTheDocument();
+    });
+
+    // Open A — mount-load fires and resolves with Chapter A
+    await user.click(screen.getByRole("button", { name: "a.png" }));
+    await waitFor(() => {
+      expect(screen.getByText("Chapter A")).toBeInTheDocument();
+    });
+
+    // Click Delete — starts the Delete-click refresh (still pending).
+    await user.click(screen.getByText(S.deleteButton));
+
+    // Navigate back to grid and open B before the stale refresh resolves.
+    await user.click(screen.getByText(S.backToGrid));
+    await user.click(screen.getByRole("button", { name: `b.png, ${S.unusedBadge}` }));
+    await waitFor(() => {
+      expect(api.images.references).toHaveBeenCalledWith("img-B", expect.any(AbortSignal));
+    });
+
+    // Now resolve the stale A-refresh with A's references.
+    resolveStaleRefresh({ chapters: [{ id: "ch-A-stale", title: "Chapter A stale" }] });
+    // Give React a tick to process the resolved promise.
+    await new Promise((r) => setTimeout(r, 10));
+
+    // B's detail view must not surface A's stale references, and must
+    // not mis-gate the Delete button by flipping into the "in use" path.
+    expect(screen.queryByText("Chapter A stale")).not.toBeInTheDocument();
+    expect(screen.queryByText(S.usedInChapters)).not.toBeInTheDocument();
+    // B has reference_count: 0, so Delete should remain the unblocked copy.
+    await user.click(screen.getByText(S.deleteButton));
+    expect(screen.getByText(S.deleteConfirm)).toBeInTheDocument();
   });
 
   // --- Where-used / references ---
@@ -523,6 +729,37 @@ describe("ImageGallery", () => {
     expect(screen.getByText(S.retryButton)).toBeInTheDocument();
   });
 
+  // I9 (review 2026-04-24): the list useEffect no longer uses a
+  // `let cancelled` flag. An AbortController drops the request on
+  // unmount / projectId change so the browser does not waste work and
+  // the ABORTED → message:null guard is reachable.
+  it("aborts in-flight images.list on unmount (I9)", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    vi.mocked(api.images.list).mockImplementation((_id, signal) => {
+      capturedSignal = signal;
+      return new Promise(() => {});
+    });
+
+    const { unmount } = render(<ImageGallery {...defaultProps} />);
+    await waitFor(() => expect(api.images.list).toHaveBeenCalled());
+    expect(capturedSignal?.aborted).toBe(false);
+
+    unmount();
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  it("stays silent when list request is aborted (no loadError banner)", async () => {
+    vi.mocked(api.images.list).mockRejectedValue(new ApiRequestError("aborted", 0, "ABORTED"));
+
+    render(<ImageGallery {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(api.images.list).toHaveBeenCalled();
+    });
+    expect(screen.queryByText(S.loadFailed)).not.toBeInTheDocument();
+    expect(screen.queryByText(S.retryButton)).not.toBeInTheDocument();
+  });
+
   it("retries loading images when retry button is clicked", async () => {
     const user = userEvent.setup();
     vi.mocked(api.images.list)
@@ -555,15 +792,42 @@ describe("ImageGallery", () => {
     expect(screen.queryByText(S.usedInChapters)).not.toBeInTheDocument();
   });
 
+  it("announces mapped references failure instead of silently swallowing (I6)", async () => {
+    const user = userEvent.setup();
+    const image = makeImage({ reference_count: 1 });
+    vi.mocked(api.images.references).mockRejectedValue(
+      new ApiRequestError("boom", 500, "INTERNAL_ERROR"),
+    );
+    await renderAndOpenDetail(image, user);
+
+    await waitFor(() => {
+      const live = document.querySelector('[aria-live="polite"]');
+      expect(live?.textContent).toContain(S.referencesLoadFailed);
+    });
+  });
+
+  it("stays silent when references fetch is aborted (I6)", async () => {
+    const user = userEvent.setup();
+    const image = makeImage({ reference_count: 1 });
+    vi.mocked(api.images.references).mockRejectedValue(
+      new ApiRequestError("aborted", 0, "ABORTED"),
+    );
+    await renderAndOpenDetail(image, user);
+
+    await waitFor(() => {
+      expect(api.images.references).toHaveBeenCalled();
+    });
+    const live = document.querySelector('[aria-live="polite"]');
+    expect(live?.textContent ?? "").not.toContain(S.referencesLoadFailed);
+  });
+
   it("handles delete API returning an in-use error", async () => {
     const user = userEvent.setup();
-    vi.mocked(api.images.delete).mockResolvedValue({
-      error: {
-        code: "IMAGE_IN_USE",
-        message: "Image is used",
+    vi.mocked(api.images.delete).mockRejectedValue(
+      new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
         chapters: [{ id: "ch-1", title: "Chapter One" }],
-      },
-    });
+      }),
+    );
     await renderAndOpenDetail(makeImage({ reference_count: 0 }), user);
 
     // Show confirm, then click delete
@@ -574,6 +838,59 @@ describe("ImageGallery", () => {
     await waitFor(() => {
       expect(screen.getByText(S.backToGrid)).toBeInTheDocument();
     });
+  });
+
+  it("announces blocked message with chapter list when server returns 409 IMAGE_IN_USE", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.images.delete).mockRejectedValue(
+      new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+        chapters: [
+          { id: "ch-1", title: "Chapter One" },
+          { id: "ch-2", title: "Chapter Two", trashed: true },
+        ],
+      }),
+    );
+    await renderAndOpenDetail(makeImage({ reference_count: 0 }), user);
+
+    await user.click(screen.getByText(S.deleteButton));
+    await user.click(screen.getByText(S.deleteButton));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(S.deleteBlocked(["Chapter One", `Chapter Two (${S.inTrash})`])),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("announces generic delete failure when server returns non-409 error", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.images.delete).mockRejectedValue(
+      new ApiRequestError("boom", 500, "INTERNAL_ERROR"),
+    );
+    await renderAndOpenDetail(makeImage({ reference_count: 0 }), user);
+
+    await user.click(screen.getByText(S.deleteButton));
+    await user.click(screen.getByText(S.deleteButton));
+
+    await waitFor(() => {
+      expect(screen.getByText(S.deleteFailedGeneric)).toBeInTheDocument();
+    });
+  });
+
+  it("silently swallows an ABORTED delete (no announcement)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.images.delete).mockRejectedValue(new ApiRequestError("aborted", 0, "ABORTED"));
+    await renderAndOpenDetail(makeImage({ reference_count: 0 }), user);
+
+    await user.click(screen.getByText(S.deleteButton));
+    await user.click(screen.getByText(S.deleteButton));
+
+    // No announcement should surface, and the detail view should remain.
+    await waitFor(() => {
+      expect(api.images.delete).toHaveBeenCalled();
+    });
+    expect(screen.queryByText(S.deleteFailedGeneric)).not.toBeInTheDocument();
+    expect(screen.getByText(S.backToGrid)).toBeInTheDocument();
   });
 
   // --- Aria live region ---
@@ -632,7 +949,7 @@ describe("ImageGallery", () => {
 
   it("fetches images on mount with the correct project ID", () => {
     render(<ImageGallery {...defaultProps} projectId="proj-abc" />);
-    expect(api.images.list).toHaveBeenCalledWith("proj-abc");
+    expect(api.images.list).toHaveBeenCalledWith("proj-abc", expect.any(AbortSignal));
   });
 
   it("resets confirming-delete state when navigating back to grid", async () => {

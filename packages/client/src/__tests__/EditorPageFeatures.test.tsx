@@ -356,7 +356,7 @@ describe("EditorPage trash view", () => {
     await userEvent.click(screen.getByText("Restore"));
 
     await waitFor(() => {
-      expect(api.chapters.restore).toHaveBeenCalledWith("ch-trashed");
+      expect(api.chapters.restore).toHaveBeenCalledWith("ch-trashed", expect.any(AbortSignal));
     });
   });
 
@@ -567,7 +567,7 @@ describe("EditorPage restore with slug change", () => {
     await userEvent.click(screen.getByText("Restore"));
 
     await waitFor(() => {
-      expect(api.chapters.restore).toHaveBeenCalledWith("ch-trashed");
+      expect(api.chapters.restore).toHaveBeenCalledWith("ch-trashed", expect.any(AbortSignal));
     });
   });
 
@@ -1452,7 +1452,11 @@ describe("EditorPage find-and-replace confirmation", () => {
     fireEvent.keyDown(renameInput!, { key: "Enter" });
 
     await waitFor(() => {
-      expect(api.chapters.update).toHaveBeenCalledWith("ch-1", { title: "New Title" });
+      expect(api.chapters.update).toHaveBeenCalledWith(
+        "ch-1",
+        { title: "New Title" },
+        expect.any(AbortSignal),
+      );
     });
   });
 
@@ -2133,7 +2137,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(viewBtn);
 
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
   });
 
@@ -2266,7 +2270,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
 
     // SnapshotBanner renders inside the editor's region with a "Restore"
@@ -2288,7 +2292,7 @@ describe("EditorPage snapshot panel", () => {
     await waitFor(() => {
       expect(
         (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore,
-      ).toHaveBeenCalledWith("snap-1");
+      ).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
   });
 
@@ -2331,7 +2335,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
 
     const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
@@ -2346,6 +2350,88 @@ describe("EditorPage snapshot panel", () => {
       await screen.findByText(STRINGS.snapshots.restoreResponseUnreadable),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: STRINGS.editor.refreshButton })).toBeInTheDocument();
+  });
+
+  it("surfaces generic restoreFailed copy and exits snapshot view on a generic 500 restore error", async () => {
+    // Phase 4b.3 commit 3 migrated the restore failure branches off the
+    // old RestoreFailureReason enum onto mapApiError("snapshot.restore").
+    // A generic 500 INTERNAL_ERROR has no byCode/byStatus/network/committed
+    // match and falls through to the scope's fallback (restoreFailed), where
+    // MappedError reports possiblyCommitted=false, transient=false. Under
+    // the pre-refactor code this was reason:"network" — the SnapshotBanner
+    // stayed on screen and the copy was restoreNetworkFailed ("retry"). The
+    // new behaviour lands in EditorPage's permanent-failure else branch:
+    // surface restoreFailed and exit snapshot view so the user isn't looping
+    // clicks on a banner that will keep failing identically.
+    //
+    // Without this test a future refactor of the fallback branch (copy swap
+    // or accidentally re-introducing a transient-style banner retention)
+    // could silently regress either half of the migration.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(api.snapshots.list).mockResolvedValue([
+      {
+        id: "snap-1",
+        chapter_id: "ch-1",
+        label: "v1",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-17T10:00:00Z",
+      },
+    ]);
+    vi.mocked(api.snapshots.get).mockResolvedValue({
+      id: "snap-1",
+      chapter_id: "ch-1",
+      label: "v1",
+      content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+      word_count: 5,
+      is_auto: false,
+      created_at: "2026-04-17T10:00:00Z",
+    });
+    const { ApiRequestError } = await import("../api/client");
+    (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore = vi
+      .fn()
+      .mockRejectedValue(new ApiRequestError("boom", 500, "INTERNAL_ERROR"));
+
+    renderEditorPage();
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapter One").length).toBeGreaterThanOrEqual(1);
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "View" }));
+    await waitFor(() => {
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
+    });
+
+    // Snapshot banner is on-screen before the failed restore.
+    expect(screen.getByRole("region", { name: STRINGS.snapshots.viewingRegionLabel })).toBeTruthy();
+
+    const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
+    await userEvent.click(restoreButtons[0]!);
+    const dialog = await screen.findByRole("alertdialog", { name: "Restore" });
+    const confirmButton = Array.from(dialog.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Restore",
+    );
+    await userEvent.click(confirmButton!);
+
+    // Generic fallback copy — NOT the network or response-unreadable copy.
+    expect(await screen.findByText(STRINGS.snapshots.restoreFailed)).toBeInTheDocument();
+    expect(screen.queryByText(STRINGS.snapshots.restoreNetworkFailed)).toBeNull();
+    expect(screen.queryByText(STRINGS.snapshots.restoreResponseUnreadable)).toBeNull();
+    // No persistent lock banner — this is a dismissible action error, not a
+    // possibly-committed lock.
+    expect(screen.queryByRole("button", { name: STRINGS.editor.refreshButton })).toBeNull();
+    // Snapshot banner has been dismissed via exitSnapshotView — otherwise
+    // the user loops clicking Restore on a permanently-failing snapshot.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("region", { name: STRINGS.snapshots.viewingRegionLabel }),
+      ).toBeNull();
+    });
+
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 
   it("clears active chapter's cache on 2xx BAD_JSON from restore (C1)", async () => {
@@ -2386,7 +2472,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
 
     const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
@@ -2402,16 +2488,18 @@ describe("EditorPage snapshot panel", () => {
     });
   });
 
-  it("shows a dismissible network banner for a pre-send non-ApiRequestError restore reject (I5)", async () => {
-    // I5: apiFetch wraps every real network/fetch error in
-    // ApiRequestError, so a bare non-ApiRequestError reject from
-    // api.snapshots.restore means the server never received the
-    // request. Before I5, useSnapshotState mapped this to "unknown"
-    // and EditorPage treated "unknown" as possibly_committed — wiping
-    // the cached draft and permanently locking the editor for what
-    // was a purely-client bug. After: the hook's restoreReachedServer
-    // flag stays false, the reason is "network", and the caller
-    // surfaces a dismissible retry banner.
+  it("shows a persistent lock banner for a non-ApiRequestError restore throw (I2)", async () => {
+    // I2 (2026-04-23 review): apiFetch wraps every real network/fetch
+    // error in ApiRequestError, so any non-ApiRequestError throw from
+    // the restore pipeline is overwhelmingly a POST-success bookkeeping
+    // throw (localStorage.removeItem in Safari private mode, setState
+    // on a torn-down boundary). The server likely committed the restore
+    // + its auto-snapshot by that point, so treating this as a transient
+    // NETWORK retry would invite the user to re-POST and double-restore.
+    // Conservative default: synthesize 200 BAD_JSON → possiblyCommitted
+    // → persistent lock banner. The earlier (I5) assumption that this
+    // meant "pre-send" is wrong — pre-send is vanishingly rare, post-
+    // success is realistic.
     vi.mocked(api.snapshots.list).mockResolvedValue([
       {
         id: "snap-1",
@@ -2443,7 +2531,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
 
     const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
@@ -2454,11 +2542,14 @@ describe("EditorPage snapshot panel", () => {
     );
     await userEvent.click(confirmButton!);
 
-    // Dismissible network banner. The persistent lock banner MUST NOT
-    // appear for a pre-send failure — the server never committed.
-    expect(await screen.findByText(STRINGS.snapshots.restoreNetworkFailed)).toBeInTheDocument();
-    expect(screen.queryByText(STRINGS.snapshots.restoreResponseUnreadable)).toBeNull();
-    expect(screen.queryByRole("button", { name: STRINGS.editor.refreshButton })).toBeNull();
+    // Persistent lock banner: server likely committed the restore, the
+    // response was unreadable client-side. A dismissible retry banner
+    // would invite a double-restore.
+    expect(
+      await screen.findByText(STRINGS.snapshots.restoreResponseUnreadable),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(STRINGS.snapshots.restoreNetworkFailed)).toBeNull();
+    expect(screen.getByRole("button", { name: STRINGS.editor.refreshButton })).toBeInTheDocument();
   });
 
   it("exits snapshot view when restore returns not_found (I6)", async () => {
@@ -2499,7 +2590,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-gone");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-gone", expect.any(AbortSignal));
     });
 
     // Confirm banner is on-screen before the 404.
@@ -2564,7 +2655,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
     // Close the panel via Escape (the toolbar Snapshots button unmounts
     // together with the Editor when viewingSnapshot is truthy).
@@ -2637,7 +2728,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
     await userEvent.keyboard("{Escape}");
 
@@ -2654,7 +2745,7 @@ describe("EditorPage snapshot panel", () => {
     await waitFor(() => {
       expect(
         (api.snapshots as unknown as { restore: ReturnType<typeof vi.fn> }).restore,
-      ).toHaveBeenCalledWith("snap-1");
+      ).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
     // refreshSnapshotCount() issues a fresh list() call — confirm it ran.
     await waitFor(() => {
@@ -2701,7 +2792,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
     await userEvent.keyboard("{Escape}");
 
@@ -2801,7 +2892,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-corrupt");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-corrupt", expect.any(AbortSignal));
     });
 
     const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
@@ -2860,7 +2951,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-xref");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-xref", expect.any(AbortSignal));
     });
 
     const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
@@ -2921,7 +3012,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
     await userEvent.keyboard("{Escape}");
     const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
@@ -2983,7 +3074,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
     await userEvent.keyboard("{Escape}");
     const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
@@ -3066,7 +3157,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
     await userEvent.keyboard("{Escape}");
     const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
@@ -3142,7 +3233,7 @@ describe("EditorPage snapshot panel", () => {
     await userEvent.click(await screen.findByRole("button", { name: /^Snapshots/ }));
     await userEvent.click(await screen.findByRole("button", { name: "View" }));
     await waitFor(() => {
-      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1");
+      expect(api.snapshots.get).toHaveBeenCalledWith("snap-1", expect.any(AbortSignal));
     });
     await userEvent.keyboard("{Escape}");
     const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });

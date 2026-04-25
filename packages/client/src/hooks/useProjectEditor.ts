@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import type { ProjectWithChapters, Chapter } from "@smudge/shared";
 import { countWords } from "@smudge/shared";
-import { api, ApiRequestError } from "../api/client";
+import { api } from "../api/client";
 import { getCachedContent, setCachedContent, clearCachedContent } from "./useContentCache";
 import { useAbortableSequence } from "./useAbortableSequence";
 import { STRINGS } from "../strings";
+import { mapApiError, isApiError, isAborted, isClientError } from "../errors";
 
 export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
 
@@ -16,7 +17,22 @@ export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
 // chapter the mutation didn't touch (I5).
 export type ReloadOutcome = "reloaded" | "superseded" | "failed";
 
-export function useProjectEditor(slug: string | undefined) {
+export interface UseProjectEditorOptions {
+  // I2 + I4 (review 2026-04-24): fires when the hook detects a
+  // server/client state divergence the user must manually refresh to
+  // recover from (terminal save code, or rename-committed followed by
+  // a slug-lost recovery GET 404). EditorPage pairs this with
+  // applyReloadFailedLock to honour CLAUDE.md save-pipeline invariant
+  // #2 (setEditable(false) + editorLockedMessage set together) and the
+  // lock banner implicitly disables auto-save via handleSaveLockGated.
+  // Hook consumers that don't own an editor (tests, storybook) may
+  // omit it.
+  onRequestEditorLock?: (message: string) => void;
+}
+
+export function useProjectEditor(slug: string | undefined, options?: UseProjectEditorOptions) {
+  const onRequestEditorLockRef = useRef(options?.onRequestEditorLock);
+  onRequestEditorLockRef.current = options?.onRequestEditorLock;
   const [project, setProject] = useState<ProjectWithChapters | null>(null);
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
   const [chapterReloadKey, setChapterReloadKey] = useState(0);
@@ -76,6 +92,62 @@ export function useProjectEditor(slug: string | undefined) {
     resolve: () => void;
   } | null>(null);
   const statusChangeSeq = useAbortableSequence();
+  // I11: rapid status clicks (A→B→C) used to issue overlapping PATCHes
+  // with no server-side ordering guarantee. statusChangeSeq only
+  // discarded response *processing*; both requests still reached the
+  // server and the persisted row could settle on A or B while the UI
+  // shows C. Mirror saveAbortRef: abort any prior in-flight PATCH
+  // before issuing a new one, and thread the signal into
+  // api.chapters.update so the abort actually severs the request.
+  const statusChangeAbortRef = useRef<AbortController | null>(null);
+  // I1 (review 2026-04-24): rapid title edits used to fire overlapping
+  // PATCHes. The S7 drift guard discarded the stale response but the
+  // SECOND PATCH had already reached the server — SQLite's writer-lock
+  // ordering determined which title won, not the client's last-typed
+  // value. Mirror statusChangeAbortRef: abort any prior in-flight
+  // rename before issuing a new one, and thread the signal into
+  // api.projects.update so the network request is actually severed.
+  const titleChangeAbortRef = useRef<AbortController | null>(null);
+  // C5 (review 2026-04-24): rapid drag-drop reorders used to issue
+  // overlapping PUTs to /chapters/order with no client-side ordering
+  // guard — the persisted order was whichever PUT SQLite's writer lock
+  // serialized last, not the user's last drop. Mirror
+  // statusChangeAbortRef: abort the prior in-flight PUT before issuing
+  // a new one, and thread the signal into api.projects.reorderChapters
+  // so the older request is actually severed.
+  const reorderAbortRef = useRef<AbortController | null>(null);
+  // I7 (review 2026-04-24): rename and delete-chapter siblings went
+  // without AbortControllers. Rapid renames raced at the server with
+  // no ordering guard; a delete that the user moved past kept running
+  // setState paths on stale chapter ids. Mirror title/status abort
+  // refs: the rename path aborts on supersede, the delete path aborts
+  // on unmount.
+  const renameChapterAbortRef = useRef<AbortController | null>(null);
+  const deleteChapterAbortRef = useRef<AbortController | null>(null);
+  // I21 (review 2026-04-24): per-chapter cache of the last server-
+  // confirmed status. Rapid X→A→B clicks used to capture
+  // `previousStatus = A` for B because A's optimistic setProject had
+  // landed; if B's PATCH failed AND the fallback GET silent-catch
+  // also failed, the revert restored A — a status the server never
+  // persisted. Tracking confirmed commits separately lets the revert
+  // target the actual server-side value. Parallels
+  // confirmedTimezoneRef / confirmedFieldsRef in ProjectSettingsDialog.
+  const confirmedStatusRef = useRef<Record<string, string | undefined>>({});
+  // I22 (review 2026-04-24): recovery GETs fired by BAD_JSON catches
+  // in handleCreateChapter / handleUpdateProjectTitle / handleStatusChange
+  // need an AbortController so unmount drops the in-flight recovery.
+  // C1 (review 2026-04-25): each handler owns its own ref. Earlier we
+  // tried a single shared ref ("only the latest matters" — superseded
+  // recoveries from the SAME handler are fine to abort), but a status
+  // revert that fires while a create-recovery GET is in flight would
+  // abort the create's controller. The create's recovery body wraps
+  // the GET in `try { ... } catch {}`, so the cross-handler abort
+  // was silently swallowed and the new chapter never landed in the
+  // sidebar. Per-handler refs scope the "latest wins" rule to its own
+  // handler and leave siblings untouched.
+  const createRecoveryAbortRef = useRef<AbortController | null>(null);
+  const statusRecoveryAbortRef = useRef<AbortController | null>(null);
+  const titleRecoveryAbortRef = useRef<AbortController | null>(null);
 
   // Shared cancel-in-flight-save helper. Aborts the save sequence (so the
   // retry loop short-circuits on its next iteration via token.isStale()),
@@ -110,11 +182,31 @@ export function useProjectEditor(slug: string | undefined) {
   useEffect(() => {
     return () => {
       cancelInFlightSave();
+      // I1: abort field PATCHes on unmount so a late-resolving rename
+      // can't fire setState on a torn-down hook.
+      titleChangeAbortRef.current?.abort();
+      statusChangeAbortRef.current?.abort();
+      reorderAbortRef.current?.abort();
+      renameChapterAbortRef.current?.abort();
+      deleteChapterAbortRef.current?.abort();
+      createRecoveryAbortRef.current?.abort();
+      statusRecoveryAbortRef.current?.abort();
+      titleRecoveryAbortRef.current?.abort();
     };
   }, [cancelInFlightSave]);
 
   useEffect(() => {
     let cancelled = false;
+    // I7 (review 2026-04-25): reset the confirmed-status cache at the
+    // start of every loadProject. The hook persists across slug changes
+    // (refs survive), so on a failed loadProject (network, 5xx) the
+    // ref retained the previous project's status table and a status
+    // revert on the new (partially-rendered) project would read against
+    // the wrong baseline. Resetting up-front guarantees the cache only
+    // ever holds the current project's state — the success branch
+    // re-seeds from the fresh server snapshot below, and a failure
+    // leaves the cache empty (correct: there's no project to revert).
+    confirmedStatusRef.current = {};
 
     async function loadProject() {
       if (!slug) return;
@@ -122,6 +214,11 @@ export function useProjectEditor(slug: string | undefined) {
         const data = await api.projects.get(slug);
         if (cancelled) return;
         setProject(data);
+        // I21: seed the confirmed-status cache from the authoritative
+        // server response. Every chapter's status here is server-truth
+        // at load time; subsequent revert paths read from this ref so
+        // they don't stomp to an optimistic value.
+        confirmedStatusRef.current = Object.fromEntries(data.chapters.map((c) => [c.id, c.status]));
         // If the cached activeChapter belongs to a different project (e.g.
         // in-place slug change that isn't a rename), the `!activeChapterRef`
         // guard would skip loading the new project's first chapter, and the
@@ -147,9 +244,13 @@ export function useProjectEditor(slug: string | undefined) {
           setChapterWordCount(countWords(effectiveChapter.content));
         }
       } catch (err) {
-        console.warn("Failed to load project:", err);
+        // Copilot review 2026-04-24 (wider occurrence of HomePage race):
+        // gate console.warn on `cancelled` so a late rejection on
+        // unmount/slug-change does not leak noise into test output.
         if (cancelled) return;
-        setError(STRINGS.error.loadProjectFailed);
+        console.warn("Failed to load project:", err);
+        const { message } = mapApiError(err, "project.load");
+        if (message) setError(message);
       }
     }
 
@@ -185,15 +286,6 @@ export function useProjectEditor(slug: string | undefined) {
 
       setSaveStatus("saving");
       setSaveErrorMessage(null);
-      // Map server 4xx error code/status to a strings.ts entry. Never
-      // surface the raw err.message — that's server-authored English that
-      // bypasses the i18n-ready externalization (CLAUDE.md). Mirrors the
-      // discipline in utils/findReplaceErrors.ts.
-      const mapSaveError = (err: ApiRequestError): string => {
-        if (err.status === 413) return STRINGS.editor.saveFailedTooLarge;
-        if (err.code === "VALIDATION_ERROR") return STRINGS.editor.saveFailedInvalid;
-        return STRINGS.editor.saveFailed;
-      };
       let rejected4xx: { message: string; code?: string } | null = null;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (token.isStale()) return false; // chapter changed, abort retries
@@ -245,14 +337,49 @@ export function useProjectEditor(slug: string | undefined) {
           // Aborted: cancelPendingSaves intentionally cancelled this save
           // (e.g. before a snapshot restore). Exit cleanly without flagging
           // an error to the user.
-          if (err instanceof ApiRequestError && err.code === "ABORTED") {
+          if (isAborted(err)) {
             return false;
           }
-          if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) {
+          // I5: a 2xx BAD_JSON or a 5xx whose code identifies a specific
+          // committed/terminal server state must not retry:
+          //   - 2xx BAD_JSON: server likely committed the PATCH but the
+          //     response body was unreadable. Retrying would either
+          //     commit-again the same content (wasteful, possibly
+          //     racing a concurrent keystroke) or land while the user
+          //     is reading the warning banner.
+          //   - 5xx UPDATE_READ_FAILURE: the server updated the row but
+          //     could not re-read it — the save committed; same UX as
+          //     2xx BAD_JSON.
+          //   - 5xx CORRUPT_CONTENT: the existing row is corrupt;
+          //     retrying will not fix it.
+          // Everything else under 500 (bare 500, transient NETWORK, etc.)
+          // still retries with backoff.
+          if (
+            isApiError(err) &&
+            (err.code === "BAD_JSON" ||
+              err.code === "UPDATE_READ_FAILURE" ||
+              err.code === "CORRUPT_CONTENT")
+          ) {
+            console.warn("Save failed with terminal code:", err.code);
+            // mapApiError returns message: null only for ABORTED, which
+            // has already been filtered above — the three codes here all
+            // route to scope.committed / byCode matches, all non-null.
+            const { message } = mapApiError(err, "chapter.save");
+            rejected4xx = { message: message as string, code: err.code };
+            break;
+          }
+          if (isClientError(err)) {
             console.warn("Save failed with 4xx:", err);
-            // Map to strings.ts copy rather than forwarding the raw
-            // server-authored message — see mapSaveError above.
-            rejected4xx = { message: mapSaveError(err), code: err.code };
+            // I4 (2026-04-23 review): route through the unified mapper
+            // so chapter.save scope is the single source of truth. Raw
+            // err.message is never forwarded (CLAUDE.md invariant); the
+            // scope's byStatus[413] / byCode[VALIDATION_ERROR] / fallback
+            // produce the same strings.ts copy the inline mapSaveError
+            // duplicated. err.code is preserved separately for the
+            // cache-clear decision below. ABORTED is filtered above so
+            // mapped.message is guaranteed non-null in this branch.
+            const { message } = mapApiError(err, "chapter.save");
+            rejected4xx = { message: message as string, code: err.code };
             break;
           }
           if (attempt < MAX_RETRIES) {
@@ -304,6 +431,21 @@ export function useProjectEditor(slug: string | undefined) {
       if (activeChapterRef.current?.id === savingChapterId && !token.isStale()) {
         setSaveStatus("error");
         setSaveErrorMessage(rejected4xx ? rejected4xx.message : STRINGS.editor.saveFailed);
+        // I2 (review 2026-04-24): terminal committed/unrecoverable
+        // codes must also lock the editor — CLAUDE.md save-pipeline
+        // invariant #2 pairs setEditable(false) with editorLockedMessage.
+        // EditorPage subscribes via onRequestEditorLock so the
+        // invariant-pair helper (applyReloadFailedLock) fires alongside
+        // the banner. Bare 4xx (VALIDATION_ERROR, 413) are recoverable
+        // and keep the editor writable.
+        if (
+          rejected4xx &&
+          (rejected4xx.code === "BAD_JSON" ||
+            rejected4xx.code === "UPDATE_READ_FAILURE" ||
+            rejected4xx.code === "CORRUPT_CONTENT")
+        ) {
+          onRequestEditorLockRef.current?.(rejected4xx.message);
+        }
       }
       return false;
     },
@@ -325,15 +467,25 @@ export function useProjectEditor(slug: string | undefined) {
   const handleCreateChapter = useCallback(
     async (onError?: (message: string) => void) => {
       const slug = projectSlugRef.current;
-      if (!slug) return;
-      // S6 (review 2026-04-21): the post-await drift guard (below)
-      // uses a two-part compare so a concurrent rename does not
-      // discard a valid response. A rename updates projectSlugRef to
-      // the new slug AND updates projectRef.slug to match, so when
-      // projectSlugRef equals projectRef?.slug we're still on the
-      // SAME project just with a new slug — keep the response.
-      // Cross-project navigation desyncs the two (URL changed, loaded
-      // project not yet swapped), and the guard fires correctly.
+      const projectId = projectRef.current?.id;
+      if (!slug || !projectId) return;
+      // S6 (review 2026-04-21) + C1 (review 2026-04-24): the post-await
+      // drift guard below combines two checks.
+      //   1. Project id captured at POST time vs projectRef.current?.id
+      //      at response time. The id is stable across rename and
+      //      changes only on cross-project navigation AFTER the new
+      //      project finishes loading. This distinguishes rename
+      //      (keep) from completed cross-project nav (discard).
+      //   2. Slug two-part compare (projectSlugRef vs captured slug
+      //      AND vs projectRef.slug). The id check can't see the
+      //      window between a URL slug prop change and loadProject
+      //      completing — projectRef still holds the old project's
+      //      id, so id equality passes. The slug compare catches
+      //      that window because projectSlugRef has already advanced
+      //      to the new URL slug while projectRef.slug still holds
+      //      the old one.
+      // Both checks are needed: (1) covers post-load cross-nav, (2)
+      // covers pre-load cross-nav, neither covers what the other does.
       // Full cancel of any in-flight save: abort the save sequence, abort
       // the fetch, and unblock any backoff sleep (S1). A bare seq-abort
       // without the controller abort + backoff clear would short-circuit
@@ -354,18 +506,29 @@ export function useProjectEditor(slug: string | undefined) {
       setCacheWarning(false);
       try {
         const newChapter = await api.chapters.create(slug);
-        // C2: discard the response if the user navigated to a different
-        // project mid-POST. Without this, `setActiveChapter` and the
-        // `setProject` merge would write Project A's new chapter into
-        // Project B's state, producing a phantom chapter in the sidebar
-        // and pointing subsequent edits at the wrong project's chapter id.
+        // C2 + C1: discard the response if the user navigated to a
+        // different project mid-POST. Without this, `setActiveChapter`
+        // and the `setProject` merge would write Project A's new
+        // chapter into Project B's state, producing a phantom chapter
+        // in the sidebar and pointing subsequent edits at the wrong
+        // project's chapter id.
+        if (projectRef.current?.id !== projectId) return;
         if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
           return;
         setActiveChapter(newChapter);
         setChapterWordCount(0);
         setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
+        // C2 (review 2026-04-25): seed the confirmed-status cache for the
+        // newly-inserted row. Without this, a later status PATCH on this
+        // chapter that fails (PATCH + recovery GET both failing) reads
+        // previousStatus = undefined and silently skips the local-revert
+        // fallback at line "if (!reverted && previousStatus !== undefined)",
+        // leaving the optimistic status on screen even though the server
+        // never accepted it. Mirrors loadProject's seed.
+        confirmedStatusRef.current[newChapter.id] = newChapter.status;
       } catch (err) {
         console.warn("Failed to create chapter:", err);
+        if (projectRef.current?.id !== projectId) return;
         if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
           return;
         // I4: route through the onError callback (same pattern as
@@ -374,10 +537,79 @@ export function useProjectEditor(slug: string | undefined) {
         // rather than the full-screen error overlay, which would tear
         // down the editor session and leave the user with only a
         // "back to projects" link.
+        const { message, possiblyCommitted } = mapApiError(err, "chapter.create");
+        if (!message) return;
+        // C1: chapter.create is non-idempotent — the server assigns a new
+        // row per POST. On an ambiguous-commit outcome (2xx BAD_JSON ⇒
+        // possiblyCommitted) or the explicit READ_AFTER_CREATE_FAILURE
+        // code, the row may already exist on the server and retrying
+        // would create a duplicate. Fetch the project fresh so the new
+        // chapter appears in the sidebar without another POST; surface
+        // the committed-specific copy so the user knows not to click
+        // Add chapter again.
+        //
+        // S8 (review 2026-04-24): `possiblyCommitted` now covers both
+        // 2xx BAD_JSON and the explicit READ_AFTER_CREATE_FAILURE code
+        // (via scope.committedCodes). The former inline `err.code ===
+        // "READ_AFTER_CREATE_FAILURE"` check lived here to work around
+        // that gap; removing it keeps the recovery logic in the scope
+        // registry where future committed-intent codes can be added
+        // without touching this call site.
+        if (possiblyCommitted) {
+          // I7: snapshot pre-POST chapter ids so we can identify the
+          // server-created row in the refreshed list. The happy path
+          // calls setActiveChapter(newChapter); the recovery path must
+          // match that intent or the user sees the new chapter appear
+          // in the sidebar but stays on the previously-active chapter,
+          // contradicting the committed-banner UX.
+          const previousChapterIds = new Set(projectRef.current?.chapters.map((c) => c.id) ?? []);
+          createRecoveryAbortRef.current?.abort();
+          const recoveryController = new AbortController();
+          createRecoveryAbortRef.current = recoveryController;
+          try {
+            const refreshed = await api.projects.get(slug, recoveryController.signal);
+            if (recoveryController.signal.aborted) return;
+            // Merge only if the user is still on the same project (by
+            // id — stable across rename, changes on cross-project
+            // navigation). The prior slug-OR check let a stale
+            // recovery response merge into a different project's
+            // state after the user navigated away AND the new project
+            // finished loading (the two refs then realign to the new
+            // slug, making the OR evaluate true).
+            if (projectRef.current?.id === projectId) {
+              setProject(refreshed);
+              // C2 (review 2026-04-25): re-seed the confirmed-status cache
+              // from the refreshed project. The recovery branch is a fresh
+              // server snapshot, so it carries the authoritative status
+              // for every chapter — same discipline as loadProject's seed.
+              // Without this, the newly-created chapter (and any other row
+              // whose status changed server-side between initial load and
+              // recovery) has no cache entry, and a later revert silently
+              // skips.
+              confirmedStatusRef.current = Object.fromEntries(
+                refreshed.chapters.map((c) => [c.id, c.status]),
+              );
+              const added = refreshed.chapters.filter((c) => !previousChapterIds.has(c.id));
+              if (added.length > 0) {
+                // Pick the highest sort_order: the server appends new
+                // chapters to the end. If somehow more than one row
+                // appeared (unexpected), the most-recently-appended
+                // one is still the best candidate for the user's
+                // intended click.
+                const newest = added.reduce((a, b) => (a.sort_order > b.sort_order ? a : b));
+                setActiveChapter(newest);
+                setChapterWordCount(countWords(newest.content));
+              }
+            }
+          } catch {
+            // Refresh is best-effort; the error copy instructs the user
+            // to refresh the page manually if this also failed.
+          }
+        }
         if (onError) {
-          onError(STRINGS.error.createChapterFailed);
+          onError(message);
         } else {
-          setError(STRINGS.error.createChapterFailed);
+          setError(message);
         }
       }
     },
@@ -409,7 +641,8 @@ export function useProjectEditor(slug: string | undefined) {
       } catch (err) {
         console.warn("Failed to load chapter:", err);
         if (token.isStale()) return;
-        setError(STRINGS.error.loadChapterFailed);
+        const { message } = mapApiError(err, "chapter.load");
+        if (message) setError(message);
       }
     },
     [cancelInFlightSave, selectChapterSeq],
@@ -474,10 +707,12 @@ export function useProjectEditor(slug: string | undefined) {
         // without flipping EditorPage into the full-screen error branch.
         // Falling back to setError preserves the legacy behavior when no
         // callback is supplied (e.g. snapshot restore reload).
+        const { message } = mapApiError(err, "chapter.load");
+        if (!message) return "failed";
         if (onError) {
-          onError(STRINGS.error.loadChapterFailed);
+          onError(message);
         } else {
-          setError(STRINGS.error.loadChapterFailed);
+          setError(message);
         }
         return "failed";
       }
@@ -509,8 +744,16 @@ export function useProjectEditor(slug: string | undefined) {
       setSaveStatus("idle");
       setSaveErrorMessage(null);
       setCacheWarning(false);
+      // I7: abort any prior in-flight delete before issuing a new one
+      // and cover this controller in the unmount cleanup so the browser
+      // drops the DELETE rather than running it for a torn-down caller.
+      deleteChapterAbortRef.current?.abort();
+      const controller = new AbortController();
+      deleteChapterAbortRef.current = controller;
       try {
-        await api.chapters.delete(chapter.id);
+        await api.chapters.delete(chapter.id, controller.signal);
+        if (controller.signal.aborted) return false;
+        if (deleteChapterAbortRef.current === controller) deleteChapterAbortRef.current = null;
         clearCachedContent(chapter.id);
         // Compute remaining from the ref (current state), not the stale closure
         const remaining = projectRef.current?.chapters.filter((c) => c.id !== chapter.id) ?? [];
@@ -531,7 +774,10 @@ export function useProjectEditor(slug: string | undefined) {
             // sidebar over the user's explicit selection.
             const token = selectChapterSeq.start();
             try {
-              const ch = await api.chapters.get(first.id);
+              // I7: thread the delete controller through the follow-up
+              // GET so an unmount aborts both the DELETE-step and the
+              // post-delete active-chapter fetch together.
+              const ch = await api.chapters.get(first.id, controller.signal);
               if (token.isStale()) return true;
               setActiveChapter(ch);
               setChapterWordCount(countWords(ch.content));
@@ -545,7 +791,8 @@ export function useProjectEditor(slug: string | undefined) {
               // as if the project had no chapters left.
               console.warn("Failed to load chapter after delete:", err);
               if (token.isStale()) return true;
-              onError?.(STRINGS.error.loadChapterFailed);
+              const { message } = mapApiError(err, "chapter.load");
+              if (message) onError?.(message);
               setActiveChapter(null);
               setChapterWordCount(0);
             }
@@ -556,8 +803,14 @@ export function useProjectEditor(slug: string | undefined) {
         }
         return true;
       } catch (err) {
+        if (deleteChapterAbortRef.current === controller) deleteChapterAbortRef.current = null;
+        // I7: ABORTED means unmount or a newer delete superseded this
+        // one; stay silent so we don't fire a banner on a torn-down
+        // caller (happens in practice in tests too).
+        if (controller.signal.aborted) return false;
         console.warn("Failed to delete chapter:", err);
-        onError?.(STRINGS.error.deleteChapterFailed);
+        const { message } = mapApiError(err, "chapter.delete");
+        if (message) onError?.(message);
         return false;
       }
     },
@@ -567,16 +820,26 @@ export function useProjectEditor(slug: string | undefined) {
   const handleReorderChapters = useCallback(
     async (orderedIds: string[], onError?: (message: string) => void) => {
       const slug = projectSlugRef.current;
-      if (!slug) return;
-      // S6 (review 2026-04-21): two-part drift guard — see
-      // handleCreateChapter for full rationale.
+      const projectId = projectRef.current?.id;
+      if (!slug || !projectId) return;
+      // C5 (review 2026-04-24): abort any prior in-flight reorder
+      // before issuing a new one so overlapping drag-drops cannot
+      // commit out of drop order. The signal is threaded through the
+      // transport so the browser actually drops the stale request.
+      reorderAbortRef.current?.abort();
+      const controller = new AbortController();
+      reorderAbortRef.current = controller;
+      // S6 (review 2026-04-21) + C1 (review 2026-04-24): drift guard —
+      // see handleCreateChapter for full rationale.
       try {
-        await api.projects.reorderChapters(slug, orderedIds);
-        // C2: discard if the user navigated away mid-PUT. Without this,
-        // the reorder would apply Project A's ordered ids to Project B's
-        // chapters array — the filter by id then drops everything (ids
-        // don't match), leaving Project B with an empty chapters list
-        // until refresh.
+        await api.projects.reorderChapters(slug, orderedIds, controller.signal);
+        if (reorderAbortRef.current === controller) reorderAbortRef.current = null;
+        // C2 + C1: discard if the user navigated away mid-PUT. Without
+        // this, the reorder would apply Project A's ordered ids to
+        // Project B's chapters array — the filter by id then drops
+        // everything (ids don't match), leaving Project B with an
+        // empty chapters list until refresh.
+        if (projectRef.current?.id !== projectId) return;
         if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
           return;
         setProject((prev) => {
@@ -590,16 +853,45 @@ export function useProjectEditor(slug: string | undefined) {
           return { ...prev, chapters: reordered };
         });
       } catch (err) {
+        if (reorderAbortRef.current === controller) reorderAbortRef.current = null;
+        // C5: ABORTED means a newer reorder superseded this one and is
+        // driving its own PATCH. Reverting here would stomp the live
+        // call; stay silent and let the newer reorder land.
+        if (controller.signal.aborted) return;
         console.warn("Failed to reorder chapters:", err);
+        if (projectRef.current?.id !== projectId) return;
         if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
           return;
         // I4: route through the onError callback rather than setError so
         // a 400 on id-list mismatch (recoverable per CLAUDE.md) surfaces
         // as a dismissible banner instead of tearing down the editor.
+        const { message, possiblyCommitted } = mapApiError(err, "chapter.reorder");
+        // I6 (2026-04-23): 2xx BAD_JSON means the server committed the
+        // reorder but the body was unreadable. Before this fix the
+        // catch touched no state, so the drag-and-drop visually snapped
+        // back to the pre-drag order while the server held the new
+        // order — a user retry would re-apply the same order
+        // idempotently but confusingly. Apply the requested order to
+        // client state on possiblyCommitted so the UI matches the
+        // committed server state, and surface the committed copy so
+        // the user knows the response was ambiguous.
+        if (possiblyCommitted) {
+          setProject((prev) => {
+            if (!prev) return prev;
+            const reordered = orderedIds
+              .map((id, index) => {
+                const ch = prev.chapters.find((c) => c.id === id);
+                return ch ? { ...ch, sort_order: index } : undefined;
+              })
+              .filter(Boolean) as Chapter[];
+            return { ...prev, chapters: reordered };
+          });
+        }
+        if (!message) return;
         if (onError) {
-          onError(STRINGS.error.reorderFailed);
+          onError(message);
         } else {
-          setError(STRINGS.error.reorderFailed);
+          setError(message);
         }
       }
     },
@@ -609,27 +901,76 @@ export function useProjectEditor(slug: string | undefined) {
   const handleUpdateProjectTitle = useCallback(
     async (title: string): Promise<string | undefined> => {
       const slug = projectSlugRef.current;
-      if (!slug) return undefined;
-      // S6 (review 2026-04-21): two-part drift guard — see
-      // handleCreateChapter for full rationale.
+      const projectId = projectRef.current?.id;
+      if (!slug || !projectId) return undefined;
+      // S6 (review 2026-04-21) + C1 (review 2026-04-24): drift guard —
+      // see handleCreateChapter for full rationale.
       setProjectTitleError(null);
+      // I1: abort any prior in-flight title PATCH before issuing a new
+      // one so overlapping renames can't commit out of typing order.
+      titleChangeAbortRef.current?.abort();
+      const controller = new AbortController();
+      titleChangeAbortRef.current = controller;
       try {
-        const updated = await api.projects.update(slug, { title });
+        const updated = await api.projects.update(slug, { title }, controller.signal);
+        if (controller.signal.aborted) return undefined;
         // C3 defense-in-depth: if the user navigated mid-PATCH, discard
         // the response. The primary C3 guard lives in useProjectTitleEditing
         // (refuses saveProjectTitle when project.slug !== slug), but this
         // extra check keeps handleUpdateProjectTitle independently safe for
         // any future direct caller.
+        if (projectRef.current?.id !== projectId) return undefined;
         if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
           return undefined;
         projectSlugRef.current = updated.slug;
         setProject((prev) => (prev ? { ...prev, title: updated.title, slug: updated.slug } : prev));
         return updated.slug;
       } catch (err) {
+        if (controller.signal.aborted) return undefined; // superseded by a newer rename
         console.warn("Failed to update project title:", err);
         // Don't call setError — that triggers the full-page error overlay.
         // Returning undefined keeps the title edit mode open so the user can retry.
-        setProjectTitleError(STRINGS.error.updateTitleFailed);
+        const { message, possiblyCommitted } = mapApiError(err, "project.updateTitle");
+        // I3: slug desync recovery. On 2xx BAD_JSON the server may have
+        // committed the rename (new slug) but we can't read the new one
+        // from the unreadable body. Subsequent save/create/reorder POSTs
+        // against projectSlugRef.current would 404 against a dead slug —
+        // cascading silent failures until the user refreshes. Attempt a
+        // project refresh under the current (old) slug; if the slug did
+        // not change (cosmetic rename, same-slug result) this recovers
+        // in place. If the slug did change the GET 404s; the committed
+        // copy alone tells the user to refresh the page.
+        if (possiblyCommitted) {
+          titleRecoveryAbortRef.current?.abort();
+          const recoveryController = new AbortController();
+          titleRecoveryAbortRef.current = recoveryController;
+          try {
+            const refreshed = await api.projects.get(slug, recoveryController.signal);
+            if (recoveryController.signal.aborted) return undefined;
+            // Merge only if still on the same project (id stable across
+            // rename, changes on cross-project navigation).
+            if (projectRef.current?.id === projectId) {
+              setProject(refreshed);
+              projectSlugRef.current = refreshed.slug;
+            }
+          } catch (recoveryErr) {
+            // I4 (review 2026-04-24): a 404 here means the server moved
+            // the project to a new slug but the unreadable body kept us
+            // from learning it. projectSlugRef still points at the dead
+            // slug; every subsequent save/create/reorder POSTs against
+            // it and 404s in a cascade. Fire onRequestEditorLock so the
+            // editor locks and auto-save short-circuits via
+            // handleSaveLockGated — the banner instructs the user to
+            // refresh. Network/other errors fall through to the generic
+            // committed banner below (auto-save still works because the
+            // slug didn't move; next attempt will succeed or surface its
+            // own error).
+            if (isApiError(recoveryErr) && recoveryErr.status === 404) {
+              onRequestEditorLockRef.current?.(STRINGS.error.updateTitleProjectSlugLost);
+            }
+          }
+        }
+        if (message) setProjectTitleError(message);
         return undefined;
       }
     },
@@ -639,8 +980,19 @@ export function useProjectEditor(slug: string | undefined) {
   const handleStatusChange = useCallback(
     async (chapterId: string, status: string, onError?: (message: string) => void) => {
       const token = statusChangeSeq.start();
-      // Save previous status for revert
-      const previousStatus = projectRef.current?.chapters.find((c) => c.id === chapterId)?.status;
+      // I11: abort the prior in-flight PATCH before issuing a new one so
+      // overlapping status clicks cannot land out-of-order at the server.
+      statusChangeAbortRef.current?.abort();
+      const controller = new AbortController();
+      statusChangeAbortRef.current = controller;
+      // I21 (review 2026-04-24): read previousStatus from the confirmed
+      // cache, not projectRef. A rapid X→A→B click sequence would
+      // otherwise capture `previousStatus = A` for B (A's optimistic
+      // setProject has landed but A's PATCH has not confirmed) — a
+      // later B-failure revert would restore A, a status the server
+      // never saw. The confirmed ref only advances after a successful
+      // PATCH, so it holds the authoritative value.
+      const previousStatus = confirmedStatusRef.current[chapterId];
 
       // Optimistic update
       setProject((prev) => {
@@ -654,15 +1006,48 @@ export function useProjectEditor(slug: string | undefined) {
       // status to the wrong chapter if the user rapidly switches chapters.
       setActiveChapter((prev) => (prev?.id === chapterId ? { ...prev, status } : prev));
       try {
-        await api.chapters.update(chapterId, { status });
-      } catch {
+        await api.chapters.update(chapterId, { status }, controller.signal);
+        if (statusChangeAbortRef.current === controller) statusChangeAbortRef.current = null;
+        // I21: advance the confirmed cache only on server-confirmed
+        // success so the next call's previousStatus reads the right
+        // value.
+        confirmedStatusRef.current[chapterId] = status;
+      } catch (err) {
+        if (statusChangeAbortRef.current === controller) statusChangeAbortRef.current = null;
         if (token.isStale()) return; // newer call owns state
+        const { message, possiblyCommitted } = mapApiError(err, "chapter.updateStatus");
+        // I11 (follow-on from the new AbortController): an ABORTED
+        // error means a later click cancelled this PATCH mid-flight —
+        // the newer click already owns the optimistic state and is
+        // driving its own PATCH. Reverting here would stomp the live
+        // call. Mirror saveAbortRef's ABORTED short-circuit.
+        if (message === null) return;
+        // I6 (2026-04-23): 2xx BAD_JSON means the server committed the
+        // new status but the response body was unreadable. A revert
+        // here either silently no-ops (the reload GET returns the new
+        // status the user just set) or fights the committed server
+        // state (local revert). Keep the optimistic update — the
+        // committed copy below tells the user the response was
+        // ambiguous, and the next chapter load will reconcile state.
+        if (possiblyCommitted) {
+          // I21: the server likely committed the new status despite
+          // the unreadable body. Advance the confirmed cache so a
+          // later status change captures this value, not the previous
+          // one, as the baseline.
+          confirmedStatusRef.current[chapterId] = status;
+          if (message) onError?.(message);
+          return;
+        }
         // Revert by reloading from server, falling back to local revert
         let reverted = false;
         const slug = projectSlugRef.current;
         if (slug) {
+          statusRecoveryAbortRef.current?.abort();
+          const recoveryController = new AbortController();
+          statusRecoveryAbortRef.current = recoveryController;
           try {
-            const data = await api.projects.get(slug);
+            const data = await api.projects.get(slug, recoveryController.signal);
+            if (recoveryController.signal.aborted) return;
             // Re-check the token after the second await (I2). The
             // earlier guard covers only the api.chapters.update await; a
             // rapid A→B (fails) then B→C click where the failure lands
@@ -672,6 +1057,9 @@ export function useProjectEditor(slug: string | undefined) {
             if (token.isStale()) return;
             const revertedChapter = data.chapters.find((c) => c.id === chapterId);
             if (revertedChapter) {
+              // I21: advance confirmed cache to the server's truth so
+              // subsequent calls don't capture a stale baseline.
+              confirmedStatusRef.current[chapterId] = revertedChapter.status;
               // Surgically revert only the status field to avoid overwriting
               // concurrent optimistic updates (reorder, rename, create).
               setProject((prev) => {
@@ -713,7 +1101,7 @@ export function useProjectEditor(slug: string | undefined) {
         // Status change failures are non-fatal — the revert already restored consistent state.
         // Call the optional onError callback for the caller to display (e.g., as a dismissible banner),
         // rather than setError which triggers the full-page error overlay.
-        onError?.(STRINGS.error.statusChangeFailed);
+        if (message) onError?.(message);
       }
     },
     [statusChangeSeq],
@@ -721,8 +1109,16 @@ export function useProjectEditor(slug: string | undefined) {
 
   const handleRenameChapter = useCallback(
     async (chapterId: string, title: string, onError?: (message: string) => void) => {
+      // I7: abort any prior in-flight rename before issuing a new one
+      // so overlapping renames cannot commit out of typing order at the
+      // server (same rationale as title/status abort refs).
+      renameChapterAbortRef.current?.abort();
+      const controller = new AbortController();
+      renameChapterAbortRef.current = controller;
       try {
-        await api.chapters.update(chapterId, { title });
+        await api.chapters.update(chapterId, { title }, controller.signal);
+        if (controller.signal.aborted) return;
+        if (renameChapterAbortRef.current === controller) renameChapterAbortRef.current = null;
         if (activeChapterRef.current?.id === chapterId) {
           // Only update the title — don't overwrite content with stale server data.
           // The editor holds the current truth (same principle as handleSave).
@@ -737,11 +1133,17 @@ export function useProjectEditor(slug: string | undefined) {
           };
         });
       } catch (err) {
+        if (renameChapterAbortRef.current === controller) renameChapterAbortRef.current = null;
+        // I7: ABORTED means a newer rename superseded this one; stay
+        // silent so the newer call's state update is not contradicted
+        // by a stale error banner.
+        if (controller.signal.aborted) return;
         console.warn("Failed to rename chapter:", err);
         // Don't call setError — that triggers the full-page error overlay.
         // Rename failures are non-fatal; surface via the optional callback
         // so callers can display inline (same pattern as handleStatusChange).
-        onError?.(STRINGS.error.renameChapterFailed);
+        const { message } = mapApiError(err, "chapter.rename");
+        if (message) onError?.(message);
       }
     },
     [],
@@ -769,6 +1171,15 @@ export function useProjectEditor(slug: string | undefined) {
     handleUpdateProjectTitle,
     handleRenameChapter,
     handleStatusChange,
+    // C2 (review 2026-04-25): sibling hooks (useTrashManager) that
+    // insert rows into project state must seed the confirmed-status
+    // cache so a later status PATCH on those rows can fall back to a
+    // baseline if both the PATCH and the recovery GET fail. Exposed as
+    // a function rather than the ref itself so call sites cannot mutate
+    // the cache to arbitrary values — only seed (id, status) pairs.
+    seedConfirmedStatus: (id: string, status: string) => {
+      confirmedStatusRef.current[id] = status;
+    },
     // Getter for reading the current active chapter from inside async
     // callbacks whose closure would otherwise see a stale value.
     getActiveChapter: () => activeChapterRef.current,

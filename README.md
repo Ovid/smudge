@@ -25,6 +25,8 @@ make dev
 
 The app runs at [http://localhost:3456](http://localhost:3456).
 
+For the full contributor guide — Node version rationale, PR rules, commit conventions — see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 If you plan to run the end-to-end tests (`make e2e` or `make all`), also run this once per machine:
 
 ```bash

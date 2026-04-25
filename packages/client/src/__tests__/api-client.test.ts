@@ -31,6 +31,16 @@ describe("api.projects", () => {
     });
   });
 
+  it("list(signal) threads signal to fetch", async () => {
+    mockFetch.mockResolvedValue(jsonResponse([]));
+    const controller = new AbortController();
+    await api.projects.list(controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects", {
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+    });
+  });
+
   it("get(slug) fetches GET /api/projects/:slug", async () => {
     const project = { id: "p1", title: "Test", chapters: [] };
     mockFetch.mockResolvedValue(jsonResponse(project));
@@ -68,6 +78,16 @@ describe("api.projects", () => {
     });
   });
 
+  it("get(slug, signal) threads signal to fetch (I22)", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({}));
+    const controller = new AbortController();
+    await api.projects.get("p1", controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1", {
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+    });
+  });
+
   it("reorderChapters sends PUT /api/projects/:slug/chapters/order", async () => {
     mockFetch.mockResolvedValue(jsonResponse({ message: "ok" }));
 
@@ -76,6 +96,28 @@ describe("api.projects", () => {
       headers: { "Content-Type": "application/json" },
       method: "PUT",
       body: JSON.stringify({ chapter_ids: ["ch3", "ch1", "ch2"] }),
+    });
+  });
+
+  it("reorderChapters threads signal to fetch (C5)", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ message: "ok" }));
+    const controller = new AbortController();
+    await api.projects.reorderChapters("p1", ["ch1"], controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1/chapters/order", {
+      headers: { "Content-Type": "application/json" },
+      method: "PUT",
+      body: JSON.stringify({ chapter_ids: ["ch1"] }),
+      signal: controller.signal,
+    });
+  });
+
+  it("trash(slug, signal) threads signal to fetch (I5)", async () => {
+    mockFetch.mockResolvedValue(jsonResponse([]));
+    const controller = new AbortController();
+    await api.projects.trash("p1", controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1/trash", {
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
     });
   });
 
@@ -113,6 +155,16 @@ describe("api.chapters", () => {
     });
   });
 
+  it("get(id, signal) threads signal to fetch (I7)", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ id: "ch-1", title: "Ch1" }));
+    const controller = new AbortController();
+    await api.chapters.get("ch-1", controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/chapters/ch-1", {
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+    });
+  });
+
   it("create(projectSlug) sends POST /api/projects/:slug/chapters", async () => {
     const chapter = { id: "ch-new", title: UNTITLED_CHAPTER };
     mockFetch.mockResolvedValue(jsonResponse(chapter, 201));
@@ -132,6 +184,17 @@ describe("api.chapters", () => {
     expect(mockFetch).toHaveBeenCalledWith("/api/chapters/ch1", {
       headers: { "Content-Type": "application/json" },
       method: "DELETE",
+    });
+  });
+
+  it("delete(id, signal) threads signal to fetch (I7)", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ message: "ok" }));
+    const controller = new AbortController();
+    await api.chapters.delete("ch1", controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/chapters/ch1", {
+      headers: { "Content-Type": "application/json" },
+      method: "DELETE",
+      signal: controller.signal,
     });
   });
 
@@ -278,7 +341,7 @@ describe("api.projects.export", () => {
     });
 
     await expect(api.projects.export("my-project", { format: "html" })).rejects.toThrow(
-      "Export failed: 500",
+      "[dev] Export HTTP 500",
     );
   });
 });
@@ -292,6 +355,40 @@ describe("api.images", () => {
     expect(result).toEqual(images);
     expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1/images", {
       headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  it("list(projectId, signal) threads signal to fetch", async () => {
+    const images: unknown[] = [];
+    mockFetch.mockResolvedValue(jsonResponse(images));
+
+    const controller = new AbortController();
+    await api.images.list("p1", controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1/images", {
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+    });
+  });
+
+  it("upload(projectId, file, signal) threads signal to fetch (I11)", async () => {
+    const uploaded = { id: "img-2", project_id: "p1", filename: "photo.jpg" };
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(uploaded),
+    });
+
+    const file = new File(["fake-image-data"], "photo.jpg", { type: "image/jpeg" });
+    const controller = new AbortController();
+    await api.images.upload("p1", file, controller.signal);
+
+    // Signal is threaded into the fetch options. Body is a FormData (we don't
+    // assert on its contents here — the sibling no-signal test pins that).
+    const call = mockFetch.mock.calls[0];
+    expect(call?.[0]).toBe("/api/projects/p1/images");
+    expect(call?.[1]).toMatchObject({
+      method: "POST",
+      signal: controller.signal,
     });
   });
 
@@ -338,7 +435,7 @@ describe("api.images", () => {
     });
 
     const file = new File(["data"], "img.png", { type: "image/png" });
-    await expect(api.images.upload("p1", file)).rejects.toThrow("Upload failed (500)");
+    await expect(api.images.upload("p1", file)).rejects.toThrow("[dev] Upload HTTP 500");
   });
 
   it("references(id) fetches GET /api/images/:id/references", async () => {
@@ -349,6 +446,16 @@ describe("api.images", () => {
     expect(result).toEqual(refs);
     expect(mockFetch).toHaveBeenCalledWith("/api/images/img-1/references", {
       headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  it("references(id, signal) threads signal to fetch (I9)", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ chapters: [] }));
+    const controller = new AbortController();
+    await api.images.references("img-1", controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/images/img-1/references", {
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
     });
   });
 
@@ -368,6 +475,18 @@ describe("api.images", () => {
     });
   });
 
+  it("update(id, data, signal) threads signal to fetch (I10)", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ id: "img-1" }));
+    const controller = new AbortController();
+    await api.images.update("img-1", { alt_text: "x" }, controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/images/img-1", {
+      headers: { "Content-Type": "application/json" },
+      method: "PATCH",
+      body: JSON.stringify({ alt_text: "x" }),
+      signal: controller.signal,
+    });
+  });
+
   it("delete(id) sends DELETE /api/images/:id and returns success", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
@@ -377,25 +496,39 @@ describe("api.images", () => {
 
     const result = await api.images.delete("img-1");
     expect(result).toEqual({ deleted: true });
-    expect(mockFetch).toHaveBeenCalledWith("/api/images/img-1", { method: "DELETE" });
+    expect(mockFetch).toHaveBeenCalledWith("/api/images/img-1", {
+      headers: { "Content-Type": "application/json" },
+      method: "DELETE",
+    });
   });
 
-  it("delete(id) returns conflict body when image is still referenced (409)", async () => {
-    const conflictBody = {
-      error: {
-        code: "IMAGE_IN_USE",
-        message: "Image is referenced by chapters",
-        chapters: [{ id: "ch-1", title: "Chapter One" }],
-      },
-    };
+  it("delete(id) throws ApiRequestError with IMAGE_IN_USE code and chapters in extras on 409", async () => {
+    const { ApiRequestError } = await import("../api/client");
     mockFetch.mockResolvedValue({
       ok: false,
       status: 409,
-      json: () => Promise.resolve(conflictBody),
+      json: () =>
+        Promise.resolve({
+          error: {
+            code: "IMAGE_IN_USE",
+            message: "Image is referenced by chapters",
+            chapters: [{ id: "ch-1", title: "Chapter One" }],
+          },
+        }),
     });
 
-    const result = await api.images.delete("img-1");
-    expect(result).toEqual(conflictBody);
+    let caught: unknown;
+    try {
+      await api.images.delete("img-1");
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(409);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("IMAGE_IN_USE");
+    expect((caught as InstanceType<typeof ApiRequestError>).extras).toEqual({
+      chapters: [{ id: "ch-1", title: "Chapter One" }],
+    });
   });
 
   it("delete(id) throws ApiRequestError on non-409 failure with server message", async () => {
@@ -415,7 +548,7 @@ describe("api.images", () => {
       json: () => Promise.resolve({}),
     });
 
-    await expect(api.images.delete("img-1")).rejects.toThrow("Delete failed (500)");
+    await expect(api.images.delete("img-1")).rejects.toThrow("[dev] HTTP 500");
   });
 });
 
@@ -566,6 +699,317 @@ describe("api.projects.export (additional)", () => {
       signal: controller.signal,
     });
   });
+
+  // I1: transport-level error classification. Before I1, export threw
+  // a bare TypeError for offline/DNS/CSP, bubbled AbortError raw, and
+  // discarded err.code/extras from the envelope — breaking the unified
+  // mapper contract.
+  it("wraps fetch TypeError as ApiRequestError(0, NETWORK) (I1)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    let caught: unknown;
+    try {
+      await api.projects.export("p1", { format: "html" });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("NETWORK");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
+  it("wraps AbortError from fetch as ApiRequestError(0, ABORTED) (I1)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockRejectedValueOnce(new DOMException("aborted", "AbortError"));
+
+    let caught: unknown;
+    try {
+      await api.projects.export("p1", { format: "html" });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("ABORTED");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
+  it("populates code from envelope on !ok response (I1)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue(
+      jsonResponse({ error: { code: "VALIDATION_ERROR", message: "Invalid format" } }, 400),
+    );
+
+    let caught: unknown;
+    try {
+      await api.projects.export("p1", { format: "html" });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("VALIDATION_ERROR");
+  });
+
+  it("maps 2xx AbortError blob-read to ABORTED (I3)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    const abort = new DOMException("aborted", "AbortError");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      blob: () => Promise.reject(abort),
+    });
+
+    let caught: unknown;
+    try {
+      await api.projects.export("p1", { format: "html" });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("ABORTED");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
+  it("maps 2xx blob-read TypeError to NETWORK (I1 2026-04-25)", async () => {
+    // I1 in the 2026-04-25 review: a stream-level TypeError from
+    // res.blob() (TCP reset post-headers, fetch's body read bailing
+    // out) is the same fault apiFetch's I14 fix handles. The earlier
+    // BAD_JSON treatment told the user "your export may have completed"
+    // when the server never flushed a body. Mirror apiFetch and the
+    // images.upload path: TypeError → NETWORK/transient. SyntaxError
+    // and other Error subclasses keep BAD_JSON treatment if the body
+    // arrived but couldn't be parsed.
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      blob: () => Promise.reject(new TypeError("truncated response")),
+    });
+
+    let caught: unknown;
+    try {
+      await api.projects.export("p1", { format: "html" });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("NETWORK");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+    expect((caught as InstanceType<typeof ApiRequestError>).message).toMatch(/^\[dev\] /);
+  });
+
+  it("preserves BAD_JSON for non-TypeError blob-read failures (I1 2026-04-25)", async () => {
+    // SyntaxError and other Error subclasses indicate the body did
+    // arrive but couldn't be parsed — that IS the possiblyCommitted
+    // case. Only TypeError flips to NETWORK.
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      blob: () => Promise.reject(new SyntaxError("unexpected token")),
+    });
+
+    let caught: unknown;
+    try {
+      await api.projects.export("p1", { format: "html" });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("BAD_JSON");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(200);
+  });
+});
+
+describe("api.images.upload (I1 transport classification)", () => {
+  it("wraps fetch TypeError as ApiRequestError(0, NETWORK)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    const file = new File(["x"], "a.png", { type: "image/png" });
+    let caught: unknown;
+    try {
+      await api.images.upload("p1", file);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("NETWORK");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
+  it("wraps AbortError from fetch as ApiRequestError(0, ABORTED)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockRejectedValueOnce(new DOMException("aborted", "AbortError"));
+
+    const file = new File(["x"], "a.png", { type: "image/png" });
+    let caught: unknown;
+    try {
+      await api.images.upload("p1", file);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("ABORTED");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
+  it("populates code from envelope on !ok response", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue(
+      jsonResponse({ error: { code: "FILE_TOO_LARGE", message: "too big" } }, 413),
+    );
+
+    const file = new File(["x"], "a.png", { type: "image/png" });
+    let caught: unknown;
+    try {
+      await api.images.upload("p1", file);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("FILE_TOO_LARGE");
+  });
+
+  it("maps 2xx AbortError body-read to ABORTED", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    const abort = new DOMException("aborted", "AbortError");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(abort),
+    });
+
+    const file = new File(["x"], "a.png", { type: "image/png" });
+    let caught: unknown;
+    try {
+      await api.images.upload("p1", file);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("ABORTED");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
+  it("maps 2xx non-abort body-read to BAD_JSON with real status", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(new SyntaxError("Unexpected token < in JSON")),
+    });
+
+    const file = new File(["x"], "a.png", { type: "image/png" });
+    let caught: unknown;
+    try {
+      await api.images.upload("p1", file);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("BAD_JSON");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(200);
+    // BAD_JSON messages must carry the [dev] prefix so stray logs of
+    // ApiRequestError.message are immediately identifiable as
+    // developer-only copy (review 2026-04-24).
+    expect((caught as InstanceType<typeof ApiRequestError>).message).toMatch(/^\[dev\] /);
+  });
+
+  // I14 (review 2026-04-24): a TypeError from res.json() indicates a
+  // stream-level network fault (e.g. TCP reset between headers and
+  // body) rather than a malformed-but-received body. Classifying that
+  // as BAD_JSON would surface "your save may have gone through" — but
+  // the server never flushed a body. Route it through NETWORK
+  // (transient) instead so consumers retry.
+  it("maps 2xx body-read TypeError to NETWORK (I14)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(new TypeError("Failed to fetch")),
+    });
+
+    let caught: unknown;
+    try {
+      await api.projects.get("p1");
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("NETWORK");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
+  it("re-throws NETWORK when !ok error-body read fails with TypeError (I3 2026-04-25)", async () => {
+    // I3 in the 2026-04-25 review: the 2xx body-read I14 fix
+    // distinguished TypeError (NETWORK/transient) from SyntaxError
+    // (BAD_JSON/possiblyCommitted). The 4xx/5xx body-read in
+    // readErrorEnvelope only caught AbortError; a TypeError fell
+    // through to a status-only error with no code, losing the
+    // stream-level classification. Mirror the 2xx body-read pattern
+    // so a TCP reset mid-error-body shows the network hint instead
+    // of a generic "HTTP 5xx".
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.reject(new TypeError("Failed to fetch")),
+    });
+
+    const file = new File(["x"], "a.png", { type: "image/png" });
+    let caught: unknown;
+    try {
+      await api.images.upload("p1", file);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("NETWORK");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
+  it("apiFetch !ok body-read TypeError reclassifies as NETWORK (I3 2026-04-25)", async () => {
+    // Same I3 invariant against apiFetch's own !ok branch (separate
+    // catch from readErrorEnvelope, used by JSON-only endpoints).
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: () => Promise.reject(new TypeError("Failed to fetch")),
+    });
+
+    let caught: unknown;
+    try {
+      await api.projects.get("p1");
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("NETWORK");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
+
+  it("re-throws ABORTED when !ok error-body read aborts (I2)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    const abort = new DOMException("aborted", "AbortError");
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.reject(abort),
+    });
+
+    const file = new File(["x"], "a.png", { type: "image/png" });
+    let caught: unknown;
+    try {
+      await api.images.upload("p1", file);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("ABORTED");
+    expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
+  });
 });
 
 describe("error handling", () => {
@@ -580,7 +1024,7 @@ describe("error handling", () => {
   it("throws with fallback message when error body lacks message", async () => {
     mockFetch.mockResolvedValue(jsonResponse({ error: {} }, 500));
 
-    await expect(api.projects.list()).rejects.toThrow("Request failed: 500");
+    await expect(api.projects.list()).rejects.toThrow("[dev] HTTP 500");
   });
 
   it("throws with fallback message when error body is not JSON", async () => {
@@ -590,7 +1034,7 @@ describe("error handling", () => {
       json: () => Promise.reject(new Error("not JSON")),
     });
 
-    await expect(api.projects.list()).rejects.toThrow("Request failed: 502");
+    await expect(api.projects.list()).rejects.toThrow("[dev] HTTP 502");
   });
 
   it("wraps fetch TypeError as ApiRequestError(0, NETWORK)", async () => {
@@ -607,6 +1051,30 @@ describe("error handling", () => {
     expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("NETWORK");
     expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(0);
     expect((caught as Error).message).toMatch(/Failed to fetch/);
+  });
+
+  it("prefixes NETWORK ApiRequestError.message with [dev] (developer-only copy guarantee)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    // Browser-raised fetch errors (TypeError "Failed to fetch", DNS
+    // failures, CSP blocks, etc.) must not masquerade as user-facing
+    // product copy when they surface in logs. classifyFetchError's
+    // NETWORK branch is the common landing zone for all such cases,
+    // so the [dev] prefix has to be applied regardless of whether the
+    // raw err was an Error instance or a bare string/undefined.
+    mockFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    try {
+      await api.projects.list();
+    } catch (e) {
+      expect((e as Error).message).toMatch(/^\[dev] /);
+      expect(e).toBeInstanceOf(ApiRequestError);
+    }
+
+    mockFetch.mockRejectedValueOnce("string rejection");
+    try {
+      await api.projects.list();
+    } catch (e) {
+      expect((e as Error).message).toMatch(/^\[dev] /);
+    }
   });
 
   it("handles 204 No Content response", async () => {
@@ -657,6 +1125,153 @@ describe("error handling", () => {
     expect(caught).toBeInstanceOf(ApiRequestError);
     expect((caught as InstanceType<typeof ApiRequestError>).code).toBe("BAD_JSON");
     expect((caught as InstanceType<typeof ApiRequestError>).status).toBe(200);
-    expect((caught as Error).message).toMatch(/Unexpected token/);
+    // Prefix first, then the parser's underlying message preserved.
+    expect((caught as Error).message).toMatch(/^\[dev\] .*Unexpected token/);
+  });
+
+  it("carries envelope extras on ApiRequestError when present", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    mockFetch.mockResolvedValue(
+      jsonResponse(
+        {
+          error: {
+            code: "IMAGE_IN_USE",
+            message: "in use",
+            chapters: [{ id: "c1", title: "Chapter 1" }],
+          },
+        },
+        409,
+      ),
+    );
+
+    let caught: unknown;
+    try {
+      await api.projects.get("some-slug");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect((caught as InstanceType<typeof ApiRequestError>).extras).toEqual({
+      chapters: [{ id: "c1", title: "Chapter 1" }],
+    });
+  });
+
+  it("encodes slug path segments to defend against route-altering characters (S9)", async () => {
+    const project = { id: "p1", title: "Test", chapters: [] };
+    mockFetch.mockResolvedValue(jsonResponse(project));
+
+    await api.projects.get("weird/slug?x=1");
+
+    // "/" and "?" are encoded so they cannot traverse out of the path
+    // segment. The server's route validator still rejects bad input,
+    // but the encoder pins that safety at the transport layer too.
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/weird%2Fslug%3Fx%3D1", {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  it("caps envelope extras at MAX_EXTRAS_KEYS to bound pathological payloads (S4)", async () => {
+    const { ApiRequestError } = await import("../api/client");
+    // Build an envelope with more extras keys than the cap; only the
+    // first 16 (insertion order) should land on ApiRequestError.extras.
+    const manyExtras: Record<string, unknown> = {};
+    for (let i = 0; i < 64; i++) manyExtras[`k${i}`] = i;
+    mockFetch.mockResolvedValue(
+      jsonResponse({ error: { code: "X", message: "m", ...manyExtras } }, 500),
+    );
+
+    let caught: InstanceType<typeof ApiRequestError> | undefined;
+    try {
+      await api.projects.get("slug");
+    } catch (err) {
+      caught = err as InstanceType<typeof ApiRequestError>;
+    }
+    expect(caught).toBeInstanceOf(ApiRequestError);
+    expect(caught?.extras).toBeDefined();
+    expect(Object.keys(caught!.extras!).length).toBe(16);
+    // First-16 kept; the rest dropped.
+    expect(caught?.extras?.k0).toBe(0);
+    expect(caught?.extras?.k15).toBe(15);
+    expect(caught?.extras?.k16).toBeUndefined();
+  });
+
+  it("ApiRequestError.extras is undefined when envelope has only code and message", async () => {
+    const ClientModule = await import("../api/client");
+    mockFetch.mockResolvedValue(
+      jsonResponse({ error: { code: "NOT_FOUND", message: "gone" } }, 404),
+    );
+    let caught: InstanceType<typeof ClientModule.ApiRequestError> | undefined;
+    try {
+      await api.projects.get("slug");
+    } catch (err) {
+      caught = err as InstanceType<typeof ClientModule.ApiRequestError>;
+    }
+    expect(caught).toBeInstanceOf(ClientModule.ApiRequestError);
+    expect(caught?.extras).toBeUndefined();
+  });
+
+  // C1 (2026-04-24 review): a hostile (or compromised) server response
+  // can include `__proto__` as an own key in the error envelope. Naive
+  // `out[k] = value` on a plain object invokes Object.prototype's
+  // `__proto__` setter and pollutes the extras object's prototype chain
+  // instead of creating an own property. The extras object must have a
+  // null prototype and must never carry `__proto__`/`constructor`/
+  // `prototype` as own keys.
+  it("does not pollute extras prototype via __proto__ in error envelope (C1)", async () => {
+    const ClientModule = await import("../api/client");
+    // JSON.parse creates `__proto__` as an own data property (ES2017+);
+    // a raw object literal would instead be interpreted as setting the
+    // prototype, so we construct the hostile envelope via JSON.parse
+    // to mirror what fetch/res.json() actually yields on the wire.
+    const hostile = JSON.parse(
+      '{"error":{"code":"IMAGE_IN_USE","message":"in use","__proto__":{"chapters":[{"title":"X"}]}}}',
+    ) as unknown;
+    mockFetch.mockResolvedValue(jsonResponse(hostile, 409));
+
+    let caught: InstanceType<typeof ClientModule.ApiRequestError> | undefined;
+    try {
+      await api.projects.get("slug");
+    } catch (err) {
+      caught = err as InstanceType<typeof ClientModule.ApiRequestError>;
+    }
+    expect(caught).toBeInstanceOf(ClientModule.ApiRequestError);
+    // The envelope had only `__proto__` as a non-code/non-message key, so
+    // after filtering it out there are no extras. The contract: either
+    // (a) extras is undefined, or (b) extras is a null-prototype object
+    // with no polluted keys.
+    if (caught?.extras !== undefined) {
+      expect(Object.getPrototypeOf(caught.extras)).toBeNull();
+      expect(Object.prototype.hasOwnProperty.call(caught.extras, "__proto__")).toBe(false);
+      expect((caught.extras as Record<string, unknown>).chapters).toBeUndefined();
+    } else {
+      expect(caught?.extras).toBeUndefined();
+    }
+  });
+
+  it("drops __proto__/constructor/prototype keys but keeps benign extras (C1)", async () => {
+    const ClientModule = await import("../api/client");
+    const hostile = JSON.parse(
+      '{"error":{"code":"IMAGE_IN_USE","message":"m","chapters":[{"id":"c1","title":"Chapter 1"}],"__proto__":{"polluted":true},"constructor":{"x":1},"prototype":{"y":2}}}',
+    ) as unknown;
+    mockFetch.mockResolvedValue(jsonResponse(hostile, 409));
+
+    let caught: InstanceType<typeof ClientModule.ApiRequestError> | undefined;
+    try {
+      await api.projects.get("slug");
+    } catch (err) {
+      caught = err as InstanceType<typeof ClientModule.ApiRequestError>;
+    }
+    expect(caught).toBeInstanceOf(ClientModule.ApiRequestError);
+    expect(caught?.extras).toBeDefined();
+    expect(Object.getPrototypeOf(caught!.extras!)).toBeNull();
+    // Benign key survives.
+    expect(caught?.extras?.chapters).toEqual([{ id: "c1", title: "Chapter 1" }]);
+    // Dangerous keys are not own properties.
+    const extras = caught!.extras!;
+    expect(Object.prototype.hasOwnProperty.call(extras, "__proto__")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(extras, "constructor")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(extras, "prototype")).toBe(false);
+    // Confirm prototype is not polluted.
+    expect((extras as Record<string, unknown>).polluted).toBeUndefined();
   });
 });

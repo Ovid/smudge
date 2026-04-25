@@ -1,12 +1,18 @@
 import { useState, useEffect, useRef, useCallback, useReducer } from "react";
 import type { ImageRow } from "@smudge/shared";
 import { api } from "../api/client";
+import { mapApiError } from "../errors";
 import { STRINGS } from "../strings";
 
 interface ImageGalleryProps {
   projectId: string;
   onInsertImage: (imageUrl: string, altText: string) => void;
   onNavigateToChapter: (chapterId: string) => void;
+  // I8 (review 2026-04-24): external bump signal the Editor uses to
+  // refresh the list on paste-upload possiblyCommitted. EditorPage
+  // holds the counter and passes it to both the Editor (via a
+  // callback) and the gallery (via this prop).
+  externalRefreshKey?: number;
 }
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -22,7 +28,12 @@ interface DetailFormState {
 
 type SaveStatus = "idle" | "saving" | "saved";
 
-export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: ImageGalleryProps) {
+export function ImageGallery({
+  projectId,
+  onInsertImage,
+  onNavigateToChapter,
+  externalRefreshKey = 0,
+}: ImageGalleryProps) {
   const [images, setImages] = useState<ImageRow[]>([]);
   const [selectedImage, setSelectedImage] = useState<ImageRow | null>(null);
   const [formState, setFormState] = useState<DetailFormState>({
@@ -36,10 +47,37 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
   const [references, setReferences] = useState<Array<{ id: string; title: string }>>([]);
   const [referencesLoaded, setReferencesLoaded] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const announcementTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Review 2026-04-24: stale-guard for the on-demand references refresh
+  // fired from the Delete button. The click handler captures the id at
+  // click time; this ref tracks the currently-selected id so the .then
+  // resolver can bail if the user has moved on (back to grid, or
+  // another image) before the response lands. Without this, A's
+  // in-flight refresh would overwrite B's references on resolution,
+  // mis-gating delete and surfacing A's "used in" list on B's detail.
+  const selectedImageIdRef = useRef<string | null>(null);
+  // I10 + I11 (review 2026-04-24): single abort ref for all gallery
+  // mutations (upload, metadata update, delete). A new mutation aborts
+  // the prior one so overlapping clicks cannot race at the server; the
+  // unmount effect aborts any in-flight mutation so a multi-MB upload
+  // does not keep running server-side after the gallery closes.
+  const mutateAbortRef = useRef<AbortController | null>(null);
+  // S2 (review 2026-04-25): the click-time references refresh on the
+  // delete button did not thread an AbortSignal (the load effect at
+  // line 138 does). A late refresh resolving after the user
+  // navigated back to grid would announce a stale failure or set
+  // references for a vanished image. Mirror mutateAbortRef.
+  const refsAbortRef = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      mutateAbortRef.current?.abort();
+      refsAbortRef.current?.abort();
+    },
+    [],
+  );
 
   const S = STRINGS.imageGallery;
 
@@ -58,22 +96,35 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
   const [refreshKey, incrementRefreshKey] = useReducer((c: number) => c + 1, 0);
 
   useEffect(() => {
-    let cancelled = false;
+    // I9 (review 2026-04-24): migrate from `let cancelled = false` to
+    // AbortController. The previous flag stopped the .then/.catch from
+    // writing state, but the fetch kept running server-side. Wiring a
+    // signal lets the browser drop the request on unmount / projectId /
+    // refreshKey change and makes the ABORTED → message:null branch
+    // reachable via the mapper.
+    const controller = new AbortController();
     api.images
-      .list(projectId)
+      .list(projectId, controller.signal)
       .then((list) => {
-        if (!cancelled) {
-          setImages(list);
-          setLoadError(false);
-        }
+        if (controller.signal.aborted) return;
+        setImages(list);
+        setLoadError(null);
       })
-      .catch(() => {
-        if (!cancelled) setLoadError(true);
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
+        // I8 (2026-04-23): route through mapApiError so NETWORK vs 5xx
+        // distinctions reach the user via the image.list scope instead
+        // of collapsing to the generic loadFailed copy. ABORTED returns
+        // message: null — treat as a no-op (the user cancelled; do not
+        // surface a loadError banner for a cancelled request).
+        const { message } = mapApiError(err, "image.list");
+        if (message === null) return;
+        setLoadError(message);
       });
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-  }, [projectId, refreshKey]);
+  }, [projectId, refreshKey, externalRefreshKey]);
 
   useEffect(() => {
     return () => {
@@ -85,27 +136,38 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
 
   // Load references when detail view opens
   const selectedImageId = selectedImage?.id ?? null;
+  // Keep the ref in sync with the currently-selected image id so the
+  // Delete-click refresh's resolver can detect a selection change and
+  // bail before clobbering a different image's references.
+  useEffect(() => {
+    selectedImageIdRef.current = selectedImageId;
+  }, [selectedImageId]);
   useEffect(() => {
     if (!selectedImageId) return;
-    let cancelled = false;
+    // I9 (review 2026-04-24): same migration as the list effect.
+    const controller = new AbortController();
     api.images
-      .references(selectedImageId)
+      .references(selectedImageId, controller.signal)
       .then((data) => {
-        if (!cancelled) {
-          setReferences(data.chapters);
-          setReferencesLoaded(true);
-        }
+        if (controller.signal.aborted) return;
+        setReferences(data.chapters);
+        setReferencesLoaded(true);
       })
-      .catch(() => {
-        if (!cancelled) {
-          setReferences([]);
-          setReferencesLoaded(true);
-        }
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
+        // I6: don't mark references as loaded on failure — the detail
+        // view falls back to selectedImage.reference_count, which at
+        // least preserves the "in use" confirm gate when the row is
+        // known-referenced. Announce the mapped message so the user
+        // knows the fresh reference check failed. ABORTED (message:
+        // null) stays silent per the mapper contract.
+        const { message } = mapApiError(err, "image.references");
+        if (message) announce(message);
       });
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-  }, [selectedImageId]);
+  }, [selectedImageId, announce]);
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -119,15 +181,30 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
       return;
     }
 
+    mutateAbortRef.current?.abort();
+    const controller = new AbortController();
+    mutateAbortRef.current = controller;
     api.images
-      .upload(projectId, file)
+      .upload(projectId, file, controller.signal)
       .then((newImage) => {
+        if (controller.signal.aborted) return;
         announce(S.uploadSuccess(newImage.filename));
         incrementRefreshKey();
       })
       .catch((err: unknown) => {
-        const reason = err instanceof Error ? err.message : "Unknown error";
-        announce(S.uploadFailed(reason));
+        if (controller.signal.aborted) return;
+        const { message, possiblyCommitted } = mapApiError(err, "image.upload");
+        // I3 (2026-04-24 review): on 2xx BAD_JSON the server stored the
+        // image but the client couldn't parse the response. Without the
+        // refresh, the stale list stays on screen and a user retry
+        // uploads the same file again (server doesn't dedupe) — creating
+        // a second row and a second blob for one intended upload. The
+        // refresh pulls the authoritative list so the newly-stored image
+        // is visible and retry is unnecessary.
+        if (possiblyCommitted) {
+          incrementRefreshKey();
+        }
+        if (message) announce(message);
       });
   }
 
@@ -154,14 +231,33 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
   async function handleSave() {
     if (!selectedImage) return;
     setSaveStatus("saving");
+    mutateAbortRef.current?.abort();
+    const controller = new AbortController();
+    mutateAbortRef.current = controller;
     try {
-      const updated = await api.images.update(selectedImage.id, formState);
+      const updated = await api.images.update(selectedImage.id, formState, controller.signal);
+      if (controller.signal.aborted) return;
       setSelectedImage(updated);
       setSaveStatus("saved");
       incrementRefreshKey();
-    } catch {
+    } catch (err: unknown) {
+      if (controller.signal.aborted) return;
       setSaveStatus("idle");
-      announce(S.saveFailed);
+      const { message, possiblyCommitted } = mapApiError(err, "image.updateMetadata");
+      // I4 (review 2026-04-25): on 2xx BAD_JSON the server stored the
+      // metadata change but the client couldn't parse the response.
+      // Without the refresh, the detail view stays on the pre-save
+      // values while the server has the new ones; a retry could 404
+      // (the field already committed) and the user has no path to
+      // learn the committed state. Mirror handleFileSelect's committed
+      // branch: bump the refresh key so the gallery re-fetches the
+      // authoritative row, and clear the detail view so the user
+      // re-opens the row (or sees the fresh values on grid hover).
+      if (possiblyCommitted) {
+        incrementRefreshKey();
+        setSelectedImage(null);
+      }
+      if (message) announce(message);
     }
   }
 
@@ -170,16 +266,31 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
     // Auto-save pending metadata changes before inserting so the DB stays in sync
     let imageToInsert = selectedImage;
     if (saveStatus !== "saved") {
+      mutateAbortRef.current?.abort();
+      const controller = new AbortController();
+      mutateAbortRef.current = controller;
       try {
         setSaveStatus("saving");
-        const updated = await api.images.update(selectedImage.id, formState);
+        const updated = await api.images.update(selectedImage.id, formState, controller.signal);
+        if (controller.signal.aborted) return;
         setSelectedImage(updated);
         setSaveStatus("saved");
         incrementRefreshKey();
         imageToInsert = updated;
-      } catch {
+      } catch (err: unknown) {
+        if (controller.signal.aborted) return;
         setSaveStatus("idle");
-        announce(S.saveFailed);
+        const { message, possiblyCommitted } = mapApiError(err, "image.updateMetadata");
+        // I4 (review 2026-04-25): same possiblyCommitted handling as
+        // handleSave. The server stored the metadata but the client
+        // can't see it; the in-progress insert must abort because
+        // imageToInsert still carries the pre-save values, which
+        // would render with stale alt-text in the chapter.
+        if (possiblyCommitted) {
+          incrementRefreshKey();
+          setSelectedImage(null);
+        }
+        if (message) announce(message);
         return;
       }
     }
@@ -190,31 +301,44 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
   async function handleDelete() {
     if (!selectedImage) return;
 
+    mutateAbortRef.current?.abort();
+    const controller = new AbortController();
+    mutateAbortRef.current = controller;
     try {
-      const result = await api.images.delete(selectedImage.id);
-      if ("deleted" in result && result.deleted) {
-        announce(S.deleteSuccess(selectedImage.filename));
+      await api.images.delete(selectedImage.id, controller.signal);
+      if (controller.signal.aborted) return;
+      announce(S.deleteSuccess(selectedImage.filename));
+      setSelectedImage(null);
+      setConfirmingDelete(false);
+      incrementRefreshKey();
+    } catch (err: unknown) {
+      if (controller.signal.aborted) return;
+      const { message, possiblyCommitted, extras } = mapApiError(err, "image.delete");
+      // ABORTED: silent (mapper returned message: null). Leave the detail
+      // view and confirmation state as-is so the user can retry.
+      if (!message) return;
+      // C3 (review 2026-04-24): on 2xx BAD_JSON the server already
+      // deleted the row but the client couldn't parse the response.
+      // Without the refresh the detail view stays on a phantom image
+      // and a user retry 409s because the image is gone. Close the
+      // detail view, reset the confirm gate, and bump the refresh key
+      // so the authoritative gallery list is fetched. The mapped
+      // committed copy is announced so the user knows to refresh.
+      if (possiblyCommitted) {
+        announce(message);
         setSelectedImage(null);
         setConfirmingDelete(false);
         incrementRefreshKey();
         return;
       }
-      // 409 or unexpected response — treat as blocked
-      const chapters =
-        "error" in result &&
-        result.error &&
-        typeof result.error === "object" &&
-        "chapters" in result.error &&
-        Array.isArray((result.error as { chapters: unknown }).chapters)
-          ? (
-              result.error as { chapters: Array<{ title: string; trashed?: boolean }> }
-            ).chapters.map((c) => (c.trashed ? `${c.title} (${S.inTrash})` : c.title))
-          : [];
-      announce(S.deleteBlocked(chapters));
-      setConfirmingDelete(false);
-    } catch (err: unknown) {
-      const reason = err instanceof Error ? err.message : "Unknown error";
-      announce(S.deleteFailed(reason));
+      if (extras?.chapters) {
+        const chapters = (extras.chapters as Array<{ title: string; trashed?: boolean }>).map(
+          (c) => (c.trashed ? `${c.title} (${S.inTrash})` : c.title),
+        );
+        announce(S.deleteBlocked(chapters));
+      } else {
+        announce(message);
+      }
       setConfirmingDelete(false);
     }
   }
@@ -246,7 +370,7 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
 
         {loadError ? (
           <div className="p-4 space-y-2">
-            <p className="text-sm text-status-error">{S.loadFailed}</p>
+            <p className="text-sm text-status-error">{loadError}</p>
             <button
               onClick={incrementRefreshKey}
               className="text-sm text-accent hover:underline focus:outline-none focus:ring-2 focus:ring-focus-ring rounded px-1"
@@ -463,16 +587,38 @@ export function ImageGallery({ projectId, onInsertImage, onNavigateToChapter }: 
               onClick={() => {
                 // Re-fetch references to avoid stale state blocking a valid delete
                 if (selectedImage) {
+                  // Review 2026-04-24: capture id at click time and
+                  // compare against the current id in the resolvers so
+                  // a rapid navigate-away (back to grid, or another
+                  // image) before resolution doesn't clobber the new
+                  // image's references or announce an unrelated failure.
+                  const imageId = selectedImage.id;
                   setReferencesLoaded(false);
+                  // S2 (review 2026-04-25): thread a signal so unmount
+                  // / new click cleanly drops the in-flight refresh.
+                  refsAbortRef.current?.abort();
+                  const controller = new AbortController();
+                  refsAbortRef.current = controller;
                   api.images
-                    .references(selectedImage.id)
+                    .references(imageId, controller.signal)
                     .then((data) => {
+                      if (controller.signal.aborted) return;
+                      if (selectedImageIdRef.current !== imageId) return;
                       setReferences(data.chapters);
                       setReferencesLoaded(true);
                     })
-                    .catch(() => {
-                      setReferences([]);
-                      setReferencesLoaded(true);
+                    .catch((err: unknown) => {
+                      if (controller.signal.aborted) return;
+                      if (selectedImageIdRef.current !== imageId) return;
+                      // I6: keep referencesLoaded=false (show the
+                      // "Loading details…" gate when reference_count>0
+                      // rather than the plain Delete confirm) and
+                      // announce the mapped failure so the user knows
+                      // the refresh failed. The server's 409
+                      // IMAGE_IN_USE still catches a slipped-through
+                      // delete attempt.
+                      const { message } = mapApiError(err, "image.references");
+                      if (message) announce(message);
                     });
                 }
                 setConfirmingDelete(true);

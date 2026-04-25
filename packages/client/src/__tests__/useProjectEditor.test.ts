@@ -451,6 +451,64 @@ describe("useProjectEditor", () => {
     expect(result.current.project?.chapters[1]!.id).toBe("ch1");
   });
 
+  // C5 (review 2026-04-24): rapid drag-drop reorders used to issue
+  // overlapping PUTs with no client-side ordering guard. SQLite writer-
+  // lock ordering at the server determined the persisted order rather
+  // than the user's last drop. Mirror statusChangeAbortRef: each call
+  // aborts the prior controller and passes its signal into the
+  // transport, so the newer reorder severs the older one.
+  it("handleReorderChapters threads AbortSignal into reorderChapters (C5)", async () => {
+    vi.mocked(api.projects.reorderChapters).mockResolvedValue({ message: "ok" });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleReorderChapters(["ch2", "ch1"]);
+    });
+
+    const callArgs = vi.mocked(api.projects.reorderChapters).mock.calls[0];
+    expect(callArgs?.[2]).toBeInstanceOf(AbortSignal);
+  });
+
+  it("handleReorderChapters aborts prior in-flight reorder on supersede (C5)", async () => {
+    // Hold the first reorder PUT open; fire a second reorder; the first
+    // call's signal must be aborted by the second call's entry.
+    let firstResolve!: () => void;
+    let firstSignal: AbortSignal | undefined;
+    let secondSignal: AbortSignal | undefined;
+
+    vi.mocked(api.projects.reorderChapters)
+      .mockImplementationOnce((_slug, _ids, signal) => {
+        firstSignal = signal;
+        return new Promise<{ message: string }>((resolve) => {
+          firstResolve = () => resolve({ message: "ok" });
+        });
+      })
+      .mockImplementationOnce((_slug, _ids, signal) => {
+        secondSignal = signal;
+        return Promise.resolve({ message: "ok" });
+      });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    // First reorder — kept pending.
+    await act(async () => {
+      void result.current.handleReorderChapters(["ch2", "ch1"]);
+    });
+    // Second reorder — must abort the first signal before issuing its own.
+    await act(async () => {
+      await result.current.handleReorderChapters(["ch1", "ch2"]);
+    });
+
+    expect(firstSignal?.aborted).toBe(true);
+    expect(secondSignal?.aborted).toBe(false);
+
+    // Resolve the stranded first request so the hook unmounts cleanly.
+    firstResolve();
+  });
+
   it("updates the project title", async () => {
     const { chapters: _, ...projectWithoutChapters } = mockProject;
     vi.mocked(api.projects.update).mockResolvedValue({
@@ -534,6 +592,27 @@ describe("useProjectEditor", () => {
       expect.stringContaining("Failed to load project:"),
       expect.any(Error),
     );
+    warnSpy.mockRestore();
+  });
+
+  it("does not console.warn when loadProject rejects after unmount", async () => {
+    // Copilot review 2026-04-24 (wider occurrence of the HomePage
+    // race): previously console.warn fired BEFORE the cancelled guard,
+    // producing test-output noise on navigation/unmount races.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let rejectFn: (err: Error) => void = () => {};
+    vi.mocked(api.projects.get).mockReturnValue(
+      new Promise((_, reject) => {
+        rejectFn = reject;
+      }),
+    );
+
+    const { unmount } = renderHook(() => useProjectEditor("some-slug"));
+    unmount();
+    rejectFn(new Error("Network error"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
   });
 
@@ -756,6 +835,117 @@ describe("useProjectEditor", () => {
     expect(onError).toHaveBeenCalledWith(STRINGS.error.statusChangeFailed);
     // Local fallback should fire since ch1 was not in the reloaded data
     expect(result.current.project?.chapters[0]!.status).toBe("outline");
+  });
+
+  // I7 (review 2026-04-24): rapid renames used to race at the server;
+  // the newer PATCH now severs the older one by installing a signal on
+  // renameChapterAbortRef before issuing the new call.
+  it("handleRenameChapter threads AbortSignal into api.chapters.update (I7)", async () => {
+    vi.mocked(api.chapters.update).mockResolvedValue({ ...mockChapter1, title: "Renamed" });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleRenameChapter("ch1", "Renamed");
+    });
+
+    const callArgs = vi.mocked(api.chapters.update).mock.calls[0];
+    expect(callArgs?.[2]).toBeInstanceOf(AbortSignal);
+  });
+
+  it("handleDeleteChapter threads AbortSignal into api.chapters.delete (I7)", async () => {
+    vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
+    vi.mocked(api.chapters.get).mockResolvedValue(mockChapter2);
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleDeleteChapter(mockChapter1);
+    });
+
+    const callArgs = vi.mocked(api.chapters.delete).mock.calls[0];
+    expect(callArgs?.[1]).toBeInstanceOf(AbortSignal);
+  });
+
+  it("handleStatusChange threads AbortSignal into api.chapters.update (I11)", async () => {
+    // Rapid status clicks used to issue overlapping PATCHes with no
+    // ordering guarantee at the server. The signal lets the newer
+    // click sever the older one's fetch.
+    vi.mocked(api.chapters.update).mockResolvedValue({ ...mockChapter1, status: "revised" });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "revised");
+    });
+
+    const callArgs = vi.mocked(api.chapters.update).mock.calls[0];
+    expect(callArgs?.[2]).toBeInstanceOf(AbortSignal);
+  });
+
+  // I21 (review 2026-04-24): rapid X→A→B click sequence must NOT
+  // revert B's failure to A. Before the confirmed-status ref,
+  // `previousStatus` read projectRef, which held the optimistic A
+  // already. If the fallback reload also failed, B's revert would
+  // restore A — a status the server never persisted. Now the revert
+  // reads from confirmedStatusRef, which only advances after a
+  // server-confirmed PATCH.
+  it("handleStatusChange reverts to the last confirmed status, not the last optimistic (I21)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // X = "outline" (from mockChapter1); A success; B fail.
+    vi.mocked(api.chapters.update)
+      .mockResolvedValueOnce({ ...mockChapter1, status: "drafting" }) // A succeeds
+      .mockRejectedValueOnce(new Error("B boom")); // B fails
+    // Fallback GET after B's failure also fails, forcing the local revert.
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockRejectedValueOnce(new Error("reload boom")); // revert-reload fails
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    // A: X → drafting (succeeds)
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "drafting");
+    });
+    expect(result.current.project?.chapters.find((c) => c.id === "ch1")?.status).toBe("drafting");
+
+    // B: drafting → revised (fails; fallback reload also fails)
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "revised");
+    });
+
+    // Local revert restores the LAST CONFIRMED status ("drafting" from
+    // A's success), NOT the optimistic value that was on screen when B
+    // entered. Before the fix this would have restored "outline" or
+    // failed differently depending on the closure read.
+    expect(result.current.project?.chapters.find((c) => c.id === "ch1")?.status).toBe("drafting");
+    warnSpy.mockRestore();
+  });
+
+  it("handleStatusChange does not revert on ABORTED (I11 follow-on)", async () => {
+    // Rapid A→B→C: B's PATCH gets aborted when C's click fires. B's
+    // catch must not revert (that would stomp C's optimistic state).
+    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("aborted", 0, "ABORTED"));
+    // Guard: the revert path would call projects.get; assert it does not.
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    const onError = vi.fn();
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "revised", onError);
+    });
+
+    expect(onError).not.toHaveBeenCalled();
+    // projects.get is called exactly once for the initial load, never
+    // for a revert. If the revert fired we would see 2 calls.
+    expect(api.projects.get).toHaveBeenCalledTimes(1);
   });
 
   it("handleStatusChange updates activeChapter status when it's the active chapter", async () => {
@@ -1003,7 +1193,7 @@ describe("useProjectEditor", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     // Raw server-authored English must NOT reach the UI — the mapper in
     // useProjectEditor routes err.code to strings.ts the same way
-    // findReplaceErrors does. Regression guard for I3.
+    // errors/scopes.ts does. Regression guard for I3.
     vi.mocked(api.chapters.update).mockRejectedValue(
       new ApiRequestError("Invalid status: xyz", 400, "VALIDATION_ERROR"),
     );
@@ -1040,6 +1230,106 @@ describe("useProjectEditor", () => {
 
     expect(result.current.saveStatus).toBe("error");
     expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedTooLarge);
+    warnSpy.mockRestore();
+  });
+
+  it("handleSave breaks immediately on 2xx BAD_JSON and shows committed copy (I5)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    let returnValue = true;
+    await act(async () => {
+      returnValue = await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(returnValue).toBe(false);
+    expect(result.current.saveStatus).toBe("error");
+    expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveCommittedUnreadable);
+    // No retry — server may have committed; retrying risks stomp
+    expect(api.chapters.update).toHaveBeenCalledTimes(1);
+    warnSpy.mockRestore();
+  });
+
+  // I2 (review 2026-04-24): CLAUDE.md save-pipeline invariant #2 requires
+  // setEditable(false) around any mutation that can leave the server
+  // committed while the user cannot see the state. handleSave's terminal
+  // BAD_JSON / UPDATE_READ_FAILURE / CORRUPT_CONTENT branches set
+  // saveStatus="error" + the committed banner but did NOT request the
+  // editor lock. The hook now invokes onRequestEditorLock so
+  // EditorPage can pair applyReloadFailedLock with the banner.
+  it.each([
+    ["BAD_JSON", 200, STRINGS.editor.saveCommittedUnreadable],
+    ["UPDATE_READ_FAILURE", 500, STRINGS.editor.saveCommittedUnreadable],
+    ["CORRUPT_CONTENT", 500, STRINGS.editor.saveFailedCorrupt],
+  ])("handleSave fires onRequestEditorLock on terminal %s (I2)", async (code, status, msg) => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("terminal", status, code));
+    const onRequestEditorLock = vi.fn();
+
+    const { result } = renderHook(() => useProjectEditor("test-project", { onRequestEditorLock }));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(onRequestEditorLock).toHaveBeenCalledWith(msg);
+    warnSpy.mockRestore();
+  });
+
+  it("handleSave breaks immediately on 500 UPDATE_READ_FAILURE (I5)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError(
+        "Chapter was updated but could not be re-read.",
+        500,
+        "UPDATE_READ_FAILURE",
+      ),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    let returnValue = true;
+    await act(async () => {
+      returnValue = await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(returnValue).toBe(false);
+    expect(result.current.saveStatus).toBe("error");
+    // Same committed UX as 2xx BAD_JSON — server updated the row, just failed re-read
+    expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveCommittedUnreadable);
+    expect(api.chapters.update).toHaveBeenCalledTimes(1);
+    warnSpy.mockRestore();
+  });
+
+  it("handleSave breaks immediately on 500 CORRUPT_CONTENT (I5)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError(
+        "Chapter content is corrupted and cannot be loaded.",
+        500,
+        "CORRUPT_CONTENT",
+      ),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    let returnValue = true;
+    await act(async () => {
+      returnValue = await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(returnValue).toBe(false);
+    expect(result.current.saveStatus).toBe("error");
+    expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedCorrupt);
+    expect(api.chapters.update).toHaveBeenCalledTimes(1);
     warnSpy.mockRestore();
   });
 
@@ -1748,6 +2038,175 @@ describe("useProjectEditor", () => {
     expect(result.current.project?.chapters.map((c) => c.id)).toEqual(["b1"]);
   });
 
+  it("handleCreateChapter discards response after the new project finished loading (C1 2026-04-24)", async () => {
+    // The two-part AND drift guard returned early only when BOTH refs
+    // drifted. After a cross-project navigation fully completes the URL
+    // slug ref and the loaded project's slug have both advanced to B, so
+    // ref-against-ref equality is true and the AND short-circuits to
+    // false — a stale Project A POST response is then merged into
+    // Project B's state. Project id is stable across rename and changes
+    // on cross-project navigation; capturing it at POST time and
+    // checking against projectRef at response time distinguishes the
+    // two and discards only the cross-project leak.
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    let resolveCreate!: (c: typeof mockChapter1) => void;
+    vi.mocked(api.chapters.create)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveCreate = resolve;
+          }),
+      );
+
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    let createPromise!: Promise<void>;
+    act(() => {
+      createPromise = result.current.handleCreateChapter();
+    });
+
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    rerender({ slug: "other-project" });
+
+    // CRITICAL: wait for Project B to finish loading BEFORE resolving
+    // Project A's stale POST. This is the window the AND guard fails:
+    // once projectRef.slug === "other-project" and projectSlugRef ===
+    // "other-project", ref-against-ref equality holds and the guard
+    // decides the response is fresh.
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    await act(async () => {
+      resolveCreate({ ...mockChapter1, id: "phantom", project_id: "p1" });
+      await createPromise;
+    });
+
+    // Project B's state must NOT contain Project A's new chapter.
+    expect(result.current.project?.chapters.find((c) => c.id === "phantom")).toBeUndefined();
+    expect(result.current.project?.chapters).toEqual([]);
+  });
+
+  it("handleReorderChapters discards response after the new project finished loading (C1 2026-04-24)", async () => {
+    // Same AND-guard hole: a stale reorder PUT for Project A landing
+    // after Project B fully loaded filter-drops Project A's ids against
+    // Project B's chapters and leaves B's sidebar empty until refresh.
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [{ ...mockChapter1, id: "b1" }],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    let resolveReorder!: () => void;
+    vi.mocked(api.projects.reorderChapters)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ message: string }>((resolve) => {
+            resolveReorder = () => resolve({ message: "ok" });
+          }),
+      );
+
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    let reorderPromise!: Promise<void>;
+    act(() => {
+      reorderPromise = result.current.handleReorderChapters(["ch2", "ch1"]);
+    });
+
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    rerender({ slug: "other-project" });
+
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    await act(async () => {
+      resolveReorder();
+      await reorderPromise;
+    });
+
+    // Project B's own chapter must still be present — the stale reorder
+    // must not have filter-dropped it.
+    expect(result.current.project?.chapters.map((c) => c.id)).toEqual(["b1"]);
+  });
+
+  it("handleReorderChapters possiblyCommitted setProject is gated by project drift (C3 2026-04-25)", async () => {
+    // C3 in the 2026-04-25 review claimed the possiblyCommitted branch
+    // (review line numbers: 839-850) lacked a project-drift guard and
+    // would apply Project A's orderedIds to Project B's chapters on
+    // 2xx BAD_JSON after a cross-project nav. Verification showed the
+    // catch block's earlier drift guard (the same projectRef.id and
+    // slug compare that gates the success path) runs BEFORE the
+    // possiblyCommitted branch, covering it. The review missed the
+    // earlier guard. This test stays as a regression guard so a future
+    // refactor that splits the catch's guard into per-branch checks
+    // can't silently regress the invariant.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [{ ...mockChapter1, id: "b1" }],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    let rejectReorder!: (err: ApiRequestError) => void;
+    vi.mocked(api.projects.reorderChapters)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ message: string }>((_resolve, reject) => {
+            rejectReorder = reject;
+          }),
+      );
+
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    let reorderPromise!: Promise<void>;
+    act(() => {
+      reorderPromise = result.current.handleReorderChapters(["ch2", "ch1"]);
+    });
+
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    rerender({ slug: "other-project" });
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    await act(async () => {
+      rejectReorder(new ApiRequestError("bad json", 200, "BAD_JSON"));
+      await reorderPromise;
+    });
+
+    // Project B's chapter must still be present — the stale reorder's
+    // possiblyCommitted branch must not have filter-dropped it.
+    expect(result.current.project?.chapters.map((c) => c.id)).toEqual(["b1"]);
+    warnSpy.mockRestore();
+  });
+
   it("handleCreateChapter routes failures through onError callback (I4)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.create).mockRejectedValue(new Error("create boom"));
@@ -1767,6 +2226,466 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("handleCreateChapter refreshes project on 2xx BAD_JSON to avoid duplicate POST (C1)", async () => {
+    // Server created the chapter but the response body was unreadable.
+    // Without the committed-branch fix, the UI surfaces a generic error
+    // and the user's retry click POSTs again → duplicate chapter.
+    // Expected: fetch project fresh so the new chapter appears in state,
+    // and surface the committed-specific copy via onError.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const newChapter = {
+      id: "ch3",
+      project_id: "p1",
+      title: UNTITLED_CHAPTER,
+      content: null,
+      sort_order: 2,
+      word_count: 0,
+      status: "outline" as const,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+      deleted_at: null,
+    };
+    const refreshedProject = { ...mockProject, chapters: [mockChapter1, mockChapter2, newChapter] };
+
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError("bad json", 200, "BAD_JSON"),
+    );
+    // First get = initial load; second get = refresh after committed POST.
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject)
+      .mockResolvedValueOnce(refreshedProject);
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project?.chapters).toHaveLength(2));
+
+    const onError = vi.fn();
+    await act(async () => {
+      await result.current.handleCreateChapter(onError);
+    });
+
+    // The refresh GET was fired (avoiding the need for another POST).
+    expect(api.projects.get).toHaveBeenCalledTimes(2);
+    // Banner surfaces the committed-specific copy rather than the generic
+    // "Failed to create chapter." that invites retry.
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.createChapterResponseUnreadable);
+    // New chapter shows up in state from the refresh so the user does not
+    // need to click "Add chapter" again.
+    expect(result.current.project?.chapters.find((c) => c.id === "ch3")).toBeDefined();
+    // I7: the happy path sets the new chapter active. The committed
+    // recovery path must match that intent — the user should not see
+    // the chapter appear in the sidebar but stay on the previously-
+    // active one.
+    expect(result.current.activeChapter?.id).toBe("ch3");
+    expect(result.current.error).toBeNull();
+    warnSpy.mockRestore();
+  });
+
+  // I4 (review 2026-04-24): on 2xx BAD_JSON of the title PATCH, the
+  // server may have committed a slug change. The recovery GET under
+  // the OLD slug then 404s because that slug is dead. Previously the
+  // recovery catch swallowed this silently; projectSlugRef stayed
+  // pointing at the dead slug and every subsequent save/create/reorder
+  // POSTed against it and 404d in a cascade. Fix: on recovery 404
+  // fire onRequestEditorLock so EditorPage applies the lock banner,
+  // disabling auto-save until the user refreshes.
+  it("handleUpdateProjectTitle requests editor lock when recovery GET 404s (I4)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.projects.update).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockRejectedValueOnce(new ApiRequestError("not found", 404)); // recovery 404 under dead slug
+
+    const onRequestEditorLock = vi.fn();
+    const { result } = renderHook(() => useProjectEditor("test-project", { onRequestEditorLock }));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleUpdateProjectTitle("Renamed");
+    });
+
+    expect(onRequestEditorLock).toHaveBeenCalledWith(STRINGS.error.updateTitleProjectSlugLost);
+    warnSpy.mockRestore();
+  });
+
+  it("handleUpdateProjectTitle surfaces committed copy + refreshes on 2xx BAD_JSON (I3)", async () => {
+    // Without a committed: branch, a 2xx BAD_JSON response to the rename
+    // PATCH left projectSlugRef pointing at the old slug while the server
+    // may have moved the project to a new slug — every subsequent save/
+    // create/reorder POSTs against the dead slug and 404s, cascading
+    // failures until the user refreshes. Expected: surface the committed
+    // copy and attempt a project refresh so the case where the slug did
+    // not change (e.g. cosmetic rename) recovers in place.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.projects.update).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+    // Refresh GET returns the same project (rename did not alter slug).
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject)
+      .mockResolvedValueOnce({ ...mockProject, title: "Renamed" });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    let returned: string | undefined;
+    await act(async () => {
+      returned = await result.current.handleUpdateProjectTitle("Renamed");
+    });
+
+    // Refresh GET was fired to resync state.
+    expect(api.projects.get).toHaveBeenCalledTimes(2);
+    // Committed copy surfaced via projectTitleError (keeps edit mode open).
+    expect(result.current.projectTitleError).toBe(STRINGS.error.updateTitleResponseUnreadable);
+    // Title picked up from refresh so the UI is not stuck on the old one.
+    expect(result.current.project?.title).toBe("Renamed");
+    // Returns undefined so useProjectTitleEditing keeps edit mode open.
+    expect(returned).toBeUndefined();
+    warnSpy.mockRestore();
+  });
+
+  it("handleCreateChapter refreshes project on READ_AFTER_CREATE_FAILURE (C1)", async () => {
+    // Server inserted the chapter but could not re-read it — emits a
+    // 500 with READ_AFTER_CREATE_FAILURE. The server message literally
+    // says "Do not retry." Same recovery path as the BAD_JSON case.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const newChapter = {
+      id: "ch3",
+      project_id: "p1",
+      title: UNTITLED_CHAPTER,
+      content: null,
+      sort_order: 2,
+      word_count: 0,
+      status: "outline" as const,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+      deleted_at: null,
+    };
+    const refreshedProject = { ...mockProject, chapters: [mockChapter1, mockChapter2, newChapter] };
+
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError(
+        "Chapter was created but could not be retrieved.",
+        500,
+        "READ_AFTER_CREATE_FAILURE",
+      ),
+    );
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject)
+      .mockResolvedValueOnce(refreshedProject);
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project?.chapters).toHaveLength(2));
+
+    const onError = vi.fn();
+    await act(async () => {
+      await result.current.handleCreateChapter(onError);
+    });
+
+    expect(api.projects.get).toHaveBeenCalledTimes(2);
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.createChapterReadAfterFailure);
+    expect(result.current.project?.chapters.find((c) => c.id === "ch3")).toBeDefined();
+    // I7: recovery path sets the newly-created chapter active to match
+    // the happy path's setActiveChapter(newChapter).
+    expect(result.current.activeChapter?.id).toBe("ch3");
+    warnSpy.mockRestore();
+  });
+
+  it("seeds confirmedStatusRef for newly-created chapters so a later revert can find a baseline (C2 2026-04-25)", async () => {
+    // confirmedStatusRef is consulted by handleStatusChange's local-revert
+    // fallback when both the PATCH and the recovery GET fail. Before the
+    // fix, the ref was only seeded inside loadProject's success path —
+    // newly-created chapters never seeded a baseline, so the fallback at
+    //   if (!reverted && previousStatus !== undefined) { ... }
+    // silently skipped, leaving the optimistic status on screen even
+    // though the server never accepted it.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const newChapter = {
+      id: "ch3",
+      project_id: "p1",
+      title: UNTITLED_CHAPTER,
+      content: null,
+      sort_order: 2,
+      word_count: 0,
+      status: "outline" as const,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+      deleted_at: null,
+    };
+    vi.mocked(api.chapters.create).mockResolvedValue(newChapter);
+    // PATCH rejects with bare 5xx → walks the local-revert fallback
+    // (non-committed code, no possiblyCommitted shortcut).
+    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("server error", 500));
+    // Recovery GET rejects so the surgical-revert branch falls through
+    // to the local-revert branch that reads previousStatus from the
+    // confirmed-status cache.
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject)
+      .mockRejectedValueOnce(new Error("get boom"));
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleCreateChapter();
+    });
+    expect(result.current.project?.chapters.find((c) => c.id === "ch3")).toBeDefined();
+
+    await act(async () => {
+      await result.current.handleStatusChange("ch3", "drafting");
+    });
+
+    // After the double-failure, the optimistic "drafting" must be
+    // reverted to the seeded baseline ("outline") rather than left
+    // on screen — the server never accepted "drafting".
+    const ch3 = result.current.project?.chapters.find((c) => c.id === "ch3");
+    expect(ch3?.status).toBe("outline");
+    warnSpy.mockRestore();
+  });
+
+  it("resets confirmedStatusRef when loadProject fires (I7 2026-04-25)", async () => {
+    // I7: the hook persists across slug changes (refs survive). On a
+    // failed loadProject, the prior project's confirmed-status cache
+    // would otherwise persist, and a later status revert against the
+    // partially-rendered new project would read the wrong baseline.
+    // Reset the cache up-front so it only ever holds the current
+    // project's state. This test covers the invariant by chaining:
+    // (1) seed via initial load, (2) overwrite via successful PATCH,
+    // (3) switch to a slug whose load fails, (4) trigger a revert path
+    // and verify the local-revert fallback skips (cache empty →
+    // previousStatus undefined → optimistic value remains).
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load: p1 with ch1=outline
+      .mockRejectedValueOnce(new Error("p2 load boom")) // p2 load fails
+      .mockRejectedValueOnce(new Error("revert recovery boom")); // status revert recovery
+
+    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("server error", 500));
+
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+    // Cache seeded: ch1=outline.
+
+    // Switch to other-project; its load fails. project state stays at p1.
+    rerender({ slug: "other-project" });
+    await waitFor(() => expect(api.projects.get).toHaveBeenCalledTimes(2));
+
+    // Trigger a status PATCH on ch1 (still rendered from p1's state).
+    // PATCH fails, recovery GET fails, falls through to local-revert.
+    // Without I7: cache returns "outline", revert lands on "outline".
+    // With I7: cache was wiped at the second loadProject's start, so
+    // previousStatus is undefined, the local-revert fallback skips,
+    // and the optimistic "revised" remains on screen.
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "revised");
+    });
+
+    const ch1 = result.current.project?.chapters.find((c) => c.id === "ch1");
+    expect(ch1?.status).toBe("revised");
+    warnSpy.mockRestore();
+  });
+
+  it("seeds confirmedStatusRef for chapters created via the BAD_JSON recovery path (C2 2026-04-25)", async () => {
+    // Same invariant as above, but the chapter arrives via
+    // handleCreateChapter's possiblyCommitted recovery branch (the
+    // setActiveChapter(newest) path). Before the fix, the recovery
+    // branch only setProject(refreshed) — confirmedStatusRef was
+    // never seeded, so a later status revert would read undefined.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const newChapter = {
+      id: "ch3",
+      project_id: "p1",
+      title: UNTITLED_CHAPTER,
+      content: null,
+      sort_order: 2,
+      word_count: 0,
+      status: "revised" as const,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+      deleted_at: null,
+    };
+    const refreshedProject = { ...mockProject, chapters: [mockChapter1, mockChapter2, newChapter] };
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError("bad json", 200, "BAD_JSON"),
+    );
+    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("server error", 500));
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject)
+      .mockResolvedValueOnce(refreshedProject)
+      .mockRejectedValueOnce(new Error("get boom"));
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleCreateChapter();
+    });
+    expect(result.current.project?.chapters.find((c) => c.id === "ch3")).toBeDefined();
+
+    await act(async () => {
+      await result.current.handleStatusChange("ch3", "drafting");
+    });
+
+    // The recovery-path-seeded baseline ("revised") restores after
+    // the double-failure revert.
+    const ch3 = result.current.project?.chapters.find((c) => c.id === "ch3");
+    expect(ch3?.status).toBe("revised");
+    warnSpy.mockRestore();
+  });
+
+  it("create-recovery is not aborted by a sibling status-revert recovery (C1 2026-04-25)", async () => {
+    // Before the fix, handleCreateChapter, handleStatusChange and
+    // handleUpdateProjectTitle all wrote their recovery AbortController
+    // to a single shared `recoveryGetAbortRef`. If a status-revert
+    // recovery fired while a create-recovery GET was in flight, the
+    // status path's `recoveryGetAbortRef.current?.abort()` aborted the
+    // create's controller. The create's recovery body wraps everything
+    // in `try { ... } catch {}`, so the abort was silently swallowed,
+    // the new chapter never landed in the sidebar, and the user saw
+    // the committed banner with no actionable state change.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const newChapter = {
+      ...mockChapter2,
+      id: "ch3",
+      sort_order: 2,
+    };
+    const refreshedProject = {
+      ...mockProject,
+      chapters: [mockChapter1, mockChapter2, newChapter],
+    };
+
+    // Create POST → 2xx BAD_JSON ⇒ recovery GET path.
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+    // Status PATCH → bare 5xx ⇒ status-revert recovery GET path
+    // (non-committed, so it walks the revert branch).
+    vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("server error", 500));
+
+    // Capture each api.projects.get call's signal so we can assert
+    // the create's recovery controller was NOT aborted by the status
+    // recovery.
+    let resolveCreateRecovery!: (val: typeof refreshedProject) => void;
+    const createRecoveryPromise = new Promise<typeof refreshedProject>((res) => {
+      resolveCreateRecovery = res;
+    });
+    const capturedSignals: Array<AbortSignal | undefined> = [];
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get).mockImplementation(async (_slug, signal) => {
+      capturedSignals.push(signal);
+      // Calls in order: 1=initial load, 2=create recovery (deferred),
+      // 3=status revert recovery (resolves immediately).
+      if (capturedSignals.length === 1) return mockProject;
+      if (capturedSignals.length === 2) return createRecoveryPromise;
+      return mockProject;
+    });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    // Kick off create. Its recovery GET will be parked on createRecoveryPromise.
+    let createPromise!: Promise<unknown>;
+    act(() => {
+      createPromise = result.current.handleCreateChapter();
+    });
+    // Wait until the recovery GET has been dispatched (capturedSignals.length === 2).
+    await waitFor(() => expect(capturedSignals.length).toBe(2));
+
+    // Now fire a status change — its catch path will start its own
+    // recovery GET. With per-handler refs, the create's signal must
+    // remain un-aborted.
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "drafting");
+    });
+
+    // Status recovery dispatched.
+    expect(capturedSignals.length).toBeGreaterThanOrEqual(3);
+    // Create's recovery signal must NOT be aborted by the status path.
+    expect(capturedSignals[1]?.aborted).toBe(false);
+
+    // Resolve the create recovery so the post-await branch can run.
+    await act(async () => {
+      resolveCreateRecovery(refreshedProject);
+      await createPromise;
+    });
+
+    // The create's recovery setProject must have run — chapter ch3 lands.
+    expect(result.current.project?.chapters.find((c) => c.id === "ch3")).toBeDefined();
+    expect(result.current.activeChapter?.id).toBe("ch3");
+    warnSpy.mockRestore();
+  });
+
+  it("handleStatusChange preserves optimistic status on 2xx BAD_JSON + surfaces committed copy (I6)", async () => {
+    // 2xx BAD_JSON means the server committed the new status but the
+    // response body was unreadable. Reverting (locally or from the
+    // server) either silently no-ops (reload returns the new status) or
+    // fights the server's committed state. Conservative behavior: keep
+    // the optimistic update and surface the committed copy so the user
+    // knows the response was ambiguous. Skipping the revert also avoids
+    // the unnecessary project GET.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+    // Guard: projects.get must NOT be called for the revert on committed.
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    const onError = vi.fn();
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "revised", onError);
+    });
+
+    // Only the initial project load — no revert GET.
+    expect(api.projects.get).toHaveBeenCalledTimes(1);
+    // Optimistic status stands because the server committed it.
+    expect(result.current.project?.chapters[0]!.status).toBe("revised");
+    expect(result.current.activeChapter?.status).toBe("revised");
+    // Committed copy surfaced, not the generic fallback.
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.statusChangeResponseUnreadable);
+    warnSpy.mockRestore();
+  });
+
+  it("handleReorderChapters applies order on 2xx BAD_JSON + surfaces committed copy (I6)", async () => {
+    // Server committed the reorder but the body was unreadable. The
+    // previous behavior left setProject untouched, so the chapter list
+    // visually snapped back to the pre-drag order even though the
+    // server had the new order. Apply the requested order to state on
+    // possiblyCommitted so the UI matches the committed server state,
+    // and surface the committed copy so the user knows to refresh.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.projects.reorderChapters).mockRejectedValue(
+      new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
+    );
+
+    const onError = vi.fn();
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleReorderChapters(["ch2", "ch1"], onError);
+    });
+
+    // Reorder applied to state despite the unreadable body.
+    expect(result.current.project?.chapters.map((c) => c.id)).toEqual(["ch2", "ch1"]);
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.reorderResponseUnreadable);
+    warnSpy.mockRestore();
+  });
+
   it("handleReorderChapters routes failures through onError callback (I4)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.projects.reorderChapters).mockRejectedValue(new Error("reorder boom"));
@@ -1782,6 +2701,48 @@ describe("useProjectEditor", () => {
     expect(onError).toHaveBeenCalledWith(STRINGS.error.reorderFailed);
     expect(result.current.error).toBeNull();
     warnSpy.mockRestore();
+  });
+
+  it("handleUpdateProjectTitle aborts in-flight PATCH when a newer rename fires (I1 2026-04-24)", async () => {
+    // Rapid title edits used to fire overlapping PATCHes. The S7 drift
+    // guard discarded the stale response but the older PATCH had
+    // already reached the server — SQLite's writer-lock ordering (not
+    // client dispatch order) decided which title won. Clip the wire
+    // by passing an AbortSignal to api.projects.update and aborting
+    // it before issuing the next rename.
+    const renamed2 = { ...mockProject, title: "Second", slug: "test-project" };
+
+    vi.mocked(api.projects.update).mockReset();
+    const signals: (AbortSignal | undefined)[] = [];
+    vi.mocked(api.projects.update)
+      .mockImplementationOnce(async (_slug, _data, signal) => {
+        signals.push(signal);
+        // Stay in flight forever so the second call can abort this one.
+        return new Promise<typeof renamed2>(() => {});
+      })
+      .mockImplementationOnce(async (_slug, _data, signal) => {
+        signals.push(signal);
+        return renamed2;
+      });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    // Kick off the first rename (stays in flight).
+    act(() => {
+      void result.current.handleUpdateProjectTitle("First");
+    });
+
+    // Wait for the first PATCH to be dispatched and its signal captured.
+    await waitFor(() => expect(signals.length).toBeGreaterThanOrEqual(1));
+
+    // Fire the second rename — should abort the first.
+    await act(async () => {
+      await result.current.handleUpdateProjectTitle("Second");
+    });
+
+    expect(signals[0]?.aborted).toBe(true);
+    expect(result.current.project?.title).toBe("Second");
   });
 
   it("handleCreateChapter response survives a concurrent rename (S6)", async () => {
