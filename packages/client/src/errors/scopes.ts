@@ -215,16 +215,14 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     extrasFrom: (err: ApiRequestError) => {
       const chapters = (err.extras as { chapters?: unknown } | undefined)?.chapters;
       if (!Array.isArray(chapters)) return undefined;
-      const valid = chapters.filter(
-        (c): c is { id?: string; title: string; trashed?: boolean } => {
-          if (!c || typeof c !== "object") return false;
-          const obj = c as Record<string, unknown>;
-          if (obj.id !== undefined && typeof obj.id !== "string") return false;
-          if (typeof obj.title !== "string") return false;
-          if (obj.trashed !== undefined && typeof obj.trashed !== "boolean") return false;
-          return true;
-        },
-      );
+      const valid = chapters.filter((c): c is { id?: string; title: string; trashed?: boolean } => {
+        if (!c || typeof c !== "object") return false;
+        const obj = c as Record<string, unknown>;
+        if (obj.id !== undefined && typeof obj.id !== "string") return false;
+        if (typeof obj.title !== "string") return false;
+        if (obj.trashed !== undefined && typeof obj.trashed !== "boolean") return false;
+        return true;
+      });
       if (valid.length !== chapters.length) return undefined;
       const bounded = valid.slice(0, 50).map((c) => ({
         ...(c.id !== undefined ? { id: c.id } : {}),
