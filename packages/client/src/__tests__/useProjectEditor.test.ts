@@ -2149,6 +2149,64 @@ describe("useProjectEditor", () => {
     expect(result.current.project?.chapters.map((c) => c.id)).toEqual(["b1"]);
   });
 
+  it("handleReorderChapters possiblyCommitted setProject is gated by project drift (C3 2026-04-25)", async () => {
+    // C3 in the 2026-04-25 review claimed the possiblyCommitted branch
+    // (review line numbers: 839-850) lacked a project-drift guard and
+    // would apply Project A's orderedIds to Project B's chapters on
+    // 2xx BAD_JSON after a cross-project nav. Verification showed the
+    // catch block's earlier drift guard (the same projectRef.id and
+    // slug compare that gates the success path) runs BEFORE the
+    // possiblyCommitted branch, covering it. The review missed the
+    // earlier guard. This test stays as a regression guard so a future
+    // refactor that splits the catch's guard into per-branch checks
+    // can't silently regress the invariant.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [{ ...mockChapter1, id: "b1" }],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    let rejectReorder!: (err: ApiRequestError) => void;
+    vi.mocked(api.projects.reorderChapters)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ message: string }>((_resolve, reject) => {
+            rejectReorder = reject;
+          }),
+      );
+
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    let reorderPromise!: Promise<void>;
+    act(() => {
+      reorderPromise = result.current.handleReorderChapters(["ch2", "ch1"]);
+    });
+
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    rerender({ slug: "other-project" });
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    await act(async () => {
+      rejectReorder(new ApiRequestError("bad json", 200, "BAD_JSON"));
+      await reorderPromise;
+    });
+
+    // Project B's chapter must still be present — the stale reorder's
+    // possiblyCommitted branch must not have filter-dropped it.
+    expect(result.current.project?.chapters.map((c) => c.id)).toEqual(["b1"]);
+    warnSpy.mockRestore();
+  });
+
   it("handleCreateChapter routes failures through onError callback (I4)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.create).mockRejectedValue(new Error("create boom"));
