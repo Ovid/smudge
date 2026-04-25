@@ -51,11 +51,7 @@ const ALLOWED_URI_REGEXP = /^\/api\/images\//i;
 // value does not match ALLOWED_URI_REGEXP. Registered once at module load
 // (ES module evaluation is cached, so the singleton picks it up exactly once).
 DOMPurify.addHook("uponSanitizeAttribute", (_node, data) => {
-  if (
-    data.attrName !== "src" &&
-    data.attrName !== "href" &&
-    data.attrName !== "xlink:href"
-  ) {
+  if (data.attrName !== "src" && data.attrName !== "href" && data.attrName !== "xlink:href") {
     return;
   }
   if (!ALLOWED_URI_REGEXP.test(data.attrValue)) {
