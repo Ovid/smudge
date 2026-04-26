@@ -31,7 +31,7 @@ describe("DEFAULT_SERVER_PORT_VITE parity", () => {
     const match = viteConfigSource.match(/DEFAULT_SERVER_PORT_VITE\s*=\s*"(\d+)"/);
     expect(
       match,
-      "DEFAULT_SERVER_PORT_VITE = \"<digits>\" literal not found in vite.config.ts — was the constant renamed or deleted? Update this test to match.",
+      'DEFAULT_SERVER_PORT_VITE = "<digits>" literal not found in vite.config.ts — was the constant renamed or deleted? Update this test to match.',
     ).not.toBeNull();
     expect(match![1]).toBe(String(DEFAULT_SERVER_PORT));
   });
