@@ -82,7 +82,13 @@ test.describe("Editor save pipeline E2e Tests", () => {
     // route.fulfill (NOT route.abort) so the client sees a real HTTP 404
     // and exercises the byStatus branch — abort would route through the
     // NETWORK path and surface a different copy.
-    await page.route("**/api/chapters/**", (route) => {
+    // S3 (review 2026-04-26): tighten from `**/api/chapters/**` so a future
+    // sub-route added under /api/chapters/ (e.g. /api/chapters/:id/foo)
+    // cannot inadvertently be intercepted. The PATCH target is exactly
+    // /api/chapters/<one-segment>; `*` does not cross `/` in Playwright
+    // glob matching, so this excludes both /api/chapters/:id/restore and
+    // any future sibling routes.
+    await page.route("**/api/chapters/*", (route) => {
       if (route.request().method() === "PATCH") {
         route.fulfill({
           status: 404,
@@ -125,8 +131,11 @@ test.describe("Editor save pipeline E2e Tests", () => {
     const editor = page.getByRole("textbox");
     await expect(editor).toBeVisible();
 
-    // Intercept PATCH requests to chapters to simulate network failure
-    await page.route("**/api/chapters/**", (route) => {
+    // Intercept PATCH requests to chapters to simulate network failure.
+    // S3 (review 2026-04-26): scope to `**/api/chapters/*` (single
+    // segment) — see the rationale in the prior test for why this is
+    // tighter than `**/api/chapters/**`.
+    await page.route("**/api/chapters/*", (route) => {
       if (route.request().method() === "PATCH") {
         route.abort("connectionrefused");
       } else {
@@ -145,7 +154,7 @@ test.describe("Editor save pipeline E2e Tests", () => {
     await expect(statusRegion).toContainText("Unable to save", { timeout: 30000 });
 
     // Remove the network interception — allow saves to succeed
-    await page.unroute("**/api/chapters/**");
+    await page.unroute("**/api/chapters/*");
 
     // Type more to trigger a new save attempt
     await editor.pressSequentially(" recovered", { delay: 20 });
