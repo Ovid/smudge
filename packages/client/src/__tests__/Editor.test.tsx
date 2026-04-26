@@ -400,6 +400,55 @@ describe("Editor", () => {
     }
   });
 
+  it("flushSave does not fire when editor is locked (defense-in-depth, OOSS1)", async () => {
+    // The mutation gate (setEditable(false) around restore / replace /
+    // reload) is the second line of defense: every live caller of
+    // flushSave (Ctrl+S handler, useEditorMutation) gates externally
+    // via editorLockedMessageRef before invoking. But if a future
+    // caller forgets to check, flushSave would PATCH stale or
+    // already-purged state, deterministically 4xx-ing — same failure
+    // mode the I6 debounced-save guard already prevents. Mirror the
+    // debounced-save isEditable check here so the invariant is
+    // enforced at the Editor level, not just at every call site.
+    const onSave = vi.fn().mockResolvedValue(true);
+    const onContentChange = vi.fn();
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+
+    const { container } = render(
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={onSave}
+        onContentChange={onContentChange}
+        editorRef={editorRef}
+      />,
+    );
+
+    await vi.waitFor(() => expect(editorRef.current).not.toBeNull(), { timeout: 3000 });
+
+    // Dirty the editor so flushSave would otherwise call onSave.
+    const editorEl = container.querySelector("[role='textbox']") as HTMLElement;
+    fireEvent.focus(editorEl);
+    editorEl.textContent = "typed before lock";
+    fireEvent.input(editorEl);
+
+    // Wait for TipTap's onUpdate to flush so dirtyRef is set.
+    await vi.waitFor(() => expect(onContentChange).toHaveBeenCalled(), { timeout: 3000 });
+
+    onSave.mockClear();
+
+    // Lock the editor before flushSave is invoked.
+    editorRef.current?.setEditable(false);
+
+    // Without the guard, flushSave would call onSaveRef.current(...)
+    // and the locked-editor save would land on the server.
+    const ok = await editorRef.current?.flushSave();
+
+    expect(onSave).not.toHaveBeenCalled();
+    // Treat lock-skip as success so callers don't loop on retry.
+    expect(ok).toBe(true);
+  });
+
   it("onBlur does not save while editor is non-editable (C2 2026-04-24)", async () => {
     // The mutation gate (setEditable(false) around restore / replace /
     // reload) relies on blur NOT committing a save with pre-mutation
