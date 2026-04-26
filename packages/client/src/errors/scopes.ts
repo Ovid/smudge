@@ -103,13 +103,25 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   },
   "chapter.save": {
     fallback: STRINGS.editor.saveFailed,
+    // I2 (Phase 4b.3a): NETWORK is transient and gets the
+    // "check your connection" hint so the user knows a retry is
+    // worthwhile. Mirrors sibling mutation scopes — pre-I2 this
+    // surfaced the generic saveFailed fallback.
+    network: STRINGS.editor.saveFailedNetwork,
     // I5: chapter.save is the app's most load-bearing mutation, so the
     // committed UX gets a save-specific banner (not the generic
     // possiblyCommitted default) that explicitly warns against typing
     // before refresh — continued edits would overwrite the server-
     // committed content.
     committed: STRINGS.editor.saveCommittedUnreadable,
-    byStatus: { 413: STRINGS.editor.saveFailedTooLarge },
+    // I2 (Phase 4b.3a): 404 means the chapter was deleted between
+    // auto-save fires (purge, hard-delete, or another tab). Generic
+    // saveFailed copy invited a retry that would deterministically
+    // 404 again; the chapter-gone copy directs the user to reload.
+    byStatus: {
+      413: STRINGS.editor.saveFailedTooLarge,
+      404: STRINGS.editor.saveFailedChapterGone,
+    },
     byCode: {
       VALIDATION_ERROR: STRINGS.editor.saveFailedInvalid,
       // UPDATE_READ_FAILURE is a 500 where the server updated the row

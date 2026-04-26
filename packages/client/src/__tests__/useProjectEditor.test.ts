@@ -1484,8 +1484,8 @@ describe("useProjectEditor", () => {
       await result.current.handleSave({ type: "doc", content: [] });
     });
     // Generic 400 without a known code falls back to the default
-    // "Unable to save — check connection" copy rather than surfacing the
-    // raw server message (I3).
+    // STRINGS.editor.saveFailed copy rather than surfacing the raw
+    // server message (I3).
     expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailed);
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("Save failed with 4xx:"),

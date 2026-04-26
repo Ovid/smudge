@@ -302,6 +302,20 @@ describe("SCOPES — chapter.save", () => {
     const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
     expect(resolveError(err, scope).message).toBe(STRINGS.editor.saveFailed);
   });
+  // I2 (Phase 4b.3a): NETWORK gets a transient connection-specific copy
+  // and 404 gets a chapter-was-deleted copy. Without these, both paths
+  // surfaced the generic saveFailed fallback that gave no actionable
+  // signal — NETWORK retries are worthwhile while a 404 indicates a
+  // deterministic failure (chapter purged or hard-deleted) that needs a
+  // reload.
+  it("NETWORK → saveFailedNetwork (I2)", () => {
+    const err = new ApiRequestError("offline", 0, "NETWORK");
+    expect(resolveError(err, scope).message).toBe(STRINGS.editor.saveFailedNetwork);
+  });
+  it("404 → saveFailedChapterGone (I2)", () => {
+    const err = new ApiRequestError("gone", 404, "NOT_FOUND");
+    expect(resolveError(err, scope).message).toBe(STRINGS.editor.saveFailedChapterGone);
+  });
 });
 
 describe("SCOPES — chapter.reorder", () => {
