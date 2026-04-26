@@ -87,7 +87,11 @@ clean: ## Remove SQLite database files (full reset)
 	rm -f packages/server/data/smudge.db packages/server/data/smudge.db-shm packages/server/data/smudge.db-wal
 
 e2e-clean: ## Wipe the isolated e2e data dir (next `make e2e` starts fresh)
-	rm -rf /tmp/smudge-e2e-data
+	@# R1 (review 2026-04-26): derive the path via Node's os.tmpdir() so
+	@# this target matches playwright.config.ts on every platform.
+	@# Hardcoding /tmp was wrong on macOS, where tmpdir() resolves under
+	@# /var/folders/.../T/ — `make e2e-clean` was a no-op there.
+	rm -rf "$$(node -p 'require("path").join(require("os").tmpdir(), "smudge-e2e-data")')"
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'
