@@ -430,6 +430,15 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
       // restore; it just couldn't re-read the row for the response body.
       RESTORE_READ_FAILURE: STRINGS.error.restoreChapterCommitted,
     },
+    // S1 (review 2026-04-26): a bare 404 (server emits {status:404,
+    // code:"NOT_FOUND"} when the deleted chapter row can't be located —
+    // e.g. malformed/unknown id) is indistinguishable from purge from the
+    // user's POV: there's no record to restore. byCode resolves first, so
+    // CHAPTER_PURGED/PROJECT_PURGED keep their dedicated copy; this only
+    // catches the otherwise-uncoded 404 path that previously fell through
+    // to the generic restoreChapterFailed fallback and invited a futile
+    // retry.
+    byStatus: { 404: STRINGS.error.restoreChapterAlreadyPurged },
     // S8: RESTORE_READ_FAILURE surfaces possiblyCommitted so
     // useTrashManager doesn't need the inline code check.
     committedCodes: ["RESTORE_READ_FAILURE"],
