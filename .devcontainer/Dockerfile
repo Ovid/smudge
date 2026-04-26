@@ -75,6 +75,22 @@ USER vscode
 ENV PATH="/home/vscode/.local/bin:$PATH"
 
 # Install Claude Code natively with marketplace plugins
+#
+# I3 (review 2026-04-26): the three `claude plugin marketplace add`
+# entries below pull plugin manifests from upstream GitHub repos with
+# no commit/SHA pin. `anthropics/skills` is Anthropic-controlled and
+# consistent with trusting the Claude CLI itself. The two
+# `trailofbits/...` entries are third-party — a compromise of either
+# upstream lands plugin code that Claude can invoke. Combined with
+# bypassPermissions (when opted in via SMUDGE_DEVCONTAINER_BYPASS=1
+# per the I4 deferred patch), NET_ADMIN/NET_RAW caps, and the R/W
+# workspace mount, plugin compromise has a wide blast radius. The CLI
+# does not (yet) expose a SHA-pinning mechanism we can wire in here.
+# Hardening checklist when revisiting:
+#   - Drop any marketplace whose plugins you do not actively invoke
+#   - When the CLI gains pin support, wire it up (one-line discipline)
+#   - Track which plugins you call from each marketplace so future
+#     drops are mechanical
 RUN curl -fsSL https://claude.ai/install.sh | bash && \
   claude plugin marketplace add anthropics/skills && \
   claude plugin marketplace add trailofbits/skills && \
