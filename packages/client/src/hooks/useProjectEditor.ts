@@ -5,7 +5,7 @@ import { api } from "../api/client";
 import { getCachedContent, setCachedContent, clearCachedContent } from "./useContentCache";
 import { useAbortableSequence } from "./useAbortableSequence";
 import { STRINGS } from "../strings";
-import { mapApiError, isApiError, isAborted, isClientError } from "../errors";
+import { mapApiError, mapApiErrorMessage, isApiError, isAborted, isClientError } from "../errors";
 
 export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
 
@@ -464,7 +464,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         setSaveErrorMessage(
           rejected4xx?.message ??
             (lastErr
-              ? (mapApiError(lastErr, "chapter.save").message ?? STRINGS.editor.saveFailed)
+              ? mapApiErrorMessage(lastErr, "chapter.save", STRINGS.editor.saveFailed)
               : STRINGS.editor.saveFailed),
         );
         // I2 (review 2026-04-24): terminal committed/unrecoverable

@@ -181,4 +181,21 @@ export function mapApiError(err: unknown, scope: ApiErrorScope): MappedError {
   return _resolveErrorInternal(err, SCOPES[scope]);
 }
 
+/**
+ * Convenience wrapper for the common `mapApiError(err, scope).message ??
+ * fallback` pattern at user-visible-message call sites. The fallback
+ * defends against the ABORTED case (mapApiError returns message: null)
+ * — non-ABORTED errors always produce scope.fallback or better, so the
+ * fallback parameter only fires on ABORTED in practice. Centralized so
+ * that call sites cannot accidentally drop the ?? defense and produce
+ * a literal "null" or empty banner.
+ */
+export function mapApiErrorMessage(
+  err: unknown,
+  scope: ApiErrorScope,
+  fallback: string,
+): string {
+  return mapApiError(err, scope).message ?? fallback;
+}
+
 export const ALL_SCOPES = Object.keys(SCOPES) as ApiErrorScope[];

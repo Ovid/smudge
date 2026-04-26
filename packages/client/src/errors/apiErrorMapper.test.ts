@@ -3,6 +3,7 @@ import type { MappedError } from "./apiErrorMapper";
 import {
   _resolveErrorInternal as resolveError,
   mapApiError,
+  mapApiErrorMessage,
   ALL_SCOPES,
   isApiError,
   isAborted,
@@ -1080,6 +1081,39 @@ describe("mapper never surfaces raw err.message (S10)", () => {
       }
     },
   );
+});
+
+// S2 (review 2026-04-26): the `mapApiError(err, scope).message ??
+// fallback` idiom appeared in two call sites (useProjectEditor's
+// retry-exhaustion banner and EditorPage's Ctrl+S catch). Extracted
+// into a single helper so the fallback handling is consistent and
+// future call sites cannot accidentally drop the ?? defense against
+// ABORTED's null message.
+describe("mapApiErrorMessage", () => {
+  it("returns the mapped message when one is available", () => {
+    const err = new ApiRequestError("network", 0, "NETWORK");
+    expect(mapApiErrorMessage(err, "chapter.save", STRINGS.editor.saveFailed)).toBe(
+      STRINGS.editor.saveFailedNetwork,
+    );
+  });
+
+  it("returns the fallback when mapApiError yields null (ABORTED)", () => {
+    const err = new ApiRequestError("aborted", 0, "ABORTED");
+    expect(mapApiErrorMessage(err, "chapter.save", STRINGS.editor.saveFailed)).toBe(
+      STRINGS.editor.saveFailed,
+    );
+  });
+
+  it("returns scope.fallback for a non-ApiRequestError (the third-arg fallback never fires here)", () => {
+    // Non-ApiRequestError still produces scope.fallback, which is
+    // truthy — the third-arg fallback is reserved for the ABORTED
+    // null-message case. Pin so a refactor that changes the precedence
+    // doesn't silently break the call sites that pass scope.fallback
+    // a second time as the explicit fallback.
+    const err = new Error("wtf");
+    const result = mapApiErrorMessage(err, "chapter.save", "explicit fallback");
+    expect(result).toBe(STRINGS.editor.saveFailed);
+  });
 });
 
 describe("cross-cutting rules apply to every scope", () => {
