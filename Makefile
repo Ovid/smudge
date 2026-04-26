@@ -20,11 +20,27 @@ all: lint format-check typecheck cover e2e ## Full CI pass: lint, format-check, 
 # with the same dlopen error. Run a load test up front; if it fails,
 # fetch the right prebuilt binary in place. Cheap on the happy path
 # (single node startup, ~50ms); only does work on cross-platform churn.
-ensure-native: ## Ensure better-sqlite3 native binding matches current platform
+#
+# I2 (review 2026-04-26): prebuild-install fetches a remote binary at
+# runtime — this target is a network-trust event. Pin --target to the
+# active Node's exact version and --runtime=node so a developer with a
+# foreign Node active (e.g. `nvm use 20` from another repo) cannot
+# silently fetch a binary keyed on the wrong ABI. Probe with
+# require.resolve first to distinguish "package missing entirely"
+# (run `npm install`) from "binary present but won't load" (the actual
+# cross-platform case this target solves).
+ensure-native: ## Ensure better-sqlite3 native binding matches current platform (network-trust event: fetches a prebuilt .node binary)
+	@node -e "try { require.resolve('better-sqlite3'); } catch { console.error('→ better-sqlite3 not installed. Run npm install first.'); process.exit(2); }" || exit $$?
 	@node -e "new (require('better-sqlite3'))(':memory:').close()" >/dev/null 2>&1 || { \
-		echo "→ better-sqlite3 binary does not match current platform; reinstalling..."; \
-		(cd node_modules/better-sqlite3 && npx prebuild-install --force) || { \
-			echo "prebuild-install failed — try 'rm -rf node_modules && npm install'"; \
+		NODE_VER=$$(node -p 'process.versions.node'); \
+		PLATFORM=$$(node -p 'process.platform + "/" + process.arch'); \
+		echo "→ better-sqlite3 binary won'\''t load (dlopen failed); reinstalling for Node $$NODE_VER on $$PLATFORM..."; \
+		(cd node_modules/better-sqlite3 && npx prebuild-install --force --target=$$NODE_VER --runtime=node) || { \
+			echo ""; \
+			echo "prebuild-install failed. Possible causes:"; \
+			echo "  - Offline or proxy blocks GitHub releases (this target requires network)"; \
+			echo "  - Active Node version ($$NODE_VER) differs from engines.node — verify with 'node --version'"; \
+			echo "  - prebuilt binary unavailable for this {platform, arch, abi} — try 'rm -rf node_modules && npm install'"; \
 			exit 1; \
 		}; \
 	}
