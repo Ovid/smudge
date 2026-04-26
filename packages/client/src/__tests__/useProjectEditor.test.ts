@@ -277,6 +277,70 @@ describe("useProjectEditor", () => {
     }
   });
 
+  it("NETWORK retry mid-backoff chapter switch does not bleed onto new chapter (S2)", async () => {
+    // S2 (review 2026-04-26): defensive guard against a future refactor
+    // moving `mapApiError(lastErr, "chapter.save")` outside the
+    // `!token.isStale()` gate at the post-loop block. The gate is what
+    // keeps a stale (cancelled) save's NETWORK exhaustion banner from
+    // landing on the chapter the user has since switched to. Without
+    // it, the cancelled save would surface STRINGS.editor.saveFailedNetwork
+    // on the freshly-loaded chapter.
+    //
+    // Sequence: kick off a save on ch1 whose first attempt rejects with
+    // NETWORK. While the loop is asleep in backoff, switch to ch2 (which
+    // calls cancelInFlightSave → saveSeq.abort() → token becomes stale,
+    // and unblocks the backoff sleep). Advance timers past the longest
+    // backoff. Assert no error state on ch2 and no further PATCH.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("[dev] Failed to fetch", 0, "NETWORK"),
+    );
+    vi.mocked(api.chapters.get).mockReset();
+    vi.mocked(api.chapters.get)
+      .mockResolvedValueOnce(mockChapter1) // initial load
+      .mockResolvedValueOnce(mockChapter2); // post-switch fetch
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter?.id).toBe("ch1"));
+
+    vi.useFakeTimers();
+    try {
+      // Kick off save; do NOT await — the retry loop is now asleep in
+      // backoff after the first rejection.
+      let savePromise: Promise<boolean> = Promise.resolve(false);
+      act(() => {
+        savePromise = result.current.handleSave({ type: "doc", content: [] }, "ch1");
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(api.chapters.update).toHaveBeenCalledTimes(1);
+
+      // Switch chapters mid-backoff. cancelInFlightSave aborts the
+      // sequence and unblocks the sleep, so the loop's next iteration
+      // returns immediately without setting error state.
+      await act(async () => {
+        await result.current.handleSelectChapter("ch2");
+      });
+      expect(result.current.activeChapter?.id).toBe("ch2");
+
+      // Drain any residual timers and the save's promise.
+      await act(async () => {
+        await flushSaveRetries();
+        expect(await savePromise).toBe(false);
+      });
+
+      // Stale save must NOT surface its NETWORK banner on ch2.
+      expect(result.current.saveStatus).not.toBe("error");
+      expect(result.current.saveErrorMessage).toBeNull();
+      // No further PATCHes after the abort: the retry loop short-
+      // circuited via the stale-token check on its next iteration.
+      expect(api.chapters.update).toHaveBeenCalledTimes(1);
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      warnSpy.mockRestore();
+    }
+  });
+
   it("unmount during save-backoff aborts the retry loop and does not fire a further PATCH", async () => {
     // Regression for a pre-existing leak: the retry loop inside handleSave
     // runs outside React's render cycle. Without unmount cleanup, a backoff
