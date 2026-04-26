@@ -298,8 +298,22 @@ describe("SCOPES — chapter.save", () => {
     const err = new ApiRequestError("bad", 400, "VALIDATION_ERROR");
     expect(resolveError(err, scope).message).toBe(STRINGS.editor.saveFailedInvalid);
   });
-  it("500 → saveFailed (fallback)", () => {
+  // I3 (review 2026-04-26): bare 500 INTERNAL_ERROR is the post-retry-
+  // exhaustion case for non-coded server failures. The previous fallback
+  // copy ("Save failed. Try again.") was misleading after 4 attempts
+  // spanning ~14 seconds — the user already retried four times. Route
+  // through byStatus[500] so the user sees a server-trouble specific
+  // hint instead.
+  it("500 → saveFailedServer (byStatus)", () => {
     const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
+    expect(resolveError(err, scope).message).toBe(STRINGS.editor.saveFailedServer);
+  });
+  // Coverage for the fallback path: a non-500 status with no matching
+  // byStatus or byCode entry must still resolve to the scope fallback.
+  // Without this, no test exercises chapter.save's fallback after I3
+  // added byStatus[500].
+  it("502 with no code → saveFailed (fallback)", () => {
+    const err = new ApiRequestError("upstream", 502);
     expect(resolveError(err, scope).message).toBe(STRINGS.editor.saveFailed);
   });
   // I2 (Phase 4b.3a): NETWORK gets a transient connection-specific copy
