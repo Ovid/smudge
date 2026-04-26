@@ -187,3 +187,39 @@
 - **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
 - **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
 - **Severity:** Suggestion
+
+## `e132b042` — playwright.config.ts hardcodes 3456/5173 and never sets SMUDGE_PORT/SMUDGE_CLIENT_PORT
+- **File (at first sighting):** `playwright.config.ts:14-25`
+- **Symbol:** `webServer[]` entries + `baseURL`
+- **Bug class:** Contract
+- **Description:** The playwright `webServer` entries pass no `env`, hardcode `port: 3456` and `port: 5173`, hardcode `baseURL: "http://localhost:5173"`, and use `reuseExistingServer: true`. `vite.config.ts:5-10` documents (in newly-added comments on the `ovid/shared-port-validation` branch) that "the e2e harness in playwright.config.ts sets SMUDGE_PORT and SMUDGE_CLIENT_PORT to test-only ports so an e2e run cannot touch the dev workflow's database" — but the harness does no such thing. As a result, an e2e run alongside `make dev` will silently piggy-back on the developer's running server (and database). The branch made the validator side fail-fast on env input, but the env-driven port pair has no consumer in the e2e harness yet.
+- **Suggested fix:** Set `env: { SMUDGE_PORT: "3457", SMUDGE_CLIENT_PORT: "5174", DB_PATH: "/tmp/smudge-e2e.db" }` on each `webServer` entry, change the matching `port:` waits to 3457 / 5174, and parameterize `baseURL` to `http://localhost:5174`. Pair with the in-scope comment fix [I2] in the corresponding review.
+- **Confidence:** High
+- **Found by:** Logic & Correctness, Error Handling & Edge Cases, Contract & Integration, Concurrency & State (`claude-opus-4-7`)
+- **First seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
+- **Last seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
+- **Severity:** Important
+
+## `afcaee1c` — Steering files don't mention SMUDGE_PORT/SMUDGE_CLIENT_PORT
+- **File (at first sighting):** `CLAUDE.md`
+- **Symbol:** "Tech Stack" / "Build & Run Commands" / project README sections
+- **Bug class:** Contract
+- **Description:** The branch `ovid/shared-port-validation` introduced a real env-var contract (`SMUDGE_PORT`, `SMUDGE_CLIENT_PORT`) for both server and client dev workflow, but no steering file mentions them. CLAUDE.md still describes "Express serves API + static frontend on port 3456" without qualification. CONTRIBUTING.md, README.md, and `.github/copilot-instructions.md` are similarly silent. Future maintainers reading CLAUDE.md as the contract will not realize these env vars exist or how they're validated.
+- **Suggested fix:** Add a one-paragraph "Configuration" section to CLAUDE.md (and mirror in CONTRIBUTING.md) listing the supported env vars: `SMUDGE_PORT`, `SMUDGE_CLIENT_PORT`, `DB_PATH`, `LOG_LEVEL`, `NODE_ENV`. Reference `@smudge/shared/parsePort` for validation rules.
+- **Confidence:** High
+- **Found by:** Contract & Integration (`claude-opus-4-7`)
+- **First seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
+- **Last seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
+- **Severity:** Suggestion
+
+## `ca84e075` — CLAUDE.md / README / copilot-instructions reference docker-compose that doesn't exist
+- **File (at first sighting):** `CLAUDE.md:22, 66`
+- **Symbol:** "Tech Stack" / "Build & Run Commands" docker references
+- **Bug class:** Contract
+- **Description:** CLAUDE.md, README, and `.github/copilot-instructions.md` all describe `docker compose up` running the app on port 3456, but `find -maxdepth 2 \( -name "docker-compose*" -o -name "Dockerfile*" \) -not -path "*/node_modules/*"` returns nothing in the repo. The mvp.md plan references a future `${SMUDGE_PORT:-3456}:3456` mapping but the file does not exist. The newly-added JSDoc on `packages/shared/src/constants.ts:11` continues this pattern, claiming the constant is "Documented in CLAUDE.md and docker-compose."
+- **Suggested fix:** Either add a minimal `docker-compose.yml` that uses `${SMUDGE_PORT:-3456}` and a matching Dockerfile (the architecture spec calls for it), or strip the docker references from CLAUDE.md / README / copilot-instructions / constants.ts JSDoc until those files exist. Document drift, pre-existing on main.
+- **Confidence:** High
+- **Found by:** Error Handling & Edge Cases, Contract & Integration (`claude-opus-4-7`)
+- **First seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
+- **Last seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
+- **Severity:** Suggestion
