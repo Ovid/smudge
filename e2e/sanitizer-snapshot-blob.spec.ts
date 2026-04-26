@@ -35,14 +35,23 @@ async function deleteProject(request: APIRequestContext, slug: string) {
 }
 
 test.describe("Sanitizer e2e (I14)", () => {
+  // S* (review 2026-04-26 inline): track creation explicitly so afterEach
+  // does not call deleteProject(request, project.slug) when beforeEach
+  // failed before assigning `project`. An unguarded cleanup would throw
+  // a second error from the test runner and mask the original failure.
   let project: TestProject;
+  let projectCreated = false;
 
   test.beforeEach(async ({ request }) => {
     project = await createTestProject(request);
+    projectCreated = true;
   });
 
   test.afterEach(async ({ request }) => {
-    await deleteProject(request, project.slug);
+    if (projectCreated) {
+      projectCreated = false;
+      await deleteProject(request, project.slug);
+    }
   });
 
   test("snapshot view sanitizes malicious img src URIs (I14)", async ({ page, request }) => {

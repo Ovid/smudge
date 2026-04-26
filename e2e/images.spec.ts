@@ -91,10 +91,17 @@ function tiptapContentWithImage(imageId: string): object {
 }
 
 test.describe("Image Gallery & Reference Panel E2e Tests", () => {
+  // Track creation explicitly so afterEach skips deleteProject when
+  // beforeEach fails before the project is assigned (or fails after
+  // creation but during the page-goto / localStorage steps below). The
+  // flag flips ON immediately after createTestProject so cleanup still
+  // runs if a later setup step throws.
   let project: TestProject;
+  let projectCreated = false;
 
   test.beforeEach(async ({ request, page }) => {
     project = await createTestProject(request);
+    projectCreated = true;
     // Clear localStorage panel state so tests start from a known state
     await page.goto(`/projects/${project.slug}`);
     await page.evaluate(() => {
@@ -104,7 +111,10 @@ test.describe("Image Gallery & Reference Panel E2e Tests", () => {
   });
 
   test.afterEach(async ({ request }) => {
-    await deleteProject(request, project.slug);
+    if (projectCreated) {
+      projectCreated = false;
+      await deleteProject(request, project.slug);
+    }
   });
 
   test("panel toggle opens and closes via button click", async ({ page }) => {

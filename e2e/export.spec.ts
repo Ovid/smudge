@@ -50,11 +50,18 @@ async function deleteProject(request: APIRequestContext, slug: string) {
 }
 
 test.describe("Export E2e Tests", () => {
+  // Track creation explicitly so afterEach skips deleteProject when
+  // beforeEach fails before the project is assigned (or fails after
+  // creation but during the chapter-fetch / content-set steps below).
+  // The flag flips ON immediately after createTestProject so cleanup
+  // still runs if a later setup step throws.
   let project: TestProject;
+  let projectCreated = false;
   let firstChapter: TestChapter;
 
   test.beforeEach(async ({ request }) => {
     project = await createTestProject(request);
+    projectCreated = true;
     // The project comes with one default chapter; fetch it from the project detail
     const projectRes = await request.get(`/api/projects/${project.slug}`);
     expect(projectRes.ok()).toBeTruthy();
@@ -66,7 +73,10 @@ test.describe("Export E2e Tests", () => {
   });
 
   test.afterEach(async ({ request }) => {
-    await deleteProject(request, project.slug);
+    if (projectCreated) {
+      projectCreated = false;
+      await deleteProject(request, project.slug);
+    }
   });
 
   test("exports manuscript as HTML via dialog", async ({ page }) => {

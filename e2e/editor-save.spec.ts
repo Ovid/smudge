@@ -25,14 +25,23 @@ async function deleteProject(request: APIRequestContext, slug: string) {
 }
 
 test.describe("Editor save pipeline E2e Tests", () => {
+  // Track creation explicitly so afterEach does not throw on
+  // `project.slug` when beforeEach failed before assigning it. An
+  // unguarded cleanup would surface a second error from the test
+  // runner and mask the original failure.
   let project: TestProject;
+  let projectCreated = false;
 
   test.beforeEach(async ({ request }) => {
     project = await createTestProject(request);
+    projectCreated = true;
   });
 
   test.afterEach(async ({ request }) => {
-    await deleteProject(request, project.slug);
+    if (projectCreated) {
+      projectCreated = false;
+      await deleteProject(request, project.slug);
+    }
   });
 
   test("typing in editor auto-saves and persists after reload", async ({ page }) => {
