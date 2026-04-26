@@ -70,6 +70,45 @@ test.describe("Editor save pipeline E2e Tests", () => {
     await expect(editorAfterReload).toContainText(testText, { timeout: 5000 });
   });
 
+  test("PATCH 404 surfaces chapter-gone copy", async ({ page }) => {
+    await page.goto(`/projects/${project.slug}`);
+
+    const editor = page.getByRole("textbox");
+    await expect(editor).toBeVisible();
+
+    // Intercept PATCH /api/chapters/<id> with a 404 envelope. The server
+    // contract emits { error: { code, message } }; the chapter.save scope
+    // routes byStatus[404] to STRINGS.editor.saveFailedChapterGone. Use
+    // route.fulfill (NOT route.abort) so the client sees a real HTTP 404
+    // and exercises the byStatus branch — abort would route through the
+    // NETWORK path and surface a different copy.
+    await page.route("**/api/chapters/**", (route) => {
+      if (route.request().method() === "PATCH") {
+        route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({
+            error: { code: "NOT_FOUND", message: "chapter not found" },
+          }),
+        });
+      } else {
+        route.continue();
+      }
+    });
+
+    // Type to trigger auto-save after the debounce.
+    await editor.click();
+    await editor.pressSequentially(`Trigger save ${Date.now()}`, { delay: 20 });
+
+    // useProjectEditor short-circuits the retry loop on any 4xx
+    // (isClientError branch in handleSave), so the failure surfaces
+    // after the first attempt — debounce (1.5s) + a single round-trip,
+    // not 4 attempts × backoff. 30s timeout matches the surrounding
+    // "shows error on save failure" test for safety on slow CI.
+    const statusRegion = page.locator("[role='status'][aria-live='polite']");
+    await expect(statusRegion).toContainText(/no longer exists/i, { timeout: 30000 });
+  });
+
   test("shows error on save failure and recovers when network returns", async ({ page }) => {
     await page.goto(`/projects/${project.slug}`);
 
