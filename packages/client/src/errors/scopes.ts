@@ -262,7 +262,7 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     // so this only fires for hostile envelopes; the validator is still
     // the right gatekeeper.
     // S4 (review 2026-04-26 inline): broaden the empty-string guard to
-    // reject whitespace-only titles (`" "`, `"\t\n"`, `" "`, etc.).
+    // reject whitespace-only titles (e.g. `" "`, `"\t\n"`, U+00A0, etc.).
     // The server's `z.string().trim().min(1)` rejects them on PATCH, so
     // legitimate envelopes never carry them — but a hostile/malformed
     // envelope of `[{title: " "}]` would otherwise reach
