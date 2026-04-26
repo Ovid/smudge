@@ -118,9 +118,18 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     // auto-save fires (purge, hard-delete, or another tab). Generic
     // saveFailed copy invited a retry that would deterministically
     // 404 again; the chapter-gone copy directs the user to reload.
+    // I3 (review 2026-04-26): bare 500 INTERNAL_ERROR exhausts the
+    // 4-attempt retry loop in handleSave. Pre-fix, the post-loop
+    // fallback surfaced "Save failed. Try again." after ~14s of
+    // retries — telling the user to do the thing the client already
+    // did 4 times. Map 500 to a server-trouble specific copy so the
+    // user sees an accurate signal. Terminal codes
+    // (BAD_JSON / UPDATE_READ_FAILURE / CORRUPT_CONTENT) keep their
+    // own copy via byCode, which takes precedence over byStatus.
     byStatus: {
       413: STRINGS.editor.saveFailedTooLarge,
       404: STRINGS.editor.saveFailedChapterGone,
+      500: STRINGS.editor.saveFailedServer,
     },
     byCode: {
       VALIDATION_ERROR: STRINGS.editor.saveFailedInvalid,

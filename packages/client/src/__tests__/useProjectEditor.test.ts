@@ -209,6 +209,13 @@ describe("useProjectEditor", () => {
     // connection drop, bypassing the scope's network: mapping and
     // violating CLAUDE.md's "all user-visible API error messages route
     // through mapApiError" invariant.
+    // S5 (review 2026-04-26): install a console.warn spy and assert no
+    // calls. NETWORK retries do not currently log (the catch ladder's
+    // warn lines fire only for terminal-code and 4xx branches), so the
+    // test is silent today. A future warn addition on the NETWORK path
+    // would otherwise slip past the zero-warnings invariant from
+    // CLAUDE.md.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.update).mockRejectedValue(
       new ApiRequestError("[dev] Failed to fetch", 0, "NETWORK"),
     );
@@ -227,8 +234,46 @@ describe("useProjectEditor", () => {
       expect(result.current.saveStatus).toBe("error");
       expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedNetwork);
       expect(api.chapters.update).toHaveBeenCalledTimes(4); // 1 initial + 3 retries
+      expect(warnSpy).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("routes post-retry-exhaustion bare 500 error through mapApiError (I3, chapter.save scope)", async () => {
+    // I3 (review 2026-04-26): mirror the NETWORK exhaustion test for a
+    // bare 500 INTERNAL_ERROR. Pre-fix, retry exhaustion of any non-coded
+    // 500 routed through the mapper's fallback copy — "Save failed. Try
+    // again." — which is misleading after 4 attempts spanning ~14s.
+    // The new chapter.save byStatus[500] mapping resolves this to
+    // STRINGS.editor.saveFailedServer ("the server is having trouble.
+    // Try again in a moment."). Terminal codes (BAD_JSON,
+    // UPDATE_READ_FAILURE, CORRUPT_CONTENT) keep their own copy via
+    // byCode and are unaffected.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("internal error", 500, "INTERNAL_ERROR"),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        const p = result.current.handleSave({ type: "doc", content: [] });
+        await flushSaveRetries();
+        expect(await p).toBe(false);
+      });
+
+      expect(result.current.saveStatus).toBe("error");
+      expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedServer);
+      expect(api.chapters.update).toHaveBeenCalledTimes(4); // 1 initial + 3 retries
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      warnSpy.mockRestore();
     }
   });
 
