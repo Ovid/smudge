@@ -192,12 +192,12 @@
 - **File (at first sighting):** `playwright.config.ts:14-25`
 - **Symbol:** `webServer[]` entries + `baseURL`
 - **Bug class:** Contract
-- **Description:** The playwright `webServer` entries pass no `env`, hardcode `port: 3456` and `port: 5173`, hardcode `baseURL: "http://localhost:5173"`, and use `reuseExistingServer: true`. `vite.config.ts:5-10` documents (in newly-added comments on the `ovid/shared-port-validation` branch) that "the e2e harness in playwright.config.ts sets SMUDGE_PORT and SMUDGE_CLIENT_PORT to test-only ports so an e2e run cannot touch the dev workflow's database" — but the harness does no such thing. As a result, an e2e run alongside `make dev` will silently piggy-back on the developer's running server (and database). The branch made the validator side fail-fast on env input, but the env-driven port pair has no consumer in the e2e harness yet.
-- **Suggested fix:** Set `env: { SMUDGE_PORT: "3457", SMUDGE_CLIENT_PORT: "5174", DB_PATH: "/tmp/smudge-e2e.db" }` on each `webServer` entry, change the matching `port:` waits to 3457 / 5174, and parameterize `baseURL` to `http://localhost:5174`. Pair with the in-scope comment fix [I2] in the corresponding review.
+- **Description:** The playwright `webServer` entries pass no `env`, hardcode `port: 3456` and `port: 5173`, hardcode `baseURL: "http://localhost:5173"`, and use `reuseExistingServer: true`. On the `ovid/shared-port-validation` branch, `vite.config.ts:5-13` adds forward-looking commentary about using `SMUDGE_PORT` / `SMUDGE_CLIENT_PORT` for e2e isolation (the original present-tense claim was rewritten in commit `09f8b21`), but the Playwright harness still does not set those vars or consume a separate test-only port pair. As a result, an e2e run alongside `make dev` can silently piggy-back on the developer's running server (and database). The branch made the validator side fail-fast on env input, but the env-driven port pair has no consumer in the e2e harness yet. Tracked as roadmap Phase 4b.6 (`docs/roadmap.md:835`).
+- **Suggested fix:** Set `env: { SMUDGE_PORT: "3457", SMUDGE_CLIENT_PORT: "5174", DB_PATH: "/tmp/smudge-e2e.db" }` on each `webServer` entry, update the `port:` waits to 3457 / 5174, and parameterize `baseURL` to `http://localhost:5174`. Once landed, restore the present-tense isolation claim in `vite.config.ts:5-13` so the comment reflects what the harness actually does.
 - **Confidence:** High
 - **Found by:** Logic & Correctness, Error Handling & Edge Cases, Contract & Integration, Concurrency & State (`claude-opus-4-7`)
 - **First seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
-- **Last seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
+- **Last seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `039ca1b`
 - **Severity:** Important
 
 ## `afcaee1c` — Steering files don't mention SMUDGE_PORT/SMUDGE_CLIENT_PORT
@@ -209,7 +209,7 @@
 - **Confidence:** High
 - **Found by:** Contract & Integration (`claude-opus-4-7`)
 - **First seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
-- **Last seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
+- **Last seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `039ca1b`
 - **Severity:** Suggestion
 
 ## `ca84e075` — CLAUDE.md / README / copilot-instructions reference docker-compose that doesn't exist
@@ -221,5 +221,5 @@
 - **Confidence:** High
 - **Found by:** Error Handling & Edge Cases, Contract & Integration (`claude-opus-4-7`)
 - **First seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
-- **Last seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
+- **Last seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `039ca1b`
 - **Severity:** Suggestion
