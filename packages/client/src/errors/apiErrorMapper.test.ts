@@ -447,6 +447,31 @@ describe("SCOPES — trash.restoreChapter", () => {
     const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
     expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterFailed);
   });
+  // S1: a bare 404 (server emits {status: 404, code: "NOT_FOUND"} when the
+  // deleted chapter row can't be located) must surface the same
+  // "already permanently deleted" copy as CHAPTER_PURGED — from the
+  // user's perspective, the trash record being absent is indistinguishable
+  // from purge. Without byStatus this fell through to the generic
+  // restoreChapterFailed fallback and invited a futile retry.
+  it("404 NOT_FOUND (no matching code) → restoreChapterAlreadyPurged (byStatus)", () => {
+    const err = new ApiRequestError("not found", 404, "NOT_FOUND");
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterAlreadyPurged);
+  });
+  it("404 with no code → restoreChapterAlreadyPurged (byStatus)", () => {
+    const err = new ApiRequestError("not found", 404);
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterAlreadyPurged);
+  });
+  // Pin byCode precedence: even though both CHAPTER_PURGED (byCode) and
+  // 404 (byStatus) resolve to the same string today, the mapper must
+  // resolve byCode first. If a future change re-routes CHAPTER_PURGED
+  // to different copy, this test will fail loudly instead of silently
+  // falling through to the byStatus mapping.
+  it("404 + CHAPTER_PURGED → byCode wins (precedence pin)", () => {
+    const err = new ApiRequestError("purged", 404, "CHAPTER_PURGED");
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterAlreadyPurged);
+    // Sanity-check the byCode entry is still the one we're matching.
+    expect(scope.byCode?.CHAPTER_PURGED).toBe(STRINGS.error.restoreChapterAlreadyPurged);
+  });
 });
 
 describe("SCOPES — image.delete", () => {
