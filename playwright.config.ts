@@ -24,7 +24,24 @@ const E2E_CLIENT_PORT = "5174";
 // playwright loads this config from multiple processes (main + each
 // worker), so a destructive top-level side-effect can run after the
 // server has finished writing, deleting the freshly-written DB.
-fs.mkdirSync(path.join(E2E_DATA_DIR, "images"), { recursive: true });
+//
+// I4 (review 2026-04-26): if /tmp/smudge-e2e-data exists as a regular
+// file (stale leftover or developer mistake), mkdirSync raises ENOTDIR
+// at the top of the config in every Playwright worker — opaque enough
+// that the cause isn't discoverable from the stack. Detect and re-throw
+// with an actionable message instead.
+try {
+  fs.mkdirSync(path.join(E2E_DATA_DIR, "images"), { recursive: true });
+} catch (err) {
+  const code = (err as NodeJS.ErrnoException).code;
+  if (code === "ENOTDIR" || code === "EEXIST") {
+    throw new Error(
+      `playwright.config: expected a directory at ${E2E_DATA_DIR}, but a non-directory exists there. ` +
+        `Remove the conflicting file (e.g. \`rm ${E2E_DATA_DIR}\`) and re-run \`make e2e\`.`,
+    );
+  }
+  throw err;
+}
 
 export default defineConfig({
   testDir: "./e2e",
