@@ -25,10 +25,12 @@ None found.
 - **Found by:** Logic & Correctness, Contract & Integration, Concurrency & State (`claude-opus-4-7`)
 
 ### [I2] Vite config comment falsely claims playwright wires SMUDGE_PORT/SMUDGE_CLIENT_PORT
-- **File:** `packages/client/vite.config.ts:5-10`
+- **Status (2026-04-26, post-039ca1b inline review):** Resolved on this branch in commit `09f8b21` ("docs(vite-config): drop false e2e-isolation claim; track as roadmap 4b.6"). The vite.config.ts comment block was rewritten to be explicitly forward-looking — the present-tense "the e2e harness in playwright.config.ts sets…" claim quoted below no longer exists in HEAD. The wiring fix (suggested-fix option (a)) remains tracked as `OOSI1` / backlog `e132b042` and as roadmap Phase 4b.6. The original finding is preserved here as the historical record of the comment text at commit `e6b64472`.
+- **File:** `packages/client/vite.config.ts:5-10` *(at e6b64472; comment block was rewritten in 09f8b21)*
 - **Bug:** The newly-added comment block reads: *"the e2e harness in playwright.config.ts sets SMUDGE_PORT and SMUDGE_CLIENT_PORT to test-only ports so an e2e run cannot touch the dev workflow's database."* Verified against `playwright.config.ts`: it does no such thing. The webServer entries pass no `env`, hardcode `port: 3456` and `port: 5173`, and use `reuseExistingServer: true`, meaning an e2e run alongside `make dev` will silently piggy-back on the dev server (and the dev DB) — exactly what the comment claims is prevented.
 - **Impact:** The branch's load-bearing rationale for env-driven ports is documented as a current property of the system. It isn't. Any reader using the comment as a contract is misled about test isolation.
 - **Suggested fix:** Two options. (a) Make the claim true: add `env: { SMUDGE_PORT: "3457", SMUDGE_CLIENT_PORT: "5174", DB_PATH: "/tmp/smudge-e2e.db" }` to each `webServer` entry in `playwright.config.ts`, change the matching `port:` waits, and parameterize `baseURL`. The wiring fix is itself out-of-scope for this branch (see [OOSI1] below). (b) Make the comment honest: rewrite as "(Future:) the e2e harness will set SMUDGE_PORT/SMUDGE_CLIENT_PORT to test-only ports — see TODO" and remove the present-tense isolation claim. Either is fine; both as-is is not.
+- **Resolution taken:** Option (b) — the comment was rewritten to be forward-looking. Option (a) is deferred to roadmap Phase 4b.6.
 - **Confidence:** High
 - **Found by:** Logic & Correctness, Error Handling & Edge Cases, Contract & Integration, Concurrency & State (`claude-opus-4-7`)
 
