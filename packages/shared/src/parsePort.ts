@@ -25,8 +25,11 @@ export function parsePort(raw: string, envName: string): number {
       `${envName} must be an integer between 1 and 65535. Received: ${JSON.stringify(raw)}`,
     );
   }
+  // The /^\d+$/ guard above already restricts `trimmed` to a non-empty
+  // pure-digit string, so Number.parseInt cannot return NaN or a non-
+  // integer here. Only the [1, 65535] range remains to enforce.
   const port = Number.parseInt(trimmed, 10);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  if (port < 1 || port > 65535) {
     throw new Error(
       `${envName} must be an integer between 1 and 65535. Received: ${JSON.stringify(raw)}`,
     );
