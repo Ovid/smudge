@@ -474,11 +474,19 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // invariant-pair helper (applyReloadFailedLock) fires alongside
         // the banner. Bare 4xx (VALIDATION_ERROR, 413) are recoverable
         // and keep the editor writable.
+        // I2 (review 2026-04-26): NOT_FOUND is also a terminal condition —
+        // the chapter is gone server-side (purge, hard-delete, or another
+        // tab). Without the lock, the user keeps typing into content the
+        // server has rejected and every debounced auto-save 404s in a
+        // loop. The chapter.save byStatus[404] mapping already surfaces
+        // the saveFailedChapterGone banner; this completes the invariant
+        // pair.
         if (
           rejected4xx &&
           (rejected4xx.code === "BAD_JSON" ||
             rejected4xx.code === "UPDATE_READ_FAILURE" ||
-            rejected4xx.code === "CORRUPT_CONTENT")
+            rejected4xx.code === "CORRUPT_CONTENT" ||
+            rejected4xx.code === "NOT_FOUND")
         ) {
           onRequestEditorLockRef.current?.(rejected4xx.message);
         }
