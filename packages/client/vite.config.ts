@@ -10,10 +10,7 @@ import { DEFAULT_SERVER_PORT } from "@smudge/shared";
 // to test-only ports so an e2e run cannot touch the dev workflow's
 // database.
 const clientPort = Number.parseInt(process.env.SMUDGE_CLIENT_PORT ?? "5173", 10);
-const serverPort = Number.parseInt(
-  process.env.SMUDGE_PORT ?? String(DEFAULT_SERVER_PORT),
-  10,
-);
+const serverPort = Number.parseInt(process.env.SMUDGE_PORT ?? String(DEFAULT_SERVER_PORT), 10);
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
