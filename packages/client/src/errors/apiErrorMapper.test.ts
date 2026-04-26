@@ -534,8 +534,12 @@ describe("SCOPES — image.delete extrasFrom", () => {
 
   // S4 (review 2026-04-25): a naive `title.slice(0, 200)` operates on
   // UTF-16 code units and can split a surrogate pair, leaving a lone
-  // surrogate that the DOM renders as U+FFFD. Use `Array.from` so the
-  // truncation happens on code points instead.
+  // surrogate that the DOM renders as U+FFFD. The code-point-aware
+  // `truncateCodePoints` helper in `scopes.ts` (implemented with `for...of`
+  // and an early break — round-3 S4 chose this over
+  // `Array.from(...).slice(...).join("")` to keep work bounded at O(max)
+  // even for hostile multi-megabyte titles) does the truncation on code
+  // points instead.
   it("truncates titles by code points, not UTF-16 code units (S4)", () => {
     const emoji = "\u{1F984}"; // U+1F984 unicorn — surrogate pair in UTF-16
     const longTitle = emoji.repeat(250);
