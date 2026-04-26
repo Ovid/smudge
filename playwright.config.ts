@@ -10,8 +10,10 @@ import * as path from "node:path";
 // projects, and any human-authored project in that DB was at risk.
 //
 // Now: e2e starts its own server/client pair on dedicated ports, with
-// DB_PATH and DATA_DIR pointing into a temp directory that is wiped at
-// config load. The dev workflow's DB is never touched.
+// DB_PATH and DATA_DIR pointing into a dedicated temp directory under
+// `os.tmpdir()` (R7 review 2026-04-26: no automatic wipe — see the
+// comment on the mkdirSync block below for why a destructive top-level
+// side-effect is unsafe here). The dev workflow's DB is never touched.
 const E2E_DATA_DIR = path.join(os.tmpdir(), "smudge-e2e-data");
 const E2E_DB_PATH = path.join(E2E_DATA_DIR, "smudge.db");
 const E2E_SERVER_PORT = "3457";
@@ -20,14 +22,17 @@ const E2E_CLIENT_PORT = "5174";
 // Ensure the data dir exists before the server starts. Tests clean up
 // after themselves (each `afterAll` deletes its project), so we don't
 // wipe — a crashed-run cleanup can be done explicitly via
-// `rm -rf /tmp/smudge-e2e-data`. We deliberately do NOT rmSync here:
+// `make e2e-clean`, which derives the path the same way this file does
+// (R8 review 2026-04-26: previously hardcoded `/tmp/smudge-e2e-data`,
+// which is wrong on macOS where `os.tmpdir()` resolves under
+// `/var/folders/.../T/`). We deliberately do NOT rmSync here:
 // playwright loads this config from multiple processes (main + each
 // worker), so a destructive top-level side-effect can run after the
 // server has finished writing, deleting the freshly-written DB.
 //
-// I4 (review 2026-04-26): if /tmp/smudge-e2e-data exists as a regular
-// file (stale leftover or developer mistake), mkdirSync raises ENOTDIR
-// at the top of the config in every Playwright worker — opaque enough
+// I4 (review 2026-04-26): if E2E_DATA_DIR exists as a regular file
+// (stale leftover or developer mistake), mkdirSync raises ENOTDIR at
+// the top of the config in every Playwright worker — opaque enough
 // that the cause isn't discoverable from the stack. Detect and re-throw
 // with an actionable message instead.
 try {
