@@ -24,11 +24,29 @@ import tailwindcss from "@tailwindcss/vite";
 // otherwise produce NaN here and surface as a confusing Vite
 // "address invalid" error far from the cause. Fail fast at config
 // load with a message that names the env var and the bad value.
+//
+// S1 (review 2026-04-26): the canonical implementation lives in
+// `@smudge/shared/parsePort` and is unit-tested there; vite.config
+// duplicates it inline because the bare-Node-ESM constraint
+// described above prevents importing it. The strict /^\d+$/ check
+// rejects "3456abc" / "3456 # comment" / "3456kb" — Number.parseInt
+// alone would accept those (parseInt extracts a leading numeric
+// prefix), defeating the fail-fast intent. Keep this implementation
+// in lockstep with shared/parsePort.ts; the test suite over there
+// is the spec for both.
 function parsePort(envName: "SMUDGE_CLIENT_PORT" | "SMUDGE_PORT", fallback: string): number {
   const raw = process.env[envName] ?? fallback;
-  const port = Number.parseInt(raw, 10);
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error(
+      `${envName} must be an integer between 1 and 65535. Received: ${JSON.stringify(raw)}`,
+    );
+  }
+  const port = Number.parseInt(trimmed, 10);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error(`${envName} must be an integer between 1 and 65535. Received: ${raw}`);
+    throw new Error(
+      `${envName} must be an integer between 1 and 65535. Received: ${JSON.stringify(raw)}`,
+    );
   }
   return port;
 }
