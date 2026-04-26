@@ -70,19 +70,22 @@ if (actual !== expected) { \
 		PLATFORM=$$(node -p 'process.platform + "/" + process.arch'); \
 		echo "→ better-sqlite3 binary won't load (dlopen failed); rebuilding from source for Node $$NODE_VER on $$PLATFORM..."; \
 		echo "  (one-time cost on cross-platform churn; no remote .node binary fetched)"; \
-		NPM_CONFIG_IGNORE_SCRIPTS=false npm rebuild better-sqlite3 --build-from-source >/dev/null 2>&1 || { \
+		NPM_CONFIG_IGNORE_SCRIPTS=false npm rebuild better-sqlite3 --build-from-source >/dev/null || { \
 			echo ""; \
 			echo "npm rebuild --build-from-source failed. Possible causes:"; \
 			echo "  - Missing C++ toolchain — install 'build-essential' (Linux) or Xcode CLT (macOS)"; \
 			echo "  - Missing python3 — required by node-gyp"; \
 			echo "  - Active Node version ($$NODE_VER) differs from engines.node — verify with 'node --version'"; \
 			echo "  - Try 'rm -rf node_modules && npm install' to start clean"; \
+			echo ""; \
+			echo "  See the npm/node-gyp stderr above for the actual error."; \
 			exit 1; \
 		}; \
-		node -e "new (require('better-sqlite3'))(':memory:').close()" >/dev/null 2>&1 || { \
+		node -e "new (require('better-sqlite3'))(':memory:').close()" >/dev/null || { \
 			echo ""; \
 			echo "→ npm rebuild succeeded but the resulting binary still won't dlopen."; \
 			echo "  This is unusual — the freshly-compiled .node may target a different ABI than the active runtime."; \
+			echo "  See the dlopen error above for the specific cause."; \
 			echo "  Try: rm -rf node_modules/better-sqlite3 && npm install better-sqlite3"; \
 			exit 1; \
 		}; \
