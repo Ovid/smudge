@@ -200,6 +200,41 @@ describe("useProjectEditor", () => {
     }
   });
 
+  it("routes post-retry-exhaustion NETWORK error through mapApiError (chapter.save scope)", async () => {
+    // Regression guard for the Task 2.2 fix: when a NETWORK
+    // ApiRequestError exhausts the 4-attempt retry loop, the user-visible
+    // banner must come from mapApiError(err, "chapter.save").message —
+    // i.e. STRINGS.editor.saveFailedNetwork — not the literal
+    // STRINGS.editor.saveFailed fallback. Pre-fix, the catch block
+    // surfaced the generic "Save failed. Try again." copy on a
+    // connection drop, bypassing the scope's network: mapping and
+    // violating CLAUDE.md's "all user-visible API error messages route
+    // through mapApiError" invariant.
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("[dev] Failed to fetch", 0, "NETWORK"),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        const p = result.current.handleSave({ type: "doc", content: [] });
+        await vi.advanceTimersByTimeAsync(2000);
+        await vi.advanceTimersByTimeAsync(4000);
+        await vi.advanceTimersByTimeAsync(8000);
+        expect(await p).toBe(false);
+      });
+
+      expect(result.current.saveStatus).toBe("error");
+      expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedNetwork);
+      expect(api.chapters.update).toHaveBeenCalledTimes(4); // 1 initial + 3 retries
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("unmount during save-backoff aborts the retry loop and does not fire a further PATCH", async () => {
     // Regression for a pre-existing leak: the retry loop inside handleSave
     // runs outside React's render cycle. Without unmount cleanup, a backoff

@@ -287,6 +287,14 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       setSaveStatus("saving");
       setSaveErrorMessage(null);
       let rejected4xx: { message: string; code?: string } | null = null;
+      // I4 (Phase 4b.3a regression guard): capture the most recent
+      // non-aborted error so retry-exhaustion can route its banner copy
+      // through the unified mapper. Pre-fix, the post-loop fallback used
+      // the literal STRINGS.editor.saveFailed, bypassing chapter.save's
+      // network: mapping and surfacing "Save failed. Try again." even
+      // for NETWORK retry exhaustion. CLAUDE.md invariant: all
+      // user-visible API error messages flow through mapApiError.
+      let lastErr: unknown = null;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (token.isStale()) return false; // chapter changed, abort retries
         // Re-read latest content each attempt so backoff retries post keystrokes
@@ -340,6 +348,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           if (isAborted(err)) {
             return false;
           }
+          // Track the most recent non-aborted error so the post-loop
+          // fallback (used when NETWORK / bare-5xx retries exhaust) can
+          // route through mapApiError(err, "chapter.save"). 4xx and
+          // terminal-code branches below still break early via
+          // rejected4xx, which takes precedence over this lastErr.
+          lastErr = err;
           // I5: a 2xx BAD_JSON or a 5xx whose code identifies a specific
           // committed/terminal server state must not retry:
           //   - 2xx BAD_JSON: server likely committed the PATCH but the
@@ -430,7 +444,21 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       // guard immediately above.
       if (activeChapterRef.current?.id === savingChapterId && !token.isStale()) {
         setSaveStatus("error");
-        setSaveErrorMessage(rejected4xx ? rejected4xx.message : STRINGS.editor.saveFailed);
+        // I4 (Phase 4b.3a regression guard): route post-retry-exhaustion
+        // copy through mapApiError so chapter.save's network: mapping
+        // (STRINGS.editor.saveFailedNetwork) wins over the generic
+        // saveFailed fallback when the cause was a NETWORK error. The
+        // ?? STRINGS.editor.saveFailed defends against ABORTED-only
+        // (mapApiError returns message: null) — defense-in-depth, since
+        // ABORTED is filtered above and never captured into lastErr.
+        // lastErr can also be null if the loop exited via the seq check
+        // without entering catch; in practice the surrounding gate
+        // (activeChapter id + !token.isStale()) excludes that path, but
+        // defend explicitly.
+        const fallbackMessage = lastErr
+          ? (mapApiError(lastErr, "chapter.save").message ?? STRINGS.editor.saveFailed)
+          : STRINGS.editor.saveFailed;
+        setSaveErrorMessage(rejected4xx ? rejected4xx.message : fallbackMessage);
         // I2 (review 2026-04-24): terminal committed/unrecoverable
         // codes must also lock the editor — CLAUDE.md save-pipeline
         // invariant #2 pairs setEditable(false) with editorLockedMessage.
