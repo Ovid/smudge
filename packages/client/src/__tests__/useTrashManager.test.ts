@@ -299,8 +299,8 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     // The 409 fixture used to pass only because byCode precedence resolves
     // before byStatus; pin real-traffic 404 so a future regression that
     // drops byCode["PROJECT_PURGED"] would surface here instead of being
-    // masked by the phantom status code (a 404 fixture would correctly
-    // route to byStatus[404] = restoreChapterAlreadyPurged).
+    // masked by the phantom status code (a 404 fixture without the code
+    // would correctly route to byStatus[404] = restoreChapterUnavailable).
     vi.mocked(api.chapters.restore).mockRejectedValue(
       new ApiRequestError("gone", 404, "PROJECT_PURGED"),
     );
