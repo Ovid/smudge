@@ -253,6 +253,14 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     // Remove..."). Server contract only emits the envelope when
     // `referencingChapters.length > 0`, so this is hostile/malformed
     // territory — but the validator is the right gatekeeper.
+    // S1 (review 2026-04-26 round 3 follow-up): also reject any chapter
+    // whose `title` is `""`. Empty-string titles pass the round-2
+    // empty-array guard (length is non-zero) but produce the same
+    // malformed announce — `[{title:""},{title:""}]` →
+    // "This image is used in: , . Remove it from those chapters first."
+    // Server schema enforces `z.string().trim().min(1)` on chapter titles,
+    // so this only fires for hostile envelopes; the validator is still
+    // the right gatekeeper.
     extrasFrom: (err: ApiRequestError) => {
       const chapters = (err.extras as { chapters?: unknown } | undefined)?.chapters;
       if (!Array.isArray(chapters)) return undefined;
@@ -271,7 +279,7 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
           if (!c || typeof c !== "object") return false;
           const obj = c as Record<string, unknown>;
           if (obj.id !== undefined && typeof obj.id !== "string") return false;
-          if (typeof obj.title !== "string") return false;
+          if (typeof obj.title !== "string" || obj.title.length === 0) return false;
           if (obj.trashed !== undefined && typeof obj.trashed !== "boolean") return false;
           return true;
         },

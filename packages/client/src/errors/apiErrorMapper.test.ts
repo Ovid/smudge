@@ -589,6 +589,28 @@ describe("SCOPES — image.delete extrasFrom", () => {
     expect(resolveError(err, scope).extras).toBeUndefined();
   });
 
+  // S1 (review 2026-04-26 round 3 follow-up): an envelope of all-empty-string
+  // titles passes the round-2 `valid.length === 0` guard (length is non-zero)
+  // and reaches `S.deleteBlocked([""])`, producing the malformed
+  // "This image is used in: , . Remove it from those chapters first." that
+  // the round-2 I2 reasoning was meant to prevent. Server schema enforces
+  // `z.string().trim().min(1)` on titles (`packages/shared/src/schemas.ts`),
+  // so legitimate traffic never carries `""` — this is hostile-input
+  // territory only, but the validator is the right gatekeeper.
+  it("returns undefined when any chapter title is empty string (S1)", () => {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: [{ title: "" }, { title: "" }],
+    });
+    expect(resolveError(err, scope).extras).toBeUndefined();
+  });
+
+  it("returns undefined when a single chapter title is empty string (S1)", () => {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: [{ title: "Chapter 1" }, { title: "" }],
+    });
+    expect(resolveError(err, scope).extras).toBeUndefined();
+  });
+
   // S* (review 2026-04-25 round 3): bound input processing at cap+1
   // entries so a hostile array of N items cannot drive O(N) filter work.
   // Trade-off: invalid entries past index 50 are no longer detected —
