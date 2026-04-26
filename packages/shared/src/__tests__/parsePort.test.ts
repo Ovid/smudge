@@ -18,6 +18,12 @@ describe("parsePort", () => {
   // intent (typo in .env, accidental shell-comment append, unit suffix)
   // is defeated unless we reject anything that isn't a pure-digit
   // string. These cases are the spec.
+  //
+  // S1 (review 2026-04-26 039ca1b): leading-zero forms (`"0080"`,
+  // `"0123"`) are also rejected. Number.parseInt("0080", 10) returns
+  // 80 (decimal), so a stray octal-looking value in .env would have
+  // silently bound to a different port. The "clean integer" docstring
+  // claim is now enforced — only canonical decimal notation passes.
   it.each([
     ["trailing letters", "3456abc"],
     ["trailing comment", "3456 # comment"],
@@ -36,6 +42,9 @@ describe("parsePort", () => {
     ["empty", ""],
     ["whitespace only", "   "],
     ["only letters", "abc"],
+    ["leading zero (octal-looking)", "0080"],
+    ["leading zero (small)", "0123"],
+    ["multiple leading zeros", "00001"],
   ])("rejects %s (%s)", (_label, raw) => {
     expect(() => parsePort(raw, "TEST_PORT")).toThrow(/TEST_PORT/);
   });
