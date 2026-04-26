@@ -129,11 +129,13 @@ test.describe("Editor save pipeline E2e Tests", () => {
     // S3 (review 2026-04-26): scope to `**/api/chapters/*` (single
     // segment) — see the rationale in the prior test for why this is
     // tighter than `**/api/chapters/**`.
-    await page.route("**/api/chapters/*", (route) => {
+    // R4 (review 2026-04-26): async + await the route calls — see the
+    // rationale in the prior test.
+    await page.route("**/api/chapters/*", async (route) => {
       if (route.request().method() === "PATCH") {
-        route.abort("connectionrefused");
+        await route.abort("connectionrefused");
       } else {
-        route.continue();
+        await route.continue();
       }
     });
 
