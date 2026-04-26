@@ -125,7 +125,7 @@ export const STRINGS = {
     saving: "Saving\u2026",
     saved: "Saved",
     unsaved: "Unsaved changes",
-    saveFailed: "Unable to save \u2014 try again.",
+    saveFailed: "Save failed. Try again.",
     saveFailedNetwork: "Unable to save \u2014 check your connection.",
     saveFailedChapterGone: "This chapter no longer exists. Reload to continue.",
     saveFailedInvalid:
