@@ -3,14 +3,36 @@
 # userland-punycode fixes.
 export NODE_OPTIONS := --disable-warning=DEP0040 ${NODE_OPTIONS}
 
-.PHONY: all test cover e2e lint format format-check typecheck dev build clean loc help
+.PHONY: all test cover e2e lint format format-check typecheck dev build clean loc help ensure-native
 
 all: lint format-check typecheck cover e2e ## Full CI pass: lint, format-check, typecheck, test+coverage, e2e
 
-test: ## Run full test suite (fast, no coverage)
+# better-sqlite3 ships a precompiled .node binary keyed on
+# {platform, arch, node-abi}. The dev workflow can leave a wrong-platform
+# binary in place in two ways: (1) the devcontainer bind-mounts the host's
+# node_modules into the container, so a host install (macOS) puts a
+# Mach-O binary where the container (Linux) needs an ELF — and vice
+# versa; (2) the container sets NPM_CONFIG_IGNORE_SCRIPTS=true, so a
+# fresh `npm install` inside the container does not auto-fetch the
+# correct binary via better-sqlite3's install script. The symptom is
+# either "invalid ELF header" (Linux loading Mach-O) or "slice is not
+# valid mach-o file" (macOS loading ELF), and every server test fails
+# with the same dlopen error. Run a load test up front; if it fails,
+# fetch the right prebuilt binary in place. Cheap on the happy path
+# (single node startup, ~50ms); only does work on cross-platform churn.
+ensure-native: ## Ensure better-sqlite3 native binding matches current platform
+	@node -e "new (require('better-sqlite3'))(':memory:').close()" >/dev/null 2>&1 || { \
+		echo "→ better-sqlite3 binary does not match current platform; reinstalling..."; \
+		(cd node_modules/better-sqlite3 && npx prebuild-install --force) || { \
+			echo "prebuild-install failed — try 'rm -rf node_modules && npm install'"; \
+			exit 1; \
+		}; \
+	}
+
+test: ensure-native ## Run full test suite (fast, no coverage)
 	npx vitest run
 
-cover: ## Run tests with coverage enforcement
+cover: ensure-native ## Run tests with coverage enforcement
 	@npx vitest run --coverage || { \
 		echo ""; \
 		echo "════════════════════════════════════════════════════════════════"; \
@@ -20,7 +42,7 @@ cover: ## Run tests with coverage enforcement
 		exit 1; \
 	}
 
-e2e: ## Run Playwright e2e tests (starts dev servers automatically)
+e2e: ensure-native ## Run Playwright e2e tests (starts dev servers automatically)
 	npx playwright test
 
 lint: ## Lint with autofix
@@ -36,7 +58,7 @@ format-check: ## Format code, then fail if anything changed
 typecheck: ## Type-check all packages
 	npm run typecheck
 
-dev: ## Start dev servers (server + client)
+dev: ensure-native ## Start dev servers (server + client)
 	npm run dev
 
 build: ## Build client for production
