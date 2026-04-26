@@ -61,7 +61,7 @@ export const ALLOWED_ATTR: readonly string[] = Object.freeze(["src", "alt"]);
 // I14 (review 2026-04-25): pin every URI-bearing attribute to Smudge's
 // own image endpoint. The regex below rejects data:, javascript:, vbscript:,
 // http(s): externals, and anything else that isn't a relative
-// `/api/images/...` path. We pass it as DOMPurify's ALLOWED_URI_REGEXP
+// `/api/images/<uuid>` path. We pass it as DOMPurify's ALLOWED_URI_REGEXP
 // option for defense in depth.
 //
 // S1 (review 2026-04-25): intentionally narrower than the server's
@@ -77,7 +77,19 @@ export const ALLOWED_ATTR: readonly string[] = Object.freeze(["src", "alt"]);
 // strips the src — the broken `<img>` is a deliberate fail-closed
 // signal that lets us catch the divergence rather than silently
 // accept new sources of `<img src>` in editor content.
-const ALLOWED_URI_REGEXP = /^\/api\/images\//i;
+//
+// Round 3 (review 2026-04-25): require a full UUID path segment after
+// `/api/images/` — a prefix-only check let `/api/images/javascript:`,
+// `/api/images/../../etc/passwd`, and `/api/images/?x=javascript:` pass.
+// `<img src>` cannot execute JS and `<a>` isn't in ALLOWED_TAGS today,
+// so XSS is unreachable — but the gap is latent if Link is later added
+// to editorExtensions. Mirror the UUID shape from the server's
+// IMAGE_SRC_RE so client and server agree on what counts as an image
+// URL. The trailing alternation allows the rendered server URL form
+// (`/api/images/<uuid>`, with optional `?query` or `#fragment` or
+// nothing) but rejects extra path segments.
+const ALLOWED_URI_REGEXP =
+  /^\/api\/images\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[?#].*)?$/i;
 
 // I14 (review 2026-04-25): DOMPurify 3.x ships a hardcoded DATA_URI_TAGS
 // carve-out (img/audio/video/source/track) that lets `data:` URIs through

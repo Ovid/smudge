@@ -78,11 +78,58 @@ describe("sanitizeEditorHtml", () => {
     }
   });
 
+  // Round 3 (review 2026-04-25): use a real UUID-shaped path. The
+  // sanitizer's ALLOWED_URI_REGEXP requires a UUID after /api/images/
+  // (matches the server's IMAGE_SRC_RE), so a synthetic non-UUID id
+  // like "abc" is rejected. Real Smudge image ids come from
+  // crypto.randomUUID() and always have this shape.
+  const SAMPLE_IMAGE_UUID = "00000000-0000-0000-0000-000000000001";
   it("preserves img src + alt (used by the image extension)", () => {
-    const input = `<img src="/api/images/abc" alt="a cat">`;
+    const input = `<img src="/api/images/${SAMPLE_IMAGE_UUID}" alt="a cat">`;
     const out = sanitizeEditorHtml(input);
-    expect(out).toContain(`src="/api/images/abc"`);
+    expect(out).toContain(`src="/api/images/${SAMPLE_IMAGE_UUID}"`);
     expect(out).toContain(`alt="a cat"`);
+  });
+
+  // Round 3 (review 2026-04-25): the previous regex /^\/api\/images\//i
+  // validated only the prefix, so values like /api/images/javascript:,
+  // /api/images/../../etc/passwd, and /api/images/?x=javascript: passed
+  // through. <img src> cannot execute JS and <a> isn't in ALLOWED_TAGS,
+  // so XSS is unreachable today — but the gap is latent. Tighten to
+  // require a UUID after /api/images/, mirroring the server's
+  // IMAGE_SRC_RE so client and server agree on what counts as an
+  // image URL.
+  it("rejects /api/images/javascript: (URI shape, not just prefix)", () => {
+    const input = `<img src="/api/images/javascript:alert(1)" alt="x">`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).not.toMatch(/<img[^>]*\bsrc=/i);
+    expect(out).not.toContain("javascript:");
+  });
+
+  it("rejects /api/images/ path traversal", () => {
+    const input = `<img src="/api/images/../../etc/passwd" alt="x">`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).not.toMatch(/<img[^>]*\bsrc=/i);
+    expect(out).not.toContain("../");
+  });
+
+  it("rejects /api/images/?query=javascript:", () => {
+    const input = `<img src="/api/images/?x=javascript:alert(1)" alt="x">`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).not.toMatch(/<img[^>]*\bsrc=/i);
+    expect(out).not.toContain("javascript:");
+  });
+
+  it("rejects /api/images/<non-uuid>", () => {
+    const input = `<img src="/api/images/not-a-uuid" alt="x">`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).not.toMatch(/<img[^>]*\bsrc=/i);
+  });
+
+  it("preserves /api/images/<uuid> followed by ?cache=v (server append)", () => {
+    const input = `<img src="/api/images/${SAMPLE_IMAGE_UUID}?v=1" alt="x">`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).toContain(`src="/api/images/${SAMPLE_IMAGE_UUID}?v=1"`);
   });
 
   it("drops disallowed attributes (class, style, id, title)", () => {
