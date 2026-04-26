@@ -304,6 +304,23 @@ describe("SCOPES — chapter.save", () => {
   });
 });
 
+describe("SCOPES — chapter.reorder", () => {
+  const scope = SCOPES["chapter.reorder"];
+  // I1 (Phase 4b.3a): server emits 400 REORDER_MISMATCH when the chapter
+  // ID list submitted to PUT /projects/:id/chapters/order doesn't match
+  // the current set (count or values). Without a byCode entry the user
+  // saw the generic "Failed to reorder chapters" fallback that invites
+  // retry of the same stale list. The mapped copy tells them to refresh.
+  it("REORDER_MISMATCH (400) → reorderMismatch", () => {
+    const err = new ApiRequestError("ids mismatch", 400, "REORDER_MISMATCH");
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.reorderMismatch);
+  });
+  it("500 → reorderFailed (fallback)", () => {
+    const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.reorderFailed);
+  });
+});
+
 describe("I4 — 2xx BAD_JSON on mutation scopes sets possiblyCommitted=true", () => {
   // Each mutation scope must surface the ambiguous-commit UX on 2xx
   // BAD_JSON. Missing this routes the user through the normal error

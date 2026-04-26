@@ -83,6 +83,7 @@ export const STRINGS = {
     loadChapterFailedNetwork: "Failed to load chapter — check your connection and try again.",
     deleteChapterFailed: "Failed to delete chapter",
     reorderFailed: "Failed to reorder chapters",
+    reorderMismatch: "The chapter list is out of sync. Refresh and try again.",
     updateTitleFailed: "Failed to update project title",
     updateTitleResponseUnreadable:
       "The title change may have been saved, but the server response was unreadable. Refresh the page to see the current project title.",
