@@ -4,10 +4,13 @@ export const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 /**
  * Default port the Express server binds to when SMUDGE_PORT is not set.
- * Imported by both packages/server/src/index.ts and packages/client/vite.config.ts
- * so the dev workflow's client→server proxy and the server's listen call
- * cannot drift apart. Documented in CLAUDE.md and docker-compose; if you
- * change this, update those references too.
+ * Imported by packages/server/src/index.ts. Mirrored — NOT imported —
+ * by packages/client/vite.config.ts as a literal `"3456"` because vite
+ * loads its config under bare Node ESM, which cannot resolve
+ * @smudge/shared's extensionless re-export chain (see vite.config.ts
+ * for the ERR_MODULE_NOT_FOUND verification). Documented in CLAUDE.md
+ * and docker-compose; if you change this, update vite.config.ts and
+ * those references too.
  */
 export const DEFAULT_SERVER_PORT = 3456;
 
