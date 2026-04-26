@@ -88,9 +88,13 @@ test.describe("Editor save pipeline E2e Tests", () => {
     // /api/chapters/<one-segment>; `*` does not cross `/` in Playwright
     // glob matching, so this excludes both /api/chapters/:id/restore and
     // any future sibling routes.
-    await page.route("**/api/chapters/*", (route) => {
+    // R4 (review 2026-04-26): make the handler async and await the
+    // route.fulfill/continue calls. Playwright tolerates floating
+    // promises here, but a race between fulfill landing and the test
+    // moving to its next assertion is a known flake source.
+    await page.route("**/api/chapters/*", async (route) => {
       if (route.request().method() === "PATCH") {
-        route.fulfill({
+        await route.fulfill({
           status: 404,
           contentType: "application/json",
           body: JSON.stringify({
@@ -98,7 +102,7 @@ test.describe("Editor save pipeline E2e Tests", () => {
           }),
         });
       } else {
-        route.continue();
+        await route.continue();
       }
     });
 
@@ -135,11 +139,13 @@ test.describe("Editor save pipeline E2e Tests", () => {
     // S3 (review 2026-04-26): scope to `**/api/chapters/*` (single
     // segment) — see the rationale in the prior test for why this is
     // tighter than `**/api/chapters/**`.
-    await page.route("**/api/chapters/*", (route) => {
+    // R4 (review 2026-04-26): async + await the route calls — see the
+    // rationale in the prior test.
+    await page.route("**/api/chapters/*", async (route) => {
       if (route.request().method() === "PATCH") {
-        route.abort("connectionrefused");
+        await route.abort("connectionrefused");
       } else {
-        route.continue();
+        await route.continue();
       }
     });
 
