@@ -1452,6 +1452,39 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  // S3 (review 2026-04-26): a 404 that arrives WITHOUT a parseable JSON
+  // envelope — e.g. a reverse-proxy HTML 404 page, an upstream that
+  // bypassed the express error handler — has no `code` field on the
+  // ApiRequestError. The chapter.save scope's byStatus[404] still
+  // surfaces saveFailedChapterGone, but the editor-lock branch only
+  // checked code === "NOT_FOUND". Pre-fix, the user saw the banner
+  // but kept typing into a chapter the server rejects, every
+  // debounced auto-save 404'd in a loop, and the banner re-fired on
+  // each 404. The fix locks on status === 404 too — same UX as the
+  // coded NOT_FOUND case but resilient to envelopes the proxy chain
+  // strips.
+  it("handleSave fires onRequestEditorLock on bare 404 (no envelope code) (S3)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      // No third argument: simulates a 404 from a reverse proxy that
+      // didn't return the { error: { code, message } } envelope.
+      new ApiRequestError("Not Found", 404),
+    );
+    const onRequestEditorLock = vi.fn();
+
+    const { result } = renderHook(() => useProjectEditor("test-project", { onRequestEditorLock }));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(onRequestEditorLock).toHaveBeenCalledWith(STRINGS.editor.saveFailedChapterGone);
+    expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedChapterGone);
+    expect(api.chapters.update).toHaveBeenCalledTimes(1);
+    warnSpy.mockRestore();
+  });
+
   it("handleSave breaks immediately on 500 UPDATE_READ_FAILURE (I5)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.update).mockRejectedValue(

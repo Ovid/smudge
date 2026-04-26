@@ -286,7 +286,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
 
       setSaveStatus("saving");
       setSaveErrorMessage(null);
-      let rejected4xx: { message: string; code?: string } | null = null;
+      let rejected4xx: { message: string; code?: string; status: number } | null = null;
       // I4 (Phase 4b.3a regression guard): capture the most recent
       // non-aborted error so retry-exhaustion can route its banner copy
       // through the unified mapper. Pre-fix, the post-loop fallback used
@@ -379,7 +379,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             // has already been filtered above — the three codes here all
             // route to scope.committed / byCode matches, all non-null.
             const { message } = mapApiError(err, "chapter.save");
-            rejected4xx = { message: message as string, code: err.code };
+            rejected4xx = { message: message as string, code: err.code, status: err.status };
             break;
           }
           if (isClientError(err)) {
@@ -393,7 +393,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             // cache-clear decision below. ABORTED is filtered above so
             // mapped.message is guaranteed non-null in this branch.
             const { message } = mapApiError(err, "chapter.save");
-            rejected4xx = { message: message as string, code: err.code };
+            rejected4xx = { message: message as string, code: err.code, status: err.status };
             break;
           }
           if (attempt < MAX_RETRIES) {
@@ -481,12 +481,22 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // loop. The chapter.save byStatus[404] mapping already surfaces
         // the saveFailedChapterGone banner; this completes the invariant
         // pair.
+        // S3 (review 2026-04-26): a 404 that arrives WITHOUT a parseable
+        // JSON envelope — e.g. a reverse-proxy HTML 404 page, an
+        // upstream that bypassed the express error handler — has no
+        // `code` on the ApiRequestError. Pre-fix, the code-only check
+        // missed those: the saveFailedChapterGone banner fired (via
+        // byStatus[404]) but the editor stayed writable, every
+        // debounced auto-save deterministically 404'd, and the banner
+        // re-fired on each save. Lock on status === 404 too so the
+        // pair holds whether or not the envelope survived the proxy
+        // chain.
         if (
           rejected4xx &&
-          (rejected4xx.code === "BAD_JSON" ||
+          (rejected4xx.status === 404 ||
+            rejected4xx.code === "BAD_JSON" ||
             rejected4xx.code === "UPDATE_READ_FAILURE" ||
-            rejected4xx.code === "CORRUPT_CONTENT" ||
-            rejected4xx.code === "NOT_FOUND")
+            rejected4xx.code === "CORRUPT_CONTENT")
         ) {
           onRequestEditorLockRef.current?.(rejected4xx.message);
         }
