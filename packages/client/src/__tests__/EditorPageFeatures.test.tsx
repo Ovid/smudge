@@ -1042,7 +1042,10 @@ describe("EditorPage view mode toggles", () => {
 });
 
 describe("EditorPage find-and-replace confirmation", () => {
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1069,32 +1072,46 @@ describe("EditorPage find-and-replace confirmation", () => {
     });
   });
 
-  /** Opens the find-and-replace panel, types a query and replacement,
-   *  waits for the search results, and clicks "Replace All in Manuscript". */
-  async function openPanelAndClickReplaceAll() {
+  /** Renders the page, opens the find-and-replace panel, types "foo"/"qux",
+   *  and flushes the 300ms debounce so search results are in the DOM on return.
+   *
+   *  Real timers everywhere except a narrow fake-timer window around the
+   *  debounce setTimeout. EditorPage render and post-helper interactions
+   *  (findByRole polling, userEvent) run on real timers; only the debounce
+   *  is faked, so other timers in the render tree (auto-save, a11y
+   *  announcements, TipTap RAF) are unaffected. */
+  async function openPanelAndSearch() {
     renderEditorPage();
 
-    // Wait for the editor page to load
     await waitFor(() => {
       expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
     });
 
-    // Open the find-replace panel via Ctrl+H
     await act(async () => {
       fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
       await Promise.resolve();
     });
 
-    // Wait for the panel to appear
     const searchInput = await screen.findByLabelText("Find");
     const replaceInput = screen.getByLabelText("Replace");
 
-    // Fill search and replacement (triggers debounced search)
-    fireEvent.change(searchInput, { target: { value: "foo" } });
-    fireEvent.change(replaceInput, { target: { value: "qux" } });
+    vi.useFakeTimers();
+    try {
+      fireEvent.change(searchInput, { target: { value: "foo" } });
+      fireEvent.change(replaceInput, { target: { value: "qux" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  }
 
-    // Wait for search results to render — "Replace All in Manuscript" button
-    // is only shown when there are results with total_count > 0.
+  /** Opens the find-and-replace panel, types a query and replacement,
+   *  waits for the search results, and clicks "Replace All in Manuscript". */
+  async function openPanelAndClickReplaceAll() {
+    await openPanelAndSearch();
+
     const replaceAllButton = await screen.findByRole(
       "button",
       { name: "Replace All in Manuscript" },
@@ -1711,17 +1728,7 @@ describe("EditorPage find-and-replace confirmation", () => {
       new ApiRequestError("project missing", 404, "NOT_FOUND"),
     );
 
-    renderEditorPage();
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
-    });
-
-    await act(async () => {
-      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
-      await Promise.resolve();
-    });
-    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
-    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+    await openPanelAndSearch();
 
     const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
     await waitFor(() => expect(api.search.find).toHaveBeenCalled());
@@ -1745,17 +1752,7 @@ describe("EditorPage find-and-replace confirmation", () => {
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
     );
 
-    renderEditorPage();
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
-    });
-
-    await act(async () => {
-      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
-      await Promise.resolve();
-    });
-    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
-    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+    await openPanelAndSearch();
 
     const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
     await userEvent.click(replaceOne[0]!);
@@ -1779,17 +1776,7 @@ describe("EditorPage find-and-replace confirmation", () => {
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
     );
 
-    renderEditorPage();
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
-    });
-
-    await act(async () => {
-      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
-      await Promise.resolve();
-    });
-    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
-    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+    await openPanelAndSearch();
 
     const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
     await userEvent.click(replaceOne[0]!);
@@ -1805,19 +1792,8 @@ describe("EditorPage find-and-replace confirmation", () => {
       new ApiRequestError("too many", 400, "MATCH_CAP_EXCEEDED"),
     );
 
-    renderEditorPage();
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
-    });
+    await openPanelAndSearch();
 
-    await act(async () => {
-      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
-      await Promise.resolve();
-    });
-    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
-    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
-
-    // The per-match "Replace" buttons appear once results render.
     const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
     await userEvent.click(replaceOne[0]!);
 
@@ -1834,17 +1810,7 @@ describe("EditorPage find-and-replace confirmation", () => {
       affected_chapter_ids: ["ch-1"],
     });
 
-    renderEditorPage();
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
-    });
-
-    await act(async () => {
-      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
-      await Promise.resolve();
-    });
-    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
-    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+    await openPanelAndSearch();
 
     const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
     await userEvent.click(replaceOne[0]!);
@@ -1869,17 +1835,7 @@ describe("EditorPage find-and-replace confirmation", () => {
     );
     vi.mocked(api.search.replace).mockReturnValueOnce(pending);
 
-    renderEditorPage();
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
-    });
-
-    await act(async () => {
-      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
-      await Promise.resolve();
-    });
-    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
-    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+    await openPanelAndSearch();
 
     const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
 
@@ -1919,17 +1875,7 @@ describe("EditorPage find-and-replace confirmation", () => {
       return { replaced_count: 1, affected_chapter_ids: ["ch-1"] };
     });
 
-    renderEditorPage();
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
-    });
-
-    await act(async () => {
-      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
-      await Promise.resolve();
-    });
-    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
-    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+    await openPanelAndSearch();
 
     const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
     await userEvent.click(replaceOne[0]!);
@@ -1946,17 +1892,7 @@ describe("EditorPage find-and-replace confirmation", () => {
       new ApiRequestError("aborted", 0, "ABORTED"),
     );
 
-    renderEditorPage();
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
-    });
-
-    await act(async () => {
-      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
-      await Promise.resolve();
-    });
-    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
-    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+    await openPanelAndSearch();
 
     const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
     await userEvent.click(replaceOne[0]!);
@@ -2049,17 +1985,7 @@ describe("EditorPage find-and-replace confirmation", () => {
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
     );
 
-    renderEditorPage();
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
-    });
-
-    await act(async () => {
-      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
-      await Promise.resolve();
-    });
-    fireEvent.change(await screen.findByLabelText("Find"), { target: { value: "foo" } });
-    fireEvent.change(screen.getByLabelText("Replace"), { target: { value: "qux" } });
+    await openPanelAndSearch();
 
     const replaceOne = await screen.findAllByRole("button", { name: "Replace" }, { timeout: 3000 });
     await userEvent.click(replaceOne[0]!);
