@@ -40,14 +40,22 @@ const E2E_CLIENT_PORT = "5174";
 // non-directory), so each code names a different offender — telling the
 // user to `rm E2E_DATA_DIR` for an EEXIST on the leaf would
 // destructively remove the parent directory and any siblings.
+//
+// S5 (review 2026-04-26): Node sets `errno.path` to the actual offender
+// for both ENOTDIR (the non-directory ancestor) and EEXIST (the leaf
+// path). Use it for both branches so the suggested `rm` lands on the
+// real conflict — telling the user to `rm $E2E_DATA_DIR` when ENOTDIR
+// fired on an ancestor (e.g. /tmp/smudge-e2e-data is fine but /tmp is
+// somehow a non-directory) would name the wrong path.
 try {
   fs.mkdirSync(path.join(E2E_DATA_DIR, "images"), { recursive: true });
 } catch (err) {
   const errno = err as NodeJS.ErrnoException;
   if (errno.code === "ENOTDIR") {
+    const offender = errno.path ?? E2E_DATA_DIR;
     throw new Error(
-      `playwright.config: expected a directory at ${E2E_DATA_DIR}, but a non-directory exists at or above it. ` +
-        `Remove the conflicting file (e.g. \`rm ${E2E_DATA_DIR}\`) and re-run \`make e2e\`.`,
+      `playwright.config: expected a directory at or above ${E2E_DATA_DIR}, but a non-directory exists at ${offender}. ` +
+        `Remove the conflicting non-directory (e.g. \`rm ${offender}\`) and re-run \`make e2e\`.`,
     );
   }
   if (errno.code === "EEXIST") {
