@@ -47,6 +47,16 @@ export default defineConfig({
   testDir: "./e2e",
   timeout: 30000,
   retries: 0,
+  // I5 (review 2026-04-26): the webServer below binds a single SQLite DB
+  // at one fixed port. Without an explicit cap, Playwright defaults to
+  // os.cpus().length / 2 workers, all hammering the same DB — SQLite
+  // serializes writes but cross-spec cleanup ordering is interleaved
+  // (e.g. one spec's afterAll deletes a fixture mid-creation in
+  // another). Pin workers: 1 so serialization matches the single-port
+  // webServer design. If e2e wall time becomes a problem, shard
+  // DB_PATH/E2E_SERVER_PORT/E2E_CLIENT_PORT per worker via
+  // process.env.TEST_PARALLEL_INDEX instead of removing this cap.
+  workers: 1,
   use: {
     baseURL: `http://localhost:${E2E_CLIENT_PORT}`,
     headless: true,
