@@ -5,6 +5,7 @@ import { UNTITLED_CHAPTER } from "@smudge/shared";
 import { api, ApiRequestError } from "../api/client";
 import { useProjectEditor } from "../hooks/useProjectEditor";
 import { STRINGS } from "../strings";
+import { flushSaveRetries } from "./helpers/saveRetries";
 
 vi.mock("../api/client", () => ({
   ApiRequestError: class ApiRequestError extends Error {
@@ -187,9 +188,7 @@ describe("useProjectEditor", () => {
     try {
       await act(async () => {
         const p = result.current.handleSave({ type: "doc", content: [] });
-        await vi.advanceTimersByTimeAsync(2000);
-        await vi.advanceTimersByTimeAsync(4000);
-        await vi.advanceTimersByTimeAsync(8000);
+        await flushSaveRetries();
         expect(await p).toBe(false);
       });
 
@@ -221,9 +220,7 @@ describe("useProjectEditor", () => {
     try {
       await act(async () => {
         const p = result.current.handleSave({ type: "doc", content: [] });
-        await vi.advanceTimersByTimeAsync(2000);
-        await vi.advanceTimersByTimeAsync(4000);
-        await vi.advanceTimersByTimeAsync(8000);
+        await flushSaveRetries();
         expect(await p).toBe(false);
       });
 

@@ -13,6 +13,7 @@ import { EditorPage } from "../pages/EditorPage";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
+import { flushSaveRetries } from "./helpers/saveRetries";
 
 // Coverage instrumentation slows renders enough to exceed the default 1000ms waitFor timeout.
 // Tests using userEvent.type also need { timeout: 15000 } on their it() calls because
@@ -443,9 +444,7 @@ describe("EditorPage save status", () => {
     try {
       await act(async () => {
         const p = capturedOnSave?.({ type: "doc", content: [{ type: "paragraph" }] });
-        await vi.advanceTimersByTimeAsync(2_000);
-        await vi.advanceTimersByTimeAsync(4_000);
-        await vi.advanceTimersByTimeAsync(8_000);
+        await flushSaveRetries();
         await p;
       });
     } finally {
