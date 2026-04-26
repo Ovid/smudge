@@ -36,15 +36,18 @@ Cluster F ([I15] retrospective) is resolved at the design level: see §Cluster F
 
 DOMPurify's defaults permit `data:` URIs in `<img src>`. A `data:image/svg+xml` SVG is a textbook XSS vector and is not blocked by `ALLOWED_TAGS` / `ALLOWED_ATTR` alone. The file's own header comment names the threat model — a hostile snapshot or server payload bypassing the editor — and this fix closes the gap.
 
-The only legitimate `<img src>` value Smudge ever produces is `/api/images/{uuid}` (server-issued, opaque). Pin:
+The only legitimate `<img src>` value Smudge ever produces is `/api/images/{uuid}` (server-issued, opaque). Pin to a UUID-shaped path so that prefix-bypass variants (`/api/images/javascript:`, `/api/images/../etc/passwd`, `/api/images/?x=javascript:`) are rejected at the sanitizer layer:
 
 ```ts
-const ALLOWED_URI_REGEXP = /^\/api\/images\//i;
+const ALLOWED_URI_REGEXP =
+  /^\/api\/images\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[?#].*)?$/i;
 ```
 
-…and pass it to DOMPurify's `sanitize` options.
+…and pass it to DOMPurify's `sanitize` options. Pair it with an `uponSanitizeAttribute` hook on a private `DOMPurify(window)` instance so that DOMPurify 3.x's hardcoded `DATA_URI_TAGS` carve-out (which lets `data:` URIs through `<img src>` even when `ALLOWED_URI_REGEXP` is set) cannot bypass the regex.
 
-**Boundary note (documented in code).** `^/api/images/` accepts `/api/images/../etc/passwd`. The sanitizer's threat model is XSS in the rendered DOM, not server-side path traversal; the server enforces the latter. Code comment makes this explicit.
+**Threat model (documented in code).** The sanitizer's threat model is XSS in the rendered DOM, not server-side path traversal; the server enforces path validity at request handling. The UUID-shaped regex above happens to reject traversal as a side effect of mirroring the server-issued URL shape — earlier round-1/round-2 designs used a prefix-only `/^\/api\/images\//i` which was widened to the UUID form in round-3 review after `<a href="/api/images/javascript:…">` was found to bypass the prefix check (XSS unreachable today because `<a>` is not in `ALLOWED_TAGS`, but the gap is latent if Link is later added to `editorExtensions`).
+
+**Server/client divergence (documented in code).** The server's `IMAGE_SRC_RE` in `packages/server/src/images/images.references.ts` is wider — it accepts `^(?:https?://[^/]+)?/api/images/<uuid>` so pasted absolute URLs still increment the reference count (conservative delete-blocking). Sanitizer is intentionally narrower (relative form only); a future writer that emits absolute URLs would surface a "broken `<img>` survives delete-block" symptom that signals the divergence.
 
 ### [S21] Bound `extrasFrom` chapters validation (`scopes.ts`)
 
