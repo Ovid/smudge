@@ -3,6 +3,15 @@ export const TRASH_RETENTION_DAYS = 30;
 export const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 /**
+ * Default port the Express server binds to when SMUDGE_PORT is not set.
+ * Imported by both packages/server/src/index.ts and packages/client/vite.config.ts
+ * so the dev workflow's client→server proxy and the server's listen call
+ * cannot drift apart. Documented in CLAUDE.md and docker-compose; if you
+ * change this, update those references too.
+ */
+export const DEFAULT_SERVER_PORT = 3456;
+
+/**
  * Upper bounds on search-query and replacement strings accepted by
  * /api/projects/:slug/search and /replace. Shared so the client can
  * pre-flight validate and show an inline error rather than round-tripping
