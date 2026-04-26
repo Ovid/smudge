@@ -3,7 +3,7 @@
 # userland-punycode fixes.
 export NODE_OPTIONS := --disable-warning=DEP0040 ${NODE_OPTIONS}
 
-.PHONY: all test cover e2e lint format format-check typecheck dev build clean loc help ensure-native
+.PHONY: all test cover e2e e2e-clean lint format format-check typecheck dev build clean loc help ensure-native
 
 all: lint format-check typecheck cover e2e ## Full CI pass: lint, format-check, typecheck, test+coverage, e2e
 
@@ -152,6 +152,9 @@ loc: ## Count lines of code in our own files
 
 clean: ## Remove SQLite database files (full reset)
 	rm -f packages/server/data/smudge.db packages/server/data/smudge.db-shm packages/server/data/smudge.db-wal
+
+e2e-clean: ## Wipe the isolated e2e data dir (next `make e2e` starts fresh)
+	rm -rf /tmp/smudge-e2e-data
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'
