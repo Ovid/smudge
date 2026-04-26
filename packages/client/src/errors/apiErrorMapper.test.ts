@@ -309,12 +309,29 @@ describe("SCOPES — chapter.save", () => {
     const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
     expect(resolveError(err, scope).message).toBe(STRINGS.editor.saveFailedServer);
   });
-  // Coverage for the fallback path: a non-500 status with no matching
-  // byStatus or byCode entry must still resolve to the scope fallback.
-  // Without this, no test exercises chapter.save's fallback after I3
-  // added byStatus[500].
-  it("502 with no code → saveFailed (fallback)", () => {
-    const err = new ApiRequestError("upstream", 502);
+  // S7 (review 2026-04-26): I3 only mapped 500. A reverse proxy in
+  // front of Smudge can emit 502/503/504 (Bad Gateway / Service
+  // Unavailable / Gateway Timeout) when the upstream server is down or
+  // overloaded — the user-visible cause is the same as a bare 500
+  // (the server is having trouble) and the same banner copy applies.
+  // Without these entries the gateway statuses fell through to the
+  // generic saveFailed fallback ("Save failed. Try again."), which
+  // defeated I3's intent the moment Smudge sat behind any reverse
+  // proxy. The fallback path is now exercised by the 599 case below.
+  it.each([
+    [502, "Bad Gateway"],
+    [503, "Service Unavailable"],
+    [504, "Gateway Timeout"],
+  ])("%i → saveFailedServer (gateway 5xx) (S7)", (status) => {
+    const err = new ApiRequestError("gateway", status);
+    expect(resolveError(err, scope).message).toBe(STRINGS.editor.saveFailedServer);
+  });
+  // Coverage for the fallback path: a non-mapped status with no
+  // matching byStatus or byCode entry must still resolve to the scope
+  // fallback. Without this, no test exercises chapter.save's fallback
+  // after I3 / S7 added byStatus[500] / [502] / [503] / [504].
+  it("599 with no code → saveFailed (fallback)", () => {
+    const err = new ApiRequestError("unknown 5xx", 599);
     expect(resolveError(err, scope).message).toBe(STRINGS.editor.saveFailed);
   });
   // I2 (Phase 4b.3a): NETWORK gets a transient connection-specific copy
