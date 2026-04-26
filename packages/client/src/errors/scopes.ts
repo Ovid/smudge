@@ -3,6 +3,23 @@ import type { ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
 import { SEARCH_ERROR_CODES, SNAPSHOT_ERROR_CODES } from "@smudge/shared";
 
+// S4 (review 2026-04-25 round 3): surrogate-safe truncation that bounds
+// work at `max` iterations rather than materializing the full string into
+// an array. Iterates code points (not UTF-16 code units), so cannot split
+// a surrogate pair into a lone surrogate (which the DOM would render as
+// U+FFFD). Used by image.delete extrasFrom; safe to extend to other
+// hostile-input boundaries that need the same guarantee.
+function truncateCodePoints(s: string, max: number): string {
+  let result = "";
+  let count = 0;
+  for (const cp of s) {
+    if (count >= max) break;
+    result += cp;
+    count++;
+  }
+  return result;
+}
+
 export type ApiErrorScope =
   | "project.load"
   | "projectList.load"
@@ -210,9 +227,13 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     // field — a hostile `description` field bypassed the API client's
     // per-key MAX_EXTRAS_KEYS cap because that cap does not recurse into
     // `chapters[i]`.
-    // S4 (review 2026-04-25): code-point slice via Array.from so the cap
+    // S4 (review 2026-04-25): code-point slice via for...of so the cap
     // cannot split a surrogate pair into a lone surrogate (which the DOM
     // would render as U+FFFD). ASCII inputs are unaffected.
+    // S4 (review 2026-04-25 round 3): use a for...of loop with an early
+    // break instead of Array.from(...).slice(...).join("") so a hostile
+    // multi-megabyte title cannot force allocation of an N-element array
+    // before the 200-codepoint cap is applied. Bounds work at O(200).
     // I1 + S2 (review 2026-04-25 round 2): drop `id` entirely from the
     // output. ImageGallery only reads `title` and `trashed`, so `id` was
     // dead plumbing. Leaving it in left an unbounded copy-through that
@@ -241,7 +262,7 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
       if (valid.length !== chapters.length) return undefined;
       if (valid.length === 0) return undefined;
       const bounded = valid.slice(0, 50).map((c) => ({
-        title: Array.from(c.title).slice(0, 200).join(""),
+        title: truncateCodePoints(c.title, 200),
         ...(c.trashed !== undefined ? { trashed: c.trashed } : {}),
       }));
       return { chapters: bounded };
