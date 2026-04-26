@@ -126,10 +126,20 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     // user sees an accurate signal. Terminal codes
     // (BAD_JSON / UPDATE_READ_FAILURE / CORRUPT_CONTENT) keep their
     // own copy via byCode, which takes precedence over byStatus.
+    // S7 (review 2026-04-26): a reverse proxy in front of Smudge can
+    // emit 502 (Bad Gateway), 503 (Service Unavailable), or 504
+    // (Gateway Timeout) when the upstream is down or overloaded.
+    // Same UX as a bare 500 — the server is having trouble. Without
+    // these entries, gateway statuses fell through to the generic
+    // saveFailed fallback ("Save failed. Try again."), defeating
+    // I3's intent the moment Smudge ran behind any reverse proxy.
     byStatus: {
       413: STRINGS.editor.saveFailedTooLarge,
       404: STRINGS.editor.saveFailedChapterGone,
       500: STRINGS.editor.saveFailedServer,
+      502: STRINGS.editor.saveFailedServer,
+      503: STRINGS.editor.saveFailedServer,
+      504: STRINGS.editor.saveFailedServer,
     },
     byCode: {
       VALIDATION_ERROR: STRINGS.editor.saveFailedInvalid,
