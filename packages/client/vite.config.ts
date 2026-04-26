@@ -12,11 +12,24 @@ import tailwindcss from "@tailwindcss/vite";
 // S1 (review 2026-04-26, follow-up): the canonical default is
 // DEFAULT_SERVER_PORT in @smudge/shared/constants.ts. This file
 // duplicates the literal 3456 because vite.config.ts is loaded by
-// vite's CONFIG resolver (esbuild-compiled then run under Node ESM),
-// and Node ESM cannot follow @smudge/shared's `main: ./src/index.ts`
-// chain — the .ts re-exports don't carry explicit extensions. The
-// server's index.ts imports the constant correctly; if you change it,
-// update the literal here and the prose in CLAUDE.md too.
+// vite's CONFIG resolver, which falls back to bare Node ESM when
+// resolving workspace dependencies — and Node ESM cannot follow
+// @smudge/shared's `main: ./src/index.ts` chain because the .ts
+// re-exports inside `src/index.ts` don't carry explicit extensions.
+// S9 (review 2026-04-26): re-verified by patching this file to
+// `import { DEFAULT_SERVER_PORT } from "@smudge/shared"` and running
+// `npx vite build` from packages/client. Build aborted with
+//
+//   failed to load config from /workspace/packages/client/vite.config.ts
+//   error during build:
+//   Error [ERR_MODULE_NOT_FOUND]: Cannot find module
+//   '/workspace/packages/shared/src/schemas' imported from
+//   '/workspace/packages/shared/src/index.ts'
+//
+// The server's index.ts imports the constant correctly (it runs under
+// tsx, which DOES rewrite extensionless .ts imports). If you change
+// the literal here, update CLAUDE.md and packages/server/src/index.ts
+// too.
 //
 // R3 (review 2026-04-26): mirror the server's SMUDGE_PORT validation
 // (packages/server/src/index.ts). A non-numeric override (typo in
