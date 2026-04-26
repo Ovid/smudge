@@ -21,6 +21,13 @@ describe("parsePort", () => {
   it.each([
     ["trailing letters", "3456abc"],
     ["trailing comment", "3456 # comment"],
+    // S4 (review 2026-04-26 f346047): trim() only strips leading and
+    // trailing whitespace, not internal — `"3456\n# comment"` survives
+    // trim and the /^\d+$/ regex catches the non-digit. Pin the
+    // rejection so a future change to the trim/regex pipeline (e.g.
+    // splitting on the first non-digit) cannot silently start
+    // accepting shell-comment styles that resemble a valid port.
+    ["trailing newline + comment", "3456\n# comment"],
     ["trailing unit", "3456kb"],
     ["leading sign", "+3456"],
     ["negative", "-1"],
