@@ -1598,7 +1598,17 @@ export function EditorPage() {
         await editorRef.current?.flushSave();
       } catch (err) {
         console.warn("Ctrl+S: flushSave threw", err);
-        setActionError(STRINGS.editor.saveFailed);
+        // I1 (review 2026-04-26): route through mapApiError so a NETWORK
+        // ApiRequestError surfaces saveFailedNetwork (parallels the
+        // auto-save retry-exhaustion path at useProjectEditor.ts and the
+        // CLAUDE.md "all user-visible API error messages route through
+        // mapApiError" invariant). For a non-ApiRequestError sync TipTap
+        // throw — the only reliably-reproducible case here, since the
+        // editor's flushSave .catch swallows promise rejections — the
+        // mapper falls through to scope.fallback = saveFailed, matching
+        // the prior literal. The ?? STRINGS.editor.saveFailed defends
+        // against ABORTED-only (mapApiError returns message: null).
+        setActionError(mapApiError(err, "chapter.save").message ?? STRINGS.editor.saveFailed);
       }
     },
     setShortcutHelpOpen,
