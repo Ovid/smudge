@@ -440,8 +440,26 @@ describe("SCOPES — trash.restoreChapter", () => {
     expect(result.possiblyCommitted).toBe(true);
   });
   it("PROJECT_PURGED → restoreChapterProjectPurged", () => {
-    const err = new ApiRequestError("gone", 409, "PROJECT_PURGED");
+    // I4 (review 2026-04-26): server emits PROJECT_PURGED at HTTP 404
+    // (`packages/server/src/chapters/chapters.routes.ts:97-104`), not 409.
+    // Pin the real-traffic status code so a future regression that drops
+    // the byCode entry would be caught by the precedence pin below — a
+    // 409 fixture would mask such a regression because byStatus has no
+    // 409 entry.
+    const err = new ApiRequestError("gone", 404, "PROJECT_PURGED");
     expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterProjectPurged);
+  });
+  // I4 (review 2026-04-26): mirror the CHAPTER_PURGED precedence pin
+  // (below) for PROJECT_PURGED. Both server-emitted 404 codes share the
+  // status with the new byStatus[404] → restoreChapterAlreadyPurged
+  // mapping; without an explicit pin, dropping or renaming
+  // byCode["PROJECT_PURGED"] would silently route real PROJECT_PURGED
+  // traffic to the wrong copy and the bare-404 test would still pass.
+  it("404 + PROJECT_PURGED → byCode wins (precedence pin)", () => {
+    const err = new ApiRequestError("gone", 404, "PROJECT_PURGED");
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterProjectPurged);
+    // Sanity-check the byCode entry is still the one we're matching.
+    expect(scope.byCode?.PROJECT_PURGED).toBe(STRINGS.error.restoreChapterProjectPurged);
   });
   it("500 (non-RESTORE_READ_FAILURE) → restoreChapterFailed (fallback)", () => {
     const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
@@ -461,16 +479,36 @@ describe("SCOPES — trash.restoreChapter", () => {
     const err = new ApiRequestError("not found", 404);
     expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterAlreadyPurged);
   });
-  // Pin byCode precedence: even though both CHAPTER_PURGED (byCode) and
-  // 404 (byStatus) resolve to the same string today, the mapper must
-  // resolve byCode first. If a future change re-routes CHAPTER_PURGED
-  // to different copy, this test will fail loudly instead of silently
-  // falling through to the byStatus mapping.
+  // Pin byCode precedence for real-traffic 404+CHAPTER_PURGED: the
+  // server emits CHAPTER_PURGED at HTTP 404
+  // (`packages/server/src/chapters/chapters.routes.ts:107-113`), so this
+  // combination is exactly what production traffic carries. Both byCode
+  // and byStatus currently resolve to the same string, but the mapper
+  // must resolve byCode first. If a future change re-routes
+  // CHAPTER_PURGED to different copy, this test will fail loudly instead
+  // of silently falling through to the byStatus mapping.
   it("404 + CHAPTER_PURGED → byCode wins (precedence pin)", () => {
     const err = new ApiRequestError("purged", 404, "CHAPTER_PURGED");
     expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterAlreadyPurged);
     // Sanity-check the byCode entry is still the one we're matching.
     expect(scope.byCode?.CHAPTER_PURGED).toBe(STRINGS.error.restoreChapterAlreadyPurged);
+  });
+  // S4 (review 2026-04-26): pin byCode precedence with a contrived
+  // scope where byCode["CHAPTER_PURGED"] and byStatus[404] resolve to
+  // *different* strings. The pin above asserts the resolved string is
+  // restoreChapterAlreadyPurged — which both branches map to in the
+  // real registry — so it cannot distinguish which branch fired. A
+  // future regression that swaps the byCode/byStatus precedence order
+  // (or drops the byCode lookup entirely) would still satisfy that
+  // assertion. This test fails on either regression.
+  it("byCode beats byStatus when both match the same status (S4)", () => {
+    const contrivedScope = {
+      fallback: "fallback",
+      byCode: { CHAPTER_PURGED: "from byCode" },
+      byStatus: { 404: "from byStatus" },
+    } as const;
+    const err = new ApiRequestError("purged", 404, "CHAPTER_PURGED");
+    expect(resolveError(err, contrivedScope).message).toBe("from byCode");
   });
 });
 
