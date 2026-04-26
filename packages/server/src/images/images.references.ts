@@ -24,9 +24,15 @@ import type { ImageRow } from "./images.types";
 // reference scanner walks user-pasted content (which can contain
 // either form) and must increment refcounts conservatively, while the
 // sanitizer enforces a fail-closed XSS posture against the rendered
-// DOM. If a writer ever starts emitting absolute same-origin URLs,
-// the resulting "broken `<img>` survives delete-block" symptom is the
-// intended signal to revisit both regexes together.
+// DOM. Absolute URLs from any host are counted here on purpose
+// (`https?://[^/]+` accepts any host, not just same-origin) as a
+// conservative delete-blocking measure: if a pasted URL points at
+// `evil.example/api/images/<uuid>` and the UUID happens to match a
+// real Smudge image, blocking the delete is the safer failure mode
+// than silently decrementing on save. If that ever causes an
+// unacceptable "broken `<img>` survives delete-block" symptom (writer
+// emits an absolute URL the sanitizer strips while the scanner counts
+// it), revisit both regexes together.
 const IMAGE_SRC_RE = new RegExp(
   `^(?:https?://[^/]+)?/api/images/(${UUID_PATTERN})(?:[/?#]|$)`,
   "i",
