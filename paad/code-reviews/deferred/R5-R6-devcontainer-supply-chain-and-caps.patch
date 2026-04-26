@@ -1,0 +1,157 @@
+From: Claude (devcontainer agent)
+Date: 2026-04-26
+Subject: [R5, R6] .devcontainer: harden curl-bash supply chain + document
+         NET_ADMIN/NET_RAW capabilities
+
+Why this is a separate patch
+============================
+This devcontainer mounts /workspace/.devcontainer as read-only inside the
+container, so an agent running inside cannot edit Dockerfile or
+devcontainer.json directly. Apply this patch from the host (or any
+environment with write access to .devcontainer/), then commit.
+
+Both items were already on the OOSI backlog (1807f5f4 and c3daad8d) from
+the prior review. The latest review re-raised them, so they're now active
+items rather than acknowledged-as-OOS.
+
+What this changes
+=================
+
+R5 — supply-chain: three curl-bash installs without integrity verification
+--------------------------------------------------------------------------
+The Dockerfile pipes three remote scripts straight into a shell:
+  1. https://claude.ai/install.sh          — moving target, no version
+  2. https://fnm.vercel.app/install        — moving target, no version
+  3. github.com/deluan/zsh-in-docker (v${ZSH_IN_DOCKER_VERSION})
+
+Other lines in the same file already pin by digest (the `FROM ... @sha256:`
+lines) and download-then-checksum (git-delta, fzf), so the bar inside this
+file is uneven.
+
+The fix below:
+  - For zsh-in-docker, which IS pinned to a tag (v1.2.1 today): download
+    to a temp path, verify SHA-256, then execute. Renovate continues to
+    bump the version; bumping the SHA along with the version is the
+    one-line discipline the comment calls out.
+  - For claude.ai and fnm, which are moving-target scripts with no
+    upstream-published checksum: leave them as-is but add an explicit
+    "trust event" comment so the supply-chain posture is honest.
+    Vendoring or self-pinning is the next step if the dev workflow
+    starts treating this image as a build artifact rather than a
+    per-developer rebuild.
+
+R6 — capabilities: NET_ADMIN/NET_RAW granted unconditionally
+-------------------------------------------------------------
+The runArgs add both Linux capabilities on every container build. The
+prior review noted they were inherited from the upstream Claude Code
+sandboxing template and may not all be needed for Smudge's actual dev
+flow — but they ARE used by bubblewrap (installed in the Dockerfile)
+when Claude Code runs commands in a network-namespaced sandbox. Removing
+them would break that sandbox; keeping them undocumented makes the
+privilege grant easy to misread.
+
+The fix below: keep the caps and add an inline rationale comment so a
+future reviewer can see WHY they're load-bearing. If you decide the
+bubblewrap network sandbox isn't actually exercised in your workflow,
+remove the runArgs entirely (the comment will be a hint that nothing
+else depends on them).
+
+How to apply
+============
+From a shell on the host (NOT inside the devcontainer):
+
+  cd <smudge repo root>
+  git apply paad/code-reviews/deferred/R5-R6-devcontainer-supply-chain-and-caps.patch
+
+The patch sets ZSH_IN_DOCKER_SHA256 to the value below. Verify it
+against the upstream release before merging:
+
+  curl -fsSL https://github.com/deluan/zsh-in-docker/releases/download/v1.2.1/zsh-in-docker.sh | sha256sum
+  # expect: 3eb01e6efa9f0cf2434742fe5b7019e1e8e7e7c6dd2a3a6ff32f8e2c2e56e5e6  (placeholder)
+
+If it differs, replace the value in the patch with the correct hash
+before applying. Do NOT apply with the placeholder hash — the build
+will fail at integrity verification, which is the desired behavior
+when a hash is uncertain.
+
+Then commit:
+  git add .devcontainer/Dockerfile .devcontainer/devcontainer.json
+  git commit -m "fix(devcontainer): verify zsh-in-docker SHA-256 + document NET caps rationale (R5, R6)"
+
+---
+diff --git a/.devcontainer/Dockerfile b/.devcontainer/Dockerfile
+--- a/.devcontainer/Dockerfile
++++ b/.devcontainer/Dockerfile
+@@ -74,7 +74,16 @@ USER vscode
+ # Set PATH early so claude and other user-installed binaries are available
+ ENV PATH="/home/vscode/.local/bin:$PATH"
+
+-# Install Claude Code natively with marketplace plugins
++# Install Claude Code natively with marketplace plugins.
++#
++# R5 (review 2026-04-26): https://claude.ai/install.sh is a moving
++# target — Anthropic does not publish per-version release artifacts
++# with checksums for this script. Piping curl into bash here is a
++# trust event on every image rebuild. Acceptable for a dev-only
++# image that's rebuilt per developer; not acceptable if this image
++# ever becomes a shared build artifact. If that changes, vendor the
++# script into .devcontainer/scripts/install-claude.sh after manual
++# review and verify a SHA-256 here.
+ RUN curl -fsSL https://claude.ai/install.sh | bash && \
+   claude plugin marketplace add anthropics/skills && \
+   claude plugin marketplace add trailofbits/skills && \
+@@ -86,7 +95,12 @@ RUN uv python install 3.13 --default
+ # Install ast-grep (AST-based code search)
+ RUN uv tool install ast-grep-cli
+
+-# Install fnm (Fast Node Manager) and Node 22
++# Install fnm (Fast Node Manager) and Node 22.
++#
++# R5 (review 2026-04-26): https://fnm.vercel.app/install is a moving
++# target without per-version release checksums. Same trust posture as
++# the claude.ai/install.sh block above — see that comment for the
++# remediation path if this image ever becomes shared.
+ ARG NODE_VERSION=22
+ ENV FNM_DIR="/home/vscode/.fnm"
+ RUN curl -fsSL https://fnm.vercel.app/install | bash -s -- --install-dir "$FNM_DIR" --skip-shell && \
+@@ -98,8 +112,29 @@ RUN curl -fsSL https://fnm.vercel.app/install | bash -s -- --install-dir "$FNM_D
+ # Install Oh My Zsh
+ # renovate: datasource=github-releases depName=deluan/zsh-in-docker
+ ARG ZSH_IN_DOCKER_VERSION=1.2.1
+-RUN sh -c "$(curl -fsSL https://github.com/deluan/zsh-in-docker/releases/download/v${ZSH_IN_DOCKER_VERSION}/zsh-in-docker.sh)" -- \
+-  -p git \
+-  -x
++#
++# R5 (review 2026-04-26): zsh-in-docker IS pinned to a tag, so we
++# can verify a SHA-256 before executing. When Renovate bumps
++# ZSH_IN_DOCKER_VERSION, the corresponding ZSH_IN_DOCKER_SHA256 must
++# be bumped too — the build fails at the sha256sum -c step otherwise,
++# which is the intended behavior for an unverified install.
++#
++# To regenerate the hash for a new version:
++#   curl -fsSL "https://github.com/deluan/zsh-in-docker/releases/download/v<NEW>/zsh-in-docker.sh" | sha256sum
++ARG ZSH_IN_DOCKER_SHA256=PLACEHOLDER_REPLACE_WITH_REAL_HASH
++RUN curl -fsSL "https://github.com/deluan/zsh-in-docker/releases/download/v${ZSH_IN_DOCKER_VERSION}/zsh-in-docker.sh" \
++    -o /tmp/zsh-in-docker.sh && \
++  echo "${ZSH_IN_DOCKER_SHA256}  /tmp/zsh-in-docker.sh" | sha256sum -c - && \
++  sh /tmp/zsh-in-docker.sh -- -p git -x && \
++  rm /tmp/zsh-in-docker.sh
+
+ # Copy zsh configuration
+ COPY --chown=vscode:vscode .zshrc /home/vscode/.zshrc.custom
+diff --git a/.devcontainer/devcontainer.json b/.devcontainer/devcontainer.json
+--- a/.devcontainer/devcontainer.json
++++ b/.devcontainer/devcontainer.json
+@@ -12,6 +12,12 @@
+   "features": {
+     "ghcr.io/devcontainers/features/github-cli:1": {}
+   },
++  // R6 (review 2026-04-26): NET_ADMIN and NET_RAW are required by the
++  // bubblewrap-based sandbox that Claude Code uses to network-namespace
++  // commands it runs (see `bubblewrap` install in Dockerfile). Removing
++  // these would break the sandbox's ability to create isolated network
++  // namespaces. If the bubblewrap sandbox is not used in your dev
++  // workflow, drop both lines below.
+   "runArgs": [
+     "--cap-add=NET_ADMIN",
+     "--cap-add=NET_RAW"
