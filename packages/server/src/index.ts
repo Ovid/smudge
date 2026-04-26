@@ -3,9 +3,10 @@ import { initProjectStore, resetProjectStore } from "./stores/project-store.inje
 import { createApp } from "./app";
 import { purgeOldTrash } from "./db/purge";
 import { logger } from "./logger";
+import { DEFAULT_SERVER_PORT } from "@smudge/shared";
 import type { Server } from "node:http";
 
-const PORT = parseInt(process.env.SMUDGE_PORT ?? "3456", 10);
+const PORT = parseInt(process.env.SMUDGE_PORT ?? String(DEFAULT_SERVER_PORT), 10);
 if (Number.isNaN(PORT) || PORT < 1 || PORT > 65535) {
   logger.error({ port: process.env.SMUDGE_PORT }, "Invalid SMUDGE_PORT: must be a number 1-65535");
   process.exit(1);
