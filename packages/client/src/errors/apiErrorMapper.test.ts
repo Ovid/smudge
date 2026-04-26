@@ -480,42 +480,46 @@ describe("SCOPES — trash.restoreChapter", () => {
     const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
     expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterFailed);
   });
-  // S1: a bare 404 (server emits {status: 404, code: "NOT_FOUND"} when the
-  // deleted chapter row can't be located) must surface the same
-  // "already permanently deleted" copy as CHAPTER_PURGED — from the
-  // user's perspective, the trash record being absent is indistinguishable
-  // from purge. Without byStatus this fell through to the generic
+  // S1: a bare 404 (server emits {status: 404, code: "NOT_FOUND"} when
+  // the deleted chapter row can't be located) routes through byStatus.
+  // Without this mapping the bare-404 path fell through to the generic
   // restoreChapterFailed fallback and invited a futile retry.
-  it("404 NOT_FOUND (no matching code) → restoreChapterAlreadyPurged (byStatus)", () => {
+  // S4 (review 2026-04-26): pinned to the softer restoreChapterUnavailable
+  // copy. The bare-404 case is indistinguishable from purge from the
+  // user's POV, but it could also be a stale URL or a row that was
+  // bulk-purged between trash-list fetch and click — the byCode
+  // CHAPTER_PURGED case keeps its dedicated "permanently deleted"
+  // copy below, which is accurate only for that explicit code.
+  it("404 NOT_FOUND (no matching code) → restoreChapterUnavailable (byStatus)", () => {
     const err = new ApiRequestError("not found", 404, "NOT_FOUND");
-    expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterAlreadyPurged);
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterUnavailable);
   });
-  it("404 with no code → restoreChapterAlreadyPurged (byStatus)", () => {
+  it("404 with no code → restoreChapterUnavailable (byStatus)", () => {
     const err = new ApiRequestError("not found", 404);
-    expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterAlreadyPurged);
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterUnavailable);
   });
   // Pin byCode precedence for real-traffic 404+CHAPTER_PURGED: the
   // server emits CHAPTER_PURGED at HTTP 404
   // (`packages/server/src/chapters/chapters.routes.ts:107-113`), so this
-  // combination is exactly what production traffic carries. Both byCode
-  // and byStatus currently resolve to the same string, but the mapper
-  // must resolve byCode first. If a future change re-routes
-  // CHAPTER_PURGED to different copy, this test will fail loudly instead
-  // of silently falling through to the byStatus mapping.
+  // combination is exactly what production traffic carries. byCode now
+  // resolves to a distinct string from byStatus[404] (S4 review
+  // 2026-04-26: byStatus is restoreChapterUnavailable; byCode keeps the
+  // explicit "permanently deleted" copy). If a future regression
+  // dropped the byCode lookup, this test would surface
+  // restoreChapterUnavailable instead of restoreChapterAlreadyPurged
+  // — an immediately visible failure rather than a silent string swap.
   it("404 + CHAPTER_PURGED → byCode wins (precedence pin)", () => {
     const err = new ApiRequestError("purged", 404, "CHAPTER_PURGED");
     expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterAlreadyPurged);
     // Sanity-check the byCode entry is still the one we're matching.
     expect(scope.byCode?.CHAPTER_PURGED).toBe(STRINGS.error.restoreChapterAlreadyPurged);
   });
-  // S4 (review 2026-04-26): pin byCode precedence with a contrived
-  // scope where byCode["CHAPTER_PURGED"] and byStatus[404] resolve to
-  // *different* strings. The pin above asserts the resolved string is
-  // restoreChapterAlreadyPurged — which both branches map to in the
-  // real registry — so it cannot distinguish which branch fired. A
-  // future regression that swaps the byCode/byStatus precedence order
-  // (or drops the byCode lookup entirely) would still satisfy that
-  // assertion. This test fails on either regression.
+  // S4 (review 2026-04-26): the precedence pin above is now naturally
+  // distinguishing because byCode and byStatus map to different strings
+  // in the real registry. This contrived-scope test remains as defense
+  // for the case where a future scope happens to map both to the same
+  // string — it ensures byCode precedence is enforced by the resolver,
+  // not by accidental string equality.
   it("byCode beats byStatus when both match the same status (S4)", () => {
     const contrivedScope = {
       fallback: "fallback",

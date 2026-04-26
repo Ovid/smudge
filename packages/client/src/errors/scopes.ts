@@ -441,13 +441,19 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     },
     // S1 (review 2026-04-26): a bare 404 (server emits {status:404,
     // code:"NOT_FOUND"} when the deleted chapter row can't be located —
-    // e.g. malformed/unknown id) is indistinguishable from purge from the
-    // user's POV: there's no record to restore. byCode resolves first, so
-    // CHAPTER_PURGED/PROJECT_PURGED keep their dedicated copy; this only
-    // catches the otherwise-uncoded 404 path that previously fell through
-    // to the generic restoreChapterFailed fallback and invited a futile
-    // retry.
-    byStatus: { 404: STRINGS.error.restoreChapterAlreadyPurged },
+    // e.g. malformed/unknown id, or bulk-purged between trash-list
+    // fetch and click) routes here. byCode resolves first, so
+    // CHAPTER_PURGED/PROJECT_PURGED keep their dedicated copy.
+    // S4 (review 2026-04-26): use the softer "no longer available"
+    // copy here rather than restoreChapterAlreadyPurged. The latter
+    // claims permanence ("permanently deleted") which is accurate
+    // only for CHAPTER_PURGED — stale-URL and never-existed cases
+    // surface the same bare 404 with no discriminating code, so a
+    // copy that doesn't make a permanence claim is correct across
+    // all of them. Distinct STRINGS key so a future regression that
+    // accidentally swaps the byStatus copy back to the byCode copy
+    // would be caught by the test below.
+    byStatus: { 404: STRINGS.error.restoreChapterUnavailable },
     // S8: RESTORE_READ_FAILURE surfaces possiblyCommitted so
     // useTrashManager doesn't need the inline code check.
     committedCodes: ["RESTORE_READ_FAILURE"],
