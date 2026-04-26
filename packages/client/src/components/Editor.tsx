@@ -167,6 +167,18 @@ export function Editor({
         // the lock setter — wasted round-trips plus warn-spam against
         // the CLAUDE.md "zero warnings" rule. dirtyRef stays true so
         // the cache (CLAUDE.md invariant #3) remains the recovery path.
+        //
+        // S8 (review 2026-04-26): NO automatic re-arm on
+        // false → true transitions. dirtyRef stays true after this
+        // short-circuit, but the debounce only re-schedules from
+        // onUpdate / onBlur. Today every caller of setEditable(true)
+        // either pairs the call with a remount of the Editor (chapter
+        // switch, snapshot restore, project-wide replace) or with an
+        // explicit flushSave/onSave cycle, so the dirty content is
+        // never stranded. If a future flow re-enables an existing
+        // Editor without remount AND without flushing, it must drive a
+        // keystroke or call flushSave to trigger persistence — the
+        // dirtyRef cache covers data-loss in the meantime.
         if (editorInstance.isEditable === false) return;
         const ok = await onSaveRef.current(
           editorInstance.getJSON() as Record<string, unknown>,
