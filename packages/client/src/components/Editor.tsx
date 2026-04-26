@@ -151,12 +151,23 @@ export function Editor({
   const editorInstanceRef = useRef<{ getJSON: () => Record<string, unknown> } | null>(null);
 
   const debouncedSave = useCallback(
-    (editorInstance: { getJSON: () => Record<string, unknown> }) => {
+    (editorInstance: { getJSON: () => Record<string, unknown>; isEditable?: boolean }) => {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
       debounceTimerRef.current = setTimeout(async () => {
         debounceTimerRef.current = null; // Clear before async work so flushSave knows the timer fired
+        // I6 (review 2026-04-26): if the editor was locked between the
+        // onUpdate that scheduled this debounce and the timer firing,
+        // skip the save. The lock pattern (applyReloadFailedLock /
+        // setEditable(false)) fires on terminal-code save failures and
+        // mutation paths that have already committed server-side; in
+        // both cases the queued save would PATCH stale or
+        // already-purged state, deterministically 4xx-ing and re-firing
+        // the lock setter — wasted round-trips plus warn-spam against
+        // the CLAUDE.md "zero warnings" rule. dirtyRef stays true so
+        // the cache (CLAUDE.md invariant #3) remains the recovery path.
+        if (editorInstance.isEditable === false) return;
         const ok = await onSaveRef.current(
           editorInstance.getJSON() as Record<string, unknown>,
           chapterIdRef.current,
