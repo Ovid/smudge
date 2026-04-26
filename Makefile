@@ -18,8 +18,10 @@ all: lint format-check typecheck cover e2e ## Full CI pass: lint, format-check, 
 # either "invalid ELF header" (Linux loading Mach-O) or "slice is not
 # valid mach-o file" (macOS loading ELF), and every server test fails
 # with the same dlopen error. Run a load test up front; if it fails,
-# fetch the right prebuilt binary in place. Cheap on the happy path
-# (single node startup, ~50ms); only does work on cross-platform churn.
+# rebuild better-sqlite3 from source in place so the native binding
+# matches the active platform/runtime. Cheap on the happy path
+# (single node startup, ~50ms); only does substantive work on
+# cross-platform churn.
 #
 # I5 (review 2026-04-26): pre-fix, this target invoked
 # `prebuild-install` to fetch a precompiled .node binary from the URL
