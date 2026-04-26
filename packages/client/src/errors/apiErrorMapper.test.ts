@@ -615,6 +615,49 @@ describe("SCOPES — image.delete extrasFrom", () => {
     expect(resolveError(err, scope).extras).toBeUndefined();
   });
 
+  // S4 (review 2026-04-26 inline): mirror the server's
+  // `z.string().trim().min(1)` constraint. A whitespace-only title
+  // (" ", "\t", "\n", U+00A0 NBSP, etc.) passes the .length > 0 guard
+  // but produces the same malformed
+  // S.deleteBlocked([" "]) → "This image is used in:  . Remove..."
+  // announcement that the empty-string guard above is meant to
+  // prevent. Server schema rejects these on PATCH, so legitimate
+  // traffic never carries them — but the validator is the right
+  // gatekeeper for hostile/malformed envelopes.
+  it("returns undefined when a chapter title is whitespace-only (S4)", () => {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: [{ title: "   " }],
+    });
+    expect(resolveError(err, scope).extras).toBeUndefined();
+  });
+
+  it("returns undefined when a chapter title is tab/newline-only (S4)", () => {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: [{ title: "\t\n  \r" }],
+    });
+    expect(resolveError(err, scope).extras).toBeUndefined();
+  });
+
+  it("returns undefined when one of many titles is whitespace-only (S4)", () => {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: [{ title: "Chapter 1" }, { title: " " }],
+    });
+    expect(resolveError(err, scope).extras).toBeUndefined();
+  });
+
+  it("accepts titles whose interior contains whitespace (S4)", () => {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: [{ title: "Chapter   One" }, { title: " Trim me " }],
+    });
+    // The validator does not normalize; titles with non-empty
+    // trimmed content pass through verbatim. Truncation/normalization
+    // is the server's job — the client only enforces "non-blank".
+    const extras = resolveError(err, scope).extras as {
+      chapters: Array<{ title: string }>;
+    };
+    expect(extras.chapters).toEqual([{ title: "Chapter   One" }, { title: " Trim me " }]);
+  });
+
   // S* (review 2026-04-25 round 3): bound input processing at cap+1
   // entries so a hostile array of N items cannot drive O(N) filter work.
   // Trade-off: invalid entries past index 50 are no longer detected —

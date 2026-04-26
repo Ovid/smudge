@@ -261,6 +261,16 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     // Server schema enforces `z.string().trim().min(1)` on chapter titles,
     // so this only fires for hostile envelopes; the validator is still
     // the right gatekeeper.
+    // S4 (review 2026-04-26 inline): broaden the empty-string guard to
+    // reject whitespace-only titles (`" "`, `"\t\n"`, `" "`, etc.).
+    // The server's `z.string().trim().min(1)` rejects them on PATCH, so
+    // legitimate envelopes never carry them — but a hostile/malformed
+    // envelope of `[{title: " "}]` would otherwise reach
+    // `S.deleteBlocked([" "])` and produce the same malformed
+    // "This image is used in:  . Remove..." announcement that S1 was
+    // added to prevent. Use `trim().length === 0` to mirror the server
+    // schema; titles whose interior contains whitespace pass through
+    // verbatim (no normalization at this layer).
     extrasFrom: (err: ApiRequestError) => {
       const chapters = (err.extras as { chapters?: unknown } | undefined)?.chapters;
       if (!Array.isArray(chapters)) return undefined;
@@ -279,7 +289,7 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
           if (!c || typeof c !== "object") return false;
           const obj = c as Record<string, unknown>;
           if (obj.id !== undefined && typeof obj.id !== "string") return false;
-          if (typeof obj.title !== "string" || obj.title.length === 0) return false;
+          if (typeof obj.title !== "string" || obj.title.trim().length === 0) return false;
           if (obj.trashed !== undefined && typeof obj.trashed !== "boolean") return false;
           return true;
         },
