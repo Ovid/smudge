@@ -34,6 +34,7 @@ export {
 } from "./tiptap-text";
 export type { SearchMatch, SearchOptions } from "./tiptap-text";
 export { generateSlug } from "./slugify";
+export { parsePort } from "./parsePort";
 export {
   UNTITLED_CHAPTER,
   TRASH_RETENTION_DAYS,

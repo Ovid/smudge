@@ -3,12 +3,21 @@ import { initProjectStore, resetProjectStore } from "./stores/project-store.inje
 import { createApp } from "./app";
 import { purgeOldTrash } from "./db/purge";
 import { logger } from "./logger";
-import { DEFAULT_SERVER_PORT } from "@smudge/shared";
+import { DEFAULT_SERVER_PORT, parsePort } from "@smudge/shared";
 import type { Server } from "node:http";
 
-const PORT = parseInt(process.env.SMUDGE_PORT ?? String(DEFAULT_SERVER_PORT), 10);
-if (Number.isNaN(PORT) || PORT < 1 || PORT > 65535) {
-  logger.error({ port: process.env.SMUDGE_PORT }, "Invalid SMUDGE_PORT: must be a number 1-65535");
+let PORT: number;
+try {
+  // S1 (review 2026-04-26): parsePort rejects "3456abc"-style values
+  // that the previous Number.isNaN-only guard accepted (parseInt's
+  // leading-prefix behavior). Shared with the client's vite.config.ts
+  // so a typo'd .env raises the same error on both sides.
+  PORT = parsePort(process.env.SMUDGE_PORT ?? String(DEFAULT_SERVER_PORT), "SMUDGE_PORT");
+} catch (e) {
+  logger.error(
+    { port: process.env.SMUDGE_PORT, err: (e as Error).message },
+    "Invalid SMUDGE_PORT: must be a number 1-65535",
+  );
   process.exit(1);
 }
 const DB_PATH = process.env.DB_PATH;
