@@ -20,8 +20,8 @@ const E2E_SERVER_PORT = "3457";
 const E2E_CLIENT_PORT = "5174";
 
 // Ensure the data dir exists before the server starts. Tests clean up
-// after themselves (each `afterAll` deletes its project), so we don't
-// wipe — a crashed-run cleanup can be done explicitly via
+// after themselves (specs delete their fixtures in `test.afterEach`),
+// so we don't wipe — a crashed-run cleanup can be done explicitly via
 // `make e2e-clean`, which derives the path the same way this file does
 // (R8 review 2026-04-26: previously hardcoded `/tmp/smudge-e2e-data`,
 // which is wrong on macOS where `os.tmpdir()` resolves under
