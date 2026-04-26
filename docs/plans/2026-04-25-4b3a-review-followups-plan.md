@@ -51,21 +51,55 @@ Expected: FAIL — DOMPurify defaults pass `data:` URIs through.
 
 **Step 3: Implement**
 
+> **Note (2026-04-26 follow-up):** the snippet below was the round-1 design.
+> The actually shipped regex requires a full UUID path segment and is paired
+> with an `uponSanitizeAttribute` hook on a private DOMPurify instance — see
+> `packages/client/src/sanitizer.ts` for the canonical implementation. Round-3
+> review tightened the regex from prefix-only (`/^\/api\/images\//i`) after
+> finding that `/api/images/javascript:`, `/api/images/../../etc/passwd`, and
+> `/api/images/?x=javascript:` all passed the looser shape. Future
+> reimplementations should mirror the UUID-shaped form so client and server
+> agree on what counts as an image URL.
+
 `packages/client/src/sanitizer.ts`:
 
 ```ts
-const ALLOWED_URI_REGEXP = /^\/api\/images\//i;
+// Private instance; the addHook below is scoped to it so the package-level
+// singleton (and any other importer of dompurify) stays untouched.
+const purifier = DOMPurify(window);
+
+// UUID-shaped path; rejects path-traversal and query-bearing variants that
+// a prefix-only `/^\/api\/images\//i` would let through.
+const ALLOWED_URI_REGEXP =
+  /^\/api\/images\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[?#].*)?$/i;
+
+// DOMPurify 3.x has a hardcoded DATA_URI_TAGS carve-out for img/audio/video/
+// source/track — it lets `data:` URIs through `<img src>` even when
+// ALLOWED_URI_REGEXP would otherwise reject them. The hook closes that gap.
+purifier.addHook("uponSanitizeAttribute", (_node, data) => {
+  if (data.attrName !== "src" && data.attrName !== "href" && data.attrName !== "xlink:href") {
+    return;
+  }
+  if (!ALLOWED_URI_REGEXP.test(data.attrValue)) {
+    data.keepAttr = false;
+  }
+});
 
 export function sanitizeEditorHtml(html: string): string {
-  return DOMPurify.sanitize(html, {
+  return purifier.sanitize(html, {
     ALLOWED_TAGS,
-    ALLOWED_ATTR,
+    ALLOWED_ATTR: [...ALLOWED_ATTR],
     ALLOWED_URI_REGEXP,
   });
 }
 ```
 
-(Note in the file: regex is intentionally simple; threat model is XSS in the rendered DOM, not server-side path traversal — the server enforces that.)
+(Note in the file: regex enforces a full UUID path so traversal/prefix-only
+variants are rejected at the sanitizer layer; the `uponSanitizeAttribute`
+hook is required because DOMPurify's DATA_URI_TAGS carve-out passes `data:`
+URIs through `<img src>` regardless of ALLOWED_URI_REGEXP. Threat model is
+XSS in the rendered DOM, not server-side path traversal — but the
+UUID-shaped form happens to reject traversal as a side effect.)
 
 **Step 4: Run, expect pass**
 
@@ -238,7 +272,7 @@ Cluster D of Phase 4b.3a (see `docs/plans/2026-04-25-4b3a-review-followups-desig
 Closes [I14], [S21] from the 4b.3 code review (`paad/code-reviews/ovid-unified-error-mapper-2026-04-25-10-32-46-a68afd1.md`).
 
 ## Changes
-- `sanitizer.ts`: pin `ALLOWED_URI_REGEXP` to `/^\/api\/images\//i` — rejects `data:` and `javascript:` URIs that DOMPurify defaults pass through.
+- `sanitizer.ts`: require `ALLOWED_URI_REGEXP` to match full `/api/images/{uuid}` paths and add an `uponSanitizeAttribute` hook on a private DOMPurify instance — rejects `data:`, `javascript:`, traversal (`/api/images/../etc/passwd`), and query-bearing variants that DOMPurify defaults pass through.
 - `scopes.ts`: bound `image.delete`'s `extrasFrom` chapters at 50 entries / 200 chars per title.
 
 ## Test plan
