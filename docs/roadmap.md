@@ -840,7 +840,7 @@ Make the e2e harness bind to test-only ports and a test-only database so an e2e 
 
 ### Why Now
 
-`packages/client/vite.config.ts` and `packages/server/src/index.ts` validate `SMUDGE_PORT` / `SMUDGE_CLIENT_PORT` via the shared `parsePort` utility, with the explicit rationale that the e2e harness would set these to test-only ports for isolation. But `playwright.config.ts` hardcodes `port: 3456` / `port: 5173`, passes no `env`, and uses `reuseExistingServer: true` — so the env-var contract has no consumer and the documented isolation rationale is currently a forward-looking TODO rather than a current property of the system. Identified as OOSI1 in the `ovid/shared-port-validation` agentic review (2026-04-26).
+Once the `ovid/shared-port-validation` branch lands, `packages/server/src/index.ts` will validate `SMUDGE_PORT` via the shared `parsePort` utility (`@smudge/shared`) and `packages/client/vite.config.ts` will validate `SMUDGE_PORT` / `SMUDGE_CLIENT_PORT` via an inline mirror of the same rules (vite's config resolver runs under bare Node ESM and cannot import `@smudge/shared`; the parity is enforced for the default port literal by `packages/shared/src/__tests__/vite-config-default-port.test.ts`). The explicit rationale on both sides is that the e2e harness would set these env vars to test-only ports for isolation. But `playwright.config.ts` hardcodes `port: 3456` / `port: 5173`, passes no `env`, and uses `reuseExistingServer: true` — so the env-var contract will have no consumer once the precursor branch merges, and the documented isolation rationale is forward-looking until this phase wires it up. Identified as OOSI1 in the `ovid/shared-port-validation` agentic review (2026-04-26).
 
 ### Scope
 
