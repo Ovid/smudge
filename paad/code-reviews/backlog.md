@@ -53,7 +53,19 @@
 - **Confidence:** Medium
 - **Found by:** Contract & Integration (`general-purpose (claude-opus-4-7)`)
 - **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
-- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
+- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `20f2616`
+- **Severity:** Suggestion
+
+## `7e2a9d41` — `Editor.flushSave` does not honor `setEditable(false)` lock
+- **File (at first sighting):** `packages/client/src/components/Editor.tsx:333`
+- **Symbol:** `flushSave` (exposed via `editorRef.current.flushSave`)
+- **Bug class:** Logic
+- **Description:** The I6 fix on the `ovid/miscellaneous-fixes` branch added an `editorInstance.isEditable === false` short-circuit inside `debouncedSave`. The same rationale (locked editor → save would deterministically 4xx and re-fire the lock setter) applies whenever any caller triggers `flushSave` while the editor is locked, but `flushSave` itself reads `editor.getJSON()` and calls `onSaveRef.current(...)` unconditionally. Today every live caller (Ctrl+S handler, `useEditorMutation`) gates externally via `editorLockedMessageRef`/`isEditorLocked()`, so no live path can reach this — pre-existing dead-defense gap, not exposed by this branch.
+- **Suggested fix:** Add `if (!editor.isEditable) return Promise.resolve(true);` at the top of `flushSave` so the invariant is enforced at the Editor level (defense-in-depth). Add a regression test mirroring the I6 test in `Editor.test.tsx`.
+- **Confidence:** Medium
+- **Found by:** Logic & Correctness (`general-purpose (claude-opus-4-7)`)
+- **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `20f2616`
+- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `20f2616`
 - **Severity:** Suggestion
 
 ## `b09b4ec5` — `uv tool install ast-grep-cli` is unpinned
