@@ -47,6 +47,17 @@ import tailwindcss from "@tailwindcss/vite";
 // prefix), defeating the fail-fast intent. Keep this implementation
 // in lockstep with shared/parsePort.ts; the test suite over there
 // is the spec for both.
+// S3 (review 2026-04-26 f346047): name the default explicitly so the
+// proxy-target literal is not a bare "3456" buried in the call site.
+// Must equal `DEFAULT_SERVER_PORT` in `packages/shared/src/constants.ts`
+// — drift is invisible at runtime (the dev workflow's client→server
+// proxy and the server's listen call would silently disagree), so
+// any change to that constant must be mirrored here. The literal is
+// duplicated rather than imported because vite.config.ts loads under
+// bare Node ESM, which cannot resolve @smudge/shared's extensionless
+// re-export chain (see comment block above).
+const DEFAULT_SERVER_PORT_VITE = "3456";
+
 function parsePort(envName: "SMUDGE_CLIENT_PORT" | "SMUDGE_PORT", fallback: string): number {
   const raw = process.env[envName] ?? fallback;
   const trimmed = raw.trim();
@@ -67,7 +78,7 @@ function parsePort(envName: "SMUDGE_CLIENT_PORT" | "SMUDGE_PORT", fallback: stri
   return port;
 }
 const clientPort = parsePort("SMUDGE_CLIENT_PORT", "5173");
-const serverPort = parsePort("SMUDGE_PORT", "3456");
+const serverPort = parsePort("SMUDGE_PORT", DEFAULT_SERVER_PORT_VITE);
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
