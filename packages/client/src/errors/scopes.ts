@@ -152,6 +152,13 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     fallback: STRINGS.error.reorderFailed,
     network: STRINGS.error.reorderFailedNetwork,
     committed: STRINGS.error.reorderResponseUnreadable,
+    // I1 (Phase 4b.3a): server emits 400 REORDER_MISMATCH when the chapter
+    // ID list submitted to PUT /projects/:id/chapters/order doesn't match
+    // the current set (count or values — typical cause is a stale list
+    // racing a concurrent create/delete). Without a byCode entry the user
+    // saw the generic reorderFailed copy that invited retry of the same
+    // stale list; the mapped copy tells them to refresh.
+    byCode: { REORDER_MISMATCH: STRINGS.error.reorderMismatch },
   },
   "chapter.updateStatus": {
     fallback: STRINGS.error.statusChangeFailed,
