@@ -1598,16 +1598,23 @@ export function EditorPage() {
         await editorRef.current?.flushSave();
       } catch (err) {
         console.warn("Ctrl+S: flushSave threw", err);
-        // I1 (review 2026-04-26): route through mapApiError so a NETWORK
-        // ApiRequestError surfaces saveFailedNetwork (parallels the
-        // auto-save retry-exhaustion path at useProjectEditor.ts and the
-        // CLAUDE.md "all user-visible API error messages route through
-        // mapApiError" invariant). For a non-ApiRequestError sync TipTap
-        // throw — the only reliably-reproducible case here, since the
-        // editor's flushSave .catch swallows promise rejections — the
-        // mapper falls through to scope.fallback = saveFailed, matching
-        // the prior literal. The ?? STRINGS.editor.saveFailed defends
-        // against ABORTED-only (mapApiError returns message: null).
+        // I1 (review 2026-04-26, follow-up): the only reachable case here
+        // is a synchronous TipTap throw (e.g. editor.getJSON() during a
+        // mid-remount), which is NOT an ApiRequestError. Editor.flushSave's
+        // .catch (Editor.tsx:334) swallows every promise rejection and
+        // resolves false — the surrounding try/catch never sees an
+        // ApiRequestError, NETWORK or otherwise. Routing through
+        // mapApiError is therefore parity-with-prior-literal:
+        // non-ApiRequestError short-circuits to scope.fallback =
+        // STRINGS.editor.saveFailed, matching what the inline literal
+        // produced before this catch existed. Routing kept (rather than
+        // re-inlining the literal) for architectural consistency with
+        // the CLAUDE.md "user-visible API errors go through mapApiError"
+        // invariant — and to be future-proof if Editor.flushSave is ever
+        // changed to re-throw, at which point this catch would meaningfully
+        // surface saveFailedNetwork / byStatus / byCode copy. The
+        // ?? STRINGS.editor.saveFailed defends against ABORTED-only
+        // (mapApiError returns message: null).
         setActionError(mapApiError(err, "chapter.save").message ?? STRINGS.editor.saveFailed);
       }
     },
