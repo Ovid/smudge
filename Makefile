@@ -34,7 +34,7 @@ ensure-native: ## Ensure better-sqlite3 native binding matches current platform 
 	@node -e "new (require('better-sqlite3'))(':memory:').close()" >/dev/null 2>&1 || { \
 		NODE_VER=$$(node -p 'process.versions.node'); \
 		PLATFORM=$$(node -p 'process.platform + "/" + process.arch'); \
-		echo "→ better-sqlite3 binary won'\''t load (dlopen failed); reinstalling for Node $$NODE_VER on $$PLATFORM..."; \
+		echo "→ better-sqlite3 binary won't load (dlopen failed); reinstalling for Node $$NODE_VER on $$PLATFORM..."; \
 		(cd node_modules/better-sqlite3 && npx --no-install prebuild-install --force --target=$$NODE_VER --runtime=node) || { \
 			echo ""; \
 			echo "prebuild-install failed. Possible causes:"; \
