@@ -17,6 +17,22 @@ import type { ImageRow } from "./images.types";
 // or root-relative (/api/images/<uuid>) — accept both via a host-prefix
 // alternation, and require that the UUID be immediately followed by a path
 // terminator so a UUID inside a query-string can't match.
+//
+// S1 (review 2026-04-25): wider than the client sanitizer's
+// ALLOWED_URI_REGEXP in `packages/client/src/sanitizer.ts`, which
+// accepts only the relative form. The asymmetry is intentional — the
+// reference scanner walks user-pasted content (which can contain
+// either form) and must increment refcounts conservatively, while the
+// sanitizer enforces a fail-closed XSS posture against the rendered
+// DOM. Absolute URLs from any host are counted here on purpose
+// (`https?://[^/]+` accepts any host, not just same-origin) as a
+// conservative delete-blocking measure: if a pasted URL points at
+// `evil.example/api/images/<uuid>` and the UUID happens to match a
+// real Smudge image, blocking the delete is the safer failure mode
+// than silently decrementing on save. If that ever causes an
+// unacceptable "broken `<img>` survives delete-block" symptom (writer
+// emits an absolute URL the sanitizer strips while the scanner counts
+// it), revisit both regexes together.
 const IMAGE_SRC_RE = new RegExp(
   `^(?:https?://[^/]+)?/api/images/(${UUID_PATTERN})(?:[/?#]|$)`,
   "i",

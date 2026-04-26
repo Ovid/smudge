@@ -23,27 +23,22 @@ const TIPTAP_CONTENT = {
 };
 
 async function createTestProject(request: APIRequestContext): Promise<TestProject> {
+  // S6 (review 2026-04-25): Date.now() millisecond resolution can collide
+  // under Playwright sharding; append crypto.randomUUID() for hard uniqueness.
   const res = await request.post("/api/projects", {
-    data: { title: `Export Test ${Date.now()}`, mode: "fiction" },
+    data: { title: `Export Test ${Date.now()}-${crypto.randomUUID()}`, mode: "fiction" },
   });
   expect(res.ok()).toBeTruthy();
   return res.json();
 }
 
-async function addChapter(
-  request: APIRequestContext,
-  slug: string,
-): Promise<TestChapter> {
+async function addChapter(request: APIRequestContext, slug: string): Promise<TestChapter> {
   const res = await request.post(`/api/projects/${slug}/chapters`);
   expect(res.ok()).toBeTruthy();
   return res.json();
 }
 
-async function setChapterContent(
-  request: APIRequestContext,
-  chapterId: string,
-  content: object,
-) {
+async function setChapterContent(request: APIRequestContext, chapterId: string, content: object) {
   const res = await request.patch(`/api/chapters/${chapterId}`, {
     data: { content },
   });
@@ -55,11 +50,18 @@ async function deleteProject(request: APIRequestContext, slug: string) {
 }
 
 test.describe("Export E2e Tests", () => {
+  // Track creation explicitly so afterEach skips deleteProject when
+  // beforeEach fails before the project is assigned (or fails after
+  // creation but during the chapter-fetch / content-set steps below).
+  // The flag flips ON immediately after createTestProject so cleanup
+  // still runs if a later setup step throws.
   let project: TestProject;
+  let projectCreated = false;
   let firstChapter: TestChapter;
 
   test.beforeEach(async ({ request }) => {
     project = await createTestProject(request);
+    projectCreated = true;
     // The project comes with one default chapter; fetch it from the project detail
     const projectRes = await request.get(`/api/projects/${project.slug}`);
     expect(projectRes.ok()).toBeTruthy();
@@ -71,7 +73,10 @@ test.describe("Export E2e Tests", () => {
   });
 
   test.afterEach(async ({ request }) => {
-    await deleteProject(request, project.slug);
+    if (projectCreated) {
+      projectCreated = false;
+      await deleteProject(request, project.slug);
+    }
   });
 
   test("exports manuscript as HTML via dialog", async ({ page }) => {
@@ -208,9 +213,7 @@ test.describe("Export E2e Tests", () => {
 
     // Exclude color-contrast: Tailwind v4 uses oklab() color space which aXe
     // cannot parse, producing false-positive contrast failures.
-    const results = await new AxeBuilder({ page })
-      .disableRules(["color-contrast"])
-      .analyze();
+    const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
     expect(results.violations).toEqual([]);
   });
 });

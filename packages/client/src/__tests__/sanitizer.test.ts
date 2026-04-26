@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { sanitizeEditorHtml } from "../sanitizer";
+import DOMPurify from "dompurify";
+import { sanitizeEditorHtml, ALLOWED_ATTR } from "../sanitizer";
 
 // I18 (review 2026-04-24): sanitizer is the app's defense-in-depth
 // against hostile backup / snapshot / server payloads. Without
@@ -29,6 +30,7 @@ describe("sanitizeEditorHtml", () => {
   it("strips javascript: URIs from img src", () => {
     const input = `<img src="javascript:alert(1)" alt="x">`;
     const out = sanitizeEditorHtml(input);
+    expect(out).not.toMatch(/<img[^>]*\bsrc=/i);
     expect(out).not.toMatch(/javascript:/i);
   });
 
@@ -76,11 +78,58 @@ describe("sanitizeEditorHtml", () => {
     }
   });
 
+  // Round 3 (review 2026-04-25): use a real UUID-shaped path. The
+  // sanitizer's ALLOWED_URI_REGEXP requires a UUID after /api/images/
+  // (matches the server's IMAGE_SRC_RE), so a synthetic non-UUID id
+  // like "abc" is rejected. Real Smudge image ids come from
+  // crypto.randomUUID() and always have this shape.
+  const SAMPLE_IMAGE_UUID = "00000000-0000-0000-0000-000000000001";
   it("preserves img src + alt (used by the image extension)", () => {
-    const input = `<img src="/api/images/abc" alt="a cat">`;
+    const input = `<img src="/api/images/${SAMPLE_IMAGE_UUID}" alt="a cat">`;
     const out = sanitizeEditorHtml(input);
-    expect(out).toContain(`src="/api/images/abc"`);
+    expect(out).toContain(`src="/api/images/${SAMPLE_IMAGE_UUID}"`);
     expect(out).toContain(`alt="a cat"`);
+  });
+
+  // Round 3 (review 2026-04-25): the previous regex /^\/api\/images\//i
+  // validated only the prefix, so values like /api/images/javascript:,
+  // /api/images/../../etc/passwd, and /api/images/?x=javascript: passed
+  // through. <img src> cannot execute JS and <a> isn't in ALLOWED_TAGS,
+  // so XSS is unreachable today — but the gap is latent. Tighten to
+  // require a UUID after /api/images/, mirroring the server's
+  // IMAGE_SRC_RE so client and server agree on what counts as an
+  // image URL.
+  it("rejects /api/images/javascript: (URI shape, not just prefix)", () => {
+    const input = `<img src="/api/images/javascript:alert(1)" alt="x">`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).not.toMatch(/<img[^>]*\bsrc=/i);
+    expect(out).not.toContain("javascript:");
+  });
+
+  it("rejects /api/images/ path traversal", () => {
+    const input = `<img src="/api/images/../../etc/passwd" alt="x">`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).not.toMatch(/<img[^>]*\bsrc=/i);
+    expect(out).not.toContain("../");
+  });
+
+  it("rejects /api/images/?query=javascript:", () => {
+    const input = `<img src="/api/images/?x=javascript:alert(1)" alt="x">`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).not.toMatch(/<img[^>]*\bsrc=/i);
+    expect(out).not.toContain("javascript:");
+  });
+
+  it("rejects /api/images/<non-uuid>", () => {
+    const input = `<img src="/api/images/not-a-uuid" alt="x">`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).not.toMatch(/<img[^>]*\bsrc=/i);
+  });
+
+  it("preserves /api/images/<uuid> followed by ?cache=v (server append)", () => {
+    const input = `<img src="/api/images/${SAMPLE_IMAGE_UUID}?v=1" alt="x">`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).toContain(`src="/api/images/${SAMPLE_IMAGE_UUID}?v=1"`);
   });
 
   it("drops disallowed attributes (class, style, id, title)", () => {
@@ -103,5 +152,97 @@ describe("sanitizeEditorHtml", () => {
 
   it("handles empty string without throwing", () => {
     expect(sanitizeEditorHtml("")).toBe("");
+  });
+
+  // S5 (review 2026-04-25): the regex `not.toMatch(/<img[^>]*\bsrc=/i)` is
+  // strictly stronger than substring assertions because it also catches
+  // partially-stripped attributes (e.g. an empty `src=""` survivor or a
+  // residual `src` with a different hostile value). Mirrors the e2e
+  // assertion in sanitizer-snapshot-blob.spec.ts.
+  it("rejects data: URIs in img src (XSS vector — I14)", () => {
+    const malicious = `<img src="data:image/svg+xml;base64,PHN2Zy8+" alt="x">`;
+    const out = sanitizeEditorHtml(malicious);
+    expect(out).not.toMatch(/<img[^>]*\bsrc=/i);
+    expect(out).not.toContain("data:");
+  });
+
+  it("rejects http(s) URIs not under /api/images/ in img src (I14)", () => {
+    const input = `<img src="http://example.com/x.png" alt="x">`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).not.toMatch(/<img[^>]*\bsrc=/i);
+    expect(out).not.toContain("example.com");
+  });
+
+  // I2 (review 2026-04-25): pin the implicit-allowlist contract for the
+  // mXSS-relevant <svg>/<math> namespaces and the media tags whose src/srcset
+  // would otherwise hit the new URI hook. These tags are not in ALLOWED_TAGS,
+  // so DOMPurify strips them today — but a future config tweak (e.g. switching
+  // to FORBID_TAGS, widening to include media) would silently lift the
+  // restriction with no failing test. These cases lock down the contract.
+  it("strips <svg> tags (mXSS namespace)", () => {
+    const input = `<p>before</p><svg><script>alert(1)</script></svg><p>after</p>`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).not.toContain("<svg");
+    expect(out).not.toContain("alert(1)");
+  });
+
+  it("strips <math> tags (mXSS namespace)", () => {
+    const input = `<p>before</p><math><mtext></mtext></math><p>after</p>`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).not.toContain("<math");
+    expect(out).not.toContain("<mtext");
+  });
+
+  it("strips media tags <audio>/<video>/<source>/<track>", () => {
+    const input =
+      `<audio src="/api/images/a"></audio>` +
+      `<video src="/api/images/v"><source src="/api/images/s"><track src="/api/images/t"></video>`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).not.toContain("<audio");
+    expect(out).not.toContain("<video");
+    expect(out).not.toContain("<source");
+    expect(out).not.toContain("<track");
+  });
+
+  it("strips <base> (would otherwise rebase relative URIs)", () => {
+    const input = `<base href="https://evil.example/"><p>after</p>`;
+    const out = sanitizeEditorHtml(input);
+    expect(out).not.toContain("<base");
+    expect(out).not.toContain("evil.example");
+  });
+
+  // S3 (review 2026-04-25): pin ALLOWED_ATTR's exact shape so a future
+  // widening (e.g. adding `srcset`, `href`, `title`) is caught at test
+  // time. The URI-validation hook in sanitizer.ts only inspects src,
+  // href, and xlink:href — adding any other URI-bearing attribute to
+  // ALLOWED_ATTR would let a hostile URI through without going through
+  // ALLOWED_URI_REGEXP. This test fails if ALLOWED_ATTR drifts from the
+  // declared contract; intentional widening must update both.
+  it("pins ALLOWED_ATTR to exactly ['src', 'alt'] (S3)", () => {
+    expect(ALLOWED_ATTR).toEqual(["src", "alt"]);
+  });
+
+  // S3 (review 2026-04-25 round 3): freeze ALLOWED_ATTR at runtime so an
+  // accidental mutation by another importer or a test cannot silently
+  // widen the allowlist (e.g. `ALLOWED_ATTR.push("srcset")` from
+  // somewhere else in the bundle would otherwise quietly let a URI-
+  // bearing attribute through that the URI-validation hook does not
+  // inspect). The export type uses `readonly string[]` to catch the
+  // mutation at compile time; this test catches it at runtime.
+  it("freezes ALLOWED_ATTR (S3 round 3)", () => {
+    expect(Object.isFrozen(ALLOWED_ATTR)).toBe(true);
+  });
+
+  // S2 (review 2026-04-25): the URI-validation hook must live on a private
+  // DOMPurify instance, not on the package-level singleton. Importing
+  // DOMPurify directly elsewhere (or in a test, or under Vite HMR) must
+  // see the unmodified default behavior — including DOMPurify 3.x's
+  // DATA_URI_TAGS carve-out that lets data: URIs through <img src>. If
+  // sanitizer.ts mutates the singleton via addHook, this test fails
+  // because the directly-imported DOMPurify also strips data: URIs.
+  it("does not pollute the global DOMPurify singleton (S2)", () => {
+    const malicious = `<img src="data:image/svg+xml;base64,PHN2Zy8+" alt="x">`;
+    const out = DOMPurify.sanitize(malicious);
+    expect(out).toContain("data:image/svg+xml");
   });
 });

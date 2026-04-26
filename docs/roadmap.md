@@ -30,8 +30,8 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b | Snapshots & Find-and-Replace | Manual/auto snapshots, project-wide search and replace | Done |
 | 4b.1 | Editor Orchestration Helper | Extract shared save-flush/markClean/setEditable/reload shape into one helper | Done |
 | 4b.2 | Abortable Sequence Hook | Unify ad-hoc seq-refs into a single `useAbortableSequence()` primitive | Done |
-| 4b.3 | Unified API Error Mapper | Single module mapping API errors to UI strings; no raw server text in UI | In Progress |
-| 4b.3a | 4b.3 Review Follow-ups | Validated-but-unfixed items from the 4b.3 code review (scope coverage, abort discipline, sanitizer, recovery completeness) | Planned |
+| 4b.3 | Unified API Error Mapper | Single module mapping API errors to UI strings; no raw server text in UI | Done |
+| 4b.3a | 4b.3 Review Follow-ups | Validated-but-unfixed items from the 4b.3 code review (scope coverage, abort discipline, sanitizer, recovery completeness) | In Progress |
 | 4b.4 | Raw-Strings ESLint Rule | Enforce strings.ts externalization via lint; fix existing violations | Planned |
 | 4b.5 | Editor State Machine | Unify `editable`/`locked`/`busy` editor state into one machine; add `committed_but_unreloaded` mutation stage for ambiguous server responses | Planned |
 | 4c | Notes, Tags & Outtakes | Inline notes, paragraph tags, scratchpad for cut text | Planned |
@@ -666,6 +666,7 @@ One module responsible for all API-error-to-UI-string mapping in the client. All
 ---
 
 ## Phase 4b.3a: 4b.3 Review Follow-ups
+<!-- plan: 2026-04-25-4b3a-review-followups-design.md -->
 
 ### Goal
 
@@ -735,8 +736,13 @@ Each cluster is a separate PR per the CLAUDE.md one-feature rule. The phase clos
 ### Out of Scope
 
 - Phase 4b.4 work (raw-strings ESLint rule). 4b.4 may land in parallel; clusters above do not block it and it does not block them.
+- Phase 4b.5 work (Editor State Machine).
 - New API error codes or HTTP status codes (allowlist stays per CLAUDE.md §API Design).
-- Behavior changes visible to the user beyond fixing the misleading copy in [I1]/[I2].
+- Behavior changes visible to the user beyond:
+  - Fixing misleading copy ([I1], [I2], [S1], [S16]).
+  - Defense-in-depth rejection of malicious image src ([I14]).
+  - Graceful navigation on stale-project state ([S11]) — explicitly logged as consistency with the existing `EditorPage:1552` convention.
+  - Surfacing previously-silent failures ([I5], [S10]).
 
 ### Definition of Done
 
