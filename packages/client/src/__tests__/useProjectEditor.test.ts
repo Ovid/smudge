@@ -1423,6 +1423,35 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  // I2 (review 2026-04-26): the chapter.save 404 NOT_FOUND mapping (added
+  // earlier in this branch) sets the "This chapter no longer exists"
+  // banner via byStatus[404]. Without locking the editor too, the user
+  // could keep typing into a chapter the server has already deleted —
+  // the next debounced auto-save deterministically 404s, the banner
+  // blinks, and the loop continues until reload. CLAUDE.md save-pipeline
+  // invariant #2 pairs setEditable(false) with editorLockedMessage; this
+  // test pins that pairing for NOT_FOUND.
+  it("handleSave fires onRequestEditorLock on 404 NOT_FOUND (I2)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("chapter gone", 404, "NOT_FOUND"),
+    );
+    const onRequestEditorLock = vi.fn();
+
+    const { result } = renderHook(() => useProjectEditor("test-project", { onRequestEditorLock }));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(onRequestEditorLock).toHaveBeenCalledWith(STRINGS.editor.saveFailedChapterGone);
+    expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedChapterGone);
+    // No retry — chapter is gone; retrying would deterministically 404 again.
+    expect(api.chapters.update).toHaveBeenCalledTimes(1);
+    warnSpy.mockRestore();
+  });
+
   it("handleSave breaks immediately on 500 UPDATE_READ_FAILURE (I5)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.update).mockRejectedValue(
