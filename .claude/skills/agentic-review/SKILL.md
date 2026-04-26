@@ -13,7 +13,11 @@ Multi-agent bug-hunting review of the current branch against main. Dispatches sp
 
 ## Definitions
 
-**In-scope** for the current branch means: this branch's changes either *caused* the bug or *worsened* it (made it more likely to fire, expanded its blast radius, removed a guard that was masking it, added a new caller into broken code, etc.). Pre-existing bugs that the branch does not reach differently are **out-of-scope**, even when they live in files the branch touches.
+**In-scope** for the current branch means: this branch's changes either *caused* the bug to be reachable in the running code, or *worsened* it (made it more likely to fire, expanded its blast radius, removed a guard that was masking it, added a new caller into broken code, etc.). The bug is reachable today via at least one live code path.
+
+**Latent** means: the branch *introduced or modified* the lines, but the bug is not currently reachable through any live code path — every current caller observes correct behavior. The risk is future-conditional: a defense-in-depth gap in a newly-introduced pattern, a load-bearing assumption that will fail open if a future code path forgets to honor it, or a brittle pattern that will trip the next time someone extends it. Latent findings live with the branch (the branch authored them) but do not block merge; they are recorded inline in the report so the next change in this area is informed.
+
+**Out-of-scope** means: the bug is purely pre-existing — the branch does not introduce, modify, or reach it differently — even when it lives in files the branch touches.
 
 ## Mechanism
 
@@ -22,6 +26,7 @@ Classification is **hybrid blame + reasoning**:
 1. **Blame default.** Every finding's `file:line` is checked against a pre-computed touched-lines map (see Phase 1). If the line falls within a touched range → tentatively **in-scope**. Otherwise → tentatively **out-of-scope**.
 2. **Reasoning promotion.** For tentatively out-of-scope findings only, the verifier asks: "Does this branch's diff cause this bug to fire when it didn't before, or measurably increase its probability/blast radius?" If yes → promote to **in-scope**. If the bug is purely pre-existing and the branch doesn't reach it differently → confirmed **out-of-scope**.
 3. **Cosmetic-touch demotion.** A finding on touched lines defaults to in-scope, but the verifier may demote to out-of-scope when **both** of the following hold: (a) the branch's edits to those specific lines are purely cosmetic (whitespace, comment additions, line splits, identifier renames that don't change semantics), and (b) the bug itself is purely pre-existing — the cosmetic touch did not introduce, expose, or alter the bug's behavior. If either condition fails (semantic edit on the line, or the touch interacts with the bug), the finding stays in-scope.
+4. **Latent classification.** A finding on touched lines is classified as **Latent** when *all* of the following hold: (a) the anchor line is in the touched-lines map, (b) the bug is not currently reachable via any live code path (every existing caller observes correct behavior), and (c) reachability depends on hypothetical future code — a forgotten sanitize call, a future feature that adopts the brittle pattern, or a code path that doesn't yet exist. Latent is for *defense-in-depth gaps in newly-introduced patterns* and *load-bearing assumptions made by this branch*, not for "the branch could have made this safer." If a current code path triggers the bug, the finding is in-scope, not latent. Latent findings are reported inline but do not block merge and do not enter the OOS backlog (the branch authored them; the report is the record).
 
 Out-of-scope findings are **semantically deduped** by the verifier against a **file-filtered slice** of `paad/code-reviews/backlog.md`. Before invoking the verifier, the orchestrator pre-filters the backlog to entries whose `File (at first sighting)` path matches a file in the current review's manifest (changed + adjacent). Match → emit an update directive (`{id, last_seen, branch, sha}`). No match → mint a new entry with a stable 8-char hex ID hashed from `file + symbol + bug-class + first-seen-iso-date`.
 
@@ -33,9 +38,11 @@ digraph classification {
   "Anchor line in touched-lines map?" [shape=diamond];
   "Branch causes/worsens this bug?" [shape=diamond];
   "Touch is purely cosmetic AND bug is purely pre-existing?" [shape=diamond];
+  "Currently reachable via any live caller?" [shape=diamond];
   "Match in pre-filtered backlog?" [shape=diamond];
 
   "In-scope" [shape=box, style=bold];
+  "Latent" [shape=box, style=bold];
   "Out-of-scope" [shape=box, style=bold];
   "Update last_seen on existing entry" [shape=box];
   "Mint new backlog entry" [shape=box];
@@ -44,7 +51,9 @@ digraph classification {
   "Anchor line in touched-lines map?" -> "Touch is purely cosmetic AND bug is purely pre-existing?" [label="yes"];
   "Anchor line in touched-lines map?" -> "Branch causes/worsens this bug?" [label="no"];
   "Touch is purely cosmetic AND bug is purely pre-existing?" -> "Out-of-scope" [label="yes (demote)"];
-  "Touch is purely cosmetic AND bug is purely pre-existing?" -> "In-scope" [label="no"];
+  "Touch is purely cosmetic AND bug is purely pre-existing?" -> "Currently reachable via any live caller?" [label="no"];
+  "Currently reachable via any live caller?" -> "In-scope" [label="yes"];
+  "Currently reachable via any live caller?" -> "Latent" [label="no — future-conditional"];
   "Branch causes/worsens this bug?" -> "In-scope" [label="yes (promote)"];
   "Branch causes/worsens this bug?" -> "Out-of-scope" [label="no"];
   "Out-of-scope" -> "Match in pre-filtered backlog?";
@@ -159,14 +168,14 @@ After all specialists complete, dispatch a single **Verifier** agent with all fi
 3. Drops false positives and findings below 60% confidence
 4. Assigns severity: **Critical** / **Important** / **Suggestion**
 5. Deduplicates findings flagged by multiple specialists (note which specialists agreed)
-6. **Classifies** each surviving finding as `in-scope` or `out-of-scope` using the rules in the Mechanism section. Inputs required: the touched-lines map (from Phase 1) and the diff. Apply blame default → reasoning promotion → cosmetic-touch demotion in that order.
-7. **Backlog dedup** for out-of-scope findings only. Inputs required: a **pre-filtered slice** of `paad/code-reviews/backlog.md` containing only entries whose `File (at first sighting)` path matches a file in the manifest. For each out-of-scope finding:
+6. **Classifies** each surviving finding as `in-scope`, `latent`, or `out-of-scope` using the rules in the Mechanism section. Inputs required: the touched-lines map (from Phase 1) and the diff. Apply blame default → reasoning promotion → cosmetic-touch demotion → latent classification in that order.
+7. **Backlog dedup** for out-of-scope findings only (latent and in-scope findings do NOT enter the backlog — the branch authored them). Inputs required: a **pre-filtered slice** of `paad/code-reviews/backlog.md` containing only entries whose `File (at first sighting)` path matches a file in the manifest. For each out-of-scope finding:
    - **Match** → emit `{id, last_seen, branch, sha}` update directive.
    - **No match** → mint a new entry with a fresh 8-char hex ID hashed from `file + symbol + bug-class + first-seen-iso-date`.
 
-Verifier output is two lists: in-scope findings (with severity) and out-of-scope findings (with severity, backlog ID, and `new` vs `re-seen` flag).
+Verifier output is three lists: in-scope findings (with severity), latent findings (with severity — informational, not merge-blocking), and out-of-scope findings (with severity, backlog ID, and `new` vs `re-seen` flag).
 
-**Verifier prompt must include:** "You are verifying bug reports. For each finding, read the actual code and confirm the bug exists. Be skeptical — reject anything you cannot confirm by reading the code. A finding reported by multiple specialists is more likely real. Then classify each surviving finding as in-scope or out-of-scope per the Definitions and Mechanism sections, and for out-of-scope findings, dedup against the provided backlog slice."
+**Verifier prompt must include:** "You are verifying bug reports. For each finding, read the actual code and confirm the bug exists. Be skeptical — reject anything you cannot confirm by reading the code. A finding reported by multiple specialists is more likely real. Then classify each surviving finding as in-scope, latent, or out-of-scope per the Definitions and Mechanism sections. For latent findings, your report MUST include: (a) which current code path keeps the bug unreachable today, (b) what hypothetical future change would make it reachable, (c) a safe-by-construction hardening (e.g. lift validation into a shared utility, add an ESLint rule, narrow a type). For out-of-scope findings, dedup against the provided backlog slice."
 
 ## Phase 4: Report
 
@@ -178,6 +187,7 @@ Create the `paad/code-reviews/` directory if it doesn't exist.
 
 - If there are zero out-of-scope findings of any tier, omit the entire `## Out of Scope` section *and* the handoff block. Review Metadata still records `Out-of-scope findings: 0`.
 - If there are zero in-scope findings of a tier but out-of-scope findings exist, write each empty in-scope tier section as `None found.` (existing convention) and write the Out of Scope section normally.
+- If there are zero latent findings, omit the entire `## Latent` section. Review Metadata still records `Latent findings: 0`.
 
 **Failure handling:**
 
@@ -217,6 +227,24 @@ Create the `paad/code-reviews/` directory if it doesn't exist.
 ## Suggestions
 
 One-line entries only. If empty, follow the Empty-section rules above.
+
+## Latent
+
+> Findings on lines this branch authored where the bug is not currently reachable
+> via any live code path, but the pattern itself is brittle or load-bearing for
+> future work. **Not a merge-blocker** — record so the next change in this area
+> is informed. Does not enter the OOS backlog (the branch authored these).
+
+### [LAT1] <title>
+- **File:** `path/to/file:line`
+- **Bug:** What's wrong
+- **Why latent:** Which current code path keeps this unreachable today
+- **What would make it active:** Hypothetical future change that would trip it
+- **Suggested hardening:** Safe-by-construction fix (lift validator into shared, add ESLint rule, narrow type, etc.)
+- **Confidence:** High/Medium
+- **Found by:** <specialist> (`<model>`)
+
+(Repeat for each, or omit the entire Latent section if there are zero — see Empty-section rules.)
 
 ## Out of Scope
 
@@ -260,6 +288,7 @@ One-line entries only. If empty, follow the Empty-section rules above.
 - **Raw findings:** N (before verification)
 - **Verified findings:** M (after verification)
 - **Filtered out:** N - M
+- **Latent findings:** N (Critical: a, Important: b, Suggestion: c)
 - **Out-of-scope findings:** N (Critical: a, Important: b, Suggestion: c)
 - **Backlog:** X new entries added, Y re-confirmed (see `paad/code-reviews/backlog.md`)
 - **Steering files consulted:** <list or "none found">
@@ -325,19 +354,22 @@ These patterns produce low-quality reviews. Avoid them:
 | Ignoring test infrastructure | When production infrastructure changes (schema migrations, build configs, environment templates), check if parallel test infrastructure exists and needs matching updates |
 | Treating out-of-scope findings as fixable on this branch | They are pre-existing — surface them, batch the ask, and let the user decide per tier |
 | Dropping out-of-scope findings on the floor | They go in the report's Out of Scope section AND in `backlog.md` — never silently discarded |
+| Using Latent as a dumping ground for "anything I want to flag but don't want to call OOS" | Latent requires that no current code path triggers the bug. If a current caller is affected, the finding is in-scope. The Latent gate is reachability today, not severity preference. |
+| Putting Latent findings into `backlog.md` | The backlog is for OOS pre-existing bugs. Latent findings were authored by this branch — they live in the report only. |
 
 ## Post-Review
 
 After writing the report:
-1. Report path and counts: `Critical: N (in-scope) / X (out-of-scope), Important: …, Suggestion: …`.
+1. Report path and counts: `Critical: N (in-scope) / L (latent) / X (out-of-scope), Important: …, Suggestion: …`.
 2. Backlog state: `Backlog: X new entries added, Y re-confirmed, Z total active.`
-3. **Out-of-scope summary** — clearly announce the out-of-scope count and, when any were found, the exact locations the findings were written to. This step must not be skipped or merged into step 1; it is the user's primary signal that pre-existing bugs surfaced and where to find them.
+3. **Latent summary** (only when any latent findings were recorded): announce the count and the report path. Latent findings are informational, not merge-blocking — say so explicitly: *"Found N latent finding(s) — informational, not blocking. See `## Latent` in `<report-path>` for the future-conditional risks this branch introduced and the suggested hardening for each."*
+4. **Out-of-scope summary** — clearly announce the out-of-scope count and, when any were found, the exact locations the findings were written to. This step must not be skipped or merged into step 1; it is the user's primary signal that pre-existing bugs surfaced and where to find them.
    - When the total out-of-scope count is **zero**, say plainly: *"No out-of-scope issues found."*
    - When the total out-of-scope count is **greater than zero**, say (filling in the actual numbers and report path): *"Found N out-of-scope issue(s). Written to:*
      - *The `## Out of Scope` section in `<report-path>` — with batched-ask handoff instructions for downstream agents.*
      - *The project-wide backlog at `paad/code-reviews/backlog.md` — X new entries, Y re-confirmed.*
      *Do not assume these should be fixed on this branch."*
-4. **Security disclosure warning** (only when this run added one or more `Bug class: Security` entries to the backlog): list the count, the affected files, and tell the user: *"`paad/code-reviews/backlog.md` is committed to this repository by default. If this repo is public or shared outside your team, decide whether to commit these security entries before pushing — you can `.gitignore` the file or remove specific entries."*
-5. **Backlog-size soft warning** (only when total active entries ≥ 200): *"Backlog has N active entries — consider triaging stale items."*
-6. Tell the user: "To address in-scope findings, review each issue in the report and fix them with per-fix commits. If you have the [superpowers](https://github.com/obra/superpowers/) plugin installed, you can use the `receiving-code-review` skill and point it at this report for a guided workflow. For out-of-scope findings, the report includes batched-ask handoff instructions; any agent following them will prompt you tier-by-tier and remove backlog entries by ID as items are fixed."
-7. Do **not** auto-fix anything. The report is the deliverable.
+5. **Security disclosure warning** (only when this run added one or more `Bug class: Security` entries to the backlog): list the count, the affected files, and tell the user: *"`paad/code-reviews/backlog.md` is committed to this repository by default. If this repo is public or shared outside your team, decide whether to commit these security entries before pushing — you can `.gitignore` the file or remove specific entries."*
+6. **Backlog-size soft warning** (only when total active entries ≥ 200): *"Backlog has N active entries — consider triaging stale items."*
+7. Tell the user: "To address in-scope findings, review each issue in the report and fix them with per-fix commits. If you have the [superpowers](https://github.com/obra/superpowers/) plugin installed, you can use the `receiving-code-review` skill and point it at this report for a guided workflow. For out-of-scope findings, the report includes batched-ask handoff instructions; any agent following them will prompt you tier-by-tier and remove backlog entries by ID as items are fixed."
+8. Do **not** auto-fix anything. The report is the deliverable.

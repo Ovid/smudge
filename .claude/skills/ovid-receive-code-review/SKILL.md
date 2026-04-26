@@ -29,24 +29,38 @@ FOR each review item (or small related group):
 
 **Why:** Small commits make it easy to revert individual fixes, simplify re-review, and prevent losing work if something goes wrong mid-session.
 
-### 2. Use Red/Green/Refactor
+### 2. Use Red/Green/Refactor (with contract analysis prerequisite)
 
 All fixes must follow TDD discipline. Do not jump straight to changing production code.
 
 ```
 FOR each fix:
-  1. RED:    Write or update a test that exposes the problem (watch it fail)
-  2. GREEN:  Write the minimal fix to make the test pass
+  0. CONTRACT ANALYSIS (prerequisite — see below)
+  1. RED:      Write or update a test that exposes the problem (watch it fail)
+  2. GREEN:    Write the minimal fix to make the test pass
   3. REFACTOR: Clean up without changing behavior
+```
+
+**Step 0 — Contract Analysis (mandatory before writing the test):**
+
+Before writing the failing test, enumerate every caller of the function/state/flag you are about to constrain, and confirm the contract you are pinning is correct for *each* caller. The test you write encodes your understanding of the contract; if your understanding is wrong, the test pins the bug as a feature.
+
+```
+BEFORE writing the test:
+  1. grep for callers of the function/method/state-flag you'll constrain
+  2. For each caller, name the meaning the caller relies on
+  3. If the same name carries DIFFERENT meanings in different callers,
+     STOP — the bug is semantic-overload, not the surface symptom
+  4. Only proceed to RED once every caller's contract is enumerated and consistent
 ```
 
 If a review item is a pure refactor with no behavioral change, existing passing tests serve as the "red" — confirm they pass before and after.
 
-**Why:** The base `superpowers:receiving-code-review` skill does not enforce TDD. This project requires it (see CLAUDE.md). Red/green/refactor prevents fixes that accidentally break something else and provides regression coverage for every review item.
+**Why:** TDD by itself does not validate that a test asserts *correct* behavior — only that the test passes. A fix to `Editor.flushSave` (review-cycle 2026-04-26) added an `isEditable === false` guard with a green test pinning the new behavior — but `isEditable === false` carried two meanings in the codebase (persistent failure lock vs in-flight mutation lock), and the guard collided with the second. A 30-second `grep "setEditable(false)"` would have surfaced the collision before the test was written. Contract analysis is the missing prerequisite that prevents TDD from encoding misunderstandings into green tests.
 
-### 3. Pre-existing and Out-of-scope Issues Must Be Fixed
+### 3. Pre-existing and Out-of-scope Issues Must Be Fixed (with semantic-blast-radius escape hatch)
 
-If a review item points out a valid problem that happens to be pre-existing behavior or technically "out of scope" for the current branch, **fix it anyway**.
+If a review item points out a valid problem that happens to be pre-existing behavior or technically "out of scope" for the current branch, **fix it anyway** — unless the fix changes the semantics of shared state used across multiple flows.
 
 ```
 IF reviewer flags a valid problem:
@@ -55,10 +69,16 @@ IF reviewer flags a valid problem:
   "It was already like that" is not a reason to skip.
   "That's out of scope" is not a reason to skip.
 
-  The ONLY reason to skip: the feedback is technically wrong.
+  Reasons to skip:
+    1. The feedback is technically wrong, OR
+    2. The fix would change the semantics of a shared flag/state/contract
+       used by multiple callers (see contract analysis in rule 2).
+       In that case: file as a separate ticket / next-PR work, do not
+       expand this PR. Note the deferral and rationale in the PR
+       description and in paad/code-reviews/backlog.md.
 ```
 
-**Why:** Valid bugs don't stop being bugs because they predate the current branch. Leaving known problems unfixed to preserve a clean diff is backwards.
+**Why:** Valid bugs don't stop being bugs because they predate the current branch. But OOS items that require changing semantics of shared state are exactly the class of fix that contract-analysis (rule 2) protects against — and squeezing them into the current PR multiplies blast radius. The OOS tier itself is the signal: the reviewer judged it could wait. Honor that signal when the fix would touch semantics across multiple flows; defer to a focused PR where the contract change can be reviewed properly.
 
 ### 3a. Check for Wider Occurrences
 
@@ -97,11 +117,20 @@ AFTER all review items are addressed:
 ```
 1. Invoke superpowers:receiving-code-review (follow it fully)
 2. Work through review items per that skill's process
-3. After validating an item: search for wider occurrences of the same issue
-4. Each fix follows red/green/refactor (include wider fixes if practical)
-5. After each fix (or small group): commit immediately
-6. Pre-existing or out-of-scope? Fix it if it's valid
-7. After all items done: run make all
-8. Fix any failures, commit fixes
-9. Only report done when make all passes
+3. For each item:
+   a. Validate the finding
+   b. CONTRACT ANALYSIS: enumerate callers of the function/state you'd touch.
+      If the same name carries different meanings across callers, STOP —
+      the bug is semantic-overload; trace the data flow before proceeding.
+   c. WIDER OCCURRENCES: grep for the same pattern elsewhere in the codebase.
+      Fix all instances if practical; otherwise fix the flagged one and
+      report the rest to the user.
+   d. SCOPE CHECK: if the item is OOS AND the fix would change the semantics
+      of shared state used in multiple flows, defer to a separate ticket.
+      Note the deferral in the PR description.
+   e. RED / GREEN / REFACTOR with the contract you confirmed in (b).
+   f. Commit immediately.
+4. After all items done: run make all
+5. Fix any failures, commit fixes
+6. Only report done when make all passes
 ```
