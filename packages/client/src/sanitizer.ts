@@ -50,7 +50,13 @@ const ALLOWED_TAGS = [
 // shape. The URI-validation hook below only inspects src/href/xlink:href —
 // adding any other URI-bearing attribute (srcset, longdesc) would let a
 // hostile URI through without going through ALLOWED_URI_REGEXP.
-export const ALLOWED_ATTR = ["src", "alt"];
+// S3 (review 2026-04-25 round 3): typed as `readonly string[]` and frozen
+// at runtime so an accidental mutation by another importer or a test
+// cannot silently widen the allowlist. DOMPurify's ALLOWED_ATTR option is
+// typed `string[]`, so the sanitize call below passes a fresh spread copy
+// — both for type compatibility and as a belt-and-braces against any
+// hypothetical mutation by the library itself.
+export const ALLOWED_ATTR: readonly string[] = Object.freeze(["src", "alt"]);
 
 // I14 (review 2026-04-25): pin every URI-bearing attribute to Smudge's
 // own image endpoint. The regex below rejects data:, javascript:, vbscript:,
@@ -91,7 +97,7 @@ purifier.addHook("uponSanitizeAttribute", (_node, data) => {
 export function sanitizeEditorHtml(html: string): string {
   return purifier.sanitize(html, {
     ALLOWED_TAGS,
-    ALLOWED_ATTR,
+    ALLOWED_ATTR: [...ALLOWED_ATTR],
     ALLOWED_URI_REGEXP,
   });
 }

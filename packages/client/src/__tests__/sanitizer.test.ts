@@ -175,6 +175,17 @@ describe("sanitizeEditorHtml", () => {
     expect(ALLOWED_ATTR).toEqual(["src", "alt"]);
   });
 
+  // S3 (review 2026-04-25 round 3): freeze ALLOWED_ATTR at runtime so an
+  // accidental mutation by another importer or a test cannot silently
+  // widen the allowlist (e.g. `ALLOWED_ATTR.push("srcset")` from
+  // somewhere else in the bundle would otherwise quietly let a URI-
+  // bearing attribute through that the URI-validation hook does not
+  // inspect). The export type uses `readonly string[]` to catch the
+  // mutation at compile time; this test catches it at runtime.
+  it("freezes ALLOWED_ATTR (S3 round 3)", () => {
+    expect(Object.isFrozen(ALLOWED_ATTR)).toBe(true);
+  });
+
   // S2 (review 2026-04-25): the URI-validation hook must live on a private
   // DOMPurify instance, not on the package-level singleton. Importing
   // DOMPurify directly elsewhere (or in a test, or under Vite HMR) must
