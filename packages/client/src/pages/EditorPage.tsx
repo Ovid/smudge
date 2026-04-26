@@ -38,7 +38,7 @@ import { api } from "../api/client";
 // only invariant holds at every call site. The barrel re-exports
 // the same class.
 import { ApiRequestError } from "../errors";
-import { mapApiError, isNotFound } from "../errors";
+import { mapApiError, mapApiErrorMessage, isNotFound } from "../errors";
 import { clearCachedContent, clearAllCachedContent } from "../hooks/useContentCache";
 import { safeSetEditable } from "../utils/editorSafeOps";
 import { Logo } from "../components/Logo";
@@ -1615,7 +1615,7 @@ export function EditorPage() {
         // surface saveFailedNetwork / byStatus / byCode copy. The
         // ?? STRINGS.editor.saveFailed defends against ABORTED-only
         // (mapApiError returns message: null).
-        setActionError(mapApiError(err, "chapter.save").message ?? STRINGS.editor.saveFailed);
+        setActionError(mapApiErrorMessage(err, "chapter.save", STRINGS.editor.saveFailed));
       }
     },
     setShortcutHelpOpen,
