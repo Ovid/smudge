@@ -11,6 +11,7 @@ Runs on container creation to set up:
 import contextlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -50,11 +51,19 @@ def setup_onboarding_bypass():
             timeout=30,
         )
         if result.returncode != 0:
+            # C1 (review 2026-04-26): bail out without touching
+            # ~/.claude.json. Falling through here would write
+            # {hasCompletedOnboarding: true} over a stale-but-valid
+            # config (from a prior successful run), masking the auth
+            # failure: subsequent `claude` invocations would skip
+            # onboarding and fail with a confusing "not authenticated"
+            # error instead of re-running the wizard.
             print(
                 f"[post_install] claude -p exited {result.returncode}: "
-                f"{result.stderr.strip()}",
+                f"{result.stderr.strip()} — onboarding bypass skipped",
                 file=sys.stderr,
             )
+            return
     except subprocess.TimeoutExpired:
         print(
             "[post_install] claude -p timed out (expected on cold start)",
@@ -80,11 +89,26 @@ def setup_onboarding_bypass():
     try:
         config = json.loads(claude_json.read_text())
     except json.JSONDecodeError as e:
-        print(
-            f"[post_install] Warning: {claude_json} has invalid JSON ({e}), "
-            "starting fresh",
-            file=sys.stderr,
-        )
+        # C1 (review 2026-04-26): a corrupt config may still hold partially
+        # recoverable auth/MCP/session state. Move it aside before we write
+        # over it so the user can inspect/recover, rather than silently
+        # destroying it.
+        backup = claude_json.with_suffix(claude_json.suffix + ".bak")
+        try:
+            shutil.move(str(claude_json), str(backup))
+            print(
+                f"[post_install] Warning: {claude_json} had invalid JSON "
+                f"({e}); backed up to {backup} and starting fresh",
+                file=sys.stderr,
+            )
+        except OSError as move_err:
+            print(
+                f"[post_install] Warning: {claude_json} had invalid JSON "
+                f"({e}) and could not be backed up ({move_err}) — "
+                "onboarding bypass skipped to preserve the original file",
+                file=sys.stderr,
+            )
+            return
 
     config["hasCompletedOnboarding"] = True
 
