@@ -17,8 +17,23 @@ import tailwindcss from "@tailwindcss/vite";
 // chain — the .ts re-exports don't carry explicit extensions. The
 // server's index.ts imports the constant correctly; if you change it,
 // update the literal here and the prose in CLAUDE.md too.
-const clientPort = Number.parseInt(process.env.SMUDGE_CLIENT_PORT ?? "5173", 10);
-const serverPort = Number.parseInt(process.env.SMUDGE_PORT ?? "3456", 10);
+//
+// R3 (review 2026-04-26): mirror the server's SMUDGE_PORT validation
+// (packages/server/src/index.ts). A non-numeric override (typo in
+// .env, shell variable accidentally set to a string, etc.) would
+// otherwise produce NaN here and surface as a confusing Vite
+// "address invalid" error far from the cause. Fail fast at config
+// load with a message that names the env var and the bad value.
+function parsePort(envName: "SMUDGE_CLIENT_PORT" | "SMUDGE_PORT", fallback: string): number {
+  const raw = process.env[envName] ?? fallback;
+  const port = Number.parseInt(raw, 10);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`${envName} must be an integer between 1 and 65535. Received: ${raw}`);
+  }
+  return port;
+}
+const clientPort = parsePort("SMUDGE_CLIENT_PORT", "5173");
+const serverPort = parsePort("SMUDGE_PORT", "3456");
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
