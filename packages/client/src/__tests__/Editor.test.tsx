@@ -400,16 +400,17 @@ describe("Editor", () => {
     }
   });
 
-  it("flushSave does not fire when editor is locked (defense-in-depth, OOSS1)", async () => {
-    // The mutation gate (setEditable(false) around restore / replace /
-    // reload) is the second line of defense: every live caller of
-    // flushSave (Ctrl+S handler, useEditorMutation) gates externally
-    // via editorLockedMessageRef before invoking. But if a future
-    // caller forgets to check, flushSave would PATCH stale or
-    // already-purged state, deterministically 4xx-ing — same failure
-    // mode the I6 debounced-save guard already prevents. Mirror the
-    // debounced-save isEditable check here so the invariant is
-    // enforced at the Editor level, not just at every call site.
+  it("flushSave fires onSave when editor is locked (useEditorMutation contract, C1 2026-04-26)", async () => {
+    // useEditorMutation.run() locks the editor via setEditable(false)
+    // and THEN calls flushSave to commit any pre-mutation typing
+    // before the server-side mutate overwrites the chapter. Skipping
+    // onSave on the locked editor here would silently destroy that
+    // pending typing: markClean() runs immediately afterwards,
+    // dirtyRef goes to false, and clearAllCachedContent wipes the
+    // localStorage draft. flushSave's existing `dirtyRef` check is
+    // sufficient — callers that should NOT flush (persistent
+    // failure-lock state) must gate externally via
+    // editorLockedMessageRef before calling.
     const onSave = vi.fn().mockResolvedValue(true);
     const onContentChange = vi.fn();
     const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
@@ -426,26 +427,20 @@ describe("Editor", () => {
 
     await vi.waitFor(() => expect(editorRef.current).not.toBeNull(), { timeout: 3000 });
 
-    // Dirty the editor so flushSave would otherwise call onSave.
     const editorEl = container.querySelector("[role='textbox']") as HTMLElement;
     fireEvent.focus(editorEl);
-    editorEl.textContent = "typed before lock";
+    editorEl.textContent = "typed before mutation lock";
     fireEvent.input(editorEl);
 
-    // Wait for TipTap's onUpdate to flush so dirtyRef is set.
     await vi.waitFor(() => expect(onContentChange).toHaveBeenCalled(), { timeout: 3000 });
 
     onSave.mockClear();
 
-    // Lock the editor before flushSave is invoked.
+    // Mimic useEditorMutation.run(): lock the editor, then flush.
     editorRef.current?.setEditable(false);
-
-    // Without the guard, flushSave would call onSaveRef.current(...)
-    // and the locked-editor save would land on the server.
     const ok = await editorRef.current?.flushSave();
 
-    expect(onSave).not.toHaveBeenCalled();
-    // Treat lock-skip as success so callers don't loop on retry.
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }), undefined);
     expect(ok).toBe(true);
   });
 

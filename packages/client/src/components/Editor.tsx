@@ -343,18 +343,21 @@ export function Editor({
     if (editorRef) {
       editorRef.current = {
         flushSave: () => {
+          // C1 (review 2026-04-26 f346047): no isEditable guard here.
+          // useEditorMutation.run() deliberately calls setEditable(false)
+          // BEFORE invoking flushSave so that pending typing is committed
+          // before the server-side mutation overwrites the chapter. A
+          // mirrored guard here would silently destroy that typing —
+          // markClean() runs immediately afterwards, dirtyRef goes to
+          // false, and clearAllCachedContent wipes the localStorage
+          // draft. The two callers that should NOT flush against a
+          // locked editor (Ctrl+S handler, future call sites) are
+          // expected to gate externally via editorLockedMessageRef
+          // before invoking. The Editor's own isEditable flag is
+          // overloaded — it serves both as the persistent failure-lock
+          // signal AND as useEditorMutation's in-flight mutation lock,
+          // and cannot be used here to discriminate between them.
           if (!dirtyRef.current || !editor) return Promise.resolve(true);
-          // OOSS1 (review 2026-04-26 backlog 7e2a9d41): mirror the I6
-          // isEditable guard from debouncedSave. Live callers
-          // (Ctrl+S handler, useEditorMutation) gate externally via
-          // editorLockedMessageRef before invoking flushSave, so this
-          // path is theoretical today — but enforcing the invariant
-          // at the Editor level rather than per-call-site means a
-          // future caller that forgets to check can't accidentally
-          // PATCH a locked editor's content. Return true so callers
-          // don't loop on retry; dirtyRef stays true so the cache
-          // (CLAUDE.md invariant #3) remains the recovery path.
-          if (!editor.isEditable) return Promise.resolve(true);
           if (debounceTimerRef.current) {
             clearTimeout(debounceTimerRef.current);
             debounceTimerRef.current = null;
