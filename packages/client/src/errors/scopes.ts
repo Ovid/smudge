@@ -217,11 +217,16 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     // calls `listAllChapterContentByProject` for the image's project and
     // includes both active and trashed chapters; >50 referencing chapters
     // is unreachable in normal Smudge use).
-    // I1 (review 2026-04-25): validate the *full* chapters array before
-    // bounding — pre-I1 the comparison was `valid.length ===
-    // bounded.length` (post-slice), which let an envelope of [50 valid,
-    // N invalid past the cap] silently surface 50 chapters instead of
-    // triggering the all-or-nothing fallback that S5 was added to enforce.
+    // I1 (review 2026-04-25): validate beyond the cap — pre-I1 the
+    // comparison was `valid.length === bounded.length` (post-slice),
+    // which let an envelope of [50 valid, N invalid past the cap]
+    // silently surface 50 chapters instead of triggering the all-or-
+    // nothing fallback that S5 was added to enforce.
+    // S* (review 2026-04-25 round 3): bound the validation window at
+    // cap+1. The all-or-nothing rule still fires for invalid entries at
+    // the cap boundary (the I1 case — invalid at index 50 in a 51-entry
+    // array), but does NOT see invalid entries strictly past index 50.
+    // This is the explicit trade-off for bounded CPU under hostile inputs.
     // S3 (review 2026-04-25): construct an explicit allowlisted shape per
     // entry. The previous spread propagated every non-allowlisted server
     // field — a hostile `description` field bypassed the API client's
@@ -251,15 +256,27 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     extrasFrom: (err: ApiRequestError) => {
       const chapters = (err.extras as { chapters?: unknown } | undefined)?.chapters;
       if (!Array.isArray(chapters)) return undefined;
-      const valid = chapters.filter((c): c is { id?: string; title: string; trashed?: boolean } => {
-        if (!c || typeof c !== "object") return false;
-        const obj = c as Record<string, unknown>;
-        if (obj.id !== undefined && typeof obj.id !== "string") return false;
-        if (typeof obj.title !== "string") return false;
-        if (obj.trashed !== undefined && typeof obj.trashed !== "boolean") return false;
-        return true;
-      });
-      if (valid.length !== chapters.length) return undefined;
+      // S* (review 2026-04-25 round 3): bound input processing at cap+1
+      // entries so a hostile envelope of N items cannot drive O(N) filter
+      // work. Slicing to 51 before validating preserves the all-or-nothing
+      // detection at the cap boundary (the 51st element is in the window,
+      // so [50 valid, 1 invalid at index 50] still triggers reject — the
+      // I1 case). The trade-off is intentional: invalid entries strictly
+      // past index 50 are not detected, so the envelope silently truncates
+      // to 50. This is reviewer-approved (round 3 inline comment); the
+      // alternative is O(chapters.length) filter under hostile inputs.
+      const candidates: unknown[] = chapters.slice(0, 51);
+      const valid = candidates.filter(
+        (c): c is { id?: string; title: string; trashed?: boolean } => {
+          if (!c || typeof c !== "object") return false;
+          const obj = c as Record<string, unknown>;
+          if (obj.id !== undefined && typeof obj.id !== "string") return false;
+          if (typeof obj.title !== "string") return false;
+          if (obj.trashed !== undefined && typeof obj.trashed !== "boolean") return false;
+          return true;
+        },
+      );
+      if (valid.length !== candidates.length) return undefined;
       if (valid.length === 0) return undefined;
       const bounded = valid.slice(0, 50).map((c) => ({
         title: truncateCodePoints(c.title, 200),

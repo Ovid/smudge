@@ -588,6 +588,30 @@ describe("SCOPES — image.delete extrasFrom", () => {
     });
     expect(resolveError(err, scope).extras).toBeUndefined();
   });
+
+  // S* (review 2026-04-25 round 3): bound input processing at cap+1
+  // entries so a hostile array of N items cannot drive O(N) filter work.
+  // Trade-off: invalid entries past index 50 are no longer detected —
+  // the all-or-nothing rule operates on the cap+1 window. An invalid
+  // entry at the cap boundary (index 50, the 51st element) is still
+  // caught, which is what the I1 test above exercises. This test pins
+  // the trade-off so a future round of review cannot silently revert to
+  // O(N) filter work without first weighing in.
+  it("validates only the first 51 entries (bound trade-off)", () => {
+    // 100 entries, all valid, with one invalid injected at index 60 —
+    // outside the cap+1 (51-element) window. The pre-bound code would
+    // reject this entire envelope (valid.length 99 !== chapters.length
+    // 100); the bounded validator does not see the invalid entry and
+    // silently truncates to 50.
+    const chapters: unknown[] = Array.from({ length: 100 }, (_, i) => ({
+      id: `c-${i}`,
+      title: `t-${i}`,
+    }));
+    chapters[60] = { missingTitle: true };
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", { chapters });
+    const extras = resolveError(err, scope).extras as { chapters: unknown[] };
+    expect(extras.chapters).toHaveLength(50);
+  });
 });
 
 describe("SCOPES — snapshot.restore", () => {
