@@ -14,9 +14,10 @@ try {
   // so a typo'd .env raises the same error on both sides.
   PORT = parsePort(process.env.SMUDGE_PORT ?? String(DEFAULT_SERVER_PORT), "SMUDGE_PORT");
 } catch (e) {
+  const err = e instanceof Error ? e : new Error(String(e));
   logger.error(
-    { port: process.env.SMUDGE_PORT, err: (e as Error).message },
-    "Invalid SMUDGE_PORT: must be a number 1-65535",
+    { port: process.env.SMUDGE_PORT, err },
+    "Invalid SMUDGE_PORT: must be an integer between 1 and 65535",
   );
   process.exit(1);
 }
