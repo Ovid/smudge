@@ -21,26 +21,69 @@ all: lint format-check typecheck cover e2e ## Full CI pass: lint, format-check, 
 # fetch the right prebuilt binary in place. Cheap on the happy path
 # (single node startup, ~50ms); only does work on cross-platform churn.
 #
-# I2 (review 2026-04-26): prebuild-install fetches a remote binary at
-# runtime — this target is a network-trust event. Pin --target to the
-# active Node's exact version and --runtime=node so a developer with a
-# foreign Node active (e.g. `nvm use 20` from another repo) cannot
-# silently fetch a binary keyed on the wrong ABI. Probe with
-# require.resolve first to distinguish "package missing entirely"
-# (run `npm install`) from "binary present but won't load" (the actual
-# cross-platform case this target solves).
-ensure-native: ## Ensure better-sqlite3 native binding matches current platform (network-trust event: fetches a prebuilt .node binary)
+# I5 (review 2026-04-26): pre-fix, this target invoked
+# `prebuild-install` to fetch a precompiled .node binary from the URL
+# in better-sqlite3's `binary` field. That fetch had no SHA-256
+# verification — a network-trust event on every cross-platform churn
+# (a compromised release could land an attacker-controlled native
+# binary running with the developer's privileges). Switch to
+# `npm rebuild --build-from-source` so compilation replaces network
+# trust: the only inputs are the package source already in
+# node_modules (covered by package-lock.json integrity) and the local
+# C++ toolchain. Trade-off: ~60s per cross-platform churn vs. <1s for
+# a prebuilt fetch. Cross-platform churn is rare (host ↔ devcontainer
+# crossings, fresh-machine setup) so the cost is paid infrequently.
+# Override NPM_CONFIG_IGNORE_SCRIPTS because the devcontainer sets it
+# to true to harden `npm install`; rebuild is an explicit, opt-in
+# compile that must run lifecycle scripts.
+#
+# S10 (review 2026-04-26): pin to engines.node major BEFORE the dlopen
+# probe so a developer with a foreign Node active never reaches the
+# rebuild path. Pre-fix, prebuild-install accepted whatever Node was
+# active and would have fetched a wrong-major ABI binary (Node 20/24
+# active when Smudge requires 22.x); tests would then run on the wrong
+# runtime entirely. Compare majors only — patch-level drift inside
+# 22.x is fine and we don't want to thrash on every Node 22 LTS bump.
+#
+# S6 (review 2026-04-26): re-probe after `npm rebuild` succeeds. A
+# successful compile that nonetheless produces a binary that won't
+# load (wrong-ABI compile, NODE_MODULE_VERSION mismatch with the
+# active runtime, partial extraction) would otherwise propagate as
+# the same opaque dlopen error in vitest with no signal pointing back
+# to the rebuild step.
+ensure-native: ## Ensure better-sqlite3 native binding matches current platform (rebuilds from source on dlopen failure; no remote binary fetched)
+	@node -e "\
+const eng = require('./package.json').engines && require('./package.json').engines.node; \
+if (!eng) { console.error('→ package.json has no engines.node; cannot validate Node major.'); process.exit(2); } \
+const m = String(eng).match(/^[\\^~]?([0-9]+)/); \
+if (!m) { console.error('→ engines.node has no parseable major: ' + eng); process.exit(2); } \
+const expected = m[1]; \
+const actual = process.versions.node.split('.')[0]; \
+if (actual !== expected) { \
+  console.error('→ Active Node v' + process.versions.node + ' major (' + actual + ') does not match engines.node (' + eng + ').'); \
+  console.error('   Run: fnm use ' + expected + '  (or nvm use ' + expected + ')  before \`make test/cover/e2e/dev\`.'); \
+  process.exit(1); \
+}" || exit $$?
 	@node -e "try { require.resolve('better-sqlite3'); } catch { console.error('→ better-sqlite3 not installed. Run npm install first.'); process.exit(2); }" || exit $$?
 	@node -e "new (require('better-sqlite3'))(':memory:').close()" >/dev/null 2>&1 || { \
 		NODE_VER=$$(node -p 'process.versions.node'); \
 		PLATFORM=$$(node -p 'process.platform + "/" + process.arch'); \
-		echo "→ better-sqlite3 binary won't load (dlopen failed); reinstalling for Node $$NODE_VER on $$PLATFORM..."; \
-		(cd node_modules/better-sqlite3 && npx --no-install prebuild-install --force --target=$$NODE_VER --runtime=node) || { \
+		echo "→ better-sqlite3 binary won't load (dlopen failed); rebuilding from source for Node $$NODE_VER on $$PLATFORM..."; \
+		echo "  (one-time cost on cross-platform churn; no remote .node binary fetched)"; \
+		NPM_CONFIG_IGNORE_SCRIPTS=false npm rebuild better-sqlite3 --build-from-source >/dev/null 2>&1 || { \
 			echo ""; \
-			echo "prebuild-install failed. Possible causes:"; \
-			echo "  - Offline or proxy blocks GitHub releases (this target requires network)"; \
+			echo "npm rebuild --build-from-source failed. Possible causes:"; \
+			echo "  - Missing C++ toolchain — install 'build-essential' (Linux) or Xcode CLT (macOS)"; \
+			echo "  - Missing python3 — required by node-gyp"; \
 			echo "  - Active Node version ($$NODE_VER) differs from engines.node — verify with 'node --version'"; \
-			echo "  - prebuilt binary unavailable for this {platform, arch, abi} — try 'rm -rf node_modules && npm install'"; \
+			echo "  - Try 'rm -rf node_modules && npm install' to start clean"; \
+			exit 1; \
+		}; \
+		node -e "new (require('better-sqlite3'))(':memory:').close()" >/dev/null 2>&1 || { \
+			echo ""; \
+			echo "→ npm rebuild succeeded but the resulting binary still won't dlopen."; \
+			echo "  This is unusual — the freshly-compiled .node may target a different ABI than the active runtime."; \
+			echo "  Try: rm -rf node_modules/better-sqlite3 && npm install better-sqlite3"; \
 			exit 1; \
 		}; \
 	}
