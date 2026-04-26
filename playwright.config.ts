@@ -34,15 +34,27 @@ const E2E_CLIENT_PORT = "5174";
 // (stale leftover or developer mistake), mkdirSync raises ENOTDIR at
 // the top of the config in every Playwright worker — opaque enough
 // that the cause isn't discoverable from the stack. Detect and re-throw
-// with an actionable message instead.
+// with an actionable message instead. ENOTDIR means an ancestor up to
+// and including E2E_DATA_DIR is a non-directory; EEXIST under recursive
+// mkdir can ONLY fire on the leaf (E2E_DATA_DIR/images existing as a
+// non-directory), so each code names a different offender — telling the
+// user to `rm E2E_DATA_DIR` for an EEXIST on the leaf would
+// destructively remove the parent directory and any siblings.
 try {
   fs.mkdirSync(path.join(E2E_DATA_DIR, "images"), { recursive: true });
 } catch (err) {
-  const code = (err as NodeJS.ErrnoException).code;
-  if (code === "ENOTDIR" || code === "EEXIST") {
+  const errno = err as NodeJS.ErrnoException;
+  if (errno.code === "ENOTDIR") {
     throw new Error(
-      `playwright.config: expected a directory at ${E2E_DATA_DIR}, but a non-directory exists there. ` +
+      `playwright.config: expected a directory at ${E2E_DATA_DIR}, but a non-directory exists at or above it. ` +
         `Remove the conflicting file (e.g. \`rm ${E2E_DATA_DIR}\`) and re-run \`make e2e\`.`,
+    );
+  }
+  if (errno.code === "EEXIST") {
+    const offender = errno.path ?? path.join(E2E_DATA_DIR, "images");
+    throw new Error(
+      `playwright.config: expected a directory at ${offender}, but a non-directory file exists there. ` +
+        `Remove the conflicting file (e.g. \`rm ${offender}\`) and re-run \`make e2e\`.`,
     );
   }
   throw err;
