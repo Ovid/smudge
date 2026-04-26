@@ -344,6 +344,17 @@ export function Editor({
       editorRef.current = {
         flushSave: () => {
           if (!dirtyRef.current || !editor) return Promise.resolve(true);
+          // OOSS1 (review 2026-04-26 backlog 7e2a9d41): mirror the I6
+          // isEditable guard from debouncedSave. Live callers
+          // (Ctrl+S handler, useEditorMutation) gate externally via
+          // editorLockedMessageRef before invoking flushSave, so this
+          // path is theoretical today — but enforcing the invariant
+          // at the Editor level rather than per-call-site means a
+          // future caller that forgets to check can't accidentally
+          // PATCH a locked editor's content. Return true so callers
+          // don't loop on retry; dirtyRef stays true so the cache
+          // (CLAUDE.md invariant #3) remains the recovery path.
+          if (!editor.isEditable) return Promise.resolve(true);
           if (debounceTimerRef.current) {
             clearTimeout(debounceTimerRef.current);
             debounceTimerRef.current = null;
