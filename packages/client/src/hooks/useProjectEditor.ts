@@ -451,14 +451,22 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // ?? STRINGS.editor.saveFailed defends against ABORTED-only
         // (mapApiError returns message: null) — defense-in-depth, since
         // ABORTED is filtered above and never captured into lastErr.
-        // lastErr can also be null if the loop exited via the seq check
-        // without entering catch; in practice the surrounding gate
-        // (activeChapter id + !token.isStale()) excludes that path, but
-        // defend explicitly.
-        const fallbackMessage = lastErr
-          ? (mapApiError(lastErr, "chapter.save").message ?? STRINGS.editor.saveFailed)
-          : STRINGS.editor.saveFailed;
-        setSaveErrorMessage(rejected4xx ? rejected4xx.message : fallbackMessage);
+        // S1 (review 2026-04-26): in practice the post-loop block is
+        // unreachable with lastErr === null. The seq-check exits inside
+        // the loop via `return false`, success returns true, and every
+        // catch branch writes lastErr before deciding whether to break
+        // or continue. The `lastErr ?` guard below is paranoid defense —
+        // future code that adds a non-throwing exit path would otherwise
+        // hand mapApiError(null) and get the scope fallback (correct,
+        // but undocumented). S6 (review 2026-04-26): collapse via ??
+        // chain so fallbackMessage isn't computed when rejected4xx is
+        // already set.
+        setSaveErrorMessage(
+          rejected4xx?.message ??
+            (lastErr
+              ? (mapApiError(lastErr, "chapter.save").message ?? STRINGS.editor.saveFailed)
+              : STRINGS.editor.saveFailed),
+        );
         // I2 (review 2026-04-24): terminal committed/unrecoverable
         // codes must also lock the editor — CLAUDE.md save-pipeline
         // invariant #2 pairs setEditable(false) with editorLockedMessage.
