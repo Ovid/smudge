@@ -106,7 +106,7 @@ test.describe("Editor save pipeline E2e Tests", () => {
     // not 4 attempts × backoff. 30s timeout matches the surrounding
     // "shows error on save failure" test for safety on slow CI.
     const statusRegion = page.locator("[role='status'][aria-live='polite']");
-    await expect(statusRegion).toContainText(/no longer exists/i, { timeout: 30000 });
+    await expect(statusRegion).toContainText(/no longer available/i, { timeout: 30000 });
 
     // I2 (review 2026-04-26): the 404 must also lock the editor —
     // CLAUDE.md save-pipeline invariant #2 pairs setEditable(false) with
@@ -114,7 +114,7 @@ test.describe("Editor save pipeline E2e Tests", () => {
     // into a chapter the server has already deleted and every debounced
     // auto-save 404s in a loop. Assert both: the lock banner is visible
     // AND the editor's contentEditable is false.
-    const lockBanner = page.getByRole("alert").filter({ hasText: /no longer exists/i });
+    const lockBanner = page.getByRole("alert").filter({ hasText: /no longer available/i });
     await expect(lockBanner).toBeVisible({ timeout: 5000 });
     await expect(editor).toHaveAttribute("contenteditable", "false");
   });
