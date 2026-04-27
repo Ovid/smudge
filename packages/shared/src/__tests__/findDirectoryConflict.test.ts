@@ -89,6 +89,47 @@ describe("findFirstNonDirectoryAncestor", () => {
     // actionable path (`unlink` it), not its file target.
     expect(findFirstNonDirectoryAncestor(join(link, "child"))).toBe(link);
   });
+
+  // S5 (review 2026-04-27, third pass): the helper handles these
+  // edge cases correctly today; the tests lock in the behavior so a
+  // future refactor can't quietly regress.
+  it("returns the cyclic symlink when an ancestor is a self-loop (ELOOP)", () => {
+    const link = join(scratch, "loop");
+    symlinkSync(link, link);
+    expect(findFirstNonDirectoryAncestor(join(link, "child"))).toBe(link);
+  });
+
+  it("returns the first symlink in a two-link mutual cycle (ELOOP)", () => {
+    const a = join(scratch, "a");
+    const b = join(scratch, "b");
+    symlinkSync(b, a);
+    symlinkSync(a, b);
+    // statSync follows the chain and bails with ELOOP; lstatSync at
+    // the link layer succeeds; the helper returns `a` (root-most in
+    // the walk under `scratch`).
+    expect(findFirstNonDirectoryAncestor(join(a, "child"))).toBe(a);
+  });
+
+  it("returns null on empty-string input (resolves to cwd, which is a directory)", () => {
+    // path.resolve("") returns process.cwd(); cwd is by definition an
+    // existing directory, so the helper walks the cwd ancestry and
+    // finds nothing offensive. Lock in the no-throw behavior.
+    expect(findFirstNonDirectoryAncestor("")).toBeNull();
+  });
+
+  it("walks transparently through a multi-hop symlink-to-directory chain", () => {
+    // macOS regression vector: /var → /private/var, plus /private/var
+    // is itself a directory. A multi-hop chain (link → link → dir)
+    // must be followed by statSync without flagging any intermediate
+    // link as offending. Build link2 → link1 → realDir.
+    const realDir = join(scratch, "real-dir");
+    mkdirSync(realDir);
+    const link1 = join(scratch, "link-1");
+    symlinkSync(realDir, link1);
+    const link2 = join(scratch, "link-2");
+    symlinkSync(link1, link2);
+    expect(findFirstNonDirectoryAncestor(join(link2, "child", "leaf"))).toBeNull();
+  });
 });
 
 // I7 + S2 + S7 + S9 + S11 (review 2026-04-27, third pass): the
