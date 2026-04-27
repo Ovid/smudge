@@ -131,7 +131,10 @@ describe("E2E config parity (playwright.config.ts ↔ Makefile)", () => {
     // was preceded by a Node stack trace. Add `.catch(...)` so the
     // diagnostic output stays curated.
     const probeMatch = makefileText.match(/Promise\.all\s*\([^)]*\)[\s\S]*?\.catch\s*\(/);
-    expect(probeMatch, "expected Promise.all(...).catch(...) chain in e2e-clean probe").toBeTruthy();
+    expect(
+      probeMatch,
+      "expected Promise.all(...).catch(...) chain in e2e-clean probe",
+    ).toBeTruthy();
   });
 
   it("e2e-clean recipe enforces a TMPDIR-prefix allowlist before rm -rf (I8)", () => {

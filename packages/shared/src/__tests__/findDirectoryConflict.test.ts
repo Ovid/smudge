@@ -2,10 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  findFirstNonDirectoryAncestor,
-  formatMkdirDataDirError,
-} from "../findDirectoryConflict";
+import { findFirstNonDirectoryAncestor, formatMkdirDataDirError } from "../findDirectoryConflict";
 
 // C1 (review 2026-04-27): Node sets `errno.path` to the requested leaf
 // for ENOTDIR, NOT the offending non-directory ancestor. Verified live:
