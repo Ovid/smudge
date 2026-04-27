@@ -286,7 +286,17 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
 
       setSaveStatus("saving");
       setSaveErrorMessage(null);
-      let rejected4xx: { message: string; code?: string; status: number } | null = null;
+      // Captures the error that terminates the retry loop (any of: 2xx
+      // BAD_JSON, 5xx UPDATE_READ_FAILURE / CORRUPT_CONTENT, any 4xx,
+      // bare-status 404 from an envelope-stripped proxy response). Every
+      // write is paired with `break` — once set, no further attempts run.
+      // Drives three downstream decisions: post-loop banner copy
+      // (line ~465), VALIDATION_ERROR cache wipe (~433), and editor
+      // lock predicate (~494). Historical name `rejected4xx` predated
+      // the BAD_JSON / UPDATE_READ_FAILURE / CORRUPT_CONTENT and
+      // status===404 branches — kept the variable single-purpose but
+      // no longer 4xx-only.
+      let terminalSaveError: { message: string; code?: string; status: number } | null = null;
       // I4 (Phase 4b.3a regression guard): capture the most recent
       // non-aborted error so retry-exhaustion can route its banner copy
       // through the unified mapper. Pre-fix, the post-loop fallback used
@@ -352,7 +362,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           // fallback (used when NETWORK / bare-5xx retries exhaust) can
           // route through mapApiError(err, "chapter.save"). 4xx and
           // terminal-code branches below still break early via
-          // rejected4xx, which takes precedence over this lastErr.
+          // terminalSaveError, which takes precedence over this lastErr.
           lastErr = err;
           // I5: a 2xx BAD_JSON or a 5xx whose code identifies a specific
           // committed/terminal server state must not retry:
@@ -379,7 +389,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             // has already been filtered above — the three codes here all
             // route to scope.committed / byCode matches, all non-null.
             const { message } = mapApiError(err, "chapter.save");
-            rejected4xx = { message: message as string, code: err.code, status: err.status };
+            terminalSaveError = { message: message as string, code: err.code, status: err.status };
             break;
           }
           if (isClientError(err)) {
@@ -393,7 +403,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             // cache-clear decision below. ABORTED is filtered above so
             // mapped.message is guaranteed non-null in this branch.
             const { message } = mapApiError(err, "chapter.save");
-            rejected4xx = { message: message as string, code: err.code, status: err.status };
+            terminalSaveError = { message: message as string, code: err.code, status: err.status };
             break;
           }
           if (attempt < MAX_RETRIES) {
@@ -430,7 +440,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       // chapters between the rejected PATCH being sent and its 4xx
       // landing, a different path (handleSelectChapter) now owns this
       // chapter's cache and we must not stomp on it (I2).
-      if (rejected4xx && rejected4xx.code === "VALIDATION_ERROR" && !token.isStale()) {
+      if (terminalSaveError && terminalSaveError.code === "VALIDATION_ERROR" && !token.isStale()) {
         clearCachedContent(savingChapterId);
         if (latestContentRef.current?.id === savingChapterId) {
           latestContentRef.current = null;
@@ -459,10 +469,10 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // future code that adds a non-throwing exit path would otherwise
         // hand mapApiError(null) and get the scope fallback (correct,
         // but undocumented). S6 (review 2026-04-26): collapse via ??
-        // chain so fallbackMessage isn't computed when rejected4xx is
-        // already set.
+        // chain so fallbackMessage isn't computed when terminalSaveError
+        // is already set.
         setSaveErrorMessage(
-          rejected4xx?.message ??
+          terminalSaveError?.message ??
             (lastErr
               ? mapApiErrorMessage(lastErr, "chapter.save", STRINGS.editor.saveFailed)
               : STRINGS.editor.saveFailed),
@@ -492,13 +502,13 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // pair holds whether or not the envelope survived the proxy
         // chain.
         if (
-          rejected4xx &&
-          (rejected4xx.status === 404 ||
-            rejected4xx.code === "BAD_JSON" ||
-            rejected4xx.code === "UPDATE_READ_FAILURE" ||
-            rejected4xx.code === "CORRUPT_CONTENT")
+          terminalSaveError &&
+          (terminalSaveError.status === 404 ||
+            terminalSaveError.code === "BAD_JSON" ||
+            terminalSaveError.code === "UPDATE_READ_FAILURE" ||
+            terminalSaveError.code === "CORRUPT_CONTENT")
         ) {
-          onRequestEditorLockRef.current?.(rejected4xx.message);
+          onRequestEditorLockRef.current?.(terminalSaveError.message);
         }
       }
       return false;
