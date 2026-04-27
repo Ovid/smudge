@@ -17,7 +17,7 @@
 - **Confidence:** Medium
 - **Found by:** Contract & Integration (`general-purpose (claude-opus-4-7)`)
 - **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
-- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
+- **Last seen:** 2026-04-27 on branch `ovid/devcontainer-and-e2e-isolation` at `5b89539`
 - **Severity:** Important
 
 ## `1807f5f4` — Three curl-bash installs without integrity verification
@@ -29,7 +29,7 @@
 - **Confidence:** Medium
 - **Found by:** Security (`general-purpose (claude-opus-4-7)`)
 - **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
-- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
+- **Last seen:** 2026-04-27 on branch `ovid/devcontainer-and-e2e-isolation` at `5b89539`
 - **Severity:** Important
 
 ## `c3daad8d` — `NET_ADMIN` / `NET_RAW` granted unconditionally
@@ -41,7 +41,7 @@
 - **Confidence:** Medium
 - **Found by:** Security (`general-purpose (claude-opus-4-7)`)
 - **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
-- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
+- **Last seen:** 2026-04-27 on branch `ovid/devcontainer-and-e2e-isolation` at `5b89539`
 - **Severity:** Important
 
 ## `f4b4b15c` — `EditorFooter.tsx` `saveFailed` fallback is structurally unreachable
@@ -77,7 +77,7 @@
 - **Confidence:** Medium
 - **Found by:** Security (`general-purpose (claude-opus-4-7)`)
 - **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
-- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
+- **Last seen:** 2026-04-27 on branch `ovid/devcontainer-and-e2e-isolation` at `5b89539`
 - **Severity:** Suggestion
 
 ## `afe54fb1` — `claude-yolo` alias and `bypassPermissions` setting are redundant routes
@@ -89,7 +89,7 @@
 - **Confidence:** Medium
 - **Found by:** Contract & Integration (`general-purpose (claude-opus-4-7)`); Security (`general-purpose (claude-opus-4-7)`)
 - **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
-- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
+- **Last seen:** 2026-04-27 on branch `ovid/devcontainer-and-e2e-isolation` at `5b89539`
 - **Severity:** Suggestion
 
 ## `7c3a91e2` — `setup_claude_settings` silently destroys customized `~/.claude/settings.json` on JSONDecodeError
@@ -137,7 +137,7 @@
 - **Confidence:** Medium
 - **Found by:** Logic & Correctness, Contract & Integration, Security (`general-purpose (claude-opus-4-7)`)
 - **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
-- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
+- **Last seen:** 2026-04-27 on branch `ovid/devcontainer-and-e2e-isolation` at `5b89539`
 - **Severity:** Important
 
 ## `4d5b9e81` — Editor unmount-cleanup PATCH ignores `setEditable(false)` lock
@@ -188,18 +188,6 @@
 - **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
 - **Severity:** Suggestion
 
-## `e132b042` — playwright.config.ts hardcodes 3456/5173 and never sets SMUDGE_PORT/SMUDGE_CLIENT_PORT
-- **File (at first sighting):** `playwright.config.ts:14-25`
-- **Symbol:** `webServer[]` entries + `baseURL`
-- **Bug class:** Contract
-- **Description:** The playwright `webServer` entries pass no `env`, hardcode `port: 3456` and `port: 5173`, hardcode `baseURL: "http://localhost:5173"`, and use `reuseExistingServer: true`. On the `ovid/shared-port-validation` branch, `vite.config.ts:5-13` adds forward-looking commentary about using `SMUDGE_PORT` / `SMUDGE_CLIENT_PORT` for e2e isolation (the original present-tense claim was rewritten in commit `09f8b21`), but the Playwright harness still does not set those vars or consume a separate test-only port pair. As a result, an e2e run alongside `make dev` can silently piggy-back on the developer's running server (and database). The branch made the validator side fail-fast on env input, but the env-driven port pair has no consumer in the e2e harness yet. Tracked as roadmap Phase 4b.6 (`docs/roadmap.md:835`).
-- **Suggested fix:** Set `env: { SMUDGE_PORT: "3457", SMUDGE_CLIENT_PORT: "5174", DB_PATH: "/tmp/smudge-e2e.db" }` on each `webServer` entry, update the `port:` waits to 3457 / 5174, and parameterize `baseURL` to `http://localhost:5174`. Once landed, restore the present-tense isolation claim in `vite.config.ts:5-13` so the comment reflects what the harness actually does.
-- **Confidence:** High
-- **Found by:** Logic & Correctness, Error Handling & Edge Cases, Contract & Integration, Concurrency & State (`claude-opus-4-7`)
-- **First seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
-- **Last seen:** 2026-04-27 on branch `ovid/shared-port-validation` at `6c5bbc5`
-- **Severity:** Important
-
 ## `afcaee1c` — Steering files don't mention SMUDGE_PORT/SMUDGE_CLIENT_PORT
 - **File (at first sighting):** `CLAUDE.md`
 - **Symbol:** "Tech Stack" / "Build & Run Commands" / project README sections
@@ -209,7 +197,7 @@
 - **Confidence:** High
 - **Found by:** Contract & Integration (`claude-opus-4-7`)
 - **First seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
-- **Last seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `039ca1b`
+- **Last seen:** 2026-04-27 on branch `ovid/devcontainer-and-e2e-isolation` at `5b89539`
 - **Severity:** Suggestion
 
 ## `ca84e075` — CLAUDE.md / README / copilot-instructions reference docker-compose that doesn't exist
@@ -221,7 +209,7 @@
 - **Confidence:** High
 - **Found by:** Error Handling & Edge Cases, Contract & Integration (`claude-opus-4-7`)
 - **First seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
-- **Last seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
+- **Last seen:** 2026-04-27 on branch `ovid/devcontainer-and-e2e-isolation` at `5b89539`
 - **Severity:** Suggestion
 
 ## `a4f29c1d` — Workspace `package.json` files lack `engines.node`
@@ -331,3 +319,15 @@
 - **First seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `4b43b07`
 - **Last seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `4b43b07`
 - **Severity:** Suggestion
+
+## `7d3a91ef` — git-delta `.deb` and fzf tarball fetched without checksum verification
+- **File (at first sighting):** `.devcontainer/Dockerfile:39, 55`
+- **Symbol:** `RUN curl … git-delta_${VERSION}.deb` + `dpkg -i`; `RUN curl … fzf-${VERSION}.tar.gz | tar -xz -C /usr/local/bin`
+- **Bug class:** Security
+- **Description:** Two GitHub-release fetches that are not enumerated in backlog `1807f5f4` (which calls out only the three *curl-bash* sites at Dockerfile lines 94/108/117). These are different mechanisms: line 39 pipes a `.deb` into `dpkg -i`, which executes maintainer scripts as root during install; line 55 unpacks a tarball into `/usr/local/bin`, where the binary runs every Ctrl-T/Ctrl-R from the shell. A compromise of the upstream GitHub releases (or a MitM on the CDN at build time) lands attacker-controlled native code with elevated trust — the .deb postinst is a particularly broad foothold. Versions are pinned via `ARG`, so the matching SHA-256 can be baked alongside the version literal.
+- **Suggested fix:** For each fetch, add `sha256sum -c -` against a hash literal in the Dockerfile, kept in lockstep with the version `ARG` (renovate can update both atomically). For git-delta, also verify the .deb's GPG signature if the project ships one. Alternatively, fold this enumeration into `1807f5f4` if a single backlog entry per supply-chain class is preferred.
+- **Confidence:** Medium
+- **Found by:** Security (`general-purpose (claude-opus-4-7)`)
+- **First seen:** 2026-04-27 on branch `ovid/devcontainer-and-e2e-isolation` at `5b89539`
+- **Last seen:** 2026-04-27 on branch `ovid/devcontainer-and-e2e-isolation` at `5b89539`
+- **Severity:** Important
