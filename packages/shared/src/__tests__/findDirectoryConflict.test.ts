@@ -56,14 +56,34 @@ describe("findFirstNonDirectoryAncestor", () => {
     expect(findFirstNonDirectoryAncestor(join(top, "a", "b"))).toBe(top);
   });
 
-  it("returns the symlink when an ancestor is a symlink (lstat does not follow)", () => {
+  it("returns the symlink when an ancestor is a dangling symlink", () => {
     const link = join(scratch, "link");
     symlinkSync("/nonexistent-target", link);
-    // A symlink masquerading as a directory entry is itself a non-
-    // directory by lstat — refusing to recurse into it surfaces the
-    // symlink as the offender, which is the right call for an ENOTDIR
-    // message (the user should `unlink` the symlink, not chase its
-    // target).
+    // A dangling symlink genuinely blocks `mkdirSync(p, {recursive:true})`
+    // — Node can't resolve its target. Flag the symlink itself as the
+    // offender so the user knows to `unlink` it, not chase the target.
+    expect(findFirstNonDirectoryAncestor(join(link, "child"))).toBe(link);
+  });
+
+  it("walks through a symlink-to-directory ancestor without flagging it", () => {
+    // Regression for macOS: `/var` is a symlink to `/private/var`, so
+    // `os.tmpdir()`-rooted paths cross a symlink-to-directory at the
+    // first ancestor. `mkdirSync` follows it transparently and does NOT
+    // raise ENOTDIR, so the helper must not flag it either.
+    const realDir = join(scratch, "real");
+    mkdirSync(realDir);
+    const link = join(scratch, "link-to-dir");
+    symlinkSync(realDir, link);
+    expect(findFirstNonDirectoryAncestor(join(link, "child", "leaf"))).toBeNull();
+  });
+
+  it("returns the symlink when its target is a regular file", () => {
+    const target = join(scratch, "target-file");
+    writeFileSync(target, "");
+    const link = join(scratch, "link-to-file");
+    symlinkSync(target, link);
+    // `mkdirSync` would raise ENOTDIR here; the symlink is the
+    // actionable path (`unlink` it), not its file target.
     expect(findFirstNonDirectoryAncestor(join(link, "child"))).toBe(link);
   });
 });
