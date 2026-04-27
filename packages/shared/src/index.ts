@@ -34,10 +34,12 @@ export {
 } from "./tiptap-text";
 export type { SearchMatch, SearchOptions } from "./tiptap-text";
 export { generateSlug } from "./slugify";
+export { parsePort } from "./parsePort";
 export {
   UNTITLED_CHAPTER,
   TRASH_RETENTION_DAYS,
   TRASH_RETENTION_MS,
+  DEFAULT_SERVER_PORT,
   SEARCH_ERROR_CODES,
   SNAPSHOT_ERROR_CODES,
   MAX_QUERY_LENGTH,

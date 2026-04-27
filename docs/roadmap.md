@@ -34,6 +34,7 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.3a | 4b.3 Review Follow-ups | Validated-but-unfixed items from the 4b.3 code review (scope coverage, abort discipline, sanitizer, recovery completeness) | In Progress |
 | 4b.4 | Raw-Strings ESLint Rule | Enforce strings.ts externalization via lint; fix existing violations | Planned |
 | 4b.5 | Editor State Machine | Unify `editable`/`locked`/`busy` editor state into one machine; add `committed_but_unreloaded` mutation stage for ambiguous server responses | Planned |
+| 4b.6 | E2E Test Isolation | Wire `playwright.config.ts` to set `SMUDGE_PORT` / `SMUDGE_CLIENT_PORT` / `DB_PATH` to test-only values so e2e cannot piggy-back on the dev server or share its database | Planned |
 | 4c | Notes, Tags & Outtakes | Inline notes, paragraph tags, scratchpad for cut text | Planned |
 | 5a | Fiction: Characters | Character sheets with structured fields and freeform notes | Planned |
 | 5b | Fiction: Scene Cards | Scene cards / outline mode with drag-and-drop | Planned |
@@ -828,6 +829,40 @@ Pattern analysis across the six `ovid/architecture` code reviews (2026-04-19 to 
 
 - Phase 4b.1 (Editor Orchestration Helper) — should land first; this phase tightens the state surface the helper operates on.
 - Should land before Phase 4c (Notes, Tags & Outtakes), which adds a new class of content-mutating flow.
+
+---
+
+## Phase 4b.6: E2E Test Isolation
+
+### Goal
+
+Make the e2e harness bind to test-only ports and a test-only database so an e2e run alongside `make dev` cannot piggy-back on the dev server or touch the dev workflow's data.
+
+### Why Now
+
+Once the `ovid/shared-port-validation` branch lands, `packages/server/src/index.ts` will validate `SMUDGE_PORT` via the shared `parsePort` utility (`@smudge/shared`) and `packages/client/vite.config.ts` will validate `SMUDGE_PORT` / `SMUDGE_CLIENT_PORT` via an inline mirror of the same rules (vite's config resolver runs under bare Node ESM and cannot import `@smudge/shared`; the parity is enforced for the default port literal by `packages/shared/src/__tests__/vite-config-default-port.test.ts`). The explicit rationale on both sides is that the e2e harness would set these env vars to test-only ports for isolation. But `playwright.config.ts` hardcodes `port: 3456` / `port: 5173`, passes no `env`, and uses `reuseExistingServer: true` — so the env-var contract will have no consumer once the precursor branch merges, and the documented isolation rationale is forward-looking until this phase wires it up. Identified as OOSI1 in the `ovid/shared-port-validation` agentic review (2026-04-26).
+
+### Scope
+
+- Set `env: { SMUDGE_PORT, SMUDGE_CLIENT_PORT, DB_PATH }` to test-only values on each `webServer` entry in `playwright.config.ts`.
+- Update the matching `port:` waits and the top-level `baseURL` to the test-only client port.
+- Restore the present-tense isolation claim in `vite.config.ts:5-10` once the harness actually does what the comment says (the comment was made forward-looking under the same branch — this phase makes the original claim true).
+- Confirm `make e2e` running alongside `make dev` does not collide on ports and does not share the dev database.
+
+### Out of Scope
+
+- Test-isolation concerns for unit/integration tests (they already use real SQLite per `CLAUDE.md` §Testing Philosophy).
+- New env-var contracts beyond `SMUDGE_PORT` / `SMUDGE_CLIENT_PORT` / `DB_PATH`.
+
+### Definition of Done
+
+- `make e2e` and `make dev` can run simultaneously without port collisions.
+- The e2e database is isolated from the dev database (different `DB_PATH`).
+- The `vite.config.ts:5-10` comment reflects what `playwright.config.ts` actually does — no forward-looking TODO left behind.
+
+### Dependencies
+
+- The shared `parsePort` utility and env-driven port reading in `vite.config.ts` / `server/index.ts` (introduced in `ovid/shared-port-validation`) must be merged.
 
 ---
 
