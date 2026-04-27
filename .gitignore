@@ -155,3 +155,6 @@ playwright-report/
 
 # Local Claude Code runtime artifacts
 .claude/scheduled_tasks.lock
+
+# Third-party devcontainer template — managed by `devc template .` outside git.
+/.devcontainer/
