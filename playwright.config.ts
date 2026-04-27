@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { parsePort } from "@smudge/shared";
 
 // E2e DB isolation. Pre-fix, playwright reused the dev server (port 3456)
 // via `reuseExistingServer: true`, so e2e tests created and trashed
@@ -90,7 +91,7 @@ export default defineConfig({
   webServer: [
     {
       command: "npm run dev -w packages/server",
-      port: Number.parseInt(E2E_SERVER_PORT, 10),
+      port: parsePort(E2E_SERVER_PORT, "E2E_SERVER_PORT"),
       // Never reuse a running server — it would defeat the whole point
       // of the env override below, since the existing server has its
       // own DB_PATH/DATA_DIR baked in at startup.
@@ -103,7 +104,7 @@ export default defineConfig({
     },
     {
       command: "npm run dev -w packages/client",
-      port: Number.parseInt(E2E_CLIENT_PORT, 10),
+      port: parsePort(E2E_CLIENT_PORT, "E2E_CLIENT_PORT"),
       reuseExistingServer: false,
       env: {
         // Vite reads these to set its dev port and proxy target so that
