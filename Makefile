@@ -57,8 +57,13 @@ ensure-native: ## Ensure better-sqlite3 native binding matches current platform 
 	@node -e "\
 const eng = require('./package.json').engines && require('./package.json').engines.node; \
 if (!eng) { console.error('→ package.json has no engines.node; cannot validate Node major.'); process.exit(2); } \
-const m = String(eng).match(/^[\\^~]?([0-9]+)/); \
-if (!m) { console.error('→ engines.node has no parseable major: ' + eng); process.exit(2); } \
+const m = String(eng).match(/^[\\^~]?(\\d+)(?:\\.(?:\\d+|x))?(?:\\.(?:\\d+|x))?$$/); \
+if (!m) { \
+  console.error('→ engines.node = ' + eng + ' is not a single-major form ensure-native supports.'); \
+  console.error('   Supported: \"22\", \"22.x\", \"22.5.0\", \"^22.5\", \"~22.5\".'); \
+  console.error('   Multi-major ranges (\"22 || 24\") would silently pin to the first major; update this recipe to iterate allowed majors if broadening is intentional.'); \
+  process.exit(2); \
+} \
 const expected = m[1]; \
 const actual = process.versions.node.split('.')[0]; \
 if (actual !== expected) { \
