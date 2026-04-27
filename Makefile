@@ -136,7 +136,7 @@ format: ## Format code
 
 format-check: ## Format code, then fail if anything changed
 	npm run format
-	@git diff --quiet -- 'packages/**/*.ts' 'packages/**/*.tsx' 'packages/**/*.json' 'packages/**/*.css' || { echo "Error: formatting changed files — commit before running make all"; exit 1; }
+	@git diff --quiet -- 'packages/**/*.ts' 'packages/**/*.tsx' 'packages/**/*.json' 'packages/**/*.css' 'e2e/**/*.ts' playwright.config.ts vitest.config.ts || { echo "Error: formatting changed files — commit before running make all"; exit 1; }
 
 typecheck: ## Type-check all packages
 	npm run typecheck

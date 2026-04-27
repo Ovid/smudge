@@ -107,7 +107,7 @@ test.describe("Snapshot E2e Tests", () => {
     await expect(panel.getByText("Untitled snapshot")).toBeVisible({ timeout: 5000 });
   });
 
-  test("view a snapshot shows banner and old content", async ({ page, request }) => {
+  test("view a snapshot shows banner and old content", async ({ page }) => {
     await page.goto(`/projects/${project.slug}`);
     const editor = page.getByRole("textbox");
     await expect(editor).toBeVisible();

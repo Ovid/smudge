@@ -29,10 +29,7 @@ import { findFirstNonDirectoryAncestor, parsePort } from "@smudge/shared";
 // Windows has no `process.getuid`; fall back to the literal "shared"
 // so the path resolves at all (the symlink-attack threat model is
 // POSIX-specific).
-const E2E_DATA_DIR = path.join(
-  os.tmpdir(),
-  `smudge-e2e-data-${process.getuid?.() ?? "shared"}`,
-);
+const E2E_DATA_DIR = path.join(os.tmpdir(), `smudge-e2e-data-${process.getuid?.() ?? "shared"}`);
 const E2E_DB_PATH = path.join(E2E_DATA_DIR, "smudge.db");
 const E2E_SERVER_PORT = "3457";
 const E2E_CLIENT_PORT = "5174";

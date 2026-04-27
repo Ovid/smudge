@@ -32,7 +32,9 @@ const VITE_CONFIG_PATH = resolve(
 describe("DEFAULT_SERVER_PORT_VITE parity", () => {
   it("matches String(DEFAULT_SERVER_PORT) in packages/client/vite.config.ts", () => {
     const viteConfigSource = readFileSync(VITE_CONFIG_PATH, "utf8");
-    const matches = Array.from(viteConfigSource.matchAll(/DEFAULT_SERVER_PORT_VITE\s*=\s*"(\d+)"/g));
+    const matches = Array.from(
+      viteConfigSource.matchAll(/DEFAULT_SERVER_PORT_VITE\s*=\s*"(\d+)"/g),
+    );
     expect(
       matches.length,
       matches.length === 0
