@@ -1,0 +1,166 @@
+From: Claude (devcontainer agent)
+Date: 2026-04-27
+Subject: [I5] Followup: state-file gate for setup_plugin_marketplaces
+
+Why this is a separate patch
+============================
+This devcontainer mounts /workspace/.devcontainer as read-only inside
+the container, so an agent running inside cannot edit Dockerfile or
+post_install.py directly. Apply this patch from the host (or any
+environment with write access to .devcontainer/), then commit and push.
+
+Order of application: this patch operates on the post_install.py STATE
+that results from applying both `2026-04-27-post_install-correctness-
+and-hardening.patch` and `2026-04-27-marketplace-runtime-add.patch`
+(it modifies the setup_plugin_marketplaces function introduced by the
+latter). Apply order:
+
+  1. paad/code-reviews/deferred/2026-04-27-post_install-correctness-and-hardening.patch
+  2. paad/code-reviews/deferred/2026-04-27-marketplace-runtime-add.patch
+  3. paad/code-reviews/deferred/2026-04-27-fix_directory_ownership-symlink-args-walk.patch
+  4. paad/code-reviews/deferred/2026-04-27-post_install-correctness-followup.patch
+  5. paad/code-reviews/deferred/2026-04-27-marketplace-state-file-followup.patch  (this one)
+
+What this fixes (review item I5 — review 2026-04-27 18:27)
+==========================================================
+
+I5 (Important): marketplace runtime-add widens TOFU window
+----------------------------------------------------------
+The parent (`2026-04-27-marketplace-runtime-add.patch`) correctly
+moves the three `claude plugin marketplace add` calls from the
+Dockerfile build step (where they were shadowed by the named-volume
+mount on /home/vscode/.claude after first creation) to
+postCreateCommand, where they apply on every container creation.
+
+Trust-frequency consequence: pre-parent, the marketplace manifests
+were re-fetched once per image rebuild (rare — Renovate-driven).
+Post-parent, they re-fetch on every "Reopen in Container", every fresh
+clone, every devcontainer recreate — frequent, daily. With
+bypassPermissions opt-in, NET_ADMIN/NET_RAW caps, and the R/W
+workspace mount, plugin compromise has wide blast radius (already
+tracked in backlog `2b9f7d63` as the static "unpinned" concern). The
+frequency-of-trust-event is a separate axis the parent does not
+address — its trust-posture commentary was carried forward verbatim.
+
+An attacker who briefly compromises a third-party marketplace upstream
+(e.g. `trailofbits/skills`) lands plugin code on the next container
+creation, not the next image build. Window expands from "weeks" to
+"minutes/hours."
+
+Fix: hash the canonical marketplace list and persist it to a state
+file at `~/.claude/.smudge-marketplaces-registered`. On subsequent
+runs, skip the `claude plugin marketplace add` calls if the prior hash
+matches the current list. The named volume persists state across
+recreations, so closing the per-creation re-fetch loop does not
+reintroduce the original volume-shadowing bug.
+
+Refresh paths:
+  - Delete the state file (`rm
+    ~/.claude/.smudge-marketplaces-registered`) to force re-registration
+    on the next container creation.
+  - Change the marketplaces list (add/remove an entry); the new hash
+    will mismatch the stored hash and trigger re-registration.
+  - Failed registrations skip the state-file write so the next run
+    retries against upstream.
+
+The hash is over the SORTED list (so list-order changes don't
+gratuitously re-register) and uses SHA-256 (overkill for an integrity
+check, but readily available via stdlib hashlib).
+
+How to apply
+============
+From a shell on the host (NOT inside the devcontainer):
+
+  cd <smudge repo root>
+  # Apply the prior 4 patches first (see Order of application)
+  git apply paad/code-reviews/deferred/2026-04-27-marketplace-state-file-followup.patch
+  git add .devcontainer/post_install.py
+  git commit -m "fix(devcontainer): state-file gate for marketplace registration (I5)"
+
+Then push.
+
+---
+--- a/.devcontainer/post_install.py
++++ b/.devcontainer/post_install.py
+@@ -8,6 +8,7 @@
+ - Directory ownership fixes for mounted volumes
+ """
+ 
++import hashlib
+ import json
+ import os
+ import shutil
+@@ -607,6 +608,36 @@
+         "trailofbits/skills",
+         "trailofbits/skills-curated",
+     ]
++
++    # I5 (review 2026-04-27 followup): hash the canonical list and skip
++    # `claude plugin marketplace add` if a prior run already registered
++    # the same set. Pre-fix, this function ran on every container
++    # creation, which made every "Reopen in Container" or fresh clone a
++    # TOFU re-fetch of three third-party manifests — widening the trust
++    # window from per-image-build (rare, Renovate-driven) to per-
++    # container-creation (frequent, daily). The state file lives in the
++    # named volume mounted at ~/.claude, so it persists across rebuilds;
++    # refresh by deleting the state file or by changing the marketplaces
++    # list (hash mismatch triggers re-add).
++    state_file = Path.home() / ".claude" / ".smudge-marketplaces-registered"
++    list_hash = hashlib.sha256(
++        "\n".join(sorted(marketplaces)).encode("utf-8")
++    ).hexdigest()
++
++    if state_file.exists():
++        try:
++            if state_file.read_text(encoding="utf-8").strip() == list_hash:
++                print(
++                    f"[post_install] Plugin marketplaces already registered "
++                    f"(state: {state_file})",
++                    file=sys.stderr,
++                )
++                return
++        except OSError:
++            # Unreadable state file — fall through to re-register.
++            pass
++
++    all_ok = True
+     for mp in marketplaces:
+         try:
+             r = subprocess.run(
+@@ -621,18 +652,36 @@
+                     file=sys.stderr,
+                 )
+             else:
++                all_ok = False
+                 print(
+                     f"[post_install] Warning: `claude plugin marketplace add "
+                     f"{mp}` exited {r.returncode}: {r.stderr.strip()}",
+                     file=sys.stderr,
+                 )
+         except (OSError, subprocess.SubprocessError) as e:
++            all_ok = False
+             print(
+                 f"[post_install] Warning: could not register marketplace "
+                 f"{mp} ({e})",
+                 file=sys.stderr,
+             )
+ 
++    if not all_ok:
++        # Don't write the state file if any registration failed — next
++        # run will retry the partial set against upstream.
++        return
++
++    try:
++        state_file.parent.mkdir(parents=True, exist_ok=True)
++        state_file.write_text(list_hash + "\n", encoding="utf-8")
++    except OSError as e:
++        print(
++            f"[post_install] Warning: could not write marketplace state "
++            f"file {state_file} ({e}); next container creation will "
++            f"re-register marketplaces",
++            file=sys.stderr,
++        )
++
+ 
+ def main():
+     """Run all post-install configuration."""
