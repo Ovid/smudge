@@ -1236,7 +1236,7 @@ describe("useProjectEditor", () => {
 
       // Select a new chapter. The backoff must be unblocked so the loop
       // reaches its seq check and returns false — without advancing
-      // timers to BACKOFF_MS[0]=2000ms.
+      // timers to SAVE_BACKOFF_MS[0]=2000ms.
       await act(async () => {
         await result.current.handleSelectChapter("ch2");
       });

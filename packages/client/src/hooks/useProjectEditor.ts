@@ -9,6 +9,12 @@ import { mapApiError, mapApiErrorMessage, isApiError, isAborted, isClientError }
 
 export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
 
+// Save-retry exponential backoff schedule (ms). Exposed so the test
+// helper `flushSaveRetries` can iterate the same schedule the hook
+// uses — a hand-mirrored copy in the test helper would silently drift
+// if this array changes.
+export const SAVE_BACKOFF_MS = [2000, 4000, 8000] as const;
+
 // Discriminated return from reloadActiveChapter so callers can distinguish
 // "fresh server state is now on screen" from "the user switched chapters
 // (or the call was gated out) before the reload ran" from "the GET errored".
@@ -281,8 +287,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       saveAbortRef.current?.abort();
       const controller = new AbortController();
       saveAbortRef.current = controller;
-      const BACKOFF_MS = [2000, 4000, 8000];
-      const MAX_RETRIES = BACKOFF_MS.length;
+      const MAX_RETRIES = SAVE_BACKOFF_MS.length;
 
       setSaveStatus("saving");
       setSaveErrorMessage(null);
@@ -418,7 +423,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
                   saveBackoffRef.current = null;
                 }
                 resolve();
-              }, BACKOFF_MS[attempt]);
+              }, SAVE_BACKOFF_MS[attempt]);
               saveBackoffRef.current = { timer, resolve };
             });
             // If cancelInFlightSave cleared the timer and resolved early,
