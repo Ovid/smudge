@@ -30,9 +30,11 @@ import tailwindcss from "@tailwindcss/vite";
 //   '/workspace/packages/shared/src/index.ts'
 //
 // The server's index.ts imports the constant correctly (it runs under
-// tsx, which DOES rewrite extensionless .ts imports). If you change
-// the literal here, update CLAUDE.md and packages/server/src/index.ts
-// too.
+// tsx, which DOES rewrite extensionless .ts imports). The canonical
+// source is DEFAULT_SERVER_PORT in packages/shared/src/constants.ts;
+// if you change the literal here, mirror it there (a parity test
+// enforces equality — see the S3 block below) and update any docs
+// that quote the port (CLAUDE.md).
 //
 // R3 (review 2026-04-26): mirror the server's SMUDGE_PORT validation
 // (packages/server/src/index.ts). A non-numeric override (typo in
