@@ -197,7 +197,7 @@
 - **Confidence:** High
 - **Found by:** Logic & Correctness, Error Handling & Edge Cases, Contract & Integration, Concurrency & State (`claude-opus-4-7`)
 - **First seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
-- **Last seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `039ca1b`
+- **Last seen:** 2026-04-27 on branch `ovid/shared-port-validation` at `6c5bbc5`
 - **Severity:** Important
 
 ## `afcaee1c` — Steering files don't mention SMUDGE_PORT/SMUDGE_CLIENT_PORT
