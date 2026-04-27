@@ -111,6 +111,50 @@ describe("E2E config parity (playwright.config.ts ↔ Makefile)", () => {
     );
   });
 
+  it("e2e-clean probe NOLISTEN set covers transient unreachable codes (S1)", () => {
+    // S1 (review 2026-04-27, third pass): some Linux configs and macOS
+    // in transient network states emit EHOSTUNREACH on connect() to
+    // ::1; ECONNRESET is possible on a peer-side close-without-listener.
+    // Both should classify as "no listener" — fail-closed treats them
+    // as probe errors and refuses to wipe, which is operator-nuisance
+    // on transient routing flakes (an IPv6-stack reset by NetworkManager
+    // is benign for our purposes).
+    expect(makefileText).toMatch(/EHOSTUNREACH/);
+    expect(makefileText).toMatch(/ECONNRESET/);
+  });
+
+  it("e2e-clean Promise.all chain has a .catch() to suppress raw stack traces (S8)", () => {
+    // S8 (review 2026-04-27, third pass): pre-fix, sync throws inside
+    // net.createConnection (theoretically reachable for malformed host
+    // args) became UnhandledPromiseRejection to stderr — the recipe
+    // still failed-closed but the curated "refusing to wipe" message
+    // was preceded by a Node stack trace. Add `.catch(...)` so the
+    // diagnostic output stays curated.
+    const probeMatch = makefileText.match(/Promise\.all\s*\([^)]*\)[\s\S]*?\.catch\s*\(/);
+    expect(probeMatch, "expected Promise.all(...).catch(...) chain in e2e-clean probe").toBeTruthy();
+  });
+
+  it("e2e-clean recipe enforces a TMPDIR-prefix allowlist before rm -rf (I8)", () => {
+    // I8 (review 2026-04-27, third pass): os.tmpdir() honors $TMPDIR,
+    // which is operator-controlled. A developer with TMPDIR=$HOME or
+    // TMPDIR=/ would have `make e2e-clean` issue `rm -rf
+    // "$HOME/smudge-e2e-data-1000"` or `rm -rf
+    // "/smudge-e2e-data-1000"` — fat-finger hazard. Refuse with a
+    // clear message unless the resolved DATA_DIR sits under one of the
+    // canonical tmp roots.
+    const eCleanMatch = makefileText.match(/^e2e-clean:[\s\S]*?(?=\n[a-zA-Z][\w-]*:)/m);
+    expect(eCleanMatch, "e2e-clean recipe block").toBeTruthy();
+    const recipe = eCleanMatch![0];
+    // The allowlist must include the standard POSIX prefixes for
+    // os.tmpdir() resolutions.
+    expect(recipe).toMatch(/\/tmp\//);
+    expect(recipe).toMatch(/\/var\/folders\//);
+    expect(recipe).toMatch(/\/var\/tmp\//);
+    // The allowlist must be enforced before `rm -rf` — there must be a
+    // `case ... esac` (or equivalent guard) in the recipe.
+    expect(recipe).toMatch(/case\s+"\$\$DATA_DIR"\s+in/);
+  });
+
   it("uses the same E2E_SERVER_PORT", () => {
     const playwrightPort = findExactlyOne(
       PLAYWRIGHT_PORT_RE,
