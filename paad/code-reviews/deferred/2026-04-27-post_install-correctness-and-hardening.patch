@@ -1,0 +1,487 @@
+From: Claude (devcontainer agent)
+Date: 2026-04-27
+Subject: [C1, C2, I2, I4, S1, S2, S4, LAT2] post_install.py: round-trip
+         escaping, fall-through fix, ordering, error surfacing, helper
+         extraction
+
+Why this is a separate patch
+============================
+This devcontainer mounts /workspace/.devcontainer as read-only inside the
+container, so an agent running inside cannot edit post_install.py
+directly. Apply this patch from the host (or any environment with write
+access to .devcontainer/), then commit and push.
+
+This is a follow-on to the prior round of post_install hardening
+(C1-onboarding-bypass, I1-I2-I4-I6-S4) — those patches addressed the
+problems known at that time; this patch addresses what the next review
+surfaced once those landed and were exercised.
+
+What this fixes
+===============
+
+C1 (review 2026-04-27) — `_git_get` round-trip strips git-INI escape/
+quote/comment chars
+-------------------------------------------------------------------
+`git config --file --get` returns the *parsed* value (escapes/quotes
+already resolved). The script then re-emitted that value verbatim into
+.gitconfig.local with f-strings — `name = {user_name}`. When that file
+is later loaded as GIT_CONFIG_GLOBAL, git's INI rules re-parse the raw
+characters and corrupt the value. Reproduced live (this patch was
+verified before submission):
+
+  Host:      [user] name = "Test #1 User"
+  _git_get:  Test #1 User
+  Re-emit:   name = Test #1 User
+  Re-parse:  user.name = "Test " (everything after '#' is comment)
+
+The same truncation hits `;` (j@x;y.com → j@x), and `"`/`\\` get
+stripped/duplicated.
+
+The fix introduces `_git_quote_value(value)` which double-quotes the
+value and escapes internal `"` and `\\`. Every `name`/`email`/
+`signingkey`/`gpgsign` emit goes through it.
+
+C2 (review 2026-04-27) — corrupt-JSON branch falls through to write a
+hasCompletedOnboarding stub
+--------------------------------------------------------------------
+When `claude -p` exits 0 but writes corrupt JSON, the prior version
+moved the corrupt file to .bak and *fell through* to the bottom of
+setup_onboarding_bypass, writing `{"hasCompletedOnboarding": true}`
+to a fresh ~/.claude.json. That's exactly the failure mode the C1
+guard at the top of the function (claude -p rc != 0 → return) was
+added to prevent — except now the stub overwrites a *just-corrupted*
+config rather than a stale-but-valid one. Either way the user sees a
+container that claims to be onboarded but has no auth state and
+silently fails on next `claude` invocation.
+
+The fix routes through the new `_load_json_or_backup` helper and bails
+out unless status == "loaded". The corrupt original (if any) is now at
+~/.claude.json.<ts>.bak for the user to recover.
+
+I2 (review 2026-04-27) — setup_claude_settings runs before
+fix_directory_ownership, so a root-owned file kills postCreate
+-------------------------------------------------------------
+Both `setup_onboarding_bypass` and `setup_claude_settings` call
+`path.read_text()` before `fix_directory_ownership`. The previous
+exception list only caught `JSONDecodeError`, so a `PermissionError`
+from a file root-owned by a previous container run would propagate
+and abort postCreate before the function designed to chown those
+files (`fix_directory_ownership`) even runs. Symptoms: no tmux
+config, wrong ownership on /commandhistory and ~/.config/gh, no git
+identity.
+
+The fix: move `fix_directory_ownership()` to the FIRST call in
+`main()`. Defense-in-depth: `_load_json_or_backup` also catches
+`OSError` so a stale or root-owned file produces a clean warning
+rather than aborting.
+
+I4 (review 2026-04-27) — `_git_get` swallows malformed-config errors
+silently → empty-of-identity container
+--------------------------------------------------------------------
+Previously, `git config --get` returning rc=1 (key absent) and rc=128
+(parse failure) were both treated as "" silently. A malformed host
+gitconfig produced a .gitconfig.local with no [user] section, and the
+first `git commit` failed with "Author identity unknown" with no
+breadcrumb pointing at the parse failure.
+
+The fix: distinguish rc=1 (return "" silently) from rc≠0,1 (warn,
+return ""). Additionally, when no identity keys land in
+.gitconfig.local at all (key truly absent OR all keys failed to
+parse), emit an explicit "no [user] section" warning so the resulting
+"Author identity unknown" failure is debuggable.
+
+S1 (review 2026-04-27) — `shutil.move(path, .bak)` silently overwrites
+a prior backup
+----------------------------------------------------------------------
+`path.with_suffix(path.suffix + ".bak")` reuses the same backup name on
+every failure, destroying older corrupt state. The fix: timestamp-suffix
+each backup with epoch seconds (e.g. `.claude.json.1714225800.bak`) so
+each failure keeps its own forensic record.
+
+S2 (review 2026-04-27) — `SMUDGE_DEVCONTAINER_BYPASS` /
+`SMUDGE_DEVCONTAINER_INCLUDE_HOST_GITCONFIG` exact-string-match `"1"`
+--------------------------------------------------------------------
+Previously matched only the literal string "1", so a user who set the
+var to `true`, `yes`, or `on` (matching common Linux/Docker conventions
+and the rest of the project's env-var style) hit a silent no-op. The
+fix: extract `_is_truthy(value)` accepting `{"1", "true", "yes", "on"}`
+case-insensitive, whitespace-trimmed.
+
+S4 (review 2026-04-27) — duplicated load-or-backup pattern
+----------------------------------------------------------
+The same try/except/move/print scaffold appeared in
+`setup_onboarding_bypass` and `setup_claude_settings`. Extracted to
+`_load_json_or_backup(path) -> tuple[dict, str]` returning a status
+tag (`"loaded"`, `"absent"`, `"backed_up"`, `"failed"`). Each caller
+inspects the tag — onboarding only proceeds on `"loaded"` (C2 fix);
+settings proceeds on anything except `"failed"` (preserving original
+intent of overwriting a missing/corrupt-then-backed-up file with
+defaults).
+
+LAT2 (review 2026-04-27) — `fix_directory_ownership` hardcodes
+~/.claude instead of CLAUDE_CONFIG_DIR
+--------------------------------------------------------------
+Latent today (devcontainer.json sets CLAUDE_CONFIG_DIR to
+/home/vscode/.claude, which equals `~/.claude`), but a user who points
+the env var elsewhere would have ownership-fix skip the actual
+directory. Mirror the pattern already used at the top of
+`setup_claude_settings` so the two stay aligned.
+
+Verification
+============
+The C1 quoting was verified live via a Python harness driving real
+`git config --file --get` against a generated config: `Test #1 User`,
+`j@x;y.com`, `Test "Q" Sir`, `path\\to\\file`, `  spaced  `, and
+`Mr. O'Brien` all round-trip losslessly.
+
+How to apply
+============
+From a shell on the host (NOT inside the devcontainer):
+
+  cd <smudge repo root>
+  git apply paad/code-reviews/deferred/2026-04-27-post_install-correctness-and-hardening.patch
+  git add .devcontainer/post_install.py
+  git commit -m "fix(devcontainer): post_install round-trip escaping + ordering + helpers (C1, C2, I2, I4, S1, S2, S4, LAT2)"
+
+Then push.
+
+---
+--- a/.devcontainer/post_install.py
++++ b/.devcontainer/post_install.py
+@@ -13,9 +13,86 @@
+ import shutil
+ import subprocess
+ import sys
++import time
+ from pathlib import Path
+ 
+ 
++# S2 (review 2026-04-27): normalize env-var booleans across all opt-in
++# flags in this script (SMUDGE_DEVCONTAINER_BYPASS,
++# SMUDGE_DEVCONTAINER_INCLUDE_HOST_GITCONFIG). Pre-fix, exact-string-
++# match `"1"` only — a user who set the var to `true` (matching the
++# rest of the project's env-var conventions) would have hit a silent
++# no-op. The accepted values mirror the common Linux/Docker convention.
++_TRUTHY_VALUES = {"1", "true", "yes", "on"}
++
++
++def _is_truthy(value: str) -> bool:
++    return value.strip().lower() in _TRUTHY_VALUES
++
++
++def _backup_path(path: Path) -> Path:
++    """S1 (review 2026-04-27): timestamp-suffixed backup name.
++
++    `path.with_suffix(path.suffix + ".bak")` overwrites a prior backup
++    if one exists, destroying the older corrupt state and removing
++    forensic evidence. Suffix with epoch seconds so each failure keeps
++    its own backup. Within-second collisions on the same path are rare
++    enough to accept; the alternative (microsecond resolution) makes
++    the filename unwieldy without protecting any real recovery case.
++    """
++    return path.with_name(f"{path.name}.{int(time.time())}.bak")
++
++
++def _load_json_or_backup(path: Path) -> tuple[dict, str]:
++    """S4 (review 2026-04-27): extract the load-or-backup pattern shared
++    by setup_onboarding_bypass and setup_claude_settings.
++
++    Returns (loaded_dict, status) where status is one of:
++      "loaded"    — file existed and parsed; loaded_dict has its content
++      "absent"    — file does not exist; loaded_dict is {}
++      "backed_up" — file existed but was corrupt; moved to .bak;
++                    loaded_dict is {}
++      "failed"    — file existed but couldn't be loaded AND couldn't be
++                    backed up; the original is intact, callers MUST NOT
++                    overwrite it (preserves any recoverable state)
++
++    Defense-in-depth: catches OSError (PermissionError, etc.) too so a
++    root-owned file produced by a previous container run doesn't abort
++    postCreate before fix_directory_ownership runs. The I2 fix
++    additionally moves fix_directory_ownership earlier, but this guard
++    remains in case ordering ever shifts again.
++    """
++    if not path.exists():
++        return {}, "absent"
++    try:
++        return json.loads(path.read_text()), "loaded"
++    except json.JSONDecodeError as e:
++        backup = _backup_path(path)
++        try:
++            shutil.move(str(path), str(backup))
++            print(
++                f"[post_install] Warning: {path} had invalid JSON "
++                f"({e}); backed up to {backup} and starting fresh",
++                file=sys.stderr,
++            )
++            return {}, "backed_up"
++        except OSError as move_err:
++            print(
++                f"[post_install] Warning: {path} had invalid JSON "
++                f"({e}) and could not be backed up ({move_err}) — "
++                "skipped to preserve the original file",
++                file=sys.stderr,
++            )
++            return {}, "failed"
++    except OSError as read_err:
++        print(
++            f"[post_install] Warning: {path} could not be read "
++            f"({read_err}) — step skipped",
++            file=sys.stderr,
++        )
++        return {}, "failed"
++
++
+ def setup_onboarding_bypass():
+     """Bypass the interactive onboarding wizard when CLAUDE_CODE_OAUTH_TOKEN is set.
+ 
+@@ -35,7 +112,7 @@
+         )
+         return
+ 
+-    # When `CLAUDE_CONFIG_DIR` is set, as is done in `devcontainer.json`, `claude` unexpectedly 
++    # When `CLAUDE_CONFIG_DIR` is set, as is done in `devcontainer.json`, `claude` unexpectedly
+     # looks for `.claude.json` in *that* folder, instead of in `~`, contradicting the documentation.
+     #  See https://github.com/anthropics/claude-code/issues/3833#issuecomment-3694918874
+     claude_json_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home()))
+@@ -84,30 +161,17 @@
+         )
+         return
+ 
+-    config: dict = {}
+-    try:
+-        config = json.loads(claude_json.read_text())
+-    except json.JSONDecodeError as e:
+-        # C1 (review 2026-04-26): a corrupt config may still hold partially
+-        # recoverable auth/MCP/session state. Move it aside before we write
+-        # over it so the user can inspect/recover, rather than silently
+-        # destroying it.
+-        backup = claude_json.with_suffix(claude_json.suffix + ".bak")
+-        try:
+-            shutil.move(str(claude_json), str(backup))
+-            print(
+-                f"[post_install] Warning: {claude_json} had invalid JSON "
+-                f"({e}); backed up to {backup} and starting fresh",
+-                file=sys.stderr,
+-            )
+-        except OSError as move_err:
+-            print(
+-                f"[post_install] Warning: {claude_json} had invalid JSON "
+-                f"({e}) and could not be backed up ({move_err}) — "
+-                "onboarding bypass skipped to preserve the original file",
+-                file=sys.stderr,
+-            )
+-            return
++    config, status = _load_json_or_backup(claude_json)
++    if status != "loaded":
++        # C2 (review 2026-04-27): mirror the C1 (rc-nonzero) discipline
++        # at the top of this function. When the just-written config
++        # parsed empty/corrupt OR couldn't be read, do NOT fall through
++        # to write {"hasCompletedOnboarding": true} — that produces a
++        # stub claiming "onboarded" with no actual auth state, exactly
++        # the failure mode C1 was added to prevent. The next container
++        # restart will retry; the corrupt original (if any) is now at
++        # claude_json + ".<ts>.bak" for the user to inspect/recover.
++        return
+ 
+     config["hasCompletedOnboarding"] = True
+ 
+@@ -124,10 +188,11 @@
+     SMUDGE_DEVCONTAINER_BYPASS env var. Default-off so a fresh
+     "Reopen in Container" isn't silently permission-free. The
+     `claude-yolo` alias in .zshrc remains for explicit per-invocation
+-    bypass. Set SMUDGE_DEVCONTAINER_BYPASS=1 in remoteEnv (or
+-    localEnv pass-through) to restore the previous always-on default.
++    bypass. Set SMUDGE_DEVCONTAINER_BYPASS=1 (or true/yes/on) in
++    remoteEnv (or localEnv pass-through) to restore the previous
++    always-on default.
+     """
+-    if os.environ.get("SMUDGE_DEVCONTAINER_BYPASS") != "1":
++    if not _is_truthy(os.environ.get("SMUDGE_DEVCONTAINER_BYPASS", "")):
+         print(
+             "[post_install] SMUDGE_DEVCONTAINER_BYPASS not set; "
+             "leaving Claude permissions at default. Use the `claude-yolo` "
+@@ -146,27 +211,14 @@
+     # user-authored settings (custom hooks, allow-list, env, model
+     # preferences) on every parse failure. Move the corrupt file to
+     # .bak so the user can recover manually instead.
+-    settings: dict = {}
+-    if settings_file.exists():
+-        try:
+-            settings = json.loads(settings_file.read_text())
+-        except json.JSONDecodeError as e:
+-            backup = settings_file.with_suffix(settings_file.suffix + ".bak")
+-            try:
+-                shutil.move(str(settings_file), str(backup))
+-                print(
+-                    f"[post_install] Warning: {settings_file} had invalid "
+-                    f"JSON ({e}); backed up to {backup} and starting fresh",
+-                    file=sys.stderr,
+-                )
+-            except OSError as move_err:
+-                print(
+-                    f"[post_install] Warning: {settings_file} had invalid "
+-                    f"JSON ({e}) and could not be backed up ({move_err}) — "
+-                    "settings setup skipped to preserve the original file",
+-                    file=sys.stderr,
+-                )
+-                return
++    #
++    # S4 (review 2026-04-27): pattern factored into _load_json_or_backup.
++    # For settings, "absent"/"loaded"/"backed_up" all proceed to write
++    # defaults; only "failed" (couldn't back up) bails out to preserve
++    # the original file.
++    settings, status = _load_json_or_backup(settings_file)
++    if status == "failed":
++        return
+ 
+     # Set bypassPermissions mode
+     if "permissions" not in settings:
+@@ -227,12 +279,29 @@
+ 
+ 
+ def fix_directory_ownership():
+-    """Fix ownership of mounted volumes that may have root ownership."""
++    """Fix ownership of mounted volumes that may have root ownership.
++
++    LAT2 (review 2026-04-27): respect CLAUDE_CONFIG_DIR for the Claude
++    state directory rather than hardcoding ~/.claude. Today the env
++    var equals the home-relative default (set in devcontainer.json),
++    so this is forward-compat — but if a user customizes the var to
++    e.g. /workspace/.claude, the original hardcoded path would skip
++    chown on the actual directory.
++
++    I2 (review 2026-04-27): moved to the FIRST call in main() so
++    later steps that read root-owned files (read_text in
++    _load_json_or_backup, etc.) see correct ownership before they
++    attempt to read.
++    """
+     uid = os.getuid()
+     gid = os.getgid()
+ 
++    claude_dir = Path(
++        os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude"))
++    )
++
+     dirs_to_fix = [
+-        Path.home() / ".claude",
++        claude_dir,
+         Path("/commandhistory"),
+         Path.home() / ".config" / "gh",
+     ]
+@@ -364,6 +433,13 @@
+     # are limited to user.name, user.email, user.signingkey, and
+     # commit.gpgsign, none of which can shell out at runtime.
+     def _git_get(key: str) -> str:
++        """Read a key from the host gitconfig.
++
++        I4 (review 2026-04-27): distinguish rc=1 (key absent — normal,
++        return "" silently) from rc≠0,1 (most likely rc=128 = host
++        gitconfig couldn't be parsed — warn so the resulting
++        no-identity container is debuggable rather than mysterious).
++        """
+         try:
+             r = subprocess.run(
+                 ["git", "config", "--file", str(host_gitconfig), "--get", key],
+@@ -371,11 +447,42 @@
+                 text=True,
+                 timeout=5,
+             )
+-            return r.stdout.strip() if r.returncode == 0 else ""
+-        except (OSError, subprocess.SubprocessError):
++            if r.returncode == 0:
++                return r.stdout.strip()
++            if r.returncode == 1:
++                return ""
++            print(
++                f"[post_install] Warning: `git config --get {key}` exited "
++                f"{r.returncode} on host gitconfig: {r.stderr.strip()}",
++                file=sys.stderr,
++            )
++            return ""
++        except (OSError, subprocess.SubprocessError) as e:
++            print(
++                f"[post_install] Warning: could not run "
++                f"`git config --get {key}` ({e})",
++                file=sys.stderr,
++            )
+             return ""
+ 
+-    use_full_include = os.environ.get("SMUDGE_DEVCONTAINER_INCLUDE_HOST_GITCONFIG") == "1"
++    def _git_quote_value(value: str) -> str:
++        """C1 (review 2026-04-27): quote a value for git INI format.
++
++        `git config --get` returns the parsed value with escapes/quotes
++        already resolved. Re-emitting raw produces wrong output if the
++        value contains `#`, `;`, leading/trailing whitespace, `\\`, or
++        `"` — git's INI parser interprets them on the second read.
++        E.g. host `[user] name = "Test #1 User"` → _git_get returns
++        `Test #1 User` → raw emit → re-parse truncates at `#` to
++        `Test `. Wrap in double quotes and escape internal backslashes
++        and quotes so the round-trip is lossless.
++        """
++        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
++        return f'"{escaped}"'
++
++    use_full_include = _is_truthy(
++        os.environ.get("SMUDGE_DEVCONTAINER_INCLUDE_HOST_GITCONFIG", "")
++    )
+     if use_full_include:
+         identity_section = f"[include]\n    path = {host_gitconfig}\n"
+     else:
+@@ -387,14 +494,34 @@
+         if user_name or user_email or signing_key:
+             identity_lines.append("[user]")
+             if user_name:
+-                identity_lines.append(f"    name = {user_name}")
++                identity_lines.append(f"    name = {_git_quote_value(user_name)}")
+             if user_email:
+-                identity_lines.append(f"    email = {user_email}")
++                identity_lines.append(f"    email = {_git_quote_value(user_email)}")
+             if signing_key:
+-                identity_lines.append(f"    signingkey = {signing_key}")
++                identity_lines.append(
++                    f"    signingkey = {_git_quote_value(signing_key)}"
++                )
++        else:
++            # I4 (review 2026-04-27): no identity surfaced. Could be
++            # legitimately absent on host, OR git couldn't parse the
++            # host config (rc=128, already warned in _git_get). Either
++            # way, the first `git commit` will fail with "Author
++            # identity unknown" — flag that loudly.
++            print(
++                "[post_install] Warning: no [user] section emitted to "
++                ".gitconfig.local — host gitconfig has no "
++                "user.name/user.email/user.signingkey, or git couldn't "
++                "parse it. The first `git commit` inside this container "
++                "will fail with 'Author identity unknown' until you set "
++                "identity manually (e.g. `git config --global user.email "
++                "...`).",
++                file=sys.stderr,
++            )
+         if commit_gpgsign:
+             identity_lines.append("[commit]")
+-            identity_lines.append(f"    gpgsign = {commit_gpgsign}")
++            identity_lines.append(
++                f"    gpgsign = {_git_quote_value(commit_gpgsign)}"
++            )
+         identity_section = ("\n".join(identity_lines) + "\n") if identity_lines else ""
+ 
+     # Create local git config: identity section (above), excludesfile,
+@@ -449,10 +576,15 @@
+     """Run all post-install configuration."""
+     print("[post_install] Starting post-install configuration...", file=sys.stderr)
+ 
++    # I2 (review 2026-04-27): fix_directory_ownership runs FIRST so
++    # subsequent steps that read potentially root-owned files (the
++    # _load_json_or_backup calls in setup_onboarding_bypass and
++    # setup_claude_settings) don't trip a PermissionError before the
++    # function designed to chown those files even runs.
++    fix_directory_ownership()
+     setup_onboarding_bypass()
+     setup_claude_settings()
+     setup_tmux_config()
+-    fix_directory_ownership()
+     setup_global_gitignore()
+ 
+     print("[post_install] Configuration complete!", file=sys.stderr)
