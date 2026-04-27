@@ -21,8 +21,13 @@ import { resolve, dirname } from "node:path";
 // length assertion catches drift in either direction.
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
-const PLAYWRIGHT_DATA_DIR_RE = /E2E_DATA_DIR\s*=\s*path\.join\(os\.tmpdir\(\),\s*"([^"]+)"\)/g;
-const MAKEFILE_DATA_DIR_RE = /require\("path"\)\.join\(require\("os"\)\.tmpdir\(\),\s*"([^"]+)"\)/g;
+// I6 (review 2026-04-27): the dir name is now `smudge-e2e-data-<UID>`
+// to namespace per-user on shared/CI hosts without sticky /tmp. We
+// capture only the static prefix that precedes the UID interpolation
+// (in playwright) or concatenation (in Makefile) — the dynamic UID
+// portion is verified separately below.
+const PLAYWRIGHT_DATA_DIR_RE = /path\.join\(\s*os\.tmpdir\(\),\s*`(smudge-e2e-data-)\$\{/g;
+const MAKEFILE_DATA_DIR_RE = /require\("os"\)\.tmpdir\(\),\s*"(smudge-e2e-data-)"\s*\+/g;
 
 // I1 (review 2026-04-27): E2E_SERVER_PORT (3457) was hardcoded in two
 // places — `const E2E_SERVER_PORT = "3457"` in playwright.config.ts and
@@ -52,7 +57,7 @@ function findExactlyOne(
       ? `${patternLabel} not found in ${fileLabel} — was the derivation rewritten? Update this test to match.`
       : `${patternLabel} matched ${matches.length} times in ${fileLabel} — expected exactly one. Did a commented-out historical example sneak in?`,
   ).toBe(1);
-  return matches[0][1];
+  return matches[0]![1]!;
 }
 
 describe("E2E config parity (playwright.config.ts ↔ Makefile)", () => {
@@ -73,6 +78,19 @@ describe("E2E config parity (playwright.config.ts ↔ Makefile)", () => {
       'require("path").join(require("os").tmpdir(), "<dir>")',
     );
     expect(playwrightDir).toBe(makefileDir);
+  });
+
+  it("namespaces the e2e data dir by UID in both files", () => {
+    // The derivation is `smudge-e2e-data-${uid}` on POSIX and
+    // `smudge-e2e-data-shared` on platforms without process.getuid
+    // (Windows). Verify both files reference process.getuid AND a
+    // "shared" fallback literal — without binding to a specific
+    // syntax, since playwright uses a template-literal coalesce
+    // (`?? "shared"`) and the Makefile uses a ternary (`?:`).
+    expect(playwrightConfig).toMatch(/process\.getuid/);
+    expect(playwrightConfig).toMatch(/"shared"/);
+    expect(makefileText).toMatch(/process\.getuid/);
+    expect(makefileText).toMatch(/"shared"/);
   });
 
   it("uses the same E2E_SERVER_PORT", () => {

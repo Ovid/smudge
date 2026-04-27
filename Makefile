@@ -180,7 +180,11 @@ e2e-clean: ## Wipe the isolated e2e data dir (next `make e2e` starts fresh)
 		echo "Wait for the test run to finish (or kill it), then re-run \`make e2e-clean\`."; \
 		exit 1; \
 	}
-	rm -rf "$$(node -p 'require("path").join(require("os").tmpdir(), "smudge-e2e-data")')"
+	@# I6 (review 2026-04-27): namespace by UID — see playwright.config.ts
+	@# for rationale. The ternary mirrors the `?? "shared"` coalesce there;
+	@# `process.getuid` is undefined on Windows, where the "shared"
+	@# literal restores POSIX-style stable naming for the data dir.
+	rm -rf "$$(node -p 'require("path").join(require("os").tmpdir(), "smudge-e2e-data-" + (process.getuid ? process.getuid() : "shared"))')"
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'

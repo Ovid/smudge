@@ -39,6 +39,6 @@ describe("DEFAULT_SERVER_PORT_VITE parity", () => {
         ? 'DEFAULT_SERVER_PORT_VITE = "<digits>" literal not found in vite.config.ts — was the constant renamed or deleted? Update this test to match.'
         : `DEFAULT_SERVER_PORT_VITE = "<digits>" matched ${matches.length} times in vite.config.ts — expected exactly one. Did a commented-out historical example sneak in?`,
     ).toBe(1);
-    expect(matches[0][1]).toBe(String(DEFAULT_SERVER_PORT));
+    expect(matches[0]![1]).toBe(String(DEFAULT_SERVER_PORT));
   });
 });

@@ -15,7 +15,24 @@ import { findFirstNonDirectoryAncestor, parsePort } from "@smudge/shared";
 // `os.tmpdir()` (R7 review 2026-04-26: no automatic wipe — see the
 // comment on the mkdirSync block below for why a destructive top-level
 // side-effect is unsafe here). The dev workflow's DB is never touched.
-const E2E_DATA_DIR = path.join(os.tmpdir(), "smudge-e2e-data");
+//
+// I6 (review 2026-04-27): namespace the dir by UID. On hosts without a
+// sticky `/tmp` (some CI runners, BSDs without it, dev hosts that
+// disabled the bit), a co-tenant could pre-create
+// `/tmp/smudge-e2e-data` as a symlink to a sensitive directory before
+// the victim ran `make e2e`; the e2e server would then write its
+// SQLite DB and uploaded images into the link target (potentially
+// clobbering files in the victim's home dir). Suffixing with the UID
+// eliminates the cross-user collision case — an attacker would have
+// to pre-create the per-UID name AND win a race against `make e2e`,
+// which is materially harder than a single fixed-name pre-position.
+// Windows has no `process.getuid`; fall back to the literal "shared"
+// so the path resolves at all (the symlink-attack threat model is
+// POSIX-specific).
+const E2E_DATA_DIR = path.join(
+  os.tmpdir(),
+  `smudge-e2e-data-${process.getuid?.() ?? "shared"}`,
+);
 const E2E_DB_PATH = path.join(E2E_DATA_DIR, "smudge.db");
 const E2E_SERVER_PORT = "3457";
 const E2E_CLIENT_PORT = "5174";
