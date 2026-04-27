@@ -136,7 +136,13 @@ format: ## Format code
 
 format-check: ## Format code, then fail if anything changed
 	npm run format
-	@git diff --quiet -- 'packages/**/*.ts' 'packages/**/*.tsx' 'packages/**/*.json' 'packages/**/*.css' 'e2e/**/*.ts' playwright.config.ts vitest.config.ts || { echo "Error: formatting changed files — commit before running make all"; exit 1; }
+	@# C1+I4 (review 2026-04-27, third pass): use git's `:(glob)` magic
+	@# so `**` actually recurses; default pathspec semantics treat `**`
+	@# as `*` (single segment), so a literal `e2e/**/*.ts` matches zero
+	@# files at depth 1 and the gate is silently dead. `tsconfig*.json`
+	@# adds root-level base + tooling tsconfig files that fall outside
+	@# `packages/**/*.json`.
+	@git diff --quiet -- ':(glob)packages/**/*.ts' ':(glob)packages/**/*.tsx' ':(glob)packages/**/*.json' ':(glob)packages/**/*.css' ':(glob)e2e/**/*.ts' playwright.config.ts vitest.config.ts 'tsconfig*.json' || { echo "Error: formatting changed files — commit before running make all"; exit 1; }
 
 typecheck: ## Type-check all packages
 	npm run typecheck

@@ -17,8 +17,8 @@
     "typecheck": "tsc -b packages/shared packages/server packages/client && tsc --noEmit -p tsconfig.tooling.json",
     "lint": "eslint --fix --max-warnings 0 packages/ e2e/ playwright.config.ts vitest.config.ts",
     "lint:check": "eslint --max-warnings 0 packages/ e2e/ playwright.config.ts vitest.config.ts",
-    "format": "prettier --write \"packages/**/*.{ts,tsx,json,css}\" \"e2e/**/*.ts\" playwright.config.ts vitest.config.ts",
-    "format:check": "prettier --check \"packages/**/*.{ts,tsx,json,css}\" \"e2e/**/*.ts\" playwright.config.ts vitest.config.ts"
+    "format": "prettier --write \"packages/**/*.{ts,tsx,json,css}\" \"e2e/**/*.ts\" playwright.config.ts vitest.config.ts \"tsconfig*.json\"",
+    "format:check": "prettier --check \"packages/**/*.{ts,tsx,json,css}\" \"e2e/**/*.ts\" playwright.config.ts vitest.config.ts \"tsconfig*.json\""
   },
   "overrides": {
     "@types/express": "4.17.25",
