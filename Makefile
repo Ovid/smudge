@@ -67,7 +67,7 @@ if (actual !== expected) { \
   process.exit(1); \
 }" || exit $$?
 	@node -e "try { require.resolve('better-sqlite3'); } catch { console.error('→ better-sqlite3 not installed. Run npm install first.'); process.exit(2); }" || exit $$?
-	@node -e "new (require('better-sqlite3'))(':memory:').close()" >/dev/null 2>&1 || { \
+	@node -e "new (require('better-sqlite3'))(':memory:').close()" >/dev/null || { \
 		NODE_VER=$$(node -p 'process.versions.node'); \
 		PLATFORM=$$(node -p 'process.platform + "/" + process.arch'); \
 		echo "→ better-sqlite3 binary won't load (dlopen failed); rebuilding from source for Node $$NODE_VER on $$PLATFORM..."; \
