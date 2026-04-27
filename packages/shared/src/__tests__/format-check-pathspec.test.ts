@@ -1,87 +1,117 @@
 import { describe, it, expect } from "vitest";
-import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve, dirname } from "node:path";
 
-// C1 (review 2026-04-27, third pass): the format-check recipe ends
-// with a `git diff --quiet --` pathspec that gates whether prettier
-// drift fails `make all`. Git's default pathspec semantics treat `**`
-// as `*` (a single segment) without `:(glob)` magic, so a pattern like
-// `e2e/**/*.ts` matches **zero files** (`e2e/*.ts` lives at depth 1).
-// Pre-fix, `make all` silently un-gated `e2e/` formatting drift —
-// prettier would have rewritten the file (the prettier glob *is*
-// shell-glob and *does* recurse), but the trailing git-diff guard saw
-// no matches and exited 0.
+// C1 + I4 + I1 + S3 (review 2026-04-27, third pass): the format-check
+// gate had two compounding bugs.
 //
-// I4 (review 2026-04-27, third pass): root-level `tsconfig.base.json`
-// and the new `tsconfig.tooling.json` were also outside the static-gate
-// scope. A formatter drift in either is invisible to `make all`. The
-// fix extends the pathspec; this test pins it.
+// C1: a git-pathspec sanity check at the end of the Makefile recipe used
+// `e2e/**/*.ts` without `:(glob)` magic, so it matched zero files at
+// depth 1 and silently un-gated `e2e/` formatting drift.
 //
-// The test pins the load-bearing property: every file the branch put
-// under prettier's reach via `npm run format` MUST also be enumerated
-// by the Makefile's git-diff pathspec, otherwise drift is silently
-// fixed on disk and never reported.
+// I1: the recipe ran `npm run format` (prettier --write) instead of
+// `npm run format:check`, silently mutating the user's tree on every
+// `make all`.
+//
+// I4: root-level `tsconfig.base.json` and `tsconfig.tooling.json` fell
+// outside `packages/**/*.json` and were invisible to the gate.
+//
+// S3: `make all` invoked `lint` (autofix) before `format-check`. With
+// I1 fixed, the autofix can produce formatter-irrelevant changes that
+// the trailing git-diff still catches with a misleading message.
+//
+// The fix collapses these into one shape:
+//   - format-check is `npm run format:check` (prettier --check, read-only).
+//     Drop the trailing git-diff guard — its message was misleading and
+//     `prettier --check` is the actual format gate.
+//   - package.json `format:check` glob covers every file the branch put
+//     under prettier's reach (e2e/, playwright/vitest configs, root
+//     tsconfig*.json).
+//   - A `lint-check` Makefile target runs `eslint` without `--fix`, and
+//     `make all` depends on it (not on the autofix `lint` target). CI
+//     gates must not mutate the tree.
+//
+// These tests pin all four properties so a future "fix" reverting any
+// one of them re-introduces the regression.
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
-function extractFormatCheckPathspec(makefileText: string): string[] {
-  const recipeMatch = makefileText.match(/^format-check:[\s\S]*?(?=^\S|\n\n[A-Za-z])/m);
-  expect(recipeMatch, "format-check recipe block in Makefile").toBeTruthy();
-  const gitDiffMatch = recipeMatch![0].match(/git diff --quiet -- ([^|\n]+?)(?:\s*\|\||\s*$)/m);
-  expect(gitDiffMatch, "git diff --quiet pathspec line").toBeTruthy();
-  const argsLine = gitDiffMatch![1].trim();
-  const tokens = argsLine.match(/'[^']*'|"[^"]*"|\S+/g);
-  expect(tokens, "tokenized pathspec args").toBeTruthy();
-  return tokens!.map((t) => t.replace(/^['"]|['"]$/g, ""));
-}
+describe("format:check glob coverage (package.json)", () => {
+  const pkg = JSON.parse(readFileSync(resolve(PROJECT_ROOT, "package.json"), "utf8")) as {
+    scripts: Record<string, string>;
+  };
 
-function lsFilesByPathspec(pathspec: string[]): string[] {
-  const args = pathspec.map((p) => `'${p.replace(/'/g, `'\\''`)}'`).join(" ");
-  const out = execSync(`git ls-files -- ${args}`, {
-    cwd: PROJECT_ROOT,
-    encoding: "utf8",
-  });
-  return out
-    .trim()
-    .split("\n")
-    .filter((s) => s.length > 0);
-}
+  it("covers every file the branch put under prettier's reach", () => {
+    const formatCheck = pkg.scripts["format:check"];
+    expect(formatCheck, "package.json must define format:check").toBeTruthy();
 
-describe("Makefile format-check pathspec coverage", () => {
-  const makefileText = readFileSync(resolve(PROJECT_ROOT, "Makefile"), "utf8");
+    // Each glob / literal path the branch added must appear in the
+    // format:check command. Substring match is fine: prettier
+    // tokenizes the args itself; we just need each pattern present.
+    const REQUIRED_PATTERNS = [
+      "e2e/**/*.ts", // C1: e2e specs
+      "tsconfig*.json", // I4: root tsconfig.base.json + tsconfig.tooling.json
+      "playwright.config.ts",
+      "vitest.config.ts",
+      "packages/**/*.{ts,tsx,json,css}",
+    ];
 
-  // Files this branch put under prettier's `npm run format` reach.
-  // Each one must be matched by at least one Makefile pathspec arg —
-  // otherwise prettier rewrites the file and the trailing git-diff
-  // guard exits 0 silently.
-  const REQUIRED_FILES = [
-    "e2e/dashboard.spec.ts",
-    "e2e/editor-save.spec.ts",
-    "e2e/snapshots.spec.ts",
-    "playwright.config.ts",
-    "vitest.config.ts",
-    "tsconfig.base.json",
-    "tsconfig.tooling.json",
-  ];
-
-  it("matches every file the branch added to prettier's reach", () => {
-    const pathspec = extractFormatCheckPathspec(makefileText);
-    const matched = new Set(lsFilesByPathspec(pathspec));
-    for (const file of REQUIRED_FILES) {
+    for (const pat of REQUIRED_PATTERNS) {
       expect(
-        matched.has(file),
-        `format-check pathspec must match ${file} (current pathspec: ${pathspec.join(" ")})`,
+        formatCheck.includes(pat),
+        `format:check must include pattern ${pat} (current: ${formatCheck})`,
       ).toBe(true);
     }
   });
 
-  it("matches at least one file under e2e/ via the recursive glob", () => {
-    // Sentinel: a pathspec like `e2e/**/*.ts` (no :(glob) magic) treats
-    // `**` as `*` and matches zero files at depth 1. Verify the live
-    // pathspec returns a non-empty set when filtered to `e2e/`.
-    const pathspec = extractFormatCheckPathspec(makefileText);
-    const matched = lsFilesByPathspec(pathspec).filter((f) => f.startsWith("e2e/"));
-    expect(matched.length, `expected at least one e2e/* file in pathspec match`).toBeGreaterThan(0);
+  it("format and format:check use the same glob set", () => {
+    const format = pkg.scripts["format"];
+    const formatCheck = pkg.scripts["format:check"];
+    expect(format, "package.json must define format").toBeTruthy();
+    expect(formatCheck, "package.json must define format:check").toBeTruthy();
+
+    // Strip the action verb (--write / --check) and compare the rest.
+    // If they diverge, prettier --check could miss drift that
+    // prettier --write would have rewritten on `npm run format`.
+    const formatArgs = format.replace(/^prettier --write\s+/, "").trim();
+    const checkArgs = formatCheck.replace(/^prettier --check\s+/, "").trim();
+    expect(formatArgs).toBe(checkArgs);
+  });
+});
+
+describe("Makefile CI gate semantics (no autofix in `make all`)", () => {
+  const makefileText = readFileSync(resolve(PROJECT_ROOT, "Makefile"), "utf8");
+
+  it("format-check recipe runs prettier --check, not --write", () => {
+    // I1: pre-fix, format-check ran `npm run format` (prettier --write),
+    // silently mutating the user's tree on every `make all`. Switch to
+    // `format:check` (read-only). Pin via textual property so a future
+    // "fix" reverting to `format` re-introduces the regression.
+    const recipeMatch = makefileText.match(/^format-check:[^\n]*\n(?:[\t ][^\n]*\n)+/m);
+    expect(recipeMatch, "format-check recipe block").toBeTruthy();
+    expect(recipeMatch![0]).toMatch(/\bnpm run format:check\b/);
+    expect(
+      recipeMatch![0],
+      "format-check must NOT invoke `npm run format` (the writing variant)",
+    ).not.toMatch(/^\s*(?:@\s*)?npm run format\s*$/m);
+  });
+
+  it("`make all` invokes lint-check (no autofix), not lint --fix", () => {
+    // S3: `lint` runs `eslint --fix` (autofix). When invoked from
+    // `make all` (the CI gate), a tree-mutating step in CI is wrong on
+    // principle and produces confusing errors when format-check then
+    // sees the mutation. Route `make all` through a no-autofix sibling.
+    const allMatch = makefileText.match(/^all:[^\n]*$/m);
+    expect(allMatch, "all: target line").toBeTruthy();
+    const deps = allMatch![0].replace(/^all:/, "").replace(/##.*/, "").trim().split(/\s+/);
+    expect(deps, "make all must depend on lint-check, not lint").toContain("lint-check");
+    expect(deps, "make all must NOT depend on the autofix `lint` target").not.toContain("lint");
+  });
+
+  it("defines a lint-check target that runs eslint without --fix", () => {
+    expect(makefileText).toMatch(/^lint-check:/m);
+    const recipeMatch = makefileText.match(/^lint-check:[^\n]*\n(?:[\t ][^\n]*\n)+/m);
+    expect(recipeMatch, "lint-check recipe block").toBeTruthy();
+    expect(recipeMatch![0]).toMatch(/\bnpm run lint:check\b/);
   });
 });

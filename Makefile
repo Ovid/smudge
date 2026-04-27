@@ -3,9 +3,9 @@
 # userland-punycode fixes.
 export NODE_OPTIONS := --disable-warning=DEP0040 ${NODE_OPTIONS}
 
-.PHONY: all test cover e2e e2e-clean lint format format-check typecheck dev build clean loc help ensure-native
+.PHONY: all test cover e2e e2e-clean lint lint-check format format-check typecheck dev build clean loc help ensure-native
 
-all: lint format-check typecheck cover e2e ## Full CI pass: lint, format-check, typecheck, test+coverage, e2e
+all: lint-check format-check typecheck cover e2e ## Full CI pass: lint-check, format-check, typecheck, test+coverage, e2e
 
 # better-sqlite3 ships a precompiled .node binary keyed on
 # {platform, arch, node-abi}. Any flow that ends up running tests
@@ -128,21 +128,31 @@ cover: ensure-native ## Run tests with coverage enforcement
 e2e: ensure-native ## Run Playwright e2e tests (starts dev servers automatically)
 	npx playwright test
 
-lint: ## Lint with autofix
+lint: ## Lint with autofix (developer use)
 	npm run lint
 
-format: ## Format code
+lint-check: ## Lint without autofix (CI gate — `make all` uses this)
+	@# S3 (review 2026-04-27, third pass): `lint` runs `eslint --fix`,
+	@# which mutates the tree. CI gates must not mutate. Route `make
+	@# all` through this no-autofix variant so the tree is unchanged
+	@# whether or not the CI gate passes; humans use `make lint` to
+	@# auto-fix locally.
+	npm run lint:check
+
+format: ## Format code (developer use — writes)
 	npm run format
 
-format-check: ## Format code, then fail if anything changed
-	npm run format
-	@# C1+I4 (review 2026-04-27, third pass): use git's `:(glob)` magic
-	@# so `**` actually recurses; default pathspec semantics treat `**`
-	@# as `*` (single segment), so a literal `e2e/**/*.ts` matches zero
-	@# files at depth 1 and the gate is silently dead. `tsconfig*.json`
-	@# adds root-level base + tooling tsconfig files that fall outside
-	@# `packages/**/*.json`.
-	@git diff --quiet -- ':(glob)packages/**/*.ts' ':(glob)packages/**/*.tsx' ':(glob)packages/**/*.json' ':(glob)packages/**/*.css' ':(glob)e2e/**/*.ts' playwright.config.ts vitest.config.ts 'tsconfig*.json' || { echo "Error: formatting changed files — commit before running make all"; exit 1; }
+format-check: ## Check formatting (CI gate — read-only)
+	@# I1 (review 2026-04-27, third pass): pre-fix, this recipe ran
+	@# `npm run format` (prettier --write), silently mutating the
+	@# user's tree on every `make all`. The trailing `git diff
+	@# --quiet` guard then printed "formatting changed files" — wrong
+	@# root cause when the dirty file was just WIP. Use `format:check`
+	@# (`prettier --check`, read-only) and let prettier itself be the
+	@# gate. WIP detection (the original git-diff guard's only
+	@# remaining value) is dropped — `make all` should not refuse to
+	@# run on a dirty tree.
+	npm run format:check
 
 typecheck: ## Type-check all packages
 	npm run typecheck
