@@ -81,6 +81,37 @@ describe("format:check glob coverage (package.json)", () => {
   });
 });
 
+describe("typecheck script covers tooling tsconfig (S12)", () => {
+  // S12 (review 2026-04-27, third pass): the typecheck script chains
+  // two tsc invocations:
+  //   tsc -b packages/shared packages/server packages/client
+  //   tsc --noEmit -p tsconfig.tooling.json
+  //
+  // The second covers playwright.config.ts, vitest.config.ts, and
+  // anything else listed in tsconfig.tooling.json's `include`. If a
+  // future refactor removes the second invocation, the tooling
+  // typecheck silently disappears — the lint and format gates still
+  // fire on those files, but typecheck does not. Pin both so a
+  // half-rewrite is caught.
+  const pkg = JSON.parse(readFileSync(resolve(PROJECT_ROOT, "package.json"), "utf8")) as {
+    scripts: Record<string, string>;
+  };
+
+  it("invokes tsc -b for the workspace projects", () => {
+    const typecheck = pkg.scripts["typecheck"];
+    expect(typecheck, "package.json must define typecheck").toBeTruthy();
+    if (!typecheck) return;
+    expect(typecheck).toMatch(/\btsc\s+-b\b/);
+  });
+
+  it("invokes tsc --noEmit -p tsconfig.tooling.json for root-level configs", () => {
+    const typecheck = pkg.scripts["typecheck"];
+    expect(typecheck, "package.json must define typecheck").toBeTruthy();
+    if (!typecheck) return;
+    expect(typecheck).toMatch(/\btsc\s+--noEmit\s+-p\s+tsconfig\.tooling\.json\b/);
+  });
+});
+
 describe("Makefile CI gate semantics (no autofix in `make all`)", () => {
   const makefileText = readFileSync(resolve(PROJECT_ROOT, "Makefile"), "utf8");
 
