@@ -35,7 +35,13 @@ export {
 export type { SearchMatch, SearchOptions } from "./tiptap-text";
 export { generateSlug } from "./slugify";
 export { parsePort } from "./parsePort";
-export { findFirstNonDirectoryAncestor } from "./findDirectoryConflict";
+// findFirstNonDirectoryAncestor is deliberately NOT re-exported here:
+// it imports `node:fs` and `node:path` (lstatSync), which Vite externalizes
+// for the browser. Re-exporting it would pull a node-only module into the
+// client bundle's transitive load chain, and the eager `import { lstatSync }
+// from "node:fs"` throws at React-app boot time. The sole consumer
+// (playwright.config.ts) imports it directly from
+// ./packages/shared/src/findDirectoryConflict instead.
 export {
   UNTITLED_CHAPTER,
   TRASH_RETENTION_DAYS,

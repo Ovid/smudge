@@ -2,7 +2,12 @@ import { defineConfig, devices } from "@playwright/test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { findFirstNonDirectoryAncestor, parsePort } from "@smudge/shared";
+import { parsePort } from "@smudge/shared";
+// Direct file import (not via @smudge/shared) because this helper imports
+// node:fs / node:path; re-exporting it through shared/index.ts would pull
+// node-only modules into the client's transitive load chain (Vite
+// externalizes them and the eager top-level import throws on the React app).
+import { findFirstNonDirectoryAncestor } from "./packages/shared/src/findDirectoryConflict";
 
 // E2e DB isolation. Pre-fix, playwright reused the dev server (port 3456)
 // via `reuseExistingServer: true`, so e2e tests created and trashed
