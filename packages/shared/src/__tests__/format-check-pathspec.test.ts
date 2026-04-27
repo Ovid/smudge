@@ -44,6 +44,7 @@ describe("format:check glob coverage (package.json)", () => {
   it("covers every file the branch put under prettier's reach", () => {
     const formatCheck = pkg.scripts["format:check"];
     expect(formatCheck, "package.json must define format:check").toBeTruthy();
+    if (!formatCheck) return;
 
     // Each glob / literal path the branch added must appear in the
     // format:check command. Substring match is fine: prettier
@@ -69,6 +70,7 @@ describe("format:check glob coverage (package.json)", () => {
     const formatCheck = pkg.scripts["format:check"];
     expect(format, "package.json must define format").toBeTruthy();
     expect(formatCheck, "package.json must define format:check").toBeTruthy();
+    if (!format || !formatCheck) return;
 
     // Strip the action verb (--write / --check) and compare the rest.
     // If they diverge, prettier --check could miss drift that

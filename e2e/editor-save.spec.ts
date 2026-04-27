@@ -20,8 +20,22 @@ async function createTestProject(request: APIRequestContext): Promise<TestProjec
 }
 
 async function deleteProject(request: APIRequestContext, slug: string) {
-  const res = await request.delete(`/api/projects/${slug}`);
-  expect(res.ok()).toBeTruthy();
+  // S6 (review 2026-04-27, third pass): cleanup must not compete with
+  // the test's own assertion. If the DELETE fails (transient blip,
+  // server crashed mid-test), log and continue — the test outcome
+  // captures the actual failure. A hard `expect()` here would surface
+  // a second, less-informative error from afterEach and mask the
+  // original test failure in the reporter.
+  try {
+    const res = await request.delete(`/api/projects/${slug}`);
+    if (!res.ok()) {
+      console.warn(`deleteProject(${slug}): cleanup DELETE returned ${res.status()}`);
+    }
+  } catch (err) {
+    console.warn(
+      `deleteProject(${slug}): cleanup threw — ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 }
 
 test.describe("Editor save pipeline E2e Tests", () => {
