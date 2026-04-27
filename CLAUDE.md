@@ -6,6 +6,17 @@ When you have finished reading this file, announce "CLAUDE.md loaded"
 
 Always address me as "Ovid" in your responses. This lets me know that you have read this file, even if I don't see the previous announcement.
 
+## Ignore `.devcontainer/`
+
+Do not read, edit, or suggest changes to anything under `.devcontainer/`
+(Dockerfile, devcontainer.json, post_install.py, .zshrc, etc.). The
+directory is bind-mounted read-only inside the running devcontainer, so
+edits cannot land from inside the container anyway, and the contents
+are intentionally maintained out-of-band — recommended changes go into
+`paad/code-reviews/deferred/*.patch` for the maintainer to apply from
+the host. Skip this directory in code search, suggestions, and any
+"explore the repo" passes unless the user explicitly asks about it.
+
 ## Project Overview
 
 Smudge is a web-based writing application for long-form fiction and non-fiction, organized as projects containing chapters. It replaces Google Docs for book-length work. Single-user, no auth. The full MVP spec lives in `docs/plans/mvp.md`.
