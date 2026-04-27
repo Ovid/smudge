@@ -86,14 +86,29 @@ describe("E2E config parity (playwright.config.ts ↔ Makefile)", () => {
   it("namespaces the e2e data dir by UID in both files", () => {
     // The derivation is `smudge-e2e-data-${uid}` on POSIX and
     // `smudge-e2e-data-shared` on platforms without process.getuid
-    // (Windows). Verify both files reference process.getuid AND a
-    // "shared" fallback literal — without binding to a specific
-    // syntax, since playwright uses a template-literal coalesce
-    // (`?? "shared"`) and the Makefile uses a ternary (`?:`).
-    expect(playwrightConfig).toMatch(/process\.getuid/);
-    expect(playwrightConfig).toMatch(/"shared"/);
-    expect(makefileText).toMatch(/process\.getuid/);
-    expect(makefileText).toMatch(/"shared"/);
+    // (Windows).
+    //
+    // I6 (review 2026-04-27, third pass): the prior assertions were
+    // two independent `toMatch` calls — one for `process.getuid`, one
+    // for `"shared"`. The string `"shared"` already appears in
+    // unrelated comments elsewhere; `process.getuid` could be moved
+    // to a different expression while leaving the literals
+    // semantically disconnected. Anchor on the FULL coalesce
+    // expression so a future refactor that decouples uid from the
+    // fallback breaks the assertion. Plus length === 1 via the
+    // existing findExactlyOne to catch drift in either form.
+    findExactlyOne(
+      /process\.getuid\?\.\(\)\s*\?\?\s*"shared"/g,
+      playwrightConfig,
+      "playwright.config.ts",
+      'process.getuid?.() ?? "shared" coalesce expression',
+    );
+    findExactlyOne(
+      /process\.getuid\s*\?\s*process\.getuid\(\)\s*:\s*"shared"/g,
+      makefileText,
+      "Makefile",
+      'process.getuid ? process.getuid() : "shared" ternary expression',
+    );
   });
 
   it("uses the same E2E_SERVER_PORT", () => {
