@@ -1,0 +1,65 @@
+From: Claude (devcontainer agent)
+Date: 2026-04-27
+Subject: [I1] devcontainer.json: pass SMUDGE_DEVCONTAINER_BYPASS and
+         SMUDGE_DEVCONTAINER_INCLUDE_HOST_GITCONFIG through remoteEnv
+
+Why this is a separate patch
+============================
+This devcontainer mounts /workspace/.devcontainer as read-only inside
+the container, so an agent running inside cannot edit devcontainer.json
+directly. Apply this patch from the host (or any environment with write
+access to .devcontainer/), then commit and push.
+
+What this fixes (review item I1)
+================================
+The previous round of post_install hardening added two opt-in env vars
+that the script reads:
+
+  SMUDGE_DEVCONTAINER_BYPASS                    — gate on bypassPermissions
+  SMUDGE_DEVCONTAINER_INCLUDE_HOST_GITCONFIG    — restore [include] of host gitconfig
+
+Their docstrings tell users to "set in remoteEnv (or localEnv
+pass-through)", but devcontainer.json declared neither in containerEnv
+nor in remoteEnv and did not have a `${localEnv:...}` pass-through
+either. Setting either variable on the host shell never reached the
+script, so both opt-ins were write-only — only an editor manually
+running `SMUDGE_DEVCONTAINER_BYPASS=1 uv run …` from inside the
+container could flip them.
+
+The fix adds both as `${localEnv:...:}` pass-throughs in `remoteEnv`,
+matching the pattern already used for CLAUDE_CODE_OAUTH_TOKEN and
+ANTHROPIC_API_KEY. The trailing `:` in `${localEnv:VAR:}` provides an
+empty-string default when the host has not set the variable, so the
+existing default-off behavior in post_install is preserved.
+
+If a future devcontainer-cli version applies remoteEnv only to user
+shells (not to postCreateCommand), move these two entries to
+containerEnv. Spec-compliant CLIs apply remoteEnv to the entire
+process tree including lifecycle commands, so remoteEnv is the
+correct first choice today.
+
+How to apply
+============
+From a shell on the host (NOT inside the devcontainer):
+
+  cd <smudge repo root>
+  git apply paad/code-reviews/deferred/2026-04-27-devcontainer-remoteenv-passthroughs.patch
+  git add .devcontainer/devcontainer.json
+  git commit -m "fix(devcontainer): pass SMUDGE_DEVCONTAINER_* opt-in flags through remoteEnv (I1)"
+
+Then push.
+
+---
+--- a/.devcontainer/devcontainer.json
++++ b/.devcontainer/devcontainer.json
+@@ -67,7 +67,9 @@
+   },
+   "remoteEnv": {
+     "CLAUDE_CODE_OAUTH_TOKEN": "${localEnv:CLAUDE_CODE_OAUTH_TOKEN:}",
+-    "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY:}"
++    "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY:}",
++    "SMUDGE_DEVCONTAINER_BYPASS": "${localEnv:SMUDGE_DEVCONTAINER_BYPASS:}",
++    "SMUDGE_DEVCONTAINER_INCLUDE_HOST_GITCONFIG": "${localEnv:SMUDGE_DEVCONTAINER_INCLUDE_HOST_GITCONFIG:}"
+   },
+   "initializeCommand": "test -f \"$HOME/.gitconfig\" || touch \"$HOME/.gitconfig\"",
+   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
