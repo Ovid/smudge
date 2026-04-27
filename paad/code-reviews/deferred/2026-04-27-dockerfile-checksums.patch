@@ -1,0 +1,147 @@
+From: Claude (devcontainer agent)
+Date: 2026-04-27
+Subject: [OOSI1] Dockerfile: SHA-256 verification for git-delta .deb
+         and fzf tarball
+
+Why this is a separate patch
+============================
+This devcontainer mounts /workspace/.devcontainer as read-only inside
+the container, so an agent running inside cannot edit Dockerfile
+directly. Apply this patch from the host (or any environment with
+write access to .devcontainer/), then commit and push.
+
+This patch is independent of the other 2026-04-27 patches and can be
+applied in any order relative to them.
+
+What this fixes (review item OOSI1, backlog id 7d3a91ef)
+========================================================
+Two GitHub-release fetches are unverified:
+
+  Dockerfile:39 — git-delta_${VER}_${ARCH}.deb piped to `dpkg -i`
+                  (which runs maintainer scripts as root during install)
+  Dockerfile:55 — fzf-${VER}-${ARCH}.tar.gz piped to `tar -xz`
+                  into /usr/local/bin (binary runs every Ctrl-T/Ctrl-R)
+
+Both are pinned by version ARG but not by content hash. A compromise
+of the upstream GitHub release lands attacker-controlled native code
+with elevated trust at next image rebuild — the .deb postinst is
+particularly broad. Distinct mitigation pattern from the curl-bash
+sites tracked in backlog `1807f5f4` (those are the moving-target
+installer scripts at lines 94/108/117).
+
+Fix: download to /tmp first, verify SHA-256 against a hash literal
+kept alongside the version ARG (one ARG per architecture since the
+binaries differ), then dpkg/untar. When Renovate bumps the version,
+the corresponding SHA-256 ARGs must be bumped too — the build fails
+at sha256sum -c otherwise, which is the intended behavior for an
+unverified version.
+
+The patch ships PLACEHOLDER values for all four hashes
+(GIT_DELTA_SHA256_AMD64, GIT_DELTA_SHA256_ARM64, FZF_SHA256_AMD64,
+FZF_SHA256_ARM64). The maintainer must regenerate the real hashes
+before applying — the per-version inline command is documented in
+each ARG block. Do NOT commit the placeholder values; the build will
+fail on first run, which is the intended behavior when the hash is
+uncertain.
+
+Sibling pattern to the existing
+`R5-R6-devcontainer-supply-chain-and-caps.patch` (which uses the same
+PLACEHOLDER pattern for zsh-in-docker.sh).
+
+How to apply
+============
+From a shell on the host (NOT inside the devcontainer):
+
+  1. Compute the four hashes (commands documented in each ARG block).
+     E.g. for git-delta v0.18.2:
+
+       for ARCH in amd64 arm64; do
+         curl -fsSL "https://github.com/dandavison/delta/releases/download/0.18.2/git-delta_0.18.2_${ARCH}.deb" | sha256sum
+       done
+
+  2. Edit this patch, replacing the four PLACEHOLDER strings with
+     the computed hashes.
+
+  3. cd <smudge repo root>
+     git apply paad/code-reviews/deferred/2026-04-27-dockerfile-checksums.patch
+     git add .devcontainer/Dockerfile
+     git commit -m "fix(devcontainer): verify git-delta and fzf SHA-256 (OOSI1)"
+
+  4. Remove backlog entry `7d3a91ef` from
+     `paad/code-reviews/backlog.md`.
+
+Then push.
+
+---
+--- a/.devcontainer/Dockerfile
++++ b/.devcontainer/Dockerfile
+@@ -34,9 +34,31 @@
+ 
+ # Install git-delta
+ # renovate: datasource=github-releases depName=dandavison/delta
++#
++# OOSI1 (review 2026-04-27): the .deb is fetched from GitHub releases
++# and `dpkg -i` runs maintainer scripts as root during install — a
++# compromise of the upstream release lands attacker-controlled native
++# code with elevated trust. Verify a SHA-256 against a hash literal
++# kept in lockstep with the version `ARG`. When Renovate bumps
++# GIT_DELTA_VERSION, the matching SHA-256 ARGs must be bumped too —
++# the build fails at sha256sum -c otherwise, which is the intended
++# behavior for an unverified version.
++#
++# To regenerate hashes for a new version (run from any machine):
++#   for ARCH in amd64 arm64; do
++#     curl -fsSL "https://github.com/dandavison/delta/releases/download/<NEW>/git-delta_<NEW>_${ARCH}.deb" | sha256sum
++#   done
+ ARG GIT_DELTA_VERSION=0.18.2
++ARG GIT_DELTA_SHA256_AMD64=PLACEHOLDER_REPLACE_WITH_REAL_HASH_AMD64
++ARG GIT_DELTA_SHA256_ARM64=PLACEHOLDER_REPLACE_WITH_REAL_HASH_ARM64
+ RUN ARCH=$(dpkg --print-architecture) && \
++  case "${ARCH}" in \
++    amd64) EXPECTED_SHA="${GIT_DELTA_SHA256_AMD64}" ;; \
++    arm64) EXPECTED_SHA="${GIT_DELTA_SHA256_ARM64}" ;; \
++    *) echo "Unsupported architecture for git-delta: ${ARCH}" && exit 1 ;; \
++  esac && \
+   curl -fsSL "https://github.com/dandavison/delta/releases/download/${GIT_DELTA_VERSION}/git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb" -o /tmp/git-delta.deb && \
++  echo "${EXPECTED_SHA}  /tmp/git-delta.deb" | sha256sum -c - && \
+   dpkg -i /tmp/git-delta.deb && \
+   rm /tmp/git-delta.deb
+ 
+@@ -45,14 +67,34 @@
+ 
+ # Install fzf from GitHub releases (newer than apt, includes built-in shell integration)
+ # renovate: datasource=github-releases depName=junegunn/fzf
++#
++# OOSI1 (review 2026-04-27): the binary lands in /usr/local/bin and
++# runs every Ctrl-T/Ctrl-R from the shell. A compromise of the
++# upstream release lands attacker-controlled native code with broad
++# user-level trust. Verify a SHA-256 against a hash literal kept in
++# lockstep with the version `ARG`. When Renovate bumps FZF_VERSION,
++# the matching SHA-256 ARGs must be bumped too — the build fails at
++# sha256sum -c otherwise, which is the intended behavior for an
++# unverified version.
++#
++# To regenerate hashes for a new version (run from any machine):
++#   for ARCH in amd64 arm64; do
++#     case ${ARCH} in amd64) FZF_ARCH=linux_amd64 ;; arm64) FZF_ARCH=linux_arm64 ;; esac
++#     curl -fsSL "https://github.com/junegunn/fzf/releases/download/v<NEW>/fzf-<NEW>-${FZF_ARCH}.tar.gz" | sha256sum
++#   done
+ ARG FZF_VERSION=0.70.0
++ARG FZF_SHA256_AMD64=PLACEHOLDER_REPLACE_WITH_REAL_HASH_AMD64
++ARG FZF_SHA256_ARM64=PLACEHOLDER_REPLACE_WITH_REAL_HASH_ARM64
+ RUN ARCH=$(dpkg --print-architecture) && \
+   case "${ARCH}" in \
+-    amd64) FZF_ARCH="linux_amd64" ;; \
+-    arm64) FZF_ARCH="linux_arm64" ;; \
++    amd64) FZF_ARCH="linux_amd64"; EXPECTED_SHA="${FZF_SHA256_AMD64}" ;; \
++    arm64) FZF_ARCH="linux_arm64"; EXPECTED_SHA="${FZF_SHA256_ARM64}" ;; \
+     *) echo "Unsupported architecture: ${ARCH}" && exit 1 ;; \
+   esac && \
+-  curl -fsSL "https://github.com/junegunn/fzf/releases/download/v${FZF_VERSION}/fzf-${FZF_VERSION}-${FZF_ARCH}.tar.gz" | tar -xz -C /usr/local/bin
++  curl -fsSL "https://github.com/junegunn/fzf/releases/download/v${FZF_VERSION}/fzf-${FZF_VERSION}-${FZF_ARCH}.tar.gz" -o /tmp/fzf.tar.gz && \
++  echo "${EXPECTED_SHA}  /tmp/fzf.tar.gz" | sha256sum -c - && \
++  tar -xz -C /usr/local/bin -f /tmp/fzf.tar.gz && \
++  rm /tmp/fzf.tar.gz
+ 
+ # Create directories and set ownership (combined for fewer layers)
+ RUN mkdir -p /commandhistory /workspace /home/vscode/.claude /opt && \
