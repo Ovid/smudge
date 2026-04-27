@@ -168,23 +168,82 @@ e2e-clean: ## Wipe the isolated e2e data dir (next `make e2e` starts fresh)
 		exit 1; \
 	}
 	@# S5 (review 2026-04-27): refuse to wipe while \`make e2e\` is mid-run.
-	@# Detect via TCP connect to the e2e server port (3457, hardcoded in
-	@# playwright.config.ts). The server only binds it during a live run;
-	@# after cleanup the port is closed. Node's `net` module is used
-	@# rather than lsof/nc/socat so the probe works on any host. exit 0
-	@# = no listener (proceed); exit 1 = listener (abort); exit 2 = other
-	@# error or timeout (abort, conservative).
-	@node -e "const net=require('net');const s=net.createConnection({port:3457,host:'127.0.0.1'});s.on('connect',()=>{s.destroy();process.exit(1);});s.on('error',(e)=>process.exit(e.code==='ECONNREFUSED'?0:2));s.setTimeout(500,()=>{s.destroy();process.exit(2);});" || { \
-		echo "make e2e-clean: cannot wipe data dir."; \
-		echo "Either \`make e2e\` is running (port 3457 is bound) or the listener probe errored."; \
-		echo "Wait for the test run to finish (or kill it), then re-run \`make e2e-clean\`."; \
+	@# Detect via TCP connect to the e2e server port (must equal
+	@# E2E_SERVER_PORT in playwright.config.ts; an
+	@# e2e-data-dir-parity.test.ts assertion enforces equality). The
+	@# server only binds during a live run; after cleanup the port is
+	@# closed. Node's `net` module is used rather than lsof/nc/socat so
+	@# the probe works on any host. exit 0 = no listener (proceed);
+	@# exit 1 = listener detected (abort); exit 2 = probe error or
+	@# timeout (abort, conservative).
+	@#
+	@# I4 (review 2026-04-27): the probe closes the steady-state race
+	@# (e2e is mid-run) but does NOT close a startup race: the server's
+	@# `app.listen(PORT)` only fires after Knex migrations (1-3s after
+	@# `npm run dev`). If the user runs `make e2e-clean` in a second
+	@# terminal during that window, the probe sees ECONNREFUSED
+	@# (correct: no listener YET), proceeds to rm, and the about-to-
+	@# start server then migrates against an empty DB. Workflow:
+	@# always wait for `make e2e` to finish (or kill it) before running
+	@# `make e2e-clean`; do NOT run them concurrently. A portable
+	@# advisory lock (flock-style) would close this hole but requires
+	@# `make e2e` to participate, expanding the patch beyond cleanup.
+	@#
+	@# S2 (review 2026-04-27): bumped TIMEOUT_MS from 500ms to 2000ms.
+	@# 500ms was tight under loopback contention; 2000ms is plenty for
+	@# either ECONNREFUSED (returns immediately) or a real connect.
+	@# Distinct error messages are printed before exit so the user can
+	@# see which host/code triggered the abort.
+	@#
+	@# S13 (review 2026-04-27): probe BOTH 127.0.0.1 AND ::1. The
+	@# server's `app.listen(PORT)` defaults to `::` on dual-stack
+	@# Linux. On IPv6-only hosts (or hosts with `bindv6only=1`), an
+	@# IPv4-only probe would see ECONNREFUSED while the server listens
+	@# on ::1, mis-conclude "no listener," and `rm -rf` the live data
+	@# dir. PORT is pulled into a single constant so the parity test
+	@# anchors on one assignment.
+	@# A "refused" verdict ALSO covers EADDRNOTAVAIL (IPv6 disabled),
+	@# EAFNOSUPPORT (IPv6 not compiled in), and ENETUNREACH (no route)
+	@# — all mean "no listener can be reached at this address," which
+	@# is functionally identical to a TCP RST for this probe. Treating
+	@# them as errors would block `make e2e-clean` on any IPv4-only
+	@# host (most devcontainers).
+	@node -e "\
+const net=require('net'),PORT=3457,HOSTS=['127.0.0.1','::1'],T=2000; \
+const NOLISTEN=new Set(['ECONNREFUSED','EADDRNOTAVAIL','EAFNOSUPPORT','ENETUNREACH']); \
+const probe=(h)=>new Promise((r)=>{ \
+  const s=net.createConnection({port:PORT,host:h}); \
+  let done=false; \
+  const finish=(st,de)=>{if(done)return;done=true;s.destroy();r({st,de,h});}; \
+  s.on('connect',()=>finish('listener')); \
+  s.on('error',(e)=>finish(NOLISTEN.has(e.code)?'refused':'error',e.code)); \
+  s.setTimeout(T,()=>finish('timeout','>'+T+'ms')); \
+}); \
+Promise.all(HOSTS.map(probe)).then((rs)=>{ \
+  const live=rs.find((r)=>r.st==='listener'); \
+  if(live){console.error('e2e listener bound on '+live.h+':'+PORT+'; refusing to wipe.');process.exit(1);} \
+  const odd=rs.find((r)=>r.st!=='refused'); \
+  if(odd){console.error('e2e probe '+odd.st+' on '+odd.h+':'+PORT+' ('+odd.de+'); refusing to wipe.');process.exit(2);} \
+});" || { \
+		echo "make e2e-clean: refusing to wipe — see probe message above."; \
+		echo "Wait for \`make e2e\` to finish (or kill it), then re-run \`make e2e-clean\`."; \
 		exit 1; \
 	}
 	@# I6 (review 2026-04-27): namespace by UID — see playwright.config.ts
 	@# for rationale. The ternary mirrors the `?? "shared"` coalesce there;
 	@# `process.getuid` is undefined on Windows, where the "shared"
 	@# literal restores POSIX-style stable naming for the data dir.
-	rm -rf "$$(node -p 'require("path").join(require("os").tmpdir(), "smudge-e2e-data-" + (process.getuid ? process.getuid() : "shared"))')"
+	@#
+	@# S1 (review 2026-04-27): capture into a shell variable and assert
+	@# non-empty before `rm -rf`. Pre-fix, `node -p` failing for any
+	@# reason silently expanded to empty string and `rm -rf ""` was a
+	@# no-op — the user thought the wipe succeeded.
+	@DATA_DIR="$$(node -p 'require("path").join(require("os").tmpdir(), "smudge-e2e-data-" + (process.getuid ? process.getuid() : "shared"))')"; \
+		test -n "$$DATA_DIR" || { \
+			echo "make e2e-clean: failed to derive e2e data dir from node -p"; \
+			exit 1; \
+		}; \
+		rm -rf "$$DATA_DIR"
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'

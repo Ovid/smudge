@@ -39,10 +39,13 @@ const MAKEFILE_DATA_DIR_RE = /require\("os"\)\.tmpdir\(\),\s*"(smudge-e2e-data-)
 // and `rm -rf` wipes the live data dir mid-run — exactly the failure
 // mode S5 (the probe) was added to prevent.
 const PLAYWRIGHT_PORT_RE = /E2E_SERVER_PORT\s*=\s*"(\d+)"/g;
-// Anchor on the JS-code `net.createConnection({port:NNN,host:...})` so
-// the regex does not match the comment block at line ~171 that
-// references "3457, hardcoded in playwright.config.ts".
-const MAKEFILE_PORT_RE = /net\.createConnection\(\{[^}]*\bport:(\d+)/g;
+// Anchor on the inline-node `PORT=NNN` constant inside the e2e-clean
+// probe. After S2/S13 (review 2026-04-27) the probe targets multiple
+// hosts, so the literal `port:3457` would appear more than once;
+// pulling the literal into a single `PORT` constant keeps the parity
+// surface anchored to one canonical assignment AND keeps the comment
+// block at Makefile:171 from matching (it's prose, not `PORT=...`).
+const MAKEFILE_PORT_RE = /\bPORT\s*=\s*(\d+)\b/g;
 
 function findExactlyOne(
   re: RegExp,
