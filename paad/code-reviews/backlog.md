@@ -221,5 +221,89 @@
 - **Confidence:** High
 - **Found by:** Error Handling & Edge Cases, Contract & Integration (`claude-opus-4-7`)
 - **First seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
-- **Last seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `039ca1b`
+- **Last seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
+- **Severity:** Suggestion
+
+## `a4f29c1d` — Workspace `package.json` files lack `engines.node`
+- **File (at first sighting):** `packages/server/package.json`
+- **Symbol:** `engines` field (absent)
+- **Bug class:** Contract
+- **Description:** Root `package.json` declares `"engines": { "node": "22.x" }`, but `packages/shared/package.json`, `packages/server/package.json`, and `packages/client/package.json` have no `engines` field. With npm workspaces this is normally fine because the root constraint applies to monorepo-wide installs, but a future `npm install -w packages/server` invoked with `engine-strict=true` would not enforce 22.x at the per-workspace boundary. Pre-existing on main; not worsened by this branch.
+- **Suggested fix:** Either propagate `"engines": { "node": "22.x" }` into each workspace's `package.json` (so the constraint is local), or document inline that the root engines field is authoritative for the monorepo.
+- **Confidence:** Medium
+- **Found by:** Contract & Integration (`general-purpose (claude-opus-4-7)`)
+- **First seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
+- **Last seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
+- **Severity:** Suggestion
+
+## `b7e3d042` — `make all` reaches `ensure-native` only after lint/format-check/typecheck
+- **File (at first sighting):** `Makefile:8`
+- **Symbol:** `all` target prereq order
+- **Bug class:** Contract
+- **Description:** `all: lint format-check typecheck cover e2e`. Make resolves prereqs left-to-right by default, so a contributor with broken native bindings burns ~30s on lint/format-check/typecheck before `cover` invokes `ensure-native` and surfaces the rebuild prompt. The `all` target's order pre-dates this branch; the `ensure-native` prereq added by this branch only reaches it via `cover`/`e2e`. Cosmetic-touch demoted to OOS — line 8 was not modified.
+- **Suggested fix:** Add `ensure-native` as the first explicit prereq of `all`, or as a prereq of `lint`/`format-check`/`typecheck`. Trade-off: ~50ms happy-path cost on every lint/format/typecheck run, paid more often than the cross-platform-churn rebuild it guards.
+- **Confidence:** Medium
+- **Found by:** Contract & Integration (`general-purpose (claude-opus-4-7)`)
+- **First seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
+- **Last seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
+- **Severity:** Suggestion
+
+## `c9e54a31` — Em-dashes / arrows in Makefile error messages mojibake under non-UTF-8 locales
+- **File (at first sighting):** `Makefile:65`
+- **Symbol:** `ensure-native` diagnostic strings
+- **Bug class:** Error Handling
+- **Description:** The recipe uses UTF-8 glyphs (`→`, `—`) in error messages at lines 65, 73, 88, etc. On terminals with `LANG=C`/`LC_ALL=C`/minimal locales these render as mojibake. Most modern terminals are UTF-8 by default (macOS Terminal, iTerm2, GNOME Terminal, Windows Terminal, GitHub Actions runners, devcontainer terminals), so this is cosmetic in practice. Consistent with existing pattern in `cover` recipe (`════` boxes). Pre-existing repo-wide convention.
+- **Suggested fix:** Replace `→` with `>>` and `—` with `--` for ASCII-safety, or document UTF-8 as a contributor-environment requirement. Repo-wide consistency matters more than locale resilience here.
+- **Confidence:** Medium
+- **Found by:** Error Handling & Edge Cases (`general-purpose (claude-opus-4-7)`)
+- **First seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
+- **Last seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
+- **Severity:** Suggestion
+
+## `d8a1f562` — `npm rebuild` could surface `EBADENGINE` warnings to recipe stderr
+- **File (at first sighting):** `Makefile:75`
+- **Symbol:** `ensure-native` rebuild branch
+- **Bug class:** Error Handling
+- **Description:** Hypothetical: if a transitive dep declares an `engines.node` that current Node 22 doesn't satisfy, `npm rebuild` emits `npm warn EBADENGINE` to stderr. Per CLAUDE.md "Zero warnings in test output", this could be confused with a violation. However: (a) the zero-warnings rule applies to test runner output, not Make recipe output; (b) line 75 deliberately preserves stderr so warnings ARE meant to surface; (c) no current dep in `package-lock.json` has an unmet engines requirement. Current behavior is correct as-is.
+- **Suggested fix:** None — surfacing warnings is the desired UX. If confusion recurs, document the rule's scope clarification ("zero warnings in test runner output, not Make recipe stderr") in CLAUDE.md.
+- **Confidence:** Medium
+- **Found by:** Logic & Correctness (`general-purpose (claude-opus-4-7)`)
+- **First seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
+- **Last seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
+- **Severity:** Suggestion
+
+## `e7c64d29` — Round-trip dlopen probe cannot distinguish a partial `.node` from a Ctrl-C'd rebuild
+- **File (at first sighting):** `Makefile:70`
+- **Symbol:** `ensure-native` dlopen probes
+- **Bug class:** Concurrency
+- **Description:** Concurrency specialist's claim: a `Ctrl-C` mid-rebuild could leave a `.node` whose ELF header is valid but `.text` truncated, passing the `:memory:` probe and crashing on first real query. In practice, the dynamic linker maps file segments by offset — a truncated `.text` would either fail at `dlopen` (mmap returns ENXIO when offset+length exceeds file size) or surface as `SIGBUS` on first symbol resolution. The `new(...)(:memory:)` constructor exercises symbol resolution immediately. The probe is more robust than the finding suggests; pre-existing concern, low ROI to harden.
+- **Suggested fix:** None — probe is sufficient for the threat model. If extra paranoia desired, switch the recipe to write to a temp path and atomically `mv -f` after a successful build to close the partial-write window. Most users will simply re-run `make test` after a Ctrl-C.
+- **Confidence:** Medium
+- **Found by:** Concurrency & State (`general-purpose (claude-opus-4-7)`)
+- **First seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
+- **Last seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
+- **Severity:** Suggestion
+
+## `f3b8201a` — Direct `npm test` / `npm test -w` / `npx playwright test` bypass `ensure-native`
+- **File (at first sighting):** `package.json:14-15`
+- **Symbol:** root `scripts.test` and per-workspace `npm test -w` paths
+- **Bug class:** Contract
+- **Description:** Root `package.json` script `test` runs `npm test -w packages/{shared,server,client}` directly, and CONTRIBUTING.md (`:90-95`) actively recommends `npm test -w packages/server` and `npx playwright test` as per-package workflows. Neither path triggers `ensure-native`. A contributor doing per-package work after a host↔devcontainer crossing has no native-binding guard. Pre-existing — these scripts were not modified by this branch (the branch only added `ensure-native` to `make`-driven targets).
+- **Suggested fix:** Add a `pretest` script in each workspace `package.json` (e.g. `"pretest": "node ../../scripts/ensure-native.mjs"` after extracting the recipe body), or strengthen the guidance in CONTRIBUTING.md to note "If you bypass `make`, run `make ensure-native` first when switching between host and devcontainer." Cleanest is to extract the probe into a node script with a single home.
+- **Confidence:** Medium
+- **Found by:** Contract & Integration (`general-purpose (claude-opus-4-7)`)
+- **First seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
+- **Last seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
+- **Severity:** Suggestion
+
+## `05f9c8a4` — Compile-from-source still trusts the publisher's source tarball
+- **File (at first sighting):** `Makefile:75`
+- **Symbol:** `ensure-native` rebuild path (and the I5 rationale framing)
+- **Bug class:** Security
+- **Description:** General supply-chain residual: a compromised better-sqlite3 publisher can include malicious C++ in the next tarball; `package-lock.json` integrity hashes faithfully match the post-compromise source, so `npm rebuild --build-from-source` would compile and run that C++ at the next cross-platform churn. The branch's I5 framing ("eliminates ... attacker-controlled native binary running with developer's privileges") accurately describes the binary-trust improvement but understates the source-trust residual. The trust model is strictly better than `prebuild-install` (publisher compromise must include malicious source visible to code review, not just a `.node` on a CDN), but it is not zero-trust.
+- **Suggested fix:** Document the residual precisely in CLAUDE.md (or a SECURITY.md). Optionally pin better-sqlite3 to an exact version (e.g., `=12.9.0` instead of `^12.x.x`) in `packages/server/package.json` to remove auto-pickup of compromised patches; pair with `npm audit signatures` (sigstore) to catch publisher key changes.
+- **Confidence:** Medium
+- **Found by:** Security (`general-purpose (claude-opus-4-7)`)
+- **First seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
+- **Last seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
 - **Severity:** Suggestion

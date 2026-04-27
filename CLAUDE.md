@@ -54,6 +54,7 @@ make format                          # Format code
 make all                             # Full CI pass: lint + format + typecheck + coverage + e2e
 make cover                           # Run tests with coverage enforcement
 make e2e                             # Run Playwright e2e tests (starts dev servers)
+make ensure-native                   # Verify better-sqlite3 native binding loads; rebuild from source on dlopen failure
 
 # Per-package testing (when working on one package)
 npm test -w packages/shared          # Unit tests (Vitest)
@@ -68,6 +69,8 @@ docker compose up                    # Full app on port 3456
 # Help
 make help                            # Show all available make targets
 ```
+
+**`make ensure-native`** is a prerequisite of `make test/cover/e2e/dev`; you rarely invoke it directly. It probes whether better-sqlite3's `.node` binary loads under the active platform/Node ABI, and on failure rebuilds from source in place (no remote `.node` binary fetched). The rebuild path needs a working C++ toolchain — `build-essential` on Linux, Xcode Command Line Tools on macOS, plus `python3` for node-gyp. Common reason to need it: switching between host (macOS) and a Linux container/VM that share `node_modules` via a bind mount, leaving a wrong-platform binary in place. Direct `npm test` / `npm test -w packages/{shared,server,client}` / `npx playwright test` invocations bypass this check; prefer the `make` entry points after a host↔guest crossing.
 
 ## Key Architecture Decisions
 
