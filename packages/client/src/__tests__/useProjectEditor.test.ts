@@ -1371,6 +1371,10 @@ describe("useProjectEditor", () => {
 
     expect(result.current.saveStatus).toBe("error");
     expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedTooLarge);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Save failed with 4xx:"),
+      expect.any(ApiRequestError),
+    );
     warnSpy.mockRestore();
   });
 
@@ -1449,6 +1453,10 @@ describe("useProjectEditor", () => {
     expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedChapterGone);
     // No retry — chapter is gone; retrying would deterministically 404 again.
     expect(api.chapters.update).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Save failed with 4xx:"),
+      expect.any(ApiRequestError),
+    );
     warnSpy.mockRestore();
   });
 
@@ -1482,6 +1490,10 @@ describe("useProjectEditor", () => {
     expect(onRequestEditorLock).toHaveBeenCalledWith(STRINGS.editor.saveFailedChapterGone);
     expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedChapterGone);
     expect(api.chapters.update).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Save failed with 4xx:"),
+      expect.any(ApiRequestError),
+    );
     warnSpy.mockRestore();
   });
 
