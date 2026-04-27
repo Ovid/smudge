@@ -17,6 +17,20 @@
  * canonical decimal notation passes; "0" itself is rejected as out of
  * range below.
  *
+ * Range: [1, 65535] is the full TCP port space. Privileged ports
+ * (1-1023) are accepted intentionally — the harness must let
+ * developers bind to a port their environment requires (e.g. an
+ * ops team that fronts Smudge with a privileged listener at :443
+ * for a private demo). On Linux, binding below 1024 needs
+ * CAP_NET_BIND_SERVICE or root; the OS itself enforces the
+ * privilege boundary, so duplicating that check in parsePort would
+ * be defense-in-depth without an attacker — Smudge is single-user,
+ * no auth, and the env-var operator IS the trust boundary. If the
+ * threat model ever changes (multi-tenant deploys, untrusted
+ * config sources), raise the floor to 1024 in BOTH this file and
+ * the inline copy in vite.config.ts so the byte-equal parity test
+ * stays green.
+ *
  * Used by the server entrypoint (packages/server/src/index.ts) and —
  * duplicated inline because vite.config.ts is loaded by Vite's config
  * resolver under bare Node ESM, which cannot resolve the extensionless
