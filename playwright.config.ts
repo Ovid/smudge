@@ -3,11 +3,15 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { parsePort } from "@smudge/shared";
-// Direct file import (not via @smudge/shared) because this helper imports
-// node:fs / node:path; re-exporting it through shared/index.ts would pull
-// node-only modules into the client's transitive load chain (Vite
-// externalizes them and the eager top-level import throws on the React app).
-import { findFirstNonDirectoryAncestor } from "./packages/shared/src/findDirectoryConflict";
+// Direct file import (not via @smudge/shared) because these helpers
+// only matter for Node-side tooling; re-exporting them through
+// shared/index.ts would pull node-only modules into the client's
+// transitive load chain (Vite externalizes them and the eager
+// top-level import throws on the React app).
+import {
+  findFirstNonDirectoryAncestor,
+  formatMkdirDataDirError,
+} from "./packages/shared/src/findDirectoryConflict";
 
 // E2e DB isolation. Pre-fix, playwright reused the dev server (port 3456)
 // via `reuseExistingServer: true`, so e2e tests created and trashed
@@ -62,35 +66,85 @@ const E2E_CLIENT_PORT = "5174";
 // (stale leftover or developer mistake), mkdirSync raises an opaque
 // errno at the top of the config in every Playwright worker — not
 // discoverable from the stack. Detect and re-throw with an actionable
-// message instead. ENOTDIR means an ancestor of E2E_DATA_DIR is a
-// non-directory; EEXIST under recursive mkdir fires when the leaf
-// (E2E_DATA_DIR itself) exists as a non-directory.
+// message instead.
 //
-// C1 (review 2026-04-27): Node sets `errno.path` to the *requested*
-// leaf for ENOTDIR — NOT the offending non-directory ancestor.
-// Verified live: `mkdirSync('/tmp/x/file/sub', {recursive:true})` when
-// `/tmp/x/file` is a regular file throws with `errno.path =
-// '/tmp/x/file/sub'`, a path that doesn't even exist. Telling the user
-// to `rm $errno.path` when ENOTDIR fires would name a phantom path; we
-// walk ancestors with lstatSync via findFirstNonDirectoryAncestor and
-// surface the real offender. EEXIST is unaffected — Node's errno.path
-// IS the leaf, which IS the offender for that branch.
+// Errno codes handled:
+//   - ENOTDIR: an ancestor of E2E_DATA_DIR is a non-directory file
+//     (Node sets `errno.path` to the requested leaf, NOT the offender,
+//     so we walk ancestors via `findFirstNonDirectoryAncestor`).
+//   - ENOENT: a dangling symlink ancestor (the symlink exists at the
+//     link layer but its target does not).
+//   - ELOOP: a cyclic symlink ancestor.
+//   - EEXIST: under recursive mkdir, the leaf exists as a non-directory.
+//
+// C1 (review 2026-04-27): for ENOTDIR/ENOENT/ELOOP, Node's `errno.path`
+// is the requested leaf — a phantom path that doesn't exist on disk.
+// `findFirstNonDirectoryAncestor` does a stat/lstat walk to surface
+// the actual offender (regular file, symlink-to-file, dangling symlink,
+// or cyclic symlink) so the diagnostic message names something the
+// user can act on.
+//
+// I2 + I7 + S7 + S9 + S11 (review 2026-04-27, third pass):
+//   - I2: extend the catch to ENOENT and ELOOP (the helper handles
+//     them; only the wiring was missing).
+//   - I7: route the message through `formatMkdirDataDirError`, which
+//     wraps every interpolated path in `JSON.stringify` to neutralize
+//     control chars / ANSI / shell-substitution metachars in
+//     attacker-controlled filenames. `/tmp` is mode-1777, so any local
+//     user could pre-position a hostile name.
+//   - S7: narrow `err instanceof Error && "code" in err` before the
+//     errno cast so non-Error throws fall through to the original
+//     `throw err` path with no message tampering.
+//   - S9: errno.code is now part of the formatted message, so the
+//     diagnostic survives without the original Error object.
+//   - S11: the verb (`rm` vs `unlink`) reflects whether the offender
+//     is a symlink — picked at the call site via `lstatSync`, passed
+//     into the formatter so the formatter stays pure.
 try {
   fs.mkdirSync(E2E_DATA_DIR, { recursive: true });
 } catch (err) {
-  const errno = err as NodeJS.ErrnoException;
-  if (errno.code === "ENOTDIR") {
-    const offender = findFirstNonDirectoryAncestor(E2E_DATA_DIR) ?? E2E_DATA_DIR;
-    throw new Error(
-      `playwright.config: expected a directory at or above ${E2E_DATA_DIR}, but a non-directory exists at ${offender}. ` +
-        `Remove the conflicting non-directory (e.g. \`rm ${offender}\`) and re-run \`make e2e\`.`,
-    );
-  }
-  if (errno.code === "EEXIST") {
-    throw new Error(
-      `playwright.config: expected a directory at ${E2E_DATA_DIR}, but a non-directory file exists there. ` +
-        `Remove the conflicting file (e.g. \`rm ${E2E_DATA_DIR}\`) and re-run \`make e2e\`.`,
-    );
+  if (err instanceof Error && "code" in err) {
+    const errno = err as NodeJS.ErrnoException;
+    const ANCESTOR_CODES = new Set(["ENOTDIR", "ENOENT", "ELOOP"]);
+    if (errno.code !== undefined && ANCESTOR_CODES.has(errno.code)) {
+      const offender = findFirstNonDirectoryAncestor(E2E_DATA_DIR);
+      let offenderIsSymlink = false;
+      if (offender !== null) {
+        try {
+          offenderIsSymlink = fs.lstatSync(offender).isSymbolicLink();
+        } catch {
+          // The offender disappeared between the mkdir failure and our
+          // lstat (concurrent cleanup, perhaps). Defaulting to
+          // non-symlink yields `rm` in the message — slightly off if it
+          // was a symlink, but the user's next step is to re-run
+          // `make e2e` and the offender is gone anyway.
+        }
+      }
+      throw new Error(
+        formatMkdirDataDirError({
+          errnoCode: errno.code,
+          dataDir: E2E_DATA_DIR,
+          offender,
+          offenderIsSymlink,
+        }),
+      );
+    }
+    if (errno.code === "EEXIST") {
+      let offenderIsSymlink = false;
+      try {
+        offenderIsSymlink = fs.lstatSync(E2E_DATA_DIR).isSymbolicLink();
+      } catch {
+        // unlikely after EEXIST but defensive
+      }
+      throw new Error(
+        formatMkdirDataDirError({
+          errnoCode: errno.code,
+          dataDir: E2E_DATA_DIR,
+          offender: E2E_DATA_DIR,
+          offenderIsSymlink,
+        }),
+      );
+    }
   }
   throw err;
 }

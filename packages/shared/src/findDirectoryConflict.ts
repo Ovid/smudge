@@ -57,3 +57,62 @@ export function findFirstNonDirectoryAncestor(targetPath: string): string | null
   }
   return null;
 }
+
+/**
+ * Build a sanitized error message for the playwright.config.ts mkdir
+ * catch block. Pre-fix, the catch interpolated `offender` straight into
+ * a thrown Error and suggested ``rm ${offender}`` — POSIX permits any
+ * byte except `\0` and `/` in a filename, so a hostile name with
+ * newlines, ANSI escapes, backticks, or `$()` could fake log output,
+ * hide preceding lines, or invoke shell command substitution if a
+ * downstream consumer piped the message through a shell.
+ *
+ * Post-fix: every interpolated path is wrapped via `JSON.stringify`,
+ * which renders control characters as `\n`/`\t`/`` literals and
+ * quotes the path so it reads as a string, not a shell expression.
+ * The verb (`rm` vs `unlink`) is chosen by the caller via the
+ * `offenderIsSymlink` flag — keeps this function pure (no fs side
+ * effects) and unit-testable.
+ *
+ * The errno code is included so the message is self-diagnostic without
+ * the original Error object.
+ */
+export function formatMkdirDataDirError(params: {
+  errnoCode: string;
+  dataDir: string;
+  offender: string | null;
+  offenderIsSymlink: boolean;
+}): string {
+  const { errnoCode, dataDir, offender, offenderIsSymlink } = params;
+  const verb = offenderIsSymlink ? "unlink" : "rm";
+  const quotedDataDir = JSON.stringify(dataDir);
+
+  if (errnoCode === "EEXIST") {
+    // The leaf itself exists as a non-directory.
+    return (
+      `playwright.config: expected a directory at ${quotedDataDir}, ` +
+      `but a non-directory file exists there (errno: ${errnoCode}). ` +
+      `Remove the conflicting file (e.g. \`${verb}\` it) and re-run \`make e2e\`.`
+    );
+  }
+
+  // ENOTDIR / ENOENT / ELOOP: an ancestor is a non-directory or an
+  // unresolvable symlink. If the helper returned null, fall back to
+  // pointing at dataDir itself with a generic-but-actionable hint.
+  if (offender === null) {
+    return (
+      `playwright.config: mkdir failed at or above ${quotedDataDir} ` +
+      `(errno: ${errnoCode}). Inspect the path manually and re-run \`make e2e\`.`
+    );
+  }
+
+  const quotedOffender = JSON.stringify(offender);
+  const symptom = offenderIsSymlink
+    ? "a symlink that does not resolve to a directory"
+    : "a non-directory file";
+  return (
+    `playwright.config: expected a directory at or above ${quotedDataDir}, ` +
+    `but ${symptom} exists at ${quotedOffender} (errno: ${errnoCode}). ` +
+    `Remove it (e.g. \`${verb}\` it) and re-run \`make e2e\`.`
+  );
+}
