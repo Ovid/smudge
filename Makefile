@@ -8,20 +8,28 @@ export NODE_OPTIONS := --disable-warning=DEP0040 ${NODE_OPTIONS}
 all: lint format-check typecheck cover e2e ## Full CI pass: lint, format-check, typecheck, test+coverage, e2e
 
 # better-sqlite3 ships a precompiled .node binary keyed on
-# {platform, arch, node-abi}. The dev workflow can leave a wrong-platform
-# binary in place in two ways: (1) the devcontainer bind-mounts the host's
-# node_modules into the container, so a host install (macOS) puts a
-# Mach-O binary where the container (Linux) needs an ELF — and vice
-# versa; (2) the container sets NPM_CONFIG_IGNORE_SCRIPTS=true, so a
-# fresh `npm install` inside the container does not auto-fetch the
-# correct binary via better-sqlite3's install script. The symptom is
-# either "invalid ELF header" (Linux loading Mach-O) or "slice is not
-# valid mach-o file" (macOS loading ELF), and every server test fails
-# with the same dlopen error. Run a load test up front; if it fails,
-# rebuild better-sqlite3 from source in place so the native binding
-# matches the active platform/runtime. Cheap on the happy path
-# (single node startup, ~50ms); only does substantive work on
+# {platform, arch, node-abi}. Any flow that ends up running tests
+# under a different {platform, arch, node-abi} than the one that
+# installed node_modules will hit a dlopen failure on the .node.
+# Common triggers: (1) a devcontainer or VM that bind-mounts the
+# host's node_modules into a different OS — host (macOS) install
+# leaves a Mach-O binary where the guest (Linux) needs an ELF, and
+# vice versa; (2) a container or CI image whose npm config sets
+# `ignore-scripts=true` (or `NPM_CONFIG_IGNORE_SCRIPTS=true`), so a
+# fresh `npm install` skips better-sqlite3's prebuild-install step
+# and leaves only stale or missing artifacts behind. The symptom is
+# either "invalid ELF header" (Linux loading Mach-O) or "slice is
+# not valid mach-o file" (macOS loading ELF), and every server test
+# fails with the same dlopen error. Run a load test up front; if it
+# fails, rebuild better-sqlite3 from source in place so the native
+# binding matches the active platform/runtime. Cheap on the happy
+# path (single node startup, ~50ms); only does substantive work on
 # cross-platform churn.
+#
+# Note: the repo's `.devcontainer/` is currently empty — neither
+# trigger is reachable in-tree today. The recipe is forward-looking
+# defense for when a devcontainer or similar is reintroduced, and
+# is also useful for ad-hoc host↔VM crossings.
 #
 # I5 (review 2026-04-26): pre-fix, this target invoked
 # `prebuild-install` to fetch a precompiled .node binary from the URL
@@ -33,11 +41,14 @@ all: lint format-check typecheck cover e2e ## Full CI pass: lint, format-check, 
 # trust: the only inputs are the package source already in
 # node_modules (covered by package-lock.json integrity) and the local
 # C++ toolchain. Trade-off: ~60s per cross-platform churn vs. <1s for
-# a prebuilt fetch. Cross-platform churn is rare (host ↔ devcontainer
+# a prebuilt fetch. Cross-platform churn is rare (host↔guest
 # crossings, fresh-machine setup) so the cost is paid infrequently.
-# Override NPM_CONFIG_IGNORE_SCRIPTS because the devcontainer sets it
-# to true to harden `npm install`; rebuild is an explicit, opt-in
-# compile that must run lifecycle scripts.
+# Override NPM_CONFIG_IGNORE_SCRIPTS=false defensively in case any
+# environment (a future devcontainer, a CI image, or a contributor's
+# global npm config) sets `ignore-scripts=true` to harden installs.
+# Rebuild is an explicit, opt-in compile that must run lifecycle
+# scripts even when the global default forbids them. No-op in
+# environments where `ignore-scripts` is already false.
 #
 # S10 (review 2026-04-26): pin to engines.node major BEFORE the dlopen
 # probe so a developer with a foreign Node active never reaches the
