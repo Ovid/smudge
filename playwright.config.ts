@@ -104,8 +104,17 @@ export default defineConfig({
   // (e.g. one spec's afterAll deletes a fixture mid-creation in
   // another). Pin workers: 1 so serialization matches the single-port
   // webServer design. If e2e wall time becomes a problem, shard
-  // DB_PATH/E2E_SERVER_PORT/E2E_CLIENT_PORT per worker via
-  // process.env.TEST_PARALLEL_INDEX instead of removing this cap.
+  // DB_PATH/E2E_SERVER_PORT/E2E_CLIENT_PORT/E2E_DATA_DIR per worker
+  // via process.env.TEST_PARALLEL_INDEX instead of removing this cap.
+  //
+  // LAT1 (review 2026-04-27): the mkdirSync above runs at config-load
+  // time in main + every worker. With workers: 1, that's 2 invocations
+  // — recursive mkdir is race-safe in libuv (EEXIST during walk is
+  // swallowed for recursive mode), so today the race is benign. If
+  // workers > 1 lands, ensure E2E_DATA_DIR is sharded per worker too,
+  // not just DB_PATH/PORT, so the catch block here doesn't have to
+  // adjudicate between "another worker created it" and "a real
+  // non-directory file blocks us."
   workers: 1,
   use: {
     baseURL: `http://localhost:${E2E_CLIENT_PORT}`,

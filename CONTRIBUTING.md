@@ -79,6 +79,7 @@ specifier, remove the `NODE_OPTIONS` line from the Makefile. Tracked in
 | `make test` | Run the full Vitest suite, fast, no coverage |
 | `make cover` | Run tests with coverage thresholds enforced |
 | `make e2e` | Run Playwright e2e tests (boots its own dev servers) |
+| `make e2e-clean` | Wipe the isolated e2e data dir (`os.tmpdir()/smudge-e2e-data-<UID>/`) so the next `make e2e` starts fresh — refuses to wipe while a live `make e2e` is running |
 | `make lint` | ESLint with autofix |
 | `make format` | Prettier write |
 | `make all` | `lint` + `format-check` + `typecheck` + `cover` + `e2e` — the CI gate |
