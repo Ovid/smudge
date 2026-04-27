@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { parsePort } from "@smudge/shared";
+import { findFirstNonDirectoryAncestor, parsePort } from "@smudge/shared";
 
 // E2e DB isolation. Pre-fix, playwright reused the dev server (port 3456)
 // via `reuseExistingServer: true`, so e2e tests created and trashed
@@ -31,39 +31,46 @@ const E2E_CLIENT_PORT = "5174";
 // worker), so a destructive top-level side-effect can run after the
 // server has finished writing, deleting the freshly-written DB.
 //
-// I4 (review 2026-04-26): if E2E_DATA_DIR exists as a regular file
-// (stale leftover or developer mistake), mkdirSync raises ENOTDIR at
-// the top of the config in every Playwright worker — opaque enough
-// that the cause isn't discoverable from the stack. Detect and re-throw
-// with an actionable message instead. ENOTDIR means an ancestor up to
-// and including E2E_DATA_DIR is a non-directory; EEXIST under recursive
-// mkdir can ONLY fire on the leaf (E2E_DATA_DIR/images existing as a
-// non-directory), so each code names a different offender — telling the
-// user to `rm E2E_DATA_DIR` for an EEXIST on the leaf would
-// destructively remove the parent directory and any siblings.
+// I3 (review 2026-04-27): only mkdir E2E_DATA_DIR itself. The server
+// creates `<DATA_DIR>/images/<projectId>/...` lazily on first upload
+// (packages/server/src/images/images.service.ts: `mkdir(path.dirname(
+// filePath), { recursive: true })`), so pre-creating `images/` here
+// duplicates server work AND bakes a server-side layout name into the
+// harness — if storage ever moves to `uploads/` or per-tenant dirs,
+// the pre-creation silently keeps creating an obsolete `images/`.
 //
-// S5 (review 2026-04-26): Node sets `errno.path` to the actual offender
-// for both ENOTDIR (the non-directory ancestor) and EEXIST (the leaf
-// path). Use it for both branches so the suggested `rm` lands on the
-// real conflict — telling the user to `rm $E2E_DATA_DIR` when ENOTDIR
-// fired on an ancestor (e.g. /tmp/smudge-e2e-data is fine but /tmp is
-// somehow a non-directory) would name the wrong path.
+// I4 (review 2026-04-26): if E2E_DATA_DIR exists as a regular file
+// (stale leftover or developer mistake), mkdirSync raises an opaque
+// errno at the top of the config in every Playwright worker — not
+// discoverable from the stack. Detect and re-throw with an actionable
+// message instead. ENOTDIR means an ancestor of E2E_DATA_DIR is a
+// non-directory; EEXIST under recursive mkdir fires when the leaf
+// (E2E_DATA_DIR itself) exists as a non-directory.
+//
+// C1 (review 2026-04-27): Node sets `errno.path` to the *requested*
+// leaf for ENOTDIR — NOT the offending non-directory ancestor.
+// Verified live: `mkdirSync('/tmp/x/file/sub', {recursive:true})` when
+// `/tmp/x/file` is a regular file throws with `errno.path =
+// '/tmp/x/file/sub'`, a path that doesn't even exist. Telling the user
+// to `rm $errno.path` when ENOTDIR fires would name a phantom path; we
+// walk ancestors with lstatSync via findFirstNonDirectoryAncestor and
+// surface the real offender. EEXIST is unaffected — Node's errno.path
+// IS the leaf, which IS the offender for that branch.
 try {
-  fs.mkdirSync(path.join(E2E_DATA_DIR, "images"), { recursive: true });
+  fs.mkdirSync(E2E_DATA_DIR, { recursive: true });
 } catch (err) {
   const errno = err as NodeJS.ErrnoException;
   if (errno.code === "ENOTDIR") {
-    const offender = errno.path ?? E2E_DATA_DIR;
+    const offender = findFirstNonDirectoryAncestor(E2E_DATA_DIR) ?? E2E_DATA_DIR;
     throw new Error(
       `playwright.config: expected a directory at or above ${E2E_DATA_DIR}, but a non-directory exists at ${offender}. ` +
         `Remove the conflicting non-directory (e.g. \`rm ${offender}\`) and re-run \`make e2e\`.`,
     );
   }
   if (errno.code === "EEXIST") {
-    const offender = errno.path ?? path.join(E2E_DATA_DIR, "images");
     throw new Error(
-      `playwright.config: expected a directory at ${offender}, but a non-directory file exists there. ` +
-        `Remove the conflicting file (e.g. \`rm ${offender}\`) and re-run \`make e2e\`.`,
+      `playwright.config: expected a directory at ${E2E_DATA_DIR}, but a non-directory file exists there. ` +
+        `Remove the conflicting file (e.g. \`rm ${E2E_DATA_DIR}\`) and re-run \`make e2e\`.`,
     );
   }
   throw err;

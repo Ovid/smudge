@@ -35,6 +35,7 @@ export {
 export type { SearchMatch, SearchOptions } from "./tiptap-text";
 export { generateSlug } from "./slugify";
 export { parsePort } from "./parsePort";
+export { findFirstNonDirectoryAncestor } from "./findDirectoryConflict";
 export {
   UNTITLED_CHAPTER,
   TRASH_RETENTION_DAYS,
