@@ -51,6 +51,7 @@ make lint                            # Lint with autofix
 make format                          # Format code
 make all                             # Full CI pass: lint + format + typecheck + coverage + e2e
 make cover                           # Run tests with coverage enforcement
+make e2e-clean                       # Wipe the isolated e2e data dir (next `make e2e` starts fresh)
 make ensure-native                   # Verify better-sqlite3 native binding; rebuild from source on dlopen failure
 
 # Per-package testing (when working on one package)
