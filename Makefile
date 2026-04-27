@@ -86,9 +86,12 @@ if (actual !== expected) { \
 		node -e "new (require('better-sqlite3'))(':memory:').close()" >/dev/null || { \
 			echo ""; \
 			echo "→ npm rebuild succeeded but the resulting binary still won't dlopen."; \
-			echo "  This is unusual — the freshly-compiled .node may target a different ABI than the active runtime."; \
+			echo "  Active Node major matches engines.node (verified above), so the cause is likely:"; \
+			echo "    - Stale node-gyp cache (try: rm -rf ~/.cache/node-gyp && rm -rf node_modules/better-sqlite3 && npm install better-sqlite3)"; \
+			echo "    - Multiple .node copies left in node_modules from an interrupted install"; \
+			echo "    - Missing system shared libraries the build linked against (check ldd / otool -L on the .node)"; \
+			echo "    - Incomplete extraction — partial files in node_modules/better-sqlite3"; \
 			echo "  See the dlopen error above for the specific cause."; \
-			echo "  Try: rm -rf node_modules/better-sqlite3 && npm install better-sqlite3"; \
 			exit 1; \
 		}; \
 	}
