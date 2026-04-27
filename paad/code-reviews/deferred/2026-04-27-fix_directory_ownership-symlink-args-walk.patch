@@ -1,0 +1,192 @@
+From: Claude (devcontainer agent)
+Date: 2026-04-27
+Subject: [I7+S5+S6] fix_directory_ownership: refuse symlinks, add sudo
+         -n/timeout, drop root-only stat precondition
+
+Why this is a separate patch
+============================
+This devcontainer mounts /workspace/.devcontainer as read-only inside
+the container, so an agent running inside cannot edit Dockerfile or
+post_install.py directly. Apply this patch from the host (or any
+environment with write access to .devcontainer/), then commit and push.
+
+Order of application: this patch operates on the LIVE state of
+post_install.py (commit 8bac750). The four sibling 2026-04-27 patches
+(post_install-correctness-and-hardening, marketplace-runtime-add,
+devcontainer-remoteenv-passthroughs, dockerfile-checksums) touch
+different lines of post_install.py and the Dockerfile, so apply
+ordering does not matter for correctness; they may be applied in any
+order, with the exception that this patch's hunk lives in a section
+that 2026-04-27-post_install-correctness-and-hardening also touches
+(both `main()` ordering and `fix_directory_ownership`). If a conflict
+fires, apply that patch FIRST (it touches `main()`); this patch's
+fix_directory_ownership hunk should still apply cleanly afterwards.
+
+What this fixes (review items I7, S5, S6 — review 2026-04-27 18:27)
+====================================================================
+
+I7 (Important): chown -R follows top-level symlinks
+---------------------------------------------------
+GNU coreutils `chown -R` does NOT dereference symlinks encountered
+DURING recursion (default --no-dereference applies to descended
+entries). It DOES, however, dereference the top-level command-line
+argument. If `Path.home() / ".claude"` is a symlink (left by a prior
+compromised container, hostile volume init, or stale developer hack),
+`sudo chown -R vscode:vscode /home/vscode/.claude` follows the symlink
+and chowns everything UNDER the target. A symlink to `/etc` chowns all
+of `/etc` to vscode and soft-bricks the container — and it's sudo
+running unconditionally (passwordless via the base image), no auth
+gate, ~30 seconds into postCreate. The named volume
+`devc-...-config-${devcontainerId}` is fresh per devcontainerId, but
+volumes ARE inherited across rebuilds; an exploit running in a prior
+container that writes a `.claude -> /etc` symlink before rebuild lands
+the chown blast on the next postCreate.
+
+Fix: refuse to chown any of the listed paths if it's a symlink. There
+is no legitimate reason for any of these to be symlinks in this
+devcontainer; surfacing the symlink (and its target) loudly is far
+safer than silently chowning the link target.
+
+S5 (Suggestion): subprocess call lacks `-n` and `timeout=`
+----------------------------------------------------------
+Sibling subprocess.run callers in this file (e.g. setup_claude_settings,
+the git-config helpers added by the post_install-correctness patch)
+already pass `timeout=` for symmetry. Without `timeout=`, the chown
+hangs indefinitely on a stuck NFS mount or a sudo authentication
+prompt (theoretically impossible with passwordless sudo, but safer to
+bound). Without `-n`, sudo would prompt interactively if a TTY is
+attached — which can happen if a developer manually runs
+post_install.py from a tmux window. Add both for consistency.
+
+S6 (Suggestion): root-only stat precondition skips child remediation
+--------------------------------------------------------------------
+The pre-fix code only ran `chown -R` if the root directory was not
+owned by `uid` — but the common state is "root dir vscode-owned,
+children root-owned" (e.g. the volume-init container ran briefly as
+root, or `npm install` inside a volume produced root-owned files
+before fix_directory_ownership ran). The existing precondition silently
+skips that case, leaving stale root-owned files inside an otherwise-
+correct tree.
+
+Fix: drop the `stat().st_uid != uid` precondition and unconditionally
+run `chown -cR` (the `-c` / `--changes` flag prints a line per actual
+change; we use it to suppress the "Fixed ownership" message when chown
+was a no-op, keeping postCreate output quiet on the steady-state path).
+
+How to apply
+============
+From a shell on the host (NOT inside the devcontainer):
+
+  cd <smudge repo root>
+  git apply paad/code-reviews/deferred/2026-04-27-fix_directory_ownership-symlink-args-walk.patch
+  git add .devcontainer/post_install.py
+  git commit -m "fix(devcontainer): symlink refusal + sudo -n/timeout + walk all entries (I7+S5+S6)"
+
+Then push.
+
+---
+--- a/.devcontainer/post_install.py
++++ b/.devcontainer/post_install.py
+@@ -238,37 +238,74 @@
+     ]
+ 
+     for dir_path in dirs_to_fix:
+-        if dir_path.exists():
++        if not dir_path.exists():
++            continue
++        # I7 (review 2026-04-27): `sudo chown -R` follows the top-level
++        # path argument (POSIX default; only recursion is no-deref).
++        # If a prior compromised container or hostile volume init left
++        # `dir_path` as a symlink, chowning the link follows it to the
++        # target — `~/.claude -> /etc` would chown all of /etc to vscode
++        # and soft-brick the container. Refuse outright; there is no
++        # legitimate reason for any of these paths to be symlinks here.
++        if dir_path.is_symlink():
+             try:
+-                # Use sudo to fix ownership if needed
+-                stat_info = dir_path.stat()
+-                if stat_info.st_uid != uid:
+-                    subprocess.run(
+-                        ["sudo", "chown", "-R", f"{uid}:{gid}", str(dir_path)],
+-                        check=True,
+-                        capture_output=True,
+-                    )
+-                    print(
+-                        f"[post_install] Fixed ownership: {dir_path}", file=sys.stderr
+-                    )
+-            except (OSError, subprocess.CalledProcessError) as e:
+-                # S4 (review 2026-04-26): broaden to OSError so a stale
+-                # symlink (FileNotFoundError) or mid-mount NotADirectoryError
+-                # doesn't propagate and skip the remaining setup steps.
+-                # Surface the chown stderr if available so the failure is
+-                # debuggable.
+-                stderr = ""
+-                if isinstance(e, subprocess.CalledProcessError) and e.stderr:
+-                    stderr = (
+-                        e.stderr.decode("utf-8", errors="replace")
+-                        if isinstance(e.stderr, bytes)
+-                        else str(e.stderr)
+-                    )
+-                tail = f" — stderr: {stderr}" if stderr else ""
++                target = os.readlink(str(dir_path))
++            except OSError:
++                target = "<unreadable>"
++            print(
++                f"[post_install] Refusing to chown {dir_path}: it is a "
++                f"symlink (target {target}). Remove the symlink before "
++                f"re-running post_install.py.",
++                file=sys.stderr,
++            )
++            continue
++        try:
++            # S6 (review 2026-04-27): unconditional `chown -cR` rather
++            # than gating on `stat().st_uid != uid` of the root only.
++            # The common stale state is "root dir vscode-owned, children
++            # root-owned" (volume-init container ran briefly as root, or
++            # `npm install` inside a volume produced root-owned files
++            # before this function ran). The old root-only precondition
++            # silently skipped that case. `-c` (`--changes`) prints a
++            # line per actual change; we use the presence of stdout to
++            # decide whether to log "Fixed ownership", keeping postCreate
++            # output quiet on the steady-state path.
++            #
++            # S5 (review 2026-04-27): `-n` keeps sudo non-interactive so
++            # a stray TTY (e.g. running post_install.py manually from a
++            # tmux window) cannot block postCreate at a password prompt.
++            # `timeout=60` bounds the subprocess for symmetry with
++            # sibling subprocess.run callers in this file.
++            result = subprocess.run(
++                ["sudo", "-n", "chown", "-cR", f"{uid}:{gid}", str(dir_path)],
++                check=True,
++                capture_output=True,
++                timeout=60,
++            )
++            if result.stdout:
+                 print(
+-                    f"[post_install] Warning: Could not fix ownership of {dir_path}: {e}{tail}",
+-                    file=sys.stderr,
++                    f"[post_install] Fixed ownership: {dir_path}", file=sys.stderr
+                 )
++        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
++            # S4 (review 2026-04-26): broaden to OSError so a stale
++            # symlink (FileNotFoundError) or mid-mount NotADirectoryError
++            # doesn't propagate and skip the remaining setup steps.
++            # Surface the chown stderr if available so the failure is
++            # debuggable. TimeoutExpired (S5 review 2026-04-27) is also
++            # caught so a stuck sudo or NFS mount doesn't abort
++            # post_install entirely.
++            stderr = ""
++            if isinstance(e, subprocess.CalledProcessError) and e.stderr:
++                stderr = (
++                    e.stderr.decode("utf-8", errors="replace")
++                    if isinstance(e.stderr, bytes)
++                    else str(e.stderr)
++                )
++            tail = f" — stderr: {stderr}" if stderr else ""
++            print(
++                f"[post_install] Warning: Could not fix ownership of {dir_path}: {e}{tail}",
++                file=sys.stderr,
++            )
+ 
+ 
+ def setup_global_gitignore():
