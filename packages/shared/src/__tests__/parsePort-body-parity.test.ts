@@ -67,10 +67,6 @@ function extractBody(source: string, fileLabel: string): string {
   return bodies[0]!;
 }
 
-function normalize(s: string): string {
-  return s.replace(/\s+/g, " ").trim();
-}
-
 describe("parsePort body parity", () => {
   const sharedSource = readFileSync(
     resolve(PROJECT_ROOT, "packages/shared/src/parsePort.ts"),
@@ -82,12 +78,22 @@ describe("parsePort body parity", () => {
   );
 
   it("vite.config.ts inline parsePort matches @smudge/shared/parsePort", () => {
-    const sharedBody = normalize(extractBody(sharedSource, "packages/shared/src/parsePort.ts"));
-    const viteBody = normalize(extractBody(viteConfigSource, "packages/client/vite.config.ts"));
+    // I5 (Copilot review 2026-04-27): pre-fix, both bodies were piped
+    // through `normalize(s) = s.replace(/\s+/g, " ").trim()` before
+    // comparison. That collapsed whitespace runs INSIDE string/template
+    // literals — a drifted error message like "between 1  and 65535"
+    // (double space) silently passed even though the surrounding
+    // comments at parsePort.ts:31,41 / vite.config.ts:58 / this file's
+    // header all claim "byte-for-byte" parity. Compare bytes directly;
+    // prettier already enforces format on both files via `format:check`,
+    // so legitimate stylistic drift cannot land without the formatter
+    // gate also catching it.
+    const sharedBody = extractBody(sharedSource, "packages/shared/src/parsePort.ts");
+    const viteBody = extractBody(viteConfigSource, "packages/client/vite.config.ts");
     expect(
       viteBody,
       "vite.config.ts inline parsePort body has drifted from @smudge/shared/parsePort. " +
-        "Sync the function bodies (the canonical lives in packages/shared/src/parsePort.ts).",
+        "Sync the function bodies byte-for-byte (the canonical lives in packages/shared/src/parsePort.ts).",
     ).toBe(sharedBody);
   });
 
@@ -104,5 +110,30 @@ describe("parsePort body parity", () => {
     // returned only the first hit and the second silently drifted).
     const doubled = sharedSource + "\n\n" + sharedSource;
     expect(findParsePortBodies(doubled)).toHaveLength(2);
+  });
+
+  it("byte-equal comparison rejects whitespace drift inside string literals (drift sentinel for I5)", () => {
+    // I5 (Copilot review 2026-04-27): synthesize the exact drift class
+    // the prior `normalize()` masked — extra space inside the
+    // user-facing error message template literal — and confirm
+    // byte-equal `.toBe()` rejects it. Pre-fix, this sentinel would
+    // have failed if written as `expect(normalize(drifted)).not.toBe(
+    // normalize(canonical))` because the inner whitespace runs got
+    // collapsed. Post-fix the comparison is the same `.toBe()` the main
+    // assertion uses, so any future regression that reintroduces
+    // normalization would have to revert BOTH the main assertion and
+    // this sentinel — making the contract tightening explicit at the
+    // test layer.
+    const driftedSharedSource = sharedSource.replace(
+      "between 1 and 65535",
+      "between 1  and 65535", // extra space inside the template literal
+    );
+    expect(driftedSharedSource).not.toBe(sharedSource); // confirm drift was injected
+    const driftedBody = extractBody(driftedSharedSource, "shared (drifted)");
+    const canonicalBody = extractBody(sharedSource, "shared (canonical)");
+    expect(
+      driftedBody,
+      "byte-equal parity must reject whitespace drift inside string literals",
+    ).not.toBe(canonicalBody);
   });
 });
