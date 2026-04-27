@@ -82,9 +82,22 @@ test.describe("Editor save pipeline E2e Tests", () => {
     // route.fulfill (NOT route.abort) so the client sees a real HTTP 404
     // and exercises the byStatus branch — abort would route through the
     // NETWORK path and surface a different copy.
-    await page.route("**/api/chapters/**", (route) => {
+    //
+    // Glob `**/api/chapters/*` (single segment) — auto-save PATCHes the
+    // chapter root URL `/api/chapters/<id>`; deeper paths
+    // (`/api/chapters/<id>/snapshots`, `/api/chapters/<id>/restore`)
+    // belong to other features and shouldn't be funneled through this
+    // handler. The wider `/**` glob would match those too and require
+    // the method gate to do more work.
+    //
+    // `async` handler with `await` on route.fulfill / route.continue:
+    // Playwright's route handler may be sync or async; explicitly
+    // awaiting the response settlement ensures the test sees the
+    // response delivered before subsequent assertions run. Drift
+    // between awaited and non-awaited handlers is a known flake source.
+    await page.route("**/api/chapters/*", async (route) => {
       if (route.request().method() === "PATCH") {
-        route.fulfill({
+        await route.fulfill({
           status: 404,
           contentType: "application/json",
           body: JSON.stringify({
@@ -92,7 +105,7 @@ test.describe("Editor save pipeline E2e Tests", () => {
           }),
         });
       } else {
-        route.continue();
+        await route.continue();
       }
     });
 
