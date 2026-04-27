@@ -3,15 +3,17 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { parsePort } from "@smudge/shared";
-// Direct file import (not via @smudge/shared) because these helpers
-// only matter for Node-side tooling; re-exporting them through
+// Subpath export (not via the main `@smudge/shared` entry) because
+// these helpers import node:fs / node:path; re-exporting them through
 // shared/index.ts would pull node-only modules into the client's
-// transitive load chain (Vite externalizes them and the eager
-// top-level import throws on the React app).
+// transitive load chain (Vite externalizes them and the eager top-
+// level import throws on the React app). The subpath isolates
+// node-only helpers behind an explicit boundary so a future helper
+// added next to findDirectoryConflict.ts must opt-in via this entry.
 import {
   findFirstNonDirectoryAncestor,
   formatMkdirDataDirError,
-} from "./packages/shared/src/findDirectoryConflict";
+} from "@smudge/shared/node-fs-helpers";
 
 // E2e DB isolation. Pre-fix, playwright reused the dev server (port 3456)
 // via `reuseExistingServer: true`, so e2e tests created and trashed

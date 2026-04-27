@@ -5,6 +5,16 @@
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./node-fs-helpers": {
+      "types": "./src/findDirectoryConflict.ts",
+      "default": "./src/findDirectoryConflict.ts"
+    }
+  },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest"
