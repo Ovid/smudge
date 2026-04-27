@@ -346,6 +346,104 @@ describe("Editor", () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
+  it("debounced save does not fire when editor is locked before the timer (I6 2026-04-26)", async () => {
+    // Regression: useProjectEditor's terminal-code branches (BAD_JSON,
+    // UPDATE_READ_FAILURE, CORRUPT_CONTENT, NOT_FOUND) lock the editor
+    // via onRequestEditorLock → applyReloadFailedLock → setEditable(false).
+    // But a debounced save queued by typing during the prior retry window
+    // would still fire after the lock, deterministically 4xx-ing again
+    // and re-firing the lock setter — wasted round-trips and warn-spam
+    // against the CLAUDE.md "zero warnings" rule. The debounced save
+    // must check editor.isEditable in its setTimeout callback.
+    vi.useFakeTimers();
+    try {
+      const onSave = vi.fn().mockResolvedValue(true);
+      const onContentChange = vi.fn();
+      const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+
+      const { container } = render(
+        <Editor
+          projectId="test-project"
+          content={null}
+          onSave={onSave}
+          onContentChange={onContentChange}
+          editorRef={editorRef}
+        />,
+      );
+
+      await vi.waitFor(() => expect(editorRef.current).not.toBeNull(), { timeout: 3000 });
+
+      const editorEl = container.querySelector("[role='textbox']") as HTMLElement;
+
+      // Type to dirty the editor. This queues a debounced save 1500ms out.
+      fireEvent.focus(editorEl);
+      editorEl.textContent = "typed during retry";
+      fireEvent.input(editorEl);
+
+      await vi.waitFor(() => expect(onContentChange).toHaveBeenCalled(), { timeout: 3000 });
+
+      onSave.mockClear();
+
+      // Lock the editor before the debounce fires (mimics applyReloadFailedLock).
+      editorRef.current?.setEditable(false);
+
+      // Advance past the debounce window. Without the isEditable guard the
+      // setTimeout callback would call onSaveRef.current(getJSON, ...) and
+      // trigger another 404 → lock cycle.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+
+      expect(onSave).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("flushSave fires onSave when editor is locked (useEditorMutation contract, C1 2026-04-26)", async () => {
+    // useEditorMutation.run() locks the editor via setEditable(false)
+    // and THEN calls flushSave to commit any pre-mutation typing
+    // before the server-side mutate overwrites the chapter. Skipping
+    // onSave on the locked editor here would silently destroy that
+    // pending typing: markClean() runs immediately afterwards,
+    // dirtyRef goes to false, and clearAllCachedContent wipes the
+    // localStorage draft. flushSave's existing `dirtyRef` check is
+    // sufficient — callers that should NOT flush (persistent
+    // failure-lock state) must gate externally via
+    // editorLockedMessageRef before calling.
+    const onSave = vi.fn().mockResolvedValue(true);
+    const onContentChange = vi.fn();
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+
+    const { container } = render(
+      <Editor
+        projectId="test-project"
+        content={null}
+        onSave={onSave}
+        onContentChange={onContentChange}
+        editorRef={editorRef}
+      />,
+    );
+
+    await vi.waitFor(() => expect(editorRef.current).not.toBeNull(), { timeout: 3000 });
+
+    const editorEl = container.querySelector("[role='textbox']") as HTMLElement;
+    fireEvent.focus(editorEl);
+    editorEl.textContent = "typed before mutation lock";
+    fireEvent.input(editorEl);
+
+    await vi.waitFor(() => expect(onContentChange).toHaveBeenCalled(), { timeout: 3000 });
+
+    onSave.mockClear();
+
+    // Mimic useEditorMutation.run(): lock the editor, then flush.
+    editorRef.current?.setEditable(false);
+    const ok = await editorRef.current?.flushSave();
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ type: "doc" }), undefined);
+    expect(ok).toBe(true);
+  });
+
   it("onBlur does not save while editor is non-editable (C2 2026-04-24)", async () => {
     // The mutation gate (setEditable(false) around restore / replace /
     // reload) relies on blur NOT committing a save with pre-mutation

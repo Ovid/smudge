@@ -3,6 +3,7 @@ import type { MappedError } from "./apiErrorMapper";
 import {
   _resolveErrorInternal as resolveError,
   mapApiError,
+  mapApiErrorMessage,
   ALL_SCOPES,
   isApiError,
   isAborted,
@@ -298,9 +299,71 @@ describe("SCOPES — chapter.save", () => {
     const err = new ApiRequestError("bad", 400, "VALIDATION_ERROR");
     expect(resolveError(err, scope).message).toBe(STRINGS.editor.saveFailedInvalid);
   });
-  it("500 → saveFailed (fallback)", () => {
+  // I3 (review 2026-04-26): bare 500 INTERNAL_ERROR is the post-retry-
+  // exhaustion case for non-coded server failures. The previous fallback
+  // copy ("Save failed. Try again.") was misleading after 4 attempts
+  // spanning ~14 seconds — the user already retried four times. Route
+  // through byStatus[500] so the user sees a server-trouble specific
+  // hint instead.
+  it("500 → saveFailedServer (byStatus)", () => {
     const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
+    expect(resolveError(err, scope).message).toBe(STRINGS.editor.saveFailedServer);
+  });
+  // S7 (review 2026-04-26): I3 only mapped 500. A reverse proxy in
+  // front of Smudge can emit 502/503/504 (Bad Gateway / Service
+  // Unavailable / Gateway Timeout) when the upstream server is down or
+  // overloaded — the user-visible cause is the same as a bare 500
+  // (the server is having trouble) and the same banner copy applies.
+  // Without these entries the gateway statuses fell through to the
+  // generic saveFailed fallback ("Save failed. Try again."), which
+  // defeated I3's intent the moment Smudge sat behind any reverse
+  // proxy. The fallback path is now exercised by the 599 case below.
+  it.each([
+    [502, "Bad Gateway"],
+    [503, "Service Unavailable"],
+    [504, "Gateway Timeout"],
+  ])("%i → saveFailedServer (gateway 5xx) (S7)", (status) => {
+    const err = new ApiRequestError("gateway", status);
+    expect(resolveError(err, scope).message).toBe(STRINGS.editor.saveFailedServer);
+  });
+  // Coverage for the fallback path: a non-mapped status with no
+  // matching byStatus or byCode entry must still resolve to the scope
+  // fallback. Without this, no test exercises chapter.save's fallback
+  // after I3 / S7 added byStatus[500] / [502] / [503] / [504].
+  it("599 with no code → saveFailed (fallback)", () => {
+    const err = new ApiRequestError("unknown 5xx", 599);
     expect(resolveError(err, scope).message).toBe(STRINGS.editor.saveFailed);
+  });
+  // I2 (Phase 4b.3a): NETWORK gets a transient connection-specific copy
+  // and 404 gets a chapter-was-deleted copy. Without these, both paths
+  // surfaced the generic saveFailed fallback that gave no actionable
+  // signal — NETWORK retries are worthwhile while a 404 indicates a
+  // deterministic failure (chapter purged or hard-deleted) that needs a
+  // reload.
+  it("NETWORK → saveFailedNetwork (I2)", () => {
+    const err = new ApiRequestError("offline", 0, "NETWORK");
+    expect(resolveError(err, scope).message).toBe(STRINGS.editor.saveFailedNetwork);
+  });
+  it("404 → saveFailedChapterGone (I2)", () => {
+    const err = new ApiRequestError("gone", 404, "NOT_FOUND");
+    expect(resolveError(err, scope).message).toBe(STRINGS.editor.saveFailedChapterGone);
+  });
+});
+
+describe("SCOPES — chapter.reorder", () => {
+  const scope = SCOPES["chapter.reorder"];
+  // I1 (Phase 4b.3a): server emits 400 REORDER_MISMATCH when the chapter
+  // ID list submitted to PUT /projects/:id/chapters/order doesn't match
+  // the current set (count or values). Without a byCode entry the user
+  // saw the generic "Failed to reorder chapters" fallback that invites
+  // retry of the same stale list. The mapped copy tells them to refresh.
+  it("REORDER_MISMATCH (400) → reorderMismatch", () => {
+    const err = new ApiRequestError("ids mismatch", 400, "REORDER_MISMATCH");
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.reorderMismatch);
+  });
+  it("500 → reorderFailed (fallback)", () => {
+    const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.reorderFailed);
   });
 });
 
@@ -409,12 +472,79 @@ describe("SCOPES — trash.restoreChapter", () => {
     expect(result.possiblyCommitted).toBe(true);
   });
   it("PROJECT_PURGED → restoreChapterProjectPurged", () => {
-    const err = new ApiRequestError("gone", 409, "PROJECT_PURGED");
+    // I4 (review 2026-04-26): server emits PROJECT_PURGED at HTTP 404
+    // (`packages/server/src/chapters/chapters.routes.ts:97-104`), not 409.
+    // Pin the real-traffic status code so a future regression that drops
+    // the byCode entry would be caught by the precedence pin below — a
+    // 409 fixture would mask such a regression because byStatus has no
+    // 409 entry.
+    const err = new ApiRequestError("gone", 404, "PROJECT_PURGED");
     expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterProjectPurged);
+  });
+  // I4 (review 2026-04-26): mirror the CHAPTER_PURGED precedence pin
+  // (below) for PROJECT_PURGED. Both server-emitted 404 codes share the
+  // status with the new byStatus[404] → restoreChapterAlreadyPurged
+  // mapping; without an explicit pin, dropping or renaming
+  // byCode["PROJECT_PURGED"] would silently route real PROJECT_PURGED
+  // traffic to the wrong copy and the bare-404 test would still pass.
+  it("404 + PROJECT_PURGED → byCode wins (precedence pin)", () => {
+    const err = new ApiRequestError("gone", 404, "PROJECT_PURGED");
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterProjectPurged);
+    // Sanity-check the byCode entry is still the one we're matching.
+    expect(scope.byCode?.PROJECT_PURGED).toBe(STRINGS.error.restoreChapterProjectPurged);
   });
   it("500 (non-RESTORE_READ_FAILURE) → restoreChapterFailed (fallback)", () => {
     const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
     expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterFailed);
+  });
+  // S1: a bare 404 (server emits {status: 404, code: "NOT_FOUND"} when
+  // the deleted chapter row can't be located) routes through byStatus.
+  // Without this mapping the bare-404 path fell through to the generic
+  // restoreChapterFailed fallback and invited a futile retry.
+  // S4 (review 2026-04-26): pinned to the softer restoreChapterUnavailable
+  // copy. The bare-404 case is indistinguishable from purge from the
+  // user's POV, but it could also be a stale URL or a row that was
+  // bulk-purged between trash-list fetch and click — the byCode
+  // CHAPTER_PURGED case keeps its dedicated "permanently deleted"
+  // copy below, which is accurate only for that explicit code.
+  it("404 NOT_FOUND (no matching code) → restoreChapterUnavailable (byStatus)", () => {
+    const err = new ApiRequestError("not found", 404, "NOT_FOUND");
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterUnavailable);
+  });
+  it("404 with no code → restoreChapterUnavailable (byStatus)", () => {
+    const err = new ApiRequestError("not found", 404);
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterUnavailable);
+  });
+  // Pin byCode precedence for real-traffic 404+CHAPTER_PURGED: the
+  // server emits CHAPTER_PURGED at HTTP 404
+  // (`packages/server/src/chapters/chapters.routes.ts:107-113`), so this
+  // combination is exactly what production traffic carries. byCode now
+  // resolves to a distinct string from byStatus[404] (S4 review
+  // 2026-04-26: byStatus is restoreChapterUnavailable; byCode keeps the
+  // explicit "permanently deleted" copy). If a future regression
+  // dropped the byCode lookup, this test would surface
+  // restoreChapterUnavailable instead of restoreChapterAlreadyPurged
+  // — an immediately visible failure rather than a silent string swap.
+  it("404 + CHAPTER_PURGED → byCode wins (precedence pin)", () => {
+    const err = new ApiRequestError("purged", 404, "CHAPTER_PURGED");
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.restoreChapterAlreadyPurged);
+    // Sanity-check the byCode entry is still the one we're matching.
+    expect(scope.byCode?.CHAPTER_PURGED).toBe(STRINGS.error.restoreChapterAlreadyPurged);
+  });
+  // S4 (review 2026-04-26): the precedence pin above is now naturally
+  // distinguishing because byCode and byStatus map to different strings
+  // in the real registry. This contrived-scope test remains as defense
+  // for the case where a future scope happens to map both to the same
+  // string — it ensures byCode precedence is enforced by the resolver,
+  // not by accidental string equality.
+  it("byCode beats byStatus when both match the same status (S4)", () => {
+    const contrivedScope = {
+      fallback: "fallback",
+      byCode: { CHAPTER_PURGED: "from byCode" },
+      byStatus: { 404: "from byStatus" },
+    } as const;
+    const err = new ApiRequestError("purged", 404, "CHAPTER_PURGED");
+    expect(resolveError(err, contrivedScope).message).toBe("from byCode");
   });
 });
 
@@ -972,6 +1102,39 @@ describe("mapper never surfaces raw err.message (S10)", () => {
       }
     },
   );
+});
+
+// S2 (review 2026-04-26): the `mapApiError(err, scope).message ??
+// fallback` idiom appeared in two call sites (useProjectEditor's
+// retry-exhaustion banner and EditorPage's Ctrl+S catch). Extracted
+// into a single helper so the fallback handling is consistent and
+// future call sites cannot accidentally drop the ?? defense against
+// ABORTED's null message.
+describe("mapApiErrorMessage", () => {
+  it("returns the mapped message when one is available", () => {
+    const err = new ApiRequestError("network", 0, "NETWORK");
+    expect(mapApiErrorMessage(err, "chapter.save", STRINGS.editor.saveFailed)).toBe(
+      STRINGS.editor.saveFailedNetwork,
+    );
+  });
+
+  it("returns the fallback when mapApiError yields null (ABORTED)", () => {
+    const err = new ApiRequestError("aborted", 0, "ABORTED");
+    expect(mapApiErrorMessage(err, "chapter.save", STRINGS.editor.saveFailed)).toBe(
+      STRINGS.editor.saveFailed,
+    );
+  });
+
+  it("returns scope.fallback for a non-ApiRequestError (the third-arg fallback never fires here)", () => {
+    // Non-ApiRequestError still produces scope.fallback, which is
+    // truthy — the third-arg fallback is reserved for the ABORTED
+    // null-message case. Pin so a refactor that changes the precedence
+    // doesn't silently break the call sites that pass scope.fallback
+    // a second time as the explicit fallback.
+    const err = new Error("wtf");
+    const result = mapApiErrorMessage(err, "chapter.save", "explicit fallback");
+    expect(result).toBe(STRINGS.editor.saveFailed);
+  });
 });
 
 describe("cross-cutting rules apply to every scope", () => {

@@ -35,6 +35,7 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.4 | Raw-Strings ESLint Rule | Enforce strings.ts externalization via lint; fix existing violations | Planned |
 | 4b.5 | Editor State Machine | Unify `editable`/`locked`/`busy` editor state into one machine; add `committed_but_unreloaded` mutation stage for ambiguous server responses | Planned |
 | 4b.6 | E2E Test Isolation | Wire `playwright.config.ts` to set `SMUDGE_PORT` / `SMUDGE_CLIENT_PORT` / `DB_PATH` to test-only values so e2e cannot piggy-back on the dev server or share its database | Planned |
+| 4b.7 | Test Warning-Pin Audit | Audit the 52 console-spy installs across 9 client test files that suppress `console.warn`/`console.error` without asserting on the call; pin each spy to the contract its production path commits to (or remove if defensive) | Planned |
 | 4c | Notes, Tags & Outtakes | Inline notes, paragraph tags, scratchpad for cut text | Planned |
 | 5a | Fiction: Characters | Character sheets with structured fields and freeform notes | Planned |
 | 5b | Fiction: Scene Cards | Scene cards / outline mode with drag-and-drop | Planned |
@@ -863,6 +864,62 @@ Once the `ovid/shared-port-validation` branch lands, `packages/server/src/index.
 ### Dependencies
 
 - The shared `parsePort` utility and env-driven port reading in `vite.config.ts` / `server/index.ts` (introduced in `ovid/shared-port-validation`) must be merged.
+
+---
+
+## Phase 4b.7: Test Warning-Pin Audit
+
+### Goal
+
+Make the CLAUDE.md §Testing Philosophy "Zero warnings in test output" rule enforceable in the existing test suite. Every `vi.spyOn(console, "warn"|"error")` install that suppresses output must either assert the expected call (pinning the production-side warn as part of the test's contract) or be removed if the spy is purely defensive against unrelated noise.
+
+### Why Now
+
+CLAUDE.md §Testing Philosophy says: *"When a test deliberately triggers an error path that logs a warning, spy on the output, suppress it, and assert the expected message — e.g. `const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {}); ... expect(warnSpy).toHaveBeenCalledWith(...); warnSpy.mockRestore();`."* The 4b.3a Cluster A code review (`paad/code-reviews/ovid-cluster-a-error-mapping-2026-04-27-14-13-42-91476d8.md`, finding I1) surfaced two tests violating this rule; a follow-up audit found 52 more across 9 files. Each unasserted spy is a contract that isn't pinned: a future change that drops or alters the production warn would silently pass. This phase closes that gap before Phase 4b.4's raw-strings lint rule lands, so the test suite is clean of latent contract gaps when lint-driven cleanup begins.
+
+### Scope
+
+Audit and fix all `vi.spyOn(console, …).mockImplementation(() => {})` installs that lack a corresponding `expect(spy).toHaveBeenCalled…` assertion in client test files. Each fix requires per-test contract analysis:
+
+- **Production warn fires deliberately** → add `expect(spy).toHaveBeenCalledWith(…)` matching the production call site. Mirror the shape of the already-pinned tests in `useProjectEditor.test.ts:1290,1314,1334`.
+- **Production warn fires defensively (e.g. unrelated library noise)** → either remove the spy entirely (let the warn through if it's harmless) or assert `expect(spy).not.toHaveBeenCalled()` to pin absence.
+- **Multi-warn paths** → assert with `toHaveBeenCalledTimes(N)` plus `toHaveBeenNthCalledWith` where the order matters.
+
+The 52 occurrences (post-I1 fix) are distributed:
+
+| Count | File |
+|---|---|
+| 27 | `packages/client/src/__tests__/useProjectEditor.test.ts` |
+| 6 | `packages/client/src/__tests__/DashboardView.test.tsx` |
+| 4 | `packages/client/src/__tests__/EditorPageFeatures.test.tsx` |
+| 4 | `packages/client/src/__tests__/HomePage.test.tsx` |
+| 3 | `packages/client/src/__tests__/ProjectSettingsDialog.test.tsx` |
+| 3 | `packages/client/src/hooks/useEditorMutation.test.tsx` |
+| 2 | `packages/client/src/__tests__/ExportDialog.test.tsx` |
+| 2 | `packages/client/src/hooks/useAbortableSequence.test.ts` |
+| 1 | `packages/client/src/__tests__/useSnapshotState.test.ts` |
+
+Consider whether a small ESLint rule (or test-side helper that wraps spy + assertion) could prevent regressions. If so, fold it into the phase; if not, document the manual review checkpoint in CONTRIBUTING.md.
+
+### Out of Scope
+
+- Server-side test files — server tests don't currently exhibit this pattern (no installs found under `packages/server/`).
+- E2e tests — Playwright doesn't use vi.spyOn; warning discipline there is governed by browser console listeners, separate concern.
+- Adding new tests beyond the assertions needed to pin existing spies. Coverage may rise as a side effect; do not chase it.
+- Refactoring tests for unrelated reasons (mock setup, render helpers).
+
+### Definition of Done
+
+- Every `vi.spyOn(console, …)` install in `packages/client/src/` either asserts on the spy or is removed.
+- A grep-based regression guard documented in CONTRIBUTING.md (or implemented as an ESLint rule) prevents new unasserted spy installs.
+- Coverage thresholds in `vitest.config.ts` unchanged or higher; no minimum-floor coast.
+- `make all` green at PR close.
+- No behavior change visible to the user (this is a test-only phase).
+
+### Dependencies
+
+- Phase 4b.3a Cluster A merged (this phase exists because of an I1 finding from that review).
+- Independent of Phase 4b.4 (Raw-Strings ESLint Rule); may land before, in parallel, or after. Landing before 4b.4 is mildly preferred so 4b.4's lint-driven cleanup operates on a contract-clean test suite.
 
 ---
 

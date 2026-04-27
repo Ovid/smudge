@@ -5,9 +5,15 @@ import { api } from "../api/client";
 import { getCachedContent, setCachedContent, clearCachedContent } from "./useContentCache";
 import { useAbortableSequence } from "./useAbortableSequence";
 import { STRINGS } from "../strings";
-import { mapApiError, isApiError, isAborted, isClientError } from "../errors";
+import { mapApiError, mapApiErrorMessage, isApiError, isAborted, isClientError } from "../errors";
 
 export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
+
+// Save-retry exponential backoff schedule (ms). Exposed so the test
+// helper `flushSaveRetries` can iterate the same schedule the hook
+// uses — a hand-mirrored copy in the test helper would silently drift
+// if this array changes.
+export const SAVE_BACKOFF_MS = [2000, 4000, 8000] as const;
 
 // Discriminated return from reloadActiveChapter so callers can distinguish
 // "fresh server state is now on screen" from "the user switched chapters
@@ -281,12 +287,29 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       saveAbortRef.current?.abort();
       const controller = new AbortController();
       saveAbortRef.current = controller;
-      const BACKOFF_MS = [2000, 4000, 8000];
-      const MAX_RETRIES = BACKOFF_MS.length;
+      const MAX_RETRIES = SAVE_BACKOFF_MS.length;
 
       setSaveStatus("saving");
       setSaveErrorMessage(null);
-      let rejected4xx: { message: string; code?: string } | null = null;
+      // Captures the error that terminates the retry loop (any of: 2xx
+      // BAD_JSON, 5xx UPDATE_READ_FAILURE / CORRUPT_CONTENT, any 4xx,
+      // bare-status 404 from an envelope-stripped proxy response). Every
+      // write is paired with `break` — once set, no further attempts run.
+      // Drives three downstream decisions: post-loop banner copy
+      // (line ~465), VALIDATION_ERROR cache wipe (~433), and editor
+      // lock predicate (~494). Historical name `rejected4xx` predated
+      // the BAD_JSON / UPDATE_READ_FAILURE / CORRUPT_CONTENT and
+      // status===404 branches — kept the variable single-purpose but
+      // no longer 4xx-only.
+      let terminalSaveError: { message: string; code?: string; status: number } | null = null;
+      // I4 (Phase 4b.3a regression guard): capture the most recent
+      // non-aborted error so retry-exhaustion can route its banner copy
+      // through the unified mapper. Pre-fix, the post-loop fallback used
+      // the literal STRINGS.editor.saveFailed, bypassing chapter.save's
+      // network: mapping and surfacing "Save failed. Try again." even
+      // for NETWORK retry exhaustion. CLAUDE.md invariant: all
+      // user-visible API error messages flow through mapApiError.
+      let lastErr: unknown = null;
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (token.isStale()) return false; // chapter changed, abort retries
         // Re-read latest content each attempt so backoff retries post keystrokes
@@ -340,6 +363,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           if (isAborted(err)) {
             return false;
           }
+          // Track the most recent non-aborted error so the post-loop
+          // fallback (used when NETWORK / bare-5xx retries exhaust) can
+          // route through mapApiError(err, "chapter.save"). 4xx and
+          // terminal-code branches below still break early via
+          // terminalSaveError, which takes precedence over this lastErr.
+          lastErr = err;
           // I5: a 2xx BAD_JSON or a 5xx whose code identifies a specific
           // committed/terminal server state must not retry:
           //   - 2xx BAD_JSON: server likely committed the PATCH but the
@@ -365,7 +394,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             // has already been filtered above — the three codes here all
             // route to scope.committed / byCode matches, all non-null.
             const { message } = mapApiError(err, "chapter.save");
-            rejected4xx = { message: message as string, code: err.code };
+            terminalSaveError = { message: message as string, code: err.code, status: err.status };
             break;
           }
           if (isClientError(err)) {
@@ -379,7 +408,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             // cache-clear decision below. ABORTED is filtered above so
             // mapped.message is guaranteed non-null in this branch.
             const { message } = mapApiError(err, "chapter.save");
-            rejected4xx = { message: message as string, code: err.code };
+            terminalSaveError = { message: message as string, code: err.code, status: err.status };
             break;
           }
           if (attempt < MAX_RETRIES) {
@@ -394,7 +423,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
                   saveBackoffRef.current = null;
                 }
                 resolve();
-              }, BACKOFF_MS[attempt]);
+              }, SAVE_BACKOFF_MS[attempt]);
               saveBackoffRef.current = { timer, resolve };
             });
             // If cancelInFlightSave cleared the timer and resolved early,
@@ -416,7 +445,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       // chapters between the rejected PATCH being sent and its 4xx
       // landing, a different path (handleSelectChapter) now owns this
       // chapter's cache and we must not stomp on it (I2).
-      if (rejected4xx && rejected4xx.code === "VALIDATION_ERROR" && !token.isStale()) {
+      if (terminalSaveError && terminalSaveError.code === "VALIDATION_ERROR" && !token.isStale()) {
         clearCachedContent(savingChapterId);
         if (latestContentRef.current?.id === savingChapterId) {
           latestContentRef.current = null;
@@ -430,7 +459,29 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       // guard immediately above.
       if (activeChapterRef.current?.id === savingChapterId && !token.isStale()) {
         setSaveStatus("error");
-        setSaveErrorMessage(rejected4xx ? rejected4xx.message : STRINGS.editor.saveFailed);
+        // I4 (Phase 4b.3a regression guard): route post-retry-exhaustion
+        // copy through mapApiError so chapter.save's network: mapping
+        // (STRINGS.editor.saveFailedNetwork) wins over the generic
+        // saveFailed fallback when the cause was a NETWORK error. The
+        // ?? STRINGS.editor.saveFailed defends against ABORTED-only
+        // (mapApiError returns message: null) — defense-in-depth, since
+        // ABORTED is filtered above and never captured into lastErr.
+        // S1 (review 2026-04-26): in practice the post-loop block is
+        // unreachable with lastErr === null. The seq-check exits inside
+        // the loop via `return false`, success returns true, and every
+        // catch branch writes lastErr before deciding whether to break
+        // or continue. The `lastErr ?` guard below is paranoid defense —
+        // future code that adds a non-throwing exit path would otherwise
+        // hand mapApiError(null) and get the scope fallback (correct,
+        // but undocumented). S6 (review 2026-04-26): collapse via ??
+        // chain so fallbackMessage isn't computed when terminalSaveError
+        // is already set.
+        setSaveErrorMessage(
+          terminalSaveError?.message ??
+            (lastErr
+              ? mapApiErrorMessage(lastErr, "chapter.save", STRINGS.editor.saveFailed)
+              : STRINGS.editor.saveFailed),
+        );
         // I2 (review 2026-04-24): terminal committed/unrecoverable
         // codes must also lock the editor — CLAUDE.md save-pipeline
         // invariant #2 pairs setEditable(false) with editorLockedMessage.
@@ -438,13 +489,31 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // invariant-pair helper (applyReloadFailedLock) fires alongside
         // the banner. Bare 4xx (VALIDATION_ERROR, 413) are recoverable
         // and keep the editor writable.
+        // I2 (review 2026-04-26): NOT_FOUND is also a terminal condition —
+        // the chapter is gone server-side (purge, hard-delete, or another
+        // tab). Without the lock, the user keeps typing into content the
+        // server has rejected and every debounced auto-save 404s in a
+        // loop. The chapter.save byStatus[404] mapping already surfaces
+        // the saveFailedChapterGone banner; this completes the invariant
+        // pair.
+        // S3 (review 2026-04-26): a 404 that arrives WITHOUT a parseable
+        // JSON envelope — e.g. a reverse-proxy HTML 404 page, an
+        // upstream that bypassed the express error handler — has no
+        // `code` on the ApiRequestError. Pre-fix, the code-only check
+        // missed those: the saveFailedChapterGone banner fired (via
+        // byStatus[404]) but the editor stayed writable, every
+        // debounced auto-save deterministically 404'd, and the banner
+        // re-fired on each save. Lock on status === 404 too so the
+        // pair holds whether or not the envelope survived the proxy
+        // chain.
         if (
-          rejected4xx &&
-          (rejected4xx.code === "BAD_JSON" ||
-            rejected4xx.code === "UPDATE_READ_FAILURE" ||
-            rejected4xx.code === "CORRUPT_CONTENT")
+          terminalSaveError &&
+          (terminalSaveError.status === 404 ||
+            terminalSaveError.code === "BAD_JSON" ||
+            terminalSaveError.code === "UPDATE_READ_FAILURE" ||
+            terminalSaveError.code === "CORRUPT_CONTENT")
         ) {
-          onRequestEditorLockRef.current?.(rejected4xx.message);
+          onRequestEditorLockRef.current?.(terminalSaveError.message);
         }
       }
       return false;

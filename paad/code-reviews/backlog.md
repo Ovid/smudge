@@ -149,7 +149,7 @@
 - **Confidence:** Medium
 - **Found by:** Concurrency & State (`general-purpose (claude-opus-4-7)`)
 - **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
-- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
+- **Last seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `91476d8`
 - **Severity:** Important
 
 ## `9e5a73d4` — `fix_directory_ownership` exception list still too narrow; subprocess stderr swallowed
@@ -306,4 +306,28 @@
 - **Found by:** Security (`general-purpose (claude-opus-4-7)`)
 - **First seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
 - **Last seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
+- **Severity:** Suggestion
+
+## `1f9d4b27` — `latestContentRef` clobbered by unmount-cleanup save targeting old chapter
+- **File (at first sighting):** `packages/client/src/hooks/useProjectEditor.ts:273`
+- **Symbol:** `handleSave` (the `latestContentRef.current = { id: savingChapterId, content }` assignment)
+- **Bug class:** Concurrency
+- **Description:** `handleSave` unconditionally writes `latestContentRef.current = { id: savingChapterId, content }`. When the OLD Editor's unmount cleanup (Editor.tsx:218) fires `onSave(getJSON, mountChapterId)` after a chapter switch, `savingChapterId` is the old chapter id but the user is already typing on the new one, whose draft just landed in `latestContentRef`. The cleanup-save overwrites the new chapter's `latestContentRef` entry with the old chapter's id+content. A subsequent backoff-retry for the new chapter reads `latestContentRef`, sees the id mismatch, and falls back to the closure `content` rather than picking up keystrokes typed during the backoff window. Pre-existing race; surfaced during the Cluster A review while reading the new lastErr capture path.
+- **Suggested fix:** Gate the `latestContentRef.current = ...` assignment on `activeChapterRef.current?.id === savingChapterId`, OR have the unmount-cleanup save bypass `handleSave` entirely (call `api.chapters.update` directly with no shared-state side effects).
+- **Confidence:** Medium
+- **Found by:** Concurrency & State (`general-purpose (claude-opus-4-7)`)
+- **First seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `4b43b07`
+- **Last seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `4b43b07`
+- **Severity:** Important
+
+## `8e3c1a47` — `cancelPendingSaves` clears `saveErrorMessage` but leaves `editorLockedMessage` banner stale
+- **File (at first sighting):** `packages/client/src/hooks/useProjectEditor.ts:1243`
+- **Symbol:** `cancelPendingSaves`
+- **Bug class:** Logic
+- **Description:** `cancelPendingSaves` sets `setSaveStatus("idle")` and `setSaveErrorMessage(null)` but does not clear the `editorLockedMessage` banner. If the user is in a `setEditable(false)` locked state and a flow calls `cancelPendingSaves` (e.g. snapshot restore initiation, future cleanup callers), the footer status clears but the alert lock banner remains, leaving a contradictory UI: footer says "idle" while alert still says "no longer available." Edge case — requires a cancel call after a terminal-code lock.
+- **Suggested fix:** Factor the lock-banner clear into `cancelPendingSaves`, OR document that lock state is independent of save state and add an `editorLockedMessage` clear-on-success path in the lock-firing scopes.
+- **Confidence:** Medium
+- **Found by:** Error Handling & Edge Cases (`general-purpose (claude-opus-4-7)`)
+- **First seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `4b43b07`
+- **Last seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `4b43b07`
 - **Severity:** Suggestion

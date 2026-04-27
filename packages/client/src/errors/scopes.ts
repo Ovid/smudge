@@ -103,13 +103,44 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
   },
   "chapter.save": {
     fallback: STRINGS.editor.saveFailed,
+    // I2 (Phase 4b.3a): NETWORK is transient and gets the
+    // "check your connection" hint so the user knows a retry is
+    // worthwhile. Mirrors sibling mutation scopes — pre-I2 this
+    // surfaced the generic saveFailed fallback.
+    network: STRINGS.editor.saveFailedNetwork,
     // I5: chapter.save is the app's most load-bearing mutation, so the
     // committed UX gets a save-specific banner (not the generic
     // possiblyCommitted default) that explicitly warns against typing
     // before refresh — continued edits would overwrite the server-
     // committed content.
     committed: STRINGS.editor.saveCommittedUnreadable,
-    byStatus: { 413: STRINGS.editor.saveFailedTooLarge },
+    // I2 (Phase 4b.3a): 404 means the chapter was deleted between
+    // auto-save fires (purge, hard-delete, or another tab). Generic
+    // saveFailed copy invited a retry that would deterministically
+    // 404 again; the chapter-gone copy directs the user to reload.
+    // I3 (review 2026-04-26): bare 500 INTERNAL_ERROR exhausts the
+    // 4-attempt retry loop in handleSave. Pre-fix, the post-loop
+    // fallback surfaced "Save failed. Try again." after ~14s of
+    // retries — telling the user to do the thing the client already
+    // did 4 times. Map 500 to a server-trouble specific copy so the
+    // user sees an accurate signal. Terminal codes
+    // (BAD_JSON / UPDATE_READ_FAILURE / CORRUPT_CONTENT) keep their
+    // own copy via byCode, which takes precedence over byStatus.
+    // S7 (review 2026-04-26): a reverse proxy in front of Smudge can
+    // emit 502 (Bad Gateway), 503 (Service Unavailable), or 504
+    // (Gateway Timeout) when the upstream is down or overloaded.
+    // Same UX as a bare 500 — the server is having trouble. Without
+    // these entries, gateway statuses fell through to the generic
+    // saveFailed fallback ("Save failed. Try again."), defeating
+    // I3's intent the moment Smudge ran behind any reverse proxy.
+    byStatus: {
+      413: STRINGS.editor.saveFailedTooLarge,
+      404: STRINGS.editor.saveFailedChapterGone,
+      500: STRINGS.editor.saveFailedServer,
+      502: STRINGS.editor.saveFailedServer,
+      503: STRINGS.editor.saveFailedServer,
+      504: STRINGS.editor.saveFailedServer,
+    },
     byCode: {
       VALIDATION_ERROR: STRINGS.editor.saveFailedInvalid,
       // UPDATE_READ_FAILURE is a 500 where the server updated the row
@@ -152,6 +183,13 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     fallback: STRINGS.error.reorderFailed,
     network: STRINGS.error.reorderFailedNetwork,
     committed: STRINGS.error.reorderResponseUnreadable,
+    // I1 (Phase 4b.3a): server emits 400 REORDER_MISMATCH when the chapter
+    // ID list submitted to PUT /projects/:id/chapters/order doesn't match
+    // the current set (count or values — typical cause is a stale list
+    // racing a concurrent create/delete). Without a byCode entry the user
+    // saw the generic reorderFailed copy that invited retry of the same
+    // stale list; the mapped copy tells them to refresh.
+    byCode: { REORDER_MISMATCH: STRINGS.error.reorderMismatch },
   },
   "chapter.updateStatus": {
     fallback: STRINGS.error.statusChangeFailed,
@@ -411,6 +449,21 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
       // restore; it just couldn't re-read the row for the response body.
       RESTORE_READ_FAILURE: STRINGS.error.restoreChapterCommitted,
     },
+    // S1 (review 2026-04-26): a bare 404 (server emits {status:404,
+    // code:"NOT_FOUND"} when the deleted chapter row can't be located —
+    // e.g. malformed/unknown id, or bulk-purged between trash-list
+    // fetch and click) routes here. byCode resolves first, so
+    // CHAPTER_PURGED/PROJECT_PURGED keep their dedicated copy.
+    // S4 (review 2026-04-26): use the softer "no longer available"
+    // copy here rather than restoreChapterAlreadyPurged. The latter
+    // claims permanence ("permanently deleted") which is accurate
+    // only for CHAPTER_PURGED — stale-URL and never-existed cases
+    // surface the same bare 404 with no discriminating code, so a
+    // copy that doesn't make a permanence claim is correct across
+    // all of them. Distinct STRINGS key so a future regression that
+    // accidentally swaps the byStatus copy back to the byCode copy
+    // would be caught by the test below.
+    byStatus: { 404: STRINGS.error.restoreChapterUnavailable },
     // S8: RESTORE_READ_FAILURE surfaces possiblyCommitted so
     // useTrashManager doesn't need the inline code check.
     committedCodes: ["RESTORE_READ_FAILURE"],

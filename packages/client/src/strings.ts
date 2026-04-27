@@ -83,6 +83,7 @@ export const STRINGS = {
     loadChapterFailedNetwork: "Failed to load chapter — check your connection and try again.",
     deleteChapterFailed: "Failed to delete chapter",
     reorderFailed: "Failed to reorder chapters",
+    reorderMismatch: "The chapter list is out of sync. Refresh and try again.",
     updateTitleFailed: "Failed to update project title",
     updateTitleResponseUnreadable:
       "The title change may have been saved, but the server response was unreadable. Refresh the page to see the current project title.",
@@ -100,6 +101,14 @@ export const STRINGS = {
     restoreChapterFailed: "Failed to restore chapter",
     restoreChapterProjectPurged: "Can't restore — the parent project was permanently deleted.",
     restoreChapterAlreadyPurged: "Can't restore — this chapter was permanently deleted.",
+    // S4 (review 2026-04-26): byStatus[404] previously routed bare
+    // NOT_FOUND (no specific code) to restoreChapterAlreadyPurged.
+    // That copy is accurate for CHAPTER_PURGED but misleading on
+    // stale-URL/never-existed cases (the trash list was fetched, the
+    // user clicked Restore, the row never existed or was bulk-purged
+    // between fetch and click). Softer copy that doesn't claim
+    // permanence is correct in all bare-404 paths.
+    restoreChapterUnavailable: "Can't restore — this chapter is no longer available.",
     restoreChapterSlugConflict:
       "Can't restore — another chapter is using this title. Rename the conflicting chapter and try again.",
     restoreChapterCommitted:
@@ -124,7 +133,15 @@ export const STRINGS = {
     saving: "Saving\u2026",
     saved: "Saved",
     unsaved: "Unsaved changes",
-    saveFailed: "Unable to save \u2014 check connection",
+    saveFailed: "Save failed. Try again.",
+    saveFailedNetwork: "Unable to save \u2014 check your connection.",
+    saveFailedServer: "Unable to save \u2014 the server is having trouble. Try again in a moment.",
+    // S4 (review 2026-04-26): "no longer exists" implied permanence,
+    // but a bare 404 NOT_FOUND can also mean the chapter was soft-
+    // deleted (still recoverable from trash). Soften to "no longer
+    // available" so the copy is accurate in both purge and soft-delete
+    // cases.
+    saveFailedChapterGone: "This chapter is no longer available. Reload to continue.",
     saveFailedInvalid:
       "Unable to save \u2014 the chapter content is invalid. Undo recent changes or reload the page.",
     saveFailedTooLarge:

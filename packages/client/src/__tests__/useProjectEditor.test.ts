@@ -5,6 +5,7 @@ import { UNTITLED_CHAPTER } from "@smudge/shared";
 import { api, ApiRequestError } from "../api/client";
 import { useProjectEditor } from "../hooks/useProjectEditor";
 import { STRINGS } from "../strings";
+import { flushSaveRetries } from "./helpers/saveRetries";
 
 vi.mock("../api/client", () => ({
   ApiRequestError: class ApiRequestError extends Error {
@@ -187,9 +188,7 @@ describe("useProjectEditor", () => {
     try {
       await act(async () => {
         const p = result.current.handleSave({ type: "doc", content: [] });
-        await vi.advanceTimersByTimeAsync(2000);
-        await vi.advanceTimersByTimeAsync(4000);
-        await vi.advanceTimersByTimeAsync(8000);
+        await flushSaveRetries();
         expect(await p).toBe(false);
       });
 
@@ -197,6 +196,148 @@ describe("useProjectEditor", () => {
       expect(api.chapters.update).toHaveBeenCalledTimes(4); // 1 initial + 3 retries
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it("routes post-retry-exhaustion NETWORK error through mapApiError (chapter.save scope)", async () => {
+    // Regression guard for the Task 2.2 fix: when a NETWORK
+    // ApiRequestError exhausts the 4-attempt retry loop, the user-visible
+    // banner must come from mapApiError(err, "chapter.save").message —
+    // i.e. STRINGS.editor.saveFailedNetwork — not the literal
+    // STRINGS.editor.saveFailed fallback. Pre-fix, the catch block
+    // surfaced the generic "Save failed. Try again." copy on a
+    // connection drop, bypassing the scope's network: mapping and
+    // violating CLAUDE.md's "all user-visible API error messages route
+    // through mapApiError" invariant.
+    // S5 (review 2026-04-26): install a console.warn spy and assert no
+    // calls. NETWORK retries do not currently log (the catch ladder's
+    // warn lines fire only for terminal-code and 4xx branches), so the
+    // test is silent today. A future warn addition on the NETWORK path
+    // would otherwise slip past the zero-warnings invariant from
+    // CLAUDE.md.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("[dev] Failed to fetch", 0, "NETWORK"),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        const p = result.current.handleSave({ type: "doc", content: [] });
+        await flushSaveRetries();
+        expect(await p).toBe(false);
+      });
+
+      expect(result.current.saveStatus).toBe("error");
+      expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedNetwork);
+      expect(api.chapters.update).toHaveBeenCalledTimes(4); // 1 initial + 3 retries
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("routes post-retry-exhaustion bare 500 error through mapApiError (I3, chapter.save scope)", async () => {
+    // I3 (review 2026-04-26): mirror the NETWORK exhaustion test for a
+    // bare 500 INTERNAL_ERROR. Pre-fix, retry exhaustion of any non-coded
+    // 500 routed through the mapper's fallback copy — "Save failed. Try
+    // again." — which is misleading after 4 attempts spanning ~14s.
+    // The new chapter.save byStatus[500] mapping resolves this to
+    // STRINGS.editor.saveFailedServer ("the server is having trouble.
+    // Try again in a moment."). Terminal codes (BAD_JSON,
+    // UPDATE_READ_FAILURE, CORRUPT_CONTENT) keep their own copy via
+    // byCode and are unaffected.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("internal error", 500, "INTERNAL_ERROR"),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        const p = result.current.handleSave({ type: "doc", content: [] });
+        await flushSaveRetries();
+        expect(await p).toBe(false);
+      });
+
+      expect(result.current.saveStatus).toBe("error");
+      expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedServer);
+      expect(api.chapters.update).toHaveBeenCalledTimes(4); // 1 initial + 3 retries
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("NETWORK retry mid-backoff chapter switch does not bleed onto new chapter (S2)", async () => {
+    // S2 (review 2026-04-26): defensive guard against a future refactor
+    // moving `mapApiError(lastErr, "chapter.save")` outside the
+    // `!token.isStale()` gate at the post-loop block. The gate is what
+    // keeps a stale (cancelled) save's NETWORK exhaustion banner from
+    // landing on the chapter the user has since switched to. Without
+    // it, the cancelled save would surface STRINGS.editor.saveFailedNetwork
+    // on the freshly-loaded chapter.
+    //
+    // Sequence: kick off a save on ch1 whose first attempt rejects with
+    // NETWORK. While the loop is asleep in backoff, switch to ch2 (which
+    // calls cancelInFlightSave → saveSeq.abort() → token becomes stale,
+    // and unblocks the backoff sleep). Advance timers past the longest
+    // backoff. Assert no error state on ch2 and no further PATCH.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("[dev] Failed to fetch", 0, "NETWORK"),
+    );
+    vi.mocked(api.chapters.get).mockReset();
+    vi.mocked(api.chapters.get)
+      .mockResolvedValueOnce(mockChapter1) // initial load
+      .mockResolvedValueOnce(mockChapter2); // post-switch fetch
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter?.id).toBe("ch1"));
+
+    vi.useFakeTimers();
+    try {
+      // Kick off save; do NOT await — the retry loop is now asleep in
+      // backoff after the first rejection.
+      let savePromise: Promise<boolean> = Promise.resolve(false);
+      act(() => {
+        savePromise = result.current.handleSave({ type: "doc", content: [] }, "ch1");
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(api.chapters.update).toHaveBeenCalledTimes(1);
+
+      // Switch chapters mid-backoff. cancelInFlightSave aborts the
+      // sequence and unblocks the sleep, so the loop's next iteration
+      // returns immediately without setting error state.
+      await act(async () => {
+        await result.current.handleSelectChapter("ch2");
+      });
+      expect(result.current.activeChapter?.id).toBe("ch2");
+
+      // Drain any residual timers and the save's promise.
+      await act(async () => {
+        await flushSaveRetries();
+        expect(await savePromise).toBe(false);
+      });
+
+      // Stale save must NOT surface its NETWORK banner on ch2.
+      expect(result.current.saveStatus).not.toBe("error");
+      expect(result.current.saveErrorMessage).toBeNull();
+      // No further PATCHes after the abort: the retry loop short-
+      // circuited via the stale-token check on its next iteration.
+      expect(api.chapters.update).toHaveBeenCalledTimes(1);
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      warnSpy.mockRestore();
     }
   });
 
@@ -1095,7 +1236,7 @@ describe("useProjectEditor", () => {
 
       // Select a new chapter. The backoff must be unblocked so the loop
       // reaches its seq check and returns false — without advancing
-      // timers to BACKOFF_MS[0]=2000ms.
+      // timers to SAVE_BACKOFF_MS[0]=2000ms.
       await act(async () => {
         await result.current.handleSelectChapter("ch2");
       });
@@ -1230,6 +1371,10 @@ describe("useProjectEditor", () => {
 
     expect(result.current.saveStatus).toBe("error");
     expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedTooLarge);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Save failed with 4xx:"),
+      expect.any(ApiRequestError),
+    );
     warnSpy.mockRestore();
   });
 
@@ -1279,6 +1424,76 @@ describe("useProjectEditor", () => {
     });
 
     expect(onRequestEditorLock).toHaveBeenCalledWith(msg);
+    warnSpy.mockRestore();
+  });
+
+  // I2 (review 2026-04-26): the chapter.save 404 NOT_FOUND mapping (added
+  // earlier in this branch) sets the "This chapter no longer exists"
+  // banner via byStatus[404]. Without locking the editor too, the user
+  // could keep typing into a chapter the server has already deleted —
+  // the next debounced auto-save deterministically 404s, the banner
+  // blinks, and the loop continues until reload. CLAUDE.md save-pipeline
+  // invariant #2 pairs setEditable(false) with editorLockedMessage; this
+  // test pins that pairing for NOT_FOUND.
+  it("handleSave fires onRequestEditorLock on 404 NOT_FOUND (I2)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("chapter gone", 404, "NOT_FOUND"),
+    );
+    const onRequestEditorLock = vi.fn();
+
+    const { result } = renderHook(() => useProjectEditor("test-project", { onRequestEditorLock }));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(onRequestEditorLock).toHaveBeenCalledWith(STRINGS.editor.saveFailedChapterGone);
+    expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedChapterGone);
+    // No retry — chapter is gone; retrying would deterministically 404 again.
+    expect(api.chapters.update).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Save failed with 4xx:"),
+      expect.any(ApiRequestError),
+    );
+    warnSpy.mockRestore();
+  });
+
+  // S3 (review 2026-04-26): a 404 that arrives WITHOUT a parseable JSON
+  // envelope — e.g. a reverse-proxy HTML 404 page, an upstream that
+  // bypassed the express error handler — has no `code` field on the
+  // ApiRequestError. The chapter.save scope's byStatus[404] still
+  // surfaces saveFailedChapterGone, but the editor-lock branch only
+  // checked code === "NOT_FOUND". Pre-fix, the user saw the banner
+  // but kept typing into a chapter the server rejects, every
+  // debounced auto-save 404'd in a loop, and the banner re-fired on
+  // each 404. The fix locks on status === 404 too — same UX as the
+  // coded NOT_FOUND case but resilient to envelopes the proxy chain
+  // strips.
+  it("handleSave fires onRequestEditorLock on bare 404 (no envelope code) (S3)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      // No third argument: simulates a 404 from a reverse proxy that
+      // didn't return the { error: { code, message } } envelope.
+      new ApiRequestError("Not Found", 404),
+    );
+    const onRequestEditorLock = vi.fn();
+
+    const { result } = renderHook(() => useProjectEditor("test-project", { onRequestEditorLock }));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleSave({ type: "doc", content: [] });
+    });
+
+    expect(onRequestEditorLock).toHaveBeenCalledWith(STRINGS.editor.saveFailedChapterGone);
+    expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedChapterGone);
+    expect(api.chapters.update).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Save failed with 4xx:"),
+      expect.any(ApiRequestError),
+    );
     warnSpy.mockRestore();
   });
 
@@ -1484,8 +1699,8 @@ describe("useProjectEditor", () => {
       await result.current.handleSave({ type: "doc", content: [] });
     });
     // Generic 400 without a known code falls back to the default
-    // "Unable to save — check connection" copy rather than surfacing the
-    // raw server message (I3).
+    // STRINGS.editor.saveFailed copy rather than surfacing the raw
+    // server message (I3).
     expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailed);
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("Save failed with 4xx:"),

@@ -70,6 +70,55 @@ test.describe("Editor save pipeline E2e Tests", () => {
     await expect(editorAfterReload).toContainText(testText, { timeout: 5000 });
   });
 
+  test("PATCH 404 surfaces chapter-gone copy", async ({ page }) => {
+    await page.goto(`/projects/${project.slug}`);
+
+    const editor = page.getByRole("textbox");
+    await expect(editor).toBeVisible();
+
+    // Intercept PATCH /api/chapters/<id> with a 404 envelope. The server
+    // contract emits { error: { code, message } }; the chapter.save scope
+    // routes byStatus[404] to STRINGS.editor.saveFailedChapterGone. Use
+    // route.fulfill (NOT route.abort) so the client sees a real HTTP 404
+    // and exercises the byStatus branch — abort would route through the
+    // NETWORK path and surface a different copy.
+    await page.route("**/api/chapters/**", (route) => {
+      if (route.request().method() === "PATCH") {
+        route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({
+            error: { code: "NOT_FOUND", message: "chapter not found" },
+          }),
+        });
+      } else {
+        route.continue();
+      }
+    });
+
+    // Type to trigger auto-save after the debounce.
+    await editor.click();
+    await editor.pressSequentially(`Trigger save ${Date.now()}`, { delay: 20 });
+
+    // useProjectEditor short-circuits the retry loop on any 4xx
+    // (isClientError branch in handleSave), so the failure surfaces
+    // after the first attempt — debounce (1.5s) + a single round-trip,
+    // not 4 attempts × backoff. 30s timeout matches the surrounding
+    // "shows error on save failure" test for safety on slow CI.
+    const statusRegion = page.locator("[role='status'][aria-live='polite']");
+    await expect(statusRegion).toContainText(/no longer available/i, { timeout: 30000 });
+
+    // I2 (review 2026-04-26): the 404 must also lock the editor —
+    // CLAUDE.md save-pipeline invariant #2 pairs setEditable(false) with
+    // editorLockedMessage. Without the lock, the user can keep typing
+    // into a chapter the server has already deleted and every debounced
+    // auto-save 404s in a loop. Assert both: the lock banner is visible
+    // AND the editor's contentEditable is false.
+    const lockBanner = page.getByRole("alert").filter({ hasText: /no longer available/i });
+    await expect(lockBanner).toBeVisible({ timeout: 5000 });
+    await expect(editor).toHaveAttribute("contenteditable", "false");
+  });
+
   test("shows error on save failure and recovers when network returns", async ({ page }) => {
     await page.goto(`/projects/${project.slug}`);
 

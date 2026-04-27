@@ -1,5 +1,6 @@
 export {
   mapApiError,
+  mapApiErrorMessage,
   ALL_SCOPES,
   isApiError,
   isAborted,

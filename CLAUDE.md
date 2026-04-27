@@ -110,7 +110,7 @@ it is enforced by review.
 
 ## API Design
 
-REST endpoints under `/api/`. Error envelope: `{ "error": { "code": "MACHINE_READABLE", "message": "Human-readable" } }`. HTTP status codes: 200, 201, 400, 404, 409, 413, 500.
+REST endpoints under `/api/`. Error envelope: `{ "error": { "code": "MACHINE_READABLE", "message": "Human-readable" } }`. HTTP status codes: 200, 201, 400, 404, 409, 413, 500. The allowlist governs codes the Smudge server itself emits; client error scopes may additionally map proxy-only codes (502/503/504, etc.) for resilience under reverse-proxy deployments.
 
 - **409** is used for conflict cases where the request is well-formed but violates a constraint the client needs to resolve (e.g. attempting to delete an image still referenced by chapters — the `{ error: { code, message, chapters: [...] } }` shape carries the referencing chapter list so the UI can route the user to them).
 - **413** is emitted when a request body exceeds the size guard (e.g. a chapter PATCH whose content would break the per-row limit). Clients should present a "too large" message rather than a generic retry prompt.
