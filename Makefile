@@ -3,26 +3,9 @@
 # userland-punycode fixes.
 export NODE_OPTIONS := --disable-warning=DEP0040 ${NODE_OPTIONS}
 
-.PHONY: all test cover e2e e2e-clean lint format format-check typecheck dev build clean loc help ensure-native check-no-placeholders
+.PHONY: all test cover e2e e2e-clean lint format format-check typecheck dev build clean loc help ensure-native
 
-all: lint format-check typecheck check-no-placeholders cover e2e ## Full CI pass: lint, format-check, typecheck, placeholder check, test+coverage, e2e
-
-# S11 (review 2026-04-27): the deferred dockerfile-checksums.patch
-# ships PLACEHOLDER_REPLACE_WITH_REAL_HASH ARG defaults that the
-# maintainer must fill in with real SHA-256 hashes BEFORE committing
-# the applied patch. If they forget, the next image rebuild will fail
-# (curl-pipe-sha256-verify aborts on hash mismatch) — but only AFTER
-# the bad commit has landed and someone tries to rebuild. Catch it
-# pre-commit: a one-line grep over .devcontainer/ that fires before
-# `make all` declares success.
-check-no-placeholders: ## Fail if PLACEHOLDER_REPLACE_WITH_REAL_HASH appears under .devcontainer/
-	@if grep -rq "PLACEHOLDER_REPLACE_WITH_REAL_HASH" .devcontainer/ 2>/dev/null; then \
-		echo "make check-no-placeholders: FAIL — .devcontainer/ contains PLACEHOLDER_REPLACE_WITH_REAL_HASH."; \
-		echo "Replace each placeholder with the actual SHA-256 of the binary it pins"; \
-		echo "(host-side, before committing) and re-run \`make all\`."; \
-		grep -rn "PLACEHOLDER_REPLACE_WITH_REAL_HASH" .devcontainer/; \
-		exit 1; \
-	fi
+all: lint format-check typecheck cover e2e ## Full CI pass: lint, format-check, typecheck, test+coverage, e2e
 
 # better-sqlite3 ships a precompiled .node binary keyed on
 # {platform, arch, node-abi}. Any flow that ends up running tests

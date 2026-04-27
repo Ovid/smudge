@@ -8,14 +8,31 @@ Always address me as "Ovid" in your responses. This lets me know that you have r
 
 ## Ignore `.devcontainer/`
 
-Do not read, edit, or suggest changes to anything under `.devcontainer/`
-(Dockerfile, devcontainer.json, post_install.py, .zshrc, etc.). The
-directory is bind-mounted read-only inside the running devcontainer, so
-edits cannot land from inside the container anyway, and the contents
-are intentionally maintained out-of-band — recommended changes go into
-`paad/code-reviews/deferred/*.patch` for the maintainer to apply from
-the host. Skip this directory in code search, suggestions, and any
-"explore the repo" passes unless the user explicitly asks about it.
+`.devcontainer/` is **third-party content** managed out-of-band
+(devcontainer template). Any local change is **wiped on the next update
+of the template** — including changes the maintainer applies from the
+host, deferred patches you author for the maintainer to apply, or
+edits the maintainer makes by hand. The directory is also bind-mounted
+read-only inside the running devcontainer, so edits cannot land from
+inside the container anyway.
+
+Concretely, this means:
+- **Do not read** files under `.devcontainer/` (Dockerfile,
+  devcontainer.json, post_install.py, .zshrc, etc.).
+- **Do not edit or suggest edits** to anything under `.devcontainer/`.
+- **Do not author deferred patches** that target `.devcontainer/` files.
+  Even patches placed in `paad/code-reviews/deferred/` for the
+  maintainer to apply will be erased on the next template update —
+  there is no path by which a `.devcontainer/`-targeted change persists.
+- **Do not flag findings inside `.devcontainer/` for fixing.** A bug,
+  hardening opportunity, or hygiene issue in `.devcontainer/` is out
+  of scope for this project. Skip the directory in code search, in any
+  "explore the repo" passes, in `/paad:agentic-review` runs, and in
+  the out-of-scope-findings backlog. The maintainer's only path to
+  changing `.devcontainer/` is upstream of the template itself.
+
+Override only if the user explicitly asks about a specific
+`.devcontainer/` file in this conversation.
 
 ## Project Overview
 
