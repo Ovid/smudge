@@ -13,26 +13,15 @@ import { resolve, dirname } from "node:path";
 // typecheck, lint, and the full unit suite — yet `make e2e-clean`
 // would still try to remove the old name. Mirror the textual parity
 // pattern from `vite-config-default-port.test.ts`.
-const PROJECT_ROOT = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "../../../..",
-);
+const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
-const PLAYWRIGHT_RE =
-  /E2E_DATA_DIR\s*=\s*path\.join\(os\.tmpdir\(\),\s*"([^"]+)"\)/;
-const MAKEFILE_RE =
-  /require\("path"\)\.join\(require\("os"\)\.tmpdir\(\),\s*"([^"]+)"\)/;
+const PLAYWRIGHT_RE = /E2E_DATA_DIR\s*=\s*path\.join\(os\.tmpdir\(\),\s*"([^"]+)"\)/;
+const MAKEFILE_RE = /require\("path"\)\.join\(require\("os"\)\.tmpdir\(\),\s*"([^"]+)"\)/;
 
 describe("E2E_DATA_DIR parity", () => {
   it("playwright.config.ts and Makefile derive the same temp dir name", () => {
-    const playwrightConfig = readFileSync(
-      resolve(PROJECT_ROOT, "playwright.config.ts"),
-      "utf8",
-    );
-    const makefileText = readFileSync(
-      resolve(PROJECT_ROOT, "Makefile"),
-      "utf8",
-    );
+    const playwrightConfig = readFileSync(resolve(PROJECT_ROOT, "playwright.config.ts"), "utf8");
+    const makefileText = readFileSync(resolve(PROJECT_ROOT, "Makefile"), "utf8");
 
     const playwrightMatch = playwrightConfig.match(PLAYWRIGHT_RE);
     const makefileMatch = makefileText.match(MAKEFILE_RE);
