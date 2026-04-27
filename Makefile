@@ -158,6 +158,28 @@ e2e-clean: ## Wipe the isolated e2e data dir (next `make e2e` starts fresh)
 	@# this target matches playwright.config.ts on every platform.
 	@# Hardcoding /tmp was wrong on macOS, where tmpdir() resolves under
 	@# /var/folders/.../T/ — `make e2e-clean` was a no-op there.
+	@# S6 (review 2026-04-27): without `node` on PATH the command
+	@# substitution at the rm line silently expands to empty string and
+	@# `rm -rf ""` is a no-op, hiding the misconfiguration. Fail loudly
+	@# instead so the user knows nothing was wiped.
+	@command -v node >/dev/null 2>&1 || { \
+		echo "make e2e-clean: \`node\` not on PATH — cannot derive the e2e data dir."; \
+		echo "Install Node 22.x (via fnm/nvm) and re-run."; \
+		exit 1; \
+	}
+	@# S5 (review 2026-04-27): refuse to wipe while \`make e2e\` is mid-run.
+	@# Detect via TCP connect to the e2e server port (3457, hardcoded in
+	@# playwright.config.ts). The server only binds it during a live run;
+	@# after cleanup the port is closed. Node's `net` module is used
+	@# rather than lsof/nc/socat so the probe works on any host. exit 0
+	@# = no listener (proceed); exit 1 = listener (abort); exit 2 = other
+	@# error or timeout (abort, conservative).
+	@node -e "const net=require('net');const s=net.createConnection({port:3457,host:'127.0.0.1'});s.on('connect',()=>{s.destroy();process.exit(1);});s.on('error',(e)=>process.exit(e.code==='ECONNREFUSED'?0:2));s.setTimeout(500,()=>{s.destroy();process.exit(2);});" || { \
+		echo "make e2e-clean: cannot wipe data dir."; \
+		echo "Either \`make e2e\` is running (port 3457 is bound) or the listener probe errored."; \
+		echo "Wait for the test run to finish (or kill it), then re-run \`make e2e-clean\`."; \
+		exit 1; \
+	}
 	rm -rf "$$(node -p 'require("path").join(require("os").tmpdir(), "smudge-e2e-data")')"
 
 help: ## Show this help
