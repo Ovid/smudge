@@ -10,7 +10,7 @@ Smudge is a web-based writing application for long-form fiction and non-fiction,
 
 - **Monorepo:** npm workspaces with three packages: `shared`, `server`, `client`
 - **Language:** TypeScript everywhere (frontend + backend + shared)
-- **Backend:** Node.js 20 LTS, Express 4.x, better-sqlite3 (synchronous), Knex.js (migrations/queries), Zod (validation)
+- **Backend:** Node.js 22 LTS (Jod), Express 4.x, better-sqlite3 (synchronous), Knex.js (migrations/queries), Zod (validation)
 - **Frontend:** React 18+, Vite, TipTap v2 (rich text editor, stores content as JSON not HTML), Tailwind CSS, @dnd-kit/sortable v10
 - **Testing:** Vitest (unit + integration with Supertest), Playwright (e2e + aXe-core a11y)
 - **Deployment:** Single Docker container, Express serves API + static frontend on port 3456, SQLite persisted via Docker volume
@@ -47,6 +47,7 @@ make lint                            # Lint with autofix
 make format                          # Format code
 make all                             # Full CI pass: lint + format + typecheck + coverage + e2e
 make cover                           # Run tests with coverage enforcement
+make ensure-native                   # Verify better-sqlite3 native binding; rebuild from source on dlopen failure
 
 # Per-package testing (when working on one package)
 npm test -w packages/shared          # Unit tests (Vitest)
@@ -61,6 +62,8 @@ docker compose up                    # Full app on port 3456
 # Help
 make help                            # Show all available make targets
 ```
+
+`make ensure-native` is a prerequisite of `dev`/`test`/`cover`/`e2e`. It probes whether better-sqlite3's `.node` binary loads under the active platform/Node ABI; on dlopen failure it rebuilds from source in place (no remote `.node` binary is fetched). The rebuild path needs a working C++ toolchain (`build-essential` on Linux, Xcode Command Line Tools on macOS) and `python3` for node-gyp. Common need: switching between a macOS host and a Linux container/VM that share `node_modules` via a bind mount.
 
 ## Key Architecture Decisions
 

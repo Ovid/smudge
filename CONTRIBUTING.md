@@ -82,8 +82,21 @@ specifier, remove the `NODE_OPTIONS` line from the Makefile. Tracked in
 | `make lint` | ESLint with autofix |
 | `make format` | Prettier write |
 | `make all` | `lint` + `format-check` + `typecheck` + `cover` + `e2e` — the CI gate |
+| `make ensure-native` | Probe better-sqlite3's `.node`; rebuild from source on dlopen failure |
 | `make clean` | Delete the dev SQLite database |
 | `make help` | List all targets |
+
+`make ensure-native` is a prerequisite of `dev`/`test`/`cover`/`e2e`,
+so you generally don't invoke it directly. It exists because
+better-sqlite3 ships a precompiled `.node` keyed on
+{platform, arch, node-abi}: switching between a macOS host and a
+Linux VM/container that share `node_modules` (or installing under
+a wrong-major Node) leaves a binary that won't `dlopen`. The
+recipe detects that, rebuilds from source in place, and re-probes.
+The rebuild path needs a C++ toolchain (`build-essential` on
+Linux, Xcode Command Line Tools on macOS) and `python3` for
+node-gyp; install those once per machine. No `.node` binary is
+fetched from the network — compilation replaces network trust.
 
 Per-package test runs, when working on one package:
 
@@ -93,6 +106,10 @@ npm test -w packages/server
 npm test -w packages/client
 npx playwright test
 ```
+
+These bypass `make ensure-native`. After a host↔guest crossing or
+a Node-version switch, run `make ensure-native` once before the
+per-package commands, or just use `make test` instead.
 
 ## Code quality bars
 
