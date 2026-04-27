@@ -13,27 +13,81 @@ import { resolve, dirname } from "node:path";
 // typecheck, lint, and the full unit suite — yet `make e2e-clean`
 // would still try to remove the old name. Mirror the textual parity
 // pattern from `vite-config-default-port.test.ts`.
+//
+// S3 (review 2026-04-27, second pass): use matchAll + length===1 so a
+// future commented-out historical example (e.g. "previously
+// /tmp/smudge-e2e-data") cannot silently match before the live
+// derivation. .match() returns the first hit; .matchAll() with a
+// length assertion catches drift in either direction.
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
-const PLAYWRIGHT_RE = /E2E_DATA_DIR\s*=\s*path\.join\(os\.tmpdir\(\),\s*"([^"]+)"\)/;
-const MAKEFILE_RE = /require\("path"\)\.join\(require\("os"\)\.tmpdir\(\),\s*"([^"]+)"\)/;
+const PLAYWRIGHT_DATA_DIR_RE = /E2E_DATA_DIR\s*=\s*path\.join\(os\.tmpdir\(\),\s*"([^"]+)"\)/g;
+const MAKEFILE_DATA_DIR_RE = /require\("path"\)\.join\(require\("os"\)\.tmpdir\(\),\s*"([^"]+)"\)/g;
 
-describe("E2E_DATA_DIR parity", () => {
-  it("playwright.config.ts and Makefile derive the same temp dir name", () => {
-    const playwrightConfig = readFileSync(resolve(PROJECT_ROOT, "playwright.config.ts"), "utf8");
-    const makefileText = readFileSync(resolve(PROJECT_ROOT, "Makefile"), "utf8");
+// I1 (review 2026-04-27): E2E_SERVER_PORT (3457) was hardcoded in two
+// places — `const E2E_SERVER_PORT = "3457"` in playwright.config.ts and
+// `port:3457` in the Makefile e2e-clean net-probe — with no parity
+// surface. A future change parameterizing the port (env var, per-worker
+// shard) would update playwright.config.ts and pass the unit suite, yet
+// `make e2e-clean`'s probe would still check 3457. If a new e2e port is
+// bound, the probe sees ECONNREFUSED on 3457, concludes "no listener,"
+// and `rm -rf` wipes the live data dir mid-run — exactly the failure
+// mode S5 (the probe) was added to prevent.
+const PLAYWRIGHT_PORT_RE = /E2E_SERVER_PORT\s*=\s*"(\d+)"/g;
+// Anchor on the JS-code `net.createConnection({port:NNN,host:...})` so
+// the regex does not match the comment block at line ~171 that
+// references "3457, hardcoded in playwright.config.ts".
+const MAKEFILE_PORT_RE = /net\.createConnection\(\{[^}]*\bport:(\d+)/g;
 
-    const playwrightMatch = playwrightConfig.match(PLAYWRIGHT_RE);
-    const makefileMatch = makefileText.match(MAKEFILE_RE);
+function findExactlyOne(
+  re: RegExp,
+  source: string,
+  fileLabel: string,
+  patternLabel: string,
+): string {
+  const matches = Array.from(source.matchAll(re));
+  expect(
+    matches.length,
+    matches.length === 0
+      ? `${patternLabel} not found in ${fileLabel} — was the derivation rewritten? Update this test to match.`
+      : `${patternLabel} matched ${matches.length} times in ${fileLabel} — expected exactly one. Did a commented-out historical example sneak in?`,
+  ).toBe(1);
+  return matches[0][1];
+}
 
-    expect(
-      playwrightMatch,
-      'E2E_DATA_DIR = path.join(os.tmpdir(), "<dir>") not found in playwright.config.ts — was the derivation rewritten? Update this test to match.',
-    ).not.toBeNull();
-    expect(
-      makefileMatch,
-      'require("path").join(require("os").tmpdir(), "<dir>") not found in Makefile — was the e2e-clean derivation rewritten? Update this test to match.',
-    ).not.toBeNull();
-    expect(playwrightMatch![1]).toBe(makefileMatch![1]);
+describe("E2E config parity (playwright.config.ts ↔ Makefile)", () => {
+  const playwrightConfig = readFileSync(resolve(PROJECT_ROOT, "playwright.config.ts"), "utf8");
+  const makefileText = readFileSync(resolve(PROJECT_ROOT, "Makefile"), "utf8");
+
+  it("derives the same e2e temp dir name", () => {
+    const playwrightDir = findExactlyOne(
+      PLAYWRIGHT_DATA_DIR_RE,
+      playwrightConfig,
+      "playwright.config.ts",
+      'E2E_DATA_DIR = path.join(os.tmpdir(), "<dir>")',
+    );
+    const makefileDir = findExactlyOne(
+      MAKEFILE_DATA_DIR_RE,
+      makefileText,
+      "Makefile",
+      'require("path").join(require("os").tmpdir(), "<dir>")',
+    );
+    expect(playwrightDir).toBe(makefileDir);
+  });
+
+  it("uses the same E2E_SERVER_PORT", () => {
+    const playwrightPort = findExactlyOne(
+      PLAYWRIGHT_PORT_RE,
+      playwrightConfig,
+      "playwright.config.ts",
+      'E2E_SERVER_PORT = "<port>"',
+    );
+    const makefilePort = findExactlyOne(
+      MAKEFILE_PORT_RE,
+      makefileText,
+      "Makefile",
+      "net.createConnection({port:<port>, ...}) in e2e-clean",
+    );
+    expect(playwrightPort).toBe(makefilePort);
   });
 });
