@@ -8,8 +8,9 @@ export const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
  * by packages/client/vite.config.ts as a literal `"3456"` (named
  * DEFAULT_SERVER_PORT_VITE there) because vite loads its config under
  * bare Node ESM, which cannot resolve the extensionless re-exports
- * inside @smudge/shared's `src/index.ts` (see `vite.config.ts:25-30`
- * for the verbatim ERR_MODULE_NOT_FOUND against `./schemas`). The
+ * inside @smudge/shared's `src/index.ts` (see
+ * `packages/client/vite.config.ts:25-30` for the verbatim
+ * ERR_MODULE_NOT_FOUND against `./schemas`). The
  * parity between the two literals is enforced by
  * `__tests__/vite-config-default-port.test.ts`; if you change this
  * value, update vite.config.ts to match or that test will fail.

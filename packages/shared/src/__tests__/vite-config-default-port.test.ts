@@ -17,8 +17,8 @@ import { DEFAULT_SERVER_PORT } from "../constants";
 //
 // vite.config.ts cannot import @smudge/shared (vite's config resolver
 // runs under bare Node ESM, which cannot resolve the extensionless
-// re-exports inside src/index.ts — see vite.config.ts:25-30 for the
-// verbatim ERR_MODULE_NOT_FOUND), so a textual parity check is the
+// re-exports inside src/index.ts — see packages/client/vite.config.ts:25-30
+// for the verbatim ERR_MODULE_NOT_FOUND), so a textual parity check is the
 // next-best guarantee that the two literals stay in lockstep.
 const VITE_CONFIG_PATH = resolve(
   dirname(fileURLToPath(import.meta.url)),

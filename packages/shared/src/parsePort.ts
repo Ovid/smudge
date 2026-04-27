@@ -20,8 +20,9 @@
  * Used by the server entrypoint (packages/server/src/index.ts) and —
  * duplicated inline because vite.config.ts is loaded by Vite's config
  * resolver under bare Node ESM, which cannot resolve the extensionless
- * re-exports inside `src/index.ts` (see `vite.config.ts:25-30` for the
- * verbatim `ERR_MODULE_NOT_FOUND` against `./schemas`) — the client's
+ * re-exports inside `src/index.ts` (see
+ * `packages/client/vite.config.ts:25-30` for the verbatim
+ * `ERR_MODULE_NOT_FOUND` against `./schemas`) — the client's
  * vite.config.ts. The inline copy now uses the same `(raw, envName)`
  * signature as this function, so the bodies are byte-for-byte
  * comparable. Tests in this package are the canonical spec for both;
