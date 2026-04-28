@@ -1,5 +1,4 @@
 ---
-
 name: experimental-dedup
 description: Use when looking for meaningfully duplicated logic in a codebase, especially duplicate behavior hidden behind different names, different syntax, different control flow, or independently evolved implementations
 ---
@@ -75,10 +74,26 @@ digraph preflight {
 }
 ```
 
-1. **Context window:** If conversation has substantive history beyond invoking this skill, tell the user: "This semantic duplicate hunt consumes significant context. Start a fresh session with `/experimental-dedup` to avoid context rot." Stop and wait.
-2. **Repository:** Confirm the current directory is a repository or recognizable project root.
-3. **Scope:** If the repository is large and no scope was provided, choose a bounded seed scope automatically rather than attempting a full exhaustive scan. Prefer changed files, `src/`, `lib/`, core domain modules, or the domain named in `$ARGUMENTS`.
-4. **Generated/vendor exclusions:** Identify generated, vendored, build, dependency, and lockfile paths before analysis.
+1. **Context window.** Treat the conversation as having substantive
+   history if any of these are true: the conversation already includes
+   tool calls beyond invoking this skill; another `/experimental-dedup`
+   pass has already been run in this session; the user has discussed an
+   unrelated topic earlier in the conversation; or transcript length
+   exceeds roughly 20 turns. If any apply, tell the user: "This semantic
+   duplicate hunt consumes significant context. Start a fresh session
+   with `/experimental-dedup` to avoid context rot." Stop and wait.
+2. **Repository.** Run `git rev-parse --show-toplevel 2>/dev/null`. If
+   that exits non-zero (no `.git` upward), check for a recognizable
+   project root by running `ls package.json pyproject.toml go.mod
+   Cargo.toml cpanfile Makefile 2>/dev/null` and confirming at least
+   one match. If neither check passes, stop and tell the user the
+   skill needs a repository or recognizable project root.
+3. **Scope.** If the repository is large and no scope was provided,
+   choose a bounded seed scope automatically rather than attempting a
+   full exhaustive scan. Prefer changed files, `src/`, `lib/`, core
+   domain modules, or the domain named in `$ARGUMENTS`.
+4. **Generated/vendor exclusions.** Identify generated, vendored, build,
+   dependency, and lockfile paths before analysis.
 
 ## Phase 1: Reconnaissance
 
@@ -106,6 +121,14 @@ prompts and could land in the on-disk report).
 **Why stderr is redirected:** the recon walks the whole tree; permission
 errors on locked-down directories should not interleave with the file
 list and confuse downstream prompts.
+
+**Truncation note:** the `| head -500` cap silently truncates large
+repositories. After running the recon, count the captured paths; if the
+count is exactly 500, the recon **is** truncated. In that case either
+(a) recommend the user re-run with a path scope (`/experimental-dedup
+src/<module>/`), or (b) note the truncation in the report's Review
+Metadata so a reader knows the scan was sample-bounded. Do not silently
+proceed pretending the recon was complete.
 6. If `--changed <base>` was supplied:
 
    * **First, verify the ref resolves:**
@@ -462,6 +485,17 @@ Each row:
 A re-run on the same branch later in the day produces another row; the
 index preserves history and lets a re-runner spot rejected candidates
 before re-discovering them.
+
+## Report Template
+
+When interpolating specialist text into the template below, fence or
+inline-escape any free-form agent output. Specialist findings can
+contain backtick fences, HTML comments (`<!-- -->`), pipe characters,
+or angle-bracketed pseudo-tags that would otherwise break the report's
+Markdown structure. Either wrap the offending block in a fenced code
+block (` ```text … ``` `) or replace internal triple-backticks with
+quadruple-backtick fences. Do **not** paste agent output unmodified
+into table cells.
 
 ```markdown
 # Semantic Duplicate Code Hunt: <branch-or-scope>
