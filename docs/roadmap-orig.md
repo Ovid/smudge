@@ -27,7 +27,15 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 3a | Export Foundation | Export pipeline, HTML, Markdown, plain text, config dialog, download | Done |
 | 3b | Document Export | PDF, Word (.docx), EPUB | Done |
 | 4a | Reference Panel & Images | Collapsible side panel infrastructure, image upload/storage | Done |
-| 4b | Snapshots & Find-and-Replace | Manual/auto snapshots, project-wide search and replace | In Progress |
+| 4b | Snapshots & Find-and-Replace | Manual/auto snapshots, project-wide search and replace | Done |
+| 4b.1 | Editor Orchestration Helper | Extract shared save-flush/markClean/setEditable/reload shape into one helper | Done |
+| 4b.2 | Abortable Sequence Hook | Unify ad-hoc seq-refs into a single `useAbortableSequence()` primitive | Done |
+| 4b.3 | Unified API Error Mapper | Single module mapping API errors to UI strings; no raw server text in UI | Done |
+| 4b.3a | 4b.3 Review Follow-ups | Validated-but-unfixed items from the 4b.3 code review (scope coverage, abort discipline, sanitizer, recovery completeness) | In Progress |
+| 4b.4 | Raw-Strings ESLint Rule | Enforce strings.ts externalization via lint; fix existing violations | Planned |
+| 4b.5 | Editor State Machine | Unify `editable`/`locked`/`busy` editor state into one machine; add `committed_but_unreloaded` mutation stage for ambiguous server responses | Planned |
+| 4b.6 | E2E Test Isolation | Wire `playwright.config.ts` to set `SMUDGE_PORT` / `SMUDGE_CLIENT_PORT` / `DB_PATH` to test-only values so e2e cannot piggy-back on the dev server or share its database | Planned |
+| 4b.7 | Test Warning-Pin Audit | Audit the 52 console-spy installs across 9 client test files that suppress `console.warn`/`console.error` without asserting on the call; pin each spy to the contract its production path commits to (or remove if defensive) | Planned |
 | 4c | Notes, Tags & Outtakes | Inline notes, paragraph tags, scratchpad for cut text | Planned |
 | 5a | Fiction: Characters | Character sheets with structured fields and freeform notes | Planned |
 | 5b | Fiction: Scene Cards | Scene cards / outline mode with drag-and-drop | Planned |
@@ -558,6 +566,360 @@ Project-wide find and replace — not just the current chapter. Critical for: re
 ### Dependencies
 
 - MVP (TipTap editor with extension support).
+
+---
+
+## Phase 4b.1: Editor Orchestration Helper
+<!-- plan: 2026-04-19-editor-orchestration-helper-design.md -->
+
+### Goal
+
+Extract the shared "mutate editor content via the server" shape — save-flush, markClean, setEditable, server call, reload — into a single helper. Eliminate the temporal coupling that produced recurring data-loss bugs during Phase 4b.
+
+### Why Now
+
+Phase 4b required 16 rounds of review. Pattern analysis showed the dominant cause was divergent re-implementations of this shape across replace, restore, and chapter-switch paths. Every future phase that mutates chapter content from the server (4c, 5b, 7e) will hit the same rake until this is extracted.
+
+### Scope
+
+Editor mutation flows in `packages/client/src/` currently implemented ad-hoc in `EditorPage.tsx`, `Editor.tsx`, and `useProjectEditor.ts` are rewired to a single helper. The helper enforces CLAUDE.md §Save-Pipeline Invariants.
+
+### Out of Scope
+
+- New features or UX changes.
+- Changes to the server-side save path.
+- Consolidating error-mapping (Phase 4b.3).
+
+### Definition of Done
+
+- All editor-mutation call sites route through the helper.
+- A regression test for the unmount-clobber bug is committed and passing.
+- No behavior change visible to the user.
+
+### Dependencies
+
+- Phase 4b (merged 2026-04-19).
+- Should land before Phase 4c.
+
+---
+
+## Phase 4b.2: Abortable Sequence Hook
+<!-- plan: 2026-04-22-abortable-sequence-hook-design.md -->
+
+### Goal
+
+Replace the ad-hoc sequence refs scattered across the client (`saveSeqRef`, `selectChapterSeqRef`, `searchSeqRef`, `viewSeqRef`, and similar) with a single reusable primitive that makes the "discard stale response" contract explicit.
+
+### Why Now
+
+Each ad-hoc seq-ref is individually correct but their interactions are implicit, which is how stale-closure bugs kept slipping through review in Phase 4b. A single primitive with a tested contract prevents the next flow (reordering, imports, tag edits) from adding a fifth variant.
+
+### Scope
+
+Introduce a hook — shape to be decided at design time — that returns a current sequence value, a bump operation, and a staleness check. Migrate existing seq-refs to use it.
+
+### Out of Scope
+
+- Changes to abort-signal propagation on `fetch` calls (separate concern).
+- Server-side sequencing.
+
+### Definition of Done
+
+- No free-standing `seqRef` patterns remain in `packages/client/src/`.
+- Tests cover the staleness contract directly.
+- Behavior unchanged from the user's perspective.
+
+### Dependencies
+
+- Phase 4b (merged 2026-04-19). Independent of 4b.1; may run in parallel.
+
+---
+
+## Phase 4b.3: Unified API Error Mapper
+<!-- plan: 2026-04-23-unified-error-mapper-design.md -->
+
+### Goal
+
+Collapse the three drift-prone error-mapping code paths (search catch, replace errors, generic fallback) into one module that turns API error envelopes into UI strings from `strings.ts`. No raw server text ever reaches the UI.
+
+### Why Now
+
+Error-copy drift was a recurring finding during Phase 4b review — each path was independently correct but they inconsistently handled the same error codes. One mapper makes the contract enforceable and eliminates a class of review findings.
+
+### Scope
+
+One module responsible for all API-error-to-UI-string mapping in the client. All call sites that currently format error text route through it.
+
+### Out of Scope
+
+- Server-side error envelope shape (already defined; see CLAUDE.md §API Design).
+- Changes to the `strings.ts` externalization approach itself (Phase 4b.4).
+
+### Definition of Done
+
+- Only one module owns API error → UI string translation.
+- No call site contains inline error-to-text mapping.
+- All strings emitted by the mapper come from `strings.ts`.
+
+### Dependencies
+
+- Phase 4b (merged 2026-04-19). Independent of 4b.1 and 4b.2.
+
+---
+
+## Phase 4b.3a: 4b.3 Review Follow-ups
+<!-- plan: 2026-04-25-4b3a-review-followups-design.md -->
+
+### Goal
+
+Address the validated-but-unfixed items from the Phase 4b.3 code review (`paad/code-reviews/ovid-unified-error-mapper-2026-04-25-10-32-46-a68afd1.md`). [I13] was fixed on the 4b.3 branch (commit `3a3728f`); the items below were verified as real problems but were out of scope for the narrow review-comment fix.
+
+### Why Now
+
+Each cluster below is a coherent follow-up to 4b.3. Letting them rot risks the same drift the unified-error-mapper migration was meant to eliminate (consumer-ladder duplication, partial abort discipline, generic copy where specific copy is owed). Landing them before Phase 4b.4 also ensures the raw-strings ESLint rule has a clean baseline (no scope-coverage gaps that would be papered over by lint noise).
+
+### Scope
+
+Each cluster is a separate PR per the CLAUDE.md one-feature rule. The phase closes when every cluster has merged.
+
+**Cluster A — Scope-coverage gaps (`packages/client/src/errors/scopes.ts`)**
+
+- [I1] `chapter.reorder` missing `byCode: { REORDER_MISMATCH: ... }`. Server emits this from `packages/server/src/projects/projects.routes.ts:132`; users currently see the generic reorder fallback.
+- [I2] `chapter.save` lacks both a `network:` field and a `byStatus: { 404: ... }` entry. Save-failure copy currently misleads when a chapter is soft-deleted in another tab.
+- [S1] `trash.restoreChapter` lacks `byStatus: { 404: ... }` for hard-purged rows.
+
+**Cluster B — AbortSignal API surface (`packages/client/src/api/client.ts`) + call-site threading**
+
+- [I7] `api.projects.create` and `api.projects.delete` don't accept `signal?: AbortSignal`. Required to finish the [I13] fix on the create POST itself, and to enable abortable delete from `HomePage`.
+- [I8] `api.chapters.create` doesn't accept signal. Caller `useProjectEditor.handleCreateChapter` already does abort discipline elsewhere; the create POST itself remains uncancellable.
+- [I9] `api.chapterStatuses.list` doesn't accept signal. `EditorPage` retry-with-backoff currently uses a `cancelled` flag.
+- [I6] `Editor.tsx` paste/drop image upload doesn't thread a signal (`Editor.tsx:281`).
+- [I10] `loadProject` uses `cancelled` flag instead of AbortController (`useProjectEditor.ts:198`); both `api.projects.get` and `api.chapters.get` skip the signal.
+- [I11] `api.search.replace` issued without signal at `EditorPage.tsx:775,1018`.
+- [I12] `ExportDialog` has no unmount cleanup for in-flight export blob (`ExportDialog.tsx:38`).
+- [S12] `api.chapters.get` skipped at `useProjectEditor.ts:239,635,688` (partial migration — `handleDeleteChapter` does pass it).
+
+**Cluster C — Consumer recovery completeness**
+
+- [I3] `snapshot.create` declares `committed:` but `SnapshotPanel.tsx:305` only destructures `{ message }`; the `possiblyCommitted` flag is dropped.
+- [I4] `useTrashManager.handleRestore` possiblyCommitted only filters from the trash list; doesn't refresh `project.chapters` or re-seed `confirmedStatusRef`.
+- [I5] `useTrashManager.confirmDeleteChapter` silently dismisses the dialog on unexpected throw.
+- [S3]/[S7] `chapter.save` non-2xx BAD_JSON locks editor with generic copy; move dispatch into the scope.
+- [S4] `handleStatusChange` possiblyCommitted drops message when caller omits `onError`.
+- [S5] `restoreSnapshot` synthesizes 200 BAD_JSON for ALL non-`ApiRequestError` throws; needs a `dispatched` flag.
+- [S8] `image.delete` `extrasFrom` returns `undefined` when any chapter element is malformed; should return the valid subset.
+- [S10] Silent recovery-catches in `handleStatusChange:1079` and `handleCreateChapter:604` hide observability; add dev-only `console.warn` gated on `!signal.aborted`.
+- [S11] `chapter.create` 404 surfaces correct copy but no UI affordance navigates; gate `isNotFound(err)` and call `navigate("/")`.
+- [S15] Consumer-ladder duplication of `if (message === null) return; if (message) setX(message)` 30+ times — extract `applyMappedError` helper.
+- [S16] `handleSelectChapterWithFlush` uses `chapter.load` scope for flush failure; add `chapter.flushBeforeNavigate`.
+- [S17] `createRecoveryAbortRef` not nulled on success; latent staleness.
+- [S18] `Editor.tsx` paste upload announcement fires on cross-chapter switch within same project.
+- [S19] `useSnapshotState.viewSnapshot` `viewAbortRef` not nulled on success.
+- [S20] `handleReorderChapters` possiblyCommitted branch lacks epoch re-check before `setProject`.
+
+**Cluster D — Sanitizer hardening (`packages/client/src/sanitizer.ts`)**
+
+- [I14] `ALLOWED_URI_REGEXP` not pinned. DOMPurify's default permits `data:` URIs in `img` tags; the only legitimate `<img src>` value in Smudge is `/api/images/{uuid}`. Add `const ALLOWED_URI_REGEXP = /^\/api\/images\//i;` and a regression test covering `data:image/svg+xml;…` and `javascript:`.
+- [S21] `extrasFrom` validates `chapters[].title` is string but not bounded; cap entries and per-title length.
+
+**Cluster E — Mapper internals & duplication**
+
+- [S2] CLAUDE.md "Unified API error mapping" doesn't describe the `committedCodes` extension; update the doc.
+- [S6] `import.meta.env?.DEV` access can throw in some test environments — `safeExtrasFrom`'s must-never-throw guard is inverted by its own dev-log; wrap dev-log in try/catch.
+- [S9] `ImageGallery` casts `extras.chapters` bypassing the mapper's narrowed shape; introduce `ScopeExtras<S>` type.
+- [S13] `confirmDeleteChapter` duplicates `openTrash` body; extract `refreshTrashList()` or call `openTrash()` directly.
+- [S14] `SnapshotPanel` mount effect duplicates `fetchSnapshots`.
+- [S22]/[S23] PR-shape transparency: `vitest.config.ts` worker cap and ESLint sequence-rule test infra adjustments need either justification in PR description or splitting.
+
+**Cluster F — PR-shape retrospective (meta)**
+
+- [I15] One-feature rule violation in 4b.3: sanitizer hardening + CONTRIBUTING.md + Node-engines pin were bundled with the error-mapper migration. Decide: retro-split, or accept and document as a learned exception. If the sanitizer + dev-environment housekeeping are kept as part of the codebase without a phase, add one to this roadmap.
+
+### Out of Scope
+
+- Phase 4b.4 work (raw-strings ESLint rule). 4b.4 may land in parallel; clusters above do not block it and it does not block them.
+- Phase 4b.5 work (Editor State Machine).
+- New API error codes or HTTP status codes (allowlist stays per CLAUDE.md §API Design).
+- Behavior changes visible to the user beyond:
+  - Fixing misleading copy ([I1], [I2], [S1], [S16]).
+  - Defense-in-depth rejection of malicious image src ([I14]).
+  - Graceful navigation on stale-project state ([S11]) — explicitly logged as consistency with the existing `EditorPage:1552` convention.
+  - Surfacing previously-silent failures ([I5], [S10]).
+
+### Definition of Done
+
+- Each of clusters A–F has either landed (linked PR + commit on this branch) or been explicitly deferred via an updated entry in this section noting the destination phase.
+- No regression in test coverage; new tests added for every fix per CLAUDE.md §Testing Philosophy.
+- `make all` green at the close of each cluster's PR.
+
+### Dependencies
+
+- Phase 4b.3 (Unified API Error Mapper) merged. Cluster B's call-site threading depends on the [I13] `handleCreate` recovery fix (landed in 4b.3 commit `3a3728f`).
+- Independent of Phase 4b.4; may land before, after, or interleaved.
+
+---
+
+## Phase 4b.4: Raw-Strings ESLint Rule
+
+### Goal
+
+Make the "all UI strings live in `strings.ts`" rule (CLAUDE.md §String externalization) enforceable by lint instead of review vigilance. Fix existing violations to bring the client package to a clean baseline.
+
+### Why Now
+
+The externalization rule has been repeatedly violated despite being a documented CLAUDE.md requirement. Until lint enforces it, every PR risks reintroducing raw strings, and every reviewer spends time catching them by hand.
+
+### Scope
+
+- Configure an ESLint rule that rejects raw string literals in JSX and common UI surfaces within `packages/client/src/`.
+- Tune the rule's allowlist (e.g. test files, type-level literals) to avoid false positives.
+- Fix existing violations so the rule can run without warnings.
+
+### Out of Scope
+
+- Server-side strings (they don't reach the UI directly; already covered by API error mapper).
+- `strings.ts` restructuring or namespacing.
+- i18n extraction (Phase 7f).
+
+### Definition of Done
+
+- `make lint` fails on a new raw UI string.
+- Current client code passes lint cleanly.
+- No behavior change visible to the user.
+
+### Dependencies
+
+- Phase 4b (merged 2026-04-19). Independent of 4b.1–4b.3; may land last.
+
+---
+
+## Phase 4b.5: Editor State Machine
+
+### Goal
+
+Replace the scattered editor-state refs (`editable`, `editorLockedMessage`, `inFlightRef`, `reloadFailed`, `reloadSucceeded`) with a single state machine that owns the editor's operational state. Close the divergence gap between the lock banner and the editor's actual editable state, and add an explicit "committed but unreloaded" mutation stage covering the cases where the server succeeded but the client cannot confirm.
+
+### Why Now
+
+Pattern analysis across the six `ovid/architecture` code reviews (2026-04-19 to 2026-04-20) identified three recurring Critical findings that all trace to the same structural shape: editor state lives in N separate refs/state kept in sync by discipline. When any one diverges — stale `expectedChapterId` skip in `reloadActiveChapter`, 2xx `BAD_JSON` on a replace or restore response, a caller that forgets to clear the lock — the editor becomes editable while the banner still says "read-only", and the next keystroke's auto-save silently overwrites the committed server change. Phase 4b.1 centralized the *flow* but not the *state*; without this phase, Phases 4c / 5b / 7e will rediscover the same class of data-loss race.
+
+### Scope
+
+- One `EditorMutationState` primitive (shape decided at design time) that owns `{ editable, locked, busy }` as a machine driven by explicit events, not by independent setState calls.
+- Extend `MutationResult.stage` with a `"committed_but_unreloaded"` variant covering:
+  - 2xx `BAD_JSON` on replace / restore response bodies.
+  - `expectedChapterId` skip where the hook would otherwise treat skip as success.
+- Callers handle the new stage exhaustively (compile-time `: never` default) and route to the persistent lock banner.
+- Migrate `editorLockedMessage` in `EditorPage.tsx` to read from the state machine rather than its own `useState` + side-effect clear on `chapterReloadKey`.
+
+### Out of Scope
+
+- New user-facing behavior.
+- Changes to the server-side save path or response envelope.
+- Migration of hand-composed flush sequences in external callers (covered under Phase 4b.1's "all call sites route through the helper" DoD).
+- Codifying CLAUDE.md §Save-Pipeline Invariants as type constraints beyond the editor-mutation state itself.
+
+### Definition of Done
+
+- A single source of truth for the editor's `{ editable, locked, busy }` state — no free-standing `editorLockedMessage` / `inFlightRef` / `reloadFailed` / `reloadSucceeded` tracking.
+- `MutationResult` includes `"committed_but_unreloaded"`; every caller handles it exhaustively.
+- Regression tests cover the three Critical findings from the 2026-04-20 review: stale-`expectedChapterId` skip, 2xx `BAD_JSON` on replace, 2xx `BAD_JSON` on restore — each asserting the editor stays read-only and the lock banner stays visible.
+- No behavior change visible to the user in the happy path.
+
+### Dependencies
+
+- Phase 4b.1 (Editor Orchestration Helper) — should land first; this phase tightens the state surface the helper operates on.
+- Should land before Phase 4c (Notes, Tags & Outtakes), which adds a new class of content-mutating flow.
+
+---
+
+## Phase 4b.6: E2E Test Isolation
+
+### Goal
+
+Make the e2e harness bind to test-only ports and a test-only database so an e2e run alongside `make dev` cannot piggy-back on the dev server or touch the dev workflow's data.
+
+### Why Now
+
+Once the `ovid/shared-port-validation` branch lands, `packages/server/src/index.ts` will validate `SMUDGE_PORT` via the shared `parsePort` utility (`@smudge/shared`) and `packages/client/vite.config.ts` will validate `SMUDGE_PORT` / `SMUDGE_CLIENT_PORT` via an inline mirror of the same rules (vite's config resolver runs under bare Node ESM and cannot import `@smudge/shared`; the parity is enforced for the default port literal by `packages/shared/src/__tests__/vite-config-default-port.test.ts`). The explicit rationale on both sides is that the e2e harness would set these env vars to test-only ports for isolation. But `playwright.config.ts` hardcodes `port: 3456` / `port: 5173`, passes no `env`, and uses `reuseExistingServer: true` — so the env-var contract will have no consumer once the precursor branch merges, and the documented isolation rationale is forward-looking until this phase wires it up. Identified as OOSI1 in the `ovid/shared-port-validation` agentic review (2026-04-26).
+
+### Scope
+
+- Set `env: { SMUDGE_PORT, SMUDGE_CLIENT_PORT, DB_PATH }` to test-only values on each `webServer` entry in `playwright.config.ts`.
+- Update the matching `port:` waits and the top-level `baseURL` to the test-only client port.
+- Restore the present-tense isolation claim in `vite.config.ts:5-10` once the harness actually does what the comment says (the comment was made forward-looking under the same branch — this phase makes the original claim true).
+- Confirm `make e2e` running alongside `make dev` does not collide on ports and does not share the dev database.
+
+### Out of Scope
+
+- Test-isolation concerns for unit/integration tests (they already use real SQLite per `CLAUDE.md` §Testing Philosophy).
+- New env-var contracts beyond `SMUDGE_PORT` / `SMUDGE_CLIENT_PORT` / `DB_PATH`.
+
+### Definition of Done
+
+- `make e2e` and `make dev` can run simultaneously without port collisions.
+- The e2e database is isolated from the dev database (different `DB_PATH`).
+- The `vite.config.ts:5-10` comment reflects what `playwright.config.ts` actually does — no forward-looking TODO left behind.
+
+### Dependencies
+
+- The shared `parsePort` utility and env-driven port reading in `vite.config.ts` / `server/index.ts` (introduced in `ovid/shared-port-validation`) must be merged.
+
+---
+
+## Phase 4b.7: Test Warning-Pin Audit
+
+### Goal
+
+Make the CLAUDE.md §Testing Philosophy "Zero warnings in test output" rule enforceable in the existing test suite. Every `vi.spyOn(console, "warn"|"error")` install that suppresses output must either assert the expected call (pinning the production-side warn as part of the test's contract) or be removed if the spy is purely defensive against unrelated noise.
+
+### Why Now
+
+CLAUDE.md §Testing Philosophy says: *"When a test deliberately triggers an error path that logs a warning, spy on the output, suppress it, and assert the expected message — e.g. `const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {}); ... expect(warnSpy).toHaveBeenCalledWith(...); warnSpy.mockRestore();`."* The 4b.3a Cluster A code review (`paad/code-reviews/ovid-cluster-a-error-mapping-2026-04-27-14-13-42-91476d8.md`, finding I1) surfaced two tests violating this rule; a follow-up audit found 52 more across 9 files. Each unasserted spy is a contract that isn't pinned: a future change that drops or alters the production warn would silently pass. This phase closes that gap before Phase 4b.4's raw-strings lint rule lands, so the test suite is clean of latent contract gaps when lint-driven cleanup begins.
+
+### Scope
+
+Audit and fix all `vi.spyOn(console, …).mockImplementation(() => {})` installs that lack a corresponding `expect(spy).toHaveBeenCalled…` assertion in client test files. Each fix requires per-test contract analysis:
+
+- **Production warn fires deliberately** → add `expect(spy).toHaveBeenCalledWith(…)` matching the production call site. Mirror the shape of the already-pinned tests in `useProjectEditor.test.ts:1290,1314,1334`.
+- **Production warn fires defensively (e.g. unrelated library noise)** → either remove the spy entirely (let the warn through if it's harmless) or assert `expect(spy).not.toHaveBeenCalled()` to pin absence.
+- **Multi-warn paths** → assert with `toHaveBeenCalledTimes(N)` plus `toHaveBeenNthCalledWith` where the order matters.
+
+The 52 occurrences (post-I1 fix) are distributed:
+
+| Count | File |
+|---|---|
+| 27 | `packages/client/src/__tests__/useProjectEditor.test.ts` |
+| 6 | `packages/client/src/__tests__/DashboardView.test.tsx` |
+| 4 | `packages/client/src/__tests__/EditorPageFeatures.test.tsx` |
+| 4 | `packages/client/src/__tests__/HomePage.test.tsx` |
+| 3 | `packages/client/src/__tests__/ProjectSettingsDialog.test.tsx` |
+| 3 | `packages/client/src/hooks/useEditorMutation.test.tsx` |
+| 2 | `packages/client/src/__tests__/ExportDialog.test.tsx` |
+| 2 | `packages/client/src/hooks/useAbortableSequence.test.ts` |
+| 1 | `packages/client/src/__tests__/useSnapshotState.test.ts` |
+
+Consider whether a small ESLint rule (or test-side helper that wraps spy + assertion) could prevent regressions. If so, fold it into the phase; if not, document the manual review checkpoint in CONTRIBUTING.md.
+
+### Out of Scope
+
+- Server-side test files — server tests don't currently exhibit this pattern (no installs found under `packages/server/`).
+- E2e tests — Playwright doesn't use vi.spyOn; warning discipline there is governed by browser console listeners, separate concern.
+- Adding new tests beyond the assertions needed to pin existing spies. Coverage may rise as a side effect; do not chase it.
+- Refactoring tests for unrelated reasons (mock setup, render helpers).
+
+### Definition of Done
+
+- Every `vi.spyOn(console, …)` install in `packages/client/src/` either asserts on the spy or is removed.
+- A grep-based regression guard documented in CONTRIBUTING.md (or implemented as an ESLint rule) prevents new unasserted spy installs.
+- Coverage thresholds in `vitest.config.ts` unchanged or higher; no minimum-floor coast.
+- `make all` green at PR close.
+- No behavior change visible to the user (this is a test-only phase).
+
+### Dependencies
+
+- Phase 4b.3a Cluster A merged (this phase exists because of an I1 finding from that review).
+- Independent of Phase 4b.4 (Raw-Strings ESLint Rule); may land before, in parallel, or after. Landing before 4b.4 is mildly preferred so 4b.4's lint-driven cleanup operates on a contract-clean test suite.
 
 ---
 
