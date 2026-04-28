@@ -41,14 +41,30 @@ If **all** phases have plan comments, announce:
 
 ## 2a. Suggest a Working Branch (if on `main`)
 
-Run `git branch --show-current`. If the current branch is not `main`, skip this
-step — the working branch is already chosen, and the rest of this skill will
-commit its outputs there.
+Run `git branch --show-current` and inspect the result. There are three
+cases:
 
-If the current branch **is** `main`, do not start brainstorming yet. The
-artifacts produced by the rest of this skill (design doc, implementation plan,
-decision log, and any phase commits) should land on a feature branch, not on
-`main`. Propose one and let the user accept or rename it before continuing.
+- **Detached HEAD** (output is empty): **stop.** Do not proceed. Tell the
+  user the working tree is in detached-HEAD state and any commits this
+  skill produces would be reachable only via reflog and pruned by the next
+  `git gc`. Ask them to either check out a named branch first or
+  explicitly confirm they want to land artifacts on a detached commit.
+  Do not silently fall through — empty is "not main", but it is also not
+  a safe place to commit.
+- **Named branch other than `main`**: skip the rest of this step. The
+  working branch is already chosen.
+- **`main`**: do not start brainstorming yet. The artifacts produced by
+  the rest of this skill (design doc, implementation plan, decision log)
+  should land on a feature branch, not on `main`. Continue with the
+  pre-check and suggestion below.
+
+### Pre-check the working tree
+
+Before suggesting any branch, run `git status --porcelain`. If the output
+is non-empty, `main` has uncommitted changes that would ride to the new
+branch. Stop and surface the dirty paths to the user; ask them to commit,
+stash, or explicitly confirm the carry-over before continuing. Do **not**
+silently `git checkout -b` over a dirty tree.
 
 ### Derive a candidate slug
 
@@ -81,13 +97,25 @@ Show the user the candidate name and ask them to accept or override:
 >
 > Suggested branch: `<candidate-slug>`. Accept, or give me a different name?
 
-Then:
+Parse the response per this explicit grammar (matches are case-insensitive;
+a trailing `.`, `!`, or `,` is ignored before matching):
 
-- **Accept** (`yes`, `ok`, "looks good") → run
-  `git checkout -b <candidate-slug>`.
-- **Override** with a name → run `git checkout -b <user-supplied-name>`.
-- **Explicit "stay on `main`"** → continue on `main`, but warn the user that
+- **Accept** — exactly one of: `yes`, `y`, `yeah`, `yep`, `yup`, `ok`,
+  `okay`, `sure`, `lgtm`, `looks good`, `go ahead`, `do it`, `proceed`.
+  Run `git checkout -b '<candidate-slug>'`. Always pass the branch name
+  inside single quotes — never interpolate raw user input into the shell
+  command.
+- **Stay on `main`** — exactly one of: `stay`, `stay on main`, `no branch`,
+  `keep main`, `on main`. Continue on `main`, but warn the user that
   every commit produced by this skill will land directly on `main`.
+- **Override** — anything else. Treat the entire response as a candidate
+  branch name and run it through the slug rule above (lowercase, collapse
+  non-`[a-z0-9]` to hyphens, strip leading/trailing) **before** passing it
+  to git. Then run `git checkout -b '<sanitized-name>'` with the
+  sanitized result, single-quoted. If the sanitized result is empty, or
+  if the response mixes accept tokens with other text in a way that's
+  ambiguous (e.g. `yeah call it foo`), ask the user to clarify rather
+  than guess.
 
 Only proceed to step 3 after the branch decision is made.
 
