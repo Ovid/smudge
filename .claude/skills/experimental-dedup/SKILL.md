@@ -91,7 +91,15 @@ Run these commands and collect results as available:
 5. `find . -maxdepth 4 -type d \( -name node_modules -o -name vendor -o -name dist -o -name build -o -name target -o -name coverage -o -name .git \) -prune -o -type f -print | head -500`
 6. If `--changed <base>` was supplied:
 
-   * `git diff --stat <base>...HEAD`
+   * **First, verify the ref resolves:**
+     `git rev-parse --verify <base>^{commit}`. If this fails (typo like
+     `mian`, an `origin/<branch>` ref that has not been fetched, a tag
+     that was deleted), **stop with a message naming the unresolvable
+     ref and asking the user to correct or fetch it.** Do not fall
+     through to the diff commands — they would emit a stderr error and
+     return empty stdout, and the rest of the scan would silently
+     proceed against no input.
+   * Once the ref resolves: `git diff --stat <base>...HEAD`
    * `git diff --name-only <base>...HEAD`
    * `git diff <base>...HEAD`
 7. Identify language ecosystems, major modules, test directories, schema directories, generated-code conventions, and public API boundaries.
