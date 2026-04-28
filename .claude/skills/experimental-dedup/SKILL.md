@@ -337,6 +337,42 @@ Write verified findings to `paad/duplicate-code-reports/<branch-or-scope>-<YYYY-
 
 Create the directory if it does not exist.
 
+### Slug rule for `<branch-or-scope>`
+
+The token must be derived from the current branch name (or, when the
+skill was invoked with a path/domain scope rather than a full-repo scan,
+from that scope token):
+
+1. Lowercase.
+2. Replace any run of non-`[a-z0-9]` characters (including `/`, `..`, and
+   path separators) with a single hyphen.
+3. Strip leading and trailing hyphens.
+4. Cap at 60 characters (truncate at the last hyphen boundary if
+   possible to keep the result readable).
+5. If the result would be empty (branch name was only Unicode/CJK,
+   detached HEAD with no scope provided, etc.), fall back to the literal
+   `report`.
+
+Examples:
+- `ovid/experimental-dedup` → `ovid-experimental-dedup`
+- `feat/auth_v2` → `feat-auth-v2`
+- `src/auth/` (path scope) → `src-auth`
+
+### Path safety
+
+After interpolation, verify the final path:
+
+- Resolves under `paad/duplicate-code-reports/` — no leading `/`, no
+  `..` segments, no `/` characters surviving the slug rule above.
+- Does not collide with an existing file. On collision (same
+  branch-slug, same date-time, same short-sha — possible when two
+  scoped passes run in the same second), append `-2`, `-3`, … to the
+  filename stem until the path is free. Never overwrite an existing
+  report silently.
+
+If either check fails after the slug rule has been applied, stop and
+surface the offending value rather than writing the report.
+
 ## Report Template
 
 ```markdown
