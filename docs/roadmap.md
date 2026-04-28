@@ -39,6 +39,15 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.5 | Editor State Machine | Unify `editable`/`locked`/`busy` editor state into one machine; add `committed_but_unreloaded` mutation stage for ambiguous server responses | Planned |
 | 4b.6 | E2E Test Isolation | Wire `playwright.config.ts` to set `SMUDGE_PORT` / `SMUDGE_CLIENT_PORT` / `DB_PATH` to test-only values so e2e cannot piggy-back on the dev server or share its database | Planned |
 | 4b.7 | Test Warning-Pin Audit | Audit the 52 console-spy installs across 9 client test files that suppress `console.warn`/`console.error` without asserting on the call; pin each spy to the contract its production path commits to (or remove if defensive) | Planned |
+| 4b.8 | TipTap Extension Consolidation | Move client+server TipTap extension config to `packages/shared/`; both packages re-export. Eliminates the parity test enforced by review. | Planned |
+| 4b.9 | Chapter Status Type Alignment | Replace `Chapter.status: string` with `ChapterStatusValue = z.infer<typeof ChapterStatus>` so the TS type matches the Zod 5-value enum. | Planned |
+| 4b.10 | Shared TipTap Unsafe-Keys Set | Extract `CANONICAL_UNSAFE_KEYS` into `packages/shared/` so `tiptap-text.ts` and `snapshots/content-hash.ts` share one declaration of `__proto__`/`prototype`/`constructor` strip. | Planned |
+| 4b.11 | 404 Route-Response Helper | Replace ~20 hand-written `res.status(404).json({ error: { code: "NOT_FOUND", … } })` blocks across `projects`/`chapters`/`snapshots`/`search` routes with a `notFound(res, resource)` helper in `app.ts`. | Planned |
+| 4b.12 | Validation Error Response Helper | Add `validationError(res, msg)` + `respondValidationParse(res, parsed)` helpers; migrate ~6 `safeParse` ladders so the 400 envelope has one owner. | Planned |
+| 4b.13 | TipTap Depth-Guard Regression Test | Add a single test that walks a depth-65 TipTap doc through every consumer (`extractText`, `canonicalize`, image `walk`, depth validator) and asserts each bails safely. Codifies the contract behind today's four independent depth checks. | Planned |
+| 4b.14 | Abortable Async Operation Hook | Extract `useAbortableAsyncOperation` for the "abort prior, fresh controller, check `signal.aborted` before setState" pattern hand-rolled in `useTrashManager`, `useFindReplaceState`, `ImageGallery`, and Editor paste/drop (~8–10 refs across 5 files). | Planned |
+| 4b.15 | Inline Title-Editing Hook | Extract a generic `useInlineTitleEditing(currentId, save, gates, options?)`; reduce `useChapterTitleEditing` and `useProjectTitleEditing` to thin wrappers that pass slug-drift check + post-save navigate as options. | Planned |
+| 4b.16 | Dialog Lifecycle Hook | Extract `useDialogLifecycle(dialogRef, { open, onClose, initialFocusRef, blockEscapePropagation, role })` and migrate the 5 dialogs (Confirm, Export, NewProject, ProjectSettings, ShortcutHelp) one at a time; preserve `stopImmediatePropagation` and happy-dom guards as opt-ins. | Planned |
 | 4c | Notes, Tags & Outtakes | Inline notes, paragraph tags, scratchpad for cut text | Planned |
 | 5a | Fiction: Characters | Character sheets with structured fields and freeform notes | Planned |
 | 5b | Fiction: Scene Cards | Scene cards / outline mode with drag-and-drop | Planned |
@@ -1008,6 +1017,356 @@ Consider whether a small ESLint rule (or test-side helper that wraps spy + asser
 
 - Phase 4b.3a Cluster A merged (this phase exists because of an I1 finding from that review).
 - Independent of Phase 4b.4 (Raw-Strings ESLint Rule); may land before, in parallel, or after. Landing before 4b.4 is mildly preferred so 4b.4's lint-driven cleanup operates on a contract-clean test suite.
+
+---
+
+## Phase 4b.8: TipTap Extension Consolidation
+
+### Goal
+
+Eliminate the byte-for-byte duplicated TipTap extension config that lives in both `packages/client/src/editorExtensions.ts` and `packages/server/src/export/editorExtensions.ts`. Move the array to `packages/shared/`; both packages become one-line re-exports. The parity test (`packages/server/src/__tests__/editorExtensions.test.ts`) — which today renders a reference doc through both configs and asserts identical HTML — becomes a single import-equality assert or is removed.
+
+### Why Now
+
+The two files declare the same StarterKit + Heading levels 3–5 + Image inline:false/allowBase64:false config and explicitly state in their headers that the configs "must match." A test enforces it. The parity-test pattern is the smell: the maintenance contract belongs in code, not in a test asserting two literals match. Adding a TipTap extension to one side without the other silently changes export rendering vs editor display until the parity test catches it after the fact. This is the lowest-risk extraction in the dedup backlog (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-02-18-093074c.md` C1).
+
+### Scope
+
+- Create `packages/shared/src/editorExtensions.ts` exporting the shared array.
+- `packages/client/src/editorExtensions.ts` and `packages/server/src/export/editorExtensions.ts` re-export from shared.
+- Reduce or delete `packages/server/src/__tests__/editorExtensions.test.ts` — at most a sanity import-equality assert remains.
+
+### Out of Scope
+
+- Adding new TipTap extensions or changing the existing config.
+- Restructuring `packages/shared/`'s public surface beyond the new file.
+
+### Definition of Done
+
+- One source declaration of the TipTap extension array.
+- Both client and server import from shared.
+- Parity test removed or reduced to import-equality.
+- `make all` green at PR close.
+- No behavior change visible to the user.
+
+### Dependencies
+
+- None. Phase 4b merged. Independently shippable.
+
+---
+
+## Phase 4b.9: Chapter Status Type Alignment
+
+### Goal
+
+Close the type-system gap where `Chapter.status: string` and `ChapterStatusRow.status: string` in `packages/shared/src/types.ts` denote a wider set than the Zod schema's `z.enum(["outline", "rough_draft", "revised", "edited", "final"])`. Replace the `string` declarations with a `z.infer` alias so the TS type matches the runtime contract.
+
+### Why Now
+
+Today, TypeScript silently accepts `chapter.status === "published"` typos because the static type is wider than the schema. Refactors that iterate over the literal set must reach for the schema rather than the type. Runtime safety is unaffected (Zod gates write paths), but the type system is not load-bearing where it should be (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-02-18-093074c.md` I3).
+
+### Scope
+
+- Add `export type ChapterStatusValue = z.infer<typeof ChapterStatus>` to `packages/shared/src/schemas.ts`.
+- Replace `status: string` with `status: ChapterStatusValue` in `Chapter` and `ChapterStatusRow` interfaces in `packages/shared/src/types.ts`.
+- Surface and fix any callers comparing against unknown literals (TypeScript will identify them).
+
+### Out of Scope
+
+- DB or API changes — both already enforce the enum at write time.
+- Migration of `chapter_statuses` table seed data.
+- Renaming `ChapterStatus` (the schema export name).
+
+### Definition of Done
+
+- `Chapter.status` and `ChapterStatusRow.status` typed as `ChapterStatusValue`.
+- `tsc` green; any caller using a string literal outside the enum fixed.
+- `make all` green.
+- No behavior change visible to the user.
+
+### Dependencies
+
+- None. Independently shippable. May land alongside or in parallel with 4b.8.
+
+---
+
+## Phase 4b.10: Shared TipTap Unsafe-Keys Set
+
+### Goal
+
+Eliminate the duplicate `__proto__`/`prototype`/`constructor` strip-set declared as `CANONICAL_UNSAFE_KEYS` in `packages/shared/src/tiptap-text.ts` and as `UNSAFE_KEYS` in `packages/server/src/snapshots/content-hash.ts`. Export a single set from `packages/shared/`; both consumers import it.
+
+### Why Now
+
+The two declarations describe the same prototype-pollution defense for TipTap canonicalization. A future change (e.g. adding `__defineGetter__` to the unsafe set) needs to land in both files; today nothing enforces that they agree (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-02-18-093074c.md` I4). Full canonicalizer extraction is *blocked* by return-type mismatch — `tiptap-text.ts` returns a string, `content-hash.ts` returns an object — so this phase scopes only to the unsafe-key set, which is trivially shareable.
+
+### Scope
+
+- Create `packages/shared/src/canonicalize.ts` exporting `CANONICAL_UNSAFE_KEYS`.
+- `tiptap-text.ts` and `content-hash.ts` import from shared instead of declaring their own.
+- Keep both canonicalization functions in place — only the constant is shared.
+
+### Out of Scope
+
+- Extracting a unified canonicalize function (different return types; future work).
+- Changing the unsafe-key set itself.
+- Production-code changes to the depth guard or the depth-guarded walkers are out of scope for this phase. Phase 4b.13 is a test-only phase (it adds a regression test against the existing walkers) and does not own the guard itself.
+
+### Definition of Done
+
+- One declaration of the unsafe-key set in `packages/shared/`.
+- Both consumers import it.
+- Existing tests in `tiptap-text.test.ts` and `content-hash.test.ts` still green.
+- `make all` green at PR close.
+- No behavior change visible to the user.
+
+### Dependencies
+
+- None. Independently shippable.
+
+---
+
+## Phase 4b.11: 404 Route-Response Helper
+
+### Goal
+
+Replace the ~20 hand-written `if (!result) { res.status(404).json({ error: { code: "NOT_FOUND", message: "X not found." } }); return; }` blocks across `projects.routes.ts`, `chapters.routes.ts`, `snapshots.routes.ts`, and `search.routes.ts` with a single `notFound(res, resource)` helper in `packages/server/src/app.ts`.
+
+### Why Now
+
+The pattern is the implementation of one rule from CLAUDE.md §API Design (404 envelope shape). It is repeated verbatim at ~20 sites with only the resource-name string changing. Today the contract lives in CLAUDE.md and reviewer memory; the code carries no enforcement. If the API contract evolves (request-id header for tracing, `details` field, structured metadata), every site must be updated in lockstep. (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` I1.)
+
+### Scope
+
+- Add `export function notFound(res: Response, resource: string): void` to `packages/server/src/app.ts`. Body: `res.status(404).json({ error: { code: "NOT_FOUND", message: \`${resource} not found.\` } })`.
+- Migrate all ~20 sites: `projects.routes.ts:50–53, 84–87, 98–101, 121–124, 150–153, 163–167, 177–181`; `chapters.routes.ts:14–17, 38–41, 77–80, 92–95`; `snapshots.routes.ts:50–53, 74–77, 97–100, 114–117, 131–137`; `search.routes.ts:86–89, 94–97, 131–134, 146–149`.
+- Use the existing route integration tests (`*.routes.test.ts`) as the regression net; they already cover every 404 path.
+
+### Out of Scope
+
+- Adding a request-id header, `details` field, or any envelope evolution. Pure mechanical extraction.
+- Touching the validation envelope (Phase 4b.12 owns that).
+- Server-internal logging changes.
+
+### Definition of Done
+
+- `notFound` helper exists in `app.ts`.
+- All ~20 sites migrated; no remaining inline `code: "NOT_FOUND"` literals in route files.
+- All `*.routes.test.ts` files still green without modification.
+- `make all` green at PR close.
+- No wire-level change visible to clients.
+
+### Dependencies
+
+- None. Independently shippable. Pairs naturally with 4b.12 (both touch `app.ts`); CLAUDE.md one-feature rule allows bundling these two as "server error-envelope helpers" if scope stays tight, otherwise they are separate PRs.
+- Independent of Phase 4b.4 (Raw-Strings ESLint Rule): the template literal `\`${resource} not found.\`` in the helper body lives in `packages/server/src/app.ts`, which is outside 4b.4's scope (4b.4 explicitly excludes server-side strings — the lint rule applies to `packages/client/src/`). May land before, in parallel, or after 4b.4 with no interaction.
+
+---
+
+## Phase 4b.12: Validation Error Response Helper
+
+### Goal
+
+Centralize the 400 `VALIDATION_ERROR` envelope. Add `validationError(res, msg)` and `respondValidationParse(res, parsed)` helpers in `packages/server/src/app.ts`; migrate the ~6 routes that hand-roll `Schema.safeParse(...)` + 400-emit and the projects/chapters routes that re-wrap a service `{ validationError }` discriminant.
+
+### Why Now
+
+The validation envelope contract is implicit. Six sites parse Zod and emit a near-identical 400. The fallback string differs subtly: direct-`safeParse` sites use `parsed.error.issues[0]?.message ?? "Invalid input"`; service-discriminant sites use the service's message verbatim. A future Zod major bump or a request to include the field name in errors requires touching every site. (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` I2.)
+
+### Scope
+
+- `validationError(res, msg)`: wraps `res.status(400).json({ error: { code: "VALIDATION_ERROR", message } })`.
+- `respondValidationParse(res, parsed)`: returns `parsed.data` on success, calls `validationError` and returns `undefined` on failure.
+- Migrate direct-safeParse sites: `snapshots.routes.ts:38–44`, `:16–22` (UUID parse), `search.routes.ts:70–76`, `:115–121`, `settings.routes.ts:22–28`, `projects.routes.ts:15–18` (createProject).
+- Migrate service-discriminant sites to use `validationError(res, result.validationError)` directly: `projects.routes.ts:55–59`, `:126–130`, `chapters.routes.ts:52–56` (the chapters PATCH `validationError` discriminant), and `settings.routes.ts:34–40` (the settings-update service-error path that emits `VALIDATION_ERROR` with `Invalid settings: ${messages}` — currently missed by the source report). All five-line ranges cover the full guard-and-emit block; do not narrow to the 3-line `res.status(400).json({...})` core, since Phase 4b.12 replaces the whole block with a single helper call.
+- Before phase entry, run `grep -rn 'code: "VALIDATION_ERROR"' packages/server/src/*/routes/` (and `chapters/`, `projects/`, `settings/`, `search/`, `snapshots/` route files) to itemize every site in scope. The phase migrates the closed list returned by that grep.
+
+### Out of Scope
+
+- Adding field-name awareness or structured Zod error projection. Helper signature stays minimal.
+- Changing validation rules or schemas.
+- The 404 envelope (Phase 4b.11 owns that).
+
+### Definition of Done
+
+- Two helpers exist in `app.ts`.
+- All ~6 direct-safeParse sites and the service-discriminant sites use them.
+- After migration, `grep -rn 'code: "VALIDATION_ERROR"' packages/server/src/*/routes/` returns zero matches in route files (the helper definition in `app.ts` is the only remaining literal).
+- All `*.routes.test.ts` files still green without modification.
+- `make all` green at PR close.
+
+### Dependencies
+
+- None. Pairs with Phase 4b.11; both touch `app.ts`. Independent of all other 4b.X phases.
+
+---
+
+## Phase 4b.13: TipTap Depth-Guard Regression Test
+
+### Goal
+
+Pin the contract that *every* consumer of TipTap JSON honors `MAX_TIPTAP_DEPTH = 64` and bails safely on a depth-65 document. The six current consumers — `validateTipTapDepth` (canonical, in `tiptap-depth.ts`), `extractText` (wordcount), `canonicalize` (content-hash), `walk` (images.references), plus `collectLeafBlocks` and `canonicalJSON` (both in `tiptap-text.ts`) — each implement their own depth-counted recursion; the constant is shared but the recursions are not.
+
+### Why Now
+
+The prior dedup pass (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-02-18-093074c.md` I5) flagged the duplicated traversals but the verifier downgraded "extract a generic walker" because each consumer's per-node work is intertwined with its recursion (e.g. images.references' regex filter is called during the walk). The source report enumerated four consumers; a sweep of `tiptap-text.ts` against HEAD turned up two more (`collectLeafBlocks`, `canonicalJSON`) that share the same depth-cap pattern, so the contract test must cover all six. The verifier's recommendation: keep the traversals separate, but add a contract test that constructs a depth-65 doc and asserts each of the six walkers bails safely. That test does not exist today. This phase adds it. A seventh walker can later trigger an extraction-vs-test re-evaluation.
+
+### Scope
+
+- One new test (location: `packages/shared/src/__tests__/tiptap-depth-walkers.test.ts` is fine, or wherever the existing depth test lives) that:
+  - Constructs a TipTap doc nested to depth 65.
+  - Calls each of the six consumers and asserts each returns or throws safely (no stack overflow, no unbounded recursion). Verify each consumer's actual bail behavior by reading source before writing assertions; do not lift expectations from this phase text alone. Today's bail behaviors (verified against HEAD): `validateTipTapDepth` returns `false`, `extractText` returns `""` for the over-depth subtree, `canonicalize` throws `CanonicalizeDepthError`, `walk` returns `void`, `collectLeafBlocks` returns `[]`, `canonicalJSON` returns the literal string `"null"`.
+- Document in the test file's header that any new TipTap walker must be added to this regression and to the constant import.
+
+### Out of Scope
+
+- Extracting a generic walker (deferred until a fifth consumer appears).
+- Changing the existing six consumers' implementations or bail behaviors.
+- Lint/automation that enforces the documentation discipline (consider only if a fifth walker arrives without joining the test).
+
+### Definition of Done
+
+- A test that fails if any of the six consumers leaks a stack overflow on a depth-65 doc.
+- Test file header documents the "new walker → add here" rule.
+- `make all` green at PR close.
+- No production-code change.
+
+### Dependencies
+
+- None. Test-only phase. May land in any order relative to 4b.10 (both touch the canonicalize area but they don't conflict).
+
+---
+
+## Phase 4b.14: Abortable Async Operation Hook
+
+### Goal
+
+Extract `useAbortableAsyncOperation` covering the "abort prior controller, create fresh, thread `signal` into the request, check `controller.signal.aborted` before setState, abort all on unmount" pattern. Migrate the four cross-confirmed hand-rolled controller refs in `useTrashManager` (open + restore), `useFindReplaceState`, and `ImageGallery` (file-select + save). Other AbortController sites in the client (~8 additional production files) are explicitly out of scope here — see "Out of Scope".
+
+### Why Now
+
+The prior dedup pass already landed `useAbortableSequence` for *response staleness*. `AbortController` solves the orthogonal problem of *network cancellation*; both are correct, neither subsumes the other. The four sites in scope here today encode the same four-step state machine independently, with detailed inline comments in `useTrashManager` that exist only because the abstraction is missing. A new list/detail/upload pane is likely to copy the nearest neighbour, and off-by-one cleanup-on-unmount is easy to miss. (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` I3.)
+
+### Scope
+
+- Add `useAbortableAsyncOperation()` in `packages/client/src/hooks/`. Suggested shape: `{ run<T>(fn: (signal: AbortSignal) => Promise<T>): { promise; signal }, get aborted(): boolean }`. Auto-abort on unmount via the cleanup effect.
+- Add unit tests for the hook (abort-on-rerun, abort-on-unmount, signal threading).
+- Migrate one site at a time behind characterization tests:
+  - `useTrashManager.ts:55–60` (`openTrash`)
+  - `useTrashManager.ts:80–85` (`handleRestore`)
+  - `useFindReplaceState.ts:212–213` (instantiation in `search`), `:259` (post-response cleanup); the unmount cleanup at `:100–104` and the project-change cleanup at `:130–131` are subsumed by the new hook's auto-abort effect
+  - `ImageGallery.tsx:184–209` (`handleFileSelect`)
+  - `ImageGallery.tsx:234–262` (`handleSave`)
+- Hooks with two independent operations (trash) keep two hook instances — do not merge unrelated controllers.
+- Do not migrate `useFindReplaceState`'s combined `AbortController` + `useAbortableSequence` pairing into a single primitive; keep both, since they solve different problems.
+
+### Out of Scope
+
+- Folding `useAbortableSequence` into the new hook. They solve different problems and are documented in CLAUDE.md as a contract.
+- Migrating `useEditorMutation`'s save-cancellation. That hook is canonical for editor mutations and has its own state machine.
+- Adding lint enforcement (consider in a follow-up if drift returns).
+- The remaining AbortController sites in the client (`App.tsx`, `DashboardView.tsx`, `ExportDialog.tsx`, `ProjectSettingsDialog.tsx`, `SnapshotPanel.tsx`, `useProjectEditor.ts`, `useSnapshotState.ts`, `EditorPage.tsx`, `HomePage.tsx`). Each is its own evaluation: some thread through `useAbortableSequence` already, some are one-shot fetches whose lifecycle does not match this hook's contract, some are dialogs that have their own lifecycle hook coming in Phase 4b.16. Defer these until either a follow-up dedup pass or per-site migration shows the hook fits cleanly. Reassess after the four in-scope migrations have landed.
+- `Editor.tsx` paste/drop image upload — the original report listed this site, but on verification (`grep -n "AbortController\\|signal.aborted" packages/client/src/components/Editor.tsx` returns nothing) the path actually uses a `projectIdRef.current !== uploadProjectId` stale-id check, not an `AbortController`. Not a member of this dedup set.
+
+### Definition of Done
+
+- New hook in `packages/client/src/hooks/` with unit tests.
+- All four in-scope sites migrated via PR-friendly, one-site-at-a-time changes behind characterization tests; do not bundle all four sites into a single extraction PR (the dedup report at `paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` lines 145–146 explicitly says each migration is independently shippable).
+- No raw `new AbortController()` + manual `signal.aborted` ladder remaining in those four sites. Other client files keep their existing controllers per "Out of Scope".
+- All client tests still green.
+- `make all` green at PR close.
+- No behavior change visible to the user.
+
+### Dependencies
+
+- Independent of all other 4b.X phases. May land in parallel with 4b.15 / 4b.16, since those touch hooks but in different files.
+
+---
+
+## Phase 4b.15: Inline Title-Editing Hook
+
+### Goal
+
+Extract a generic `useInlineTitleEditing(currentId, save, gates, options?)` capturing the inline edit/cancel/commit state machine (enter edit mode, escape-cancel sentinel, `isSavingRef` re-entry guard, `prevIdRef` stale-draft discard, trim-and-compare, keep modal open on error). Reduce `useChapterTitleEditing.ts` and `useProjectTitleEditing.ts` to thin wrappers that pass an optional `driftCheck` predicate (the project's slug-change race) and an optional `onAfterSave` callback (project's `navigate(newSlug)`).
+
+### Why Now
+
+The two hooks are ~85% line-by-line identical (105 + 119 lines, same refs, same lifecycle, same gates). Bug fixes (a future Escape race or busy-gate tightening) require synchronized edits in two files; tests on one path don't cover the other. The slug-drift check and post-save navigate are load-bearing in the project hook and *intentionally absent* from the chapter hook (chapters have no slug). Extraction must preserve those differences as opt-in callbacks. (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-02-18-093074c.md` I1, cross-confirmed by two specialists in that pass.)
+
+### Scope
+
+- Add characterization tests covering both existing hooks first — they exist (`useChapterTitleEditing.test.ts`, `useProjectTitleEditing.test.ts`), verify they pin the differences (slug drift, post-save navigate). Add test cases if any are missing.
+- Add `useInlineTitleEditing(currentId, save, gates, options?)` in `packages/client/src/hooks/` with its own unit tests. The `options` argument exposes `driftCheck?: () => boolean` and `onAfterSave?: (result) => void`.
+- Rewrite `useChapterTitleEditing` and `useProjectTitleEditing` as 10–20 line wrappers. Project wrapper passes `driftCheck = () => project.slug !== slug` and `onAfterSave = (result) => navigate(result.newSlug)`.
+- Verify all callers and existing tests pass without modification.
+
+### Out of Scope
+
+- Extending the hook to non-title inline editing.
+- Changing keyboard semantics, cancel-on-escape, or trim-before-compare behavior.
+- Migrating any other dialog/modal hook.
+
+### Definition of Done
+
+- One canonical `useInlineTitleEditing` hook with unit tests.
+- Two thin wrappers around it; the slug-drift check and post-save navigate remain load-bearing in the project wrapper.
+- All existing title-editing tests green without modification.
+- `make all` green at PR close.
+- No behavior change visible to the user.
+
+### Dependencies
+
+- Independent of other 4b.X phases. Should land before any new title-style inline editing surface (none currently planned).
+
+---
+
+## Phase 4b.16: Dialog Lifecycle Hook
+
+### Goal
+
+Extract `useDialogLifecycle(dialogRef, { open, onClose, initialFocusRef, blockEscapePropagation, safeShowClose, role })` capturing the show-on-mount, focus-an-actionable-element, Escape-closes (sometimes with `stopImmediatePropagation`), backdrop-click-closes pattern that is reimplemented across `ConfirmDialog`, `ExportDialog`, `NewProjectDialog`, `ProjectSettingsDialog`, and `ShortcutHelpDialog`. Migrate the dialogs one at a time behind characterization tests; preserve `stopImmediatePropagation` and the happy-dom `showModal/close` try/catch as opt-ins.
+
+### Why Now
+
+The five dialogs reimplement the same three affordances with arbitrary inclusions/exclusions: some attach manual Escape listeners, others rely on browser default; `ConfirmDialog` calls `stopImmediatePropagation` on Escape to keep the find-replace panel's listener from also handling it; `ProjectSettingsDialog` is a slide-out, not a centered modal, with happy-dom-safe `showModal/close`; `ExportDialog` carries the same happy-dom try/catch guard at `ExportDialog.tsx:66–69`; the remaining dialogs (`NewProjectDialog`, `ShortcutHelpDialog`) call `showModal()` directly and rely on jsdom/happy-dom passing. New dialogs are likely to copy whichever neighbour they were spawned from rather than a single policy — accessibility variance, test-environment fragility, and silent drift in keyboard semantics follow. (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-02-18-093074c.md` I2.)
+
+### Scope
+
+- Add `useDialogLifecycle` in `packages/client/src/hooks/` with unit tests. The options expose `blockEscapePropagation: boolean` (default false; `ConfirmDialog` opts in), `safeShowClose: boolean` (default false; `ExportDialog` and `ProjectSettingsDialog` opt in to wrap `dialog.showModal()` / `dialog.close()` in try/catch for happy-dom compatibility — alternatively, make this an always-on guard if no caller needs the throw to surface), and a `role` for ARIA classification.
+- Migrate in this order to control risk: `ExportDialog` and `ConfirmDialog` first (vanilla + opt-in propagation block + happy-dom safety), then `NewProjectDialog` and `ShortcutHelpDialog` (vanilla), then `ProjectSettingsDialog` last. The slide-out positioning and happy-dom guard in `ProjectSettingsDialog` may not factor cleanly — if it doesn't, leave it on a hand-rolled implementation and document why in a code comment. Do not force migration when extraction would break the slide-out semantics.
+- Verify a11y at each step: focus management, Escape behavior, backdrop click, ARIA role. The existing component tests cover each dialog; treat them as the regression net.
+
+### Out of Scope
+
+- Replacing the native `<dialog>` element with a custom modal primitive.
+- Changing visual design, animation, or `prefers-reduced-motion` handling.
+- Bundling Phase 4b.15 (title hooks) into the same PR. Each dialog migration is its own commit; per CLAUDE.md one-feature rule the whole hook extraction is one PR (`useDialogLifecycle` + 4 to 5 migrations bundled is fine; force-fitting `ProjectSettingsDialog` is not).
+
+### Definition of Done
+
+- One canonical `useDialogLifecycle` hook with unit tests.
+- All four of `ConfirmDialog`, `ExportDialog`, `NewProjectDialog`, and `ShortcutHelpDialog` migrated; `ProjectSettingsDialog` migrated *or* explicitly documented as opt-out with the specific reason (slide-out positioning that does not factor through the hook's contract).
+- All existing dialog component tests green without modification (focus, Escape, backdrop).
+- aXe-core e2e checks green.
+- `make all` green at PR close.
+- No behavior change visible to the user.
+
+### Dependencies
+
+- Independent of other 4b.X phases. Should land after 4b.4 (Raw-Strings ESLint Rule) only if dialog-internal strings are surfaced during the migration; otherwise independent.
+
+---
+
+### Phase 4b.X dedup suggestions deferred (not roadmap'd)
+
+The two dedup reports under `paad/duplicate-code-reports/` flagged four Suggestion-tier findings; three are **deliberately not** captured as 4b.X phases and are recorded here so the evidence trail is not lost:
+
+- **Report 1 S2** — `author_name` column is unbounded `text` in migration `011_add_author_name.js` while the schema caps at 500. Standard "API cap with permissive DB" pattern; pick up only if a hardening pass is undertaken across all string-typed columns.
+- **Report 1 S3** — Chapter status is seeded by migration 003 (with `sort_order` and `label`) and *also* declared as a Zod enum (values only). DB is the source of truth for UI labels (via `/api/chapter-statuses`); enum exists for input validation. Document the sync requirement in `CLAUDE.md` rather than refactoring; pick up in a CLAUDE.md doc-pass.
+- **Report 2 S1** — `possiblyCommitted` refresh recipe is duplicated at three image-upload sites (`ImageGallery.handleFileSelect`, `ImageGallery.handleSave`, `Editor.tsx` paste/drop). Three sites with two in the same file is below the consolidation threshold; pick up only if a fourth image-upload entry point appears (e.g. drag-drop on detail view, bulk import).
+- **Report 1 S1** — *(partially addressed)*: `ProjectSettingsDialog`/`ExportDialog` hand-rolled `AbortController` is intentionally distinct from `useAbortableSequence` (different problems) and is now explicitly deferred under Phase 4b.14's "Out of Scope" along with the other ~8 production AbortController sites.
+
+If a hardening pass (S2), a CLAUDE.md doc-pass (S3), or a fourth image-upload entry point (Report 2 S1) appears, surface the corresponding suggestion as a candidate phase.
 
 ---
 

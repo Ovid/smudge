@@ -39,6 +39,125 @@ If **all** phases have plan comments, announce:
 
 …and stop.
 
+## 2a. Suggest a Working Branch (if on `main`)
+
+Run `git branch --show-current` and inspect the result. There are three
+cases:
+
+- **Detached HEAD** (output is empty): **stop.** Do not proceed. Tell the
+  user the working tree is in detached-HEAD state and any commits this
+  skill produces would be reachable only via reflog and pruned by the next
+  `git gc`. Ask them to either check out a named branch first or
+  explicitly confirm they want to land artifacts on a detached commit.
+  Do not silently fall through — empty is "not main", but it is also not
+  a safe place to commit.
+- **Named branch other than `main`**: skip the rest of this step. The
+  working branch is already chosen.
+- **`main`**: do not start brainstorming yet. The artifacts produced by
+  the rest of this skill (design doc, implementation plan, decision log)
+  should land on a feature branch, not on `main`. Continue with the
+  pre-check and suggestion below.
+
+### Pre-check the working tree
+
+Before suggesting any branch, run `git status --porcelain`. If the output
+is non-empty, `main` has uncommitted changes that would ride to the new
+branch. Stop and surface the dirty paths to the user; ask them to commit,
+stash, or explicitly confirm the carry-over before continuing. Do **not**
+silently `git checkout -b` over a dirty tree.
+
+### Derive a candidate slug
+
+From the target phase heading, take the title text (everything after the
+`Phase N:` or `Phase Na:` prefix), then:
+
+1. Lowercase the title.
+2. Drop apostrophes (`'`, `'`, `'`) **without** inserting a separator, so
+   `Editor's` becomes `editors`, not `editor-s`.
+3. If the trailing word is `implementation`, `impl`, or `feature`, drop it —
+   it adds nothing to a branch name.
+4. Replace any run of non-`[a-z0-9]` characters with a single hyphen.
+5. Strip leading and trailing hyphens.
+6. If the result is empty (e.g. the title was only `implementation`, or
+   only Unicode/CJK characters that collapsed to nothing), fall back to
+   `phase-N` using the phase number — including any sub-letter — from
+   the heading. `Phase 12: Implementation` → `phase-12`.
+   `Phase 3a: 漢字` → `phase-3a`.
+
+Examples:
+
+| Phase heading                                  | Candidate slug         |
+|------------------------------------------------|------------------------|
+| `Phase 1: Backend Foundation`                  | `backend-foundation`   |
+| `Phase 3a: Movie Data Cleaning`                | `movie-data-cleaning`  |
+| `Phase 7: User Authentication implementation`  | `user-authentication`  |
+| `Phase 9: Editor's Polish`                     | `editors-polish`       |
+| `Phase 12: Implementation`                     | `phase-12`             |
+
+The slug is bare — no `feat/`, no `<username>/` prefix. If the user's
+convention adds a prefix, let them apply it via the override path below.
+
+### Present the suggestion and wait
+
+Show the user the candidate name and ask them to accept or override:
+
+> Currently on `main`. Before brainstorming, I'd like to create a feature
+> branch so the design doc, plan, and decision log land off `main`.
+>
+> Suggested branch: `<candidate-slug>`. Accept, or give me a different name?
+
+Parse the response per this explicit grammar (matches are case-insensitive;
+a trailing `.`, `!`, or `,` is ignored before matching):
+
+- **Accept** — exactly one of: `yes`, `y`, `yeah`, `yep`, `yup`, `ok`,
+  `okay`, `sure`, `lgtm`, `looks good`, `go ahead`, `do it`, `proceed`.
+  Run `git checkout -b '<candidate-slug>'`. Always pass the branch name
+  inside single quotes — never interpolate raw user input into the shell
+  command.
+- **Stay on `main`** — exactly one of: `stay`, `stay on main`, `no branch`,
+  `keep main`, `on main`. Continue on `main`, but warn the user that
+  every commit produced by this skill will land directly on `main`.
+- **Decline (ambiguous, ask)** — exactly one of: `no`, `nope`, `nah`,
+  `n`, `cancel`, `abort`. A bare negative is too ambiguous to interpret
+  as either Stay-on-main or as the literal branch name `no`. Ask the
+  user to clarify: "Did you mean stay on `main` (no feature branch),
+  or cancel the brainstorming run entirely, or use a specific branch
+  name? Reply with one of: `stay`, `cancel`, or a branch name." Do
+  **not** treat the bare negative as Override — `git checkout -b 'no'`
+  is almost certainly not what the user wants.
+- **Override** — anything else. Treat the entire response as a candidate
+  branch name and run it through the slug rule above (lowercase, collapse
+  non-`[a-z0-9]` to hyphens, strip leading/trailing) **before** passing it
+  to git. Then run `git checkout -b '<sanitized-name>'` with the
+  sanitized result, single-quoted. If the sanitized result is empty, or
+  if the response mixes accept tokens with other text in a way that's
+  ambiguous (e.g. `yeah call it foo`), ask the user to clarify rather
+  than guess.
+
+### Handle `git checkout -b` failure
+
+After running `git checkout -b '<name>'` (Accept or Override path),
+check the exit status. The most common failure is the named branch
+already exists (`fatal: a branch named '<name>' already exists`).
+Other failures: invalid ref (slug rule did not catch a forbidden
+character), refusal to create from a detached HEAD without a starting
+commit, or a corrupt index.
+
+On any non-zero exit:
+
+- **"already exists"** — surface the exact message and ask: "Branch
+  `<name>` already exists. Switch to it (`git checkout '<name>'`),
+  choose a different name, or stay on `main`?" Wait for the user's
+  decision; do not switch silently — the existing branch may carry
+  unrelated WIP that the user does not want to land roadmap artifacts
+  on.
+- **Any other failure** — surface the full git error and stop. Do not
+  fall through to step 3 brainstorming on `main`; that is the very
+  thing §2a was designed to prevent.
+
+Only proceed to step 3 after the branch decision is made *and* the
+checkout succeeded.
+
 ## 3. Extract the Phase Context
 
 Collect the full text of the target phase section from the roadmap (everything between its `## Phase N` heading and the next `## Phase` heading or end of file). This is the spec input for brainstorming.
@@ -114,6 +233,16 @@ After pushback completes, discuss the findings with the user and update the desi
 
 If pushback raises zero issues, record that — a clean pushback is itself evidence.
 
+**Failure handling.** If the `paad:pushback` invocation itself errors,
+times out, or returns malformed output (anything that is not a usable
+pushback report), retry **once**. If the retry also fails, **stop**
+and surface the failure to the user — name the failure mode and the
+last output (or error text). Do **not** record "no issues" or "clean
+pushback" in the decision log: that wording is reserved for runs
+where the skill returned successfully with zero findings. The
+decision log's purpose is evidence; a failed pushback recorded as a
+clean pushback corrupts the evidence trail.
+
 ## 7. CLAUDE.md Review
 
 Before announcing completion, evaluate whether `CLAUDE.md` needs updating to reflect this phase.
@@ -156,11 +285,17 @@ After alignment completes, discuss any findings with the user and update the pla
 
 **Instrumentation for the decision log.** Same as step 6: mentally track each alignment issue (title, severity, category, one-paragraph summary, resolution from the closed vocabulary, one-sentence resolution detail). Alignment categories are: `missing-coverage`, `out-of-scope`, `design-gap`, `tdd-format`. If alignment raises zero issues, record that.
 
+**Failure handling.** Same as step 6: if `paad:alignment` errors,
+times out, or returns malformed output, retry **once**, then stop and
+surface to the user. Do **not** record "no issues" or "clean
+alignment" in the decision log unless the skill returned successfully
+with zero findings.
+
 ## 10. Write the Decision Log Entry
 
 Write a single Markdown file to `docs/roadmap-decisions/YYYY-MM-DD-<phase-slug>.md` capturing this run.
 
-**Filename slug rule:** lowercase the phase heading, replace any run of non-`[a-z0-9]` characters with a single hyphen, strip leading/trailing hyphens. `Phase 7: Editor's Polish & Polish` → `phase-7-editor-s-polish-polish`. Combine with today's date in `YYYY-MM-DD` form.
+**Filename slug rule:** lowercase the phase heading, drop apostrophes (no separator inserted), replace any run of non-`[a-z0-9]` characters with a single hyphen, strip leading/trailing hyphens, and fall back to `phase-N` (using the phase number, including any sub-letter, from the heading) if the result would otherwise be empty. `Phase 7: Editor's Polish & Polish` → `phase-7-editors-polish-polish`. Combine with today's date in `YYYY-MM-DD` form.
 
 **Model field:** read from your own system context (the system prompt always identifies the model you are running on, e.g., `claude-opus-4-7`). Use the bare model ID, no version suffixes.
 
@@ -214,6 +349,20 @@ alignment:
 ```
 
 All fields are required. Severity counts under `pushback` and `alignment` must sum to `total`. For a clean run with no findings, set `total: 0` and omit the severity fields.
+
+**If the per-issue tracking from steps 6 or 9 produces severity
+counts that do not sum to `total`** (e.g. an issue was downgraded
+mid-discussion and the running tally was not updated), **stop** and
+reconcile with the user before writing the entry. Do **not** adjust
+counts to satisfy the invariant; the invariant is an integrity check,
+not a target. Common causes: a finding presented as Important got
+re-categorized as Minor during discussion (decrement Important,
+increment Minor); a finding was dismissed as a duplicate of another
+already-counted item (decrement the original tier, do not add); the
+user split one finding into two (increment the relevant tier). In
+each case the reconciliation has to be explicit — silently padding
+counts to make `total` match would hide the original transition and
+corrupt the year-of-entries view that the index supports.
 
 ### Body sections
 
@@ -275,11 +424,13 @@ Prepend new rows to the table so the newest entry is always at the top.
 
 ### Slug rule
 
-Lowercase the phase heading, replace any run of non-`[a-z0-9]` characters with a single hyphen, strip leading and trailing hyphens. Examples:
+Lowercase the phase heading, drop apostrophes (`'`, `'`, `'`) without inserting a separator, replace any run of non-`[a-z0-9]` characters with a single hyphen, strip leading and trailing hyphens, and fall back to `phase-N` (using the phase number — including any sub-letter — from the heading) if the result would otherwise be empty. Examples:
 
 - `Phase 3a: Export Foundation` → `phase-3a-export-foundation`
-- `Phase 7: Editor's Polish & Polish` → `phase-7-editor-s-polish-polish`
+- `Phase 7: Editor's Polish & Polish` → `phase-7-editors-polish-polish`
+- `Phase 12: Implementation` → `phase-12-implementation` (filename slug keeps the `implementation` suffix; only the §2a branch slug drops it)
 
 ### Why this schema
 
 The single `model` field assumes one model per /roadmap run (true ~99% of the time). Per-issue resolution tracking is what makes this evidence rather than a list of complaints — "pushback caught N important issues, M of which became design changes" is a much stronger argument than "pushback raised N things." Severity counts in the index let a year of entries be skimmed at a glance for patterns. Closed-set vocabularies (categories, resolutions) keep entries comparable across runs and trivially aggregatable by future tooling.
+
