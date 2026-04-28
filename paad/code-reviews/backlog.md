@@ -173,7 +173,7 @@
 - **Confidence:** Medium
 - **Found by:** Security (`general-purpose (claude-opus-4-7)`)
 - **First seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
-- **Last seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
+- **Last seen:** 2026-04-27 on branch `ovid/devcontainer-and-e2e-isolation` at `5f46256`
 - **Severity:** Suggestion
 
 ## `1f9d4b27` — `latestContentRef` clobbered by unmount-cleanup save targeting old chapter
