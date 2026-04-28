@@ -105,6 +105,18 @@ digraph preflight {
    Cargo.toml cpanfile Makefile 2>/dev/null` and confirming at least
    one match. If neither check passes, stop and tell the user the
    skill needs a repository or recognizable project root.
+   **Submodule / worktree check:** also run
+   `git rev-parse --show-superproject-working-tree 2>/dev/null` and
+   `git rev-parse --git-common-dir 2>/dev/null`. If
+   `--show-superproject-working-tree` returns a non-empty path, the
+   current repo is a submodule of a parent project — the dedup hunt
+   will scope itself to the submodule and silently ignore code in the
+   parent. Surface this to the user before continuing: "This is a
+   submodule of `<parent>`. The hunt will only scan the submodule. To
+   scan the parent, re-run from `<parent>`." If `--git-common-dir`
+   resolves to a path *outside* `<toplevel>/.git`, the working tree is
+   a `git worktree add` checkout — note this in the report's Review
+   Metadata so a re-runner knows the scan was against a worktree.
 3. **Scope.** If the repository is large and no scope was provided,
    choose a bounded seed scope automatically rather than attempting a
    full exhaustive scan. Prefer changed files, `src/`, `lib/`, core
@@ -547,12 +559,35 @@ from that scope token):
    possible to keep the result readable).
 5. If the result would be empty (branch name was only Unicode/CJK,
    detached HEAD with no scope provided, etc.), fall back to the literal
-   `report`.
+   `report` **suffixed with the first 7 characters of the SHA-256 of
+   the original branch name** (`report-<7-char-hex>`). Two empty-slug
+   runs from different branches would otherwise produce
+   indistinguishable INDEX rows; the suffix discriminates without
+   leaking the original Unicode characters into a filename. If the
+   branch name is itself unavailable (detached HEAD with no scope),
+   use the short commit SHA: `report-<short-sha>`.
 
 Examples:
 - `ovid/experimental-dedup` → `ovid-experimental-dedup`
 - `feat/auth_v2` → `feat-auth-v2`
 - `src/auth/` (path scope) → `src-auth`
+- `漢字` → `report-` + first 7 hex of SHA-256(`漢字`)
+
+**Cross-reference with `roadmap` SKILL.md.** The roadmap skill carries
+a similar slug rule with two extra steps that this skill deliberately
+**does not** apply:
+
+- Apostrophe stripping (`'` / `'` / `'` → `` `` rather than `-`), so
+  `Editor's` becomes `editors` not `editor-s`.
+- Trailing-suffix dropping (`implementation`, `impl`, `feature`).
+
+Both extra steps are roadmap-specific (phase headings carry English
+prose; branch names are usually already terse). The asymmetry is
+intentional but visible: if a branch name happens to contain an
+apostrophe, the dedup-report slug will preserve it as a hyphen, while
+the roadmap slug for the same word would not. If the asymmetry ever
+needs to be eliminated, extract the slug rule into a shared reference
+paragraph rather than diverging silently.
 
 ### Path safety
 
@@ -785,4 +820,23 @@ After writing the report:
 2. Highlight any exact semantic duplicates that are safe to consolidate.
 3. Highlight any near-duplicates where contract tests are safer than shared implementation.
 4. Do **not** auto-refactor anything. The report is the deliverable.
+5. **Security-disclosure warning.** If any Critical or Important
+   finding names code that handles authorization, authentication,
+   credentials, password hashing, secret material, encryption keys,
+   session tokens, or PII, surface this to the user before they
+   commit the report:
+
+   > "This report names sensitive code paths (authorization /
+   > credential / secret-handling). The file is unencrypted on disk
+   > and will be committed if you `git add paad/duplicate-code-reports/`.
+   > If this branch is published or the repo is public, anyone reading
+   > the diff sees a roadmap of where the security-relevant duplication
+   > lives. Confirm you want to commit, or move the report out of the
+   > tracked tree."
+
+   This is the dedup-side analogue to `agentic-review`'s same warning;
+   apply when finding bodies, file paths, or the canonical-concept
+   lines mention any of: `auth`, `authz`, `permission`, `role`,
+   `scope`, `entitlement`, `password`, `bcrypt`/`argon2`/`scrypt`,
+   `token`, `secret`, `credential`, `kms`, `vault`, `pii`, `gdpr`.
 
