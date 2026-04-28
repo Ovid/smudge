@@ -16,14 +16,14 @@ A semantic duplicate is code that performs substantially the same domain operati
 
 Examples:
 
-* Two validators enforce the same rule with different names or slightly different predicates.
+* Two or more validators enforce the same rule with different names or slightly different predicates.
 * A `for` loop and a `while` loop perform the same traversal, filtering, and accumulation.
-* Two type aliases, branded types, schemas, DTOs, interfaces, or constraint objects describe the same accepted values.
-* Two parsers normalize the same external input shape into the same internal representation.
-* Two permission checks answer the same authorization question through different helper chains.
-* Two mappers convert between the same conceptual source and target models.
-* Two error classifiers map the same failure cases to equivalent outcomes.
-* Two cache-key builders, id canonicalizers, date range normalizers, or amount/currency formatters encode the same policy.
+* Two or more type aliases, branded types, schemas, DTOs, interfaces, or constraint objects describe the same accepted values.
+* Two or more parsers normalize the same external input shape into the same internal representation.
+* Two or more permission checks answer the same authorization question through different helper chains.
+* Two or more mappers convert between the same conceptual source and target models.
+* Two or more error classifiers map the same failure cases to equivalent outcomes.
+* Two or more cache-key builders, id canonicalizers, date range normalizers, or amount/currency formatters encode the same policy.
 
 ## What Does Not Count
 
@@ -33,7 +33,7 @@ Usually not actionable:
 
 * Boilerplate required by a framework.
 * Repeated test setup unless it obscures behavior or regularly diverges.
-* Two functions with similar structure but different domain contracts.
+* Two or more functions with similar structure but different domain contracts.
 * Thin wrappers intentionally preserving separate public APIs.
 * Generated code, vendored code, migration snapshots, lockfiles, protobuf/OpenAPI outputs, or ORM artifacts.
 * Similar null checks, logging, tracing, telemetry, or error wrapping unless they encode duplicated policy.
@@ -77,7 +77,7 @@ digraph preflight {
 
 1. **Context window:** If conversation has substantive history beyond invoking this skill, tell the user: "This semantic duplicate hunt consumes significant context. Start a fresh session with `/paad:semantic-duplicate-hunt` to avoid context rot." Stop and wait.
 2. **Repository:** Confirm the current directory is a repository or recognizable project root.
-3. **Scope:** If the repository is large and no scope was provided, choose a bounded seed scope automatically rather than attempting a full exhaustive scan. Prefer changed files, `src/`, core domain modules, or the domain named in `$ARGUMENTS`.
+3. **Scope:** If the repository is large and no scope was provided, choose a bounded seed scope automatically rather than attempting a full exhaustive scan. Prefer changed files, `src/`, `lib/`, core domain modules, or the domain named in `$ARGUMENTS`.
 4. **Generated/vendor exclusions:** Identify generated, vendored, build, dependency, and lockfile paths before analysis.
 
 ## Phase 1: Reconnaissance
@@ -165,7 +165,7 @@ Use this template:
 - **Equivalence class:** What other implementation would be interchangeable from a caller's perspective?
 ```
 
-Two units are semantic duplicate candidates when their behavioral fingerprints substantially overlap, even if syntax differs.
+Two or more units are semantic duplicate candidates when their behavioral fingerprints substantially overlap, even if syntax differs.
 
 ### Strategy C: Type, Schema, and Constraint Equivalence
 
@@ -206,9 +206,9 @@ Potential duplicates include:
 * Different names but same accepted value set.
 * Static type and runtime schema that are intended to represent the same concept but have drifted.
 * API DTO and DB model with the same fields but different nullability/default rules.
-* Two enums with overlapping values and different spellings.
-* Two branded types that are structurally identical but may or may not be intentionally distinct.
-* Two regexes that accept effectively the same domain values.
+* Two or more enums with overlapping values and different spellings.
+* Two or more branded types that are structurally identical but may or may not be intentionally distinct.
+* Two or more regexes that accept effectively the same domain values.
 
 Do not assume two constraints are duplicates merely because their field sets match. Check call sites and domain identity.
 
@@ -441,13 +441,13 @@ Use these heuristics during discovery, but never report from heuristics alone.
 * Static type says optional, runtime schema requires it.
 * Runtime schema accepts `null`, DB column is `NOT NULL`.
 * API accepts string enum aliases that internal enum rejects.
-* Two branded types share representation but represent different domain identities.
+* Two or more branded types share representation but represent different domain identities.
 * Client-side validation is stricter or looser than server-side validation.
 * Regexes differ only in anchoring, case sensitivity, Unicode handling, or whitespace policy.
 * Numeric constraints differ between minor units and major units.
 * Date constraints differ on timezone, inclusivity, or truncation.
-* Two schemas use different default values for the same omitted field.
-* Two validators handle empty string, `null`, and `undefined` differently.
+* Two or more schemas use different default values for the same omitted field.
+* Two or more validators handle empty string, `null`, and `undefined` differently.
 * One implementation trims/lowercases before validation and another validates raw input.
 * A test fixture encodes a shape no production validator accepts.
 
