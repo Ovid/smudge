@@ -33,8 +33,8 @@ One critical and five important semantic duplicates verified across the editor p
 
 - **Canonical concept:** Inline title editing — enter edit mode, escape-cancel sentinel that blocks blur-save, `isSavingRef` re-entry guard, `prevIdRef` stale-draft discard on context switch, trim-and-compare-before-handler, keep modal open on error.
 - **Duplicate locations:**
-  - `packages/client/src/hooks/useChapterTitleEditing.ts` (106 lines)
-  - `packages/client/src/hooks/useProjectTitleEditing.ts` (120 lines)
+  - `packages/client/src/hooks/useChapterTitleEditing.ts` (105 lines)
+  - `packages/client/src/hooks/useProjectTitleEditing.ts` (119 lines)
 - **Why these are semantically duplicate:** ~85% line-by-line identical; same refs, same lifecycle, same gates (`isActionBusy`, `isEditorLocked`).
 - **Important differences:** The project hook adds (a) a `project.slug !== slug` drift check covering the slug-change race during save, and (b) a `navigate(newSlug)` step on successful rename. Both differences are load-bearing — slugs don't apply to chapters.
 - **Impact:** Bug fixes (e.g., a future Escape race or busy-gate tightening) require synchronized edits in two files. Tests on one path don't cover the other.
@@ -149,7 +149,7 @@ Each item is independently shippable; none requires a multi-PR sequence. Apply t
 - **Agents dispatched:** 4 specialists (TipTap pipeline, type & constraint, sanitization, client hooks) + 1 verifier
 - **Files scanned:** ~90 source files across the three packages
 - **Candidate pairs/groups discovered:** 18
-- **Verified findings:** 6 (1 Critical, 5 Important, 3 Suggestions)
+- **Verified findings:** 9 (1 Critical, 5 Important, 3 Suggestions)
 - **Rejected candidates:** 8
 - **Cross-confirmed by ≥2 specialists:** I1 (title hooks), I2 (dialog lifecycle)
 - **Generated/vendor paths excluded:** `dist/`, `node_modules/`, `coverage/`, `.devcontainer/`, `test-results/`, `playwright-report/`
