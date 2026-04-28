@@ -39,6 +39,58 @@ If **all** phases have plan comments, announce:
 
 …and stop.
 
+## 2a. Suggest a Working Branch (if on `main`)
+
+Run `git branch --show-current`. If the current branch is not `main`, skip this
+step — the working branch is already chosen, and the rest of this skill will
+commit its outputs there.
+
+If the current branch **is** `main`, do not start brainstorming yet. The
+artifacts produced by the rest of this skill (design doc, implementation plan,
+decision log, and any phase commits) should land on a feature branch, not on
+`main`. Propose one and let the user accept or rename it before continuing.
+
+### Derive a candidate slug
+
+From the target phase heading, take the title text (everything after the
+`Phase N:` or `Phase Na:` prefix), then:
+
+1. Lowercase the title.
+2. If the trailing word is `implementation`, `impl`, or `feature`, drop it —
+   it adds nothing to a branch name.
+3. Replace any run of non-`[a-z0-9]` characters with a single hyphen.
+4. Strip leading and trailing hyphens.
+
+Examples:
+
+| Phase heading                                  | Candidate slug         |
+|------------------------------------------------|------------------------|
+| `Phase 1: Backend Foundation`                  | `backend-foundation`   |
+| `Phase 3a: Movie Data Cleaning`                | `movie-data-cleaning`  |
+| `Phase 7: User Authentication implementation`  | `user-authentication`  |
+
+The slug is bare — no `feat/`, no `<username>/` prefix. If the user's
+convention adds a prefix, let them apply it via the override path below.
+
+### Present the suggestion and wait
+
+Show the user the candidate name and ask them to accept or override:
+
+> Currently on `main`. Before brainstorming, I'd like to create a feature
+> branch so the design doc, plan, and decision log land off `main`.
+>
+> Suggested branch: `<candidate-slug>`. Accept, or give me a different name?
+
+Then:
+
+- **Accept** (`yes`, `ok`, "looks good") → run
+  `git checkout -b <candidate-slug>`.
+- **Override** with a name → run `git checkout -b <user-supplied-name>`.
+- **Explicit "stay on `main`"** → continue on `main`, but warn the user that
+  every commit produced by this skill will land directly on `main`.
+
+Only proceed to step 3 after the branch decision is made.
+
 ## 3. Extract the Phase Context
 
 Collect the full text of the target phase section from the roadmap (everything between its `## Phase N` heading and the next `## Phase` heading or end of file). This is the spec input for brainstorming.
@@ -283,3 +335,4 @@ Lowercase the phase heading, replace any run of non-`[a-z0-9]` characters with a
 ### Why this schema
 
 The single `model` field assumes one model per /roadmap run (true ~99% of the time). Per-issue resolution tracking is what makes this evidence rather than a list of complaints — "pushback caught N important issues, M of which became design changes" is a much stronger argument than "pushback raised N things." Severity counts in the index let a year of entries be skimmed at a glance for patterns. Closed-set vocabularies (categories, resolutions) keep entries comparable across runs and trivially aggregatable by future tooling.
+
