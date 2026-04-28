@@ -72,10 +72,17 @@ From the target phase heading, take the title text (everything after the
 `Phase N:` or `Phase Na:` prefix), then:
 
 1. Lowercase the title.
-2. If the trailing word is `implementation`, `impl`, or `feature`, drop it —
+2. Drop apostrophes (`'`, `'`, `'`) **without** inserting a separator, so
+   `Editor's` becomes `editors`, not `editor-s`.
+3. If the trailing word is `implementation`, `impl`, or `feature`, drop it —
    it adds nothing to a branch name.
-3. Replace any run of non-`[a-z0-9]` characters with a single hyphen.
-4. Strip leading and trailing hyphens.
+4. Replace any run of non-`[a-z0-9]` characters with a single hyphen.
+5. Strip leading and trailing hyphens.
+6. If the result is empty (e.g. the title was only `implementation`, or
+   only Unicode/CJK characters that collapsed to nothing), fall back to
+   `phase-N` using the phase number — including any sub-letter — from
+   the heading. `Phase 12: Implementation` → `phase-12`.
+   `Phase 3a: 漢字` → `phase-3a`.
 
 Examples:
 
@@ -84,6 +91,8 @@ Examples:
 | `Phase 1: Backend Foundation`                  | `backend-foundation`   |
 | `Phase 3a: Movie Data Cleaning`                | `movie-data-cleaning`  |
 | `Phase 7: User Authentication implementation`  | `user-authentication`  |
+| `Phase 9: Editor's Polish`                     | `editors-polish`       |
+| `Phase 12: Implementation`                     | `phase-12`             |
 
 The slug is bare — no `feat/`, no `<username>/` prefix. If the user's
 convention adds a prefix, let them apply it via the override path below.
@@ -240,7 +249,7 @@ After alignment completes, discuss any findings with the user and update the pla
 
 Write a single Markdown file to `docs/roadmap-decisions/YYYY-MM-DD-<phase-slug>.md` capturing this run.
 
-**Filename slug rule:** lowercase the phase heading, replace any run of non-`[a-z0-9]` characters with a single hyphen, strip leading/trailing hyphens. `Phase 7: Editor's Polish & Polish` → `phase-7-editor-s-polish-polish`. Combine with today's date in `YYYY-MM-DD` form.
+**Filename slug rule:** lowercase the phase heading, drop apostrophes (no separator inserted), replace any run of non-`[a-z0-9]` characters with a single hyphen, strip leading/trailing hyphens, and fall back to `phase-N` (using the phase number, including any sub-letter, from the heading) if the result would otherwise be empty. `Phase 7: Editor's Polish & Polish` → `phase-7-editors-polish-polish`. Combine with today's date in `YYYY-MM-DD` form.
 
 **Model field:** read from your own system context (the system prompt always identifies the model you are running on, e.g., `claude-opus-4-7`). Use the bare model ID, no version suffixes.
 
@@ -355,10 +364,11 @@ Prepend new rows to the table so the newest entry is always at the top.
 
 ### Slug rule
 
-Lowercase the phase heading, replace any run of non-`[a-z0-9]` characters with a single hyphen, strip leading and trailing hyphens. Examples:
+Lowercase the phase heading, drop apostrophes (`'`, `'`, `'`) without inserting a separator, replace any run of non-`[a-z0-9]` characters with a single hyphen, strip leading and trailing hyphens, and fall back to `phase-N` (using the phase number — including any sub-letter — from the heading) if the result would otherwise be empty. Examples:
 
 - `Phase 3a: Export Foundation` → `phase-3a-export-foundation`
-- `Phase 7: Editor's Polish & Polish` → `phase-7-editor-s-polish-polish`
+- `Phase 7: Editor's Polish & Polish` → `phase-7-editors-polish-polish`
+- `Phase 12: Implementation` → `phase-12-implementation` (filename slug keeps the `implementation` suffix; only the §2a branch slug drops it)
 
 ### Why this schema
 
