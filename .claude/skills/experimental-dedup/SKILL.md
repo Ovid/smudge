@@ -401,6 +401,27 @@ After fanning out and awaiting all specialists, build an outcome map:
 |------------|---------------------|------------------------------------|
 | <name>     | returned / empty / errored / timed_out / malformed | <error text or first-line of output> |
 
+**Outcome discrimination ladder** (apply in order; first match wins):
+
+1. The agent infrastructure raised an error (tool failure, hitting a
+   guard, the agent itself reported a fatal error string) →
+   `errored`. Note the error text.
+2. The agent did not return within the timeout the orchestrator
+   imposed → `timed_out`. Note the elapsed time if known.
+3. The agent returned output, but the output cannot be parsed against
+   the expected finding shape (e.g. expected JSON, got prose; expected
+   the report skeleton, got an apology) → `malformed`. Note the
+   first 200 characters.
+4. The agent returned parseable output containing **zero** well-formed
+   findings → `empty`. (This is a legitimate state — no duplication
+   in scope is a valid result.)
+5. The agent returned parseable output containing **at least one**
+   well-formed finding → `returned`. If the output also contains a
+   non-fatal error string (a partial run that produced usable findings
+   alongside an error), classify as `returned` and put the error text
+   in the Notes column. **Do not** burn a retry on a specialist that
+   already produced usable findings.
+
 Then:
 
 1. Optionally retry **once** any specialist whose outcome is `errored`,
@@ -445,6 +466,30 @@ The Verifier prompt must also include the Phase 3 outcome map. The
 Verifier reports which lenses produced findings and which did not, and
 the report's executive summary must call out a degraded run when one or
 more specialists are missing.
+
+### Phase 4 verifier failure handling
+
+The Verifier itself can also error, time out, or return malformed
+output. Apply the Phase 3 outcome discrimination ladder to the
+Verifier's result:
+
+1. If the Verifier's outcome is `errored`, `timed_out`, or `malformed`,
+   retry **once** (a single transient retry — do not loop).
+2. If the retry also fails, **stop** and surface the failure to the
+   user. Name the failure mode and the verifier's last output (or
+   error text). Do **not** write a report from raw specialist findings.
+3. The skill's headline guarantee — "Do not report duplication until it
+   has been verified against behavior, call sites, constraints, and
+   domain intent" — and the report's "verified findings" header are
+   load-bearing. A report written without a successful Verifier pass
+   would silently demote those guarantees from "verified" to
+   "specialist consensus" without flagging the difference to the reader.
+   That is the failure mode this clause exists to prevent.
+4. If the user explicitly asks to proceed without verification (e.g.
+   "give me the raw findings, I'll verify by hand"), produce the
+   report with the section title changed from "Findings by Severity"
+   to "Specialist Findings (Unverified)" and a banner in the executive
+   summary stating verification was skipped at user request.
 
 ## Phase 5: Report
 
