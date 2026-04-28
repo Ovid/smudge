@@ -426,7 +426,42 @@ After interpolation, verify the final path:
 If either check fails after the slug rule has been applied, stop and
 surface the offending value rather than writing the report.
 
-## Report Template
+### Update `paad/duplicate-code-reports/INDEX.md`
+
+After the report file is written, prepend a row to the `## Entries`
+table in `paad/duplicate-code-reports/INDEX.md` (newest entry on top —
+mirroring the prepend pattern in `docs/roadmap-decisions/INDEX.md`).
+Create the index file if it does not exist, with this header:
+
+```markdown
+# Semantic Duplicate Code Hunt Index
+
+This index lists every `/experimental-dedup` run in reverse
+chronological order. Use it on a fresh-session re-run to skim what
+was previously found or rejected before paying full context budget
+to rediscover candidates.
+
+## Entries
+
+| Date       | Branch / Scope             | Commit  | Mode       | Findings (C/I/S) | Specialists missing | Entry |
+|------------|----------------------------|---------|------------|------------------|---------------------|-------|
+```
+
+Each row:
+
+- **Date**: `YYYY-MM-DD HH:MM:SS` from the report header.
+- **Branch / Scope**: the slugified `<branch-or-scope>` token.
+- **Commit**: short SHA from the report header.
+- **Mode**: full / changed / type-constraint / domain.
+- **Findings (C/I/S)**: counts of Critical / Important / Suggestion
+  findings as written in the report.
+- **Specialists missing**: comma-separated list of specialists whose
+  Phase 3 outcome was not `returned`, or `—` if all returned.
+- **Entry**: relative link to the report file just written.
+
+A re-run on the same branch later in the day produces another row; the
+index preserves history and lets a re-runner spot rejected candidates
+before re-discovering them.
 
 ```markdown
 # Semantic Duplicate Code Hunt: <branch-or-scope>
