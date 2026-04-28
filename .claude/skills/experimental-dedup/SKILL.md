@@ -1,0 +1,486 @@
+---
+
+name: experimental-dedup
+description: Use when looking for meaningfully duplicated logic in a codebase, especially duplicate behavior hidden behind different names, different syntax, different control flow, or independently evolved implementations
+---
+
+# Semantic Duplicate Code Hunt
+
+Find code that duplicates business, validation, transformation, authorization, parsing, persistence, or algorithmic meaning — not merely code with similar text or structure. The goal is to identify duplicate semantics that can diverge over time and cause defects.
+
+**This is a technique skill.** Follow the phases in order. Do not report duplication until it has been verified against behavior, call sites, constraints, and domain intent.
+
+## What Counts as a Semantic Duplicate
+
+A semantic duplicate is code that performs substantially the same domain operation, enforces the same rule, derives the same value, or recognizes the same concept, even when the implementation differs.
+
+Examples:
+
+* Two validators enforce the same rule with different names or slightly different predicates.
+* A `for` loop and a `while` loop perform the same traversal, filtering, and accumulation.
+* Two type aliases, branded types, schemas, DTOs, interfaces, or constraint objects describe the same accepted values.
+* Two parsers normalize the same external input shape into the same internal representation.
+* Two permission checks answer the same authorization question through different helper chains.
+* Two mappers convert between the same conceptual source and target models.
+* Two error classifiers map the same failure cases to equivalent outcomes.
+* Two cache-key builders, id canonicalizers, date range normalizers, or amount/currency formatters encode the same policy.
+
+## What Does Not Count
+
+Do not report duplication merely because code looks similar.
+
+Usually not actionable:
+
+* Boilerplate required by a framework.
+* Repeated test setup unless it obscures behavior or regularly diverges.
+* Two functions with similar structure but different domain contracts.
+* Thin wrappers intentionally preserving separate public APIs.
+* Generated code, vendored code, migration snapshots, lockfiles, protobuf/OpenAPI outputs, or ORM artifacts.
+* Similar null checks, logging, tracing, telemetry, or error wrapping unless they encode duplicated policy.
+* Coincidental structural similarity without shared domain meaning.
+
+## Arguments
+
+`/paad:semantic-duplicate-hunt` accepts optional `$ARGUMENTS`:
+
+* `/paad:semantic-duplicate-hunt` — scan the current repository.
+* `/paad:semantic-duplicate-hunt src/auth/` — scan only a path or module.
+* `/paad:semantic-duplicate-hunt --changed main` — focus on duplicated logic introduced or touched by the current branch against `main`.
+* `/paad:semantic-duplicate-hunt --type-constraints` — focus on duplicated schemas, type aliases, interfaces, branded types, validation constraints, and model definitions.
+* `/paad:semantic-duplicate-hunt --domain "payments"` — focus on files, names, and rules related to the supplied domain term.
+
+When a path is supplied, constrain reconnaissance and reporting to that path except for callers/callees and canonical utilities outside the path.
+
+When `--changed <base>` is supplied, treat the diff against `<base>` as the initial seed set, but search the surrounding codebase for pre-existing equivalent logic.
+
+## Pre-flight Checks
+
+```dot
+digraph preflight {
+  "Conversation has history?" [shape=diamond];
+  "Repository available?" [shape=diamond];
+  "Scope too large?" [shape=diamond];
+  "Proceed to Phase 1" [shape=box];
+  "STOP: recommend new session" [shape=box, style=bold];
+  "STOP: not in repo" [shape=box, style=bold];
+  "NARROW: choose seed scope" [shape=box];
+
+  "Conversation has history?" -> "STOP: recommend new session" [label="yes"];
+  "Conversation has history?" -> "Repository available?" [label="no"];
+  "Repository available?" -> "STOP: not in repo" [label="no"];
+  "Repository available?" -> "Scope too large?" [label="yes"];
+  "Scope too large?" -> "NARROW: choose seed scope" [label="yes"];
+  "Scope too large?" -> "Proceed to Phase 1" [label="no"];
+  "NARROW: choose seed scope" -> "Proceed to Phase 1" [label="user decides or best-effort scope chosen"];
+}
+```
+
+1. **Context window:** If conversation has substantive history beyond invoking this skill, tell the user: "This semantic duplicate hunt consumes significant context. Start a fresh session with `/paad:semantic-duplicate-hunt` to avoid context rot." Stop and wait.
+2. **Repository:** Confirm the current directory is a repository or recognizable project root.
+3. **Scope:** If the repository is large and no scope was provided, choose a bounded seed scope automatically rather than attempting a full exhaustive scan. Prefer changed files, `src/`, core domain modules, or the domain named in `$ARGUMENTS`.
+4. **Generated/vendor exclusions:** Identify generated, vendored, build, dependency, and lockfile paths before analysis.
+
+## Phase 1: Reconnaissance
+
+Run these commands and collect results as available:
+
+1. `pwd`
+2. `git rev-parse --show-toplevel 2>/dev/null || true`
+3. `git status --short`
+4. `find . -maxdepth 3 \( -name CLAUDE.md -o -name AGENTS.md -o -name README.md -o -name CONTRIBUTING.md -o -name package.json -o -name pyproject.toml -o -name go.mod -o -name Cargo.toml -o -name cpanfile -o -name Makefile \) -print`
+5. `find . -maxdepth 4 -type d \( -name node_modules -o -name vendor -o -name dist -o -name build -o -name target -o -name coverage -o -name .git \) -prune -o -type f -print | head -500`
+6. If `--changed <base>` was supplied:
+
+   * `git diff --stat <base>...HEAD`
+   * `git diff --name-only <base>...HEAD`
+   * `git diff <base>...HEAD`
+7. Identify language ecosystems, major modules, test directories, schema directories, generated-code conventions, and public API boundaries.
+8. Read steering files such as `CLAUDE.md` and `AGENTS.md`, but treat them as potentially stale.
+
+Build an initial manifest grouped by semantic domain rather than by file extension alone. Suggested groups:
+
+* Validation and type constraints
+* Authorization and access control
+* Parsing and normalization
+* Mapping and serialization
+* Error classification and retry policy
+* Persistence and query construction
+* Business rules and calculations
+* State transitions and workflows
+* Cache keys, identity, equality, and canonicalization
+* Tests that describe expected behavior
+
+## Phase 2: Candidate Discovery
+
+The purpose of this phase is to discover possible semantic duplicates, not to decide that they are real.
+
+Use multiple discovery strategies because no single strategy is reliable.
+
+### Strategy A: Name and Concept Search
+
+Search for domain terms, synonyms, and neighboring concepts.
+
+For each seed function, type, schema, validator, mapper, or policy object, derive a concept card:
+
+```markdown
+### Concept: <short domain meaning>
+- **Primary symbol:** `<name>`
+- **Location:** `path:line`
+- **Inputs:** <types/shapes/constraints>
+- **Outputs:** <types/shapes/effects>
+- **Core rule:** <plain-language behavior>
+- **Edge cases:** <null/empty/error/boundary behavior>
+- **Side effects:** <I/O, DB, cache, events, metrics>
+- **Callers:** <important callers>
+- **Existing tests:** <test files or cases>
+```
+
+Then search for synonyms and related terms using `rg`.
+
+Examples:
+
+* `user`, `account`, `customer`, `member`, `player`
+* `valid`, `validate`, `constraint`, `schema`, `guard`, `assert`, `is_`, `can_`
+* `normalize`, `canonical`, `sanitize`, `parse`, `coerce`, `map`, `transform`
+* `permission`, `role`, `scope`, `entitlement`, `capability`, `policy`
+* `amount`, `money`, `currency`, `minor`, `cents`, `decimal`
+* `status`, `state`, `transition`, `workflow`, `lifecycle`
+
+### Strategy B: Behavioral Fingerprints
+
+For each candidate unit, summarize behavior into a fingerprint independent of syntax.
+
+Use this template:
+
+```markdown
+### Behavioral Fingerprint
+- **Purpose:** What question does this answer or what transformation does this perform?
+- **Inputs consumed:** Which input fields or parameters matter?
+- **Ignored inputs:** Which fields are passed through or ignored?
+- **Preconditions:** What must already be true?
+- **Predicate logic:** Boolean conditions in plain language.
+- **Transformations:** Field renames, coercions, defaulting, sorting, filtering, grouping, aggregation.
+- **Outputs/effects:** Return value, thrown errors, mutations, DB writes, emitted events.
+- **Failure behavior:** Exceptions, nulls, defaults, partial results, logging.
+- **Equivalence class:** What other implementation would be interchangeable from a caller's perspective?
+```
+
+Two units are semantic duplicate candidates when their behavioral fingerprints substantially overlap, even if syntax differs.
+
+### Strategy C: Type, Schema, and Constraint Equivalence
+
+When analyzing declared type constraints, avoid relying on names. Compare denotation: the set of values accepted, required, produced, or rejected.
+
+Inspect:
+
+* Type aliases, interfaces, classes, records, structs, enums, unions, branded/opaque types.
+* Runtime schemas: Zod, Yup, Joi, JSON Schema, OpenAPI, GraphQL, Pydantic, Marshmallow, io-ts, Valibot, Superstruct, TypeBox, Rails validations, Ecto changesets, Moose/Moo type constraints, Type::Tiny, DBIx::Class constraints, SQL DDL constraints.
+* Database constraints: columns, nullability, enum/check constraints, unique indexes, foreign keys.
+* Validators and guard functions.
+* Test factories and fixtures that encode accepted shapes.
+
+Normalize each constraint into this form:
+
+```markdown
+### Constraint Fingerprint
+- **Symbol/name:** `<name>`
+- **Location:** `path:line`
+- **Kind:** static type / runtime schema / DB constraint / validator / test factory
+- **Domain concept:** <plain language>
+- **Accepted primitive domain:** string / number / object / array / enum / union / etc.
+- **Required fields:** <field names and meanings>
+- **Optional fields:** <field names and default behavior>
+- **Forbidden fields:** <if known>
+- **Null/undefined policy:** <accepted/rejected/defaulted>
+- **Bounds:** min/max length, numeric range, date range, collection size
+- **Pattern constraints:** regexes, formats, prefixes, suffixes, canonical forms
+- **Enum/value set:** accepted literals and aliases
+- **Cross-field constraints:** dependencies, mutual exclusion, conditional requirements
+- **Coercions:** trim, lowercase, parse number, parse date, empty string to null, etc.
+- **Nominality:** structural only or intentionally distinct domain identity?
+- **Consumers:** functions/APIs/DB columns that rely on it
+```
+
+Potential duplicates include:
+
+* Different names but same accepted value set.
+* Static type and runtime schema that are intended to represent the same concept but have drifted.
+* API DTO and DB model with the same fields but different nullability/default rules.
+* Two enums with overlapping values and different spellings.
+* Two branded types that are structurally identical but may or may not be intentionally distinct.
+* Two regexes that accept effectively the same domain values.
+
+Do not assume two constraints are duplicates merely because their field sets match. Check call sites and domain identity.
+
+### Strategy D: Control-flow Normalization
+
+Look for syntax variants that express the same behavior:
+
+* `for`, `while`, recursion, iterator chains, stream pipelines, SQL queries, comprehensions.
+* Early returns vs nested conditionals.
+* Positive predicate vs negated predicate.
+* Switch/case vs lookup table.
+* Regex parser vs split/substring parser.
+* Database filtering vs in-memory filtering.
+* Exceptions vs result objects.
+* Object method vs free function vs static helper.
+
+Summarize normalized control flow as:
+
+```markdown
+Input -> validate/precondition -> normalize -> select/filter -> transform -> aggregate/map -> output/effect
+```
+
+Compare the normalized flow rather than the syntax.
+
+### Strategy E: Tests as Behavioral Specs
+
+Search tests for duplicated expectations.
+
+Useful signs:
+
+* Same input fixtures asserted against different functions.
+* Same edge cases repeated across unrelated test files.
+* Same mocked external response parsed by multiple parsers.
+* Same authorization matrix encoded in multiple places.
+* Same state transition table duplicated across implementation and tests.
+
+Tests can prove that two functions are meant to behave the same, but they can also reveal intentional distinctions. Read names and assertions carefully.
+
+### Strategy F: Existing Canonical Utility Search
+
+For each candidate duplicate, search for an existing canonical implementation:
+
+* Shared utility/helper/service.
+* Domain model method.
+* Policy object.
+* Parser/serializer module.
+* Type/schema definition.
+* Generated client or contract source.
+* Database or API contract.
+
+If a canonical implementation exists and other code reimplements it, that is usually a stronger finding than two peer implementations that merely overlap.
+
+## Phase 3: Specialist Review
+
+Dispatch agents in parallel using the Agent tool. Each receives the manifest, concept cards, candidate list, relevant files, tests, and steering files.
+
+| Agent                             | Lens                                                                                                                                       | Scope                                                        |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| **Semantic Equivalence**          | Same behavior expressed through different syntax, control flow, helper chains, or abstractions                                             | Candidate functions and their callers/tests                  |
+| **Type & Constraint Equivalence** | Different type/schema/validator definitions accepting the same conceptual values or drifting from each other                               | Types, schemas, validators, DB constraints, API contracts    |
+| **Domain Boundary & Intent**      | Whether similar concepts are intentionally distinct because of bounded contexts, API layers, security, compliance, or persistence concerns | Namespaces, module boundaries, public APIs, docs             |
+| **Divergence Risk**               | Whether duplicates are likely to evolve independently and create bugs                                                                      | History, call sites, tests, edge cases, ownership boundaries |
+| **Refactoring Safety**            | Whether a shared abstraction would reduce risk or create coupling, leaky abstractions, or loss of clarity                                  | Candidate duplicates, proposed canonicalization path         |
+
+If the codebase is large, partition by semantic domain rather than alphabetically.
+
+### Agent Prompt Template
+
+Each specialist agent prompt must include:
+
+* The repository/module scope.
+* Relevant files and snippets.
+* Concept cards and behavioral fingerprints.
+* Constraint fingerprints when applicable.
+* Tests and fixtures that exercise the behavior.
+* Steering files with this caveat: "Steering files describe conventions but may be stale. If actual code contradicts them, flag the contradiction."
+* Instruction: "Find semantic duplication, not style issues. Do not report mere structural similarity. For each finding report: canonical concept, duplicate locations, why the semantics match, important differences, divergence risk, suggested consolidation path, and confidence 0-100. Only report findings with confidence >= 65."
+
+### Type & Constraint Equivalence Additional Instruction
+
+"Do not rely on type or schema names. Compare denotation: accepted values, rejected values, nullability, defaults, coercions, enum sets, regex domains, cross-field rules, and consumers. Explicitly state whether the constraints are exactly equivalent, overlapping, subset/superset, or similar but intentionally distinct."
+
+### Domain Boundary & Intent Additional Instruction
+
+"Be conservative across bounded contexts. Similar structures in different layers may be intentional anti-corruption boundaries. Treat duplication as actionable only when sharing the rule would preserve the architectural boundary or when one side should depend on a canonical contract."
+
+### Refactoring Safety Additional Instruction
+
+"Do not recommend abstraction for its own sake. Prefer extracting a named domain rule, shared schema, table-driven policy, contract test, or canonical utility only when it lowers divergence risk without creating inappropriate coupling."
+
+## Phase 4: Verification
+
+After all specialists complete, dispatch a single **Verifier** agent with all findings.
+
+The verifier must:
+
+1. Read the actual current code at every referenced location.
+2. Read enough callers and tests to understand intended behavior.
+3. Confirm whether the alleged duplicates are semantically equivalent, overlapping, subset/superset, or merely similar.
+4. Reject findings based only on name similarity, field-shape similarity, or visual structure.
+5. Reject findings where duplication is intentional and safer than sharing.
+6. Identify any behavior differences that would make consolidation unsafe.
+7. Assign severity:
+
+   * **Critical:** Duplicate security, authorization, money, compliance, migration, data-loss, or externally visible contract logic already differs or is highly likely to diverge dangerously.
+   * **Important:** Duplicate domain logic with meaningful divergence risk or evidence of drift.
+   * **Suggestion:** Benign duplication where consolidation may improve maintainability but no concrete bug risk is shown.
+8. Only keep findings with verified confidence >= 70.
+9. Deduplicate reports from multiple specialists and note which specialists agreed.
+
+**Verifier prompt must include:**
+
+"You are verifying semantic-duplication reports. Be skeptical. A true finding must show shared domain meaning, not merely similar code. Confirm the behavior by reading implementation, call sites, tests, and constraints. If consolidation would erase an intentional boundary or create risky coupling, downgrade or reject the finding."
+
+## Phase 5: Report
+
+Write verified findings to `paad/duplicate-code-reports/<branch-or-scope>-<YYYY-MM-DD-HH-MM-SS>-<short-sha>.md`.
+
+Create the directory if it does not exist.
+
+## Report Template
+
+```markdown
+# Semantic Duplicate Code Hunt: <branch-or-scope>
+
+**Date:** YYYY-MM-DD HH:MM:SS
+**Repository:** <repo root>
+**Scope:** <paths/modules/changed files/domain>
+**Commit:** <full-sha or "working tree">
+**Mode:** full scan / changed-code scan / type-constraint scan / domain scan
+
+## Executive Summary
+
+2-4 sentences summarizing the most important duplication risks, confidence level, and whether consolidation is recommended now or later.
+
+## Findings by Severity
+
+### Critical Issues
+
+#### [C1] <canonical concept duplicated>
+- **Canonical concept:** <plain-language rule/operation>
+- **Duplicate locations:**
+  - `path/to/file:line` — <symbol/name>
+  - `path/to/file:line` — <symbol/name>
+- **Why these are semantically duplicate:** <behavioral equivalence>
+- **Important differences:** <differences, if any>
+- **Impact:** <bug/divergence/security/compliance risk>
+- **Suggested consolidation:** <specific refactoring or contract strategy>
+- **Confidence:** High/Medium
+- **Found by:** <specialist name(s)>
+
+Or: None found.
+
+### Important Issues
+
+Same structure as Critical.
+
+### Suggestions
+
+One-line entries only unless detail is needed.
+
+## Type and Constraint Equivalence Notes
+
+For each verified type/schema/constraint duplicate or near-duplicate:
+
+| Concept | Location A | Location B | Relationship | Risk | Recommendation |
+|---------|------------|------------|--------------|------|----------------|
+| <concept> | `path:line` | `path:line` | exact / overlap / subset / superset / drift | low/medium/high | <action> |
+
+## Rejected Candidate Duplicates
+
+List high-interest rejected candidates briefly. This section prevents future reviewers from rediscovering the same false positives.
+
+| Candidate | Reason rejected |
+|-----------|-----------------|
+| `path:line` vs `path:line` | Similar structure but different domain contract |
+| `path:line` vs `path:line` | Intentional bounded-context separation |
+
+## Consolidation Strategy
+
+Recommend one of:
+
+- **Extract canonical domain function** — when duplicated logic is pure and shared across modules.
+- **Extract policy object** — when duplicated logic represents business policy or authorization.
+- **Extract shared schema/type** — when duplicated constraints represent the same data contract.
+- **Generate from contract** — when duplication exists across API, DB, and client boundaries.
+- **Add contract tests only** — when sharing code would create coupling but behavior must remain aligned.
+- **Leave duplicated intentionally** — when similarity is superficial or boundaries are valuable.
+
+Include a safe migration sequence if consolidation is recommended:
+
+1. Add characterization tests covering both current implementations.
+2. Document intentional behavior differences.
+3. Extract or choose canonical implementation.
+4. Migrate one caller at a time.
+5. Keep compatibility wrappers if public APIs are involved.
+6. Add regression tests for the edge cases that previously differed.
+
+## Review Metadata
+
+- **Agents dispatched:** <list with focus areas>
+- **Files scanned:** <count>
+- **Candidate pairs/groups discovered:** <count>
+- **Verified findings:** <count>
+- **Rejected candidates:** <count>
+- **Generated/vendor paths excluded:** <list>
+- **Steering files consulted:** <list or "none found">
+- **Tests consulted:** <list or "none found">
+```
+
+## Heuristics for Finding Hard Semantic Duplicates
+
+Use these heuristics during discovery, but never report from heuristics alone.
+
+### High-signal Duplicate Patterns
+
+* Same literal error messages, status strings, enum values, event names, metric names, or external field names.
+* Same regex intent with different spelling.
+* Same normalization sequence: trim/lowercase/default/sort/dedupe.
+* Same magic constants, thresholds, date windows, retry counts, timeout values, currency conversions, or pagination limits.
+* Same decision table encoded as conditionals in more than one place.
+* Same external API response mapped in multiple modules.
+* Same permission matrix encoded in implementation and tests separately.
+* Same SQL predicate repeated in application code.
+* Same state transition rule duplicated between frontend and backend.
+* Same validation rule duplicated between API boundary and persistence layer.
+
+### Type/Constraint Rabbit Holes to Check
+
+* Static type says optional, runtime schema requires it.
+* Runtime schema accepts `null`, DB column is `NOT NULL`.
+* API accepts string enum aliases that internal enum rejects.
+* Two branded types share representation but represent different domain identities.
+* Client-side validation is stricter or looser than server-side validation.
+* Regexes differ only in anchoring, case sensitivity, Unicode handling, or whitespace policy.
+* Numeric constraints differ between minor units and major units.
+* Date constraints differ on timezone, inclusivity, or truncation.
+* Two schemas use different default values for the same omitted field.
+* Two validators handle empty string, `null`, and `undefined` differently.
+* One implementation trims/lowercases before validation and another validates raw input.
+* A test fixture encodes a shape no production validator accepts.
+
+### Red Flags for False Positives
+
+* Same fields but different lifecycle stage: create DTO vs update DTO vs persisted entity vs event payload.
+* Same shape crossing a bounded context where duplication is intentional anti-corruption.
+* Same algorithm applied to different units, currencies, timezones, or trust levels.
+* Same validation in frontend and backend where frontend is UX-only and backend is authoritative.
+* Same parser behavior for different external providers whose contracts may diverge.
+* Same serialization shape required by two external systems but owned independently.
+
+## Common Mistakes
+
+| Mistake                           | What to do instead                                                                              |
+| --------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Reporting syntactic clones        | Report only shared domain behavior or value constraints.                                        |
+| Trusting names                    | Compare behavior and accepted values. Names often lie.                                          |
+| Ignoring call sites               | Callers reveal whether two functions answer the same question.                                  |
+| Ignoring tests                    | Tests often encode the intended semantic contract.                                              |
+| Forcing abstraction               | Sometimes duplicated code is safer than shared coupling.                                        |
+| Missing type/schema drift         | Compare static types, runtime validators, DB constraints, fixtures, and API contracts together. |
+| Treating overlap as equivalence   | State exact / subset / superset / overlapping / drift.                                          |
+| Reporting generated code          | Exclude generated, vendored, dependency, and build artifacts.                                   |
+| Not recording rejected candidates | Record important false positives to avoid repeated churn.                                       |
+| Skipping verification             | Always verify against current code before reporting.                                            |
+
+## Post-Review
+
+After writing the report:
+
+1. Tell the user the report location and finding counts by severity.
+2. Highlight any exact semantic duplicates that are safe to consolidate.
+3. Highlight any near-duplicates where contract tests are safer than shared implementation.
+4. Do **not** auto-refactor anything. The report is the deliverable.
+
