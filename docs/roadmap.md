@@ -1357,6 +1357,19 @@ The five dialogs reimplement the same three affordances with arbitrary inclusion
 
 ---
 
+### Phase 4b.X dedup suggestions deferred (not roadmap'd)
+
+The two dedup reports under `paad/duplicate-code-reports/` flagged four Suggestion-tier findings; three are **deliberately not** captured as 4b.X phases and are recorded here so the evidence trail is not lost:
+
+- **Report 1 S2** — `author_name` column is unbounded `text` in migration `011_add_author_name.js` while the schema caps at 500. Standard "API cap with permissive DB" pattern; pick up only if a hardening pass is undertaken across all string-typed columns.
+- **Report 1 S3** — Chapter status is seeded by migration 003 (with `sort_order` and `label`) and *also* declared as a Zod enum (values only). DB is the source of truth for UI labels (via `/api/chapter-statuses`); enum exists for input validation. Document the sync requirement in `CLAUDE.md` rather than refactoring; pick up in a CLAUDE.md doc-pass.
+- **Report 2 S1** — `possiblyCommitted` refresh recipe is duplicated at three image-upload sites (`ImageGallery.handleFileSelect`, `ImageGallery.handleSave`, `Editor.tsx` paste/drop). Three sites with two in the same file is below the consolidation threshold; pick up only if a fourth image-upload entry point appears (e.g. drag-drop on detail view, bulk import).
+- **Report 1 S1** — *(partially addressed)*: `ProjectSettingsDialog`/`ExportDialog` hand-rolled `AbortController` is intentionally distinct from `useAbortableSequence` (different problems) and is now explicitly deferred under Phase 4b.14's "Out of Scope" along with the other ~8 production AbortController sites.
+
+If a hardening pass (S2), a CLAUDE.md doc-pass (S3), or a fourth image-upload entry point (Report 2 S1) appears, surface the corresponding suggestion as a candidate phase.
+
+---
+
 ## Phase 4c: Notes, Tags & Outtakes
 
 ### Goal
