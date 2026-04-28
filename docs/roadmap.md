@@ -1261,7 +1261,7 @@ The prior dedup pass already landed `useAbortableSequence` for *response stalene
 ### Definition of Done
 
 - New hook in `packages/client/src/hooks/` with unit tests.
-- All five identified sites migrated, one PR-friendly site at a time or as one bundled extraction PR per CLAUDE.md one-feature rule.
+- All five identified sites migrated via PR-friendly, one-site-at-a-time changes behind characterization tests; do not bundle all five sites into a single extraction PR (the dedup report at `paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` lines 145–146 explicitly says each migration is independently shippable).
 - No raw `new AbortController()` + manual `signal.aborted` ladder remaining in those files.
 - All client tests still green.
 - `make all` green at PR close.
