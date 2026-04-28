@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Three Important findings and one Suggestion remain after verification, all in the *route/orchestration boilerplate* layer rather than the editor pipeline (which the prior pass mined). The two highest-leverage extractions are a `notFound(res, "X")` route helper (~20 verbatim sites across 4 route files) and a `useAbortableAsyncOperation` hook (~8–10 hand-rolled `AbortController` + `signal.aborted` blocks across 5 hooks/components). Nine candidates that the specialists raised were rejected after reading the actual code — most because they confused architectural necessity (DOCX bypassing an HTML wrapper, snapshots lacking a delete-block guard) with semantic duplication.
+Three Important findings and one Suggestion remain after verification, all in the *route/orchestration boilerplate* layer rather than the editor pipeline (which the prior pass mined). The two highest-leverage extractions are a `notFound(res, "X")` route helper (~20 verbatim sites across 4 route files) and a `useAbortableAsyncOperation` hook (~7 hand-rolled `AbortController` + `signal.aborted` blocks across 4 cross-confirmed hooks/components, with ~8 additional production sites in the client deferred for per-site evaluation). Nine candidates that the specialists raised were rejected after reading the actual code — most because they confused architectural necessity (DOCX bypassing an HTML wrapper, snapshots lacking a delete-block guard) with semantic duplication.
 
 ## Findings by Severity
 
@@ -70,18 +70,19 @@ None.
 - **Confidence:** Medium-High (76). Verified.
 - **Found by:** Server CRUD specialist; verified.
 
-#### [I3] AbortController + `signal.aborted` guard hand-rolled at 5+ sites
+#### [I3] AbortController + `signal.aborted` guard hand-rolled at 4 cross-confirmed sites (~7 refs); ~8 additional sites deferred
 
 - **Canonical concept:** "On user-driven action that supersedes a prior in-flight request: abort prior controller, create fresh, thread `signal` into fetch, and check `controller.signal.aborted` (or equivalent) before any `setState`. On unmount, abort all outstanding."
 - **Duplicate locations (verified):**
   - `packages/client/src/hooks/useTrashManager.ts:55–60` (`openTrash`) — `trashAbortRef`
   - `packages/client/src/hooks/useTrashManager.ts:80–85` (`handleRestore`) — `restoreAbortRef`
-  - `packages/client/src/hooks/useFindReplaceState.ts:100–104` — `searchAbortRef`
+  - `packages/client/src/hooks/useFindReplaceState.ts:212–213` (instantiation in `search`); post-response cleanup at `:259`. The unmount cleanup at `:100–104` and the project-change cleanup at `:130–131` are mirror sites that the new hook's own cleanup effect would subsume.
   - `packages/client/src/components/ImageGallery.tsx:184–209` (`handleFileSelect`) — `mutateAbortRef`
   - `packages/client/src/components/ImageGallery.tsx:234–262` (`handleSave`) — `mutateAbortRef` (reused)
-  - `packages/client/src/components/Editor.tsx:315–330` (paste/drop image upload)
-  Total ~8–10 distinct refs across the 5 files.
-- **Why semantically duplicate:** Every site implements the same four-step state machine — `prior?.abort()` → `new AbortController()` → `signal` threaded into the request → post-response guard `if (controller.signal.aborted) return`. The pattern is meaningful enough that reviewers have left detailed inline comments explaining it (`useTrashManager.ts` carries multiple round-numbered comments). That review residue is itself the smell: if reviewers have to re-derive the invariant per site, the abstraction is missing.
+  Total ~7 distinct refs across these 4 files.
+- **Sites considered and excluded:** `Editor.tsx:315–330` (paste/drop image upload) does **not** use an `AbortController` on verification (`grep -n "AbortController\|signal.aborted" packages/client/src/components/Editor.tsx` returns nothing); the path uses a `projectIdRef.current !== uploadProjectId` stale-id check, not `AbortController`. Not a member of this set. The original specialist hit was a false positive.
+- **Sites deferred (verified via `grep -rln "new AbortController" packages/client/src`, ~8 additional production files):** `App.tsx`, `DashboardView.tsx`, `ExportDialog.tsx`, `ProjectSettingsDialog.tsx`, `SnapshotPanel.tsx`, `useProjectEditor.ts`, `useSnapshotState.ts`, `EditorPage.tsx`, `HomePage.tsx`. Each needs a per-site evaluation — some thread through `useAbortableSequence` already, some are one-shot fetches, some are dialogs with their own forthcoming lifecycle hook. Reassess after the four in-scope migrations land.
+- **Why semantically duplicate:** Every in-scope site implements the same four-step state machine — `prior?.abort()` → `new AbortController()` → `signal` threaded into the request → post-response guard `if (controller.signal.aborted) return`. The pattern is meaningful enough that reviewers have left detailed inline comments explaining it (`useTrashManager.ts` carries multiple round-numbered comments). That review residue is itself the smell: if reviewers have to re-derive the invariant per site, the abstraction is missing.
 - **Important differences (load-bearing):**
   - `useFindReplaceState` combines `AbortController` *and* `useAbortableSequence` — it needs both network cancellation and response-staleness arbitration.
   - `useTrashManager` uses two separate refs because trash-load and trash-restore can be independently in-flight.
@@ -105,9 +106,9 @@ None.
     };
   }
   ```
-  The five sites become two-line: `const op = useAbortableAsyncOperation(); const { promise, signal } = op.run(fetchFn); ...; if (signal.aborted) return;`. Migrate one site at a time behind characterization tests.
-- **Confidence:** Medium-High (78). Verifier confirmed all 5 sites.
-- **Found by:** Save/sequencing specialist; verified.
+  The four in-scope sites become two-line: `const op = useAbortableAsyncOperation(); const { promise, signal } = op.run(fetchFn); ...; if (signal.aborted) return;`. Migrate one site at a time behind characterization tests.
+- **Confidence:** Medium-High (78). Verifier confirmed the 4 in-scope sites; the 5th (Editor.tsx) was rejected on verification, and the additional ~8 production sites are flagged for separate evaluation.
+- **Found by:** Save/sequencing specialist; image/snapshot specialist (cross-confirmed via `ImageGallery`); verified.
 
 ### Suggestions
 
@@ -142,7 +143,7 @@ This pass found no new type/constraint duplicates. The prior pass already covere
 
 1. **I1 — `notFound(res, "X")` helper.** Add to `packages/server/src/app.ts`. Migrate the 20 sites in one PR (mechanical, all currently test-covered). Estimated 30–45 min including running the test suite. Single feature per CLAUDE.md.
 2. **I2 — `validationError(res, msg)` and `respondValidationParse(res, parsed)` helpers.** Same `app.ts` file. Migrate the 6 direct-safeParse sites; leave the service-discriminant sites using just `validationError()`. ~45 min.
-3. **I3 — `useAbortableAsyncOperation` hook.** Add to `packages/client/src/hooks/`. Write the hook + tests; migrate one call site at a time behind characterization tests. ~2 hours. Each migration is independently shippable; do not bundle all five.
+3. **I3 — `useAbortableAsyncOperation` hook.** Add to `packages/client/src/hooks/`. Write the hook + tests; migrate one call site at a time behind characterization tests. ~2 hours for the four in-scope sites; each migration is independently shippable, do not bundle all four. The remaining ~8 client AbortController sites are deferred per the I3 "Sites deferred" list.
 4. **S1 — defer.** Reassess if a fourth image-upload entry point appears.
 
 **Per CLAUDE.md's one-feature rule:** I1, I2, and I3 are three distinct refactors. They should be three PRs. I1 and I2 share a file but address different envelopes; combining them is borderline acceptable since both are server-side error-envelope helpers. I3 is client-side and unambiguously its own PR.

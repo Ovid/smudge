@@ -1239,17 +1239,23 @@ The prior dedup pass (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-
 
 ### Goal
 
-Extract `useAbortableAsyncOperation` covering the "abort prior controller, create fresh, thread `signal` into the request, check `controller.signal.aborted` before setState, abort all on unmount" pattern. Migrate the ~8–10 hand-rolled controller refs across `useTrashManager` (open + restore), `useFindReplaceState`, `ImageGallery` (file-select + save), and `Editor` paste/drop image upload.
+Extract `useAbortableAsyncOperation` covering the "abort prior controller, create fresh, thread `signal` into the request, check `controller.signal.aborted` before setState, abort all on unmount" pattern. Migrate the four cross-confirmed hand-rolled controller refs in `useTrashManager` (open + restore), `useFindReplaceState`, and `ImageGallery` (file-select + save). Other AbortController sites in the client (~8 additional production files) are explicitly out of scope here — see "Out of Scope".
 
 ### Why Now
 
-The prior dedup pass already landed `useAbortableSequence` for *response staleness*. `AbortController` solves the orthogonal problem of *network cancellation*; both are correct, neither subsumes the other. The five sites today encode the same four-step state machine independently, with detailed inline comments in `useTrashManager` that exist only because the abstraction is missing. A new list/detail/upload pane is likely to copy the nearest neighbour, and off-by-one cleanup-on-unmount is easy to miss. (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` I3.)
+The prior dedup pass already landed `useAbortableSequence` for *response staleness*. `AbortController` solves the orthogonal problem of *network cancellation*; both are correct, neither subsumes the other. The four sites in scope here today encode the same four-step state machine independently, with detailed inline comments in `useTrashManager` that exist only because the abstraction is missing. A new list/detail/upload pane is likely to copy the nearest neighbour, and off-by-one cleanup-on-unmount is easy to miss. (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` I3.)
 
 ### Scope
 
 - Add `useAbortableAsyncOperation()` in `packages/client/src/hooks/`. Suggested shape: `{ run<T>(fn: (signal: AbortSignal) => Promise<T>): { promise; signal }, get aborted(): boolean }`. Auto-abort on unmount via the cleanup effect.
 - Add unit tests for the hook (abort-on-rerun, abort-on-unmount, signal threading).
-- Migrate one site at a time behind characterization tests: `useTrashManager.ts:55–60` (`openTrash`), `:80–85` (`handleRestore`), `useFindReplaceState.ts:100–104` (search), `ImageGallery.tsx:184–209` (`handleFileSelect`), `:234–262` (`handleSave`), `Editor.tsx:315–330` (paste/drop). Hooks with two independent operations (trash) keep two hook instances — do not merge unrelated controllers.
+- Migrate one site at a time behind characterization tests:
+  - `useTrashManager.ts:55–60` (`openTrash`)
+  - `useTrashManager.ts:80–85` (`handleRestore`)
+  - `useFindReplaceState.ts:212–213` (instantiation in `search`), `:259` (post-response cleanup); the unmount cleanup at `:100–104` and the project-change cleanup at `:130–131` are subsumed by the new hook's auto-abort effect
+  - `ImageGallery.tsx:184–209` (`handleFileSelect`)
+  - `ImageGallery.tsx:234–262` (`handleSave`)
+- Hooks with two independent operations (trash) keep two hook instances — do not merge unrelated controllers.
 - Do not migrate `useFindReplaceState`'s combined `AbortController` + `useAbortableSequence` pairing into a single primitive; keep both, since they solve different problems.
 
 ### Out of Scope
@@ -1257,12 +1263,14 @@ The prior dedup pass already landed `useAbortableSequence` for *response stalene
 - Folding `useAbortableSequence` into the new hook. They solve different problems and are documented in CLAUDE.md as a contract.
 - Migrating `useEditorMutation`'s save-cancellation. That hook is canonical for editor mutations and has its own state machine.
 - Adding lint enforcement (consider in a follow-up if drift returns).
+- The remaining AbortController sites in the client (`App.tsx`, `DashboardView.tsx`, `ExportDialog.tsx`, `ProjectSettingsDialog.tsx`, `SnapshotPanel.tsx`, `useProjectEditor.ts`, `useSnapshotState.ts`, `EditorPage.tsx`, `HomePage.tsx`). Each is its own evaluation: some thread through `useAbortableSequence` already, some are one-shot fetches whose lifecycle does not match this hook's contract, some are dialogs that have their own lifecycle hook coming in Phase 4b.16. Defer these until either a follow-up dedup pass or per-site migration shows the hook fits cleanly. Reassess after the four in-scope migrations have landed.
+- `Editor.tsx` paste/drop image upload — the original report listed this site, but on verification (`grep -n "AbortController\\|signal.aborted" packages/client/src/components/Editor.tsx` returns nothing) the path actually uses a `projectIdRef.current !== uploadProjectId` stale-id check, not an `AbortController`. Not a member of this dedup set.
 
 ### Definition of Done
 
 - New hook in `packages/client/src/hooks/` with unit tests.
-- All five identified sites migrated via PR-friendly, one-site-at-a-time changes behind characterization tests; do not bundle all five sites into a single extraction PR (the dedup report at `paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` lines 145–146 explicitly says each migration is independently shippable).
-- No raw `new AbortController()` + manual `signal.aborted` ladder remaining in those files.
+- All four in-scope sites migrated via PR-friendly, one-site-at-a-time changes behind characterization tests; do not bundle all four sites into a single extraction PR (the dedup report at `paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` lines 145–146 explicitly says each migration is independently shippable).
+- No raw `new AbortController()` + manual `signal.aborted` ladder remaining in those four sites. Other client files keep their existing controllers per "Out of Scope".
 - All client tests still green.
 - `make all` green at PR close.
 - No behavior change visible to the user.
