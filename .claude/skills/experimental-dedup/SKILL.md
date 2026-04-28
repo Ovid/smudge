@@ -87,8 +87,25 @@ Run these commands and collect results as available:
 1. `pwd`
 2. `git rev-parse --show-toplevel 2>/dev/null || true`
 3. `git status --short`
-4. `find . -maxdepth 3 \( -name CLAUDE.md -o -name AGENTS.md -o -name README.md -o -name CONTRIBUTING.md -o -name package.json -o -name pyproject.toml -o -name go.mod -o -name Cargo.toml -o -name cpanfile -o -name Makefile \) -print`
-5. `find . -maxdepth 4 -type d \( -name node_modules -o -name vendor -o -name dist -o -name build -o -name target -o -name coverage -o -name .git \) -prune -o -type f -print | head -500`
+4. `find . -maxdepth 3 -type d \( -name .devcontainer -o -name .aws -o -name .ssh \) -prune -o \( -name CLAUDE.md -o -name AGENTS.md -o -name README.md -o -name CONTRIBUTING.md -o -name package.json -o -name pyproject.toml -o -name go.mod -o -name Cargo.toml -o -name cpanfile -o -name Makefile \) -print 2>/dev/null`
+5. `find . -maxdepth 4 -type d \( -name node_modules -o -name vendor -o -name dist -o -name build -o -name target -o -name coverage -o -name .git -o -name .devcontainer -o -name .aws -o -name .ssh \) -prune -o -type f \! -name '.env' \! -name '.env.*' \! -name '*.pem' \! -name '*.key' \! -name '*.p12' \! -name 'id_rsa*' -print 2>/dev/null | head -500`
+
+**Why `.devcontainer` is pruned:** the project's CLAUDE.md (root) marks
+`.devcontainer/` as third-party content managed out-of-band by a
+template; it is wiped on each template update and is bind-mounted
+read-only inside the running devcontainer. Skip it in code search and
+do not surface findings from it. Other repositories may not carry the
+same rule, but devcontainer artifacts are rarely useful for a semantic
+duplication scan and the prune is harmless.
+
+**Why secret paths are excluded:** `.env*`, `*.pem`, `*.key`, `*.p12`,
+`id_rsa*`, `.aws/`, `.ssh/` commonly hold credentials. Reading them
+into LLM context is unsafe (the contents would propagate to specialist
+prompts and could land in the on-disk report).
+
+**Why stderr is redirected:** the recon walks the whole tree; permission
+errors on locked-down directories should not interleave with the file
+list and confuse downstream prompts.
 6. If `--changed <base>` was supplied:
 
    * **First, verify the ref resolves:**
