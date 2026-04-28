@@ -1,4 +1,4 @@
-## Semantic Duplicate Code Hunt: ovid/experimental-dedup (second pass)
+# Semantic Duplicate Code Hunt: ovid/experimental-dedup (second pass)
 
 **Date:** 2026-04-28 08:13:33
 **Repository:** /workspace (Smudge — TypeScript monorepo)
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Three Important findings and one Suggestion remain after verification, all in the *route/orchestration boilerplate* layer rather than the editor pipeline (which the prior pass mined). The two highest-leverage extractions are a `notFound(res, "X")` route helper (~20 verbatim sites across 4 route files) and a `useAbortableAsyncOperation` hook (~8–10 hand-rolled `AbortController` + `signal.aborted` blocks across 5 hooks/components). Five candidates that the specialists raised were rejected after reading the actual code — most because they confused architectural necessity (DOCX bypassing an HTML wrapper, snapshots lacking a delete-block guard) with semantic duplication.
+Three Important findings and one Suggestion remain after verification, all in the *route/orchestration boilerplate* layer rather than the editor pipeline (which the prior pass mined). The two highest-leverage extractions are a `notFound(res, "X")` route helper (~20 verbatim sites across 4 route files) and a `useAbortableAsyncOperation` hook (~8–10 hand-rolled `AbortController` + `signal.aborted` blocks across 5 hooks/components). Nine candidates that the specialists raised were rejected after reading the actual code — most because they confused architectural necessity (DOCX bypassing an HTML wrapper, snapshots lacking a delete-block guard) with semantic duplication.
 
 ## Findings by Severity
 
