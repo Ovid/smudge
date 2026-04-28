@@ -41,13 +41,13 @@ Usually not actionable:
 
 ## Arguments
 
-`/paad:semantic-duplicate-hunt` accepts optional `$ARGUMENTS`:
+`/experimental-dedup` accepts optional `$ARGUMENTS`:
 
-* `/paad:semantic-duplicate-hunt` — scan the current repository.
-* `/paad:semantic-duplicate-hunt src/auth/` — scan only a path or module.
-* `/paad:semantic-duplicate-hunt --changed main` — focus on duplicated logic introduced or touched by the current branch against `main`.
-* `/paad:semantic-duplicate-hunt --type-constraints` — focus on duplicated schemas, type aliases, interfaces, branded types, validation constraints, and model definitions.
-* `/paad:semantic-duplicate-hunt --domain "payments"` — focus on files, names, and rules related to the supplied domain term.
+* `/experimental-dedup` — scan the current repository.
+* `/experimental-dedup src/auth/` — scan only a path or module.
+* `/experimental-dedup --changed main` — focus on duplicated logic introduced or touched by the current branch against `main`.
+* `/experimental-dedup --type-constraints` — focus on duplicated schemas, type aliases, interfaces, branded types, validation constraints, and model definitions.
+* `/experimental-dedup --domain "payments"` — focus on files, names, and rules related to the supplied domain term.
 
 When a path is supplied, constrain reconnaissance and reporting to that path except for callers/callees and canonical utilities outside the path.
 
@@ -75,7 +75,7 @@ digraph preflight {
 }
 ```
 
-1. **Context window:** If conversation has substantive history beyond invoking this skill, tell the user: "This semantic duplicate hunt consumes significant context. Start a fresh session with `/paad:semantic-duplicate-hunt` to avoid context rot." Stop and wait.
+1. **Context window:** If conversation has substantive history beyond invoking this skill, tell the user: "This semantic duplicate hunt consumes significant context. Start a fresh session with `/experimental-dedup` to avoid context rot." Stop and wait.
 2. **Repository:** Confirm the current directory is a repository or recognizable project root.
 3. **Scope:** If the repository is large and no scope was provided, choose a bounded seed scope automatically rather than attempting a full exhaustive scan. Prefer changed files, `src/`, `lib/`, core domain modules, or the domain named in `$ARGUMENTS`.
 4. **Generated/vendor exclusions:** Identify generated, vendored, build, dependency, and lockfile paths before analysis.
