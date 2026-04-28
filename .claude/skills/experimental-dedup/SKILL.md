@@ -182,6 +182,23 @@ count is exactly 500, the recon **is** truncated. In that case either
 src/<module>/`), or (b) note the truncation in the report's Review
 Metadata so a reader knows the scan was sample-bounded. Do not silently
 proceed pretending the recon was complete.
+
+**Discriminator (which path to take):** prefer (a) — stop and ask for
+a path scope. Only proceed with (b) if one of the following is true:
+
+- The user has been told the recon is truncated and explicitly
+  declined to narrow the scope ("just go with what you have").
+- `--changed <base>` was supplied — the diff already defines the
+  scope, so the truncation cap applied to the project-wide listing
+  step is benign (the seed set is the diff, not the file walk).
+- The repository is unambiguously bounded (e.g. a single-package repo
+  with `find` reporting 500 in a directory whose `find` un-truncated
+  count would still fit in budget) — then re-run `find` without
+  `head -500` and use the un-truncated list.
+
+In all other cases, (a) is the safe default. The point of the recon
+is to feed Phase 2 manifest construction; a 500-of-5000 sample is not
+a useful seed set.
 6. If `--changed <base>` was supplied:
 
    * **First, validate the ref shape** per the Shell-arg hygiene rules
@@ -558,6 +575,22 @@ After the report file is written, prepend a row to the `## Entries`
 table in `paad/duplicate-code-reports/INDEX.md` (newest entry on top —
 mirroring the prepend pattern in `docs/roadmap-decisions/INDEX.md`).
 Create the index file if it does not exist, with this header:
+
+**Before prepending**, verify that the existing INDEX.md (if present)
+still has the expected structure: a `## Entries` heading, followed by
+a Markdown table whose header row matches the schema below
+(`| Date | Branch / Scope | Commit | Mode | Findings (C/I/S) |
+Specialists missing | Entry |`). If the heading was renamed, the
+column set differs, additional headings sit between `## Entries` and
+the table, or the file's first line is something other than the
+expected `# Semantic Duplicate Code Hunt Index` title, **stop and
+surface the offending file to the user** — do not prepend a row that
+would land in a misaligned table, and do not regenerate the file from
+the template (which would erase prior history). The index is the
+cross-run continuity surface; corrupting or overwriting it eliminates
+the guarantee a re-runner relies on. The "create the index file if it
+does not exist" path applies only when the file is **absent**, not
+when it is present-but-unfamiliar.
 
 ```markdown
 # Semantic Duplicate Code Hunt Index
