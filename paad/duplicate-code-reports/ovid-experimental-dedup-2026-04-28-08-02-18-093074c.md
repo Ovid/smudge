@@ -47,17 +47,18 @@ One critical and five important semantic duplicates verified across the editor p
 - **Canonical concept:** Show-on-mount → focus a primary actionable element → Escape closes (sometimes with `stopImmediatePropagation`) → backdrop click closes.
 - **Duplicate locations:**
   - `packages/client/src/components/ConfirmDialog.tsx:23–47` — Escape with `stopImmediatePropagation`, focus cancelRef, backdrop check
-  - `packages/client/src/components/ExportDialog.tsx:40,60,77` — show/close on `open` prop, focus cancelRef, plain Escape
+  - `packages/client/src/components/ExportDialog.tsx:40,60,77` — show/close on `open` prop (also wrapped in try/catch at `:66–69` for happy-dom), focus cancelRef, plain Escape
   - `packages/client/src/components/NewProjectDialog.tsx:16–24` — show/close on prop; relies on browser's native Escape
   - `packages/client/src/components/ProjectSettingsDialog.tsx:160–179` — show/close wrapped in try/catch (happy-dom)
   - `packages/client/src/components/ShortcutHelpDialog.tsx:12–20` — show/close + click-outside
-- **Why these are semantically duplicate:** Same three affordances reimplemented per dialog with arbitrary inclusions/exclusions: some attach manual Escape listeners, others rely on browser default; some use `stopImmediatePropagation`, others don't; happy-dom guard is in one file only; ARIA roles vary.
+- **Why these are semantically duplicate:** Same three affordances reimplemented per dialog with arbitrary inclusions/exclusions: some attach manual Escape listeners, others rely on browser default; some use `stopImmediatePropagation`, others don't; happy-dom guard is present in **two** files (`ExportDialog` and `ProjectSettingsDialog`); ARIA roles vary.
 - **Important differences (load-bearing):**
   - `ConfirmDialog` calls `stopImmediatePropagation` on Escape to keep the find-replace panel's listener from also handling it.
-  - `ProjectSettingsDialog` is a slide-out, not a centered modal, with happy-dom-safe `showModal/close`.
-  - The other three are vanilla.
+  - `ProjectSettingsDialog` is a slide-out, not a centered modal, with happy-dom-safe `showModal/close` wrapped in try/catch.
+  - `ExportDialog` is a centered modal but also wraps `showModal()` in try/catch for happy-dom safety — same guard, different shape.
+  - The remaining two (`NewProjectDialog`, `ShortcutHelpDialog`) are vanilla.
 - **Impact:** Accessibility variance (focus management, ARIA), test-environment fragility, and silent drift in keyboard semantics. New dialogs are likely to copy whichever neighbor they were spawned from rather than a single policy.
-- **Suggested consolidation:** Extract `useDialogLifecycle(dialogRef, { open, onClose, initialFocusRef, blockEscapePropagation, role })`. Migrate one dialog at a time, behind characterization tests; do not force `ProjectSettingsDialog` into the same hook unless its slide-out positioning truly factors out (it may not).
+- **Suggested consolidation:** Extract `useDialogLifecycle(dialogRef, { open, onClose, initialFocusRef, blockEscapePropagation, safeShowClose, role })`. The `safeShowClose` opt-in (or an always-on try/catch around `showModal()`/`close()`) absorbs the happy-dom guard that exists in `ExportDialog` and `ProjectSettingsDialog`. Migrate one dialog at a time, behind characterization tests; do not force `ProjectSettingsDialog` into the same hook unless its slide-out positioning truly factors out (it may not).
 - **Confidence:** Medium-High (75)
 - **Found by:** Hook specialist; verified with caveat — extraction is justified but must preserve `stopImmediatePropagation` and happy-dom behavior as opt-ins.
 

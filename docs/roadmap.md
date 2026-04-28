@@ -1322,16 +1322,16 @@ The two hooks are ~85% line-by-line identical (105 + 119 lines, same refs, same 
 
 ### Goal
 
-Extract `useDialogLifecycle(dialogRef, { open, onClose, initialFocusRef, blockEscapePropagation, role })` capturing the show-on-mount, focus-an-actionable-element, Escape-closes (sometimes with `stopImmediatePropagation`), backdrop-click-closes pattern that is reimplemented across `ConfirmDialog`, `ExportDialog`, `NewProjectDialog`, `ProjectSettingsDialog`, and `ShortcutHelpDialog`. Migrate the dialogs one at a time behind characterization tests; preserve `stopImmediatePropagation` and the happy-dom `showModal/close` try/catch as opt-ins.
+Extract `useDialogLifecycle(dialogRef, { open, onClose, initialFocusRef, blockEscapePropagation, safeShowClose, role })` capturing the show-on-mount, focus-an-actionable-element, Escape-closes (sometimes with `stopImmediatePropagation`), backdrop-click-closes pattern that is reimplemented across `ConfirmDialog`, `ExportDialog`, `NewProjectDialog`, `ProjectSettingsDialog`, and `ShortcutHelpDialog`. Migrate the dialogs one at a time behind characterization tests; preserve `stopImmediatePropagation` and the happy-dom `showModal/close` try/catch as opt-ins.
 
 ### Why Now
 
-The five dialogs reimplement the same three affordances with arbitrary inclusions/exclusions: some attach manual Escape listeners, others rely on browser default; `ConfirmDialog` calls `stopImmediatePropagation` on Escape to keep the find-replace panel's listener from also handling it; `ProjectSettingsDialog` is a slide-out, not a centered modal, with happy-dom-safe `showModal/close`; the others are vanilla. New dialogs are likely to copy whichever neighbour they were spawned from rather than a single policy — accessibility variance, test-environment fragility, and silent drift in keyboard semantics follow. (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-02-18-093074c.md` I2.)
+The five dialogs reimplement the same three affordances with arbitrary inclusions/exclusions: some attach manual Escape listeners, others rely on browser default; `ConfirmDialog` calls `stopImmediatePropagation` on Escape to keep the find-replace panel's listener from also handling it; `ProjectSettingsDialog` is a slide-out, not a centered modal, with happy-dom-safe `showModal/close`; `ExportDialog` carries the same happy-dom try/catch guard at `ExportDialog.tsx:66–69`; the remaining dialogs (`NewProjectDialog`, `ShortcutHelpDialog`) call `showModal()` directly and rely on jsdom/happy-dom passing. New dialogs are likely to copy whichever neighbour they were spawned from rather than a single policy — accessibility variance, test-environment fragility, and silent drift in keyboard semantics follow. (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-02-18-093074c.md` I2.)
 
 ### Scope
 
-- Add `useDialogLifecycle` in `packages/client/src/hooks/` with unit tests. The options expose `blockEscapePropagation: boolean` (default false; ConfirmDialog opts in) and a `role` for ARIA classification.
-- Migrate in this order to control risk: `ExportDialog` and `ConfirmDialog` first (vanilla + opt-in propagation block), then `NewProjectDialog` and `ShortcutHelpDialog` (vanilla), then `ProjectSettingsDialog` last. The slide-out positioning and happy-dom guard in `ProjectSettingsDialog` may not factor cleanly — if it doesn't, leave it on a hand-rolled implementation and document why in a code comment. Do not force migration when extraction would break the slide-out semantics.
+- Add `useDialogLifecycle` in `packages/client/src/hooks/` with unit tests. The options expose `blockEscapePropagation: boolean` (default false; `ConfirmDialog` opts in), `safeShowClose: boolean` (default false; `ExportDialog` and `ProjectSettingsDialog` opt in to wrap `dialog.showModal()` / `dialog.close()` in try/catch for happy-dom compatibility — alternatively, make this an always-on guard if no caller needs the throw to surface), and a `role` for ARIA classification.
+- Migrate in this order to control risk: `ExportDialog` and `ConfirmDialog` first (vanilla + opt-in propagation block + happy-dom safety), then `NewProjectDialog` and `ShortcutHelpDialog` (vanilla), then `ProjectSettingsDialog` last. The slide-out positioning and happy-dom guard in `ProjectSettingsDialog` may not factor cleanly — if it doesn't, leave it on a hand-rolled implementation and document why in a code comment. Do not force migration when extraction would break the slide-out semantics.
 - Verify a11y at each step: focus management, Escape behavior, backdrop click, ARIA role. The existing component tests cover each dialog; treat them as the regression net.
 
 ### Out of Scope
@@ -1343,7 +1343,7 @@ The five dialogs reimplement the same three affordances with arbitrary inclusion
 ### Definition of Done
 
 - One canonical `useDialogLifecycle` hook with unit tests.
-- At least four dialogs migrated; `ProjectSettingsDialog` migrated *or* explicitly documented as opt-out with the reason.
+- All four of `ConfirmDialog`, `ExportDialog`, `NewProjectDialog`, and `ShortcutHelpDialog` migrated; `ProjectSettingsDialog` migrated *or* explicitly documented as opt-out with the specific reason (slide-out positioning that does not factor through the hook's contract).
 - All existing dialog component tests green without modification (focus, Escape, backdrop).
 - aXe-core e2e checks green.
 - `make all` green at PR close.
