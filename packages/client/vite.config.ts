@@ -2,15 +2,16 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-// Read ports from env so a future e2e harness can run a parallel
+// Read ports from env so the e2e harness can run a parallel
 // client/server pair on different ports without colliding with `make dev`.
-// Defaults preserve the standard 5173 (client) / 3456 (server) pair.
-//
-// As of this branch, playwright.config.ts hardcodes 3456/5173, sets no
-// env, and uses reuseExistingServer — so the isolation rationale is
-// forward-looking. Roadmap Phase 4b.6 (E2E Test Isolation) will wire
-// SMUDGE_PORT, SMUDGE_CLIENT_PORT, and DB_PATH on the playwright side
-// and make the rationale true.
+// Defaults preserve the standard 5173 (client) / 3456 (server) pair;
+// playwright.config.ts wires SMUDGE_PORT, SMUDGE_CLIENT_PORT, DB_PATH,
+// and DATA_DIR so it spins up its own pair on 3457/5174 against an
+// isolated SQLite DB and image-store directory under
+// `os.tmpdir()/smudge-e2e-data-<uid>/`. `reuseExistingServer: false`
+// on both webServer entries guarantees the override env reaches every
+// e2e run rather than being shadowed by a leftover dev server holding
+// its own DB_PATH/DATA_DIR baked in at startup.
 //
 // S1 (review 2026-04-26, follow-up): the canonical default is
 // DEFAULT_SERVER_PORT in @smudge/shared/constants.ts. This file

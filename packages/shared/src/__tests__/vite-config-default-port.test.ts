@@ -25,14 +25,22 @@ const VITE_CONFIG_PATH = resolve(
   "../../../client/vite.config.ts",
 );
 
+// S3 (review 2026-04-27): use matchAll + length===1 so a future
+// commented-out historical example (e.g. "previously 3456") cannot
+// silently match before the live assignment. .match() returns the first
+// hit; .matchAll() with a length assertion catches drift either way.
 describe("DEFAULT_SERVER_PORT_VITE parity", () => {
   it("matches String(DEFAULT_SERVER_PORT) in packages/client/vite.config.ts", () => {
     const viteConfigSource = readFileSync(VITE_CONFIG_PATH, "utf8");
-    const match = viteConfigSource.match(/DEFAULT_SERVER_PORT_VITE\s*=\s*"(\d+)"/);
+    const matches = Array.from(
+      viteConfigSource.matchAll(/DEFAULT_SERVER_PORT_VITE\s*=\s*"(\d+)"/g),
+    );
     expect(
-      match,
-      'DEFAULT_SERVER_PORT_VITE = "<digits>" literal not found in vite.config.ts — was the constant renamed or deleted? Update this test to match.',
-    ).not.toBeNull();
-    expect(match![1]).toBe(String(DEFAULT_SERVER_PORT));
+      matches.length,
+      matches.length === 0
+        ? 'DEFAULT_SERVER_PORT_VITE = "<digits>" literal not found in vite.config.ts — was the constant renamed or deleted? Update this test to match.'
+        : `DEFAULT_SERVER_PORT_VITE = "<digits>" matched ${matches.length} times in vite.config.ts — expected exactly one. Did a commented-out historical example sneak in?`,
+    ).toBe(1);
+    expect(matches[0]![1]).toBe(String(DEFAULT_SERVER_PORT));
   });
 });

@@ -2,6 +2,10 @@
 
 This file provides guidance to GitHub Copilot when working with code in this repository.
 
+## Ignore `.devcontainer/`
+
+Do not read, edit, or suggest changes to anything under `.devcontainer/` (Dockerfile, devcontainer.json, post_install.py, .zshrc, etc.). The directory is bind-mounted read-only inside the running devcontainer, so edits cannot land from inside the container anyway, and the contents are intentionally maintained out-of-band — there is no path by which a `.devcontainer/`-targeted change persists across a template update, so do not stage changes elsewhere intended for the maintainer to apply to it. Skip this directory in code search, suggestions, and any "explore the repo" passes unless the user explicitly asks about it.
+
 ## Project Overview
 
 Smudge is a web-based writing application for long-form fiction and non-fiction, organized as **projects** containing **chapters**. It is designed to replace Google Docs for book-length work. Single-user, no authentication. The full MVP spec lives in `docs/plans/mvp.md`.
@@ -47,6 +51,7 @@ make lint                            # Lint with autofix
 make format                          # Format code
 make all                             # Full CI pass: lint + format + typecheck + coverage + e2e
 make cover                           # Run tests with coverage enforcement
+make e2e-clean                       # Wipe the isolated e2e data dir (next `make e2e` starts fresh)
 make ensure-native                   # Verify better-sqlite3 native binding; rebuild from source on dlopen failure
 
 # Per-package testing (when working on one package)

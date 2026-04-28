@@ -8,42 +8,6 @@
 
 ---
 
-## `5034239f` — `.git/hooks` mounted read-only breaks pre-commit frameworks
-- **File (at first sighting):** `.devcontainer/devcontainer.json:51`
-- **Symbol:** `mounts[]` (devcontainer.json mounts entry for `.git/hooks`)
-- **Bug class:** Contract
-- **Description:** `.git/hooks` is bind-mounted with `readonly`. Pre-commit frameworks (lefthook, some husky configs) write into `.git/hooks` at install/refresh time and would silently fail inside the container while working on host. The project does not currently use such a framework, so this is forward-compat hazard rather than a present bug.
-- **Suggested fix:** Drop `readonly` if the project plans to adopt a hook framework, or document and add a CI check that all committed hooks are read-only-safe.
-- **Confidence:** Medium
-- **Found by:** Contract & Integration (`general-purpose (claude-opus-4-7)`)
-- **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
-- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
-- **Severity:** Important
-
-## `1807f5f4` — Three curl-bash installs without integrity verification
-- **File (at first sighting):** `.devcontainer/Dockerfile:78`
-- **Symbol:** `RUN curl … | bash` (claude.ai/install.sh, fnm.vercel.app/install, zsh-in-docker release)
-- **Bug class:** Security
-- **Description:** Three uncontrolled installer scripts pulled and piped to a shell during image build with no SHA-256 verification. Other lines pin by digest, so the bar is already higher. Container rebuild is a TOFU event — if any endpoint is compromised between builds, attacker-controlled shell runs.
-- **Suggested fix:** Download to a temp file, `sha256sum -c -` against a checked-in hash, then execute. Use Renovate annotations to track version+digest pairs.
-- **Confidence:** Medium
-- **Found by:** Security (`general-purpose (claude-opus-4-7)`)
-- **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
-- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
-- **Severity:** Important
-
-## `c3daad8d` — `NET_ADMIN` / `NET_RAW` granted unconditionally
-- **File (at first sighting):** `.devcontainer/devcontainer.json:15`
-- **Symbol:** `runArgs[]`
-- **Bug class:** Security
-- **Description:** Both Linux capabilities are added on every container build regardless of whether bubblewrap-with-network-namespacing is actually used by the Smudge dev workflow. NET_RAW enables ARP spoofing on the container's Docker bridge — lateral-movement risk on multi-tenant Docker hosts.
-- **Suggested fix:** If bubblewrap doesn't need either cap for Smudge, drop them. If it does, document which is needed and why next to the runArgs.
-- **Confidence:** Medium
-- **Found by:** Security (`general-purpose (claude-opus-4-7)`)
-- **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
-- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
-- **Severity:** Important
-
 ## `f4b4b15c` — `EditorFooter.tsx` `saveFailed` fallback is structurally unreachable
 - **File (at first sighting):** `packages/client/src/components/EditorFooter.tsx:40`
 - **Symbol:** `EditorFooter` (saveStatus="error" branch)
@@ -68,78 +32,6 @@
 - **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `20f2616`
 - **Severity:** Suggestion
 
-## `b09b4ec5` — `uv tool install ast-grep-cli` is unpinned
-- **File (at first sighting):** `.devcontainer/Dockerfile:87`
-- **Symbol:** `RUN uv tool install ast-grep-cli`
-- **Bug class:** Security
-- **Description:** No version constraint, no Renovate annotation. A typo-squat or compromised PyPI release would be picked up at next image build. Dev-only tool but invoked by Claude skills and `sg` alias, so it does run against source.
-- **Suggested fix:** Pin the version (`uv tool install ast-grep-cli==<version>`) with a Renovate `# datasource=pypi depName=ast-grep-cli` annotation matching other pinned tools.
-- **Confidence:** Medium
-- **Found by:** Security (`general-purpose (claude-opus-4-7)`)
-- **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
-- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
-- **Severity:** Suggestion
-
-## `afe54fb1` — `claude-yolo` alias and `bypassPermissions` setting are redundant routes
-- **File (at first sighting):** `.devcontainer/post_install.py:113`
-- **Symbol:** `setup_claude_settings` (and `.devcontainer/.zshrc:35` `claude-yolo` alias)
-- **Bug class:** Contract
-- **Description:** Two independent mechanisms enable the same Claude Code permission bypass: `post_install.py` writes `permissions.defaultMode = "bypassPermissions"` to `~/.claude/settings.json`, and `.zshrc` defines `alias claude-yolo='claude --dangerously-skip-permissions'`. If Claude Code renames either the setting key or the CLI flag, only one path will be updated.
-- **Suggested fix:** Pick one canonical mechanism and document it. Drop the other or add a comment cross-referencing them.
-- **Confidence:** Medium
-- **Found by:** Contract & Integration (`general-purpose (claude-opus-4-7)`); Security (`general-purpose (claude-opus-4-7)`)
-- **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `e79576f`
-- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
-- **Severity:** Suggestion
-
-## `7c3a91e2` — `setup_claude_settings` silently destroys customized `~/.claude/settings.json` on JSONDecodeError
-- **File (at first sighting):** `.devcontainer/post_install.py:104`
-- **Symbol:** `setup_claude_settings`
-- **Bug class:** Logic
-- **Description:** `with contextlib.suppress(json.JSONDecodeError): settings = json.loads(settings_file.read_text())` swallows the parse error; `settings` falls back to `{}` and the file is then rewritten with only `permissions.defaultMode = "bypassPermissions"`. Any user-authored hooks/allow-list/env/model preferences are silently destroyed on every devcontainer rebuild. Symmetric to the deferred C1 patch for `~/.claude.json` but for `~/.claude/settings.json`.
-- **Suggested fix:** On JSONDecodeError, `shutil.move` the corrupt file to `settings.json.bak`, log a stderr warning, then proceed with `{}`. Covered by `paad/code-reviews/deferred/I1-I2-I4-I6-S4-post_install-hardening.patch`.
-- **Confidence:** High
-- **Found by:** Logic & Correctness, Error Handling, Security (`general-purpose (claude-opus-4-7)`)
-- **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
-- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
-- **Severity:** Important
-
-## `8d4f2bc1` — `setup_global_gitignore` overwrites `~/.gitignore_global` and `~/.gitconfig.local` unconditionally
-- **File (at first sighting):** `.devcontainer/post_install.py:255`
-- **Symbol:** `setup_global_gitignore`
-- **Bug class:** Logic
-- **Description:** Both `gitignore.write_text(...)` (line 255) and `local_gitconfig.write_text(...)` (line 289) run unconditionally on every `postCreateCommand` invocation. Sibling `setup_tmux_config` uses an `if file.exists(): return` guard. User customizations to `~/.gitignore_global` (added language patterns, project ignores) or `~/.gitconfig.local` (custom `[delta]`, `[merge]` overrides, signing config) are destroyed on every container rebuild.
-- **Suggested fix:** Mirror `setup_tmux_config`'s `if file.exists(): print("…skipping"); return` guard, or use a sentinel marker (`# managed by post_install.py`) and only rewrite when the marker is present. Covered by `paad/code-reviews/deferred/I1-I2-I4-I6-S4-post_install-hardening.patch`.
-- **Confidence:** High
-- **Found by:** Logic & Correctness, Security (`general-purpose (claude-opus-4-7)`)
-- **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
-- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
-- **Severity:** Important
-
-## `1a8e6c5f` — Host gitconfig directives execute under bypassPermissions inside the container
-- **File (at first sighting):** `.devcontainer/post_install.py:264`
-- **Symbol:** `setup_global_gitignore` (the `[include] path = {host_gitconfig}` block)
-- **Bug class:** Security
-- **Description:** Host `~/.gitconfig` is bind-mounted readonly into the container, and `setup_global_gitignore` writes `~/.gitconfig.local` containing `[include] path = {host_gitconfig}`. Git resolves directives in the included file when running git commands inside the container, including `core.pager`, `core.fsmonitor`, `core.editor`, `[alias] xyz = !shell-cmd`, `[diff "lfs"] command = …`. Anything in the developer's host gitconfig executes inside the container, where Claude runs with bypassPermissions. Distinct from backlog `5034239f` (`.git/hooks` mount).
-- **Suggested fix:** Either (a) parse the host gitconfig at `setup_global_gitignore` time and refuse to `[include]` it if `core.pager`, `core.editor`, `core.fsmonitor`, or any `!`-prefixed alias is present (warn with the offending key), or (b) drop the `[include]` and manually copy only the non-executable subsections (`user.*`, `commit.*`, `pull.*`, etc.). Covered by `paad/code-reviews/deferred/I1-I2-I4-I6-S4-post_install-hardening.patch`.
-- **Confidence:** Medium
-- **Found by:** Logic & Correctness, Security (`general-purpose (claude-opus-4-7)`)
-- **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
-- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
-- **Severity:** Important
-
-## `2b9f7d63` — Third-party plugin marketplaces unpinned in Dockerfile
-- **File (at first sighting):** `.devcontainer/Dockerfile:80`
-- **Symbol:** `RUN claude plugin marketplace add trailofbits/skills…`
-- **Bug class:** Security
-- **Description:** `claude plugin marketplace add trailofbits/skills` and `claude plugin marketplace add trailofbits/skills-curated` are added unconditionally with no commit-SHA / tag pin. These are not Anthropic-controlled. Plugins from these marketplaces run with `bypassPermissions` (post_install:113) inside a container that has NET_ADMIN/NET_RAW (devcontainer.json:15-18) and a R/W workspace bind mount. Distinct mechanism from the curl-bash issue tracked in backlog `1807f5f4`: that one is install-script integrity, this one is marketplace content integrity.
-- **Suggested fix:** Pin to specific commit SHAs / audited tags via the plugin marketplace CLI's pinning mechanism. Drop whichever of the two marketplaces is unused; document the residual one. Add a Renovate or equivalent track-and-bump rule. Covered by `paad/code-reviews/deferred/I3-dockerfile-marketplaces.patch`.
-- **Confidence:** Medium
-- **Found by:** Logic & Correctness, Contract & Integration, Security (`general-purpose (claude-opus-4-7)`)
-- **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
-- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
-- **Severity:** Important
-
 ## `4d5b9e81` — Editor unmount-cleanup PATCH ignores `setEditable(false)` lock
 - **File (at first sighting):** `packages/client/src/components/Editor.tsx:218`
 - **Symbol:** `Editor` unmount cleanup (the `if (dirtyRef.current && editorInstanceRef.current) { onSaveRef.current(...).catch(...) }` block)
@@ -151,18 +43,6 @@
 - **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
 - **Last seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `91476d8`
 - **Severity:** Important
-
-## `9e5a73d4` — `fix_directory_ownership` exception list still too narrow; subprocess stderr swallowed
-- **File (at first sighting):** `.devcontainer/post_install.py:193`
-- **Symbol:** `fix_directory_ownership`
-- **Bug class:** Error Handling
-- **Description:** `except (PermissionError, subprocess.CalledProcessError)` does not catch bare `OSError` (`FileNotFoundError` from a stale symlink, `NotADirectoryError`/ENOTDIR mid-mount race). An uncaught exception propagates and skips the remaining `setup_global_gitignore()`, leaving the dev environment half-configured. Captured `subprocess.run(... capture_output=True)` `stderr` is also never surfaced — only the exception's `repr` is printed.
-- **Suggested fix:** Broaden to `except (OSError, subprocess.CalledProcessError) as e`, and on `CalledProcessError` also print `e.stderr.decode("utf-8", errors="replace")` so the chown failure is debuggable. Covered by `paad/code-reviews/deferred/I1-I2-I4-I6-S4-post_install-hardening.patch`.
-- **Confidence:** Medium-High
-- **Found by:** Logic & Correctness, Error Handling (`general-purpose (claude-opus-4-7)`)
-- **First seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
-- **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
-- **Severity:** Suggestion
 
 ## `3c4e8f72` — `chapter.create` scope lacks 5xx mapping; sibling-asymmetric to `chapter.save` 502/503/504
 - **File (at first sighting):** `packages/client/src/errors/scopes.ts:157`
@@ -188,18 +68,6 @@
 - **Last seen:** 2026-04-26 on branch `ovid/miscellaneous-fixes` at `f346047`
 - **Severity:** Suggestion
 
-## `e132b042` — playwright.config.ts hardcodes 3456/5173 and never sets SMUDGE_PORT/SMUDGE_CLIENT_PORT
-- **File (at first sighting):** `playwright.config.ts:14-25`
-- **Symbol:** `webServer[]` entries + `baseURL`
-- **Bug class:** Contract
-- **Description:** The playwright `webServer` entries pass no `env`, hardcode `port: 3456` and `port: 5173`, hardcode `baseURL: "http://localhost:5173"`, and use `reuseExistingServer: true`. On the `ovid/shared-port-validation` branch, `vite.config.ts:5-13` adds forward-looking commentary about using `SMUDGE_PORT` / `SMUDGE_CLIENT_PORT` for e2e isolation (the original present-tense claim was rewritten in commit `09f8b21`), but the Playwright harness still does not set those vars or consume a separate test-only port pair. As a result, an e2e run alongside `make dev` can silently piggy-back on the developer's running server (and database). The branch made the validator side fail-fast on env input, but the env-driven port pair has no consumer in the e2e harness yet. Tracked as roadmap Phase 4b.6 (`docs/roadmap.md:835`).
-- **Suggested fix:** Set `env: { SMUDGE_PORT: "3457", SMUDGE_CLIENT_PORT: "5174", DB_PATH: "/tmp/smudge-e2e.db" }` on each `webServer` entry, update the `port:` waits to 3457 / 5174, and parameterize `baseURL` to `http://localhost:5174`. Once landed, restore the present-tense isolation claim in `vite.config.ts:5-13` so the comment reflects what the harness actually does.
-- **Confidence:** High
-- **Found by:** Logic & Correctness, Error Handling & Edge Cases, Contract & Integration, Concurrency & State (`claude-opus-4-7`)
-- **First seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
-- **Last seen:** 2026-04-27 on branch `ovid/shared-port-validation` at `6c5bbc5`
-- **Severity:** Important
-
 ## `afcaee1c` — Steering files don't mention SMUDGE_PORT/SMUDGE_CLIENT_PORT
 - **File (at first sighting):** `CLAUDE.md`
 - **Symbol:** "Tech Stack" / "Build & Run Commands" / project README sections
@@ -209,7 +77,7 @@
 - **Confidence:** High
 - **Found by:** Contract & Integration (`claude-opus-4-7`)
 - **First seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
-- **Last seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `039ca1b`
+- **Last seen:** 2026-04-27 on branch `ovid/devcontainer-and-e2e-isolation` at `5b89539`
 - **Severity:** Suggestion
 
 ## `ca84e075` — CLAUDE.md / README / copilot-instructions reference docker-compose that doesn't exist
@@ -221,7 +89,7 @@
 - **Confidence:** High
 - **Found by:** Error Handling & Edge Cases, Contract & Integration (`claude-opus-4-7`)
 - **First seen:** 2026-04-26 on branch `ovid/shared-port-validation` at `e6b6447`
-- **Last seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
+- **Last seen:** 2026-04-27 on branch `ovid/devcontainer-and-e2e-isolation` at `5b89539`
 - **Severity:** Suggestion
 
 ## `a4f29c1d` — Workspace `package.json` files lack `engines.node`
@@ -305,7 +173,7 @@
 - **Confidence:** Medium
 - **Found by:** Security (`general-purpose (claude-opus-4-7)`)
 - **First seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
-- **Last seen:** 2026-04-27 on branch `ovid/native-binding-build-infra` at `aff8498`
+- **Last seen:** 2026-04-27 on branch `ovid/devcontainer-and-e2e-isolation` at `5f46256`
 - **Severity:** Suggestion
 
 ## `1f9d4b27` — `latestContentRef` clobbered by unmount-cleanup save targeting old chapter
@@ -331,3 +199,4 @@
 - **First seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `4b43b07`
 - **Last seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `4b43b07`
 - **Severity:** Suggestion
+

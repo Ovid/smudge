@@ -20,8 +20,22 @@ async function createTestProject(request: APIRequestContext): Promise<TestProjec
 }
 
 async function deleteProject(request: APIRequestContext, slug: string) {
-  const res = await request.delete(`/api/projects/${slug}`);
-  expect(res.ok()).toBeTruthy();
+  // S6 (review 2026-04-27, third pass): cleanup must not compete with
+  // the test's own assertion. If the DELETE fails (transient blip,
+  // server crashed mid-test), log and continue — the test outcome
+  // captures the actual failure. A hard `expect()` here would surface
+  // a second, less-informative error from afterEach and mask the
+  // original test failure in the reporter.
+  try {
+    const res = await request.delete(`/api/projects/${slug}`);
+    if (!res.ok()) {
+      console.warn(`deleteProject(${slug}): cleanup DELETE returned ${res.status()}`);
+    }
+  } catch (err) {
+    console.warn(
+      `deleteProject(${slug}): cleanup threw — ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 }
 
 test.describe("Editor save pipeline E2e Tests", () => {
@@ -82,9 +96,22 @@ test.describe("Editor save pipeline E2e Tests", () => {
     // route.fulfill (NOT route.abort) so the client sees a real HTTP 404
     // and exercises the byStatus branch — abort would route through the
     // NETWORK path and surface a different copy.
-    await page.route("**/api/chapters/**", (route) => {
+    //
+    // Glob `**/api/chapters/*` (single segment) — auto-save PATCHes the
+    // chapter root URL `/api/chapters/<id>`; deeper paths
+    // (`/api/chapters/<id>/snapshots`, `/api/chapters/<id>/restore`)
+    // belong to other features and shouldn't be funneled through this
+    // handler. The wider `/**` glob would match those too and require
+    // the method gate to do more work.
+    //
+    // `async` handler with `await` on route.fulfill / route.continue:
+    // Playwright's route handler may be sync or async; explicitly
+    // awaiting the response settlement ensures the test sees the
+    // response delivered before subsequent assertions run. Drift
+    // between awaited and non-awaited handlers is a known flake source.
+    await page.route("**/api/chapters/*", async (route) => {
       if (route.request().method() === "PATCH") {
-        route.fulfill({
+        await route.fulfill({
           status: 404,
           contentType: "application/json",
           body: JSON.stringify({
@@ -92,7 +119,7 @@ test.describe("Editor save pipeline E2e Tests", () => {
           }),
         });
       } else {
-        route.continue();
+        await route.continue();
       }
     });
 
@@ -125,12 +152,17 @@ test.describe("Editor save pipeline E2e Tests", () => {
     const editor = page.getByRole("textbox");
     await expect(editor).toBeVisible();
 
-    // Intercept PATCH requests to chapters to simulate network failure
-    await page.route("**/api/chapters/**", (route) => {
+    // Intercept PATCH requests to chapters to simulate network failure.
+    // S3 (review 2026-04-26): scope to `**/api/chapters/*` (single
+    // segment) — see the rationale in the prior test for why this is
+    // tighter than `**/api/chapters/**`.
+    // R4 (review 2026-04-26): async + await the route calls — see the
+    // rationale in the prior test.
+    await page.route("**/api/chapters/*", async (route) => {
       if (route.request().method() === "PATCH") {
-        route.abort("connectionrefused");
+        await route.abort("connectionrefused");
       } else {
-        route.continue();
+        await route.continue();
       }
     });
 
@@ -145,7 +177,7 @@ test.describe("Editor save pipeline E2e Tests", () => {
     await expect(statusRegion).toContainText("Unable to save", { timeout: 30000 });
 
     // Remove the network interception — allow saves to succeed
-    await page.unroute("**/api/chapters/**");
+    await page.unroute("**/api/chapters/*");
 
     // Type more to trigger a new save attempt
     await editor.pressSequentially(" recovered", { delay: 20 });

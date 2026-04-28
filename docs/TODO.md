@@ -1,3 +1,9 @@
+- Need to look at agentic code simplification in the agentic review?
+
+- How to prevent fan out on receiving a code review?
+
+- If something is out of scope, can it be added as "next phase in roadmap"?
+
 - Need a deep dive into how we save documents to ensure that it's working as
   intended.
 

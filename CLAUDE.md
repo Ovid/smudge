@@ -6,6 +6,32 @@ When you have finished reading this file, announce "CLAUDE.md loaded"
 
 Always address me as "Ovid" in your responses. This lets me know that you have read this file, even if I don't see the previous announcement.
 
+## Ignore `.devcontainer/`
+
+`.devcontainer/` is **third-party content** managed out-of-band
+(devcontainer template). Any local change is **wiped on the next update
+of the template** — including changes the maintainer applies from the
+host or edits the maintainer makes by hand. The directory is also
+bind-mounted read-only inside the running devcontainer, so edits cannot
+land from inside the container anyway. There is no path by which a
+`.devcontainer/`-targeted change persists across a template update.
+
+Concretely, this means:
+- **Do not read** files under `.devcontainer/` (Dockerfile,
+  devcontainer.json, post_install.py, .zshrc, etc.).
+- **Do not edit or suggest edits** to anything under `.devcontainer/`,
+  and do not stage changes elsewhere intended for the maintainer to
+  apply to `.devcontainer/`. The maintainer's only path to changing
+  `.devcontainer/` is upstream of the template itself.
+- **Do not flag findings inside `.devcontainer/` for fixing.** A bug,
+  hardening opportunity, or hygiene issue in `.devcontainer/` is out
+  of scope for this project. Skip the directory in code search, in any
+  "explore the repo" passes, in `/paad:agentic-review` runs, and in
+  the out-of-scope-findings backlog.
+
+Override only if the user explicitly asks about a specific
+`.devcontainer/` file in this conversation.
+
 ## Project Overview
 
 Smudge is a web-based writing application for long-form fiction and non-fiction, organized as projects containing chapters. It replaces Google Docs for book-length work. Single-user, no auth. The full MVP spec lives in `docs/plans/mvp.md`.
@@ -54,6 +80,7 @@ make format                          # Format code
 make all                             # Full CI pass: lint + format + typecheck + coverage + e2e
 make cover                           # Run tests with coverage enforcement
 make e2e                             # Run Playwright e2e tests (starts dev servers)
+make e2e-clean                       # Wipe the isolated e2e data dir (next `make e2e` starts fresh)
 make ensure-native                   # Verify better-sqlite3 native binding loads; rebuild from source on dlopen failure
 
 # Per-package testing (when working on one package)
@@ -69,6 +96,17 @@ docker compose up                    # Full app on port 3456
 # Help
 make help                            # Show all available make targets
 ```
+
+**`make e2e-clean`** wipes the isolated e2e data dir (under
+`os.tmpdir()/smudge-e2e-data-<UID>/`) so the next `make e2e` starts
+against a fresh SQLite DB and image store. The recipe refuses to wipe
+while a live `make e2e` is running (it probes 127.0.0.1:3457 and
+::1:3457 for the e2e server), so it's safe to run in a stray terminal.
+**Do not** run `make e2e-clean` concurrently with the start-up phase of
+`make e2e` (the first 1–3s while Knex migrations are running and
+`app.listen` has not yet bound) — the probe sees ECONNREFUSED, proceeds
+to rm, and the about-to-bind server then migrates against an empty DB.
+Wait for `make e2e` to finish (or kill it) before running cleanup.
 
 **`make ensure-native`** is a prerequisite of `make test/cover/e2e/dev`; you rarely invoke it directly. It probes whether better-sqlite3's `.node` binary loads under the active platform/Node ABI, and on failure rebuilds from source in place (no remote `.node` binary fetched). The rebuild path needs a working C++ toolchain — `build-essential` on Linux, Xcode Command Line Tools on macOS, plus `python3` for node-gyp. Common reason to need it: switching between host (macOS) and a Linux container/VM that share `node_modules` via a bind mount, leaving a wrong-platform binary in place. Direct `npm test` / `npm test -w packages/{shared,server,client}` / `npx playwright test` invocations bypass this check; prefer the `make` entry points after a host↔guest crossing.
 

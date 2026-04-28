@@ -35,6 +35,15 @@ export {
 export type { SearchMatch, SearchOptions } from "./tiptap-text";
 export { generateSlug } from "./slugify";
 export { parsePort } from "./parsePort";
+// Helpers that import node:fs / node:path (findFirstNonDirectoryAncestor,
+// formatMkdirDataDirError) are deliberately NOT re-exported here. Vite
+// externalizes node-only modules for the browser; re-exporting from this
+// barrel would pull them into the client bundle's transitive load chain,
+// and the eager `import { lstatSync } from "node:fs"` throws at React-app
+// boot time. The sole consumer (playwright.config.ts) imports these
+// helpers via the `@smudge/shared/node-fs-helpers` subpath export defined
+// in `packages/shared/package.json` — a deliberate boundary that future
+// node-only helpers should join.
 export {
   UNTITLED_CHAPTER,
   TRASH_RETENTION_DAYS,
