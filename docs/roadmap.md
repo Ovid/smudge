@@ -1159,6 +1159,7 @@ The pattern is the implementation of one rule from CLAUDE.md §API Design (404 e
 ### Dependencies
 
 - None. Independently shippable. Pairs naturally with 4b.12 (both touch `app.ts`); CLAUDE.md one-feature rule allows bundling these two as "server error-envelope helpers" if scope stays tight, otherwise they are separate PRs.
+- Independent of Phase 4b.4 (Raw-Strings ESLint Rule): the template literal `\`${resource} not found.\`` in the helper body lives in `packages/server/src/app.ts`, which is outside 4b.4's scope (4b.4 explicitly excludes server-side strings — the lint rule applies to `packages/client/src/`). May land before, in parallel, or after 4b.4 with no interaction.
 
 ---
 
@@ -1177,7 +1178,8 @@ The validation envelope contract is implicit. Six sites parse Zod and emit a nea
 - `validationError(res, msg)`: wraps `res.status(400).json({ error: { code: "VALIDATION_ERROR", message } })`.
 - `respondValidationParse(res, parsed)`: returns `parsed.data` on success, calls `validationError` and returns `undefined` on failure.
 - Migrate direct-safeParse sites: `snapshots.routes.ts:38–44`, `:16–22` (UUID parse), `search.routes.ts:70–76`, `:115–121`, `settings.routes.ts:22–28`, `projects.routes.ts:15–18` (createProject).
-- Migrate service-discriminant sites to use `validationError(res, result.validationError)` directly: `projects.routes.ts:55–59`, `:127–129`, plus equivalents in chapters routes.
+- Migrate service-discriminant sites to use `validationError(res, result.validationError)` directly: `projects.routes.ts:55–59`, `:127–129`, `chapters.routes.ts:52–56` (the chapters PATCH `validationError` discriminant), and `settings.routes.ts:34–40` (the settings-update service-error path that emits `VALIDATION_ERROR` with `Invalid settings: ${messages}` — currently missed by the source report).
+- Before phase entry, run `grep -rn 'code: "VALIDATION_ERROR"' packages/server/src/*/routes/` (and `chapters/`, `projects/`, `settings/`, `search/`, `snapshots/` route files) to itemize every site in scope. The phase migrates the closed list returned by that grep.
 
 ### Out of Scope
 
@@ -1189,7 +1191,7 @@ The validation envelope contract is implicit. Six sites parse Zod and emit a nea
 
 - Two helpers exist in `app.ts`.
 - All ~6 direct-safeParse sites and the service-discriminant sites use them.
-- No remaining inline `code: "VALIDATION_ERROR"` literals in route files.
+- After migration, `grep -rn 'code: "VALIDATION_ERROR"' packages/server/src/*/routes/` returns zero matches in route files (the helper definition in `app.ts` is the only remaining literal).
 - All `*.routes.test.ts` files still green without modification.
 - `make all` green at PR close.
 
