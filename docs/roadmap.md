@@ -1110,7 +1110,7 @@ The two declarations describe the same prototype-pollution defense for TipTap ca
 
 - Extracting a unified canonicalize function (different return types; future work).
 - Changing the unsafe-key set itself.
-- Touching the depth guard (Phase 4b.13).
+- Production-code changes to the depth guard or the depth-guarded walkers are out of scope for this phase. Phase 4b.13 is a test-only phase (it adds a regression test against the existing walkers) and does not own the guard itself.
 
 ### Definition of Done
 
@@ -1203,28 +1203,28 @@ The validation envelope contract is implicit. Six sites parse Zod and emit a nea
 
 ### Goal
 
-Pin the contract that *every* consumer of TipTap JSON honors `MAX_TIPTAP_DEPTH = 64` and bails safely on a depth-65 document. The four current consumers — `validateTipTapDepth` (canonical), `extractText` (wordcount), `canonicalize` (content-hash), `walk` (images.references) — each implement their own depth-counted recursion; the constant is shared but the recursions are not.
+Pin the contract that *every* consumer of TipTap JSON honors `MAX_TIPTAP_DEPTH = 64` and bails safely on a depth-65 document. The six current consumers — `validateTipTapDepth` (canonical, in `tiptap-depth.ts`), `extractText` (wordcount), `canonicalize` (content-hash), `walk` (images.references), plus `collectLeafBlocks` and `canonicalJSON` (both in `tiptap-text.ts`) — each implement their own depth-counted recursion; the constant is shared but the recursions are not.
 
 ### Why Now
 
-The prior dedup pass (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-02-18-093074c.md` I5) flagged the duplicated traversals but the verifier downgraded "extract a generic walker" because each consumer's per-node work is intertwined with its recursion (e.g. images.references' regex filter is called during the walk). The verifier's recommendation: keep the traversals separate, but add a contract test that constructs a depth-65 doc and asserts each of the four walkers bails safely. That test does not exist today. This phase adds it. A fifth walker can later trigger an extraction-vs-test re-evaluation.
+The prior dedup pass (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-02-18-093074c.md` I5) flagged the duplicated traversals but the verifier downgraded "extract a generic walker" because each consumer's per-node work is intertwined with its recursion (e.g. images.references' regex filter is called during the walk). The source report enumerated four consumers; a sweep of `tiptap-text.ts` against HEAD turned up two more (`collectLeafBlocks`, `canonicalJSON`) that share the same depth-cap pattern, so the contract test must cover all six. The verifier's recommendation: keep the traversals separate, but add a contract test that constructs a depth-65 doc and asserts each of the six walkers bails safely. That test does not exist today. This phase adds it. A seventh walker can later trigger an extraction-vs-test re-evaluation.
 
 ### Scope
 
 - One new test (location: `packages/shared/src/__tests__/tiptap-depth-walkers.test.ts` is fine, or wherever the existing depth test lives) that:
   - Constructs a TipTap doc nested to depth 65.
-  - Calls each of the four consumers and asserts each returns or throws safely (no stack overflow, no unbounded recursion). Use the consumer's documented bail behavior: `extractText` returns `""` for the over-depth subtree, `canonicalize` throws `CanonicalizeDepthError`, `walk` returns `void`, `validateTipTapDepth` throws.
+  - Calls each of the six consumers and asserts each returns or throws safely (no stack overflow, no unbounded recursion). Verify each consumer's actual bail behavior by reading source before writing assertions; do not lift expectations from this phase text alone. Today's bail behaviors (verified against HEAD): `validateTipTapDepth` returns `false`, `extractText` returns `""` for the over-depth subtree, `canonicalize` throws `CanonicalizeDepthError`, `walk` returns `void`, `collectLeafBlocks` returns `[]`, `canonicalJSON` returns the literal string `"null"`.
 - Document in the test file's header that any new TipTap walker must be added to this regression and to the constant import.
 
 ### Out of Scope
 
 - Extracting a generic walker (deferred until a fifth consumer appears).
-- Changing the existing four consumers' implementations or bail behaviors.
+- Changing the existing six consumers' implementations or bail behaviors.
 - Lint/automation that enforces the documentation discipline (consider only if a fifth walker arrives without joining the test).
 
 ### Definition of Done
 
-- A test that fails if any of the four consumers leaks a stack overflow on a depth-65 doc.
+- A test that fails if any of the six consumers leaks a stack overflow on a depth-65 doc.
 - Test file header documents the "new walker → add here" rule.
 - `make all` green at PR close.
 - No production-code change.
