@@ -137,7 +137,7 @@ Run these commands and collect results as available:
 2. `git rev-parse --show-toplevel 2>/dev/null || true`
 3. `git status --short`
 4. `find . -maxdepth 3 -type d \( -name .devcontainer -o -name .aws -o -name .ssh \) -prune -o \( -name CLAUDE.md -o -name AGENTS.md -o -name README.md -o -name CONTRIBUTING.md -o -name package.json -o -name pyproject.toml -o -name go.mod -o -name Cargo.toml -o -name cpanfile -o -name Makefile \) -print 2>/dev/null`
-5. `find . -maxdepth 4 -type d \( -name node_modules -o -name vendor -o -name dist -o -name build -o -name target -o -name coverage -o -name .git -o -name .devcontainer -o -name .aws -o -name .ssh \) -prune -o -type f \! -name '.env' \! -name '.env.*' \! -name '*.pem' \! -name '*.key' \! -name '*.p12' \! -name 'id_rsa*' -print 2>/dev/null | head -500`
+5. `find . -maxdepth 4 -type d \( -name node_modules -o -name vendor -o -name dist -o -name build -o -name target -o -name coverage -o -name .git -o -name .devcontainer -o -name .aws -o -name .ssh -o -name .gnupg \) -prune -o -type f \! -name '.env' \! -name '.env.*' \! -name '.npmrc' \! -name '.netrc' \! -name '.git-credentials' \! -name '.htpasswd' \! -name '*.pem' \! -name '*.key' \! -name '*.p12' \! -name '*.pfx' \! -name '*.jks' \! -name '*.keystore' \! -name '*.kdbx' \! -name '*.tfvars' \! -name 'secrets.yml' \! -name 'secrets.yaml' \! -name 'credentials.json' \! -name 'service-account*.json' \! -name 'id_rsa*' \! -name 'id_ed25519*' \! -name 'id_ecdsa*' \! -name 'id_dsa*' -print 2>/dev/null | head -500`
 
 **Why `.devcontainer` is pruned:** the project's CLAUDE.md (root) marks
 `.devcontainer/` as third-party content managed out-of-band by a
@@ -147,10 +147,29 @@ do not surface findings from it. Other repositories may not carry the
 same rule, but devcontainer artifacts are rarely useful for a semantic
 duplication scan and the prune is harmless.
 
-**Why secret paths are excluded:** `.env*`, `*.pem`, `*.key`, `*.p12`,
-`id_rsa*`, `.aws/`, `.ssh/` commonly hold credentials. Reading them
-into LLM context is unsafe (the contents would propagate to specialist
-prompts and could land in the on-disk report).
+**Why secret paths are excluded:** the named files and directories
+commonly hold credentials. Reading them into LLM context is unsafe —
+the contents would propagate to specialist prompts and could land in
+the on-disk report (which the user may then commit). The list covers:
+- `.env*`, `.npmrc`, `.netrc`, `.git-credentials`, `.htpasswd` —
+  shell/tooling credential files
+- `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore` —
+  TLS / Java key material
+- `*.kdbx` (KeePass), `*.tfvars` (Terraform — often holds AWS creds)
+- `secrets.yml`/`secrets.yaml` (Rails / Ansible),
+  `credentials.json` / `service-account*.json` (GCP)
+- `id_rsa*`, `id_ed25519*`, `id_ecdsa*`, `id_dsa*` — SSH keys
+  (modern defaults are ed25519/ecdsa, not just rsa)
+- `.aws/`, `.ssh/`, `.gnupg/` — pruned directories
+
+This list is a starting point, not exhaustive. For a more
+authoritative pattern source, treat
+[gitleaks defaults](https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml)
+or [detect-secrets](https://github.com/Yelp/detect-secrets) baseline
+patterns as the canonical reference; mirror new patterns here when
+they appear there. If a repository scan surfaces a credential-looking
+file outside this list, stop and alert the user before reading or
+echoing the contents.
 
 **Why stderr is redirected:** the recon walks the whole tree; permission
 errors on locked-down directories should not interleave with the file
