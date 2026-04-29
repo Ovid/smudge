@@ -13,3 +13,4 @@ skimmed at a glance for patterns.
 
 | Date       | Phase                          | Model              | Pushback (C/I/M) | Alignment (C/I/M) | Entry |
 |------------|--------------------------------|--------------------|------------------|-------------------|-------|
+| 2026-04-29 | Roadmap edit: reorder 4b.14 (now 4b.3a.1) before 4b.3b | claude-opus-4-7 | 0/2/6 | pending | [link](2026-04-29-roadmap-reorder-4b-14-before-4b-3b.md) |

@@ -16,6 +16,12 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 
 **A note on scope within phases:** Each phase is designed to be a single deliverable increment — something you can build, ship, and use before starting the next. Phases are sized to produce manageable PRs.
 
+### Phase Numbering and Order
+
+**Phase numbers are stable identifiers, not execution order.** Items are handled in the order they appear in this document — top to bottom — and that document order is the source of truth for "what's next." Phase numbers exist to give each phase a stable name that survives reordering: when a phase is moved, its number stays the same so external references (commits, decision-log entries, code-review artifacts, conversations) keep working. Reading "Phase 4b.3a.1" sandwiched between "Phase 4b.3a" and "Phase 4b.3b" is correct — that's a phase whose number reflects its current execution-order position because it was renumbered when moved. The number `4b.3a.1` does not imply anything about when it was created or how it relates to `4b.14` historically; it just identifies a unique row in the table below.
+
+**Implication for tooling.** Any tool that picks "the next phase to plan" must scan this document in document order, not numeric order. The `/roadmap` skill follows this contract: it walks the file top to bottom and picks the first `## Phase` heading without a `<!-- plan: … -->` comment. Future tooling should follow the same rule.
+
 ### Phase Structure
 
 | Phase | Name | Summary | Status |
@@ -32,8 +38,8 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.2 | Abortable Sequence Hook | Unify ad-hoc seq-refs into a single `useAbortableSequence()` primitive | Done |
 | 4b.3 | Unified API Error Mapper | Single module mapping API errors to UI strings; no raw server text in UI | Done |
 | 4b.3a | 4b.3 Review Follow-ups (Clusters A, D, F) | Scope-coverage gaps, sanitizer hardening, PR-shape retrospective | Done |
-| 4b.14 | Abortable Async Operation Hook | Extract `useAbortableAsyncOperation` for the "abort prior, fresh controller, check `signal.aborted` before setState" pattern hand-rolled in `useTrashManager`, `useFindReplaceState`, `ImageGallery` (~7 refs across 3 files). Re-ordered 2026-04-28 to land before 4b.3b–d per dedup-pass collision (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` finding I3). | Planned |
-| 4b.3b | AbortSignal Threading Completion | Finish Cluster B: thread signal through remaining call sites (HomePage create/delete, useProjectEditor `handleCreateChapter` + `loadProject` + remaining `chapters.get`, EditorPage chapterStatuses retry + `search.replace`). Now depends on 4b.14; each site re-evaluated against the new hook before threading. | Planned |
+| 4b.3a.1 | Abortable Async Operation Hook | Extract `useAbortableAsyncOperation` for the "abort prior, fresh controller, check `signal.aborted` before setState" pattern hand-rolled in `useTrashManager`, `useFindReplaceState`, `ImageGallery` (5 in-scope migration points across 3 files; additional refs in those files are out of scope per the per-site-evaluation rule). Originally numbered 4b.14; renumbered 2026-04-29 when re-ordered to land before 4b.3b–d per dedup-pass collision (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` finding I3). | Planned |
+| 4b.3b | AbortSignal Threading Completion | Finish Cluster B: thread signal through remaining call sites (HomePage create/delete, useProjectEditor `handleCreateChapter` + `loadProject` + remaining `chapters.get`, EditorPage chapterStatuses retry + `search.replace`). Now depends on 4b.3a.1; each site re-evaluated against the new hook before threading. | Planned |
 | 4b.3c | Consumer Recovery Completeness | Cluster C: introduce `applyMappedError` helper and migrate 15 consumers that mishandle `mapApiError` output | Planned |
 | 4b.3d | Mapper Internals & CLAUDE.md Updates | Cluster E: `safeExtrasFrom` try/catch, `ScopeExtras<S>` type, helper extractions, CLAUDE.md doc update | Planned |
 | 4b.4 | Raw-Strings ESLint Rule | Enforce strings.ts externalization via lint; fix existing violations | Planned |
@@ -722,17 +728,19 @@ Cluster A merged via `ovid/cluster-a-error-mapping` (merge `a0cacec`).
 
 ---
 
-## Phase 4b.14: Abortable Async Operation Hook
+## Phase 4b.3a.1: Abortable Async Operation Hook
 
 ### Goal
 
-Extract `useAbortableAsyncOperation` covering the "abort prior controller, create fresh, thread `signal` into the request, check `controller.signal.aborted` before setState, abort all on unmount" pattern. Migrate the four cross-confirmed hand-rolled controller refs in `useTrashManager` (open + restore), `useFindReplaceState`, and `ImageGallery` (file-select + save). Other AbortController sites in the client (~8 additional production files) are explicitly out of scope here — see "Out of Scope".
+Extract `useAbortableAsyncOperation` covering the "abort prior controller, create fresh, thread `signal` into the request, check `controller.signal.aborted` before setState, abort all on unmount" pattern. Migrate the five in-scope hand-rolled controller refs across three files: `useTrashManager.openTrash`, `useTrashManager.handleRestore`, `useFindReplaceState.search`, `ImageGallery.handleFileSelect`, and `ImageGallery.handleSave`. Other AbortController sites in the client (~8 additional production files) are explicitly out of scope here — see "Out of Scope".
+
+(Note on counts: the dedup report at `paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` finding I3 frames these as "4 cross-confirmed sites (~7 refs)" by grouping `ImageGallery`'s two operations into one site; this section enumerates them individually as 5 migrations because each operation needs its own characterization test before migration.)
 
 ### Why Now
 
-The prior dedup pass already landed `useAbortableSequence` for *response staleness*. `AbortController` solves the orthogonal problem of *network cancellation*; both are correct, neither subsumes the other. The four sites in scope here today encode the same four-step state machine independently, with detailed inline comments in `useTrashManager` that exist only because the abstraction is missing. A new list/detail/upload pane is likely to copy the nearest neighbour, and off-by-one cleanup-on-unmount is easy to miss. (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` I3.)
+The prior dedup pass already landed `useAbortableSequence` for *response staleness*. `AbortController` solves the orthogonal problem of *network cancellation*; both are correct, neither subsumes the other. The five sites in scope here today encode the same four-step state machine independently, with detailed inline comments in `useTrashManager` that exist only because the abstraction is missing. A new list/detail/upload pane is likely to copy the nearest neighbour, and off-by-one cleanup-on-unmount is easy to miss. (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` I3.)
 
-**Re-ordered 2026-04-28** to land before Phase 4b.3b (AbortSignal Threading Completion). The /roadmap brainstorming pass on 2026-04-28 surfaced a collision: 4b.3b would add seven more hand-rolled instances of exactly the pattern this phase extracts, *before* the extraction lands. Doing 4b.14 first means 4b.3b's per-site evaluation can adopt the new hook where it fits and justify hand-rolled threading where it does not, instead of growing the duplication footprint and then cleaning it up later.
+**Originally numbered 4b.14; renumbered to 4b.3a.1 and re-ordered 2026-04-29** to land before Phase 4b.3b (AbortSignal Threading Completion). The /roadmap brainstorming pass on 2026-04-28 surfaced a collision: 4b.3b would add seven more hand-rolled instances of exactly the pattern this phase extracts, *before* the extraction lands. Doing this phase first means 4b.3b's per-site evaluation can adopt the new hook where it fits and justify hand-rolled threading where it does not, instead of growing the pattern footprint and then consolidating it later. The 2026-04-29 pushback review on the reorder produced the renumber (per the document-order = execution-order contract documented in §Phase Numbering and Order) and the count corrections in this section.
 
 ### Scope
 
@@ -752,17 +760,21 @@ The prior dedup pass already landed `useAbortableSequence` for *response stalene
 - Folding `useAbortableSequence` into the new hook. They solve different problems and are documented in CLAUDE.md as a contract.
 - Migrating `useEditorMutation`'s save-cancellation. That hook is canonical for editor mutations and has its own state machine.
 - Adding lint enforcement (consider in a follow-up if drift returns).
-- The remaining AbortController sites in the client (`App.tsx`, `DashboardView.tsx`, `ExportDialog.tsx`, `ProjectSettingsDialog.tsx`, `SnapshotPanel.tsx`, `useProjectEditor.ts`, `useSnapshotState.ts`, `EditorPage.tsx`, `HomePage.tsx`). Each is its own evaluation: some thread through `useAbortableSequence` already, some are one-shot fetches whose lifecycle does not match this hook's contract, some are dialogs that have their own lifecycle hook coming in Phase 4b.16. Defer these until either a follow-up dedup pass or per-site migration shows the hook fits cleanly. Reassess after the four in-scope migrations have landed. **Phase 4b.3b's per-site evaluation will use this hook where it fits.**
+- The remaining AbortController sites in the client (`App.tsx`, `DashboardView.tsx`, `ExportDialog.tsx`, `ProjectSettingsDialog.tsx`, `SnapshotPanel.tsx`, `useProjectEditor.ts`, `useSnapshotState.ts`, `EditorPage.tsx`, `HomePage.tsx`). Each is its own evaluation: some thread through `useAbortableSequence` already, some are one-shot fetches whose lifecycle does not match this hook's contract, some are dialogs that have their own lifecycle hook coming in Phase 4b.16. Defer these until either a follow-up dedup pass or per-site migration shows the hook fits cleanly. Reassess after the five in-scope migrations have landed. **Phase 4b.3b's per-site evaluation will use this hook where it fits.**
 - `Editor.tsx` paste/drop image upload — the original report listed this site, but on verification (`grep -n "AbortController\\|signal.aborted" packages/client/src/components/Editor.tsx` returns nothing) the path actually uses a `projectIdRef.current !== uploadProjectId` stale-id check, not an `AbortController`. Not a member of this dedup set.
 
 ### Definition of Done
 
 - New hook in `packages/client/src/hooks/` with unit tests.
-- All four in-scope sites migrated via PR-friendly, one-site-at-a-time changes behind characterization tests; do not bundle all four sites into a single extraction PR (the dedup report at `paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` lines 145–146 explicitly says each migration is independently shippable).
-- No raw `new AbortController()` + manual `signal.aborted` ladder remaining in those four sites. Other client files keep their existing controllers per "Out of Scope".
+- All five in-scope migration points completed via PR-friendly, one-site-at-a-time changes behind characterization tests; do not bundle all five into a single extraction PR (the dedup report at `paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` lines 145–146 explicitly says each migration is independently shippable).
+- No raw `new AbortController()` + manual `signal.aborted` ladder remaining at those five migration points. Other client files keep their existing controllers per "Out of Scope".
 - All client tests still green.
 - `make all` green at PR close.
 - No behavior change visible to the user.
+
+### PR Shape
+
+The exact split (one PR per migration, vs. some grouped) is decided at brainstorming time. The dedup report's `each migration is independently shippable` is the floor, not a ceiling — the brainstormer may reasonably group migrations that share a file and a test setup (e.g., `ImageGallery.handleFileSelect` and `handleSave`) if review-context favours it. Open question for the brainstormer to resolve, not the roadmap.
 
 ### Dependencies
 
@@ -781,17 +793,19 @@ Finish Cluster B from the Phase 4b.3 code review (`paad/code-reviews/ovid-unifie
 
 CLAUDE.md `§Save-pipeline invariants` rule 4 (bump-the-sequence-before-the-request) is enforced by `useAbortableSequence`, but it depends on the underlying request being cancellable. While these consumers ship without signals, an in-flight response can land on a stale closure and re-set state after the user has navigated away — the same drift `useAbortableSequence` exists to prevent. Landing this before Phase 4b.3c's [S10] is required because the dev-warn gate uses `signal.aborted`.
 
-**Reordering (2026-04-28).** This phase now depends on Phase 4b.14 (`useAbortableAsyncOperation`) landing first. The /roadmap brainstorming pass on 2026-04-28 surfaced a collision with finding I3 of the experimental-dedup pass (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md`): the eight client AbortController sites are deferred in I3 pending per-site evaluation after the new hook is proven on the four cross-confirmed sites (`useTrashManager`, `useFindReplaceState`, `ImageGallery`). Threading hand-rolled signals through this phase's call sites *before* the hook lands would add to the duplication footprint that 4b.14 was created to reduce. Each call site below will be re-evaluated against the new hook at brainstorm time: where the hook fits, the site migrates to it; where the lifecycle does not match (e.g., sites paired with `useAbortableSequence`), the hand-rolled threading is justified per-site. [I6] has already been removed (see below).
+**Reordering (2026-04-28).** This phase now depends on Phase 4b.3a.1 (`useAbortableAsyncOperation`, originally numbered 4b.14) landing first. The /roadmap brainstorming pass on 2026-04-28 surfaced a collision with finding I3 of the experimental-dedup pass (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md`): the eight client AbortController sites are deferred in I3 pending per-site evaluation after the new hook is proven on the cross-confirmed sites (`useTrashManager`, `useFindReplaceState`, `ImageGallery`). Threading hand-rolled signals through this phase's call sites *before* the hook lands would expand the pattern footprint that 4b.3a.1 was created to consolidate. Each call site below will be re-evaluated against the new hook at brainstorm time: where the hook fits, the site migrates to it; where the lifecycle does not match (e.g., sites paired with `useAbortableSequence`), the hand-rolled threading is justified per-site. [I6] has already been removed (see below).
 
 ### Scope
 
-- ~~[I6] `Editor.tsx` paste/drop image upload~~ — **removed 2026-04-28.** The experimental-dedup pass finding I3 explicitly excluded this site: `Editor.tsx:315–330` does not currently use an `AbortController`; the path uses a `projectIdRef.current !== uploadProjectId` stale-id check, and the original specialist hit was characterized as a false positive. Adding an AbortController here would contradict the dedup author's per-site evaluation. If a real bug appears at this site later, open a new phase with concrete evidence rather than restoring this item.
+- ~~[I6] `Editor.tsx` paste/drop image upload~~ — **removed 2026-04-28; rationale clarified 2026-04-29.** The experimental-dedup pass finding I3 correctly observed that this site is not currently a member of the AbortController dedup set: the path uses a `projectIdRef.current !== uploadProjectId` stale-id check rather than abort semantics, and the original specialist hit was characterized as a false positive *with respect to dedup-set membership*. The original [I6] code review (`paad/code-reviews/ovid-unified-error-mapper-2026-04-25-10-32-46-a68afd1.md` line 59) cited two underlying impacts that the dedup author did not evaluate:
+  1. **Bytes-on-wire keep flowing post-navigation** (image upload runs to completion against a torn-down editor on chapter switch / unmount). Dropped from 4b.3b on the grounds that bandwidth is negligible for a single-user, localhost-only deployment shape; revisit if the deployment changes (e.g. server in cloud, slow connection) and bytes-on-wire becomes a measurable problem.
+  2. **Success announcement fires on a torn-down editor instance** (cross-chapter same-project switch). Addressed separately by [S18] in Phase 4b.3c via `editor === editorInstanceRef.current` instance capture — the more direct fix that the original review itself suggested at line 158. The [I6] AbortController approach would have addressed this transitively; [S18] addresses it directly and stays in scope.
 - [I7] `HomePage` call-site threading — `HomePage.tsx:61` (`api.projects.create`) and `:104` (`api.projects.delete`) currently omit the signal even though the API surface accepts it. Re-evaluate against `useAbortableAsyncOperation` at brainstorm time; if the hook fits, migrate to it. Otherwise allocate per-handler `AbortController`s and abort on unmount, with a per-site justification for not using the hook.
 - [I8] `useProjectEditor.handleCreateChapter` (`packages/client/src/hooks/useProjectEditor.ts:577`) — `api.chapters.create(slug)` omits the signal. Re-evaluate against `useAbortableAsyncOperation`; the recovery branch's `createRecoveryAbortRef` is a strong candidate for migration, the primary POST may or may not fit depending on how the hook composes with the existing `useAbortableSequence` pairing in this hook.
 - [I9] `EditorPage` chapterStatuses retry-with-backoff (`packages/client/src/pages/EditorPage.tsx:1224`) — replace `let cancelled = false` and the setTimeout-queue with `AbortController` semantics. Re-evaluate against `useAbortableAsyncOperation`; the retry-with-backoff lifecycle (multiple sequential calls under one logical operation) may not fit the hook's single-run shape and could remain hand-rolled with a justification.
 - [I10] `loadProject` (`useProjectEditor.ts:204-268`) — replace the `let cancelled = false` flag with `AbortController` semantics. Re-evaluate against `useAbortableAsyncOperation`; this is a strong fit candidate (single effect-scoped operation that auto-aborts on slug change / unmount).
 - [I11] `api.search.replace` at `EditorPage.tsx:775` and `:1018` — neither call site threads a signal. Re-evaluate against `useAbortableAsyncOperation`; the call already runs through `useEditorMutation`, so the hook fit may be limited and a `replaceAbortRef` paired with the mutation may be the right shape.
-- [S12] `api.chapters.get` signal threading at remaining `useProjectEditor.ts` call sites (lines 245, 704, 757). The fourth call site (line 849) already threads a signal. These are paired with `selectChapterSeq` (a `useAbortableSequence`) for epoch checks; the `AbortController` complement is orthogonal. Likely keeps a hand-rolled `selectChapterAbortRef` pattern, since 4b.14's "Out of Scope" explicitly notes that the `useAbortableSequence`-paired sites stay paired.
+- [S12] `api.chapters.get` signal threading at remaining `useProjectEditor.ts` call sites (lines 245, 704, 757). The fourth call site (line 849) already threads a signal. These are paired with `selectChapterSeq` (a `useAbortableSequence`) for epoch checks; the `AbortController` complement is orthogonal. Likely keeps a hand-rolled `selectChapterAbortRef` pattern, since Phase 4b.3a.1's "Out of Scope" explicitly notes that the `useAbortableSequence`-paired sites stay paired.
 
 ### Out of Scope
 
@@ -799,7 +813,6 @@ CLAUDE.md `§Save-pipeline invariants` rule 4 (bump-the-sequence-before-the-requ
 - Cluster C consumer recovery work (Phase 4b.3c).
 - Cluster E mapper-internals work (Phase 4b.3d).
 - Behaviour changes visible to the user; this phase is correctness-and-observability only.
-- Re-introducing [I6] without new evidence beyond the dedup pass's per-site evaluation.
 
 ### Definition of Done
 
@@ -811,7 +824,7 @@ CLAUDE.md `§Save-pipeline invariants` rule 4 (bump-the-sequence-before-the-requ
 ### Dependencies
 
 - Phase 4b.3a (signal-bearing API surface).
-- **Phase 4b.14** (`useAbortableAsyncOperation`) — added 2026-04-28; each call site is re-evaluated against this hook before threading. Independent of 4b.3c and 4b.3d at the file level; Phase 4b.3c [S10] depends on this one.
+- **Phase 4b.3a.1** (`useAbortableAsyncOperation`, originally numbered 4b.14) — added 2026-04-28; each call site is re-evaluated against this hook before threading. Independent of 4b.3c and 4b.3d at the file level; Phase 4b.3c [S10] depends on this one.
 
 ---
 
@@ -841,7 +854,7 @@ The Phase 4b.3 unified error mapper centralized code-to-string translation, but 
 - [S4] `handleStatusChange` (`useProjectEditor.ts:1032-1040`) — fall back to `setError(message)` when `onError` is omitted (mirror `handleReorderChapters`).
 - [S5] `useSnapshotState.restoreSnapshot` (`useSnapshotState.ts:421-434`) — track a `dispatched` flag; only synthesize a 200 BAD_JSON for failures that occurred *after* the request was sent.
 - [S8] Reconcile `image.delete.extrasFrom` partial-malformed handling with the [I1]-era all-or-nothing guard. Three options documented in the original 4b.3a plan (drop, reconcile, replace [I1]); pick one and document the choice.
-- [S10] Dev-only `console.warn` on silent recovery-catches in `handleStatusChange:1079` and `handleCreateChapter:604`, gated on `!signal.aborted`. Depends on Phase 4b.3b's signal threading. **Reordering note (2026-04-28):** if the recovery sites at `handleStatusChange:1079` and `handleCreateChapter:604` migrate to `useAbortableAsyncOperation` in Phase 4b.14 / 4b.3b, this gate may be re-expressible via the hook's internal `aborted` getter rather than a raw `signal.aborted` check. Re-evaluate the gate's surface during 4b.3c brainstorming after 4b.14 lands.
+- [S10] Dev-only `console.warn` on silent recovery-catches in `handleStatusChange:1079` and `handleCreateChapter:604`, gated on `!signal.aborted`. Depends on Phase 4b.3b's signal threading. **Reordering note (2026-04-29):** if the recovery sites at `handleStatusChange:1079` and `handleCreateChapter:604` migrate to `useAbortableAsyncOperation` in Phase 4b.3a.1 / 4b.3b, this gate consumes the per-call `signal` returned by `run()` (i.e. `run(...).signal.aborted`), **not** the hook's component-scoped `get aborted(): boolean` getter. The component-scoped getter reads true after *any* operation in that hook has aborted (including unmount cleanup), which would over-suppress the warn — firing it as silent for catches whose own operation had not aborted. Re-evaluate the gate's surface during 4b.3c brainstorming after Phase 4b.3a.1 lands; the per-call signal stays the right input.
 - [S11] `chapter.create` 404 — gate `isNotFound(err)` and call `navigate("/")` (mirror `EditorPage:1552`).
 - [S15] Migrate the 30+ `if (message === null) return; if (message) setX(message)` ladders to `applyMappedError`. One commit per migrated site; mixed-catch sites get a behaviour-pinning test before migration.
 - [S16] Add `chapter.flushBeforeNavigate` scope to `scopes.ts`; switch `EditorPage.tsx:1481-1485` to it.
@@ -1371,7 +1384,7 @@ The two dedup reports under `paad/duplicate-code-reports/` flagged four Suggesti
 - **Report 1 S2** — `author_name` column is unbounded `text` in migration `011_add_author_name.js` while the schema caps at 500. Standard "API cap with permissive DB" pattern; pick up only if a hardening pass is undertaken across all string-typed columns.
 - **Report 1 S3** — Chapter status is seeded by migration 003 (with `sort_order` and `label`) and *also* declared as a Zod enum (values only). DB is the source of truth for UI labels (via `/api/chapter-statuses`); enum exists for input validation. Document the sync requirement in `CLAUDE.md` rather than refactoring; pick up in a CLAUDE.md doc-pass.
 - **Report 2 S1** — `possiblyCommitted` refresh recipe is duplicated at three image-upload sites (`ImageGallery.handleFileSelect`, `ImageGallery.handleSave`, `Editor.tsx` paste/drop). Three sites with two in the same file is below the consolidation threshold; pick up only if a fourth image-upload entry point appears (e.g. drag-drop on detail view, bulk import).
-- **Report 1 S1** — *(partially addressed)*: `ProjectSettingsDialog`/`ExportDialog` hand-rolled `AbortController` is intentionally distinct from `useAbortableSequence` (different problems) and is now explicitly deferred under Phase 4b.14's "Out of Scope" along with the other ~8 production AbortController sites.
+- **Report 1 S1** — *(partially addressed)*: `ProjectSettingsDialog`/`ExportDialog` hand-rolled `AbortController` is intentionally distinct from `useAbortableSequence` (different problems) and is now explicitly deferred under Phase 4b.3a.1's "Out of Scope" (originally numbered 4b.14) along with the other ~8 production AbortController sites.
 
 If a hardening pass (S2), a CLAUDE.md doc-pass (S3), or a fourth image-upload entry point (Report 2 S1) appears, surface the corresponding suggestion as a candidate phase.
 
