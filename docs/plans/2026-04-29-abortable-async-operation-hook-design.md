@@ -62,6 +62,8 @@ export type AbortableAsyncOperation = {
 export function useAbortableAsyncOperation(): AbortableAsyncOperation;
 ```
 
+`run` returns an inline structural type `{ promise: Promise<T>; signal: AbortSignal }` rather than a separately-exported named type. This matches `useAbortableSequence`'s convention: `SequenceToken` is exported because consumers persist tokens across calls; an "abortable run" is an immediate-use shape that consumers destructure at the call site, not a thing they store. Keeping the shape inline keeps the public surface minimal.
+
 There is deliberately **no** component-level `aborted` getter. The roadmap §S10 reordering note at line 857 already documents that the per-call signal is the right input for "did this operation abort" gates — a hook-level getter reads true after *any* operation in that hook has aborted (including unmount cleanup), which would over-suppress dev warnings firing on catches whose own operation had not aborted. The `signal` returned from `run()` is per-call and immune to that footgun.
 
 The returned object is `useMemo`-stable across renders (matching `useAbortableSequence`); `run` and `abort` are `useCallback`-stable with `[]` dependencies. Consumers may safely place the hook's returned object in a `useEffect` dependency array.
@@ -210,8 +212,8 @@ Insert `<!-- plan: 2026-04-29-abortable-async-operation-hook-design.md -->` on t
 - New file `packages/client/src/hooks/useAbortableAsyncOperation.ts` with the API above.
 - New file `packages/client/src/hooks/useAbortableAsyncOperation.test.ts` covering the nine behavioural-contract cases.
 - CLAUDE.md `§Save-pipeline invariants` rule 4 extended per the "CLAUDE.md addition" section.
-- `docs/roadmap.md` restructured per R1–R5 above.
-- Plan comment for this design lands per R5.
+- `docs/roadmap.md` restructured per R1–R5 above. *(Already executed during brainstorming on 2026-04-29; carried in this branch as commit `e5736e8`. The implementation plan does not re-execute these edits.)*
+- Plan comment for this design lands per R5. *(Already executed in the same `e5736e8` commit alongside the restructure.)*
 - Zero consumer migrations.
 - `make all` green at PR close (lint, format, typecheck, coverage thresholds, e2e — though e2e shouldn't change).
 - Coverage on the new hook ≥ CLAUDE.md `§Testing Philosophy` thresholds (95/85/90/95).
