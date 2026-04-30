@@ -38,7 +38,10 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.2 | Abortable Sequence Hook | Unify ad-hoc seq-refs into a single `useAbortableSequence()` primitive | Done |
 | 4b.3 | Unified API Error Mapper | Single module mapping API errors to UI strings; no raw server text in UI | Done |
 | 4b.3a | 4b.3 Review Follow-ups (Clusters A, D, F) | Scope-coverage gaps, sanitizer hardening, PR-shape retrospective | Done |
-| 4b.3a.1 | Abortable Async Operation Hook | Extract `useAbortableAsyncOperation` for the "abort prior, fresh controller, check `signal.aborted` before setState" pattern hand-rolled in `useTrashManager`, `useFindReplaceState`, `ImageGallery` (5 in-scope migration points across 3 files; additional refs in those files are out of scope per the per-site-evaluation rule). Originally numbered 4b.14; renumbered 2026-04-29 when re-ordered to land before 4b.3b–d per dedup-pass collision (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` finding I3). | Planned |
+| 4b.3a.1 | Abortable Async Operation Hook | Extract `useAbortableAsyncOperation()` + unit tests + CLAUDE.md addition; consumer migrations follow in 4b.3a.2/3/4. Originally numbered 4b.14; renumbered 2026-04-29 when re-ordered to land before 4b.3b–d per dedup-pass collision (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` finding I3); narrowed and split into 4b.3a.1–4b.3a.4 on 2026-04-29 after the brainstorm's code survey found the named-site count undercounted shared-ref siblings (see `docs/plans/2026-04-29-abortable-async-operation-hook-design.md`). | In Progress |
+| 4b.3a.2 | Find/Replace Abort Migration | Migrate `useFindReplaceState.search` (sequence-paired single op) to `useAbortableAsyncOperation`. Cleanup effects at lines 99–104 and 130–131 are subsumed by the hook's auto-abort; `closePanel`'s explicit `searchAbortRef.current?.abort()` becomes `op.abort()`. | Planned |
+| 4b.3a.3 | Trash Manager Abort Migration | Migrate `useTrashManager` to `useAbortableAsyncOperation`: `openTrash` + `confirmDeleteChapter` refresh share one hook instance (replaces `trashAbortRef`); `handleRestore` uses a second instance (replaces `restoreAbortRef`). Two instances stay separate because the operations can be in flight concurrently. | Planned |
+| 4b.3a.4 | Image Gallery Abort Migration | Migrate `ImageGallery` to `useAbortableAsyncOperation`: 4 mutation operations (`handleFileSelect`, `handleSave`, `handleInsert`, `handleDelete`) share one hook instance (replaces `mutateAbortRef`); the click-time references-load refresh uses a second instance (replaces `refsAbortRef`). The list-load and detail-load `useEffect` controllers stay as-is (different lifecycle shape). | Planned |
 | 4b.3b | AbortSignal Threading Completion | Finish Cluster B: thread signal through remaining call sites (HomePage create/delete, useProjectEditor `handleCreateChapter` + `loadProject` + remaining `chapters.get`, EditorPage chapterStatuses retry + `search.replace`). Now depends on 4b.3a.1; each site re-evaluated against the new hook before threading. | Planned |
 | 4b.3c | Consumer Recovery Completeness | Cluster C: introduce `applyMappedError` helper and migrate 15 consumers that mishandle `mapApiError` output | Planned |
 | 4b.3d | Mapper Internals & CLAUDE.md Updates | Cluster E: `safeExtrasFrom` try/catch, `ScopeExtras<S>` type, helper extractions, CLAUDE.md doc update | Planned |
@@ -729,57 +732,188 @@ Cluster A merged via `ovid/cluster-a-error-mapping` (merge `a0cacec`).
 ---
 
 ## Phase 4b.3a.1: Abortable Async Operation Hook
+<!-- plan: 2026-04-29-abortable-async-operation-hook-design.md -->
 
 ### Goal
 
-Extract `useAbortableAsyncOperation` covering the "abort prior controller, create fresh, thread `signal` into the request, check `controller.signal.aborted` before setState, abort all on unmount" pattern. Migrate the five in-scope hand-rolled controller refs across three files: `useTrashManager.openTrash`, `useTrashManager.handleRestore`, `useFindReplaceState.search`, `ImageGallery.handleFileSelect`, and `ImageGallery.handleSave`. Other AbortController sites in the client (~8 additional production files) are explicitly out of scope here — see "Out of Scope".
-
-(Note on counts: the dedup report at `paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` finding I3 frames these as "4 cross-confirmed sites (~7 refs)" by grouping `ImageGallery`'s two operations into one site; this section enumerates them individually as 5 migrations because each operation needs its own characterization test before migration.)
+Extract `useAbortableAsyncOperation` covering the "abort prior controller, create fresh, thread `signal` into the request, check `signal.aborted` before setState, abort all on unmount" pattern. **This phase ships the hook + unit tests + a CLAUDE.md addition only — zero consumer migrations.** The three migration phases (4b.3a.2 `useFindReplaceState`, 4b.3a.3 `useTrashManager`, 4b.3a.4 `ImageGallery`) follow in document order and consume the hook one file at a time.
 
 ### Why Now
 
-The prior dedup pass already landed `useAbortableSequence` for *response staleness*. `AbortController` solves the orthogonal problem of *network cancellation*; both are correct, neither subsumes the other. The five sites in scope here today encode the same four-step state machine independently, with detailed inline comments in `useTrashManager` that exist only because the abstraction is missing. A new list/detail/upload pane is likely to copy the nearest neighbour, and off-by-one cleanup-on-unmount is easy to miss. (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` I3.)
+The prior dedup pass already landed `useAbortableSequence` for *response staleness*. `AbortController` solves the orthogonal problem of *network cancellation*; both are correct, neither subsumes the other. The cross-confirmed sites encode the same four-step state machine independently, with detailed inline comments in `useTrashManager` that exist only because the abstraction is missing. A new list/detail/upload pane is likely to copy the nearest neighbour, and off-by-one cleanup-on-unmount is easy to miss. (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` I3.)
 
-**Originally numbered 4b.14; renumbered to 4b.3a.1 and re-ordered 2026-04-29** to land before Phase 4b.3b (AbortSignal Threading Completion). The /roadmap brainstorming pass on 2026-04-28 surfaced a collision: 4b.3b would add seven more hand-rolled instances of exactly the pattern this phase extracts, *before* the extraction lands. Doing this phase first means 4b.3b's per-site evaluation can adopt the new hook where it fits and justify hand-rolled threading where it does not, instead of growing the pattern footprint and then consolidating it later. The 2026-04-29 pushback review on the reorder produced the renumber (per the document-order = execution-order contract documented in §Phase Numbering and Order) and the count corrections in this section.
+**Originally numbered 4b.14; renumbered to 4b.3a.1 and re-ordered 2026-04-29** to land before Phase 4b.3b (AbortSignal Threading Completion). The /roadmap brainstorming pass on 2026-04-28 surfaced a collision: 4b.3b would add seven more hand-rolled instances of exactly the pattern this phase extracts, *before* the extraction lands. Doing this phase first means 4b.3b's per-site evaluation can adopt the new hook where it fits and justify hand-rolled threading where it does not, instead of growing the pattern footprint and then consolidating it later. The 2026-04-29 pushback review on the reorder produced the renumber per the document-order = execution-order contract.
+
+**Narrowed and split 2026-04-29.** The brainstorming pass for this phase (`docs/plans/2026-04-29-abortable-async-operation-hook-design.md`) found that the originally-named 5 migration sites undercounted shared-ref siblings: `mutateAbortRef` is used by 4 `ImageGallery` operations (not 2), and `trashAbortRef` is used by 2 `useTrashManager` operations (not 1). Because the new hook owns one `AbortController` ref per instance, you cannot migrate a subset of operations sharing one ref — doing so silently breaks the mutual-exclusion contract. The migration unit is therefore the file, not the named operation. The corrected in-scope set is 9 operations across 3 files; the original phase split into the hook PR (this phase) plus three file-PRs (4b.3a.2/3/4).
 
 ### Scope
 
-- Add `useAbortableAsyncOperation()` in `packages/client/src/hooks/`. Suggested shape: `{ run<T>(fn: (signal: AbortSignal) => Promise<T>): { promise; signal }, get aborted(): boolean }`. Auto-abort on unmount via the cleanup effect.
-- Add unit tests for the hook (abort-on-rerun, abort-on-unmount, signal threading).
-- Migrate one site at a time behind characterization tests:
-  - `useTrashManager.ts:55–60` (`openTrash`)
-  - `useTrashManager.ts:80–85` (`handleRestore`)
-  - `useFindReplaceState.ts:212–213` (instantiation in `search`), `:259` (post-response cleanup); the unmount cleanup at `:100–104` and the project-change cleanup at `:130–131` are subsumed by the new hook's auto-abort effect
-  - `ImageGallery.tsx:184–209` (`handleFileSelect`)
-  - `ImageGallery.tsx:234–262` (`handleSave`)
-- Hooks with two independent operations (trash) keep two hook instances — do not merge unrelated controllers.
-- Do not migrate `useFindReplaceState`'s combined `AbortController` + `useAbortableSequence` pairing into a single primitive; keep both, since they solve different problems.
+- Add `useAbortableAsyncOperation()` in `packages/client/src/hooks/`. Public surface: `{ run<T>(fn: (signal: AbortSignal) => Promise<T>): { promise: Promise<T>; signal: AbortSignal }, abort(): void }`. Auto-abort on unmount via the cleanup effect; no component-level `aborted` getter (the per-call `signal` is the canonical "did this operation abort" probe).
+- Add unit tests for the hook covering the nine behavioural-contract bullets in the design doc (abort-prior, signal identity, explicit abort, unmount-aborts, post-unmount run, stable returned object, idempotent abort, concurrent-run discipline, StrictMode double-mount).
+- Add a paragraph to CLAUDE.md `§Save-pipeline invariants` rule 4 documenting `useAbortableAsyncOperation` alongside `useAbortableSequence` (per the design doc's "CLAUDE.md addition" section).
+- The Phase Structure table at the top of this file plus the addition of phases 4b.3a.2/3/4 land in this PR (executed during brainstorming on 2026-04-29; included for traceability).
 
 ### Out of Scope
 
-- Folding `useAbortableSequence` into the new hook. They solve different problems and are documented in CLAUDE.md as a contract.
+- **All consumer migrations.** No call site in `packages/client/src/` switches to the new hook in this PR. The hook ships unused by production code; only unit tests exercise it. Migrations land in 4b.3a.2 (`useFindReplaceState`), 4b.3a.3 (`useTrashManager`), and 4b.3a.4 (`ImageGallery`).
+- Folding `useAbortableSequence` into the new hook. They solve different problems and stay separate primitives.
 - Migrating `useEditorMutation`'s save-cancellation. That hook is canonical for editor mutations and has its own state machine.
 - Adding lint enforcement (consider in a follow-up if drift returns).
-- The remaining AbortController sites in the client (`App.tsx`, `DashboardView.tsx`, `ExportDialog.tsx`, `ProjectSettingsDialog.tsx`, `SnapshotPanel.tsx`, `useProjectEditor.ts`, `useSnapshotState.ts`, `EditorPage.tsx`, `HomePage.tsx`). Each is its own evaluation: some thread through `useAbortableSequence` already, some are one-shot fetches whose lifecycle does not match this hook's contract, some are dialogs that have their own lifecycle hook coming in Phase 4b.16. Defer these until either a follow-up dedup pass or per-site migration shows the hook fits cleanly. Reassess after the five in-scope migrations have landed. **Phase 4b.3b's per-site evaluation will use this hook where it fits.**
-- `Editor.tsx` paste/drop image upload — the original report listed this site, but on verification (`grep -n "AbortController\\|signal.aborted" packages/client/src/components/Editor.tsx` returns nothing) the path actually uses a `projectIdRef.current !== uploadProjectId` stale-id check, not an `AbortController`. Not a member of this dedup set.
+- The remaining AbortController sites in the client (`App.tsx`, `DashboardView.tsx`, `ExportDialog.tsx`, `ProjectSettingsDialog.tsx`, `SnapshotPanel.tsx`, `useProjectEditor.ts`, `useSnapshotState.ts`, `EditorPage.tsx`, `HomePage.tsx`). Each is its own evaluation; **Phase 4b.3b's per-site evaluation will use this hook where it fits.**
+- `Editor.tsx` paste/drop image upload — uses a `projectIdRef.current !== uploadProjectId` stale-id check, not an `AbortController`. Not a member of this dedup set.
+- `ImageGallery`'s list-load and detail-load `useEffect` controllers (lines 105–126, 145–169). Their lifecycle (controller-per-effect, cleanup-on-dep-change) is a different shape from this hook's "abort-prior-on-action" contract. Not in scope here or in 4b.3a.4.
 
 ### Definition of Done
 
-- New hook in `packages/client/src/hooks/` with unit tests.
-- All five in-scope migration points completed via PR-friendly, one-site-at-a-time changes behind characterization tests; do not bundle all five into a single extraction PR (the dedup report at `paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` lines 145–146 explicitly says each migration is independently shippable).
-- No raw `new AbortController()` + manual `signal.aborted` ladder remaining at those five migration points. Other client files keep their existing controllers per "Out of Scope".
-- All client tests still green.
+- New file `packages/client/src/hooks/useAbortableAsyncOperation.ts` with the documented API.
+- New file `packages/client/src/hooks/useAbortableAsyncOperation.test.ts` covering the nine behavioural-contract cases.
+- CLAUDE.md `§Save-pipeline invariants` rule 4 extended.
+- `docs/roadmap.md` restructured: Phase Structure table updated; 4b.3a.1 narrowed; 4b.3a.2/3/4 added; Phase 4b.3b dependency parenthetical tidied. (Already executed during brainstorming.)
+- Plan comment for the design doc lands. (Already executed during brainstorming.)
+- Zero consumer migrations.
 - `make all` green at PR close.
-- No behavior change visible to the user.
-
-### PR Shape
-
-The exact split (one PR per migration, vs. some grouped) is decided at brainstorming time. The dedup report's `each migration is independently shippable` is the floor, not a ceiling — the brainstormer may reasonably group migrations that share a file and a test setup (e.g., `ImageGallery.handleFileSelect` and `handleSave`) if review-context favours it. Open question for the brainstormer to resolve, not the roadmap.
+- Coverage on the new hook ≥ CLAUDE.md `§Testing Philosophy` thresholds (95/85/90/95).
+- Zero test warnings.
 
 ### Dependencies
 
-- Independent of all other 4b.X phases. May land in parallel with 4b.15 / 4b.16, since those touch hooks but in different files.
+- Independent of all prior phases. The signal-bearing API surface in `api/client.ts` was shipped in 4b.3a; this hook does not consume that surface.
+- **Blocks** Phase 4b.3a.2 / 4b.3a.3 / 4b.3a.4 — each migration depends on the hook existing.
 - **Blocks Phase 4b.3b** as of the 2026-04-28 reorder; 4b.3b's per-site evaluation depends on this hook existing.
+
+---
+
+## Phase 4b.3a.2: Find/Replace Abort Migration
+
+### Goal
+
+Migrate `useFindReplaceState.search` from a hand-rolled `searchAbortRef` + cleanup-effect pattern to a single `useAbortableAsyncOperation` instance. The companion `useAbortableSequence` pairing stays — `search` needs both response-staleness arbitration AND network cancellation, and the two hooks remain orthogonal per CLAUDE.md `§Save-pipeline invariants` rule 4.
+
+### Why Now
+
+Phase 4b.3a.1 ships the `useAbortableAsyncOperation` primitive; this phase is one of three independent file migrations that consume it. `useFindReplaceState` is the simplest of the three (single operation, no shared-ref coupling) and gives the hook its first production-side validation.
+
+### Scope
+
+- Add a characterization test before migration that pins the abort-prior, abort-on-unmount, and signal-threading behaviour of `search` at the consumer's API surface.
+- Replace `searchAbortRef` (line 78) and its associated unmount cleanup (lines 99–104) and project-change cleanup (lines 130–131) with one `useAbortableAsyncOperation` instance allocated alongside `searchSeq`.
+- Replace the in-`search` allocation pattern (lines 193, 212–213) with `op.run(signal => api.search.find(slug, frozenQuery, frozenOptions, signal))`.
+- Replace `closePanel`'s explicit `searchAbortRef.current?.abort()` (line 168) with `op.abort()`.
+- Replace the post-response `if (searchAbortRef.current === controller) searchAbortRef.current = null` cleanup (line 259) — no longer needed; the hook owns the ref lifecycle.
+- The `if (token.isStale()) return` epoch checks (lines 218, 223, 254) stay — sequence arbitration is independent of network cancellation.
+- The `if (signal.aborted) return` checks against the per-call `signal` stay (and become the canonical pattern).
+
+### Out of Scope
+
+- Migrating the `useAbortableSequence` pairing. Both hooks coexist on this operation by design.
+- Touching `closePanel`'s debounce-clear, `setLoading(false)`, or sequence-abort logic — only the `searchAbortRef`-related lines are in scope.
+- Other consumers of `useAbortableAsyncOperation` (those land in 4b.3a.3 / 4b.3a.4).
+
+### Definition of Done
+
+- `useFindReplaceState` no longer references `useRef<AbortController>` — only `useAbortableAsyncOperation`.
+- Characterization test passes both before and after the migration.
+- `make all` green.
+- No behaviour change visible to the user.
+
+### PR Shape
+
+One PR for this single-file migration. Per CLAUDE.md `§Pull Request Scope` one-feature rule, the migration is one refactor; do not bundle with 4b.3a.3 or 4b.3a.4.
+
+### Dependencies
+
+- Phase 4b.3a.1 (the `useAbortableAsyncOperation` hook).
+- Independent of Phase 4b.3a.3 / 4b.3a.4; may land in any order relative to those.
+
+---
+
+## Phase 4b.3a.3: Trash Manager Abort Migration
+
+### Goal
+
+Migrate `useTrashManager`'s three `AbortController` operations to `useAbortableAsyncOperation` instances. The two refs in this hook (`trashAbortRef`, `restoreAbortRef`) cover three operations: `openTrash` and `confirmDeleteChapter`'s post-delete trash refresh both share `trashAbortRef` (mutually exclusive), and `handleRestore` owns `restoreAbortRef` independently. The migration produces two hook instances — one per ref — preserving the existing concurrency model.
+
+### Why Now
+
+Phase 4b.3a.1 ships the primitive. Migrating `useTrashManager` validates the hook against a two-instance, three-operation consumer with both shared and independent semantics.
+
+### Scope
+
+- Add characterization tests before migration: one each for `openTrash`, `confirmDeleteChapter`'s trash refresh, and `handleRestore`. Each pins the abort-prior, abort-on-unmount, and signal-threading behaviour at the consumer's API surface.
+- Replace `trashAbortRef` (line 36) with `const trashOp = useAbortableAsyncOperation()`. Both `openTrash` (line 53) and `confirmDeleteChapter`'s refresh (lines 166–178) call `trashOp.run(signal => api.projects.trash(project.slug, signal))`.
+- Replace `restoreAbortRef` (line 44) with `const restoreOp = useAbortableAsyncOperation()`. `handleRestore` (line 73) calls `restoreOp.run(signal => api.chapters.restore(chapterId, signal))`.
+- Remove the unmount cleanup `useEffect` at lines 45–51 — both hook instances handle their own auto-abort.
+- Remove the post-response `if (restoreAbortRef.current === controller) restoreAbortRef.current = null` lines (86, 110) — the hook owns the ref lifecycle.
+- The `if (controller.signal.aborted) return` checks become `if (signal.aborted) return` against the per-call signal.
+- Update inline review comments to reference the new hook instead of the hand-rolled refs.
+
+### Out of Scope
+
+- Folding `trashOp` and `restoreOp` into one instance. They serve different concurrency models — the user can be restoring a chapter while the trash list refreshes — and merging would silently break that.
+- Other consumers of `useAbortableAsyncOperation`.
+- The C2 `seedConfirmedStatusRef` cache-seeding logic (line 104) — orthogonal.
+
+### Definition of Done
+
+- `useTrashManager` no longer references `useRef<AbortController>` — only `useAbortableAsyncOperation`.
+- Three characterization tests pass before and after migration.
+- `make all` green.
+- No behaviour change visible to the user.
+
+### PR Shape
+
+One PR for this single-file migration. Two hook instances are still one file's worth of refactor.
+
+### Dependencies
+
+- Phase 4b.3a.1 (the hook).
+- Independent of Phase 4b.3a.2 / 4b.3a.4.
+
+---
+
+## Phase 4b.3a.4: Image Gallery Abort Migration
+
+### Goal
+
+Migrate `ImageGallery`'s `AbortController` operations to `useAbortableAsyncOperation` instances. The file has two refs: `mutateAbortRef` (shared by four mutually-exclusive mutation operations: `handleFileSelect`, `handleSave`, `handleInsert`, `handleDelete`) and `refsAbortRef` (used by the click-time references-load refresh, intentionally independent of mutations). The migration produces two hook instances; the four mutation operations share one, and the references refresh uses the other. The list-load and detail-load `useEffect` controllers stay as-is — their lifecycle (controller-per-effect, cleanup-on-dep-change) is a different shape from this hook's contract.
+
+### Why Now
+
+Phase 4b.3a.1 ships the primitive. `ImageGallery` is the largest of the three migration consumers — five operations across two hook instances — so it's the strongest validation of the hook's coupling story.
+
+### Scope
+
+- Add characterization tests before migration: one each for `handleFileSelect`, `handleSave`, `handleInsert`, `handleDelete`, and the click-time references refresh. Each pins abort-prior, abort-on-unmount, and signal-threading behaviour.
+- Replace `mutateAbortRef` (line 67) with `const mutationOp = useAbortableAsyncOperation()`. All four mutation handlers (`handleFileSelect:184`, `handleSave:234`, `handleInsert:269`, `handleDelete:304`) call `mutationOp.run(signal => api.images.<operation>(args, signal))`.
+- Replace `refsAbortRef` (line 73) with `const refsOp = useAbortableAsyncOperation()`. The Delete-button click handler at line 599 calls `refsOp.run(signal => api.images.references(imageId, signal))`.
+- Remove the unmount cleanup `useEffect` at lines 74–80 — both hook instances handle their own auto-abort.
+- The `if (controller.signal.aborted) return` checks become `if (signal.aborted) return` against the per-call signal.
+- Capture-time identity checks (`selectedImageIdRef.current !== imageId` at lines 606, 612) stay — the hook handles abort, the consumer handles identity.
+- Update inline review comments to reference the new hook.
+
+### Out of Scope
+
+- The list-load `useEffect` at lines 105–126 and the detail-load `useEffect` at lines 145–169. Their lifecycle is "controller-per-effect, cleanup-on-dep-change" — different from this hook's "abort-prior-on-action" contract. The cleanup-function approach is correct as-is.
+- Folding `mutationOp` and `refsOp` into one instance. The two refs are intentionally orthogonal; merging would silently break the "delete in flight does not abort an in-progress references refresh" non-relationship that today's code preserves.
+- Other consumers of `useAbortableAsyncOperation`.
+- The `incrementRefreshKey` reducer / `refreshKey` external prop (lines 96, 127) — orthogonal.
+
+### Definition of Done
+
+- `ImageGallery` no longer references `useRef<AbortController>` for `mutateAbortRef` or `refsAbortRef` — only `useAbortableAsyncOperation`.
+- The list-load and detail-load `useEffect` controllers remain unchanged.
+- Five characterization tests pass before and after migration.
+- `make all` green.
+- No behaviour change visible to the user.
+
+### PR Shape
+
+One PR for this single-file migration. Five operations across two hook instances are still one file's worth of refactor.
+
+### Dependencies
+
+- Phase 4b.3a.1 (the hook).
+- Independent of Phase 4b.3a.2 / 4b.3a.3.
 
 ---
 
@@ -793,7 +927,7 @@ Finish Cluster B from the Phase 4b.3 code review (`paad/code-reviews/ovid-unifie
 
 CLAUDE.md `§Save-pipeline invariants` rule 4 (bump-the-sequence-before-the-request) is enforced by `useAbortableSequence`, but it depends on the underlying request being cancellable. While these consumers ship without signals, an in-flight response can land on a stale closure and re-set state after the user has navigated away — the same drift `useAbortableSequence` exists to prevent. Landing this before Phase 4b.3c's [S10] is required because the dev-warn gate uses `signal.aborted`.
 
-**Reordering (2026-04-28).** This phase now depends on Phase 4b.3a.1 (`useAbortableAsyncOperation`, originally numbered 4b.14) landing first. The /roadmap brainstorming pass on 2026-04-28 surfaced a collision with finding I3 of the experimental-dedup pass (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md`): the eight client AbortController sites are deferred in I3 pending per-site evaluation after the new hook is proven on the cross-confirmed sites (`useTrashManager`, `useFindReplaceState`, `ImageGallery`). Threading hand-rolled signals through this phase's call sites *before* the hook lands would expand the pattern footprint that 4b.3a.1 was created to consolidate. Each call site below will be re-evaluated against the new hook at brainstorm time: where the hook fits, the site migrates to it; where the lifecycle does not match (e.g., sites paired with `useAbortableSequence`), the hand-rolled threading is justified per-site. [I6] has already been removed (see below).
+**Reordering (2026-04-28).** This phase now depends on Phase 4b.3a.1 (`useAbortableAsyncOperation`) landing first. The /roadmap brainstorming pass on 2026-04-28 surfaced a collision with finding I3 of the experimental-dedup pass (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md`): the eight client AbortController sites are deferred in I3 pending per-site evaluation after the new hook is proven on the cross-confirmed sites (`useTrashManager`, `useFindReplaceState`, `ImageGallery`). Threading hand-rolled signals through this phase's call sites *before* the hook lands would expand the pattern footprint that 4b.3a.1 was created to consolidate. Each call site below will be re-evaluated against the new hook at brainstorm time: where the hook fits, the site migrates to it; where the lifecycle does not match (e.g., sites paired with `useAbortableSequence`), the hand-rolled threading is justified per-site. [I6] has already been removed (see below).
 
 ### Scope
 
@@ -824,7 +958,7 @@ CLAUDE.md `§Save-pipeline invariants` rule 4 (bump-the-sequence-before-the-requ
 ### Dependencies
 
 - Phase 4b.3a (signal-bearing API surface).
-- **Phase 4b.3a.1** (`useAbortableAsyncOperation`, originally numbered 4b.14) — added 2026-04-28; each call site is re-evaluated against this hook before threading. Independent of 4b.3c and 4b.3d at the file level; Phase 4b.3c [S10] depends on this one.
+- **Phase 4b.3a.1** (`useAbortableAsyncOperation`) — added 2026-04-28; each call site is re-evaluated against this hook before threading. Independent of 4b.3c and 4b.3d at the file level; Phase 4b.3c [S10] depends on this one.
 
 ---
 
