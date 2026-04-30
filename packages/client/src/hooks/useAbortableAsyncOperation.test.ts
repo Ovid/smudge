@@ -80,6 +80,27 @@ describe("useAbortableAsyncOperation", () => {
     expect(signal.aborted).toBe(false);
   });
 
+  it("run() during initial render returns a non-pre-aborted signal", () => {
+    // Pins that useAbortableAsyncOperation.ts initializes mountedRef to
+    // `useRef(true)`, not `useRef(false)`. If a future refactor flipped
+    // the default to false, the mount effect would still flip it to true
+    // *after* render completes — so every consumer that calls run() in
+    // the render body (during the initial render, before effects commit)
+    // would silently produce pre-aborted signals. Call run() during the
+    // same render pass so the assertion captures the value *before* the
+    // effect has had a chance to revive mountedRef. Mirrors
+    // useAbortableSequence.test.ts:108-126.
+    let renderPhaseAborted: boolean | null = null;
+    renderHook(() => {
+      const op = useAbortableAsyncOperation();
+      if (renderPhaseAborted === null) {
+        renderPhaseAborted = op.run(resolveImmediately).signal.aborted;
+      }
+      return op;
+    });
+    expect(renderPhaseAborted).toBe(false);
+  });
+
   it("returns a stable AbortableAsyncOperation object across renders", () => {
     const { result, rerender } = renderHook(() => useAbortableAsyncOperation());
     const first = result.current;
