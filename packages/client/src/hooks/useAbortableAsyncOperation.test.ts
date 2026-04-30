@@ -2,11 +2,21 @@ import { describe, it, expect, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
 
+// `void s;` marks the signal as intentionally unused (silences
+// noUnusedParameters without disabling it suite-wide). Extracting the two
+// idioms keeps the per-test bodies focused on the behaviour under test
+// rather than the test-double scaffolding.
+const neverResolves = (s: AbortSignal) => new Promise<void>(() => void s);
+const resolveImmediately = (s: AbortSignal) => {
+  void s;
+  return Promise.resolve();
+};
+
 describe("useAbortableAsyncOperation", () => {
   it("run() aborts the prior controller before creating a fresh one", () => {
     const { result } = renderHook(() => useAbortableAsyncOperation());
-    const first = result.current.run((s) => new Promise<void>(() => { void s; }));
-    const second = result.current.run((s) => new Promise<void>(() => { void s; }));
+    const first = result.current.run(neverResolves);
+    const second = result.current.run(neverResolves);
     expect(first.signal.aborted).toBe(true);
     expect(second.signal.aborted).toBe(false);
   });
@@ -23,16 +33,16 @@ describe("useAbortableAsyncOperation", () => {
 
   it("abort() aborts the currently-tracked controller", () => {
     const { result } = renderHook(() => useAbortableAsyncOperation());
-    const { signal } = result.current.run((s) => new Promise<void>(() => { void s; }));
+    const { signal } = result.current.run(neverResolves);
     result.current.abort();
     expect(signal.aborted).toBe(true);
   });
 
   it("a run() after abort() returns a fresh non-aborted signal", () => {
     const { result } = renderHook(() => useAbortableAsyncOperation());
-    result.current.run((s) => new Promise<void>(() => { void s; }));
+    result.current.run(neverResolves);
     result.current.abort();
-    const next = result.current.run((s) => { void s; return Promise.resolve(); });
+    const next = result.current.run(resolveImmediately);
     expect(next.signal.aborted).toBe(false);
   });
 
@@ -43,7 +53,7 @@ describe("useAbortableAsyncOperation", () => {
 
   it("unmount aborts the in-flight controller", () => {
     const { result, unmount } = renderHook(() => useAbortableAsyncOperation());
-    const { signal } = result.current.run((s) => new Promise<void>(() => { void s; }));
+    const { signal } = result.current.run(neverResolves);
     unmount();
     expect(signal.aborted).toBe(true);
   });
@@ -51,7 +61,7 @@ describe("useAbortableAsyncOperation", () => {
   it("run() called after unmount returns a pre-aborted signal", () => {
     const { result, unmount } = renderHook(() => useAbortableAsyncOperation());
     unmount();
-    const { signal } = result.current.run((s) => { void s; return Promise.resolve(); });
+    const { signal } = result.current.run(resolveImmediately);
     expect(signal.aborted).toBe(true);
   });
 
@@ -66,7 +76,7 @@ describe("useAbortableAsyncOperation", () => {
     const { result } = renderHook(() => useAbortableAsyncOperation(), {
       wrapper: ({ children }) => React.createElement(React.StrictMode, null, children),
     });
-    const { signal } = result.current.run((s) => { void s; return Promise.resolve(); });
+    const { signal } = result.current.run(resolveImmediately);
     expect(signal.aborted).toBe(false);
   });
 
@@ -85,8 +95,8 @@ describe("useAbortableAsyncOperation", () => {
       a: useAbortableAsyncOperation(),
       b: useAbortableAsyncOperation(),
     }));
-    const aRun = result.current.a.run((s) => new Promise<void>(() => { void s; }));
-    const bRun = result.current.b.run((s) => new Promise<void>(() => { void s; }));
+    const aRun = result.current.a.run(neverResolves);
+    const bRun = result.current.b.run(neverResolves);
     act(() => {
       result.current.a.abort();
     });
@@ -102,8 +112,8 @@ describe("useAbortableAsyncOperation", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const { result, unmount } = renderHook(() => useAbortableAsyncOperation());
-    result.current.run((s) => { void s; return Promise.resolve(); });
-    result.current.run((s) => { void s; return Promise.resolve(); });
+    result.current.run(resolveImmediately);
+    result.current.run(resolveImmediately);
     result.current.abort();
     unmount();
     expect(warnSpy).not.toHaveBeenCalled();
