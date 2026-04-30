@@ -200,3 +200,15 @@
 - **Last seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `4b43b07`
 - **Severity:** Suggestion
 
+## `d0682aab` — `migrationStructuralCheck.test.ts` lacks scaffolding for `useAbortableAsyncOperation` consumers
+- **File (at first sighting):** `packages/client/src/__tests__/migrationStructuralCheck.test.ts:76-90`
+- **Symbol:** `migrationStructuralCheck` (file-level)
+- **Bug class:** Contract
+- **Description:** The existing structural check pins `useAbortableSequence` is imported by every file that used to own a seq-ref. After the upcoming consumer migrations in Phase 4b.3a.2/3/4, the migrated files (`useFindReplaceState.ts`, `useTrashManager.ts`, `ImageGallery.tsx`) lose protection against drifting back to hand-rolled `useRef<AbortController>` because no parallel structural check exists for `useAbortableAsyncOperation`. CLAUDE.md explicitly notes "lint enforcement deferred." Without a structural check, post-migration regressions can silently reintroduce the very pattern footprint the hook was created to consolidate.
+- **Suggested fix:** Either add a placeholder section to `migrationStructuralCheck.test.ts` listing `useAbortableAsyncOperation` migration targets (initially empty array, extended by 4b.3a.2/3/4 PRs as files migrate), OR pick this up as the first task of 4b.3a.2 since that's the first migration that requires the import.
+- **Confidence:** Medium
+- **Found by:** Contract & Integration (`general-purpose (claude-opus-4-7)`)
+- **First seen:** 2026-04-30 on branch `abortable-async-operation-hook` at `7954469`
+- **Last seen:** 2026-04-30 on branch `abortable-async-operation-hook` at `7954469`
+- **Severity:** Suggestion
+
