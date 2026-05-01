@@ -24,7 +24,7 @@ vi.mock("../api/client", () => ({
   },
 }));
 
-const mockFind = api.search.find as ReturnType<typeof vi.fn>;
+const mockFind = api.search.find as unknown as ReturnType<typeof vi.fn<typeof api.search.find>>;
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -45,7 +45,7 @@ afterEach(() => {
  * deep.
  */
 function captureSignal(callIndex = 0): AbortSignal {
-  return mockFind.mock.calls[callIndex][3] as AbortSignal;
+  return mockFind.mock.calls[callIndex]![3]!;
 }
 
 describe("useFindReplaceState", () => {
@@ -379,7 +379,7 @@ describe("useFindReplaceState", () => {
   });
 
   it("search() preserves prior successful results on network/5xx blip (S8)", async () => {
-    const priorResults = { total_count: 1, chapters: [{ id: "c1", title: "Ch 1", matches: [] }] };
+    const priorResults = { total_count: 1, chapters: [{ chapter_id: "c1", chapter_title: "Ch 1", matches: [] }] };
     mockFind.mockResolvedValueOnce(priorResults);
 
     const { result } = renderHook(() => useFindReplaceState("my-project"));
@@ -424,7 +424,7 @@ describe("useFindReplaceState", () => {
     // changes the query. Keeping prior results next to the
     // contentTooLarge banner lets Replace act on stale matches the
     // server has already said it cannot process.
-    const priorResults = { total_count: 1, chapters: [{ id: "c1", title: "Ch 1", matches: [] }] };
+    const priorResults = { total_count: 1, chapters: [{ chapter_id: "c1", chapter_title: "Ch 1", matches: [] }] };
     mockFind.mockResolvedValueOnce(priorResults);
 
     const { result } = renderHook(() => useFindReplaceState("my-project"));
@@ -446,7 +446,7 @@ describe("useFindReplaceState", () => {
   });
 
   it("search() DOES clear results on 400 (query itself is invalid) (S8)", async () => {
-    const priorResults = { total_count: 1, chapters: [{ id: "c1", title: "Ch 1", matches: [] }] };
+    const priorResults = { total_count: 1, chapters: [{ chapter_id: "c1", chapter_title: "Ch 1", matches: [] }] };
     mockFind.mockResolvedValueOnce(priorResults);
 
     const { result } = renderHook(() => useFindReplaceState("my-project"));
