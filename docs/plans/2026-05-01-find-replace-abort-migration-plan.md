@@ -798,7 +798,7 @@ it("migrated files do not contain raw useRef<AbortController>", () => {
   // lands last can convert this from a per-file check to a global
   // packages/client/src ban (excluding the hook file itself).
   const migrated = [resolve(clientSrcRoot, "hooks/useFindReplaceState.ts")];
-  const pattern = /useRef\s*<\s*AbortController\s*>/;
+  const pattern = /useRef\s*<\s*AbortController\s*(?:\|\s*null\s*)?>/;
   for (const file of migrated) {
     const source = readFileSync(file, "utf-8");
     expect(source, `${file} should not contain useRef<AbortController>`).not.toMatch(pattern);

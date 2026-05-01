@@ -107,8 +107,14 @@ describe("client source-tree migration structural check", () => {
     // Companion to the import assertion above; whichever migration phase
     // lands last can convert this from a per-file check to a global
     // packages/client/src ban (excluding the hook file itself).
+    //
+    // The regex covers both `useRef<AbortController>` and
+    // `useRef<AbortController | null>` — every existing site in the
+    // codebase uses the `| null` form, so the narrow form would never
+    // catch the realistic drift case (a future change reverting the
+    // migration with `useRef<AbortController | null>(null)`).
     const migrated = [resolve(clientSrcRoot, "hooks/useFindReplaceState.ts")];
-    const pattern = /useRef\s*<\s*AbortController\s*>/;
+    const pattern = /useRef\s*<\s*AbortController\s*(?:\|\s*null\s*)?>/;
     for (const file of migrated) {
       const source = readFileSync(file, "utf-8");
       expect(source, `${file} should not contain useRef<AbortController>`).not.toMatch(pattern);

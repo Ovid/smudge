@@ -134,13 +134,15 @@ it("migrated files do not contain raw useRef<AbortController>", () => {
   const migrated = [
     resolve(clientSrcRoot, "hooks/useFindReplaceState.ts"),
   ];
-  const pattern = /useRef\s*<\s*AbortController\s*>/;
+  const pattern = /useRef\s*<\s*AbortController\s*(?:\|\s*null\s*)?>/;
   for (const file of migrated) {
     const source = readFileSync(file, "utf-8");
     expect(source, `${file} should not contain useRef<AbortController>`).not.toMatch(pattern);
   }
 });
 ```
+
+The regex covers both `useRef<AbortController>` and `useRef<AbortController | null>` — every existing site in the codebase uses the `| null` form, so the narrow form would never catch the realistic drift case (a future change reverting the migration with `useRef<AbortController | null>(null)`).
 
 Future migration phases (4b.3a.3 / 4b.3a.4) extend the `migrated` array by one entry each. Whichever lands last can collapse the per-file checks into a global ban (out of scope for this phase).
 
