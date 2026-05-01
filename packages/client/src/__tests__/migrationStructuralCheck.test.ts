@@ -88,4 +88,30 @@ describe("client source-tree migration structural check", () => {
       expect(source, `${file} should import useAbortableSequence`).toMatch(/useAbortableSequence/);
     }
   });
+
+  it("useAbortableAsyncOperation is imported by every file that has been migrated to it", () => {
+    // Phase 4b.3a.2 (find-replace) is the first migration of this hook;
+    // 4b.3a.3 (useTrashManager) and 4b.3a.4 (ImageGallery) will append
+    // their migrated files to this list. Whichever phase lands last can
+    // collapse this per-file check into a global ban.
+    const migrated = [resolve(clientSrcRoot, "hooks/useFindReplaceState.ts")];
+    for (const file of migrated) {
+      const source = readFileSync(file, "utf-8");
+      expect(source, `${file} should import useAbortableAsyncOperation`).toMatch(
+        /useAbortableAsyncOperation/,
+      );
+    }
+  });
+
+  it("migrated files do not contain raw useRef<AbortController>", () => {
+    // Companion to the import assertion above; whichever migration phase
+    // lands last can convert this from a per-file check to a global
+    // packages/client/src ban (excluding the hook file itself).
+    const migrated = [resolve(clientSrcRoot, "hooks/useFindReplaceState.ts")];
+    const pattern = /useRef\s*<\s*AbortController\s*>/;
+    for (const file of migrated) {
+      const source = readFileSync(file, "utf-8");
+      expect(source, `${file} should not contain useRef<AbortController>`).not.toMatch(pattern);
+    }
+  });
 });
