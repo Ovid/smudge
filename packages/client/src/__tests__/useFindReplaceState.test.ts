@@ -3,6 +3,7 @@ import { renderHook, act, cleanup } from "@testing-library/react";
 import { useFindReplaceState } from "../hooks/useFindReplaceState";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
+import type { SearchResult } from "@smudge/shared";
 
 vi.mock("../api/client", () => ({
   api: {
@@ -34,6 +35,18 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
 });
+
+/**
+ * Captures the AbortSignal passed to `api.search.find` at the given call
+ * index. The 4th positional argument of `api.search.find` is the signal
+ * (see packages/client/src/api/client.ts). Centralising the index here
+ * absorbs the index-fragility risk noted in the design's §Risks: a future
+ * arg-order change to api.search.find is a one-line fix here, not N tests
+ * deep.
+ */
+function captureSignal(callIndex = 0): AbortSignal {
+  return mockFind.mock.calls[callIndex][3] as AbortSignal;
+}
 
 describe("useFindReplaceState", () => {
   it("initial state is closed with empty fields", () => {
@@ -671,17 +684,133 @@ describe("useFindReplaceState", () => {
     });
     expect(result.current.loading).toBe(true);
 
+    // ADDED for Phase 4b.3a.2: capture the in-flight signal so we can
+    // pin that the project-change reset aborts it (current code:
+    // searchAbortRef.current?.abort(); post-migration: op.abort()).
+    const signal = captureSignal(0);
+    expect(signal.aborted).toBe(false);
+
     // Navigate to a different project with the panel still open and a
     // search in flight.
     rerender({ slug: "second", id: "proj-2" });
 
     expect(result.current.loading).toBe(false);
+    // ADDED for Phase 4b.3a.2: pin that the in-flight signal was aborted
+    // by the project-change reset.
+    expect(signal.aborted).toBe(true);
     // Resolve the now-orphaned response — it must not flip loading back.
     resolveFind({ total_count: 0, chapters: [] });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(result.current.loading).toBe(false);
+  });
+
+  it("search() aborts the prior in-flight signal when called again rapidly", async () => {
+    // Pin the abort-prior contract that op.run() provides post-migration
+    // (and that searchAbortRef.current?.abort() provides today). Issue
+    // search1 against a manually-controlled promise; capture signal1.
+    // Issue search2 against a never-resolving promise; capture signal2.
+    // Assert signal1 is aborted, signal2 is not.
+    let resolveFirst: (v: SearchResult) => void = () => {};
+    mockFind.mockImplementationOnce(
+      () =>
+        new Promise<SearchResult>((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+    mockFind.mockImplementationOnce(() => new Promise<SearchResult>(() => {}));
+
+    const { result } = renderHook(() => useFindReplaceState("my-project"));
+
+    act(() => {
+      result.current.setQuery("first");
+    });
+    await act(async () => {
+      void result.current.search("my-project");
+      await Promise.resolve();
+    });
+    expect(mockFind).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      result.current.setQuery("second");
+    });
+    await act(async () => {
+      void result.current.search("my-project");
+      await Promise.resolve();
+    });
+    expect(mockFind).toHaveBeenCalledTimes(2);
+
+    expect(captureSignal(0).aborted).toBe(true);
+    expect(captureSignal(1).aborted).toBe(false);
+
+    // Allow the orphaned first promise to resolve without affecting state.
+    resolveFirst({ total_count: 0, chapters: [] });
+    await act(async () => {
+      await Promise.resolve();
+    });
+  });
+
+  it("search() in-flight signal aborts on hook unmount", async () => {
+    // Pin the auto-abort-on-unmount contract. The unmount cleanup effect
+    // at lines 99–104 of useFindReplaceState (current) provides this; the
+    // hook's auto-abort provides it post-migration. Either way, an in-
+    // flight search's signal must read aborted === true after unmount.
+    mockFind.mockImplementationOnce(() => new Promise<SearchResult>(() => {}));
+
+    const { result, unmount } = renderHook(() => useFindReplaceState("my-project"));
+
+    act(() => {
+      result.current.setQuery("hello");
+    });
+    await act(async () => {
+      void result.current.search("my-project");
+      await Promise.resolve();
+    });
+    expect(mockFind).toHaveBeenCalledTimes(1);
+
+    const signal = captureSignal(0);
+    expect(signal.aborted).toBe(false);
+
+    unmount();
+    expect(signal.aborted).toBe(true);
+  });
+
+  it("closePanel aborts an in-flight search signal", async () => {
+    // Pin the closePanel abort behaviour. Use a never-resolving mock so a
+    // search is genuinely in flight at closePanel time. Pre-migration:
+    // closePanel calls searchAbortRef.current?.abort() which aborts the
+    // controller. Post-migration: closePanel calls op.abort() which does
+    // the same.
+    //
+    // This test was added during plan-writing because the design's §3a
+    // tightening of "closePanel clears stale result state" was infeasible
+    // — that test resolves the fetch via mockResolvedValue before
+    // closePanel runs, and the pre-migration finally-block clears the
+    // searchAbortRef on success. The captured signal is therefore NOT
+    // aborted pre-migration in that test, contradicting the
+    // characterization framing. Plan-vs-Design Note [D1] documents the
+    // tradeoff.
+    mockFind.mockImplementationOnce(() => new Promise<SearchResult>(() => {}));
+
+    const { result } = renderHook(() => useFindReplaceState("my-project"));
+
+    act(() => {
+      result.current.togglePanel();
+      result.current.setQuery("foo");
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(mockFind).toHaveBeenCalledTimes(1);
+
+    const signal = captureSignal(0);
+    expect(signal.aborted).toBe(false);
+
+    act(() => {
+      result.current.closePanel();
+    });
+    expect(signal.aborted).toBe(true);
   });
 });
 
