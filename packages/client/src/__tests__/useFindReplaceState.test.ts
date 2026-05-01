@@ -812,6 +812,56 @@ describe("useFindReplaceState", () => {
     });
     expect(signal.aborted).toBe(true);
   });
+
+  it("search() success-path setState is suppressed when the signal aborts between await and the next line", async () => {
+    // Pin that the success-path setResults is suppressed when the prior
+    // search is aborted. LIMITATION (per design §Test plan §3b item 3):
+    // the migrated code has TWO gates between await and setResults
+    // (signal.aborted then token.isStale). Both fire when closePanel
+    // bumps the seq AND aborts op. This test cannot tell which gate did
+    // the suppression — it pins the combined behaviour. Pinning the
+    // gates in isolation would require contrived production-impossible
+    // state and is explicitly out of scope.
+    let resolveFind: (v: SearchResult) => void = () => {};
+    mockFind.mockImplementationOnce(
+      () =>
+        new Promise<SearchResult>((resolve) => {
+          resolveFind = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() => useFindReplaceState("my-project"));
+
+    act(() => {
+      result.current.togglePanel();
+      result.current.setQuery("hello");
+    });
+    // Let the 300ms debounce fire so the search starts and loading flips.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    expect(result.current.loading).toBe(true);
+    expect(result.current.results).toBeNull();
+
+    // Close the panel before the search resolves. closePanel bumps
+    // searchSeq (causing token.isStale() to return true) AND, post-
+    // migration, aborts op (causing signal.aborted to be true). Both
+    // gates would fire in the await-to-setResults gap.
+    act(() => {
+      result.current.closePanel();
+    });
+
+    // Resolve the now-orphaned response.
+    await act(async () => {
+      resolveFind({ total_count: 5, chapters: [{ chapter_id: "c1", chapter_title: "Ch 1", matches: [] }] });
+      await Promise.resolve();
+    });
+
+    // The success-path setResults must NOT have fired despite the
+    // resolved response — both the signal.aborted and token.isStale
+    // gates would suppress it (the test does not differentiate which).
+    expect(result.current.results).toBeNull();
+  });
 });
 
 // (Migration structural check moved to migrationStructuralCheck.test.ts — S2.)
