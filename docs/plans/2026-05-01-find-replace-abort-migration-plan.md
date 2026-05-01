@@ -71,7 +71,9 @@ function captureSignal(callIndex = 0): AbortSignal {
 
 - [ ] **Step 2: Run lint to determine the typing approach (per pushback [3])**
 
-Run: `make lint`
+Run: `make lint-check`
+
+(`make lint-check` is the read-only CI variant; `make lint` also works but autofixes the tree as a side effect.)
 
 If lint passes: keep the inline `as AbortSignal` cast as written.
 
@@ -308,11 +310,11 @@ Run: `npm test -w packages/client`
 
 Expected: all pass.
 
-- [ ] **Step 12: Run lint and typecheck**
+- [ ] **Step 12: Run the per-task CI subset (lint + format + typecheck)**
 
-Run: `make lint`
+Run: `make lint-check format-check typecheck`
 
-Expected: PASS. If the typing-decision lint check from Step 2 surfaced an issue and was switched to typed mock, verify it stays clean.
+Expected: PASS on all three. This is the no-mutation per-task gate — the same checks `make all` runs minus `cover` and `e2e` (which are slower and run at Task 6's final verification). **`make lint` (without `-check`) is the developer-convenience target that runs `eslint --fix` only — it is NOT a sufficient gate, since it skips both prettier and tsc.** If the typing-decision check from Step 2 surfaced an issue and was switched to typed mock, verify it stays clean here.
 
 - [ ] **Step 13: Commit**
 
@@ -420,11 +422,11 @@ Run: `npm test -w packages/client`
 
 Expected: all pass.
 
-- [ ] **Step 4: Run lint**
+- [ ] **Step 4: Run the per-task CI subset (lint + format + typecheck)**
 
-Run: `make lint`
+Run: `make lint-check format-check typecheck`
 
-Expected: PASS.
+Expected: PASS. See Task 1 Step 12 for why `make lint` (without `-check`) is not a sufficient gate.
 
 - [ ] **Step 5: Commit**
 
@@ -714,11 +716,11 @@ Run: `npm test -w packages/client`
 
 Expected: all pass.
 
-- [ ] **Step 9: Run typecheck**
+- [ ] **Step 9: Run the per-task CI subset (lint + format + typecheck)**
 
-Run: `make lint` (which runs typecheck + eslint together in this repo) or, if you want typecheck alone: `npx tsc -p packages/client --noEmit`
+Run: `make lint-check format-check typecheck`
 
-Expected: no errors.
+Expected: PASS on all three. **Earlier drafts of this step claimed `make lint` runs typecheck — that was incorrect.** `make lint` runs `eslint --fix` only; it does not run prettier or tsc. The Makefile's `make all` target chains `lint-check format-check typecheck cover e2e` — the per-task gate is the first three; `cover` and `e2e` are slower and deferred to Task 6's final verification.
 
 - [ ] **Step 10: Commit**
 
@@ -818,11 +820,11 @@ Run: `npm test -w packages/client`
 
 Expected: all pass.
 
-- [ ] **Step 4: Run lint**
+- [ ] **Step 4: Run the per-task CI subset (lint + format + typecheck)**
 
-Run: `make lint`
+Run: `make lint-check format-check typecheck`
 
-Expected: PASS.
+Expected: PASS. See Task 1 Step 12 for why `make lint` (without `-check`) is not a sufficient gate.
 
 - [ ] **Step 5: Commit**
 
@@ -866,11 +868,11 @@ Expected: no output.
 
 If any remains (most likely in a code comment that wasn't fully scrubbed during Task 3), edit it to remove the reference or update it to reflect the post-migration state.
 
-- [ ] **Step 2: Verify no unused imports**
+- [ ] **Step 2: Verify no unused imports and clean typecheck**
 
-Run: `make lint`
+Run: `make lint-check format-check typecheck`
 
-Expected: PASS. If any unused-import warning appears, remove the offending import. (Note: `useRef` stays — it is used by `debounceRef`, `latestSlugRef`, `panelOpenRef`, `latestProjectIdRef`.)
+Expected: PASS. If any unused-import warning appears, remove the offending import. (Note: `useRef` stays — it is used by `debounceRef`, `latestSlugRef`, `panelOpenRef`, `latestProjectIdRef`.) See Task 1 Step 12 for why `make lint` (without `-check`) is not a sufficient gate.
 
 - [ ] **Step 3: If any edits were made in Steps 1 or 2, commit; otherwise SKIP this task**
 
