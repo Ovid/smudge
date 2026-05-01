@@ -93,7 +93,7 @@ All test changes land in `packages/client/src/__tests__/useFindReplaceState.test
 
 ### Tightening existing tests (assertions added in place)
 
-Add `expect(signal.aborted).toBe(true)` to the existing tests below. The signal is captured from `mockFind`'s call args (`mockFind.mock.calls[N][3]` is the `AbortSignal`). Use a small inline test helper — `function captureSignal(callIndex = 0): AbortSignal { return mockFind.mock.calls[callIndex][3] as AbortSignal; }` — at the top of the new tests block to absorb the index-fragility risk noted under §Risks.
+Add `expect(signal.aborted).toBe(true)` to the existing tests below. The signal is captured from `mockFind`'s call args (`mockFind.mock.calls[N][3]` is the `AbortSignal`). Use a small inline test helper — `function captureSignal(callIndex = 0): AbortSignal { return mockFind.mock.calls[callIndex][3] as AbortSignal; }` — at the top of the new tests block to absorb the index-fragility risk noted under §Risks. **Typing note:** the existing test file declares `mockFind` as `api.search.find as ReturnType<typeof vi.fn>`, which makes `mock.calls[N]` an `any[]`. The `as AbortSignal` cast in the helper is therefore a cast on an `any[]` element. If the project's lint config rejects that under a `no-unsafe-type-assertion`-style rule, type the mock at declaration site as `vi.fn<typeof api.search.find>()` instead; otherwise inline the cast as written. The implementation plan picks whichever approach the lint pass accepts.
 
 | Existing test | Assertion change |
 |---|---|
@@ -109,7 +109,7 @@ Add `expect(signal.aborted).toBe(true)` to the existing tests below. The signal 
 
 2. **`search() in-flight signal aborts on hook unmount`.** Issue a search against a never-resolving promise; capture the signal. Call `unmount()`. Assert `signal.aborted === true`. Pins the auto-abort-on-unmount contract. Passes against pre-migration code (the unmount cleanup effect at lines 99–104 provides it); after migration it pins that the hook's auto-abort still honors it.
 
-3. **`search() success-path setState is suppressed when the signal aborts between await and the next line`.** Issue a search whose `mockFind` returns a manually-controlled promise. Before resolving, abort via `closePanel()` (or directly via a follow-up `search()`). Resolve the promise. Assert `result.current.results` is unchanged. Passes against pre-migration code via the `token.isStale()` path; after migration it pins the new row-7 success-path gate's contract specifically. If the seq-bump path is ever removed without the signal-aborted gate also covering, this test catches the regression directly.
+3. **`search() success-path setState is suppressed when the signal aborts between await and the next line`.** Issue a search whose `mockFind` returns a manually-controlled promise. Before resolving, abort via `closePanel()` (or directly via a follow-up `search()`). Resolve the promise. Assert `result.current.results` is unchanged. Pins that the success-path setState is suppressed when the prior search is aborted. **Limitation:** the design does not differentiate which of the two row-7 gates (`signal.aborted` vs. `token.isStale()`) does the suppression — production abort paths bump both, so the test cannot tell them apart, and a future maintainer who deletes the `signal.aborted` gate would not see this test fail. The code comment at the gate (per §Risks) is the design-time enforcement of the gate's intent; this test is a behavioural backstop covering the combined behaviour. Pinning the gates in isolation would require contrived production-impossible state (mocking `useAbortableAsyncOperation` directly) and is explicitly out of scope.
 
 ### Structural check
 
@@ -150,19 +150,19 @@ Zero test warnings (CLAUDE.md §Testing Philosophy): no `console.warn`/`console.
 
 ## Migration order & PR shape
 
-**TDD ordering (one PR, multiple commits).** Per the roadmap "characterization tests BEFORE migration" requirement and CLAUDE.md §Testing Philosophy red-green-refactor:
+**Commit ordering (one PR, multiple commits).** Per the roadmap "characterization tests BEFORE migration" requirement:
 
-1. **Commit 1 — RED-shaped tests for the abort-prior contract.** Add new test #1 and new test #2; tighten the two existing tests in §3a with signal-state assertions. All pass green against current code (these are characterization tests, pinning behaviour the migration must preserve).
+1. **Commit 1 — Characterization tests for the abort-prior contract.** Add new test #1 and new test #2; tighten the two existing tests in §3a with signal-state assertions.
 
-2. **Commit 2 — RED-shaped test for the new success-path gate.** Add new test #3. Passes green against current code via the `token.isStale()` path; pins the migration's new gate.
+2. **Commit 2 — Characterization test for the new success-path gate.** Add new test #3.
 
-3. **Commit 3 — GREEN: the migration itself.** Apply the row-by-row replacement from §Behaviour mapping to `packages/client/src/hooks/useFindReplaceState.ts`. All tests stay green.
+3. **Commit 3 — Migration source.** Apply the row-by-row replacement from §Behaviour mapping to `packages/client/src/hooks/useFindReplaceState.ts`. All tests stay green.
 
-4. **Commit 4 — GREEN on the structural check.** Extend `migrationStructuralCheck.test.ts` with the two new assertions. Both pass green against the just-migrated `useFindReplaceState.ts`.
+4. **Commit 4 — Structural check.** Extend `migrationStructuralCheck.test.ts` with the two new assertions. Both pass green against the just-migrated `useFindReplaceState.ts`.
 
-5. **Commit 5 — REFACTOR (if needed).** Inspect the migrated `useFindReplaceState.ts` for residual cruft: stale comments referencing `searchAbortRef`, unused imports, etc. Tidy. If nothing needs tidying, omit this commit; the order matters, not the count.
+5. **Commit 5 — Cleanup (if needed).** Inspect the migrated `useFindReplaceState.ts` for residual cruft: stale comments referencing `searchAbortRef`, unused imports, etc. Tidy. If nothing needs tidying, omit this commit; the order matters, not the count.
 
-Splitting commits this way keeps the diff scannable: the test commits prove the behaviour is pinned before the source change, and the migration commit isolates the source change from any test additions.
+**This phase's tests are characterization tests — they pin behaviour the source change must preserve. They are not red-then-green tests in the strict sense, since the pre-migration code already satisfies them.** The commit ordering preserves the discipline (no source change without prior test); it does not pretend the test commits go red against the current source. Splitting commits this way keeps the diff scannable: the test commits prove the behaviour is pinned before the source change, and the migration commit isolates the source change from any test additions.
 
 **One PR, one refactor.** Per CLAUDE.md §Pull Request Scope:
 - One file's worth of migration only. Do not bundle 4b.3a.3 (`useTrashManager`) or 4b.3a.4 (`ImageGallery`) — they are independent migrations and live in their own PRs.
