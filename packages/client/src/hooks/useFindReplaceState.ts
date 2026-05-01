@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import { type SearchResult } from "@smudge/shared";
 import { mapApiError, isApiError } from "../errors";
 import { useAbortableSequence } from "./useAbortableSequence";
+import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
 
 export interface SearchOptionsShape {
   case_sensitive: boolean;
@@ -72,10 +73,12 @@ export function useFindReplaceState(
   // expected UX; wiping it is surprising data loss.
   const latestProjectIdRef = useRef<string | null>(projectId ?? null);
   const searchSeq = useAbortableSequence();
-  // Owned by the latest in-flight search() call. Aborting releases the
-  // HTTP connection and stops the server-side regex walk; the sequence
-  // token still protects us from late resolutions writing state back.
-  const searchAbortRef = useRef<AbortController | null>(null);
+  // Network-cancellation primitive (CLAUDE.md §Save-pipeline invariants
+  // rule 4). Coexists with searchSeq on this operation: searchSeq
+  // arbitrates response staleness via epoch tokens; op cancels in-flight
+  // network requests via AbortController. Both are needed; neither
+  // subsumes the other.
+  const op = useAbortableAsyncOperation();
 
   // Keep latestSlugRef in sync with the current slug so search() always
   // POSTs to the live URL. Resets are gated on project id below.
@@ -93,15 +96,6 @@ export function useFindReplaceState(
   useEffect(() => {
     panelOpenRef.current = panelOpen;
   }, [panelOpen]);
-
-  // On unmount, abort any in-flight search so the server stops walking
-  // chapters for a caller that no longer exists.
-  useEffect(() => {
-    return () => {
-      searchAbortRef.current?.abort();
-      searchAbortRef.current = null;
-    };
-  }, []);
 
   // Reset search state only on genuine project change, not on rename.
   useEffect(() => {
@@ -126,11 +120,10 @@ export function useFindReplaceState(
       searchSeq.abort();
       // Abort any in-flight search so the server stops walking a project
       // the user has left. The sequence abort prevents the response from
-      // writing state back, but without this the server keeps scanning.
-      searchAbortRef.current?.abort();
-      searchAbortRef.current = null;
+      // writing state back, but without op.abort() the server keeps scanning.
+      op.abort();
     }
-  }, [projectId, searchSeq]);
+  }, [projectId, searchSeq, op]);
 
   const togglePanel = useCallback(() => {
     // Sync the ref *synchronously* alongside the state update. The
@@ -165,8 +158,7 @@ export function useFindReplaceState(
     searchSeq.abort();
     // Abort the underlying fetch too so the server stops walking chapters
     // for a search the user has clearly moved on from.
-    searchAbortRef.current?.abort();
-    searchAbortRef.current = null;
+    op.abort();
     // Clear any pending debounced search; if the panel closes inside the
     // 300ms debounce window, the timer would otherwise fire search(slug)
     // after the panel was closed — starting a new sequence and writing a
@@ -176,7 +168,7 @@ export function useFindReplaceState(
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
-  }, [searchSeq]);
+  }, [searchSeq, op]);
 
   const toggleOption = useCallback((opt: "case_sensitive" | "whole_word" | "regex") => {
     setOptions((prev) => ({ ...prev, [opt]: !prev[opt] }));
@@ -187,12 +179,14 @@ export function useFindReplaceState(
       // Always bump the sequence so any still-in-flight response for a
       // prior query is discarded rather than overwriting cleared state.
       const token = searchSeq.start();
-      // Abort any prior in-flight search so a rapid-typing stream doesn't
-      // leave N regex walks running server-side for queries the user has
-      // already moved past.
-      searchAbortRef.current?.abort();
       if (!query) {
-        searchAbortRef.current = null;
+        // Per Plan-vs-Design Note [D2]: explicitly abort any in-flight
+        // prior search when the user clears the query, preserving the
+        // pre-migration line-193 abort-prior behaviour. op.run() handles
+        // abort-prior in the non-empty branch, but never fires here, so
+        // the abort would otherwise be lost in this defensive path.
+        // Cheap when no controller is tracked.
+        op.abort();
         setResults(null);
         setResultsQuery(null);
         setResultsOptions(null);
@@ -209,17 +203,35 @@ export function useFindReplaceState(
       // what the user sees.
       const frozenQuery = query;
       const frozenOptions: SearchOptionsShape = { ...options };
-      const controller = new AbortController();
-      searchAbortRef.current = controller;
       setLoading(true);
       setError(null);
+      // op.run() aborts any prior controller, allocates a fresh one, and
+      // returns the per-call signal. The signal is captured here for the
+      // belt-and-suspenders gates below.
+      const { promise, signal } = op.run((s) =>
+        api.search.find(slug, frozenQuery, frozenOptions, s),
+      );
       try {
-        const result = await api.search.find(slug, frozenQuery, frozenOptions, controller.signal);
+        const result = await promise;
+        // Belt-and-suspenders against (a) a future code path that calls
+        // op.abort() without bumping searchSeq, and (b) mapApiError's
+        // ABORTED handling ever changing. The token.isStale() check below
+        // also catches every abort path that exists today; this gate
+        // locally documents the per-call signal contract per CLAUDE.md
+        // §Save-pipeline invariants rule 4. Do NOT delete as "redundant"
+        // — see Phase 4b.3a.2 design §Risks for the rationale.
+        if (signal.aborted) return;
         if (token.isStale()) return;
         setResults(result);
         setResultsQuery(frozenQuery);
         setResultsOptions(frozenOptions);
       } catch (err) {
+        // See success-path comment above. Placed before mapApiError so an
+        // aborted network error bypasses error mapping entirely —
+        // mapApiError's ABORTED-message-null path is the unified contract
+        // today, but this gate insulates useFindReplaceState from any
+        // future change to that contract.
+        if (signal.aborted) return;
         if (token.isStale()) return;
         const { message } = mapApiError(err, "findReplace.search");
         if (message === null) {
@@ -253,14 +265,10 @@ export function useFindReplaceState(
       } finally {
         if (!token.isStale()) {
           setLoading(false);
-          // Release this request's controller — a stale (overwritten) ref
-          // would already have been replaced by the next search, so only
-          // the still-current branch owns the cleanup.
-          if (searchAbortRef.current === controller) searchAbortRef.current = null;
         }
       }
     },
-    [query, options, searchSeq],
+    [query, options, searchSeq, op],
   );
 
   // Debounced auto-search when query/options change
