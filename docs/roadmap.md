@@ -38,8 +38,8 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.2 | Abortable Sequence Hook | Unify ad-hoc seq-refs into a single `useAbortableSequence()` primitive | Done |
 | 4b.3 | Unified API Error Mapper | Single module mapping API errors to UI strings; no raw server text in UI | Done |
 | 4b.3a | 4b.3 Review Follow-ups (Clusters A, D, F) | Scope-coverage gaps, sanitizer hardening, PR-shape retrospective | Done |
-| 4b.3a.1 | Abortable Async Operation Hook | Extract `useAbortableAsyncOperation()` + unit tests + CLAUDE.md addition; consumer migrations follow in 4b.3a.2/3/4. Originally numbered 4b.14; renumbered 2026-04-29 when re-ordered to land before 4b.3b–d per dedup-pass collision (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` finding I3); narrowed and split into 4b.3a.1–4b.3a.4 on 2026-04-29 after the brainstorm's code survey found the named-site count undercounted shared-ref siblings (see `docs/plans/2026-04-29-abortable-async-operation-hook-design.md`). | In Progress |
-| 4b.3a.2 | Find/Replace Abort Migration | Migrate `useFindReplaceState.search` (sequence-paired single op) to `useAbortableAsyncOperation`. Cleanup effects at lines 99–104 and 130–131 are subsumed by the hook's auto-abort; `closePanel`'s explicit `searchAbortRef.current?.abort()` becomes `op.abort()`. | Planned |
+| 4b.3a.1 | Abortable Async Operation Hook | Extract `useAbortableAsyncOperation()` + unit tests + CLAUDE.md addition; consumer migrations follow in 4b.3a.2/3/4. Originally numbered 4b.14; renumbered 2026-04-29 when re-ordered to land before 4b.3b–d per dedup-pass collision (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` finding I3); narrowed and split into 4b.3a.1–4b.3a.4 on 2026-04-29 after the brainstorm's code survey found the named-site count undercounted shared-ref siblings (see `docs/plans/2026-04-29-abortable-async-operation-hook-design.md`). | Done |
+| 4b.3a.2 | Find/Replace Abort Migration | Migrate `useFindReplaceState.search` (sequence-paired single op) to `useAbortableAsyncOperation`. Cleanup effects at lines 99–104 and 130–131 are subsumed by the hook's auto-abort; `closePanel`'s explicit `searchAbortRef.current?.abort()` becomes `op.abort()`. | In Progress |
 | 4b.3a.3 | Trash Manager Abort Migration | Migrate `useTrashManager` to `useAbortableAsyncOperation`: `openTrash` + `confirmDeleteChapter` refresh share one hook instance (replaces `trashAbortRef`); `handleRestore` uses a second instance (replaces `restoreAbortRef`). Two instances stay separate because the operations can be in flight concurrently. | Planned |
 | 4b.3a.4 | Image Gallery Abort Migration | Migrate `ImageGallery` to `useAbortableAsyncOperation`: 4 mutation operations (`handleFileSelect`, `handleSave`, `handleInsert`, `handleDelete`) share one hook instance (replaces `mutateAbortRef`); the click-time references-load refresh uses a second instance (replaces `refsAbortRef`). The list-load and detail-load `useEffect` controllers stay as-is (different lifecycle shape). | Planned |
 | 4b.3b | AbortSignal Threading Completion | Finish Cluster B: thread signal through remaining call sites (HomePage create/delete, useProjectEditor `handleCreateChapter` + `loadProject` + remaining `chapters.get`, EditorPage chapterStatuses retry + `search.replace`). Now depends on 4b.3a.1; each site re-evaluated against the new hook before threading. | Planned |
@@ -784,6 +784,7 @@ The prior dedup pass already landed `useAbortableSequence` for *response stalene
 ---
 
 ## Phase 4b.3a.2: Find/Replace Abort Migration
+<!-- plan: 2026-05-01-find-replace-abort-migration-design.md -->
 
 ### Goal
 
