@@ -48,6 +48,29 @@ function captureSignal(callIndex = 0): AbortSignal {
   return mockFind.mock.calls[callIndex]![3]!;
 }
 
+/**
+ * Builds a mock-find implementation that returns a promise which never
+ * resolves but DOES reject with an AbortError if the passed signal is
+ * aborted. S4 (review 2026-05-01): the prior `new Promise(() => {})`
+ * form left a pending promise hanging across teardown — vitest doesn't
+ * warn but it's untidy. Mirrors the real shape from api/client.ts where
+ * an aborted fetch throws DOMException("AbortError"), which the hook's
+ * catch branch handles via `signal.aborted` → return silently.
+ */
+function neverResolvingSearchMock() {
+  return (
+    _slug: string,
+    _query: string,
+    _options: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean } | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<SearchResult> =>
+    new Promise<SearchResult>((_resolve, reject) => {
+      signal?.addEventListener("abort", () => {
+        reject(new DOMException("aborted", "AbortError"));
+      });
+    });
+}
+
 describe("useFindReplaceState", () => {
   it("initial state is closed with empty fields", () => {
     const { result } = renderHook(() => useFindReplaceState("my-project"));
@@ -728,7 +751,7 @@ describe("useFindReplaceState", () => {
           resolveFirst = resolve;
         }),
     );
-    mockFind.mockImplementationOnce(() => new Promise<SearchResult>(() => {}));
+    mockFind.mockImplementationOnce(neverResolvingSearchMock());
 
     const { result } = renderHook(() => useFindReplaceState("my-project"));
 
@@ -765,7 +788,7 @@ describe("useFindReplaceState", () => {
     // at lines 99–104 of useFindReplaceState (current) provides this; the
     // hook's auto-abort provides it post-migration. Either way, an in-
     // flight search's signal must read aborted === true after unmount.
-    mockFind.mockImplementationOnce(() => new Promise<SearchResult>(() => {}));
+    mockFind.mockImplementationOnce(neverResolvingSearchMock());
 
     const { result, unmount } = renderHook(() => useFindReplaceState("my-project"));
 
@@ -800,7 +823,7 @@ describe("useFindReplaceState", () => {
     // aborted pre-migration in that test, contradicting the
     // characterization framing. Plan-vs-Design Note [D1] documents the
     // tradeoff.
-    mockFind.mockImplementationOnce(() => new Promise<SearchResult>(() => {}));
+    mockFind.mockImplementationOnce(neverResolvingSearchMock());
 
     const { result } = renderHook(() => useFindReplaceState("my-project"));
 
