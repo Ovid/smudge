@@ -263,6 +263,21 @@ export function useFindReplaceState(
           setError(message);
         }
       } finally {
+        // S2 (review 2026-05-01): the `!token.isStale()` gate is
+        // LOAD-BEARING for the rapid-sequential search case: if user
+        // types "a" then "ab" inside the 300ms window, search("a")'s
+        // finally runs AFTER search("ab") has already called
+        // setLoading(true); an unconditional setLoading(false) here
+        // would clobber that and the spinner would disappear while a
+        // fresh search is in flight.
+        //
+        // Consequence for callers: any new path that calls
+        // searchSeq.abort() (or any future helper that bumps the
+        // sequence) MUST also setLoading(false) BEFORE bumping —
+        // otherwise the in-flight finally bails on the stale token and
+        // the spinner stays stuck. closePanel:155, project-change
+        // useEffect:119, and the empty-query branch:194 all follow
+        // this pattern; mirror them.
         if (!token.isStale()) {
           setLoading(false);
         }
