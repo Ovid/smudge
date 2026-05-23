@@ -14,6 +14,11 @@ import { tmpdir } from "node:os";
 // counter. One grep across the whole client source tree is enough.
 const clientSrcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
+// Pattern shared between the source-tree migration check and the regex
+// drift-spec test below. Keep in lockstep — if you change the regex, the
+// spec test is what pins the new contract.
+const USE_REF_ABORT_CONTROLLER_PATTERN = /useRef\s*<\s*AbortController\b[^>]*>/;
+
 export function collectTsSources(root: string): string[] {
   const results: string[] = [];
   for (const entry of readdirSync(root)) {
@@ -108,16 +113,41 @@ describe("client source-tree migration structural check", () => {
     // lands last can convert this from a per-file check to a global
     // packages/client/src ban (excluding the hook file itself).
     //
-    // The regex covers both `useRef<AbortController>` and
-    // `useRef<AbortController | null>` — every existing site in the
-    // codebase uses the `| null` form, so the narrow form would never
-    // catch the realistic drift case (a future change reverting the
-    // migration with `useRef<AbortController | null>(null)`).
+    // The regex covers `useRef<AbortController>` and any single-line
+    // union that ends with `>` (`| null`, `| undefined`, `| null |
+    // undefined`, etc). The `\b[^>]*>` tail is what catches drift —
+    // S1 (review 2026-05-01) flagged the prior `(?:\|\s*null\s*)?>` as
+    // missing the `| undefined` variant. The word-boundary on
+    // `AbortController\b` keeps false positives like
+    // `useRef<AbortControllerWrapper>` out.
     const migrated = [resolve(clientSrcRoot, "hooks/useFindReplaceState.ts")];
-    const pattern = /useRef\s*<\s*AbortController\s*(?:\|\s*null\s*)?>/;
     for (const file of migrated) {
       const source = readFileSync(file, "utf-8");
-      expect(source, `${file} should not contain useRef<AbortController>`).not.toMatch(pattern);
+      expect(source, `${file} should not contain useRef<AbortController>`).not.toMatch(
+        USE_REF_ABORT_CONTROLLER_PATTERN,
+      );
     }
+  });
+
+  it("useRef<AbortController> regex catches all realistic drift forms (S1)", () => {
+    // Direct exercise of USE_REF_ABORT_CONTROLLER_PATTERN. If the regex is
+    // ever tightened or loosened, this test pins the contract explicitly
+    // rather than relying on a future drift to surface it.
+    expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<AbortController>(null)")).toBe(true);
+    expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<AbortController | null>(null)")).toBe(
+      true,
+    );
+    expect(
+      USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<AbortController | undefined>(undefined)"),
+    ).toBe(true);
+    expect(
+      USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<AbortController | null | undefined>(null)"),
+    ).toBe(true);
+    // Negative cases — must NOT match.
+    expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<AbortControllerWrapper>(null)")).toBe(
+      false,
+    );
+    expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<MyAbortController>(null)")).toBe(false);
+    expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<string>(null)")).toBe(false);
   });
 });
