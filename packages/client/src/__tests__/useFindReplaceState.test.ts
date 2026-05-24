@@ -62,21 +62,6 @@ function captureSignal(callIndex = 0): AbortSignal {
   return call[3]!;
 }
 
-/**
- * S4 (review 2026-05-01): the rejection-on-abort shape was extracted to
- * `helpers/abortableMocks.ts` so other test files can share it. This
- * thin wrapper exists only to fix the mock's positional signature; the
- * actual abort behavior lives in `pendingUntilAbort`.
- */
-function neverResolvingSearchMock() {
-  return (
-    _slug: string,
-    _query: string,
-    _options: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean } | undefined,
-    signal: AbortSignal | undefined,
-  ): Promise<SearchResult> => pendingUntilAbort<SearchResult>(signal);
-}
-
 describe("useFindReplaceState", () => {
   it("initial state is closed with empty fields", () => {
     const { result } = renderHook(() => useFindReplaceState("my-project"));
@@ -757,7 +742,9 @@ describe("useFindReplaceState", () => {
           resolveFirst = resolve;
         }),
     );
-    mockFind.mockImplementationOnce(neverResolvingSearchMock());
+    mockFind.mockImplementationOnce((_slug, _query, _options, signal) =>
+      pendingUntilAbort<SearchResult>(signal),
+    );
 
     const { result } = renderHook(() => useFindReplaceState("my-project"));
 
@@ -794,7 +781,9 @@ describe("useFindReplaceState", () => {
     // at lines 99–104 of useFindReplaceState (current) provides this; the
     // hook's auto-abort provides it post-migration. Either way, an in-
     // flight search's signal must read aborted === true after unmount.
-    mockFind.mockImplementationOnce(neverResolvingSearchMock());
+    mockFind.mockImplementationOnce((_slug, _query, _options, signal) =>
+      pendingUntilAbort<SearchResult>(signal),
+    );
 
     const { result, unmount } = renderHook(() => useFindReplaceState("my-project"));
 
@@ -829,7 +818,9 @@ describe("useFindReplaceState", () => {
     // aborted pre-migration in that test, contradicting the
     // characterization framing. Plan-vs-Design Note [D1] documents the
     // tradeoff.
-    mockFind.mockImplementationOnce(neverResolvingSearchMock());
+    mockFind.mockImplementationOnce((_slug, _query, _options, signal) =>
+      pendingUntilAbort<SearchResult>(signal),
+    );
 
     const { result } = renderHook(() => useFindReplaceState("my-project"));
 
