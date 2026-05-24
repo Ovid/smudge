@@ -275,9 +275,9 @@ export function useFindReplaceState(
         // searchSeq.abort() (or any future helper that bumps the
         // sequence) MUST also setLoading(false) BEFORE bumping —
         // otherwise the in-flight finally bails on the stale token and
-        // the spinner stays stuck. closePanel:155, project-change
-        // useEffect:119, and the empty-query branch:194 all follow
-        // this pattern; mirror them.
+        // the spinner stays stuck. closePanel, the project-change
+        // reset effect, and the empty-query branch all follow this
+        // pattern; mirror them.
         if (!token.isStale()) {
           setLoading(false);
         }
