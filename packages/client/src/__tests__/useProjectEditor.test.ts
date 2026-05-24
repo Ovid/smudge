@@ -6,6 +6,7 @@ import { api, ApiRequestError } from "../api/client";
 import { useProjectEditor } from "../hooks/useProjectEditor";
 import { STRINGS } from "../strings";
 import { flushSaveRetries } from "./helpers/saveRetries";
+import { pendingUntilAbort } from "./helpers/abortableMocks";
 
 vi.mock("../api/client", () => ({
   ApiRequestError: class ApiRequestError extends Error {
@@ -2932,8 +2933,8 @@ describe("useProjectEditor", () => {
     vi.mocked(api.projects.update)
       .mockImplementationOnce(async (_slug, _data, signal) => {
         signals.push(signal);
-        // Stay in flight forever so the second call can abort this one.
-        return new Promise<typeof renamed2>(() => {});
+        // Stay in flight until aborted; the second call will abort us.
+        return pendingUntilAbort<typeof renamed2>(signal);
       })
       .mockImplementationOnce(async (_slug, _data, signal) => {
         signals.push(signal);

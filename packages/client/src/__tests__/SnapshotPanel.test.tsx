@@ -6,6 +6,7 @@ import { SnapshotPanel, type SnapshotPanelHandle } from "../components/SnapshotP
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
 import type { SnapshotListItem } from "@smudge/shared";
+import { pendingUntilAbort } from "./helpers/abortableMocks";
 
 vi.mock("../api/client", () => {
   class ApiRequestError extends Error {
@@ -568,7 +569,7 @@ describe("SnapshotPanel", () => {
       let capturedSignal: AbortSignal | undefined;
       vi.mocked(api.snapshots.delete).mockImplementation((_id, signal) => {
         capturedSignal = signal;
-        return new Promise(() => {}); // never resolves
+        return pendingUntilAbort(signal);
       });
 
       const { unmount } = render(<SnapshotPanel {...defaultProps} />);
@@ -672,8 +673,8 @@ describe("SnapshotPanel", () => {
       vi.mocked(api.snapshots.list).mockImplementation(
         async (_chapterId: string, signal?: AbortSignal) => {
           if (signal) capturedSignals.push(signal);
-          // Hang forever — the test only cares whether unmount aborts.
-          return new Promise<SnapshotListItem[]>(() => {});
+          // Hang until aborted — test only cares whether unmount aborts.
+          return pendingUntilAbort<SnapshotListItem[]>(signal);
         },
       );
 

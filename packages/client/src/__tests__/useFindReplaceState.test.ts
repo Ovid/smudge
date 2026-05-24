@@ -4,6 +4,7 @@ import { useFindReplaceState } from "../hooks/useFindReplaceState";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
 import type { SearchResult } from "@smudge/shared";
+import { pendingUntilAbort } from "./helpers/abortableMocks";
 
 vi.mock("../api/client", () => ({
   api: {
@@ -49,13 +50,10 @@ function captureSignal(callIndex = 0): AbortSignal {
 }
 
 /**
- * Builds a mock-find implementation that returns a promise which never
- * resolves but DOES reject with an AbortError if the passed signal is
- * aborted. S4 (review 2026-05-01): the prior `new Promise(() => {})`
- * form left a pending promise hanging across teardown — vitest doesn't
- * warn but it's untidy. Mirrors the real shape from api/client.ts where
- * an aborted fetch throws DOMException("AbortError"), which the hook's
- * catch branch handles via `signal.aborted` → return silently.
+ * S4 (review 2026-05-01): the rejection-on-abort shape was extracted to
+ * `helpers/abortableMocks.ts` so other test files can share it. This
+ * thin wrapper exists only to fix the mock's positional signature; the
+ * actual abort behavior lives in `pendingUntilAbort`.
  */
 function neverResolvingSearchMock() {
   return (
@@ -63,12 +61,7 @@ function neverResolvingSearchMock() {
     _query: string,
     _options: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean } | undefined,
     signal: AbortSignal | undefined,
-  ): Promise<SearchResult> =>
-    new Promise<SearchResult>((_resolve, reject) => {
-      signal?.addEventListener("abort", () => {
-        reject(new DOMException("aborted", "AbortError"));
-      });
-    });
+  ): Promise<SearchResult> => pendingUntilAbort<SearchResult>(signal);
 }
 
 describe("useFindReplaceState", () => {

@@ -5,6 +5,7 @@ import { EditorPage } from "../pages/EditorPage";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
+import { pendingUntilAbort } from "./helpers/abortableMocks";
 
 vi.mock("../hooks/useContentCache", () => ({
   getCachedContent: vi.fn().mockReturnValue(null),
@@ -467,8 +468,8 @@ describe("EditorPage empty and loading states", () => {
   });
 
   it("shows loading state while project loads", async () => {
-    // Never resolve — keep project loading forever
-    vi.mocked(api.projects.get).mockReturnValue(new Promise(() => {}));
+    // Hang until aborted — keep project loading forever for the test
+    vi.mocked(api.projects.get).mockImplementation((_slug, signal) => pendingUntilAbort(signal));
 
     renderEditorPage();
 
@@ -476,9 +477,9 @@ describe("EditorPage empty and loading states", () => {
   });
 
   it("shows loading state when project loaded but activeChapter not yet set", async () => {
-    // Project with chapters but chapter.get never resolves
+    // Project with chapters but chapter.get hangs until aborted
     vi.mocked(api.projects.get).mockResolvedValue(mockProject);
-    vi.mocked(api.chapters.get).mockReturnValue(new Promise(() => {}));
+    vi.mocked(api.chapters.get).mockImplementation((_id, signal) => pendingUntilAbort(signal));
 
     renderEditorPage();
 

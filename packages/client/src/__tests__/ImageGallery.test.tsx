@@ -5,6 +5,7 @@ import { ImageGallery } from "../components/ImageGallery";
 import { api, ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
 import type { ImageRow } from "@smudge/shared";
+import { pendingUntilAbort } from "./helpers/abortableMocks";
 
 vi.mock("../api/client", async () => {
   const actual = await vi.importActual<typeof import("../api/client")>("../api/client");
@@ -737,7 +738,7 @@ describe("ImageGallery", () => {
     let capturedSignal: AbortSignal | undefined;
     vi.mocked(api.images.list).mockImplementation((_id, signal) => {
       capturedSignal = signal;
-      return new Promise(() => {});
+      return pendingUntilAbort(signal);
     });
 
     const { unmount } = render(<ImageGallery {...defaultProps} />);
