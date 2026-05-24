@@ -44,9 +44,22 @@ afterEach(() => {
  * absorbs the index-fragility risk noted in the design's §Risks: a future
  * arg-order change to api.search.find is a one-line fix here, not N tests
  * deep.
+ *
+ * S3 (review 2026-05-24): named guard around the index lookup. The
+ * helper was extracted to absorb arg-order fragility — readable
+ * failure modes belong in the same envelope, so a stale call index
+ * fails with a message that names the helper rather than an opaque
+ * "Cannot read properties of undefined".
  */
 function captureSignal(callIndex = 0): AbortSignal {
-  return mockFind.mock.calls[callIndex]![3]!;
+  const call = mockFind.mock.calls[callIndex];
+  if (!call) {
+    throw new Error(
+      `captureSignal: no api.search.find call at index ${callIndex} ` +
+        `(observed ${mockFind.mock.calls.length} calls so far)`,
+    );
+  }
+  return call[3]!;
 }
 
 /**
@@ -889,6 +902,16 @@ describe("useFindReplaceState", () => {
     // resolved response — both the signal.aborted and token.isStale
     // gates would suppress it (the test does not differentiate which).
     expect(result.current.results).toBeNull();
+  });
+});
+
+describe("captureSignal test helper", () => {
+  it("throws a named error when no api.search.find call exists at the index", () => {
+    // S3 (review 2026-05-24): pin the named-failure-mode contract so a
+    // future refactor cannot silently regress to the opaque
+    // "Cannot read properties of undefined (reading '3')" TypeError
+    // that the prior `mock.calls[i]![3]!` form produced.
+    expect(() => captureSignal(0)).toThrow(/captureSignal: no api\.search\.find call at index 0/);
   });
 });
 
