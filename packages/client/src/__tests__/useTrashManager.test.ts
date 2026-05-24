@@ -6,6 +6,7 @@ import { STRINGS } from "../strings";
 
 import { api } from "../api/client";
 import { useTrashManager } from "../hooks/useTrashManager";
+import { pendingUntilAbort } from "./helpers/abortableMocks";
 
 vi.mock("../api/client", async () => {
   const actual = await vi.importActual<typeof import("../api/client")>("../api/client");
@@ -145,7 +146,7 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     let capturedSignal: AbortSignal | undefined;
     vi.mocked(api.projects.trash).mockImplementation((_slug, signal) => {
       capturedSignal = signal;
-      return new Promise(() => {}); // never resolves
+      return pendingUntilAbort(signal);
     });
 
     const { result, unmount } = renderHook(() =>
@@ -193,7 +194,7 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     let capturedSignal: AbortSignal | undefined;
     vi.mocked(api.chapters.restore).mockImplementation((_id, signal) => {
       capturedSignal = signal;
-      return new Promise(() => {}); // never resolves — we care about abort only
+      return pendingUntilAbort(signal);
     });
     vi.mocked(api.projects.trash).mockResolvedValue([makeChapter({ id: "ch-restored" })]);
 

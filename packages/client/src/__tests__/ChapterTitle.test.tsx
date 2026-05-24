@@ -13,6 +13,7 @@ import { EditorPage } from "../pages/EditorPage";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
+import { pendingUntilAbort } from "./helpers/abortableMocks";
 import { flushSaveRetries } from "./helpers/saveRetries";
 
 // Coverage instrumentation slows renders enough to exceed the default 1000ms waitFor timeout.
@@ -379,15 +380,17 @@ describe("EditorPage save status", () => {
   });
 
   it("shows loading state before data arrives", () => {
-    // Make API calls never resolve
-    vi.mocked(api.projects.get).mockReturnValue(new Promise(() => {}));
+    // Hang the project fetch until aborted so the loading state is observable
+    vi.mocked(api.projects.get).mockImplementation((_slug, signal) => pendingUntilAbort(signal));
     renderEditorPage();
     expect(screen.getByText("Loading...")).toBeInTheDocument();
   });
 
   it("shows 'Saving...' during save", async () => {
-    // Make update hang indefinitely to capture saving state
-    vi.mocked(api.chapters.update).mockReturnValue(new Promise(() => {}));
+    // Make update hang until aborted so the saving state is observable
+    vi.mocked(api.chapters.update).mockImplementation((_id, _data, signal) =>
+      pendingUntilAbort(signal),
+    );
     renderEditorPage();
 
     await waitFor(() => {

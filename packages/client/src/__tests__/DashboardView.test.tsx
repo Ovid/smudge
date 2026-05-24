@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { DashboardView } from "../components/DashboardView";
 import { api } from "../api/client";
 import type { ChapterStatusRow } from "@smudge/shared";
+import { pendingUntilAbort } from "./helpers/abortableMocks";
 
 vi.mock("../api/client", () => ({
   // Needed by errors/apiErrorMapper — `err instanceof ApiRequestError`
@@ -305,8 +306,11 @@ describe("DashboardView", () => {
   });
 
   it("shows loading state before data arrives", async () => {
-    // Never resolve the promise — component stays in loading state
-    vi.mocked(api.projects.dashboard).mockReturnValue(new Promise(() => {}));
+    // Hang the request until the component unmounts (component stays in
+    // loading state for the duration of the test).
+    vi.mocked(api.projects.dashboard).mockImplementation((_slug, signal) =>
+      pendingUntilAbort(signal),
+    );
 
     render(
       <DashboardView
@@ -442,8 +446,10 @@ describe("DashboardView", () => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
     });
 
-    // Change slug but make the new call hang
-    vi.mocked(api.projects.dashboard).mockReturnValue(new Promise(() => {}));
+    // Change slug but make the new call hang until aborted
+    vi.mocked(api.projects.dashboard).mockImplementation((_slug, signal) =>
+      pendingUntilAbort(signal),
+    );
     rerender(
       <DashboardView
         slug="different-project"

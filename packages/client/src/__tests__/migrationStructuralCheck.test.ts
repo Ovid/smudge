@@ -14,6 +14,22 @@ import { tmpdir } from "node:os";
 // counter. One grep across the whole client source tree is enough.
 const clientSrcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
+// Pattern shared between the source-tree migration check and the regex
+// drift-spec test below. Keep in lockstep — if you change the regex, the
+// spec test is what pins the new contract.
+const USE_REF_ABORT_CONTROLLER_PATTERN = /useRef\s*<\s*AbortController\b[^>]*>/;
+
+// Builds an import-statement regex for a named symbol. Matches a real ES
+// import (start of line, possibly indented) — not a bare reference,
+// comment, or string literal. Review (2026-05-24, Copilot) flagged the
+// prior bare-identifier match as too lax: a future comment or string
+// mention of the hook would have silently satisfied the assertion. The
+// `[^}]*` segments span newlines so multi-line `import { … }` blocks
+// still match.
+export function importPatternFor(name: string): RegExp {
+  return new RegExp(`^\\s*import\\s*\\{[^}]*\\b${name}\\b[^}]*\\}\\s*from\\s*["']`, "m");
+}
+
 export function collectTsSources(root: string): string[] {
   const results: string[] = [];
   for (const entry of readdirSync(root)) {
@@ -83,9 +99,99 @@ describe("client source-tree migration structural check", () => {
       resolve(clientSrcRoot, "hooks/useFindReplaceState.ts"),
       resolve(clientSrcRoot, "components/SnapshotPanel.tsx"),
     ];
+    const pattern = importPatternFor("useAbortableSequence");
     for (const file of migrated) {
       const source = readFileSync(file, "utf-8");
-      expect(source, `${file} should import useAbortableSequence`).toMatch(/useAbortableSequence/);
+      expect(source, `${file} should import useAbortableSequence`).toMatch(pattern);
     }
+  });
+
+  it("useAbortableAsyncOperation is imported by every file that has been migrated to it", () => {
+    // Phase 4b.3a.2 (find-replace) is the first migration of this hook;
+    // 4b.3a.3 (useTrashManager) and 4b.3a.4 (ImageGallery) will append
+    // their migrated files to this list. Whichever phase lands last can
+    // collapse this per-file check into a global ban.
+    const migrated = [resolve(clientSrcRoot, "hooks/useFindReplaceState.ts")];
+    const pattern = importPatternFor("useAbortableAsyncOperation");
+    for (const file of migrated) {
+      const source = readFileSync(file, "utf-8");
+      expect(source, `${file} should import useAbortableAsyncOperation`).toMatch(pattern);
+    }
+  });
+
+  it("migrated files do not contain raw useRef<AbortController>", () => {
+    // Companion to the import assertion above; whichever migration phase
+    // lands last can convert this from a per-file check to a global
+    // packages/client/src ban (excluding the hook file itself).
+    //
+    // The regex covers `useRef<AbortController>` and any single-line
+    // union that ends with `>` (`| null`, `| undefined`, `| null |
+    // undefined`, etc). The `\b[^>]*>` tail is what catches drift —
+    // S1 (review 2026-05-01) flagged the prior `(?:\|\s*null\s*)?>` as
+    // missing the `| undefined` variant. The word-boundary on
+    // `AbortController\b` keeps false positives like
+    // `useRef<AbortControllerWrapper>` out.
+    const migrated = [resolve(clientSrcRoot, "hooks/useFindReplaceState.ts")];
+    for (const file of migrated) {
+      const source = readFileSync(file, "utf-8");
+      expect(source, `${file} should not contain useRef<AbortController>`).not.toMatch(
+        USE_REF_ABORT_CONTROLLER_PATTERN,
+      );
+    }
+  });
+
+  it("importPatternFor matches real imports but not comments, strings, or bare references", () => {
+    // Direct exercise of the helper. The prior bare-identifier match
+    // (review 2026-05-24, Copilot) accepted comments and string mentions
+    // as "imports"; this spec pins the tightened contract so future drift
+    // surfaces here rather than in a silent green test.
+    const pattern = importPatternFor("useAbortableAsyncOperation");
+    // Positive: real ES imports in the shapes the codebase uses today.
+    expect(
+      pattern.test(`import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";`),
+    ).toBe(true);
+    expect(
+      pattern.test(
+        `import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";`,
+      ),
+    ).toBe(true);
+    expect(pattern.test(`import { foo, useAbortableAsyncOperation } from "./x";`)).toBe(true);
+    expect(pattern.test(`import { useAbortableAsyncOperation, bar } from "./y";`)).toBe(true);
+    // Multi-line imports (defensive — single-line today, but the helper
+    // shouldn't rot the day someone reformats).
+    expect(pattern.test(`import {\n  foo,\n  useAbortableAsyncOperation,\n} from "./x";`)).toBe(
+      true,
+    );
+    // Indented import (e.g. nested in a conditional block — defensive).
+    expect(pattern.test(`  import { useAbortableAsyncOperation } from "./z";`)).toBe(true);
+    // Negative: the cases the loose regex used to wrongly accept.
+    expect(pattern.test(`// useAbortableAsyncOperation lives in ./hooks`)).toBe(false);
+    expect(pattern.test(`/* useAbortableAsyncOperation */`)).toBe(false);
+    expect(pattern.test(`const s = "useAbortableAsyncOperation";`)).toBe(false);
+    expect(pattern.test(`const op = useAbortableAsyncOperation();`)).toBe(false);
+    // Word boundary: a longer identifier with the same prefix must not match.
+    expect(pattern.test(`import { useAbortableAsyncOperationX } from "./x";`)).toBe(false);
+  });
+
+  it("useRef<AbortController> regex catches all realistic drift forms (S1)", () => {
+    // Direct exercise of USE_REF_ABORT_CONTROLLER_PATTERN. If the regex is
+    // ever tightened or loosened, this test pins the contract explicitly
+    // rather than relying on a future drift to surface it.
+    expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<AbortController>(null)")).toBe(true);
+    expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<AbortController | null>(null)")).toBe(
+      true,
+    );
+    expect(
+      USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<AbortController | undefined>(undefined)"),
+    ).toBe(true);
+    expect(
+      USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<AbortController | null | undefined>(null)"),
+    ).toBe(true);
+    // Negative cases — must NOT match.
+    expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<AbortControllerWrapper>(null)")).toBe(
+      false,
+    );
+    expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<MyAbortController>(null)")).toBe(false);
+    expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<string>(null)")).toBe(false);
   });
 });

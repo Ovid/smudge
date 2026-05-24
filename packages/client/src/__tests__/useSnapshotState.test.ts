@@ -6,6 +6,7 @@ import { mapApiError } from "../errors";
 import { STRINGS } from "../strings";
 import { SNAPSHOT_ERROR_CODES } from "@smudge/shared";
 import type { Chapter, SnapshotListItem, SnapshotRow } from "@smudge/shared";
+import { pendingUntilAbort } from "./helpers/abortableMocks";
 
 vi.mock("../hooks/useContentCache", () => ({
   getCachedContent: vi.fn().mockReturnValue(null),
@@ -389,7 +390,7 @@ describe("useSnapshotState", () => {
     let capturedSignal: AbortSignal | undefined;
     vi.mocked(api.snapshots.restore).mockImplementation((_id, signal) => {
       capturedSignal = signal;
-      return new Promise(() => {}); // never resolves
+      return pendingUntilAbort(signal);
     });
 
     const { result, unmount } = renderHook(() => useSnapshotState("ch-1"));

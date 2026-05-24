@@ -3,6 +3,7 @@ import { render, screen, waitFor, cleanup, fireEvent } from "@testing-library/re
 import userEvent from "@testing-library/user-event";
 import { ProjectSettingsDialog } from "../components/ProjectSettingsDialog";
 import { api, ApiRequestError } from "../api/client";
+import { pendingUntilAbort } from "./helpers/abortableMocks";
 
 vi.mock("../api/client", async () => {
   const actual = await vi.importActual<typeof import("../api/client")>("../api/client");
@@ -391,7 +392,7 @@ describe("ProjectSettingsDialog", () => {
     vi.mocked(api.settings.update).mockImplementation(
       (_settings: unknown, signal?: AbortSignal) => {
         capturedSignal = signal;
-        return new Promise(() => {}); // never resolves — we care about abort only
+        return pendingUntilAbort(signal);
       },
     );
 
@@ -432,7 +433,7 @@ describe("ProjectSettingsDialog", () => {
     let capturedSignal: AbortSignal | undefined;
     vi.mocked(api.projects.update).mockImplementation((_slug, _data, signal) => {
       capturedSignal = signal;
-      return new Promise(() => {}); // never resolves
+      return pendingUntilAbort(signal);
     });
 
     const { rerender } = render(
@@ -486,7 +487,7 @@ describe("ProjectSettingsDialog", () => {
     let capturedSignal: AbortSignal | undefined;
     vi.mocked(api.settings.get).mockImplementation((signal?: AbortSignal) => {
       capturedSignal = signal;
-      return new Promise(() => {}); // never resolves
+      return pendingUntilAbort(signal);
     });
 
     const { unmount } = render(

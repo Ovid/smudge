@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { HomePage } from "../pages/HomePage";
 import { MemoryRouter } from "react-router-dom";
 import { api, ApiRequestError } from "../api/client";
+import { pendingUntilAbort } from "./helpers/abortableMocks";
 
 vi.mock("../api/client", () => ({
   ApiRequestError: class ApiRequestError extends Error {
@@ -365,8 +366,8 @@ describe("HomePage", () => {
       listSignals.push(signal);
       // Initial load resolves immediately so the page can render.
       if (listSignals.length === 1) return Promise.resolve([]);
-      // Recovery refetch never resolves — we only need to inspect the signal.
-      return new Promise<never>(() => {});
+      // Recovery refetch hangs until aborted — we only need to inspect the signal.
+      return pendingUntilAbort<never>(signal);
     });
     vi.mocked(api.projects.create).mockRejectedValue(
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
