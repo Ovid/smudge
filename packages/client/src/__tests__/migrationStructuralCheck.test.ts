@@ -151,15 +151,17 @@ describe("client source-tree migration structural check", () => {
       pattern.test(`import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";`),
     ).toBe(true);
     expect(
-      pattern.test(`import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";`),
+      pattern.test(
+        `import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";`,
+      ),
     ).toBe(true);
     expect(pattern.test(`import { foo, useAbortableAsyncOperation } from "./x";`)).toBe(true);
     expect(pattern.test(`import { useAbortableAsyncOperation, bar } from "./y";`)).toBe(true);
     // Multi-line imports (defensive — single-line today, but the helper
     // shouldn't rot the day someone reformats).
-    expect(
-      pattern.test(`import {\n  foo,\n  useAbortableAsyncOperation,\n} from "./x";`),
-    ).toBe(true);
+    expect(pattern.test(`import {\n  foo,\n  useAbortableAsyncOperation,\n} from "./x";`)).toBe(
+      true,
+    );
     // Indented import (e.g. nested in a conditional block — defensive).
     expect(pattern.test(`  import { useAbortableAsyncOperation } from "./z";`)).toBe(true);
     // Negative: the cases the loose regex used to wrongly accept.
@@ -168,9 +170,7 @@ describe("client source-tree migration structural check", () => {
     expect(pattern.test(`const s = "useAbortableAsyncOperation";`)).toBe(false);
     expect(pattern.test(`const op = useAbortableAsyncOperation();`)).toBe(false);
     // Word boundary: a longer identifier with the same prefix must not match.
-    expect(
-      pattern.test(`import { useAbortableAsyncOperationX } from "./x";`),
-    ).toBe(false);
+    expect(pattern.test(`import { useAbortableAsyncOperationX } from "./x";`)).toBe(false);
   });
 
   it("useRef<AbortController> regex catches all realistic drift forms (S1)", () => {
