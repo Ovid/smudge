@@ -129,11 +129,11 @@ describe("client source-tree migration structural check", () => {
   // forcing function.
   const PHASE_4B_3B_ALLOWLIST = new Set([
     resolve(clientSrcRoot, "components/ExportDialog.tsx"),
-    resolve(clientSrcRoot, "components/ProjectSettingsDialog.tsx"),
     resolve(clientSrcRoot, "components/SnapshotPanel.tsx"),
     resolve(clientSrcRoot, "hooks/useProjectEditor.ts"),
     resolve(clientSrcRoot, "hooks/useSnapshotState.ts"),
     // EditorPage.tsx removed by Phase 4b.3b row S-1 (settingsRefreshAbortRef migrated)
+    // ProjectSettingsDialog.tsx removed by Phase 4b.3b row S-10 (fieldAbortRef + timezoneAbortRef migrated)
     resolve(clientSrcRoot, "pages/HomePage.tsx"),
   ]);
 
