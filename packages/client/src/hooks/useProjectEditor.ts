@@ -139,7 +139,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // value. Mirror statusChangeAbortRef: abort any prior in-flight
   // rename before issuing a new one, and thread the signal into
   // api.projects.update so the network request is actually severed.
-  const titleChangeAbortRef = useRef<AbortController | null>(null);
+  const titleChangeOp = useAbortableAsyncOperation();
   // C5 (review 2026-04-24): rapid drag-drop reorders used to issue
   // overlapping PUTs to /chapters/order with no client-side ordering
   // guard — the persisted order was whichever PUT SQLite's writer lock
@@ -229,7 +229,6 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       cancelInFlightSave();
       // I1: abort field PATCHes on unmount so a late-resolving rename
       // can't fire setState on a torn-down hook.
-      titleChangeAbortRef.current?.abort();
       reorderAbortRef.current?.abort();
       renameChapterAbortRef.current?.abort();
       deleteChapterAbortRef.current?.abort();
@@ -1022,12 +1021,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       setProjectTitleError(null);
       // I1: abort any prior in-flight title PATCH before issuing a new
       // one so overlapping renames can't commit out of typing order.
-      titleChangeAbortRef.current?.abort();
-      const controller = new AbortController();
-      titleChangeAbortRef.current = controller;
+      const { promise, signal } = titleChangeOp.run((s) =>
+        api.projects.update(slug, { title }, s),
+      );
       try {
-        const updated = await api.projects.update(slug, { title }, controller.signal);
-        if (controller.signal.aborted) return undefined;
+        const updated = await promise;
+        if (signal.aborted) return undefined;
         // C3 defense-in-depth: if the user navigated mid-PATCH, discard
         // the response. The primary C3 guard lives in useProjectTitleEditing
         // (refuses saveProjectTitle when project.slug !== slug), but this
@@ -1040,7 +1039,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         setProject((prev) => (prev ? { ...prev, title: updated.title, slug: updated.slug } : prev));
         return updated.slug;
       } catch (err) {
-        if (controller.signal.aborted) return undefined; // superseded by a newer rename
+        if (signal.aborted) return undefined; // superseded by a newer rename
         console.warn("Failed to update project title:", err);
         // Don't call setError — that triggers the full-page error overlay.
         // Returning undefined keeps the title edit mode open so the user can retry.
@@ -1088,7 +1087,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         return undefined;
       }
     },
-    [],
+    [titleChangeOp],
   );
 
   const handleStatusChange = useCallback(
