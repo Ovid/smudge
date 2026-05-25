@@ -1,3 +1,5 @@
+Need import/export roundtrip tests for Smudge.
+
 - Need to look at agentic code simplification in the agentic review?
 
 - How to prevent fan out on receiving a code review?

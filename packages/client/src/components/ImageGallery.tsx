@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useReducer } from "react";
 import type { ImageRow } from "@smudge/shared";
 import { api } from "../api/client";
 import { mapApiError } from "../errors";
+import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 import { STRINGS } from "../strings";
 
 interface ImageGalleryProps {
@@ -59,25 +60,22 @@ export function ImageGallery({
   // in-flight refresh would overwrite B's references on resolution,
   // mis-gating delete and surfacing A's "used in" list on B's detail.
   const selectedImageIdRef = useRef<string | null>(null);
-  // I10 + I11 (review 2026-04-24): single abort ref for all gallery
-  // mutations (upload, metadata update, delete). A new mutation aborts
-  // the prior one so overlapping clicks cannot race at the server; the
-  // unmount effect aborts any in-flight mutation so a multi-MB upload
-  // does not keep running server-side after the gallery closes.
-  const mutateAbortRef = useRef<AbortController | null>(null);
+  // I10 + I11 (review 2026-04-24): single shared mutationOp instance
+  // for all gallery mutations (upload, metadata update, delete). A new
+  // mutation's mutationOp.run() aborts the prior one so overlapping
+  // clicks cannot race at the server; the hook's auto-abort on unmount
+  // aborts any in-flight mutation so a multi-MB upload does not keep
+  // running server-side after the gallery closes.
+  const mutationOp = useAbortableAsyncOperation();
   // S2 (review 2026-04-25): the click-time references refresh on the
-  // delete button did not thread an AbortSignal (the load effect at
-  // line 138 does). A late refresh resolving after the user
+  // delete button did not thread an AbortSignal (the detail-references
+  // load useEffect does). A late refresh resolving after the user
   // navigated back to grid would announce a stale failure or set
-  // references for a vanished image. Mirror mutateAbortRef.
-  const refsAbortRef = useRef<AbortController | null>(null);
-  useEffect(
-    () => () => {
-      mutateAbortRef.current?.abort();
-      refsAbortRef.current?.abort();
-    },
-    [],
-  );
+  // references for a vanished image. The refsOp instance mirrors
+  // mutationOp's pattern: per-call signal threaded into
+  // api.images.references, aborted on the next call and on unmount via
+  // the hook's auto-abort.
+  const refsOp = useAbortableAsyncOperation();
 
   const S = STRINGS.imageGallery;
 
@@ -181,18 +179,16 @@ export function ImageGallery({
       return;
     }
 
-    mutateAbortRef.current?.abort();
-    const controller = new AbortController();
-    mutateAbortRef.current = controller;
-    api.images
-      .upload(projectId, file, controller.signal)
+    // (s) not (signal) to avoid shadowing the outer destructured signal used in .then/.catch below.
+    const { promise, signal } = mutationOp.run((s) => api.images.upload(projectId, file, s));
+    promise
       .then((newImage) => {
-        if (controller.signal.aborted) return;
+        if (signal.aborted) return;
         announce(S.uploadSuccess(newImage.filename));
         incrementRefreshKey();
       })
       .catch((err: unknown) => {
-        if (controller.signal.aborted) return;
+        if (signal.aborted) return;
         const { message, possiblyCommitted } = mapApiError(err, "image.upload");
         // I3 (2026-04-24 review): on 2xx BAD_JSON the server stored the
         // image but the client couldn't parse the response. Without the
@@ -231,17 +227,17 @@ export function ImageGallery({
   async function handleSave() {
     if (!selectedImage) return;
     setSaveStatus("saving");
-    mutateAbortRef.current?.abort();
-    const controller = new AbortController();
-    mutateAbortRef.current = controller;
+    const { promise, signal } = mutationOp.run((s) =>
+      api.images.update(selectedImage.id, formState, s),
+    );
     try {
-      const updated = await api.images.update(selectedImage.id, formState, controller.signal);
-      if (controller.signal.aborted) return;
+      const updated = await promise;
+      if (signal.aborted) return;
       setSelectedImage(updated);
       setSaveStatus("saved");
       incrementRefreshKey();
     } catch (err: unknown) {
-      if (controller.signal.aborted) return;
+      if (signal.aborted) return;
       setSaveStatus("idle");
       const { message, possiblyCommitted } = mapApiError(err, "image.updateMetadata");
       // I4 (review 2026-04-25): on 2xx BAD_JSON the server stored the
@@ -266,19 +262,19 @@ export function ImageGallery({
     // Auto-save pending metadata changes before inserting so the DB stays in sync
     let imageToInsert = selectedImage;
     if (saveStatus !== "saved") {
-      mutateAbortRef.current?.abort();
-      const controller = new AbortController();
-      mutateAbortRef.current = controller;
+      const { promise, signal } = mutationOp.run((s) =>
+        api.images.update(selectedImage.id, formState, s),
+      );
       try {
         setSaveStatus("saving");
-        const updated = await api.images.update(selectedImage.id, formState, controller.signal);
-        if (controller.signal.aborted) return;
+        const updated = await promise;
+        if (signal.aborted) return;
         setSelectedImage(updated);
         setSaveStatus("saved");
         incrementRefreshKey();
         imageToInsert = updated;
       } catch (err: unknown) {
-        if (controller.signal.aborted) return;
+        if (signal.aborted) return;
         setSaveStatus("idle");
         const { message, possiblyCommitted } = mapApiError(err, "image.updateMetadata");
         // I4 (review 2026-04-25): same possiblyCommitted handling as
@@ -301,18 +297,16 @@ export function ImageGallery({
   async function handleDelete() {
     if (!selectedImage) return;
 
-    mutateAbortRef.current?.abort();
-    const controller = new AbortController();
-    mutateAbortRef.current = controller;
+    const { promise, signal } = mutationOp.run((s) => api.images.delete(selectedImage.id, s));
     try {
-      await api.images.delete(selectedImage.id, controller.signal);
-      if (controller.signal.aborted) return;
+      await promise;
+      if (signal.aborted) return;
       announce(S.deleteSuccess(selectedImage.filename));
       setSelectedImage(null);
       setConfirmingDelete(false);
       incrementRefreshKey();
     } catch (err: unknown) {
-      if (controller.signal.aborted) return;
+      if (signal.aborted) return;
       const { message, possiblyCommitted, extras } = mapApiError(err, "image.delete");
       // ABORTED: silent (mapper returned message: null). Leave the detail
       // view and confirmation state as-is so the user can retry.
@@ -341,6 +335,43 @@ export function ImageGallery({
       }
       setConfirmingDelete(false);
     }
+  }
+
+  function handleOpenDeleteConfirm() {
+    // Re-fetch references to avoid stale state blocking a valid delete
+    if (selectedImage) {
+      // Review 2026-04-24: capture id at click time and
+      // compare against the current id in the resolvers so
+      // a rapid navigate-away (back to grid, or another
+      // image) before resolution doesn't clobber the new
+      // image's references or announce an unrelated failure.
+      const imageId = selectedImage.id;
+      setReferencesLoaded(false);
+      // S2 (review 2026-04-25): thread a signal so unmount
+      // / new click cleanly drops the in-flight refresh.
+      const { promise, signal } = refsOp.run((s) => api.images.references(imageId, s));
+      promise
+        .then((data) => {
+          if (signal.aborted) return;
+          if (selectedImageIdRef.current !== imageId) return;
+          setReferences(data.chapters);
+          setReferencesLoaded(true);
+        })
+        .catch((err: unknown) => {
+          if (signal.aborted) return;
+          if (selectedImageIdRef.current !== imageId) return;
+          // I6: keep referencesLoaded=false (show the
+          // "Loading details…" gate when reference_count>0
+          // rather than the plain Delete confirm) and
+          // announce the mapped failure so the user knows
+          // the refresh failed. The server's 409
+          // IMAGE_IN_USE still catches a slipped-through
+          // delete attempt.
+          const { message } = mapApiError(err, "image.references");
+          if (message) announce(message);
+        });
+    }
+    setConfirmingDelete(true);
   }
 
   function updateField(field: keyof DetailFormState, value: string) {
@@ -584,45 +615,7 @@ export function ImageGallery({
             )
           ) : (
             <button
-              onClick={() => {
-                // Re-fetch references to avoid stale state blocking a valid delete
-                if (selectedImage) {
-                  // Review 2026-04-24: capture id at click time and
-                  // compare against the current id in the resolvers so
-                  // a rapid navigate-away (back to grid, or another
-                  // image) before resolution doesn't clobber the new
-                  // image's references or announce an unrelated failure.
-                  const imageId = selectedImage.id;
-                  setReferencesLoaded(false);
-                  // S2 (review 2026-04-25): thread a signal so unmount
-                  // / new click cleanly drops the in-flight refresh.
-                  refsAbortRef.current?.abort();
-                  const controller = new AbortController();
-                  refsAbortRef.current = controller;
-                  api.images
-                    .references(imageId, controller.signal)
-                    .then((data) => {
-                      if (controller.signal.aborted) return;
-                      if (selectedImageIdRef.current !== imageId) return;
-                      setReferences(data.chapters);
-                      setReferencesLoaded(true);
-                    })
-                    .catch((err: unknown) => {
-                      if (controller.signal.aborted) return;
-                      if (selectedImageIdRef.current !== imageId) return;
-                      // I6: keep referencesLoaded=false (show the
-                      // "Loading details…" gate when reference_count>0
-                      // rather than the plain Delete confirm) and
-                      // announce the mapped failure so the user knows
-                      // the refresh failed. The server's 409
-                      // IMAGE_IN_USE still catches a slipped-through
-                      // delete attempt.
-                      const { message } = mapApiError(err, "image.references");
-                      if (message) announce(message);
-                    });
-                }
-                setConfirmingDelete(true);
-              }}
+              onClick={handleOpenDeleteConfirm}
               className="text-sm text-status-error hover:underline focus:outline-none focus:ring-2 focus:ring-focus-ring rounded px-1"
             >
               {S.deleteButton}
