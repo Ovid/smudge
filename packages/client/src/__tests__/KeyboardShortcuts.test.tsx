@@ -307,7 +307,7 @@ describe("Ctrl+Shift+Arrow chapter navigation", () => {
 
     await waitFor(
       () => {
-        expect(api.chapters.get).toHaveBeenCalledWith("ch-2");
+        expect(api.chapters.get).toHaveBeenCalledWith("ch-2", expect.any(AbortSignal));
       },
       { timeout: 3000 },
     );

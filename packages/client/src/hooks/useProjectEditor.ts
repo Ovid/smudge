@@ -112,6 +112,18 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // per-call signal through the transport additionally severs the
   // network request rather than just gating the post-await setState.
   const loadProjectOp = useAbortableAsyncOperation();
+  // C-7 + C-8 (Phase 4b.3b): handleSelectChapter and reloadActiveChapter
+  // share a single instance. Both are mutually-compatible "load chapter
+  // content" operations that already share selectChapterSeq for
+  // response-staleness via token; a new call from either supersedes the
+  // prior. The hook layers network cancellation on top: the in-flight
+  // GET is severed rather than just having its setState gated by
+  // token.isStale(). useEditorMutation's expected-id supersession path
+  // (see useEditorMutation.ts:419-432) remains the cross-caller
+  // contract; this shared instance does not change that.
+  // useAbortableSequence and useAbortableAsyncOperation are orthogonal —
+  // both apply to every call.
+  const selectChapterOp = useAbortableAsyncOperation();
   // I11: rapid status clicks (A→B→C) used to issue overlapping PATCHes
   // with no server-side ordering guarantee. statusChangeSeq only
   // discarded response *processing*; both requests still reached the
@@ -725,7 +737,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       setCacheWarning(false);
       const token = selectChapterSeq.start();
       try {
-        const chapter = await api.chapters.get(chapterId);
+        // C-7 (Phase 4b.3b): the shared selectChapterOp severs the
+        // network request on supersede/unmount; token.isStale() remains
+        // for response-staleness gating. Both checks apply.
+        const { promise, signal } = selectChapterOp.run((s) => api.chapters.get(chapterId, s));
+        const chapter = await promise;
+        if (signal.aborted) return;
         if (token.isStale()) return; // superseded by a newer selection
         const cached = getCachedContent(chapterId);
         const effectiveChapter = cached ? { ...chapter, content: cached } : chapter;
@@ -738,7 +755,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         if (message) setError(message);
       }
     },
-    [cancelInFlightSave, selectChapterSeq],
+    [cancelInFlightSave, selectChapterSeq, selectChapterOp],
   );
 
   const reloadActiveChapter = useCallback(
@@ -778,7 +795,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       setCacheWarning(false);
       const token = selectChapterSeq.start();
       try {
-        const chapter = await api.chapters.get(current.id);
+        // C-8 (Phase 4b.3b): the shared selectChapterOp severs the
+        // network request on supersede/unmount; token.isStale() remains
+        // for response-staleness gating. Both checks apply.
+        const { promise, signal } = selectChapterOp.run((s) => api.chapters.get(current.id, s));
+        const chapter = await promise;
+        if (signal.aborted) return "superseded";
         if (token.isStale()) return "superseded";
         // Clear cache AFTER the server GET succeeds (invariant 3). Before
         // I3, this ran pre-GET — a failed GET would have already erased the
@@ -810,7 +832,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         return "failed";
       }
     },
-    [cancelInFlightSave, selectChapterSeq],
+    [cancelInFlightSave, selectChapterSeq, selectChapterOp],
   );
 
   const projectRef = useRef(project);
