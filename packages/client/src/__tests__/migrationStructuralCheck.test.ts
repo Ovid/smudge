@@ -106,43 +106,59 @@ describe("client source-tree migration structural check", () => {
     }
   });
 
-  it("useAbortableAsyncOperation is imported by every file that has been migrated to it", () => {
-    // Phase 4b.3a.2 (find-replace) and 4b.3a.3 (useTrashManager) have
-    // migrated; 4b.3a.4 (ImageGallery) will append its migrated file
-    // to this list. Once 4b.3a.4 lands, this per-file check can
-    // collapse into a global ban.
-    const migrated = [
-      resolve(clientSrcRoot, "hooks/useFindReplaceState.ts"),
-      resolve(clientSrcRoot, "hooks/useTrashManager.ts"),
-    ];
-    const pattern = importPatternFor("useAbortableAsyncOperation");
-    for (const file of migrated) {
+  // 4b.3a.4 collapsed the per-file `migrated` array into a global walk
+  // because ImageGallery was the last consumer in this hook's
+  // dedicated migration cluster (4b.3a.2/3/4). Seven AbortController
+  // sites remain hand-rolled pending Phase 4b.3b's per-site evaluation
+  // (see docs/roadmap.md lines 762–763 — App/DashboardView/ExportDialog/
+  // ProjectSettingsDialog/SnapshotPanel/useProjectEditor/useSnapshotState/
+  // EditorPage/HomePage). Phase 4b.3b decides per-site whether each
+  // site adopts useAbortableAsyncOperation or stays hand-rolled with
+  // justification; every adoption removes one entry from PHASE_4B_3B_ALLOWLIST,
+  // and Phase 4b.4 collapses the allowlist to nothing once it empties.
+  //
+  // Files in the allowlist are pinned by absolute-path equivalence
+  // (resolved against clientSrcRoot) so the assertion stays robust
+  // against rename within the tree. A file that's renamed without
+  // updating this list will fail the ban — that's the intended
+  // forcing function.
+  const PHASE_4B_3B_ALLOWLIST = new Set([
+    resolve(clientSrcRoot, "components/ExportDialog.tsx"),
+    resolve(clientSrcRoot, "components/ProjectSettingsDialog.tsx"),
+    resolve(clientSrcRoot, "components/SnapshotPanel.tsx"),
+    resolve(clientSrcRoot, "hooks/useProjectEditor.ts"),
+    resolve(clientSrcRoot, "hooks/useSnapshotState.ts"),
+    resolve(clientSrcRoot, "pages/EditorPage.tsx"),
+    resolve(clientSrcRoot, "pages/HomePage.tsx"),
+  ]);
+
+  it("no file in packages/client/src (excluding __tests__, the hook itself, and the Phase 4b.3b allowlist) contains raw useRef<AbortController>", () => {
+    const HOOK_FILE = resolve(clientSrcRoot, "hooks/useAbortableAsyncOperation.ts");
+    const files = collectTsSources(clientSrcRoot);
+    const offenders: string[] = [];
+    for (const file of files) {
+      if (file === HOOK_FILE) continue;
+      if (PHASE_4B_3B_ALLOWLIST.has(file)) continue;
       const source = readFileSync(file, "utf-8");
-      expect(source, `${file} should import useAbortableAsyncOperation`).toMatch(pattern);
+      if (USE_REF_ABORT_CONTROLLER_PATTERN.test(source)) {
+        offenders.push(file.replace(clientSrcRoot, "packages/client/src"));
+      }
     }
+    expect(offenders).toEqual([]);
   });
 
-  it("migrated files do not contain raw useRef<AbortController>", () => {
-    // Companion to the import assertion above; whichever migration phase
-    // lands last can convert this from a per-file check to a global
-    // packages/client/src ban (excluding the hook file itself).
-    //
-    // The regex covers `useRef<AbortController>` and any single-line
-    // union that ends with `>` (`| null`, `| undefined`, `| null |
-    // undefined`, etc). The `\b[^>]*>` tail is what catches drift —
-    // S1 (review 2026-05-01) flagged the prior `(?:\|\s*null\s*)?>` as
-    // missing the `| undefined` variant. The word-boundary on
-    // `AbortController\b` keeps false positives like
-    // `useRef<AbortControllerWrapper>` out.
-    const migrated = [
-      resolve(clientSrcRoot, "hooks/useFindReplaceState.ts"),
-      resolve(clientSrcRoot, "hooks/useTrashManager.ts"),
-    ];
-    for (const file of migrated) {
+  it("Phase 4b.3b allowlist entries actually contain useRef<AbortController>", () => {
+    // If an entry no longer matches, the file was either renamed (update
+    // the allowlist), migrated to useAbortableAsyncOperation (remove the
+    // entry), or deleted (remove the entry). All three cases are work
+    // for Phase 4b.3b's per-site evaluation. Letting dead entries linger
+    // would mask drift in files that still need migration.
+    for (const file of PHASE_4B_3B_ALLOWLIST) {
       const source = readFileSync(file, "utf-8");
-      expect(source, `${file} should not contain useRef<AbortController>`).not.toMatch(
-        USE_REF_ABORT_CONTROLLER_PATTERN,
-      );
+      expect(
+        source,
+        `${file} is on the allowlist but no longer contains useRef<AbortController>`,
+      ).toMatch(USE_REF_ABORT_CONTROLLER_PATTERN);
     }
   });
 
