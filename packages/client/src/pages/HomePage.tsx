@@ -70,13 +70,23 @@ export function HomePage() {
 
   async function handleCreate(title: string, mode: ProjectMode) {
     setError(null);
+    // I3 (review 2026-05-25): hoist `signal` out of the try so the
+    // catch arm below can gate on signal.aborted before warning.
+    // Mirrors the pattern used by useProjectEditor's handleReorderChapters
+    // and handleUpdateProjectTitle.
+    const { promise, signal } = createOp.run((s) => api.projects.create({ title, mode }, s));
     try {
-      const { promise, signal } = createOp.run((s) => api.projects.create({ title, mode }, s));
       const project = await promise;
       if (signal.aborted) return;
       setDialogOpen(false);
       navigate(`/projects/${project.slug}`);
     } catch (err) {
+      // I3 (review 2026-05-25): Phase 4b.3b threaded createOp's signal
+      // into api.projects.create; supersede/unmount now rejects this
+      // catch with ApiRequestError{ABORTED}. Short-circuit before warn
+      // (and before the possiblyCommitted recovery + setError below)
+      // to keep test output clean per CLAUDE.md §Testing Philosophy.
+      if (signal.aborted) return;
       console.warn("Failed to create project:", err);
       const { message, possiblyCommitted } = mapApiError(err, "project.create");
       // I5 (review 2026-04-25): project.create is non-idempotent — the
@@ -115,13 +125,24 @@ export function HomePage() {
   async function handleDelete() {
     if (!deleteTarget) return;
     setError(null);
+    // I3 (review 2026-05-25): hoist `signal` out of the try so the
+    // catch arm below can gate setDeleteTarget(null)/warn/setError on
+    // signal.aborted before they fire.
+    const { promise, signal } = deleteOp.run((s) => api.projects.delete(deleteTarget.slug, s));
     try {
-      const { promise, signal } = deleteOp.run((s) => api.projects.delete(deleteTarget.slug, s));
       await promise;
       if (signal.aborted) return;
       setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
       setDeleteTarget(null);
     } catch (err) {
+      // I3 (review 2026-05-25): same shape as handleCreate — gate warn,
+      // possiblyCommitted, setError, AND setDeleteTarget(null) on
+      // !signal.aborted. The setDeleteTarget(null) call below would
+      // otherwise clear the dialog target on a superseded operation,
+      // which is logically incorrect (benign in React 18 because the
+      // setter is a no-op post-unmount, but the contract should be
+      // "abort exits silently").
+      if (signal.aborted) return;
       console.warn("Failed to delete project:", err);
       const { message, possiblyCommitted } = mapApiError(err, "project.delete");
       // I1 (review 2026-04-24): on possiblyCommitted (2xx BAD_JSON) the

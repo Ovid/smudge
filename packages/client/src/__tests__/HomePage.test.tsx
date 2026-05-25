@@ -503,6 +503,81 @@ describe("HomePage", () => {
     expect(api.projects.delete).not.toHaveBeenCalled();
   });
 
+  // I3 (review 2026-05-25): Phase 4b.3b threaded signals into
+  // api.projects.create and api.projects.delete. Supersede/unmount now
+  // rejects in-flight POST/DELETE with ApiRequestError{ABORTED}, but
+  // the create/delete catches fired console.warn(...) BEFORE checking
+  // signal.aborted. Every navigate-away mid-mutation emitted a noisy
+  // "Failed to ... ABORTED" warning, violating CLAUDE.md §Testing
+  // Philosophy zero-warnings rule. Additionally, handleDelete called
+  // setDeleteTarget(null) unconditionally in the catch — logically
+  // incorrect on ABORTED (a superseded operation should not clear the
+  // dialog target).
+  it("handleCreate does not warn when superseded by unmount (I3)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.projects.list).mockResolvedValue([]);
+    vi.mocked(api.projects.create).mockImplementation((_input, signal) =>
+      pendingUntilAbort(signal),
+    );
+
+    const { unmount } = renderHomePage();
+    await waitFor(() => {
+      expect(screen.getByText("No projects yet. Create one to start writing.")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "New Project" }));
+    const input = screen.getByRole("textbox");
+    await userEvent.type(input, "My Book");
+    const form = input.closest("form") as HTMLFormElement;
+    const submitButton = form.querySelector("button[type='submit']") as HTMLButtonElement;
+    await userEvent.click(submitButton);
+
+    unmount();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Only the loadProjects-effect path may have emitted warns (none
+    // here since it resolved). The create path must be silent on abort.
+    const createFailedWarns = warnSpy.mock.calls.filter(
+      (call) => typeof call[0] === "string" && call[0].includes("Failed to create project"),
+    );
+    expect(createFailedWarns).toEqual([]);
+    warnSpy.mockRestore();
+  });
+
+  it("handleDelete does not warn when superseded by unmount (I3)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.projects.list).mockResolvedValue([
+      {
+        id: "p1",
+        slug: "novel-one",
+        title: "Novel One",
+        mode: "fiction",
+        total_word_count: 0,
+        updated_at: "",
+      },
+    ]);
+    vi.mocked(api.projects.delete).mockImplementation((_slug, signal) =>
+      pendingUntilAbort(signal),
+    );
+
+    const { unmount } = renderHomePage();
+    await waitFor(() => {
+      expect(screen.getByText("Novel One")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /delete/i }));
+    await userEvent.click(screen.getByRole("button", { name: /confirm/i }));
+
+    unmount();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const deleteFailedWarns = warnSpy.mock.calls.filter(
+      (call) => typeof call[0] === "string" && call[0].includes("Failed to delete project"),
+    );
+    expect(deleteFailedWarns).toEqual([]);
+    warnSpy.mockRestore();
+  });
+
   it("does not console.warn when loadProjects rejects after unmount", async () => {
     // Copilot review 2026-04-24: the previous bare `cancelled` flag
     // with warn ABOVE the check produced console noise on navigation/
