@@ -154,7 +154,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // setState paths on stale chapter ids. Mirror title/status abort
   // refs: the rename path aborts on supersede, the delete path aborts
   // on unmount.
-  const renameChapterAbortRef = useRef<AbortController | null>(null);
+  const renameChapterOp = useAbortableAsyncOperation();
   const deleteChapterAbortRef = useRef<AbortController | null>(null);
   // I21 (review 2026-04-24): per-chapter cache of the last server-
   // confirmed status. Rapid X→A→B clicks used to capture
@@ -229,7 +229,6 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       cancelInFlightSave();
       // I1: abort field PATCHes on unmount so a late-resolving rename
       // can't fire setState on a torn-down hook.
-      renameChapterAbortRef.current?.abort();
       deleteChapterAbortRef.current?.abort();
       createRecoveryAbortRef.current?.abort();
       statusRecoveryAbortRef.current?.abort();
@@ -1221,13 +1220,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       // I7: abort any prior in-flight rename before issuing a new one
       // so overlapping renames cannot commit out of typing order at the
       // server (same rationale as title/status abort refs).
-      renameChapterAbortRef.current?.abort();
-      const controller = new AbortController();
-      renameChapterAbortRef.current = controller;
+      const { promise, signal } = renameChapterOp.run((s) =>
+        api.chapters.update(chapterId, { title }, s),
+      );
       try {
-        await api.chapters.update(chapterId, { title }, controller.signal);
-        if (controller.signal.aborted) return;
-        if (renameChapterAbortRef.current === controller) renameChapterAbortRef.current = null;
+        await promise;
+        if (signal.aborted) return;
         if (activeChapterRef.current?.id === chapterId) {
           // Only update the title — don't overwrite content with stale server data.
           // The editor holds the current truth (same principle as handleSave).
@@ -1242,11 +1240,10 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           };
         });
       } catch (err) {
-        if (renameChapterAbortRef.current === controller) renameChapterAbortRef.current = null;
         // I7: ABORTED means a newer rename superseded this one; stay
         // silent so the newer call's state update is not contradicted
         // by a stale error banner.
-        if (controller.signal.aborted) return;
+        if (signal.aborted) return;
         console.warn("Failed to rename chapter:", err);
         // Don't call setError — that triggers the full-page error overlay.
         // Rename failures are non-fatal; surface via the optional callback
@@ -1255,7 +1252,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         if (message) onError?.(message);
       }
     },
-    [],
+    [renameChapterOp],
   );
 
   return {
