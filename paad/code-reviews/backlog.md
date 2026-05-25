@@ -185,7 +185,7 @@
 - **Confidence:** Medium
 - **Found by:** Concurrency & State (`general-purpose (claude-opus-4-7)`)
 - **First seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `4b43b07`
-- **Last seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `4b43b07`
+- **Last seen:** 2026-05-25 on branch `abortsignal-threading-completion` at `63c3049`
 - **Severity:** Important
 
 ## `8e3c1a47` — `cancelPendingSaves` clears `saveErrorMessage` but leaves `editorLockedMessage` banner stale
@@ -197,6 +197,6 @@
 - **Confidence:** Medium
 - **Found by:** Error Handling & Edge Cases (`general-purpose (claude-opus-4-7)`)
 - **First seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `4b43b07`
-- **Last seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `4b43b07`
+- **Last seen:** 2026-05-25 on branch `abortsignal-threading-completion` at `63c3049`
 - **Severity:** Suggestion
 
