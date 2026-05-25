@@ -133,7 +133,7 @@ describe("client source-tree migration structural check", () => {
     resolve(clientSrcRoot, "components/SnapshotPanel.tsx"),
     resolve(clientSrcRoot, "hooks/useProjectEditor.ts"),
     resolve(clientSrcRoot, "hooks/useSnapshotState.ts"),
-    resolve(clientSrcRoot, "pages/EditorPage.tsx"),
+    // EditorPage.tsx removed by Phase 4b.3b row S-1 (settingsRefreshAbortRef migrated)
     resolve(clientSrcRoot, "pages/HomePage.tsx"),
   ]);
 

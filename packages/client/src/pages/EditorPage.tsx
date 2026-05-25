@@ -1211,7 +1211,7 @@ export function EditorPage() {
   // hook. Mirror the abort-on-unmount discipline used everywhere else
   // on this branch — one controller per call, aborted on the next
   // call AND on unmount.
-  const settingsRefreshAbortRef = useRef<AbortController | null>(null);
+  const settingsRefreshOp = useAbortableAsyncOperation();
   // I8 (review 2026-04-24): shared counter bumped when a paste/drop
   // upload falls into the possiblyCommitted branch; ImageGallery
   // re-fetches its list so a retry sees the already-stored row rather
@@ -1219,16 +1219,13 @@ export function EditorPage() {
   const [galleryExternalRefreshKey, setGalleryExternalRefreshKey] = useState(0);
   const [toolbarEditor, setToolbarEditor] = useState<TipTapEditor | null>(null);
 
-  // Clean up image announcement timer on unmount
+  // Clean up image announcement timer on unmount.
+  // settingsRefreshOp auto-aborts on unmount — no explicit call needed.
   useEffect(() => {
     return () => {
       if (imageAnnouncementTimerRef.current) {
         clearTimeout(imageAnnouncementTimerRef.current);
       }
-      // I11 (review 2026-04-25): drop any in-flight settings refresh GET
-      // so the .then/.catch can't fire setProject / navigate("/") on a
-      // torn-down hook.
-      settingsRefreshAbortRef.current?.abort();
     };
   }, []);
 
@@ -1529,13 +1526,12 @@ export function EditorPage() {
     if (slug) {
       // I11 (review 2026-04-25): abort prior in-flight refresh and
       // thread the signal so the .then/.catch can drop on unmount.
-      settingsRefreshAbortRef.current?.abort();
-      const controller = new AbortController();
-      settingsRefreshAbortRef.current = controller;
-      api.projects
-        .get(slug, controller.signal)
+      const { promise, signal } = settingsRefreshOp.run((s) =>
+        api.projects.get(slug, s),
+      );
+      promise
         .then((data) => {
-          if (controller.signal.aborted) return;
+          if (signal.aborted) return;
           // S7 (review 2026-04-21): re-check busy before merging. The
           // entry gate above guarantees no mutation was in flight when
           // we dispatched the GET, but a mutation can start during the
@@ -1560,7 +1556,7 @@ export function EditorPage() {
         })
         .catch((err: unknown) => {
           // I11: drop on unmount or supersession.
-          if (controller.signal.aborted) return;
+          if (signal.aborted) return;
           // I12 (review 2026-04-25): mirror the success-path busy gate
           // in the catch branch. A settings GET that fails while the
           // editor is mid-mutation would otherwise surface a banner
