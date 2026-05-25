@@ -68,8 +68,8 @@ export function ImageGallery({
   // running server-side after the gallery closes.
   const mutationOp = useAbortableAsyncOperation();
   // S2 (review 2026-04-25): the click-time references refresh on the
-  // delete button did not thread an AbortSignal (the load effect at
-  // line 138 does). A late refresh resolving after the user
+  // delete button did not thread an AbortSignal (the detail-references
+  // load useEffect does). A late refresh resolving after the user
   // navigated back to grid would announce a stale failure or set
   // references for a vanished image. The refsOp instance mirrors
   // mutationOp's pattern: per-call signal threaded into
