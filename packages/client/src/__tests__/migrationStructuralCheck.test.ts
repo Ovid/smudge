@@ -72,7 +72,11 @@ export function extractAbortableAsyncOperationBindings(source: string): string[]
   const names: string[] = [];
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(source)) !== null) {
-    names.push(match[1]);
+    // Capture group 1 is always present when the regex matches — the
+    // `(\w+)` is required, not optional. Assert non-undefined to
+    // satisfy noUncheckedIndexedAccess.
+    const name = match[1];
+    if (name !== undefined) names.push(name);
   }
   return names;
 }
