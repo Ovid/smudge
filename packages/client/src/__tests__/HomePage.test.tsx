@@ -556,9 +556,7 @@ describe("HomePage", () => {
         updated_at: "",
       },
     ]);
-    vi.mocked(api.projects.delete).mockImplementation((_slug, signal) =>
-      pendingUntilAbort(signal),
-    );
+    vi.mocked(api.projects.delete).mockImplementation((_slug, signal) => pendingUntilAbort(signal));
 
     const { unmount } = renderHomePage();
     await waitFor(() => {

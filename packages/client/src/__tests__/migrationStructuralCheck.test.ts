@@ -293,9 +293,9 @@ describe("client source-tree migration structural check", () => {
     // S5 (review 2026-05-25): multi-line generic forms. The codebase uses
     // single-line today, but a future reformat-of-long-types pass must
     // not silently break the structural check.
-    expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<\n  AbortController | null\n>(null)")).toBe(
-      true,
-    );
+    expect(
+      USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<\n  AbortController | null\n>(null)"),
+    ).toBe(true);
     expect(
       USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<\n  AbortController\n  | null\n>(null)"),
     ).toBe(true);
@@ -343,8 +343,8 @@ describe("client source-tree migration structural check", () => {
     expect(stripCommentsFromTsSource("// useRef<AbortController>\nconst r = 1;")).not.toContain(
       "useRef<AbortController>",
     );
-    expect(
-      stripCommentsFromTsSource("const r = useRef<AbortController | null>(null);"),
-    ).toContain("useRef<AbortController");
+    expect(stripCommentsFromTsSource("const r = useRef<AbortController | null>(null);")).toContain(
+      "useRef<AbortController",
+    );
   });
 });
