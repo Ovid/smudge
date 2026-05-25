@@ -157,6 +157,19 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // was silently swallowed and the new chapter never landed in the
   // sidebar. Per-handler refs scope the "latest wins" rule to its own
   // handler and leave siblings untouched.
+  //
+  // Phase 4b.3b decision matrix row C-5: createRecoveryAbortRef,
+  // statusRecoveryAbortRef, and titleRecoveryAbortRef are kept hand-rolled.
+  // Each fires from the catch branch of its respective primary mutation
+  // (handleCreateChapter / handleStatusChange / handleTitleChange) and
+  // runs a follow-up GET that must complete even after the primary
+  // mutation's hook has auto-aborted (e.g. on the next handleStatusChange
+  // after a failed one). Routing these through the primary's hook would
+  // cause the next mutation to cancel the previous mutation's recovery
+  // refresh — exactly the case where the previous error's user-visible
+  // state most needs the refresh to land. Phase 4b.4 replaces this
+  // file-level allowlist entry with inline `// eslint-disable-next-line`
+  // on each of the three lines below.
   const createRecoveryAbortRef = useRef<AbortController | null>(null);
   const statusRecoveryAbortRef = useRef<AbortController | null>(null);
   const titleRecoveryAbortRef = useRef<AbortController | null>(null);
