@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from "react";
 import { api } from "../api/client";
 import { useAbortableSequence } from "../hooks/useAbortableSequence";
+import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 import { STRINGS } from "../strings";
 import { mapApiError, isNotFound } from "../errors";
 import type { SnapshotListItem } from "@smudge/shared";
@@ -122,7 +123,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
     // the unmount-cleanup effect below — without that cleanup, an
     // imperative refresh whose parent unmounts while it is in flight
     // leaked the server request to completion.
-    const fetchAbortRef = useRef<AbortController | null>(null);
+    const fetchOp = useAbortableAsyncOperation();
     // I6 (review 2026-04-24): distinct controller for create/delete
     // POST/DELETE. Kept separate from fetchAbortRef so a new list
     // fetch does not sever an in-flight mutation, and a mutation
@@ -131,7 +132,6 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
     const mutateAbortRef = useRef<AbortController | null>(null);
     useEffect(() => {
       return () => {
-        fetchAbortRef.current?.abort();
         mutateAbortRef.current?.abort();
       };
     }, []);
@@ -139,11 +139,9 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
     const fetchSnapshots = useCallback(async () => {
       if (!chapterId) return;
       const token = chapterSeq.capture();
-      fetchAbortRef.current?.abort();
-      const controller = new AbortController();
-      fetchAbortRef.current = controller;
+      const { promise } = fetchOp.run((s) => api.snapshots.list(chapterId, s));
       try {
-        const data = await api.snapshots.list(chapterId, controller.signal);
+        const data = await promise;
         if (token.isStale()) return;
         setSnapshots(data);
         setListError(null);
@@ -156,7 +154,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         const { message } = mapApiError(err, "snapshot.list");
         if (message) setListError(message);
       }
-    }, [chapterId, onSnapshotsChange, chapterSeq]);
+    }, [chapterId, onSnapshotsChange, chapterSeq, fetchOp]);
 
     useImperativeHandle(ref, () => ({ refreshSnapshots: fetchSnapshots }), [fetchSnapshots]);
 
@@ -167,11 +165,8 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
       chapterSeq.abort();
       if (!isOpen || !chapterId) return;
       const token = chapterSeq.capture();
-      fetchAbortRef.current?.abort();
-      const controller = new AbortController();
-      fetchAbortRef.current = controller;
-      api.snapshots
-        .list(chapterId, controller.signal)
+      const { promise } = fetchOp.run((s) => api.snapshots.list(chapterId, s));
+      promise
         .then((data) => {
           if (token.isStale()) return;
           setSnapshots(data);
@@ -183,10 +178,8 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
           const { message } = mapApiError(err, "snapshot.list");
           if (message) setListError(message);
         });
-      return () => {
-        controller.abort();
-      };
-    }, [isOpen, chapterId, onSnapshotsChange, chapterSeq]);
+      // No explicit cleanup — fetchOp auto-aborts on unmount/effect-rerun.
+    }, [isOpen, chapterId, onSnapshotsChange, chapterSeq, fetchOp]);
 
     // Focus management
     useEffect(() => {
