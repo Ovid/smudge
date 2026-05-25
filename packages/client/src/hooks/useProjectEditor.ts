@@ -673,6 +673,14 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // never accepted it. Mirrors loadProject's seed.
         confirmedStatusRef.current[newChapter.id] = newChapter.status;
       } catch (err) {
+        // I2 (review 2026-05-25): chapter.create now threads the
+        // createChapterOp signal, so supersede/unmount rejects this
+        // catch with ApiRequestError{ABORTED}. The warn at this site
+        // (and the downstream mapApiError + onError) must short-circuit
+        // before logging — otherwise every navigate-away mid-POST emits
+        // a "Failed to create chapter: ABORTED" warning, violating
+        // CLAUDE.md §Testing Philosophy zero-warnings rule.
+        if (isAborted(err)) return;
         console.warn("Failed to create chapter:", err);
         if (projectRef.current?.id !== projectId) return;
         if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
@@ -790,6 +798,11 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         setActiveChapter(effectiveChapter);
         setChapterWordCount(countWords(effectiveChapter.content));
       } catch (err) {
+        // I2 (review 2026-05-25): selectChapterOp.run aborts prior
+        // requests on supersede and unmount, so ABORTED rejections are
+        // an intentional control-flow signal here — silence them
+        // before the warn so test output stays clean.
+        if (isAborted(err)) return;
         console.warn("Failed to load chapter:", err);
         if (token.isStale()) return;
         const { message } = mapApiError(err, "chapter.load");
@@ -853,6 +866,13 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         setChapterReloadKey((k) => k + 1);
         return "reloaded";
       } catch (err) {
+        // I2 (review 2026-05-25): selectChapterOp.run aborts prior
+        // requests on supersede and unmount; ABORTED is intentional and
+        // must short-circuit before the warn to keep test output clean.
+        // Return "superseded" so callers (useEditorMutation) treat the
+        // abort as a non-fatal skip rather than a lock-worthy failure
+        // (mirrors the token.isStale() arm immediately below).
+        if (isAborted(err)) return "superseded";
         console.warn("Failed to reload chapter:", err);
         // Token stale during the GET → user navigated away. A newer
         // select owns state now; "superseded" is correct and must not
@@ -962,6 +982,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
                 setActiveChapter(ch);
                 setChapterWordCount(countWords(ch.content));
               } catch (err) {
+                // I2 (review 2026-05-25): the secondary GET now threads
+                // the deleteChapterOp signal `s`, so unmount or a
+                // superseding delete rejects with ABORTED. Gate the
+                // warn first to keep test output clean (matches the
+                // outer DELETE catch's discipline at line ~987).
+                if (s.aborted) return true;
                 // Secondary fetch failed — fall through to the empty state
                 // rather than setting activeChapter to the list-level row
                 // (which has content=null). Surface the failure via the
@@ -970,7 +996,6 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
                 // I3 the catch was silent and the user saw "Add chapter"
                 // as if the project had no chapters left.
                 console.warn("Failed to load chapter after delete:", err);
-                if (s.aborted) return true;
                 if (token.isStale()) return true;
                 const { message } = mapApiError(err, "chapter.load");
                 if (message) onError?.(message);

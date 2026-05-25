@@ -964,6 +964,104 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  // I2 (review 2026-05-25): with Phase 4b.3b threading signals into
+  // chapter.create / chapter.get / chapter.delete, supersede and unmount
+  // now reject the in-flight call with ApiRequestError{ABORTED}. The
+  // pre-fix catches fired console.warn(...) BEFORE the abort/stale
+  // gate, violating CLAUDE.md §Testing Philosophy zero-warnings rule.
+  // These tests pin the silent-on-abort contract.
+  describe("I2: console.warn gated on abort", () => {
+    it("handleCreateChapter does not warn when superseded by unmount", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      vi.mocked(api.chapters.create).mockImplementation((_slug, signal) =>
+        pendingUntilAbort(signal),
+      );
+
+      const { result, unmount } = renderHook(() => useProjectEditor("test-project"));
+      await waitFor(() => expect(result.current.project).toBeTruthy());
+
+      void result.current.handleCreateChapter();
+      unmount();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(warnSpy).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it("handleSelectChapter does not warn when superseded by unmount", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      // Initial load resolves; subsequent select hangs until abort.
+      let callIndex = 0;
+      vi.mocked(api.chapters.get).mockImplementation((id, signal) => {
+        callIndex++;
+        if (callIndex === 1) return Promise.resolve(mockChapter1);
+        return pendingUntilAbort(signal);
+      });
+
+      const { result, unmount } = renderHook(() => useProjectEditor("test-project"));
+      await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+      void result.current.handleSelectChapter("ch2");
+      unmount();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(warnSpy).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it("reloadActiveChapter does not warn when superseded by unmount", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      let callIndex = 0;
+      vi.mocked(api.chapters.get).mockImplementation((_id, signal) => {
+        callIndex++;
+        if (callIndex === 1) return Promise.resolve(mockChapter1);
+        return pendingUntilAbort(signal);
+      });
+
+      const { result, unmount } = renderHook(() => useProjectEditor("test-project"));
+      await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+      void result.current.reloadActiveChapter();
+      unmount();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(warnSpy).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it("handleDeleteChapter inner secondary-GET does not warn on abort", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      // Active chapter (ch1) is the deletion target so the deletion path
+      // enters the secondary-GET branch (lines around 956). The DELETE
+      // resolves; the post-delete GET hangs until the unmount-driven abort
+      // rejects it with ABORTED.
+      vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
+      let callIndex = 0;
+      vi.mocked(api.chapters.get).mockImplementation((_id, signal) => {
+        callIndex++;
+        if (callIndex === 1) return Promise.resolve(mockChapter1);
+        return pendingUntilAbort(signal);
+      });
+
+      const { result, unmount } = renderHook(() => useProjectEditor("test-project"));
+      await waitFor(() => expect(result.current.activeChapter?.id).toBe("ch1"));
+
+      void result.current.handleDeleteChapter(mockChapter1);
+      // Allow the DELETE to resolve and the secondary GET to start.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      unmount();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // Pre-fix, the secondary-GET catch warned BEFORE checking s.aborted.
+      const failedAfterDelete = warnSpy.mock.calls.filter(
+        (call) =>
+          typeof call[0] === "string" && call[0].includes("Failed to load chapter after delete"),
+      );
+      expect(failedAfterDelete).toEqual([]);
+      warnSpy.mockRestore();
+    });
+  });
+
   it("calls onError callback when handleRenameChapter fails (does not set full-page error)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.update).mockRejectedValue(new Error("rename boom"));
