@@ -106,21 +106,15 @@ describe("client source-tree migration structural check", () => {
     }
   });
 
-  // 4b.3a.4 collapsed the per-file `migrated` array into a global walk
-  // because ImageGallery was the last consumer in this hook's
-  // dedicated migration cluster (4b.3a.2/3/4). Seven files with
-  // hand-rolled `useRef<AbortController>` allocations remain pending
-  // Phase 4b.3b's per-site evaluation; several of those files contain
-  // multiple allocations (e.g. useProjectEditor.ts), so "seven" counts
-  // allowlisted files, not call sites. See PHASE_4B_3B_ALLOWLIST below
-  // and Phase 4b.3a.1 §Out of Scope in docs/roadmap.md (which also
-  // lists App.tsx and DashboardView.tsx — those use AbortController
-  // without useRef, so they don't match this regex and aren't
-  // allowlisted here). Phase 4b.3b decides per-site whether each site
-  // adopts useAbortableAsyncOperation or stays hand-rolled with
-  // justification; a file leaves PHASE_4B_3B_ALLOWLIST once all of its
-  // useRef<AbortController> allocations have been adopted or removed,
-  // and Phase 4b.4 collapses the allowlist to nothing once it empties.
+  // Phase 4b.3b post-sweep state: three files retain hand-rolled
+  // useRef<AbortController> for documented second-tier-recovery
+  // (HomePage.createRecoveryAbortRef; useProjectEditor's three
+  // recovery refs) or simultaneously-live-controller patterns
+  // (useSnapshotState.restoreFollowupAbortRef). Each retained ref
+  // carries an inline justification comment at its allocation. Phase
+  // 4b.4 replaces this file-level allowlist with inline
+  // `// eslint-disable-next-line` on each of the surviving lines and
+  // removes this `PHASE_4B_3B_ALLOWLIST` set entirely.
   //
   // Files in the allowlist are pinned by absolute-path equivalence
   // (resolved against clientSrcRoot) so the assertion stays robust
@@ -166,6 +160,41 @@ describe("client source-tree migration structural check", () => {
       ).toMatch(USE_REF_ABORT_CONTROLLER_PATTERN);
     }
   });
+
+  it("every file that imports useAbortableAsyncOperation contains at least one .run( call", () => {
+    // Guards against drift: a file that imports the hook but never
+    // calls .run() either has dead code or has had its only call
+    // removed without removing the import. Either is a code-smell.
+    const importPattern = importPatternFor("useAbortableAsyncOperation");
+    const runPattern = /\.run\s*\(/;
+    const files = collectTsSources(clientSrcRoot);
+    const offenders: string[] = [];
+    for (const file of files) {
+      const source = readFileSync(file, "utf-8");
+      if (!importPattern.test(source)) continue;
+      if (!runPattern.test(source)) {
+        offenders.push(file.replace(clientSrcRoot, "packages/client/src"));
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  // TODO(Phase 4b.4): encode the "each new signal-bearing API endpoint
+  // has ≥1 consumer threading a non-undefined signal" structural
+  // assertion. Per design §3.1 last bullet (Phase 4b.3b best-effort).
+  // Deferred because the four endpoint shapes are heterogeneous:
+  // api.projects.create({...}, s) and api.projects.delete(slug, s) and
+  // api.chapters.create(slug, s) match `endpoint(arg, ident)` cleanly,
+  // but api.chapterStatuses.list(s) is single-arg signal-only and
+  // doesn't fit the same comma-separated regex shape. A simple
+  // grep-on-source is too fragile to express the union without false
+  // positives or false negatives (e.g. `api.chapterStatuses.list(s)`
+  // vs `api.chapterStatuses.list()`). Signal-threading is covered
+  // behaviorally by Tasks 11 (C-6), 13 (C-9), 14 (C-10/11), 23 (S-2),
+  // 24 (S-7) mock-call assertions — those tests assert each consumer
+  // actually passes the live signal through to the API call. The
+  // structural assertion is a belt-and-suspenders nicety, not a
+  // correctness gate.
 
   it("importPatternFor matches real imports but not comments, strings, or bare references", () => {
     // Direct exercise of the helper. The prior bare-identifier match
