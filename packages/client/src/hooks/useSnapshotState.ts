@@ -169,7 +169,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   // already superseded. One controller per viewSnapshot / refreshCount
   // call; aborted on the next call AND on unmount (via a cleanup
   // useEffect below).
-  const viewAbortRef = useRef<AbortController | null>(null);
+  const viewOp = useAbortableAsyncOperation();
   const refreshCountOp = useAbortableAsyncOperation();
   // I3 (review 2026-04-24): restore + follow-up list had no
   // AbortController. A chapter switch or unmount mid-flight left the
@@ -264,11 +264,9 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       // I2: abort any prior in-flight View GET before issuing a new
       // one so the server stops reading the old snapshot as soon as
       // the user clicks a different entry.
-      viewAbortRef.current?.abort();
-      const controller = new AbortController();
-      viewAbortRef.current = controller;
+      const { promise } = viewOp.run((s) => api.snapshots.get(snapshot.id, s));
       try {
-        const full = await api.snapshots.get(snapshot.id, controller.signal);
+        const full = await promise;
         if (cToken.isStale()) return { ok: true, superseded: "chapter" };
         if (vToken.isStale()) return { ok: true, superseded: "sameChapterNewer" };
         // S11 (2026-04-23 review): defensive undefined guard. apiFetch
@@ -344,7 +342,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         return { ok: false, error: makeClientNetworkError() };
       }
     },
-    [chapterSeq, viewSeq],
+    [chapterSeq, viewSeq, viewOp],
   );
 
   const exitSnapshotView = useCallback(() => {
@@ -463,7 +461,6 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   // useAbortableAsyncOperation.
   useEffect(
     () => () => {
-      viewAbortRef.current?.abort();
       restoreFollowupAbortRef.current?.abort();
     },
     [],
