@@ -13,6 +13,18 @@ export type AbortableAsyncOperation = {
    * external cancellation (panel-close, project-id change) that is NOT
    * paired with starting a new operation. After abort(), the next run()
    * starts fresh.
+   *
+   * S10 (review 2026-05-25): the "currently-tracked controller" is the
+   * one from the most recent run() call — which may have happened
+   * after the caller saw the value they intended to cancel. Callers
+   * who hold a reference to a specific operation should NOT use this
+   * to cancel that specific operation; they should either (a) sequence
+   * abort() against a known-most-recent run() (the typical case for
+   * panel-close: there is at most one operation in flight at a time)
+   * or (b) capture the per-call signal from run() and use AbortSignal
+   * APIs directly. Calling abort() at an arbitrary later time aborts
+   * whatever ran most recently — possibly a different operation than
+   * the caller had in mind.
    */
   abort(): void;
 };

@@ -126,6 +126,20 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // contract; this shared instance does not change that.
   // useAbortableSequence and useAbortableAsyncOperation are orthogonal —
   // both apply to every call.
+  //
+  // S6 (review 2026-05-25, follow-up to Pushback #8 in the decision log):
+  // verification that the shared instance is race-safe across the two
+  // callers — handleSelectChapter and reloadActiveChapter are never
+  // BOTH live with mutually-exclusive intents simultaneously. Both
+  // funnel through selectChapterSeq.start()/capture() at the top, and
+  // either caller's start() invalidates the other's pending token. The
+  // "abort prior controller" semantics of useAbortableAsyncOperation
+  // therefore align with the seq's "drop stale responses" semantics:
+  // when reloadActiveChapter supersedes a slow handleSelectChapter (or
+  // vice-versa), the prior fetch is severed AND the stale response
+  // would have been discarded anyway. Allocating a second instance
+  // would be wasteful, not safer — the two ops have identical
+  // supersede semantics (load-the-chapter, drop anything older).
   const selectChapterOp = useAbortableAsyncOperation();
   // I11: rapid status clicks (A→B→C) used to issue overlapping PATCHes
   // with no server-side ordering guarantee. statusChangeSeq only
@@ -217,6 +231,22 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // paths omitted the backoff-unblock step, leaving the retry loop
   // asleep for up to 8s after a chapter switch/delete; routing through
   // saveOp.abort() makes that class of bug structurally impossible.
+  //
+  // S8 (review 2026-05-25): the two calls are NOT redundant — they
+  // gate different things and dropping either re-opens a real race.
+  //   - saveSeq.abort() invalidates outstanding tokens. The retry loop
+  //     reads token.isStale() at the top of each iteration AND after
+  //     the PATCH resolves; a stale token short-circuits without
+  //     calling setSaveStatus/setProject, even if the PATCH has
+  //     already succeeded. Without this, a successful resolve from a
+  //     superseded save would still write through to React state.
+  //   - saveOp.abort() severs the in-flight network call AND rejects
+  //     the backoff sleep awaiting the same signal. Without this, the
+  //     PATCH continues to completion on the server (wasted work) and
+  //     a backoff sleep would hold the loop asleep for the rest of
+  //     the 2/4/8s window before its next iteration's seq-check could
+  //     fire — that's the 8-second-stale-PATCH bug S3 fixed.
+  // A future refactor that drops either is a regression — keep both.
   const cancelInFlightSave = useCallback(() => {
     saveSeq.abort();
     saveOp.abort();
