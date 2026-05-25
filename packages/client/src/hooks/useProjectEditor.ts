@@ -147,7 +147,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // statusChangeAbortRef: abort the prior in-flight PUT before issuing
   // a new one, and thread the signal into api.projects.reorderChapters
   // so the older request is actually severed.
-  const reorderAbortRef = useRef<AbortController | null>(null);
+  const reorderOp = useAbortableAsyncOperation();
   // I7 (review 2026-04-24): rename and delete-chapter siblings went
   // without AbortControllers. Rapid renames raced at the server with
   // no ordering guard; a delete that the user moved past kept running
@@ -229,7 +229,6 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       cancelInFlightSave();
       // I1: abort field PATCHes on unmount so a late-resolving rename
       // can't fire setState on a torn-down hook.
-      reorderAbortRef.current?.abort();
       renameChapterAbortRef.current?.abort();
       deleteChapterAbortRef.current?.abort();
       createRecoveryAbortRef.current?.abort();
@@ -939,14 +938,13 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       // before issuing a new one so overlapping drag-drops cannot
       // commit out of drop order. The signal is threaded through the
       // transport so the browser actually drops the stale request.
-      reorderAbortRef.current?.abort();
-      const controller = new AbortController();
-      reorderAbortRef.current = controller;
+      const { promise, signal } = reorderOp.run((s) =>
+        api.projects.reorderChapters(slug, orderedIds, s),
+      );
       // S6 (review 2026-04-21) + C1 (review 2026-04-24): drift guard —
       // see handleCreateChapter for full rationale.
       try {
-        await api.projects.reorderChapters(slug, orderedIds, controller.signal);
-        if (reorderAbortRef.current === controller) reorderAbortRef.current = null;
+        await promise;
         // C2 + C1: discard if the user navigated away mid-PUT. Without
         // this, the reorder would apply Project A's ordered ids to
         // Project B's chapters array — the filter by id then drops
@@ -966,11 +964,10 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           return { ...prev, chapters: reordered };
         });
       } catch (err) {
-        if (reorderAbortRef.current === controller) reorderAbortRef.current = null;
         // C5: ABORTED means a newer reorder superseded this one and is
         // driving its own PATCH. Reverting here would stomp the live
         // call; stay silent and let the newer reorder land.
-        if (controller.signal.aborted) return;
+        if (signal.aborted) return;
         console.warn("Failed to reorder chapters:", err);
         if (projectRef.current?.id !== projectId) return;
         if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
@@ -1008,7 +1005,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         }
       }
     },
-    [],
+    [reorderOp],
   );
 
   const handleUpdateProjectTitle = useCallback(
