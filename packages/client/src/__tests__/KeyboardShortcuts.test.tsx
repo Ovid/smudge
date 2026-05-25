@@ -274,7 +274,7 @@ describe("Ctrl+Shift+N creates a new chapter", () => {
 
     await waitFor(
       () => {
-        expect(api.chapters.create).toHaveBeenCalledWith("test-project");
+        expect(api.chapters.create).toHaveBeenCalledWith("test-project", expect.any(AbortSignal));
       },
       { timeout: 3000 },
     );

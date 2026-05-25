@@ -4,6 +4,7 @@ import { countWords } from "@smudge/shared";
 import { api } from "../api/client";
 import { getCachedContent, setCachedContent, clearCachedContent } from "./useContentCache";
 import { useAbortableSequence } from "./useAbortableSequence";
+import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
 import { STRINGS } from "../strings";
 import { mapApiError, mapApiErrorMessage, isApiError, isAborted, isClientError } from "../errors";
 
@@ -98,6 +99,11 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
     resolve: () => void;
   } | null>(null);
   const statusChangeSeq = useAbortableSequence();
+  // C-4 (Phase 4b.3b): handleCreateChapter routes its POST through this
+  // hook so the in-flight fetch is severed on supersede/unmount. The
+  // existing projectRef/projectSlugRef drift checks after the await are
+  // orthogonal (response-discard) and remain.
+  const createChapterOp = useAbortableAsyncOperation();
   // I11: rapid status clicks (A→B→C) used to issue overlapping PATCHes
   // with no server-side ordering guarantee. statusChangeSeq only
   // discarded response *processing*; both requests still reached the
@@ -574,7 +580,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       setSaveErrorMessage(null);
       setCacheWarning(false);
       try {
-        const newChapter = await api.chapters.create(slug);
+        const { promise, signal } = createChapterOp.run((s) => api.chapters.create(slug, s));
+        const newChapter = await promise;
+        if (signal.aborted) return;
         // C2 + C1: discard the response if the user navigated to a
         // different project mid-POST. Without this, `setActiveChapter`
         // and the `setProject` merge would write Project A's new

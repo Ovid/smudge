@@ -2144,7 +2144,7 @@ describe("useProjectEditor", () => {
       await result.current.handleCreateChapter();
     });
 
-    expect(api.chapters.create).toHaveBeenCalledWith("other-project");
+    expect(api.chapters.create).toHaveBeenCalledWith("other-project", expect.any(AbortSignal));
     resolveOther(otherProject);
     await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
   });
