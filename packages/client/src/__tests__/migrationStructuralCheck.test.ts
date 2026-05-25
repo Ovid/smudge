@@ -108,14 +108,16 @@ describe("client source-tree migration structural check", () => {
 
   // 4b.3a.4 collapsed the per-file `migrated` array into a global walk
   // because ImageGallery was the last consumer in this hook's
-  // dedicated migration cluster (4b.3a.2/3/4). Seven AbortController
-  // sites remain hand-rolled pending Phase 4b.3b's per-site evaluation
-  // (see docs/roadmap.md lines 762–763 — App/DashboardView/ExportDialog/
-  // ProjectSettingsDialog/SnapshotPanel/useProjectEditor/useSnapshotState/
-  // EditorPage/HomePage). Phase 4b.3b decides per-site whether each
-  // site adopts useAbortableAsyncOperation or stays hand-rolled with
-  // justification; every adoption removes one entry from PHASE_4B_3B_ALLOWLIST,
-  // and Phase 4b.4 collapses the allowlist to nothing once it empties.
+  // dedicated migration cluster (4b.3a.2/3/4). Seven useRef<AbortController>
+  // sites remain hand-rolled pending Phase 4b.3b's per-site evaluation;
+  // see PHASE_4B_3B_ALLOWLIST below and docs/roadmap.md lines 762–763
+  // (which also lists App.tsx and DashboardView.tsx — those use
+  // AbortController without useRef, so they don't match this regex
+  // and aren't allowlisted here). Phase 4b.3b decides per-site whether
+  // each site adopts useAbortableAsyncOperation or stays hand-rolled
+  // with justification; every adoption removes one entry from
+  // PHASE_4B_3B_ALLOWLIST, and Phase 4b.4 collapses the allowlist to
+  // nothing once it empties.
   //
   // Files in the allowlist are pinned by absolute-path equivalence
   // (resolved against clientSrcRoot) so the assertion stays robust
