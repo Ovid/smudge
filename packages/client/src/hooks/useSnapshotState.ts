@@ -7,6 +7,7 @@ import { api } from "../api/client";
 import { mapApiError, isApiError, ApiRequestError } from "../errors";
 import { clearCachedContent } from "./useContentCache";
 import { useAbortableSequence } from "./useAbortableSequence";
+import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
 import type { SnapshotPanelHandle } from "../components/SnapshotPanel";
 
 // Synthetic ApiRequestErrors for failure paths where the hook caught a
@@ -169,7 +170,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   // call; aborted on the next call AND on unmount (via a cleanup
   // useEffect below).
   const viewAbortRef = useRef<AbortController | null>(null);
-  const refreshCountAbortRef = useRef<AbortController | null>(null);
+  const refreshCountOp = useAbortableAsyncOperation();
   // I3 (review 2026-04-24): restore + follow-up list had no
   // AbortController. A chapter switch or unmount mid-flight left the
   // server fetching/writing for a caller that already discarded the
@@ -441,17 +442,16 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
     if (!chapterId) return;
     const token = chapterSeq.capture();
     // I2: abort any prior in-flight count refresh before issuing a new
-    // one (and on unmount, via the cleanup useEffect below).
-    refreshCountAbortRef.current?.abort();
-    const controller = new AbortController();
-    refreshCountAbortRef.current = controller;
-    api.snapshots
-      .list(chapterId, controller.signal)
+    // one (and on unmount, via the hook's own cleanup). The hook's
+    // run() aborts the prior controller per call; unmount cleanup is
+    // baked into useAbortableAsyncOperation.
+    const { promise } = refreshCountOp.run((s) => api.snapshots.list(chapterId, s));
+    promise
       .then((data) => {
         if (!token.isStale()) setSnapshotCount(data.length);
       })
       .catch(() => {});
-  }, [chapterId, chapterSeq]);
+  }, [chapterId, chapterSeq, refreshCountOp]);
 
   // Feeds the hook's count from the panel's own list fetch so the toolbar
   // badge stays in sync without duplicating the GET.
@@ -461,10 +461,10 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
 
   // I2: abort outstanding snapshot fetches on unmount so a late-
   // resolving .then/.catch can't fire setState on a torn-down hook.
+  // refreshCountOp self-cleans on unmount via useAbortableAsyncOperation.
   useEffect(
     () => () => {
       viewAbortRef.current?.abort();
-      refreshCountAbortRef.current?.abort();
       restoreAbortRef.current?.abort();
       restoreFollowupAbortRef.current?.abort();
     },
