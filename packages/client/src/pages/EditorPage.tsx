@@ -1526,9 +1526,7 @@ export function EditorPage() {
     if (slug) {
       // I11 (review 2026-04-25): abort prior in-flight refresh and
       // thread the signal so the .then/.catch can drop on unmount.
-      const { promise, signal } = settingsRefreshOp.run((s) =>
-        api.projects.get(slug, s),
-      );
+      const { promise, signal } = settingsRefreshOp.run((s) => api.projects.get(slug, s));
       promise
         .then((data) => {
           if (signal.aborted) return;

@@ -148,9 +148,7 @@ export function ExportDialog({
       config.chapter_ids = chapters.filter((c) => selectedChapterIds.has(c.id)).map((c) => c.id);
     }
 
-    const { promise, signal } = exportOp.run((s) =>
-      api.projects.export(projectSlug, config, s),
-    );
+    const { promise, signal } = exportOp.run((s) => api.projects.export(projectSlug, config, s));
 
     try {
       const blob = await promise;

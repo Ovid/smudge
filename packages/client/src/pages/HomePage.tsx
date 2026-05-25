@@ -71,9 +71,7 @@ export function HomePage() {
   async function handleCreate(title: string, mode: ProjectMode) {
     setError(null);
     try {
-      const { promise, signal } = createOp.run((s) =>
-        api.projects.create({ title, mode }, s),
-      );
+      const { promise, signal } = createOp.run((s) => api.projects.create({ title, mode }, s));
       const project = await promise;
       if (signal.aborted) return;
       setDialogOpen(false);
@@ -118,9 +116,7 @@ export function HomePage() {
     if (!deleteTarget) return;
     setError(null);
     try {
-      const { promise, signal } = deleteOp.run((s) =>
-        api.projects.delete(deleteTarget.slug, s),
-      );
+      const { promise, signal } = deleteOp.run((s) => api.projects.delete(deleteTarget.slug, s));
       await promise;
       if (signal.aborted) return;
       setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));

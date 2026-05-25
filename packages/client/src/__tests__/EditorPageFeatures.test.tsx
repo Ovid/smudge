@@ -972,10 +972,7 @@ describe("EditorPage handleStatusChangeWithError", () => {
         expect(screen.getByText(mockProject.title)).toBeInTheDocument();
       });
       await waitFor(() => {
-        expect(warnSpy).toHaveBeenCalledWith(
-          "Failed to load chapter statuses:",
-          expect.any(Error),
-        );
+        expect(warnSpy).toHaveBeenCalledWith("Failed to load chapter statuses:", expect.any(Error));
       });
 
       // First attempt must have been invoked with an AbortSignal (the signal
