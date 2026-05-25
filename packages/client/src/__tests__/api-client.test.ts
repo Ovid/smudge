@@ -65,6 +65,19 @@ describe("api.projects", () => {
     });
   });
 
+  it("create(input, signal) threads signal to fetch (API-1)", async () => {
+    const created = { id: "p3", title: "Sig", mode: "fiction" };
+    mockFetch.mockResolvedValue(jsonResponse(created, 201));
+    const controller = new AbortController();
+    await api.projects.create({ title: "Sig", mode: "fiction" }, controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects", {
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      body: JSON.stringify({ title: "Sig", mode: "fiction" }),
+      signal: controller.signal,
+    });
+  });
+
   it("update(slug, data) sends PATCH /api/projects/:slug", async () => {
     const updated = { id: "p1", title: "Renamed" };
     mockFetch.mockResolvedValue(jsonResponse(updated));
@@ -141,6 +154,17 @@ describe("api.projects", () => {
       method: "DELETE",
     });
   });
+
+  it("delete(slug, signal) threads signal to fetch (API-2)", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ message: "ok" }));
+    const controller = new AbortController();
+    await api.projects.delete("p1", controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1", {
+      headers: { "Content-Type": "application/json" },
+      method: "DELETE",
+      signal: controller.signal,
+    });
+  });
 });
 
 describe("api.chapters", () => {
@@ -174,6 +198,17 @@ describe("api.chapters", () => {
     expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1/chapters", {
       headers: { "Content-Type": "application/json" },
       method: "POST",
+    });
+  });
+
+  it("create(projectSlug, signal) threads signal to fetch (API-3)", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ id: "c1", title: UNTITLED_CHAPTER }, 201));
+    const controller = new AbortController();
+    await api.chapters.create("p1", controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1/chapters", {
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      signal: controller.signal,
     });
   });
 
@@ -271,6 +306,24 @@ describe("api.chapterStatuses", () => {
 
     const result = await api.chapterStatuses.list();
     expect(result).toEqual(statuses);
+    expect(mockFetch).toHaveBeenCalledWith("/api/chapter-statuses", {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  it("list(signal) threads signal to fetch (API-4)", async () => {
+    mockFetch.mockResolvedValue(jsonResponse([]));
+    const controller = new AbortController();
+    await api.chapterStatuses.list(controller.signal);
+    expect(mockFetch).toHaveBeenCalledWith("/api/chapter-statuses", {
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+    });
+  });
+
+  it("list() without signal omits the signal option", async () => {
+    mockFetch.mockResolvedValue(jsonResponse([]));
+    await api.chapterStatuses.list();
     expect(mockFetch).toHaveBeenCalledWith("/api/chapter-statuses", {
       headers: { "Content-Type": "application/json" },
     });
