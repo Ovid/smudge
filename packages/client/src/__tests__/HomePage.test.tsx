@@ -149,7 +149,10 @@ describe("HomePage", () => {
     await userEvent.click(submitButton);
 
     await waitFor(() => {
-      expect(api.projects.create).toHaveBeenCalledWith({ title: "My Book", mode: "fiction" });
+      expect(api.projects.create).toHaveBeenCalledWith(
+        { title: "My Book", mode: "fiction" },
+        expect.any(AbortSignal),
+      );
     });
     expect(mockNavigate).toHaveBeenCalledWith("/projects/my-book");
   });

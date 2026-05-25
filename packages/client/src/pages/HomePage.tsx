@@ -7,6 +7,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { STRINGS } from "../strings";
 import { Logo } from "../components/Logo";
 import { mapApiError } from "../errors";
+import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 
 export function HomePage() {
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
@@ -22,6 +23,7 @@ export function HomePage() {
   // the controller in a ref so unmount cleanup can abort it, and gate
   // the .then on signal.aborted.
   const createRecoveryAbortRef = useRef<AbortController | null>(null);
+  const createOp = useAbortableAsyncOperation();
 
   useEffect(
     () => () => {
@@ -58,7 +60,11 @@ export function HomePage() {
   async function handleCreate(title: string, mode: ProjectMode) {
     setError(null);
     try {
-      const project = await api.projects.create({ title, mode });
+      const { promise, signal } = createOp.run((s) =>
+        api.projects.create({ title, mode }, s),
+      );
+      const project = await promise;
+      if (signal.aborted) return;
       setDialogOpen(false);
       navigate(`/projects/${project.slug}`);
     } catch (err) {
