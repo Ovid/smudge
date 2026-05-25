@@ -131,7 +131,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // shows C. Mirror saveAbortRef: abort any prior in-flight PATCH
   // before issuing a new one, and thread the signal into
   // api.chapters.update so the abort actually severs the request.
-  const statusChangeAbortRef = useRef<AbortController | null>(null);
+  const statusChangeOp = useAbortableAsyncOperation();
   // I1 (review 2026-04-24): rapid title edits used to fire overlapping
   // PATCHes. The S7 drift guard discarded the stale response but the
   // SECOND PATCH had already reached the server — SQLite's writer-lock
@@ -230,7 +230,6 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       // I1: abort field PATCHes on unmount so a late-resolving rename
       // can't fire setState on a torn-down hook.
       titleChangeAbortRef.current?.abort();
-      statusChangeAbortRef.current?.abort();
       reorderAbortRef.current?.abort();
       renameChapterAbortRef.current?.abort();
       deleteChapterAbortRef.current?.abort();
@@ -1097,9 +1096,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       const token = statusChangeSeq.start();
       // I11: abort the prior in-flight PATCH before issuing a new one so
       // overlapping status clicks cannot land out-of-order at the server.
-      statusChangeAbortRef.current?.abort();
-      const controller = new AbortController();
-      statusChangeAbortRef.current = controller;
+      const { promise: statusPromise, signal: statusSignal } = statusChangeOp.run((s) =>
+        api.chapters.update(chapterId, { status }, s),
+      );
       // I21 (review 2026-04-24): read previousStatus from the confirmed
       // cache, not projectRef. A rapid X→A→B click sequence would
       // otherwise capture `previousStatus = A` for B (A's optimistic
@@ -1121,14 +1120,13 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       // status to the wrong chapter if the user rapidly switches chapters.
       setActiveChapter((prev) => (prev?.id === chapterId ? { ...prev, status } : prev));
       try {
-        await api.chapters.update(chapterId, { status }, controller.signal);
-        if (statusChangeAbortRef.current === controller) statusChangeAbortRef.current = null;
+        await statusPromise;
         // I21: advance the confirmed cache only on server-confirmed
         // success so the next call's previousStatus reads the right
         // value.
         confirmedStatusRef.current[chapterId] = status;
       } catch (err) {
-        if (statusChangeAbortRef.current === controller) statusChangeAbortRef.current = null;
+        if (statusSignal.aborted) return;
         if (token.isStale()) return; // newer call owns state
         const { message, possiblyCommitted } = mapApiError(err, "chapter.updateStatus");
         // I11 (follow-on from the new AbortController): an ABORTED
@@ -1219,7 +1217,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         if (message) onError?.(message);
       }
     },
-    [statusChangeSeq],
+    [statusChangeSeq, statusChangeOp],
   );
 
   const handleRenameChapter = useCallback(
