@@ -19,6 +19,8 @@ import { EditorFooter } from "../components/EditorFooter";
 import { STRINGS } from "../strings";
 import { useProjectEditor } from "../hooks/useProjectEditor";
 import { useEditorMutation } from "../hooks/useEditorMutation";
+import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
+import { sleep } from "../utils/abortable";
 import { useSidebarState } from "../hooks/useSidebarState";
 import { useReferencePanelState } from "../hooks/useReferencePanelState";
 import { useSnapshotState } from "../hooks/useSnapshotState";
@@ -1219,35 +1221,40 @@ export function EditorPage() {
     setEditorLockedMessage(null);
   }, [activeChapter?.id, chapterReloadKey]);
 
-  // Fetch chapter statuses with retry
+  // Fetch chapter statuses with retry. statusesOp lives in the component
+  // body (not inside the effect) so its identity is stable across renders;
+  // the effect closes over the same controller-tracking hook each time.
+  const statusesOp = useAbortableAsyncOperation();
+
   useEffect(() => {
-    let cancelled = false;
-    let attempts = 0;
-    let timerId: ReturnType<typeof setTimeout> | null = null;
-    function fetchStatuses() {
-      api.chapterStatuses
-        .list()
-        .then((data) => {
-          if (!cancelled) setStatuses(data);
-        })
-        .catch((err) => {
-          if (cancelled) return;
+    const { promise } = statusesOp.run(async (s) => {
+      let attempts = 0;
+      while (true) {
+        if (s.aborted) return;
+        try {
+          const data = await api.chapterStatuses.list(s);
+          if (s.aborted) return;
+          setStatuses(data);
+          return;
+        } catch (err) {
+          if (s.aborted) return;
           console.warn("Failed to load chapter statuses:", err);
-          if (attempts < 2) {
-            attempts++;
-            timerId = setTimeout(fetchStatuses, 2000 * attempts);
-          } else {
+          if (attempts >= 2) {
             const { message } = mapApiError(err, "chapterStatus.fetch");
             if (message) setActionError(message);
+            return;
           }
-        });
-    }
-    fetchStatuses();
-    return () => {
-      cancelled = true;
-      if (timerId !== null) clearTimeout(timerId);
-    };
-  }, [setActionError]);
+          attempts++;
+          try {
+            await sleep(2000 * attempts, s);
+          } catch {
+            return; // sleep aborted — exit silently, cleanup will handle.
+          }
+        }
+      }
+    });
+    void promise;
+  }, [setActionError, statusesOp]);
 
   const handleStatusChangeWithError = useCallback(
     (chapterId: string, status: string) => {

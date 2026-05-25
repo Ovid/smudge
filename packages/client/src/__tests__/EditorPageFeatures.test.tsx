@@ -956,6 +956,61 @@ describe("EditorPage handleStatusChangeWithError", () => {
       warnSpy.mockRestore();
     }
   });
+
+  it("C-9: chapterStatuses retry threads an AbortSignal and aborts on unmount", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapterStatuses.list).mockRejectedValue(new Error("first attempt fails"));
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { unmount } = renderEditorPage();
+
+      // Wait for the project to load AND the first chapterStatuses attempt to fail.
+      // The retry useEffect fires immediately on mount; await the warn so we know
+      // the first .catch() has resolved before we unmount.
+      await waitFor(() => {
+        expect(screen.getByText(mockProject.title)).toBeInTheDocument();
+      });
+      await waitFor(() => {
+        expect(warnSpy).toHaveBeenCalledWith(
+          "Failed to load chapter statuses:",
+          expect.any(Error),
+        );
+      });
+
+      // First attempt must have been invoked with an AbortSignal (the signal
+      // the statusesOp.run() callback receives). This is the C-9 contract:
+      // the retry loop threads the hook signal into the API call so an
+      // in-flight request can be aborted by unmount, not just future-pending
+      // setTimeout retries.
+      const firstCallArgs = vi.mocked(api.chapterStatuses.list).mock.calls[0];
+      expect(firstCallArgs).toBeDefined();
+      expect(firstCallArgs![0]).toBeInstanceOf(AbortSignal);
+      const capturedSignal = firstCallArgs![0] as AbortSignal;
+      expect(capturedSignal.aborted).toBe(false);
+
+      const callsAfterFirst = vi.mocked(api.chapterStatuses.list).mock.calls.length;
+
+      // Unmount during the 2s backoff window. The hook-level controller
+      // must abort the signal the first call received and short-circuit the
+      // sleep(2000) backoff so no second attempt fires.
+      unmount();
+      expect(capturedSignal.aborted).toBe(true);
+
+      // Advance past the backoff. With abortable sleep, the next attempt
+      // MUST NOT fire (and no further warn must be emitted).
+      const warnCallsBefore = warnSpy.mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      expect(vi.mocked(api.chapterStatuses.list).mock.calls.length).toBe(callsAfterFirst);
+      expect(warnSpy.mock.calls.length).toBe(warnCallsBefore);
+    } finally {
+      vi.useRealTimers();
+      warnSpy.mockRestore();
+    }
+  });
 });
 
 describe("EditorPage view mode toggles", () => {
