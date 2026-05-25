@@ -792,15 +792,13 @@ Replace the inner `if (trashOpen && project)` block with the migrated form (rows
     setDeleteTarget(null);
     if (!success) return;
     if (trashOpen && project) {
-      // S4 + S5 (review 2026-04-25): thread a signal via trashOp so an
-      // unmount between the successful delete and the trash refresh
-      // drops the GET cleanly (was risking setTrashedChapters on a
-      // torn-down hook), and route the catch through mapApiError so a
-      // non-ABORTED failure surfaces an actionable banner instead of
-      // being silently swallowed by `catch {}`. ABORTED stays silent
-      // (mapper returns message: null). trashOp is shared with
-      // openTrash — calling either while the other is in flight
-      // aborts the prior, by design.
+      // S4 + S5 (review 2026-04-25): thread a signal so an unmount
+      // between the successful delete and the trash refresh drops the
+      // GET cleanly (was risking setTrashedChapters on a torn-down
+      // hook), and route the catch through mapApiError so a non-
+      // ABORTED failure surfaces an actionable banner instead of being
+      // silently swallowed by `catch {}`. ABORTED stays silent
+      // (mapper returns message: null).
       const { promise, signal } = trashOp.run((s) =>
         api.projects.trash(project.slug, s),
       );
@@ -820,7 +818,7 @@ Replace the inner `if (trashOpen && project)` block with the migrated form (rows
 Note the changes:
 - Row 9: the abort-prior + new controller + signal-thread becomes `trashOp.run((s) => api.projects.trash(project.slug, s))`.
 - Row 10: both `if (controller.signal.aborted) return` → `if (signal.aborted) return`.
-- The S4+S5 comment is retargeted to mention `trashOp` (not `trashAbortRef`) and to acknowledge the shared-`trashOp` semantics — this is part of row 11's intentional rephrase, since the original comment referenced "the trash refresh" implicitly through the shared-ref pattern.
+- The S4+S5 comment (lines 159–165 pre-migration) is **left exactly as-is** per design row 11's "do not touch" list — it never named the old refs and is orthogonal to the abort lifecycle. The shared-`trashOp` rationale lives in test #5 and in the design itself, not in this comment block.
 - `useCallback` deps gain `trashOp`.
 
 - [ ] **Step 6: Run the full useTrashManager test file against the migration**
@@ -1029,9 +1027,9 @@ Open the migrated file and scan the comment blocks at:
 - The I2+S8 possiblyCommitted UX comment block (immediately before the `if (possiblyCommitted)` block in handleRestore's catch)
 - The S4+S5 refresh comment block (immediately before the `trashOp.run(...)` inside confirmDeleteChapter)
 
-Per row 11 of the design and the [D1]-style pushback resolution, the C2, catch-silent-abort, and I2+S8 comments should be **untouched** by the migration. The S4+S5 comment was intentionally retargeted in Task 3 Step 5 (rephrased to mention `trashOp` and the shared-`trashOp` semantics). Confirm each block reads consistently with its surrounding code.
+Per row 11 of the design (post-pushback), **all four** of these comment blocks — C2 seed (100–104), catch-silent-abort (111–115), I2+S8 possiblyCommitted UX (122–133), and S4+S5 refresh (159–165) — should be **untouched** by the migration. None of them named `trashAbortRef` / `restoreAbortRef` originally; all of them carry rationale that is orthogonal to the abort lifecycle. Confirm each block reads identically to the pre-migration source.
 
-If any comment reads inconsistently (e.g., references `trashAbortRef` because Task 3's edit missed a line), retarget it now.
+If any comment was inadvertently modified (e.g., a token replacement bled into a comment block it shouldn't have), revert it to its pre-migration form now.
 
 - [ ] **Step 4: Decide whether a Cleanup commit is warranted**
 
