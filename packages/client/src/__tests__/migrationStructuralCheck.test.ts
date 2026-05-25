@@ -107,11 +107,14 @@ describe("client source-tree migration structural check", () => {
   });
 
   it("useAbortableAsyncOperation is imported by every file that has been migrated to it", () => {
-    // Phase 4b.3a.2 (find-replace) is the first migration of this hook;
-    // 4b.3a.3 (useTrashManager) and 4b.3a.4 (ImageGallery) will append
-    // their migrated files to this list. Whichever phase lands last can
-    // collapse this per-file check into a global ban.
-    const migrated = [resolve(clientSrcRoot, "hooks/useFindReplaceState.ts")];
+    // Phase 4b.3a.2 (find-replace) and 4b.3a.3 (useTrashManager) have
+    // migrated; 4b.3a.4 (ImageGallery) will append its migrated file
+    // to this list. Once 4b.3a.4 lands, this per-file check can
+    // collapse into a global ban.
+    const migrated = [
+      resolve(clientSrcRoot, "hooks/useFindReplaceState.ts"),
+      resolve(clientSrcRoot, "hooks/useTrashManager.ts"),
+    ];
     const pattern = importPatternFor("useAbortableAsyncOperation");
     for (const file of migrated) {
       const source = readFileSync(file, "utf-8");
@@ -131,7 +134,10 @@ describe("client source-tree migration structural check", () => {
     // missing the `| undefined` variant. The word-boundary on
     // `AbortController\b` keeps false positives like
     // `useRef<AbortControllerWrapper>` out.
-    const migrated = [resolve(clientSrcRoot, "hooks/useFindReplaceState.ts")];
+    const migrated = [
+      resolve(clientSrcRoot, "hooks/useFindReplaceState.ts"),
+      resolve(clientSrcRoot, "hooks/useTrashManager.ts"),
+    ];
     for (const file of migrated) {
       const source = readFileSync(file, "utf-8");
       expect(source, `${file} should not contain useRef<AbortController>`).not.toMatch(
