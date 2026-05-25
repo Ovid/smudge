@@ -13,6 +13,7 @@ skimmed at a glance for patterns.
 
 | Date       | Phase                          | Model              | Pushback (C/I/M) | Alignment (C/I/M) | Entry |
 |------------|--------------------------------|--------------------|------------------|-------------------|-------|
+| 2026-05-25 | Phase 4b.3a.4: Image Gallery Abort Migration | claude-opus-4-7 | 0/1/3 | 0/0/0 | [link](2026-05-25-phase-4b-3a-4-image-gallery-abort-migration.md) |
 | 2026-05-25 | Phase 4b.3a.3: Trash Manager Abort Migration | claude-opus-4-7 | 0/1/0 | 0/1/0 | [link](2026-05-25-phase-4b-3a-3-trash-manager-abort-migration.md) |
 | 2026-05-01 | Phase 4b.3a.2: Find/Replace Abort Migration | claude-opus-4-7 | 0/2/1 | 0/1/1 | [link](2026-05-01-phase-4b-3a-2-find-replace-abort-migration.md) |
 | 2026-04-30 | Phase 4b.3a.1: Abortable Async Operation Hook | claude-opus-4-7 | 0/1/1 | 0/0/1 | [link](2026-04-30-phase-4b-3a-1-abortable-async-operation-hook.md) |
