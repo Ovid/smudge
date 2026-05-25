@@ -342,6 +342,43 @@ describe("useProjectEditor", () => {
     }
   });
 
+  it("S-2: cancelInFlightSave aborts an in-flight save (regression test)", async () => {
+    // Phase 4b.3b row S-2: locks the contract that cancelInFlightSave()
+    // — invoked by cancelPendingSaves, handleSelectChapter,
+    // handleDeleteChapter, handleCreateChapter, and unmount cleanup —
+    // actually aborts the AbortSignal threaded into api.chapters.update.
+    // Before the migration this came from saveAbortRef.current.abort();
+    // after the migration the same guarantee comes from
+    // saveOp.abort() via useAbortableAsyncOperation. The test asserts
+    // the externally-observable behavior so it passes against both
+    // implementations.
+    let capturedSignal: AbortSignal | undefined;
+    vi.mocked(api.chapters.update).mockImplementation((_id, _data, signal) => {
+      capturedSignal = signal;
+      return pendingUntilAbort<typeof mockChapter1>(signal);
+    });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy(), { timeout: 3000 });
+
+    let savePromise: Promise<boolean> = Promise.resolve(false);
+    act(() => {
+      savePromise = result.current.handleSave({ type: "doc", content: [] }, "ch1");
+    });
+    await waitFor(() => expect(capturedSignal).toBeDefined(), { timeout: 3000 });
+    expect(capturedSignal!.aborted).toBe(false);
+
+    await act(async () => {
+      result.current.cancelPendingSaves();
+      // Drain the pending save promise — the aborted fetch rejects with
+      // ABORTED, which the catch block in handleSave short-circuits via
+      // isAborted(err).
+      expect(await savePromise).toBe(false);
+    });
+
+    expect(capturedSignal!.aborted).toBe(true);
+  });
+
   it("unmount during save-backoff aborts the retry loop and does not fire a further PATCH", async () => {
     // Regression for a pre-existing leak: the retry loop inside handleSave
     // runs outside React's render cycle. Without unmount cleanup, a backoff
