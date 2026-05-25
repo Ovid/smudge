@@ -975,4 +975,170 @@ describe("ImageGallery", () => {
     // Should not show confirmation — delete state was reset
     expect(screen.queryByText(S.deleteConfirm)).not.toBeInTheDocument();
   });
+
+  // --- mutationOp characterization (Phase 4b.3a.4) ---
+  //
+  // The four gallery mutation handlers (handleFileSelect, handleSave,
+  // handleInsert's auto-save inner branch, handleDelete) today share a
+  // single hand-rolled `mutateAbortRef` in ImageGallery.tsx. Commit 3 of
+  // this phase migrates them to one shared
+  // `mutationOp = useAbortableAsyncOperation()` instance. These four
+  // tests pin the observable contract — abort-prior, signal-threading,
+  // abort-on-unmount — that the migration must preserve. They pass
+  // GREEN against the pre-migration source (where the ref already
+  // exhibits the same behaviour); they are NOT red-green-refactor.
+
+  it("handleFileSelect aborts prior, threads signal, aborts on unmount (mutationOp)", async () => {
+    // Three axes: abort-prior + signal-threading + abort-on-unmount.
+    // Pre-migration: mutateAbortRef.current?.abort() at line 184 plus
+    // the unmount effect at line 76. Post-migration: mutationOp.run()
+    // aborts the prior controller and unmount auto-aborts via the hook.
+    const user = userEvent.setup();
+    const capturedSignals: AbortSignal[] = [];
+    vi.mocked(api.images.upload).mockImplementation((_p, _f, signal) => {
+      if (signal) capturedSignals.push(signal);
+      return pendingUntilAbort(signal);
+    });
+
+    const { unmount } = render(<ImageGallery {...defaultProps} />);
+
+    const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const file1 = new File(["x"], "first.png", { type: "image/png" });
+    await user.upload(fileInput, file1);
+    await waitFor(() => expect(api.images.upload).toHaveBeenCalledTimes(1));
+    expect(capturedSignals[0].aborted).toBe(false);
+
+    const file2 = new File(["y"], "second.png", { type: "image/png" });
+    await user.upload(fileInput, file2);
+    await waitFor(() => expect(api.images.upload).toHaveBeenCalledTimes(2));
+
+    // Abort-prior: first signal aborted, second fresh.
+    expect(capturedSignals[0].aborted).toBe(true);
+    expect(capturedSignals[1].aborted).toBe(false);
+
+    unmount();
+    expect(capturedSignals[1].aborted).toBe(true);
+  });
+
+  it("handleSave threads signal, aborts on unmount (mutationOp)", async () => {
+    // Two axes only: signal-threading + abort-on-unmount. The
+    // abort-prior axis is NOT DOM-testable here because the Save
+    // button is disabled while saveStatus === "saving"
+    // (ImageGallery.tsx line 514), so the user cannot trigger a second
+    // handleSave while the first is in flight. That contract is
+    // implicitly pinned by test #7 (Commit 2, cross-handler shared-op).
+    const user = userEvent.setup();
+    const capturedSignals: AbortSignal[] = [];
+    vi.mocked(api.images.update).mockImplementation((_id, _data, signal) => {
+      if (signal) capturedSignals.push(signal);
+      return pendingUntilAbort(signal);
+    });
+
+    // Inline the render/click sequence so we can capture `unmount` —
+    // renderAndOpenDetail doesn't return it.
+    const image = makeImage();
+    vi.mocked(api.images.list).mockResolvedValue([image]);
+    const { unmount } = render(<ImageGallery {...defaultProps} />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: imageButtonName(image) })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: imageButtonName(image) }));
+
+    // openDetail sets saveStatus to "saved" — edit a field so the Save
+    // button renders with S.saveButton (not S.saved).
+    await user.type(screen.getByLabelText(S.captionLabel), "x");
+    await user.click(screen.getByText(S.saveButton));
+
+    await waitFor(() => expect(api.images.update).toHaveBeenCalledTimes(1));
+    expect(capturedSignals[0].aborted).toBe(false);
+
+    unmount();
+    expect(capturedSignals[0].aborted).toBe(true);
+  });
+
+  it("handleInsert auto-save inner branch threads signal, aborts on unmount (mutationOp)", async () => {
+    // Pinning intent: handleInsert's auto-save inner branch shares the
+    // same mutationOp as handleSave — both currently use the shared
+    // mutateAbortRef. Post-migration they both call mutationOp.run().
+    //
+    // Two axes only: signal-threading + abort-on-unmount. The
+    // abort-prior axis is NOT DOM-testable because the Insert button
+    // is disabled while saveStatus === "saving" (ImageGallery.tsx
+    // line 522). Inline comment required by the plan.
+    const user = userEvent.setup();
+    const capturedSignals: AbortSignal[] = [];
+    vi.mocked(api.images.update).mockImplementation((_id, _data, signal) => {
+      if (signal) capturedSignals.push(signal);
+      return pendingUntilAbort(signal);
+    });
+
+    const image = makeImage();
+    vi.mocked(api.images.list).mockResolvedValue([image]);
+    const { unmount } = render(<ImageGallery {...defaultProps} />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: imageButtonName(image) })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: imageButtonName(image) }));
+
+    // Edit a metadata field via updateField to flip saveStatus from
+    // "saved" (set by openDetail) to "idle". Without this, handleInsert
+    // skips the auto-save inner branch entirely (saveStatus === "saved")
+    // and api.images.update is never called.
+    await user.type(screen.getByLabelText(S.altTextLabel), "x");
+    await user.click(screen.getByText(S.insertButton));
+
+    // Mandatory: assert the inner branch actually fired. If a setup
+    // mistake leaves saveStatus === "saved", the test would silently
+    // pass without exercising mutationOp at all.
+    await waitFor(() => expect(api.images.update).toHaveBeenCalledTimes(1));
+    expect(api.images.update).toHaveBeenCalledTimes(1);
+    expect(capturedSignals[0].aborted).toBe(false);
+
+    unmount();
+    expect(capturedSignals[0].aborted).toBe(true);
+  });
+
+  it("handleDelete aborts prior, threads signal, aborts on unmount (mutationOp)", async () => {
+    // Three axes: abort-prior + signal-threading + abort-on-unmount.
+    // The abort-prior axis is DOM-testable here because the confirm
+    // Delete button stays rendered between calls — the catch path's
+    // `if (signal.aborted) return` gate (ImageGallery.tsx line 315)
+    // returns before reaching setConfirmingDelete(false), so the
+    // confirm UI is unchanged and the second click reaches handleDelete.
+    const user = userEvent.setup();
+    const capturedSignals: AbortSignal[] = [];
+    vi.mocked(api.images.delete).mockImplementation((_id, signal) => {
+      if (signal) capturedSignals.push(signal);
+      return pendingUntilAbort(signal);
+    });
+
+    const image = makeImage({ reference_count: 0 });
+    vi.mocked(api.images.list).mockResolvedValue([image]);
+    const { unmount } = render(<ImageGallery {...defaultProps} />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: imageButtonName(image) })).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: imageButtonName(image) }));
+
+    // First Delete click transitions confirmingDelete to true; does
+    // NOT call handleDelete. Second click reaches handleDelete and
+    // fires api.images.delete.
+    await user.click(screen.getByText(S.deleteButton));
+    await user.click(screen.getByText(S.deleteButton));
+    await waitFor(() => expect(api.images.delete).toHaveBeenCalledTimes(1));
+    expect(capturedSignals[0].aborted).toBe(false);
+
+    // Second confirm-Delete click — handleDelete fires again. Because
+    // the first call is held by pendingUntilAbort, confirmingDelete
+    // stayed true, and the catch path's aborted-guard returned before
+    // setConfirmingDelete(false), the confirm UI is still rendered.
+    await user.click(screen.getByText(S.deleteButton));
+    await waitFor(() => expect(api.images.delete).toHaveBeenCalledTimes(2));
+
+    expect(capturedSignals[0].aborted).toBe(true);
+    expect(capturedSignals[1].aborted).toBe(false);
+
+    unmount();
+    expect(capturedSignals[1].aborted).toBe(true);
+  });
 });
