@@ -48,6 +48,35 @@ export function stripCommentsFromTsSource(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
 }
 
+// Extracts every variable name bound from a `useAbortableAsyncOperation()`
+// call site. Re-review S1 (2026-05-25) fixed a regex false-pass: the prior
+// import-implies-call check used a bare `/\.run\s*\(/` which `useEditorMutation`'s
+// `mutation.run(...)` satisfied independently. A file importing both hooks
+// (EditorPage.tsx today) could have ALL `useAbortableAsyncOperation`-derived
+// `.run(` calls removed and the assertion would silently green-pass on the
+// surviving `mutation.run(` — defeating the drift detector. The fix
+// extracts binding names from the hook's call sites and checks each
+// binding has a matching `<name>.run(` somewhere in the same file. A bare
+// receiver-less `.run(` is no longer enough.
+//
+// Caller is responsible for stripping comments first (see
+// stripCommentsFromTsSource) — a future fixture in a comment must not
+// extract as a binding. Destructured bindings (`const { run } =
+// useAbortableAsyncOperation()`) are intentionally not matched: the
+// codebase uses the canonical `const NAME = useAbortableAsyncOperation()`
+// shape today, and the absence of a binding name would surface as a
+// "no bindings — import is dead" offender, prompting the maintainer to
+// either rename the destructure or extend the helper.
+export function extractAbortableAsyncOperationBindings(source: string): string[] {
+  const pattern = /(?:const|let|var)\s+(\w+)\s*=\s*useAbortableAsyncOperation\s*\(/g;
+  const names: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(source)) !== null) {
+    names.push(match[1]);
+  }
+  return names;
+}
+
 // Builds an import-statement regex for a named symbol. Matches a real ES
 // import (start of line, possibly indented) — not a bare reference,
 // comment, or string literal. Review (2026-05-24, Copilot) flagged the
@@ -201,7 +230,7 @@ describe("client source-tree migration structural check", () => {
     }
   });
 
-  it("every file that imports useAbortableAsyncOperation contains at least one .run( call", () => {
+  it("every binding from useAbortableAsyncOperation is referenced with <binding>.run(", () => {
     // Guards against drift: a file that imports the hook but never
     // calls .run() either has dead code or has had its only call
     // removed without removing the import. Either is a code-smell.
@@ -211,16 +240,52 @@ describe("client source-tree migration structural check", () => {
     // explanatory comment can't satisfy the "has at least one call"
     // assertion — that would silence the very drift the check was
     // introduced to catch.
+    //
+    // S1 (re-review 2026-05-25): the prior `/\.run\s*\(/` regex matched
+    // `useEditorMutation`'s `mutation.run(...)` independently of any
+    // `useAbortableAsyncOperation` usage. EditorPage.tsx (which imports
+    // both hooks AND has live `mutation.run(...)` calls at lines 412/785/1033)
+    // would have silently green-passed the assertion even if every
+    // useAbortableAsyncOperation-derived `.run(` were removed — the
+    // exact drift the check exists to catch. Per-binding pattern
+    // (`<name>.run(`) closes the false-pass: `mutation` is not a
+    // `useAbortableAsyncOperation()` binding, so its `.run(` does not
+    // count. Also strengthens the contract from "at least one .run(
+    // somewhere" to "every binding has a matching .run( call" —
+    // catches both removal-of-usage AND addition-of-dead-binding drift.
     const importPattern = importPatternFor("useAbortableAsyncOperation");
-    const runPattern = /\.run\s*\(/;
     const files = collectTsSources(clientSrcRoot);
-    const offenders: string[] = [];
+    const offenders: { file: string; reason: string }[] = [];
     for (const file of files) {
       const raw = readFileSync(file, "utf-8");
       if (!importPattern.test(raw)) continue;
       const source = stripCommentsFromTsSource(raw);
-      if (!runPattern.test(source)) {
-        offenders.push(file.replace(clientSrcRoot, "packages/client/src"));
+      const bindings = extractAbortableAsyncOperationBindings(source);
+      const relative = file.replace(clientSrcRoot, "packages/client/src");
+      if (bindings.length === 0) {
+        offenders.push({
+          file: relative,
+          reason:
+            "imports useAbortableAsyncOperation but has no const NAME = useAbortableAsyncOperation() binding",
+        });
+        continue;
+      }
+      for (const name of bindings) {
+        // Word-boundary on the LEFT so `xOp.run(` doesn't satisfy a
+        // search for `p.run(` etc. Right-side allows an optional
+        // generic argument list (`<T>`) between `.run` and `(` so
+        // `saveOp.run<SaveLoopOutcome>(...)` in useProjectEditor.ts
+        // matches. Inner `[^>]*` is non-nested by design — the codebase
+        // uses single-level generics today; a future nested-generic
+        // call would surface as an offender, forcing the regex to be
+        // extended deliberately rather than silently false-passing.
+        const callPattern = new RegExp(`\\b${name}\\.run\\s*(?:<[^>]*>)?\\s*\\(`);
+        if (!callPattern.test(source)) {
+          offenders.push({
+            file: relative,
+            reason: `binding "${name}" is never .run() — dead variable or drifted import`,
+          });
+        }
       }
     }
     expect(offenders).toEqual([]);
@@ -315,6 +380,85 @@ describe("client source-tree migration structural check", () => {
     );
     expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<MyAbortController>(null)")).toBe(false);
     expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<string>(null)")).toBe(false);
+  });
+
+  it("extractAbortableAsyncOperationBindings extracts hook bindings and rejects mutation.run drift (S1 re-review 2026-05-25)", () => {
+    // Direct exercise of the helper that powers the import-implies-call
+    // assertion. Pins the contract that the per-binding `.run(` pattern
+    // distinguishes `useAbortableAsyncOperation`-derived ops from
+    // `useEditorMutation`'s `mutation.run(...)`. Without this, the prior
+    // bare `/\.run\s*\(/` regex silently green-passed for files importing
+    // both hooks (EditorPage.tsx in particular) — the exact drift the
+    // structural check exists to catch.
+
+    // Positive: real bindings in the shapes the codebase uses today.
+    expect(
+      extractAbortableAsyncOperationBindings("const saveOp = useAbortableAsyncOperation();"),
+    ).toEqual(["saveOp"]);
+    expect(
+      extractAbortableAsyncOperationBindings("  const op = useAbortableAsyncOperation()"),
+    ).toEqual(["op"]);
+    expect(
+      extractAbortableAsyncOperationBindings(
+        "const a = useAbortableAsyncOperation();\nconst b = useAbortableAsyncOperation();\n",
+      ),
+    ).toEqual(["a", "b"]);
+    // Multi-line assignment (defensive — single-line today, but the
+    // helper shouldn't rot the day someone reformats).
+    expect(
+      extractAbortableAsyncOperationBindings("const x =\n  useAbortableAsyncOperation();"),
+    ).toEqual(["x"]);
+    // let/var (defensive — codebase uses const, but the regex shouldn't
+    // exclude future hoisted patterns).
+    expect(
+      extractAbortableAsyncOperationBindings("let lateOp = useAbortableAsyncOperation();"),
+    ).toEqual(["lateOp"]);
+
+    // Negative: the cases the loose regex used to wrongly conflate.
+    expect(
+      extractAbortableAsyncOperationBindings("const mutation = useEditorMutation({});"),
+    ).toEqual([]);
+    expect(
+      extractAbortableAsyncOperationBindings("mutation.run(async () => ({ ok: true }));"),
+    ).toEqual([]);
+    // Word boundary on the LEFT so `useAbortableAsyncOperationLike` etc.
+    // doesn't false-positive.
+    expect(
+      extractAbortableAsyncOperationBindings("const x = useAbortableAsyncOperationLike();"),
+    ).toEqual([]);
+
+    // Drift scenario: file imports both hooks, has a useAbortableAsyncOperation()
+    // binding that is NEVER `.run()`-ed, and a `mutation.run<T>(...)` call from
+    // useEditorMutation (with the generic-arg form EditorPage.tsx actually
+    // uses). The bare regex would have accepted this; the per-binding
+    // pattern with the same generic-aware shape must reject it.
+    const driftFixture = `
+      import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
+      import { useEditorMutation } from "./useEditorMutation";
+      function C() {
+        const someOp = useAbortableAsyncOperation();
+        const mutation = useEditorMutation({});
+        mutation.run<RestoreData>(async () => ({ ok: true }));
+      }
+    `;
+    const bindings = extractAbortableAsyncOperationBindings(driftFixture);
+    expect(bindings).toEqual(["someOp"]);
+    // someOp.run( does NOT appear; mutation.run<T>( does. The per-binding
+    // pattern (with optional generic args) correctly rejects this.
+    const callPattern = new RegExp(`\\b${bindings[0]}\\.run\\s*(?:<[^>]*>)?\\s*\\(`);
+    expect(callPattern.test(driftFixture)).toBe(false);
+
+    // Positive companion: the same pattern matches a real generic-arg
+    // call when the receiver IS a hook binding. saveOp.run<SaveLoopOutcome>(...)
+    // in useProjectEditor.ts:385 is the live example.
+    const liveFixture = `
+      const saveOp = useAbortableAsyncOperation();
+      const { promise: saveRunPromise } = saveOp.run<SaveLoopOutcome>(async (s) => fetch(s));
+    `;
+    const liveBindings = extractAbortableAsyncOperationBindings(liveFixture);
+    expect(liveBindings).toEqual(["saveOp"]);
+    const livePattern = new RegExp(`\\b${liveBindings[0]}\\.run\\s*(?:<[^>]*>)?\\s*\\(`);
+    expect(livePattern.test(liveFixture)).toBe(true);
   });
 
   it("stripCommentsFromTsSource removes line and block comments (S1/S3)", () => {
