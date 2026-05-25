@@ -28,8 +28,8 @@ Two scope decisions were made during the 2026-05-25 brainstorm session and are r
 ## In Scope
 
 1. **API surface additions** (`packages/client/src/api/client.ts`). Four endpoints grow a `signal?: AbortSignal` parameter (API-1 through API-4 in §2.1).
-2. **Cluster B consumer threading** ([I7]–[I11] + [S12]). All 8 sites enumerated in the roadmap get a signal, via `useAbortableAsyncOperation` where the hook fits or hand-rolled-with-justification where it doesn't (C-1 through C-11 in §2.2).
-3. **Allowlist sweep.** All remaining 12 `useRef<AbortController>` allocations across the 4 non-Cluster-B allowlisted files get re-evaluated against the Approach-3 decision matrix (S-1 through S-16 in §2.3).
+2. **Cluster B consumer threading** ([I7]–[I11] + [S12]). All 11 entries enumerated below get a signal, via `useAbortableAsyncOperation` where the hook fits or hand-rolled-with-justification where it doesn't (C-1 through C-11 in §2.2).
+3. **Allowlist sweep.** All remaining 16 `useRef<AbortController>` allocations across the 6 allowlisted files (EditorPage and useProjectEditor are partially touched by Cluster B as well) get re-evaluated against the Approach-3 decision matrix (S-1 through S-16 in §2.3).
 4. **Structural test update.** `migrationStructuralCheck.test.ts:130–138`'s `PHASE_4B_3B_ALLOWLIST` shrinks to the 3 post-sweep survivors; the comment block is rewritten to reflect post-sweep reality.
 5. **CLAUDE.md edits.** §Save-pipeline invariants Rule 4 reframing + §Pull Request Scope footnote (see §4).
 
@@ -39,7 +39,7 @@ Two scope decisions were made during the 2026-05-25 brainstorm session and are r
 - Cluster E (Phase 4b.3d) mapper internals.
 - Phase 4b.4's ESLint rule itself — this phase prepares the codebase for it; the rule lands in 4b.4 with inline `eslint-disable` for the three justified survivors.
 - Behavior changes visible to the user. This phase is correctness-and-observability only.
-- Migrating `App.tsx` / `DashboardView.tsx` — both already use `AbortController` without `useRef`, so they don't match the structural regex and aren't allowlisted. Leave them alone.
+- Migrating `App.tsx` / `DashboardView.tsx` — both already use `AbortController` with `useEffect`-cleanup abort lifecycle; verified during 4b.3b brainstorming that no migration is needed. Phase 4b.4's ESLint rule design will re-evaluate whether they need inline justification comments. (They also don't match the structural regex and aren't allowlisted.)
 
 ## Dependencies
 
@@ -87,7 +87,7 @@ Hand-rolled survivors get inline justification comments. The result: a much smal
 | C-5 | `useProjectEditor` recovery refs — `createRecoveryAbortRef`, `statusRecoveryAbortRef`, `titleRecoveryAbortRef` (lines 154–156) | Hand-rolled refs | **Hand-rolled, justified.** Same rationale as C-3. All three share a single block comment at line 154. |
 | C-6 | `useProjectEditor.loadProject` — `let cancelled = false` (line 205) + `api.projects.get(slug)` (line 220) + `api.chapters.get(firstChapter.id)` (line 245) | Flag + no signal | **Hook.** New `loadProjectOp` at hook scope, called inside the `useEffect`. The `cancelled` flag dies entirely; `signal.aborted` after each `await` replaces it. Thread `signal` through both `api.projects.get` and `api.chapters.get`. |
 | C-7 | `useProjectEditor.handleSelectChapter` — `api.chapters.get(chapterId)` (line 704) | No signal; paired with `selectChapterSeq` | **Hook.** New `selectChapterOp`. Both `selectChapterSeq.start()` (epoch token) *and* `selectChapterOp.run((s) => api.chapters.get(id, s))` apply — orthogonal, like the find/replace pairing. |
-| C-8 | `useProjectEditor.reloadActiveChapter` — `api.chapters.get(current.id)` (line 757) | No signal; paired with `selectChapterSeq` | **Hook reuse.** Same `selectChapterOp` instance as C-7 — both flows are "load active chapter" under the same logical operation. |
+| C-8 | `useProjectEditor.reloadActiveChapter` — `api.chapters.get(current.id)` (line 757) | No signal; paired with `selectChapterSeq` | **Hook reuse.** Same `selectChapterOp` instance as C-7 — both flows are "load active chapter" under the same logical operation. **Verify before migration:** confirm `reloadActiveChapter` cannot fire concurrently with `handleSelectChapter`. If it can, this row becomes "Two separate hook instances" and a behavioral test pins the chosen race semantics. |
 | C-9 | `EditorPage` chapterStatuses retry (lines 1223–1250) | `let cancelled = false` + setTimeout queue | **Hook.** New `statusesOp`. Call `statusesOp.run(async (signal) => { ... })` once inside the effect; the retry loop lives inside the callback, checks `signal.aborted` between attempts, and uses a small `sleep(ms, signal)` helper for the backoff. Thread `signal` into `api.chapterStatuses.list(signal)`. |
 | C-10 | `EditorPage` executeReplace — `api.search.replace` (line 775) | No signal; runs inside `mutation.run(...)` | **Hook.** New `replaceOp` at page scope. Inside the `mutation.run(...)` callback, get a signal via `replaceOp.run((s) => api.search.replace(..., s))`. The mutation owns staleness/locking; the hook owns network cancellation. |
 | C-11 | `EditorPage` executeReplaceOne — `api.search.replace` (line 1018) | No signal; same shape as C-10 | **Hook reuse.** Same `replaceOp` instance — replace-all and replace-one are mutually exclusive (gated by `isActionBusy`). |
@@ -97,7 +97,7 @@ Hand-rolled survivors get inline justification comments. The result: a much smal
 | # | Site (file:line) | Current purpose | Decision |
 |---|---|---|---|
 | S-1 | `EditorPage.settingsRefreshAbortRef` (1193) | Post-update settings GET; abort on unmount | **Hook.** Single-shot, abort-on-unmount — textbook fit. Replace ref with new `settingsRefreshOp`. |
-| S-2 | `useProjectEditor.saveAbortRef` (90) | Save retry-with-backoff (paired with `saveSeq`) | **Hook.** Retry-with-backoff pattern (matches C-9). `cancelInFlightSave()` maps to `saveOp.abort()` rather than ref-poke. |
+| S-2 | `useProjectEditor.saveAbortRef` (90) | Save retry-with-backoff (paired with `saveSeq`) | **Hook.** Retry-with-backoff pattern (matches C-9). `cancelInFlightSave()` maps to `saveOp.abort()` rather than ref-poke. Uses the shared `sleep(ms, signal)` helper (see §5 step 2). |
 | S-3 | `useProjectEditor.statusChangeAbortRef` (108) | Status PATCH; abort prior + on unmount | **Hook.** Textbook fit. |
 | S-4 | `useProjectEditor.titleChangeAbortRef` (116) | Title PATCH; same shape | **Hook.** Textbook fit. |
 | S-5 | `useProjectEditor.reorderAbortRef` (124) | Reorder PUT; same shape | **Hook.** Textbook fit. |
@@ -149,7 +149,9 @@ Add focused unit tests *only* where the migration changes observable behavior:
 | S-7 deleteChapter follow-up | The same signal threaded into delete *and* the post-delete `api.chapters.get` aborts both together. |
 | S-16 restoreFollowup | The hand-rolled two-controller pattern still aborts correctly on unmount and on a new restore. |
 
-Plus a unit test for `sleep(ms, signal)` if extracted as a shared helper.
+Plus a unit test for the shared `sleep(ms, signal)` helper at `packages/client/src/utils/abortable.ts` (see §5 step 2): aborts the timer when the signal aborts; rejects with the canonical ABORTED shape; does not throw if aborted before the call.
+
+**Hook-level contract test.** Add to `useAbortableAsyncOperation.test.ts`: the per-call signal passed to `fn` remains valid across multiple awaited calls within `fn`, and aborts all of them on the next `run()`. Pins the contract that S-7 (and any future dual-await site) relies on. Lands with the S-7 commit or as a tiny precursor.
 
 ### 3.3 — Drop redundant tests
 
@@ -179,20 +181,30 @@ Two edits land in this phase, as explicit tasks (not "while we're in there" chan
 
 Single PR, ordered commits:
 
-1. **API surface.** Land API-1 through API-4 as one commit with tests proving each signal reaches `apiFetch` options.
-2. **`sleep(ms, signal)` helper** (if extracted). Tiny — isolates review from the call-site change.
+1. **API surface.** Land API-1 through API-4 as one commit with 4 transport-level unit tests in `packages/client/src/api/client.test.ts` (or equivalent location for transport tests) — one per new endpoint, mocking `fetch` and asserting the signal reaches `apiFetch` options.
+2. **`sleep(ms, signal)` helper** at `packages/client/src/utils/abortable.ts` with unit tests. Used by C-9 and S-2. Tiny — isolates review from the call-site change.
 3. **Cluster B consumer threading.** [I7], [I8], [I9], [I10], [I11], [S12] — one commit per site (~8 commits).
 4. **Allowlist sweep — textbook-fit sites.** S-1, S-3/4/5/6, S-9/10, S-14/15. Mechanical migrations, low per-commit review burden.
 5. **Allowlist sweep — paired-with-sequence sites.** S-11/12, S-13, plus the C-7/8 commits (already in step 3, re-listed here for review-attention emphasis).
 6. **Tricky sites.** S-2 (saveAbortRef retry-with-backoff), S-7 (dual-purpose signal), S-8 (dialog-close lifecycle). One commit each — reviewer should spend real time here.
-7. **Structural test update + allowlist shrink.** Inline justification comments added at C-3, C-5, S-16. New import-implies-call assertion.
+7. **Structural test update + allowlist shrink.** Inline justification comments added at C-3, C-5, S-16. New import-implies-call assertion. **After this commit:** run `make cover` and record the per-package coverage delta vs. branch-base. If any threshold dropped (even within the still-passing range), add a focused test before opening the PR.
 8. **CLAUDE.md edits.** §Save-pipeline Rule 4 + §Pull Request Scope footnote. Last because it describes the actually-landed state.
+
+**Allowlist-edit discipline.** The structural-test assertion at `migrationStructuralCheck.test.ts:155` ("Phase 4b.3b allowlist entries actually contain `useRef<AbortController>`") fails the moment a migration removes the LAST ref from any file still in the allowlist. Three files have only their own refs and trip this fail-mode on the migration commit that removes their final ref:
+
+- **ExportDialog.tsx** — last-ref-removal is S-8 (step 6).
+- **ProjectSettingsDialog.tsx** — last-ref-removal is whichever of S-9 or S-10 lands second (step 4).
+- **SnapshotPanel.tsx** — last-ref-removal is whichever of S-11 or S-12 lands second (step 5).
+
+Each of these commits MUST also remove the file from `PHASE_4B_3B_ALLOWLIST` in the same commit. The step-7 commit then only rewrites the allowlist comment block; the file-set is already correct by the time step 7 runs. This keeps CI green per-commit and preserves the rollback-at-site-granularity property below.
 
 **Branch / PR shape.** Single PR. Path B already commits to bending the one-feature rule, and the structural test's allowlist must land in the same PR as the sites it covers — splitting would flip CI red mid-merge.
 
-**Verification gates.** Each commit: `make test` green for the touched package, type errors fail-fast. Final commit: `make all` green (lint, format, typecheck, coverage, e2e). Coverage thresholds met or exceeded — never lowered.
+**Verification gates.** Each commit: `make test` green for the touched package, type errors fail-fast. Final commit: `make all` green (lint, format, typecheck, coverage, e2e). Coverage thresholds met or exceeded — never lowered (see step 7's explicit `make cover` checkpoint).
 
 **Rollback shape.** Each site is its own commit so a regression on `main` can be reverted at site granularity. The API surface commit (step 1) is forward-compatible: reverting any consumer leaves the surface in place with no contract break.
+
+**Review strategy.** Review per-commit, not per-PR. Each commit is a single per-site migration (plus, where applicable, the `PHASE_4B_3B_ALLOWLIST` shrink for that file's last ref-removal). Reviewers may approve commit-by-commit and merge once all are green. §2's decision matrix is the contract — if a commit's behavior diverges from its row, that's the only place to raise. This is the discipline that distinguishes this PR (Decision 2, recorded bend of the one-feature rule) from snapshots-find-replace's 16-round-review shape.
 
 ---
 
@@ -200,7 +212,15 @@ Single PR, ordered commits:
 
 ### API surface
 - [ ] `api.projects.create`, `api.projects.delete`, `api.chapters.create`, `api.chapterStatuses.list` each accept `signal?: AbortSignal`.
-- [ ] Each new signal parameter is exercised by at least one consumer test that asserts the signal reaches `apiFetch` options.
+- [ ] Transport-level unit test in commit #1 for each new endpoint, mocking `fetch` and asserting the signal reaches `apiFetch` options.
+- [ ] Each new signal parameter is also exercised by ≥1 consumer test landing with that consumer's migration commit.
+
+### Shared helpers
+- [ ] `sleep(ms, signal)` helper exists at `packages/client/src/utils/abortable.ts` with unit tests.
+- [ ] Both C-9 (chapterStatuses retry) and S-2 (`saveAbortRef`) use the helper.
+
+### Hook contract
+- [ ] `useAbortableAsyncOperation.test.ts` includes a test pinning the per-call-signal contract: the signal passed to `fn` remains valid across multiple awaited calls within `fn`, and aborts all of them on the next `run()`.
 
 ### Cluster B consumers
 - [ ] Every site enumerated in roadmap §Phase 4b.3b threads a signal.
