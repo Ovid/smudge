@@ -110,10 +110,10 @@ describe("client source-tree migration structural check", () => {
   // because ImageGallery was the last consumer in this hook's
   // dedicated migration cluster (4b.3a.2/3/4). Seven useRef<AbortController>
   // sites remain hand-rolled pending Phase 4b.3b's per-site evaluation;
-  // see PHASE_4B_3B_ALLOWLIST below and docs/roadmap.md lines 762–763
-  // (which also lists App.tsx and DashboardView.tsx — those use
-  // AbortController without useRef, so they don't match this regex
-  // and aren't allowlisted here). Phase 4b.3b decides per-site whether
+  // see PHASE_4B_3B_ALLOWLIST below and Phase 4b.3a.1 §Out of Scope in
+  // docs/roadmap.md (which also lists App.tsx and DashboardView.tsx —
+  // those use AbortController without useRef, so they don't match this
+  // regex and aren't allowlisted here). Phase 4b.3b decides per-site whether
   // each site adopts useAbortableAsyncOperation or stays hand-rolled
   // with justification; every adoption removes one entry from
   // PHASE_4B_3B_ALLOWLIST, and Phase 4b.4 collapses the allowlist to
