@@ -172,7 +172,19 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
           const { message } = mapApiError(err, "snapshot.list");
           if (message) setListError(message);
         });
-      // No explicit cleanup — fetchOp auto-aborts on unmount/effect-rerun.
+      // S4 (review 2026-05-25): explicit cleanup. useAbortableAsyncOperation
+      // auto-aborts on unmount AND on the next .run() call, but NOT on a
+      // bare effect-rerun (e.g. the isOpen=true→false transition that early-
+      // returns above without re-issuing run()). In practice SnapshotPanel
+      // is conditionally rendered on `snapshotPanelOpen && activeChapter`,
+      // so a close-while-mounted transition doesn't occur today — but a
+      // future refactor that keeps the panel mounted with isOpen=false
+      // would leave the prior in-flight server work running to completion.
+      // Mirror sibling ExportDialog's explicit op.abort() in its
+      // open→closed transition.
+      return () => {
+        fetchOp.abort();
+      };
     }, [isOpen, chapterId, onSnapshotsChange, chapterSeq, fetchOp]);
 
     // Focus management
