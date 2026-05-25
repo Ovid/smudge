@@ -22,6 +22,16 @@ export function HomePage() {
   // Mirror the createRecoveryAbortRef pattern in useProjectEditor: hold
   // the controller in a ref so unmount cleanup can abort it, and gate
   // the .then on signal.aborted.
+  //
+  // Phase 4b.3b decision matrix row C-3: kept hand-rolled. The recovery
+  // branch outlives the primary mutation by design — by the time the
+  // recovery `api.projects.list` resolves, the create dialog has already
+  // closed and `createOp` may have advanced to a new run() (e.g. a second
+  // project create). Routing this through createOp would auto-abort the
+  // recovery refresh whenever the user kicks off another create —
+  // exactly the case where the previous error's recovery still needs to
+  // run to completion. Phase 4b.4 replaces this file-level allowlist
+  // entry with an inline `// eslint-disable-next-line` on the same line.
   const createRecoveryAbortRef = useRef<AbortController | null>(null);
   const createOp = useAbortableAsyncOperation();
   const deleteOp = useAbortableAsyncOperation();
