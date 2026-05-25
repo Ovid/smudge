@@ -758,6 +758,37 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("C-6: unmount mid-api.projects.get does NOT call setProject (preserves cancelled-flag guarantee)", async () => {
+    // C-6 (Phase 4b.3b): the loadProject useEffect replaced its
+    // `let cancelled = false` flag with `loadProjectOp.run(...)`. The
+    // pre-migration guarantee was: a late-resolving api.projects.get
+    // landing after unmount must not call setProject. The hook's
+    // auto-abort-on-unmount + `if (s.aborted) return;` gate must
+    // preserve that guarantee.
+    let resolveGet: (data: typeof mockProject) => void = () => {};
+    vi.mocked(api.projects.get).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveGet = resolve as (data: typeof mockProject) => void;
+        }),
+    );
+
+    const { result, unmount } = renderHook(() => useProjectEditor("test-project"));
+    // Sanity: nothing has resolved yet, so project should still be null.
+    expect(result.current.project).toBeNull();
+    unmount();
+    // Resolve AFTER unmount — the post-await `if (s.aborted) return;`
+    // gate must short-circuit before any setState fires.
+    resolveGet(mockProject);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // The hook is unmounted, so result.current is frozen at its last
+    // pre-unmount value (project: null). If the guard regressed and
+    // setProject fired after unmount, React would log a "state update
+    // on unmounted component" warning — assert no console.error either.
+    expect(result.current.project).toBeNull();
+  });
+
   it("updates word count on content change", async () => {
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());

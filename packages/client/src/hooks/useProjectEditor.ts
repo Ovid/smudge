@@ -104,6 +104,14 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // existing projectRef/projectSlugRef drift checks after the await are
   // orthogonal (response-discard) and remain.
   const createChapterOp = useAbortableAsyncOperation();
+  // C-6 (Phase 4b.3b): loadProject routes both its api.projects.get and
+  // its api.chapters.get through this single hook so one unmount aborts
+  // both. Replaces the pre-migration `let cancelled = false` flag — the
+  // hook's auto-abort-on-unmount semantics now provide the same
+  // "discard late-resolving response" guarantee, and threading the
+  // per-call signal through the transport additionally severs the
+  // network request rather than just gating the post-await setState.
+  const loadProjectOp = useAbortableAsyncOperation();
   // I11: rapid status clicks (A→B→C) used to issue overlapping PATCHes
   // with no server-side ordering guarantee. statusChangeSeq only
   // discarded response *processing*; both requests still reached the
@@ -221,7 +229,6 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   }, [cancelInFlightSave]);
 
   useEffect(() => {
-    let cancelled = false;
     // I7 (review 2026-04-25): reset the confirmed-status cache at the
     // start of every loadProject. The hook persists across slug changes
     // (refs survive), so on a failed loadProject (network, 5xx) the
@@ -233,11 +240,11 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
     // leaves the cache empty (correct: there's no project to revert).
     confirmedStatusRef.current = {};
 
-    async function loadProject() {
+    const { promise } = loadProjectOp.run(async (s) => {
       if (!slug) return;
       try {
-        const data = await api.projects.get(slug);
-        if (cancelled) return;
+        const data = await api.projects.get(slug, s);
+        if (s.aborted) return;
         setProject(data);
         // I21: seed the confirmed-status cache from the authoritative
         // server response. Every chapter's status here is server-truth
@@ -261,8 +268,8 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         }
         const firstChapter = data.chapters[0];
         if (firstChapter && !activeChapterRef.current) {
-          const chapter = await api.chapters.get(firstChapter.id);
-          if (cancelled) return;
+          const chapter = await api.chapters.get(firstChapter.id, s);
+          if (s.aborted) return;
           const cached = getCachedContent(chapter.id);
           const effectiveChapter = cached ? { ...chapter, content: cached } : chapter;
           setActiveChapter(effectiveChapter);
@@ -270,21 +277,17 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         }
       } catch (err) {
         // Copilot review 2026-04-24 (wider occurrence of HomePage race):
-        // gate console.warn on `cancelled` so a late rejection on
+        // gate console.warn on s.aborted so a late rejection on
         // unmount/slug-change does not leak noise into test output.
-        if (cancelled) return;
+        // (Replaces the pre-migration `cancelled` gate; C-6 Phase 4b.3b.)
+        if (s.aborted) return;
         console.warn("Failed to load project:", err);
         const { message } = mapApiError(err, "project.load");
         if (message) setError(message);
       }
-    }
-
-    loadProject();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [slug]);
+    });
+    void promise;
+  }, [slug, loadProjectOp]);
 
   const handleSave = useCallback(
     async (content: Record<string, unknown>, chapterId?: string): Promise<boolean> => {
