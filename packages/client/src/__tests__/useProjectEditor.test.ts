@@ -1079,6 +1079,69 @@ describe("useProjectEditor", () => {
     expect(callArgs?.[1]).toBeInstanceOf(AbortSignal);
   });
 
+  it("S-7: the same signal threads into delete and the post-delete api.chapters.get; both abort together on unmount", async () => {
+    // Phase 4b.3b row S-7: the deleteChapterOp.run() callback wraps
+    // BOTH api.chapters.delete AND the post-delete api.chapters.get,
+    // so a single per-call signal `s` threads through both calls.
+    // One unmount aborts both. The hook-level cross-await stability
+    // contract in useAbortableAsyncOperation.test.ts pins the
+    // "same signal across awaits" property; this consumer test pins
+    // that useProjectEditor actually uses it that way.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let deleteSignal: AbortSignal | undefined;
+    let getSignal: AbortSignal | undefined;
+    vi.mocked(api.chapters.delete).mockImplementationOnce((_id, signal) => {
+      deleteSignal = signal;
+      return Promise.resolve({ message: "deleted" });
+    });
+    // The post-delete GET stays pending until the signal aborts. Using
+    // pendingUntilAbort (rather than `new Promise(() => {})`) mirrors the
+    // real api-client shape: a real fetch aborts with ApiRequestError(0,
+    // "ABORTED"), routing the consumer through the same catch arms it
+    // would hit in production. mockImplementationOnce so the once-queue
+    // is fully consumed by this test and doesn't leak to siblings.
+    vi.mocked(api.chapters.get).mockReset();
+    vi.mocked(api.chapters.get).mockResolvedValueOnce(mockChapter1); // initial load
+    vi.mocked(api.chapters.get).mockImplementationOnce((_id, signal) => {
+      getSignal = signal;
+      return pendingUntilAbort(signal);
+    });
+
+    const { result, unmount } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    // Fire the delete of the active chapter. After the delete resolves,
+    // the followup GET for the next active chapter will await.
+    let deletePromise: Promise<boolean> = Promise.resolve(false);
+    await act(async () => {
+      deletePromise = result.current.handleDeleteChapter(mockChapter1);
+      // Yield so the awaited DELETE settles and the followup GET starts.
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The post-delete GET should now be in flight with its signal captured.
+    expect(deleteSignal).toBeInstanceOf(AbortSignal);
+    expect(getSignal).toBeInstanceOf(AbortSignal);
+    // Load-bearing invariant: the SAME controller flows into BOTH calls.
+    expect(deleteSignal).toBe(getSignal);
+    expect(deleteSignal!.aborted).toBe(false);
+
+    // Unmount severs both calls together via the single hook's auto-abort.
+    // The followup GET's pendingUntilAbort rejects, the run() callback's
+    // catch arm sees s.aborted and returns true, and the deletePromise
+    // resolves under the aborted branch.
+    unmount();
+    expect(deleteSignal!.aborted).toBe(true);
+    expect(getSignal!.aborted).toBe(true);
+
+    await act(async () => {
+      await deletePromise;
+    });
+    warnSpy.mockRestore();
+  });
+
   it("handleStatusChange threads AbortSignal into api.chapters.update (I11)", async () => {
     // Rapid status clicks used to issue overlapping PATCHes with no
     // ordering guarantee at the server. The signal lets the newer

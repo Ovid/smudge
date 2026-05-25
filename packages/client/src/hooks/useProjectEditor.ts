@@ -158,7 +158,16 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // refs: the rename path aborts on supersede, the delete path aborts
   // on unmount.
   const renameChapterOp = useAbortableAsyncOperation();
-  const deleteChapterAbortRef = useRef<AbortController | null>(null);
+  // S-7 (Phase 4b.3b): handleDeleteChapter threads a single signal into
+  // TWO sequential api calls within one deleteChapterOp.run() callback:
+  // api.chapters.delete AND the post-delete api.chapters.get for the
+  // next active chapter. The hook's per-call signal is the SAME
+  // instance across both awaits (pinned by the hook-level contract
+  // test in useAbortableAsyncOperation.test.ts) — one unmount aborts
+  // both calls together. Replaces a hand-rolled
+  // `useRef<AbortController>` that paired an `abort()` with a
+  // self-clearing identity check; the hook owns that bookkeeping now.
+  const deleteChapterOp = useAbortableAsyncOperation();
   // I21 (review 2026-04-24): per-chapter cache of the last server-
   // confirmed status. Rapid X→A→B clicks used to capture
   // `previousStatus = A` for B because A's optimistic setProject had
@@ -227,8 +236,8 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
     return () => {
       cancelInFlightSave();
       // I1: abort field PATCHes on unmount so a late-resolving rename
-      // can't fire setState on a torn-down hook.
-      deleteChapterAbortRef.current?.abort();
+      // can't fire setState on a torn-down hook. (S-7: deleteChapterOp
+      // auto-aborts on unmount via the hook; no manual entry here.)
       createRecoveryAbortRef.current?.abort();
       statusRecoveryAbortRef.current?.abort();
       titleRecoveryAbortRef.current?.abort();
@@ -908,77 +917,84 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       setSaveStatus("idle");
       setSaveErrorMessage(null);
       setCacheWarning(false);
-      // I7: abort any prior in-flight delete before issuing a new one
-      // and cover this controller in the unmount cleanup so the browser
-      // drops the DELETE rather than running it for a torn-down caller.
-      deleteChapterAbortRef.current?.abort();
-      const controller = new AbortController();
-      deleteChapterAbortRef.current = controller;
-      try {
-        await api.chapters.delete(chapter.id, controller.signal);
-        if (controller.signal.aborted) return false;
-        if (deleteChapterAbortRef.current === controller) deleteChapterAbortRef.current = null;
-        clearCachedContent(chapter.id);
-        // Compute remaining from the ref (current state), not the stale closure
-        const remaining = projectRef.current?.chapters.filter((c) => c.id !== chapter.id) ?? [];
-        setProject((prev) => {
-          if (!prev) return prev;
-          return { ...prev, chapters: prev.chapters.filter((c) => c.id !== chapter.id) };
-        });
+      // S-7 (Phase 4b.3b): I7's "abort prior in-flight delete before
+      // issuing a new one" and "cover the controller in unmount cleanup"
+      // are now satisfied by deleteChapterOp's hook semantics — run()
+      // aborts the prior controller before allocating a fresh one, and
+      // the hook auto-aborts on unmount. The single per-call signal
+      // `s` threads into BOTH the DELETE and the post-delete GET so
+      // one abort severs both calls together (pinned by the
+      // useAbortableAsyncOperation hook-level contract test).
+      const { promise } = deleteChapterOp.run(async (s): Promise<boolean> => {
+        try {
+          await api.chapters.delete(chapter.id, s);
+          if (s.aborted) return false;
+          clearCachedContent(chapter.id);
+          // Compute remaining from the ref (current state), not the stale closure
+          const remaining = projectRef.current?.chapters.filter((c) => c.id !== chapter.id) ?? [];
+          setProject((prev) => {
+            if (!prev) return prev;
+            return { ...prev, chapters: prev.chapters.filter((c) => c.id !== chapter.id) };
+          });
 
-        // If deleting the active chapter, switch to the first remaining
-        if (activeChapterRef.current?.id === chapter.id) {
-          const first = remaining[0];
-          if (first) {
-            // Capture-and-compare the select token across the secondary
-            // GET (I5). Without this guard, a rapid click-then-click
-            // during delete (user selects another chapter after the
-            // delete POST resolves but before this GET does) would let
-            // the stale "next chapter after delete" fetch pin the
-            // sidebar over the user's explicit selection.
-            const token = selectChapterSeq.start();
-            try {
-              // I7: thread the delete controller through the follow-up
-              // GET so an unmount aborts both the DELETE-step and the
-              // post-delete active-chapter fetch together.
-              const ch = await api.chapters.get(first.id, controller.signal);
-              if (token.isStale()) return true;
-              setActiveChapter(ch);
-              setChapterWordCount(countWords(ch.content));
-            } catch (err) {
-              // Secondary fetch failed — fall through to the empty state
-              // rather than setting activeChapter to the list-level row
-              // (which has content=null). Surface the failure via the
-              // onError callback and a console.warn so the user and the
-              // dev console both learn something went wrong (I3); before
-              // I3 the catch was silent and the user saw "Add chapter"
-              // as if the project had no chapters left.
-              console.warn("Failed to load chapter after delete:", err);
-              if (token.isStale()) return true;
-              const { message } = mapApiError(err, "chapter.load");
-              if (message) onError?.(message);
+          // If deleting the active chapter, switch to the first remaining
+          if (activeChapterRef.current?.id === chapter.id) {
+            const first = remaining[0];
+            if (first) {
+              // Capture-and-compare the select token across the secondary
+              // GET (I5). Without this guard, a rapid click-then-click
+              // during delete (user selects another chapter after the
+              // delete POST resolves but before this GET does) would let
+              // the stale "next chapter after delete" fetch pin the
+              // sidebar over the user's explicit selection.
+              const token = selectChapterSeq.start();
+              try {
+                // I7: thread the delete signal through the follow-up GET
+                // so an unmount (or supersede via the next deleteChapterOp.run)
+                // aborts both the DELETE-step and the post-delete
+                // active-chapter fetch together.
+                const ch = await api.chapters.get(first.id, s);
+                if (s.aborted) return true;
+                if (token.isStale()) return true;
+                setActiveChapter(ch);
+                setChapterWordCount(countWords(ch.content));
+              } catch (err) {
+                // Secondary fetch failed — fall through to the empty state
+                // rather than setting activeChapter to the list-level row
+                // (which has content=null). Surface the failure via the
+                // onError callback and a console.warn so the user and the
+                // dev console both learn something went wrong (I3); before
+                // I3 the catch was silent and the user saw "Add chapter"
+                // as if the project had no chapters left.
+                console.warn("Failed to load chapter after delete:", err);
+                if (s.aborted) return true;
+                if (token.isStale()) return true;
+                const { message } = mapApiError(err, "chapter.load");
+                if (message) onError?.(message);
+                setActiveChapter(null);
+                setChapterWordCount(0);
+              }
+            } else {
               setActiveChapter(null);
               setChapterWordCount(0);
             }
-          } else {
-            setActiveChapter(null);
-            setChapterWordCount(0);
           }
+          return true;
+        } catch (err) {
+          // I7: ABORTED means unmount or a newer delete superseded this
+          // one; stay silent so we don't fire a banner on a torn-down
+          // caller (happens in practice in tests too).
+          if (s.aborted) return false;
+          console.warn("Failed to delete chapter:", err);
+          const { message } = mapApiError(err, "chapter.delete");
+          if (message) onError?.(message);
+          return false;
         }
-        return true;
-      } catch (err) {
-        if (deleteChapterAbortRef.current === controller) deleteChapterAbortRef.current = null;
-        // I7: ABORTED means unmount or a newer delete superseded this
-        // one; stay silent so we don't fire a banner on a torn-down
-        // caller (happens in practice in tests too).
-        if (controller.signal.aborted) return false;
-        console.warn("Failed to delete chapter:", err);
-        const { message } = mapApiError(err, "chapter.delete");
-        if (message) onError?.(message);
-        return false;
-      }
+      });
+
+      return promise;
     },
-    [cancelInFlightSave, selectChapterSeq],
+    [cancelInFlightSave, selectChapterSeq, deleteChapterOp],
   );
 
   const handleReorderChapters = useCallback(
