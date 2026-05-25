@@ -17,7 +17,36 @@ const clientSrcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // Pattern shared between the source-tree migration check and the regex
 // drift-spec test below. Keep in lockstep — if you change the regex, the
 // spec test is what pins the new contract.
-const USE_REF_ABORT_CONTROLLER_PATTERN = /useRef\s*<\s*AbortController\b[^>]*>/;
+//
+// S2 (review 2026-05-25): broadened to match AbortController anywhere
+// inside the generic argument list — not just as the first/sole token.
+// Pre-fix `/useRef\s*<\s*AbortController\b[^>]*>/` required AbortController
+// to be the FIRST token after `<`, which silently let nested generics
+// like `useRef<Record<string, AbortController>>` slip through. Future
+// per-key cancellation patterns would have false-passed the structural
+// check. The new shape `[^>]*\bAbortController\b` doesn't require a
+// closing `>` (because nested generics carry their own), and the word
+// boundary still rejects `AbortControllerWrapper`.
+const USE_REF_ABORT_CONTROLLER_PATTERN = /useRef\s*<[^>]*\bAbortController\b/;
+
+// S1/S3 (review 2026-05-25): the prior `.run(` import-implies-call check
+// and the "allowlist actually contains useRef<AbortController>" check
+// both matched commented occurrences as if they were live code. A file
+// that imported the hook with a single `.run(` reference in a JSDoc
+// example silently passed the import-implies-call ban; a file whose
+// only `useRef<AbortController>` was a comment from a prior refactor
+// would keep the allowlist entry alive even after migration.
+//
+// Strips line (`// ...`) and block (`/* ... */`) comments from
+// TypeScript source so the structural checks see only executable code.
+// The regex pair is deliberately simple: it does not parse strings
+// (so `"// hello"` is shortened to `"`, which is fine for the
+// presence-checks we run downstream — we only care that real
+// references survive, not that the resulting source is parseable).
+// Block-comment regex is non-greedy so adjacent comments don't merge.
+export function stripCommentsFromTsSource(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+}
 
 // Builds an import-statement regex for a named symbol. Matches a real ES
 // import (start of line, possibly indented) — not a bare reference,
@@ -138,7 +167,11 @@ describe("client source-tree migration structural check", () => {
     for (const file of files) {
       if (file === HOOK_FILE) continue;
       if (PHASE_4B_3B_ALLOWLIST.has(file)) continue;
-      const source = readFileSync(file, "utf-8");
+      // S3 (review 2026-05-25): strip comments before testing so a
+      // commented-out `useRef<AbortController>` reference can't keep
+      // a migrated file flagged as an offender. Symmetric with the
+      // allowlist "actually contains" check below.
+      const source = stripCommentsFromTsSource(readFileSync(file, "utf-8"));
       if (USE_REF_ABORT_CONTROLLER_PATTERN.test(source)) {
         offenders.push(file.replace(clientSrcRoot, "packages/client/src"));
       }
@@ -152,11 +185,18 @@ describe("client source-tree migration structural check", () => {
     // entry), or deleted (remove the entry). All three cases are work
     // for Phase 4b.3b's per-site evaluation. Letting dead entries linger
     // would mask drift in files that still need migration.
+    //
+    // S3 (review 2026-05-25): the file's text must contain a LIVE
+    // useRef<AbortController> — not just a commented mention of one.
+    // useProjectEditor.ts in particular carries historical comments at
+    // lines 97/168 that reference the prior hand-rolled pattern; a
+    // future refactor migrating all live refs while leaving those
+    // comments in place would silently keep the file allowlisted.
     for (const file of PHASE_4B_3B_ALLOWLIST) {
-      const source = readFileSync(file, "utf-8");
+      const source = stripCommentsFromTsSource(readFileSync(file, "utf-8"));
       expect(
         source,
-        `${file} is on the allowlist but no longer contains useRef<AbortController>`,
+        `${file} is on the allowlist but no longer contains LIVE useRef<AbortController> (comments don't count)`,
       ).toMatch(USE_REF_ABORT_CONTROLLER_PATTERN);
     }
   });
@@ -165,13 +205,20 @@ describe("client source-tree migration structural check", () => {
     // Guards against drift: a file that imports the hook but never
     // calls .run() either has dead code or has had its only call
     // removed without removing the import. Either is a code-smell.
+    //
+    // S1 (review 2026-05-25): strip comments before testing so a file
+    // importing the hook with only a `.run(` in a JSDoc example or
+    // explanatory comment can't satisfy the "has at least one call"
+    // assertion — that would silence the very drift the check was
+    // introduced to catch.
     const importPattern = importPatternFor("useAbortableAsyncOperation");
     const runPattern = /\.run\s*\(/;
     const files = collectTsSources(clientSrcRoot);
     const offenders: string[] = [];
     for (const file of files) {
-      const source = readFileSync(file, "utf-8");
-      if (!importPattern.test(source)) continue;
+      const raw = readFileSync(file, "utf-8");
+      if (!importPattern.test(raw)) continue;
+      const source = stripCommentsFromTsSource(raw);
       if (!runPattern.test(source)) {
         offenders.push(file.replace(clientSrcRoot, "packages/client/src"));
       }
@@ -243,11 +290,61 @@ describe("client source-tree migration structural check", () => {
     expect(
       USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<AbortController | null | undefined>(null)"),
     ).toBe(true);
+    // S5 (review 2026-05-25): multi-line generic forms. The codebase uses
+    // single-line today, but a future reformat-of-long-types pass must
+    // not silently break the structural check.
+    expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<\n  AbortController | null\n>(null)")).toBe(
+      true,
+    );
+    expect(
+      USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<\n  AbortController\n  | null\n>(null)"),
+    ).toBe(true);
+    // S2 (review 2026-05-25): nested generics. Future per-key cancellation
+    // patterns like `useRef<Record<string, AbortController>>` MUST match
+    // — the pre-fix regex missed these (verified empirically by Copilot
+    // review).
+    expect(
+      USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<Record<string, AbortController>>(new Map())"),
+    ).toBe(true);
+    expect(
+      USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<Map<string, AbortController | null>>(null)"),
+    ).toBe(true);
     // Negative cases — must NOT match.
     expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<AbortControllerWrapper>(null)")).toBe(
       false,
     );
     expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<MyAbortController>(null)")).toBe(false);
     expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<string>(null)")).toBe(false);
+  });
+
+  it("stripCommentsFromTsSource removes line and block comments (S1/S3)", () => {
+    // The helper pins S1/S3 behavior: structural checks must see only
+    // executable code, never commented mentions. If this contract drifts
+    // (e.g. someone naively tries to strip comments with a non-greedy
+    // pattern that crosses adjacent blocks), the downstream import/
+    // allowlist checks would silently re-acquire the false-pass risk.
+    expect(stripCommentsFromTsSource("const x = 1; // comment\n")).toBe("const x = 1; \n");
+    expect(stripCommentsFromTsSource("const /* inline */ y = 2;")).toBe("const  y = 2;");
+    expect(stripCommentsFromTsSource("/* multi\n  line */\nconst z = 3;")).toBe("\nconst z = 3;");
+    // Adjacent block comments must NOT merge into one greedy match.
+    expect(stripCommentsFromTsSource("/* a */ x /* b */")).toBe(" x ");
+    // Live code with patterns that LOOK like comments inside strings is
+    // left as-is on the string side — the helper is a presence-filter,
+    // not a full JS parser. This is fine for our use because the
+    // downstream checks look for code-shape patterns (useRef<…>, .run()),
+    // not for the absence of strings.
+    expect(stripCommentsFromTsSource("// hide\nconst live = 'x';")).toBe("\nconst live = 'x';");
+    // A real `.run(` survives stripping; a commented one does not.
+    expect(stripCommentsFromTsSource("foo.run(s); // comment-form: bar.run(s)")).toContain(
+      "foo.run(s);",
+    );
+    expect(stripCommentsFromTsSource("// foo.run(s)\nconst x = 1;")).not.toContain("foo.run");
+    // A real useRef<AbortController> survives; a commented one does not.
+    expect(stripCommentsFromTsSource("// useRef<AbortController>\nconst r = 1;")).not.toContain(
+      "useRef<AbortController>",
+    );
+    expect(
+      stripCommentsFromTsSource("const r = useRef<AbortController | null>(null);"),
+    ).toContain("useRef<AbortController");
   });
 });
