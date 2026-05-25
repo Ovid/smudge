@@ -448,7 +448,7 @@ describe("useSnapshotState", () => {
     await waitFor(() => {
       expect(followupSignals.length).toBeGreaterThanOrEqual(2);
     });
-    const followup1 = followupSignals[followupSignals.length - 1];
+    const followup1 = followupSignals[followupSignals.length - 1]!;
     expect(followup1.aborted).toBe(false);
 
     // Second restore → follow-up #2 starts; the hook must abort
@@ -459,7 +459,7 @@ describe("useSnapshotState", () => {
     await waitFor(() => {
       expect(followupSignals.length).toBeGreaterThanOrEqual(3);
     });
-    const followup2 = followupSignals[followupSignals.length - 1];
+    const followup2 = followupSignals[followupSignals.length - 1]!;
     expect(followup1.aborted).toBe(true);
     expect(followup2.aborted).toBe(false);
 
