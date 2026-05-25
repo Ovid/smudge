@@ -322,4 +322,240 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     expect(result.current.trashedChapters.find((c) => c.id === "ch-purged")).toBeDefined();
     expect(result.current.actionError).toBe(STRINGS.error.restoreChapterProjectPurged);
   });
+
+  it("openTrash aborts the prior in-flight signal when called again rapidly", async () => {
+    // Pin the abort-prior contract on trashOp via the openTrash path. Pre-
+    // migration: trashAbortRef.current?.abort() at line 55. Post-migration:
+    // trashOp.run() aborts the prior controller before allocating a new
+    // one. Either way, two rapid openTrash() calls must leave the first
+    // signal aborted and the second signal fresh.
+    const capturedSignals: AbortSignal[] = [];
+    vi.mocked(api.projects.trash).mockImplementation((_slug, signal) => {
+      if (signal) capturedSignals.push(signal);
+      return pendingUntilAbort(signal);
+    });
+
+    const project = makeProject();
+    const { result } = renderHook(() =>
+      useTrashManager(project, project.slug, vi.fn(), vi.fn(), vi.fn()),
+    );
+
+    act(() => {
+      void result.current.openTrash();
+    });
+    await waitFor(() => expect(api.projects.trash).toHaveBeenCalledTimes(1));
+    expect(capturedSignals[0]?.aborted).toBe(false);
+
+    act(() => {
+      void result.current.openTrash();
+    });
+    await waitFor(() => expect(api.projects.trash).toHaveBeenCalledTimes(2));
+
+    expect(capturedSignals[0]?.aborted).toBe(true);
+    expect(capturedSignals[1]?.aborted).toBe(false);
+  });
+
+  it("confirmDeleteChapter's post-delete trash refresh aborts on unmount and threads the signal", async () => {
+    // Pin abort-on-unmount + signal-threading for the post-delete refresh
+    // path. Pre-migration: the refresh allocates its own AbortController
+    // and stores it on trashAbortRef (lines 166–170); the combined unmount
+    // cleanup effect at lines 45–51 aborts it. Post-migration: the refresh
+    // calls trashOp.run() and the hook's auto-abort handles unmount.
+    //
+    // Per Plan-vs-Design Note [D1]: this test sets trashOpen=true manually
+    // via the hook's exposed setter so confirmDeleteChapter's
+    // `if (trashOpen && project)` guard reaches the refresh branch without
+    // requiring a preceding openTrash() (whose pendingUntilAbort would
+    // never set trashOpen=true).
+    let refreshSignal: AbortSignal | undefined;
+    vi.mocked(api.projects.trash).mockImplementation((_slug, signal) => {
+      refreshSignal = signal;
+      return pendingUntilAbort(signal);
+    });
+
+    const target = makeChapter({ id: "ch-target" });
+    const project = makeProject();
+    const handleDeleteChapter = vi.fn().mockResolvedValue(true);
+
+    const { result, unmount } = renderHook(() =>
+      useTrashManager(project, project.slug, vi.fn(), handleDeleteChapter, vi.fn()),
+    );
+
+    // [D1] setup: satisfy the `if (trashOpen && project)` guard without
+    // calling openTrash (whose pendingUntilAbort would never resolve).
+    act(() => {
+      result.current.setTrashOpen(true);
+      result.current.setDeleteTarget(target);
+    });
+
+    act(() => {
+      void result.current.confirmDeleteChapter();
+    });
+    await waitFor(() => expect(api.projects.trash).toHaveBeenCalledTimes(1));
+
+    expect(refreshSignal).toBeDefined();
+    expect(refreshSignal?.aborted).toBe(false);
+
+    unmount();
+    expect(refreshSignal?.aborted).toBe(true);
+  });
+
+  it("openTrash and confirmDeleteChapter's refresh share trashOp (shared-ref behaviour)", async () => {
+    // Pin the shared-controller behaviour across openTrash and
+    // confirmDeleteChapter's refresh. Pre-migration: both call sites
+    // reference trashAbortRef, so the second one's
+    // `trashAbortRef.current?.abort()` cancels the first's controller.
+    // Post-migration: both call sites invoke trashOp.run() on the same
+    // hook instance, so run()'s abort-prior cancels the first call's
+    // controller. The shared-controller invariant is what makes
+    // openTrash + refresh mutually exclusive — calling either while the
+    // other is in flight aborts the prior.
+    //
+    // Per Plan-vs-Design Note [D2]: setTrashOpen=true is called manually
+    // before the in-flight openTrash so confirmDeleteChapter's refresh
+    // branch can fire without waiting for openTrash to resolve (which it
+    // won't, with pendingUntilAbort).
+    const capturedSignals: AbortSignal[] = [];
+    vi.mocked(api.projects.trash).mockImplementation((_slug, signal) => {
+      if (signal) capturedSignals.push(signal);
+      return pendingUntilAbort(signal);
+    });
+
+    const target = makeChapter({ id: "ch-target" });
+    const project = makeProject();
+    const handleDeleteChapter = vi.fn().mockResolvedValue(true);
+
+    const { result } = renderHook(() =>
+      useTrashManager(project, project.slug, vi.fn(), handleDeleteChapter, vi.fn()),
+    );
+
+    // [D2] setup: trashOpen=true so confirmDeleteChapter reaches the
+    // refresh branch; deleteTarget so confirmDeleteChapter has a chapter
+    // to delete.
+    act(() => {
+      result.current.setTrashOpen(true);
+      result.current.setDeleteTarget(target);
+    });
+
+    act(() => {
+      void result.current.openTrash();
+    });
+    await waitFor(() => expect(api.projects.trash).toHaveBeenCalledTimes(1));
+    const openTrashSignal = capturedSignals[0];
+    expect(openTrashSignal?.aborted).toBe(false);
+
+    // Fire confirmDeleteChapter. It awaits handleDeleteChapter (resolves
+    // true), then hits the refresh branch which calls api.projects.trash
+    // a second time. Pre-migration the refresh aborts the prior
+    // trashAbortRef.current; post-migration trashOp.run() aborts the prior
+    // controller. Either way, the openTrash signal is aborted.
+    act(() => {
+      void result.current.confirmDeleteChapter();
+    });
+    await waitFor(() => expect(api.projects.trash).toHaveBeenCalledTimes(2));
+    const refreshSignal = capturedSignals[1];
+
+    expect(openTrashSignal?.aborted).toBe(true);
+    expect(refreshSignal?.aborted).toBe(false);
+  });
+
+  it("handleRestore aborts the prior in-flight signal when called again rapidly", async () => {
+    // Pin the abort-prior contract on restoreOp via the handleRestore
+    // path. Pre-migration: restoreAbortRef.current?.abort() at line 80.
+    // Post-migration: restoreOp.run() aborts the prior controller.
+    // Either way, two rapid handleRestore() calls must leave the first
+    // signal aborted and the second signal fresh.
+    const capturedSignals: AbortSignal[] = [];
+    vi.mocked(api.chapters.restore).mockImplementation((_id, signal) => {
+      if (signal) capturedSignals.push(signal);
+      return pendingUntilAbort(signal);
+    });
+
+    const project = makeProject();
+    const { result } = renderHook(() =>
+      useTrashManager(project, project.slug, vi.fn(), vi.fn(), vi.fn()),
+    );
+
+    act(() => {
+      void result.current.handleRestore("ch-1");
+    });
+    await waitFor(() => expect(api.chapters.restore).toHaveBeenCalledTimes(1));
+    expect(capturedSignals[0]?.aborted).toBe(false);
+
+    act(() => {
+      void result.current.handleRestore("ch-2");
+    });
+    await waitFor(() => expect(api.chapters.restore).toHaveBeenCalledTimes(2));
+
+    expect(capturedSignals[0]?.aborted).toBe(true);
+    expect(capturedSignals[1]?.aborted).toBe(false);
+  });
+
+  it("trashOp and restoreOp use independent controllers (cross-ref independence)", async () => {
+    // Pin the cross-ref independence invariant. Pre-migration:
+    // trashAbortRef and restoreAbortRef are distinct useRef<...> slots,
+    // so openTrash (which touches only trashAbortRef) cannot abort an
+    // in-flight handleRestore signal, and vice versa. Post-migration:
+    // trashOp and restoreOp are two separate useAbortableAsyncOperation
+    // instances with two distinct internal refs, preserving the same
+    // independence.
+    //
+    // This is the load-bearing test the design's §Risks calls out —
+    // without it, a future maintainer collapsing trashOp + restoreOp
+    // into one shared instance would silently break the "user can be
+    // restoring a chapter while the trash list refreshes" concurrency
+    // model. The §Out of scope rule "Folding trashOp and restoreOp into
+    // one instance" depends on this test for executable enforcement.
+    const trashSignals: AbortSignal[] = [];
+    vi.mocked(api.projects.trash).mockImplementation((_slug, signal) => {
+      if (signal) trashSignals.push(signal);
+      return pendingUntilAbort(signal);
+    });
+    const restoreSignals: AbortSignal[] = [];
+    vi.mocked(api.chapters.restore).mockImplementation((_id, signal) => {
+      if (signal) restoreSignals.push(signal);
+      return pendingUntilAbort(signal);
+    });
+
+    const project = makeProject();
+    const { result } = renderHook(() =>
+      useTrashManager(project, project.slug, vi.fn(), vi.fn(), vi.fn()),
+    );
+
+    // Start both ops in flight.
+    act(() => {
+      void result.current.openTrash();
+    });
+    await waitFor(() => expect(api.projects.trash).toHaveBeenCalledTimes(1));
+    act(() => {
+      void result.current.handleRestore("ch-x");
+    });
+    await waitFor(() => expect(api.chapters.restore).toHaveBeenCalledTimes(1));
+
+    const trashSignal1 = trashSignals[0];
+    const restoreSignal1 = restoreSignals[0];
+    expect(trashSignal1?.aborted).toBe(false);
+    expect(restoreSignal1?.aborted).toBe(false);
+
+    // Fire a second openTrash. It aborts the prior trash controller via
+    // trashOp; restore controller is untouched.
+    act(() => {
+      void result.current.openTrash();
+    });
+    await waitFor(() => expect(api.projects.trash).toHaveBeenCalledTimes(2));
+    expect(trashSignal1?.aborted).toBe(true);
+    expect(restoreSignal1?.aborted).toBe(false);
+
+    // Fire a second handleRestore. It aborts the prior restore controller
+    // via restoreOp; the just-allocated second trash controller is
+    // untouched.
+    act(() => {
+      void result.current.handleRestore("ch-y");
+    });
+    await waitFor(() => expect(api.chapters.restore).toHaveBeenCalledTimes(2));
+    expect(restoreSignal1?.aborted).toBe(true);
+    // Sanity: the second trash signal (allocated by the second openTrash)
+    // is still fresh — handleRestore did not reach into trashOp.
+    expect(trashSignals[1]?.aborted).toBe(false);
+  });
 });
