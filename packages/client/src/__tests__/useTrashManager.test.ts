@@ -344,15 +344,15 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
       void result.current.openTrash();
     });
     await waitFor(() => expect(api.projects.trash).toHaveBeenCalledTimes(1));
-    expect(capturedSignals[0].aborted).toBe(false);
+    expect(capturedSignals[0]?.aborted).toBe(false);
 
     act(() => {
       void result.current.openTrash();
     });
     await waitFor(() => expect(api.projects.trash).toHaveBeenCalledTimes(2));
 
-    expect(capturedSignals[0].aborted).toBe(true);
-    expect(capturedSignals[1].aborted).toBe(false);
+    expect(capturedSignals[0]?.aborted).toBe(true);
+    expect(capturedSignals[1]?.aborted).toBe(false);
   });
 
   it("confirmDeleteChapter's post-delete trash refresh aborts on unmount and threads the signal", async () => {
@@ -442,7 +442,7 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     });
     await waitFor(() => expect(api.projects.trash).toHaveBeenCalledTimes(1));
     const openTrashSignal = capturedSignals[0];
-    expect(openTrashSignal.aborted).toBe(false);
+    expect(openTrashSignal?.aborted).toBe(false);
 
     // Fire confirmDeleteChapter. It awaits handleDeleteChapter (resolves
     // true), then hits the refresh branch which calls api.projects.trash
@@ -455,8 +455,8 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     await waitFor(() => expect(api.projects.trash).toHaveBeenCalledTimes(2));
     const refreshSignal = capturedSignals[1];
 
-    expect(openTrashSignal.aborted).toBe(true);
-    expect(refreshSignal.aborted).toBe(false);
+    expect(openTrashSignal?.aborted).toBe(true);
+    expect(refreshSignal?.aborted).toBe(false);
   });
 
   it("handleRestore aborts the prior in-flight signal when called again rapidly", async () => {
@@ -480,15 +480,15 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
       void result.current.handleRestore("ch-1");
     });
     await waitFor(() => expect(api.chapters.restore).toHaveBeenCalledTimes(1));
-    expect(capturedSignals[0].aborted).toBe(false);
+    expect(capturedSignals[0]?.aborted).toBe(false);
 
     act(() => {
       void result.current.handleRestore("ch-2");
     });
     await waitFor(() => expect(api.chapters.restore).toHaveBeenCalledTimes(2));
 
-    expect(capturedSignals[0].aborted).toBe(true);
-    expect(capturedSignals[1].aborted).toBe(false);
+    expect(capturedSignals[0]?.aborted).toBe(true);
+    expect(capturedSignals[1]?.aborted).toBe(false);
   });
 
   it("trashOp and restoreOp use independent controllers (cross-ref independence)", async () => {
@@ -534,8 +534,8 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
 
     const trashSignal1 = trashSignals[0];
     const restoreSignal1 = restoreSignals[0];
-    expect(trashSignal1.aborted).toBe(false);
-    expect(restoreSignal1.aborted).toBe(false);
+    expect(trashSignal1?.aborted).toBe(false);
+    expect(restoreSignal1?.aborted).toBe(false);
 
     // Fire a second openTrash. It aborts the prior trash controller via
     // trashOp; restore controller is untouched.
@@ -543,8 +543,8 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
       void result.current.openTrash();
     });
     await waitFor(() => expect(api.projects.trash).toHaveBeenCalledTimes(2));
-    expect(trashSignal1.aborted).toBe(true);
-    expect(restoreSignal1.aborted).toBe(false);
+    expect(trashSignal1?.aborted).toBe(true);
+    expect(restoreSignal1?.aborted).toBe(false);
 
     // Fire a second handleRestore. It aborts the prior restore controller
     // via restoreOp; the just-allocated second trash controller is
@@ -553,9 +553,9 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
       void result.current.handleRestore("ch-y");
     });
     await waitFor(() => expect(api.chapters.restore).toHaveBeenCalledTimes(2));
-    expect(restoreSignal1.aborted).toBe(true);
+    expect(restoreSignal1?.aborted).toBe(true);
     // Sanity: the second trash signal (allocated by the second openTrash)
     // is still fresh — handleRestore did not reach into trashOp.
-    expect(trashSignals[1].aborted).toBe(false);
+    expect(trashSignals[1]?.aborted).toBe(false);
   });
 });
