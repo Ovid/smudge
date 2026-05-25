@@ -468,11 +468,13 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
               // hand-rolled setTimeout/resolver dance that used to live
               // in saveBackoffRef. The signal is the per-call saveOp
               // signal — if cancelInFlightSave fires while we're
-              // asleep, sleep rejects with AbortError and we exit
-              // cleanly (caught by isAborted below). The seq-check at
-              // the top of the next iteration would short-circuit
-              // anyway, but the abortable sleep means we don't wait
-              // out the rest of the backoff window first.
+              // asleep, sleep rejects with a DOMException AbortError
+              // and we exit cleanly (caught by isAborted below; the
+              // predicate matches DOMException AbortError in addition
+              // to ApiRequestError{ABORTED}). The seq-check at the top
+              // of the next iteration would short-circuit anyway, but
+              // the abortable sleep means we don't wait out the rest
+              // of the backoff window first.
               //
               // The `?? 0` guards a theoretical out-of-range index —
               // `attempt < MAX_RETRIES === SAVE_BACKOFF_MS.length`
@@ -486,11 +488,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
                 await sleep(backoffMs, s);
               } catch (sleepErr) {
                 if (isAborted(sleepErr)) return { kind: "aborted" };
-                // The sleep helper only rejects on abort; any other
-                // throw is a true programming error and should
-                // surface — but defensively short-circuit here so a
-                // future code change can't accidentally fall through.
-                return { kind: "aborted" };
+                // I1 (review 2026-05-25): the sleep helper only rejects
+                // on abort today; any other throw is a true programming
+                // error (e.g. a future refactor that throws synchronously
+                // before scheduling the timer) and must surface so the
+                // bug is visible instead of being swallowed as "aborted".
+                throw sleepErr;
               }
             }
           }

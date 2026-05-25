@@ -40,7 +40,7 @@ import { api } from "../api/client";
 // only invariant holds at every call site. The barrel re-exports
 // the same class.
 import { ApiRequestError } from "../errors";
-import { mapApiError, mapApiErrorMessage, isNotFound } from "../errors";
+import { mapApiError, mapApiErrorMessage, isAborted, isNotFound } from "../errors";
 import { clearCachedContent, clearAllCachedContent } from "../hooks/useContentCache";
 import { safeSetEditable } from "../utils/editorSafeOps";
 import { Logo } from "../components/Logo";
@@ -1263,8 +1263,14 @@ export function EditorPage() {
           attempts++;
           try {
             await sleep(2000 * attempts, s);
-          } catch {
-            return; // sleep aborted — exit silently, cleanup will handle.
+          } catch (sleepErr) {
+            // S7 (review 2026-05-25): narrow the catch to abort only —
+            // a bare `catch {}` would swallow a future non-abort throw
+            // from sleep (e.g. a refactor that throws synchronously
+            // before scheduling the timer) and mask the bug. Mirrors
+            // the same predicate used in useProjectEditor's save loop.
+            if (isAborted(sleepErr)) return;
+            throw sleepErr;
           }
         }
       }
