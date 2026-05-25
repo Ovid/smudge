@@ -128,12 +128,12 @@ describe("client source-tree migration structural check", () => {
   // updating this list will fail the ban — that's the intended
   // forcing function.
   const PHASE_4B_3B_ALLOWLIST = new Set([
-    resolve(clientSrcRoot, "components/ExportDialog.tsx"),
     resolve(clientSrcRoot, "hooks/useProjectEditor.ts"),
     resolve(clientSrcRoot, "hooks/useSnapshotState.ts"),
     // EditorPage.tsx removed by Phase 4b.3b row S-1 (settingsRefreshAbortRef migrated)
     // ProjectSettingsDialog.tsx removed by Phase 4b.3b row S-10 (fieldAbortRef + timezoneAbortRef migrated)
     // SnapshotPanel.tsx removed by Phase 4b.3b row S-12 (fetchAbortRef + mutateAbortRef migrated)
+    // ExportDialog.tsx removed by Phase 4b.3b row S-8 (abortRef migrated)
     resolve(clientSrcRoot, "pages/HomePage.tsx"),
   ]);
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { EXPORT_FILE_EXTENSIONS, type ExportFormatType } from "@smudge/shared";
 import { api } from "../api/client";
 import { mapApiError } from "../errors";
+import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 import { STRINGS } from "../strings";
 
 interface ExportDialogProps {
@@ -33,7 +34,7 @@ export function ExportDialog({
     Array<{ id: string; filename: string; mime_type: string }>
   >([]);
   const exportingRef = useRef(false);
-  const abortRef = useRef<AbortController | null>(null);
+  const exportOp = useAbortableAsyncOperation();
 
   // Reset state only when the dialog opens (open transitions false → true)
   const prevOpenRef = useRef(false);
@@ -50,11 +51,10 @@ export function ExportDialog({
       setCoverImages([]);
     } else if (!open && prevOpenRef.current) {
       // Dialog closing — abort any in-flight export
-      abortRef.current?.abort();
-      abortRef.current = null;
+      exportOp.abort();
     }
     prevOpenRef.current = open;
-  }, [open, chapters]);
+  }, [open, chapters, exportOp]);
 
   // Show/close modal
   useEffect(() => {
@@ -130,31 +130,32 @@ export function ExportDialog({
     setExporting(true);
     setError(null);
 
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const config: {
+      format: ExportFormatType;
+      include_toc?: boolean;
+      chapter_ids?: string[];
+      epub_cover_image_id?: string;
+    } = {
+      format,
+      include_toc: includeToc,
+    };
+
+    if (format === "epub" && epubCoverImageId) {
+      config.epub_cover_image_id = epubCoverImageId;
+    }
+
+    if (selectingChapters) {
+      config.chapter_ids = chapters.filter((c) => selectedChapterIds.has(c.id)).map((c) => c.id);
+    }
+
+    const { promise, signal } = exportOp.run((s) =>
+      api.projects.export(projectSlug, config, s),
+    );
 
     try {
-      const config: {
-        format: ExportFormatType;
-        include_toc?: boolean;
-        chapter_ids?: string[];
-        epub_cover_image_id?: string;
-      } = {
-        format,
-        include_toc: includeToc,
-      };
+      const blob = await promise;
 
-      if (format === "epub" && epubCoverImageId) {
-        config.epub_cover_image_id = epubCoverImageId;
-      }
-
-      if (selectingChapters) {
-        config.chapter_ids = chapters.filter((c) => selectedChapterIds.has(c.id)).map((c) => c.id);
-      }
-
-      const blob = await api.projects.export(projectSlug, config, controller.signal);
-
-      if (controller.signal.aborted) return;
+      if (signal.aborted) return;
 
       const filename = `${projectSlug}.${EXPORT_FILE_EXTENSIONS[format]}`;
 
@@ -169,7 +170,7 @@ export function ExportDialog({
 
       onClose();
     } catch (err) {
-      if (controller.signal.aborted) return;
+      if (signal.aborted) return;
       const { message } = mapApiError(err, "export.run");
       if (message) setError(message);
     } finally {
@@ -185,6 +186,7 @@ export function ExportDialog({
     projectSlug,
     epubCoverImageId,
     onClose,
+    exportOp,
   ]);
 
   const handleChapterToggle = useCallback((chapterId: string) => {
