@@ -184,6 +184,17 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   // through rapid restore-then-restore until the next chapter-switch
   // refetch. Allocating its own controller scopes "latest wins" to the
   // follow-up list itself, not to the parent restore.
+  // Phase 4b.3b decision matrix row S-16: kept hand-rolled. The follow-up
+  // GET fires from inside the restore's success branch — by the time
+  // it runs, restoreOp's controller has been replaced by the next
+  // restore (if any), so routing this through restoreOp would
+  // auto-abort the follow-up. Two simultaneously-live controllers from
+  // one useAbortableAsyncOperation instance are not expressible —
+  // run() aborts the prior on each call. Splitting into two hook
+  // instances loses the entangled-lifecycle context documented at the
+  // existing I8 comment block above. Phase 4b.4 replaces this
+  // file-level allowlist entry with an inline `// eslint-disable-next-line`
+  // on the line below.
   const restoreFollowupAbortRef = useRef<AbortController | null>(null);
   // Mirror the current chapterId so async handlers can check the live value
   // against their captured one (needed for A→B→A restore detection).
