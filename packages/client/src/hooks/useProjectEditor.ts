@@ -756,7 +756,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         }
       }
     },
-    [cancelInFlightSave, selectChapterSeq],
+    [cancelInFlightSave, selectChapterSeq, createChapterOp],
   );
 
   const handleSelectChapter = useCallback(

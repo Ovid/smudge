@@ -1578,7 +1578,7 @@ export function EditorPage() {
           if (message) setActionError(message);
         });
     }
-  }, [slug, setProject, setActionError, navigate, mutation, isActionBusy]);
+  }, [slug, setProject, setActionError, navigate, mutation, isActionBusy, settingsRefreshOp]);
 
   useKeyboardShortcuts({
     shortcutHelpOpen,
