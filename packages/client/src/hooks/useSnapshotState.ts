@@ -176,7 +176,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   // server fetching/writing for a caller that already discarded the
   // response. Thread the signal through both calls and abort on
   // unmount so the browser drops them cleanly.
-  const restoreAbortRef = useRef<AbortController | null>(null);
+  const restoreOp = useAbortableAsyncOperation();
   // I8 (review 2026-04-25): the follow-up snapshot list after a successful
   // restore must NOT share the restore POST's controller. Sharing meant
   // a subsequent restore aborted the prior follow-up list (the new
@@ -359,14 +359,12 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       // reset viewingSnapshot for the new chapter.
       const token = chapterSeq.capture();
       const restoringChapterId = chapterId;
-      // I3: abort any prior in-flight restore before issuing a new one
-      // and install the controller on the shared ref so the unmount
-      // effect can sever a mid-flight restore.
-      restoreAbortRef.current?.abort();
-      const controller = new AbortController();
-      restoreAbortRef.current = controller;
+      // I3: abort any prior in-flight restore before issuing a new one;
+      // useAbortableAsyncOperation auto-aborts on unmount so a mid-
+      // flight restore is severed cleanly when the hook tears down.
+      const { promise } = restoreOp.run((s) => api.snapshots.restore(snapshotId, s));
       try {
-        await api.snapshots.restore(snapshotId, controller.signal);
+        await promise;
         // A→B→A round-trip: epoch moved but the current chapter is once
         // again the one we restored. Treat that as a NOT-stale completion
         // — the caller should reload the editor because the restore
@@ -393,11 +391,11 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
           const freshToken = chapterSeq.capture();
           // I8 (review 2026-04-25): allocate a separate controller for
           // the follow-up list. Sharing the restore POST's controller
-          // meant the next restore (which abort()s restoreAbortRef)
-          // also aborted the prior follow-up list, leaving the badge
-          // stale until a chapter-switch refetch. The unmount cleanup
-          // covers this ref too so a torn-down hook drops the list
-          // cleanly.
+          // meant the next restore (which aborts the prior restore
+          // controller) also aborted the prior follow-up list, leaving
+          // the badge stale until a chapter-switch refetch. The unmount
+          // cleanup covers this ref too so a torn-down hook drops the
+          // list cleanly.
           restoreFollowupAbortRef.current?.abort();
           const followupController = new AbortController();
           restoreFollowupAbortRef.current = followupController;
@@ -435,7 +433,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         return { ok: false, error: makeClientCommittedError() };
       }
     },
-    [chapterId, chapterSeq],
+    [chapterId, chapterSeq, restoreOp],
   );
 
   const refreshCount = useCallback(() => {
@@ -461,11 +459,11 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
 
   // I2: abort outstanding snapshot fetches on unmount so a late-
   // resolving .then/.catch can't fire setState on a torn-down hook.
-  // refreshCountOp self-cleans on unmount via useAbortableAsyncOperation.
+  // refreshCountOp and restoreOp self-clean on unmount via
+  // useAbortableAsyncOperation.
   useEffect(
     () => () => {
       viewAbortRef.current?.abort();
-      restoreAbortRef.current?.abort();
       restoreFollowupAbortRef.current?.abort();
     },
     [],
