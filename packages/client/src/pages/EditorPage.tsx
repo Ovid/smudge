@@ -727,6 +727,15 @@ export function EditorPage() {
     ],
   );
 
+  // Shared controller for the find-and-replace flow. executeReplace
+  // (replace-all) and handleReplaceOne (replace-one) are mutually
+  // exclusive at runtime — both are gated by isActionBusy() — so a
+  // single replaceOp is correct: starting either operation aborts any
+  // prior in-flight call, and unmount cancels whichever is open.
+  // useEditorMutation still owns staleness/locking; replaceOp is the
+  // orthogonal network-cancellation layer (per design §2.2 C-10/C-11).
+  const replaceOp = useAbortableAsyncOperation();
+
   const executeReplace = useCallback(
     async (frozen: {
       scope: { type: "project" } | { type: "chapter"; chapter_id: string };
@@ -774,13 +783,17 @@ export function EditorPage() {
         type ReplaceData = Awaited<ReturnType<typeof api.search.replace>>;
 
         const result = await mutation.run<ReplaceData>(async () => {
-          const resp = await api.search.replace(
-            slug,
-            frozen.query,
-            frozen.replacement,
-            frozen.options,
-            frozen.scope,
+          const { promise } = replaceOp.run((s) =>
+            api.search.replace(
+              slug,
+              frozen.query,
+              frozen.replacement,
+              frozen.options,
+              frozen.scope,
+              s,
+            ),
           );
+          const resp = await promise;
           // Read the CURRENT active chapter (not the closure value) so a
           // chapter switch between click and response still reloads when the
           // now-active chapter was affected.
@@ -916,6 +929,7 @@ export function EditorPage() {
       setActionError,
       mutation,
       isActionBusy,
+      replaceOp,
     ],
   );
 
@@ -1017,17 +1031,21 @@ export function EditorPage() {
         type ReplaceData = Awaited<ReturnType<typeof api.search.replace>>;
 
         const result = await mutation.run<ReplaceData>(async () => {
-          const resp = await api.search.replace(
-            slug,
-            frozenQuery,
-            frozenReplacement,
-            frozenOptions,
-            {
-              type: "chapter",
-              chapter_id: chapterId,
-              match_index: matchIndex,
-            },
+          const { promise } = replaceOp.run((s) =>
+            api.search.replace(
+              slug,
+              frozenQuery,
+              frozenReplacement,
+              frozenOptions,
+              {
+                type: "chapter",
+                chapter_id: chapterId,
+                match_index: matchIndex,
+              },
+              s,
+            ),
           );
+          const resp = await promise;
           const current = getActiveChapter();
           // Replace-one with 0 count means the match was gone on the server —
           // emit no cache clear / no reload; the ok branch will surface the
@@ -1143,6 +1161,7 @@ export function EditorPage() {
       setActionError,
       mutation,
       isActionBusy,
+      replaceOp,
     ],
   );
 
