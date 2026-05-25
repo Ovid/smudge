@@ -24,6 +24,7 @@ export function HomePage() {
   // the .then on signal.aborted.
   const createRecoveryAbortRef = useRef<AbortController | null>(null);
   const createOp = useAbortableAsyncOperation();
+  const deleteOp = useAbortableAsyncOperation();
 
   useEffect(
     () => () => {
@@ -107,7 +108,11 @@ export function HomePage() {
     if (!deleteTarget) return;
     setError(null);
     try {
-      await api.projects.delete(deleteTarget.slug);
+      const { promise, signal } = deleteOp.run((s) =>
+        api.projects.delete(deleteTarget.slug, s),
+      );
+      await promise;
+      if (signal.aborted) return;
       setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
       setDeleteTarget(null);
     } catch (err) {

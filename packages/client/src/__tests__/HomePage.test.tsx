@@ -237,7 +237,10 @@ describe("HomePage", () => {
     await userEvent.click(screen.getByRole("button", { name: /confirm/i }));
 
     await waitFor(() => {
-      expect(api.projects.delete).toHaveBeenCalledWith("novel-one");
+      expect(api.projects.delete).toHaveBeenCalledWith(
+        "novel-one",
+        expect.any(AbortSignal),
+      );
     });
   });
 
