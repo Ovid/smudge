@@ -179,6 +179,7 @@ export function ImageGallery({
       return;
     }
 
+    // (s) not (signal) to avoid shadowing the outer destructured signal used in .then/.catch below.
     const { promise, signal } = mutationOp.run((s) => api.images.upload(projectId, file, s));
     promise
       .then((newImage) => {

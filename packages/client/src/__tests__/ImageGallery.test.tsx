@@ -1006,18 +1006,18 @@ describe("ImageGallery", () => {
     const file1 = new File(["x"], "first.png", { type: "image/png" });
     await user.upload(fileInput, file1);
     await waitFor(() => expect(api.images.upload).toHaveBeenCalledTimes(1));
-    expect(capturedSignals[0].aborted).toBe(false);
+    expect(capturedSignals[0]!.aborted).toBe(false);
 
     const file2 = new File(["y"], "second.png", { type: "image/png" });
     await user.upload(fileInput, file2);
     await waitFor(() => expect(api.images.upload).toHaveBeenCalledTimes(2));
 
     // Abort-prior: first signal aborted, second fresh.
-    expect(capturedSignals[0].aborted).toBe(true);
-    expect(capturedSignals[1].aborted).toBe(false);
+    expect(capturedSignals[0]!.aborted).toBe(true);
+    expect(capturedSignals[1]!.aborted).toBe(false);
 
     unmount();
-    expect(capturedSignals[1].aborted).toBe(true);
+    expect(capturedSignals[1]!.aborted).toBe(true);
   });
 
   it("handleSave threads signal, aborts on unmount (mutationOp)", async () => {
@@ -1050,10 +1050,10 @@ describe("ImageGallery", () => {
     await user.click(screen.getByText(S.saveButton));
 
     await waitFor(() => expect(api.images.update).toHaveBeenCalledTimes(1));
-    expect(capturedSignals[0].aborted).toBe(false);
+    expect(capturedSignals[0]!.aborted).toBe(false);
 
     unmount();
-    expect(capturedSignals[0].aborted).toBe(true);
+    expect(capturedSignals[0]!.aborted).toBe(true);
   });
 
   it("handleInsert auto-save inner branch threads signal, aborts on unmount (mutationOp)", async () => {
@@ -1064,7 +1064,7 @@ describe("ImageGallery", () => {
     // Two axes only: signal-threading + abort-on-unmount. The
     // abort-prior axis is NOT DOM-testable because the Insert button
     // is disabled while saveStatus === "saving" (ImageGallery.tsx
-    // line 522). Inline comment required by the plan.
+    // line 522).
     const user = userEvent.setup();
     const capturedSignals: AbortSignal[] = [];
     vi.mocked(api.images.update).mockImplementation((_id, _data, signal) => {
@@ -1091,11 +1091,10 @@ describe("ImageGallery", () => {
     // mistake leaves saveStatus === "saved", the test would silently
     // pass without exercising mutationOp at all.
     await waitFor(() => expect(api.images.update).toHaveBeenCalledTimes(1));
-    expect(api.images.update).toHaveBeenCalledTimes(1);
-    expect(capturedSignals[0].aborted).toBe(false);
+    expect(capturedSignals[0]!.aborted).toBe(false);
 
     unmount();
-    expect(capturedSignals[0].aborted).toBe(true);
+    expect(capturedSignals[0]!.aborted).toBe(true);
   });
 
   it("handleDelete aborts prior, threads signal, aborts on unmount (mutationOp)", async () => {
@@ -1126,7 +1125,7 @@ describe("ImageGallery", () => {
     await user.click(screen.getByText(S.deleteButton));
     await user.click(screen.getByText(S.deleteButton));
     await waitFor(() => expect(api.images.delete).toHaveBeenCalledTimes(1));
-    expect(capturedSignals[0].aborted).toBe(false);
+    expect(capturedSignals[0]!.aborted).toBe(false);
 
     // Second confirm-Delete click — handleDelete fires again. Because
     // the first call is held by pendingUntilAbort, confirmingDelete
@@ -1135,11 +1134,11 @@ describe("ImageGallery", () => {
     await user.click(screen.getByText(S.deleteButton));
     await waitFor(() => expect(api.images.delete).toHaveBeenCalledTimes(2));
 
-    expect(capturedSignals[0].aborted).toBe(true);
-    expect(capturedSignals[1].aborted).toBe(false);
+    expect(capturedSignals[0]!.aborted).toBe(true);
+    expect(capturedSignals[1]!.aborted).toBe(false);
 
     unmount();
-    expect(capturedSignals[1].aborted).toBe(true);
+    expect(capturedSignals[1]!.aborted).toBe(true);
   });
 
   // --- refsOp + cross-instance contracts (Phase 4b.3a.4) ---
@@ -1196,7 +1195,7 @@ describe("ImageGallery", () => {
     // refresh and transitions confirmingDelete to true.
     await user.click(screen.getByText(S.deleteButton));
     await waitFor(() => expect(api.images.references).toHaveBeenCalledTimes(1));
-    const signal1 = capturedSignals[0];
+    const signal1 = capturedSignals[0]!;
     expect(signal1.aborted).toBe(false);
 
     // backToGrid does NOT abort the in-flight refsOp call (it only
@@ -1218,7 +1217,7 @@ describe("ImageGallery", () => {
     // signal1 (abort-prior) and install a fresh controller.
     await user.click(screen.getByText(S.deleteButton));
     await waitFor(() => expect(api.images.references).toHaveBeenCalledTimes(3));
-    const signal2 = capturedSignals[1];
+    const signal2 = capturedSignals[1]!;
     expect(signal1.aborted).toBe(true);
     expect(signal2.aborted).toBe(false);
 
@@ -1281,7 +1280,7 @@ describe("ImageGallery", () => {
     await user.type(screen.getByLabelText(S.captionLabel), "x");
     await user.click(screen.getByText(S.saveButton));
     await waitFor(() => expect(api.images.update).toHaveBeenCalledTimes(1));
-    const updateSig = updateSignals[0];
+    const updateSig = updateSignals[0]!;
     expect(updateSig.aborted).toBe(false);
 
     // 2. Click the link-style Delete — fires api.images.references on
@@ -1289,7 +1288,7 @@ describe("ImageGallery", () => {
     // by a refsOp run.
     await user.click(screen.getByText(S.deleteButton));
     await waitFor(() => expect(api.images.references).toHaveBeenCalledTimes(1));
-    const refsSig = refsSignals[0];
+    const refsSig = refsSignals[0]!;
     expect(refsSig.aborted).toBe(false);
     expect(updateSig.aborted).toBe(false);
 
@@ -1301,7 +1300,7 @@ describe("ImageGallery", () => {
     const file = new File(["x"], "u.png", { type: "image/png" });
     await user.upload(fileInput, file);
     await waitFor(() => expect(api.images.upload).toHaveBeenCalledTimes(1));
-    const uploadSig = uploadSignals[0];
+    const uploadSig = uploadSignals[0]!;
 
     expect(updateSig.aborted).toBe(true); // mutation aborted prior mutation
     expect(refsSig.aborted).toBe(false); // mutation did NOT abort refsOp
@@ -1354,7 +1353,7 @@ describe("ImageGallery", () => {
     const file = new File(["x"], "u.png", { type: "image/png" });
     await user.upload(fileInput, file);
     await waitFor(() => expect(api.images.upload).toHaveBeenCalledTimes(1));
-    const uploadSig = uploadSignals[0];
+    const uploadSig = uploadSignals[0]!;
     expect(uploadSig.aborted).toBe(false);
 
     // 2. Open detail view (the gallery is still in grid view because
@@ -1365,7 +1364,7 @@ describe("ImageGallery", () => {
     await user.type(screen.getByLabelText(S.captionLabel), "x");
     await user.click(screen.getByText(S.saveButton));
     await waitFor(() => expect(api.images.update).toHaveBeenCalledTimes(1));
-    const updateSig = updateSignals[0];
+    const updateSig = updateSignals[0]!;
 
     // Cross-handler shared-op invariant: the Save handler reached
     // into the same mutationOp as the upload handler and aborted it.
