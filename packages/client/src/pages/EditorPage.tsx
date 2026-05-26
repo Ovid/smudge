@@ -1405,9 +1405,21 @@ export function EditorPage() {
         // handleSelectChapterWithFlush void this promise via the sidebar
         // click handler and have no try/catch. Convert to a save-failed
         // banner + false return — the same shape as a flushed:false reject.
+        //
+        // S2 (agentic-review 2026-05-26): the chapter.flushBeforeNavigate
+        // scope was added in this PR for this exact case (flush failure
+        // observed BEFORE navigation completes) but had been wired only
+        // to handleSelectChapterWithFlush's defensive outer catch, which
+        // is unreachable today (this catch already converts throws to a
+        // banner+false return). Route the mapping here so the scope has
+        // a real reachable site and the NETWORK case gets the scope's
+        // transient-specific `flushBeforeNavigateFailedNetwork` copy
+        // instead of the generic viewSwitchSaveFailed string.
         safeSetEditable(editorRef, true);
         console.warn("switchToView: flushSave threw", err);
-        setActionError(STRINGS.editor.viewSwitchSaveFailed);
+        applyMappedError(mapApiError(err, "chapter.flushBeforeNavigate"), {
+          onMessage: setActionError,
+        });
         return false;
       }
       if (!flushed) {
@@ -1516,10 +1528,15 @@ export function EditorPage() {
         await handleSelectChapter(chapterId);
       } catch (err) {
         console.warn("handleSelectChapterWithFlush failed", err);
-        // S16 (4b.3c.1): chapter.flushBeforeNavigate distinguishes flush-on-navigate
-        // failures from chapter-load failures. The scope's copy points the user at
-        // the save problem rather than the navigation target.
-        applyMappedError(mapApiError(err, "chapter.flushBeforeNavigate"), {
+        // S2 (agentic-review 2026-05-26): this outer catch is defensive
+        // — switchToView converts its own throws to false+banner, and
+        // handleSelectChapter catches all its own errors. The only path
+        // that can reach this catch is a future refactor that
+        // reintroduces a throw from handleSelectChapter (chapter.load
+        // context). The chapter.flushBeforeNavigate scope was relocated
+        // to switchToView's catch (the actual flush-throw site) where
+        // its copy is meaningful.
+        applyMappedError(mapApiError(err, "chapter.load"), {
           onMessage: setActionError,
         });
       }
