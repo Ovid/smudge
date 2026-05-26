@@ -7,9 +7,7 @@ import type { MappedError } from "./apiErrorMapper";
 // scope-specific; the explicit generic is needed because MappedError
 // has no default after S4 (agentic-review 2026-05-26). Tests that
 // exercise extras shapes construct MappedError<"image.delete"> inline.
-const ok = (
-  overrides: Partial<MappedError<"chapter.load">> = {},
-): MappedError<"chapter.load"> => ({
+const ok = (overrides: Partial<MappedError<"chapter.load">> = {}): MappedError<"chapter.load"> => ({
   message: "boom",
   possiblyCommitted: false,
   transient: false,

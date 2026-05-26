@@ -104,10 +104,7 @@ export function isClientError(err: unknown): err is ApiRequestError {
 // should go through mapApiError in tests too. The underscore prefix
 // is the convention for "intended to be internal but must be exported
 // for testing." The barrel does not re-export this.
-export function _resolveErrorInternal(
-  err: unknown,
-  scope: ScopeEntry,
-): MappedError<ApiErrorScope> {
+export function _resolveErrorInternal(err: unknown, scope: ScopeEntry): MappedError<ApiErrorScope> {
   if (!isApiRequestError(err)) {
     return { message: scope.fallback, possiblyCommitted: false, transient: false, terminal: false };
   }

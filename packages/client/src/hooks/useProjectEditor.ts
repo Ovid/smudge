@@ -649,7 +649,10 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // hand-coded list this branch used to carry (status === 404 ||
         // code === "BAD_JSON" || code === "UPDATE_READ_FAILURE" ||
         // code === "CORRUPT_CONTENT") is gone.
-        if (terminalSaveError && (terminalSaveError.terminal || terminalSaveError.possiblyCommitted)) {
+        if (
+          terminalSaveError &&
+          (terminalSaveError.terminal || terminalSaveError.possiblyCommitted)
+        ) {
           onRequestEditorLockRef.current?.(terminalSaveError.message);
         }
       }
