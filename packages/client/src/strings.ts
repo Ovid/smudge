@@ -150,6 +150,10 @@ export const STRINGS = {
       "Your save may have completed, but the server response was unreadable. Refresh the page before continuing \u2014 editing now could overwrite the saved content.",
     saveFailedCorrupt:
       "Unable to save \u2014 the chapter content on the server is corrupted. Reload the page before continuing.",
+    flushBeforeNavigateFailed:
+      "Unable to save your changes before switching chapters. Please retry or check your connection.",
+    flushBeforeNavigateFailedNetwork:
+      "Network problem prevented saving your changes before switching. Check your connection and try again.",
     cacheUnavailable: "Local backup unavailable",
     viewSwitchSaveFailed:
       "Unable to save pending changes. Try again once your connection recovers before switching views.",

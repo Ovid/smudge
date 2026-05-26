@@ -1070,6 +1070,7 @@ describe("SCOPES registry", () => {
       "chapter.save",
       "chapter.create",
       "chapter.delete",
+      "chapter.flushBeforeNavigate",
       "chapter.rename",
       "chapter.reorder",
       "chapter.updateStatus",
@@ -1315,5 +1316,20 @@ describe("chapter.save terminal-codes scope-level configuration", () => {
     const result = mapApiError(err, "chapter.save");
     expect(result.terminal).toBe(false);
     expect(result.possiblyCommitted).toBe(false);
+  });
+});
+
+describe("chapter.flushBeforeNavigate scope (4b.3c.1 S16)", () => {
+  it("maps a NETWORK error to the flush-before-navigate network copy", () => {
+    const err = new ApiRequestError("net", 0, "NETWORK");
+    const result = mapApiError(err, "chapter.flushBeforeNavigate");
+    expect(result.message).toBe(STRINGS.editor.flushBeforeNavigateFailedNetwork);
+    expect(result.transient).toBe(true);
+  });
+
+  it("maps a non-routed error to the fallback", () => {
+    const err = new ApiRequestError("internal", 500, "INTERNAL_ERROR");
+    const result = mapApiError(err, "chapter.flushBeforeNavigate");
+    expect(result.message).toBe(STRINGS.editor.flushBeforeNavigateFailed);
   });
 });

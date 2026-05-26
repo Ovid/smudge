@@ -31,6 +31,7 @@ export type ApiErrorScope =
   | "chapter.save"
   | "chapter.create"
   | "chapter.delete"
+  | "chapter.flushBeforeNavigate"
   | "chapter.rename"
   | "chapter.reorder"
   | "chapter.updateStatus"
@@ -184,6 +185,10 @@ export const SCOPES = {
     fallback: STRINGS.error.deleteChapterFailed,
     network: STRINGS.error.deleteChapterFailedNetwork,
     committed: STRINGS.error.possiblyCommitted,
+  },
+  "chapter.flushBeforeNavigate": {
+    fallback: STRINGS.editor.flushBeforeNavigateFailed,
+    network: STRINGS.editor.flushBeforeNavigateFailedNetwork,
   },
   "chapter.rename": {
     fallback: STRINGS.error.renameChapterFailed,
