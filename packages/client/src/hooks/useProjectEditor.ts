@@ -1256,13 +1256,13 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       } catch (err) {
         if (statusSignal.aborted) return;
         if (token.isStale()) return; // newer call owns state
-        const { message, possiblyCommitted } = mapApiError(err, "chapter.updateStatus");
+        const mapped = mapApiError(err, "chapter.updateStatus");
         // I11 (follow-on from the new AbortController): an ABORTED
         // error means a later click cancelled this PATCH mid-flight —
         // the newer click already owns the optimistic state and is
         // driving its own PATCH. Reverting here would stomp the live
         // call. Mirror saveAbortRef's ABORTED short-circuit.
-        if (message === null) return;
+        if (mapped.message === null) return;
         // I6 (2026-04-23): 2xx BAD_JSON means the server committed the
         // new status but the response body was unreadable. A revert
         // here either silently no-ops (the reload GET returns the new
@@ -1270,13 +1270,13 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // state (local revert). Keep the optimistic update — the
         // committed copy below tells the user the response was
         // ambiguous, and the next chapter load will reconcile state.
-        if (possiblyCommitted) {
+        if (mapped.possiblyCommitted) {
           // I21: the server likely committed the new status despite
           // the unreadable body. Advance the confirmed cache so a
           // later status change captures this value, not the previous
           // one, as the baseline.
           confirmedStatusRef.current[chapterId] = status;
-          if (message) onError?.(message);
+          if (mapped.message) onError?.(mapped.message);
           return;
         }
         // Revert by reloading from server, falling back to local revert
@@ -1342,7 +1342,11 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // Status change failures are non-fatal — the revert already restored consistent state.
         // Call the optional onError callback for the caller to display (e.g., as a dismissible banner),
         // rather than setError which triggers the full-page error overlay.
-        if (message) onError?.(message);
+        // S4 fix (Task 29 in 4b.3c.2) will add a setError fallback when onError is absent; this
+        // migration mirrors the pre-S4 shape (only onError?.(message), no fallback).
+        applyMappedError(mapped, {
+          onMessage: (message) => onError?.(message),
+        });
       }
     },
     [statusChangeSeq, statusChangeOp],
