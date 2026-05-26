@@ -27,7 +27,10 @@ describe("errors/index barrel re-exports", () => {
 
 describe("MappedError shape", () => {
   it("has message, possiblyCommitted, transient, optional extras", () => {
-    const m: MappedError = {
+    // Explicit scope arg required after S4 (agentic-review 2026-05-26)
+    // dropped the default parameter on MappedError. chapter.load is a
+    // generic enough scope to assert the structural fields.
+    const m: MappedError<"chapter.load"> = {
       message: null,
       possiblyCommitted: false,
       transient: false,
@@ -1278,16 +1281,27 @@ describe("MappedError<S> phantom propagation", () => {
     expectTypeOf(mapped).toEqualTypeOf<MappedError<"chapter.load">>();
   });
 
-  it("default MappedError (no <S>) is structurally equivalent for existing destructured consumers", () => {
-    const m: MappedError = {
+  it("bare MappedError (no <S>) fails to typecheck after S4 — regression guard", () => {
+    // After S4 (agentic-review 2026-05-26) dropped the default
+    // parameter, bare `MappedError` (without `<S>`) is no longer a
+    // valid type. The @ts-expect-error directive flips to TS2314
+    // "Generic type 'MappedError' requires 1 type argument(s)" if a
+    // future refactor restores the default. Runtime structural
+    // equivalence is now redundant with the `MappedError<"chapter.load">`
+    // assertion in the "MappedError shape" describe block above.
+    //
+    // The cast on the explicit-scope object pins the phantom field as
+    // absent (optional `__scope` carries no runtime value).
+    const m: MappedError<"chapter.load"> = {
       message: null,
       possiblyCommitted: false,
       transient: false,
       terminal: false,
     };
-    expect(m.message).toBeNull();
-    // Phantom field is optional; absence at runtime is fine.
     expect("__scope" in m).toBe(false);
+    // @ts-expect-error — Generic type 'MappedError<S>' requires 1 type argument; default was dropped (S4).
+    const _bare: MappedError = m;
+    expect(_bare).toBe(m);
   });
 });
 

@@ -1,15 +1,18 @@
 import { ApiRequestError } from "../api/client";
 import { SCOPES, type ApiErrorScope } from "./scopes";
 
-export type MappedError<S extends ApiErrorScope = ApiErrorScope> = {
+export type MappedError<S extends ApiErrorScope> = {
   message: string | null;
   possiblyCommitted: boolean;
   transient: boolean;
   terminal: boolean;
   extras?: Record<string, unknown>;
   // Phantom — no runtime field; carries S through the type system so
-  // applyMappedError can require the same S on its handlers.
-  readonly __scope?: S;
+  // applyMappedError can require the same S on its handlers. The
+  // generic has no default (S4, agentic-review 2026-05-26): a default
+  // of `ApiErrorScope` would let a bare `MappedError` widen S to the
+  // full scope union, silently defeating the phantom narrowing that
+  // ScopeExtras<S> depends on at the applyMappedError boundary.
 };
 
 export type ScopeEntry = {
@@ -91,7 +94,10 @@ export function isClientError(err: unknown): err is ApiRequestError {
 // should go through mapApiError in tests too. The underscore prefix
 // is the convention for "intended to be internal but must be exported
 // for testing." The barrel does not re-export this.
-export function _resolveErrorInternal(err: unknown, scope: ScopeEntry): MappedError {
+export function _resolveErrorInternal(
+  err: unknown,
+  scope: ScopeEntry,
+): MappedError<ApiErrorScope> {
   if (!isApiRequestError(err)) {
     return { message: scope.fallback, possiblyCommitted: false, transient: false, terminal: false };
   }

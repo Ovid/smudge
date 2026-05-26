@@ -2,7 +2,14 @@ import { describe, it, expect, vi } from "vitest";
 import { applyMappedError, STOP } from "./applyMappedError";
 import type { MappedError } from "./apiErrorMapper";
 
-const ok = (overrides: Partial<MappedError> = {}): MappedError => ({
+// Test helper pins to `chapter.load` (a scope with no extrasFrom →
+// ScopeExtras = never). The shape under test is structural, not
+// scope-specific; the explicit generic is needed because MappedError
+// has no default after S4 (agentic-review 2026-05-26). Tests that
+// exercise extras shapes construct MappedError<"image.delete"> inline.
+const ok = (
+  overrides: Partial<MappedError<"chapter.load">> = {},
+): MappedError<"chapter.load"> => ({
   message: "boom",
   possiblyCommitted: false,
   transient: false,
