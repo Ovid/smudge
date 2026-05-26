@@ -1385,8 +1385,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // Don't call setError — that triggers the full-page error overlay.
         // Rename failures are non-fatal; surface via the optional callback
         // so callers can display inline (same pattern as handleStatusChange).
-        const { message } = mapApiError(err, "chapter.rename");
-        if (message) onError?.(message);
+        applyMappedError(mapApiError(err, "chapter.rename"), {
+          onMessage: (message) => onError?.(message),
+        });
       }
     },
     [renameChapterOp],
