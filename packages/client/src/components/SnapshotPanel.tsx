@@ -297,8 +297,23 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         await fetchSnapshots();
       } catch (err) {
         if (signal.aborted) return;
-        const { message } = mapApiError(err, "snapshot.create");
-        if (message) setCreateError(message);
+        applyMappedError(mapApiError(err, "snapshot.create"), {
+          onCommitted: () => {
+            // I3 (4b.3c.2): 2xx BAD_JSON means the server likely committed
+            // the snapshot but the response body was unreadable. Close the
+            // form so the user can't re-submit against an ambiguous server
+            // state, clear the label, drop any stale duplicateMessage, and
+            // refetch the list so the new snapshot (if it landed) appears.
+            // The committed banner copy from mapped.message tells the user
+            // the response was ambiguous; the panel-top createError render
+            // (above) keeps it visible after the form closes.
+            setShowCreateForm(false);
+            setCreateLabel("");
+            setDuplicateMessage(false);
+            void fetchSnapshots();
+          },
+          onMessage: setCreateError,
+        });
       }
     };
 
@@ -378,11 +393,6 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
               {duplicateMessage && (
                 <p className="text-xs text-amber-700 font-sans">{S.duplicateSkipped}</p>
               )}
-              {createError && (
-                <p role="alert" className="text-xs text-red-700 font-sans">
-                  {createError}
-                </p>
-              )}
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -404,6 +414,15 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
                 </button>
               </div>
             </div>
+          )}
+
+          {/* Create error (I3 4b.3c.2): rendered at panel-top so the
+              committed banner survives `handleCreate`'s `setShowCreateForm(false)`
+              on possiblyCommitted recovery. */}
+          {createError && (
+            <p role="alert" className="text-xs text-red-700 font-sans">
+              {createError}
+            </p>
           )}
 
           {/* List error */}

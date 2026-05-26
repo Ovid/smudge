@@ -311,7 +311,7 @@ describe("SnapshotPanel", () => {
   });
 
   describe("SnapshotPanel.handleCreate possiblyCommitted (4b.3c.2 I3)", () => {
-    it("PINNED: 200 BAD_JSON currently surfaces createError but does NOT close form, clear label, or refetch — flips on I3 fix", async () => {
+    it("200 BAD_JSON closes form, clears label, refetches list, and surfaces the committed banner at panel-top", async () => {
       const user = userEvent.setup();
       const { ApiRequestError } = await import("../api/client");
       vi.mocked(api.snapshots.list).mockResolvedValue([]);
@@ -332,20 +332,22 @@ describe("SnapshotPanel", () => {
       await user.type(screen.getByPlaceholderText(S.labelPlaceholder), "My label");
       await user.click(screen.getByText(S.save));
 
-      // (a) Committed banner displayed — mapper returns possiblyCommitted=true
-      //     with the committed copy because snapshot.create has committed: defined.
+      // (a) Committed banner displayed at panel-top — survives the form close
+      //     because the {createError && …} render lives outside the form div.
       await waitFor(() => {
         expect(screen.getByText(STRINGS.error.possiblyCommitted)).toBeInTheDocument();
       });
 
-      // (b) Form is NOT closed — the label input is still rendered.
-      expect(screen.getByPlaceholderText(S.labelPlaceholder)).toBeInTheDocument();
+      // (b) Form IS closed — the label input is no longer rendered, and the
+      //     Create button returns. Prevents the user from re-submitting the
+      //     same form against an ambiguous (possibly committed) server state.
+      expect(screen.queryByPlaceholderText(S.labelPlaceholder)).not.toBeInTheDocument();
+      expect(screen.getByText(S.createButton)).toBeInTheDocument();
 
-      // (c) Label is NOT cleared.
-      expect(screen.getByPlaceholderText(S.labelPlaceholder)).toHaveValue("My label");
-
-      // (d) No refetch — list-call count is still 1 (the mount-time fetch).
-      expect(api.snapshots.list).toHaveBeenCalledTimes(1);
+      // (c) Refetch fired — list call count is 2 (mount-time + post-committed).
+      await waitFor(() => {
+        expect(api.snapshots.list).toHaveBeenCalledTimes(2);
+      });
     });
   });
 
