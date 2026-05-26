@@ -170,8 +170,7 @@ export function ExportDialog({
       onClose();
     } catch (err) {
       if (signal.aborted) return;
-      const { message } = mapApiError(err, "export.run");
-      if (message) setError(message);
+      applyMappedError(mapApiError(err, "export.run"), { onMessage: setError });
     } finally {
       exportingRef.current = false;
       setExporting(false);
