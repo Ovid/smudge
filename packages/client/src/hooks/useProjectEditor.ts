@@ -838,8 +838,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         if (isAborted(err)) return;
         console.warn("Failed to load chapter:", err);
         if (token.isStale()) return;
-        const { message } = mapApiError(err, "chapter.load");
-        if (message) setError(message);
+        applyMappedError(mapApiError(err, "chapter.load"), { onMessage: setError });
       }
     },
     [cancelInFlightSave, selectChapterSeq, selectChapterOp],
