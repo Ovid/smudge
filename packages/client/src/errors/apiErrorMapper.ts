@@ -152,8 +152,7 @@ export function _resolveErrorInternal(err: unknown, scope: ScopeEntry): MappedEr
       possiblyCommitted:
         err.code !== undefined && scope.committedCodes?.includes(err.code) === true,
       transient: false,
-      terminal:
-        err.code !== undefined && scope.terminalCodes?.includes(err.code) === true,
+      terminal: err.code !== undefined && scope.terminalCodes?.includes(err.code) === true,
       extras: safeExtrasFrom(scope, err),
     };
   }
@@ -198,10 +197,7 @@ function safeExtrasFrom(
   }
 }
 
-export function mapApiError<S extends ApiErrorScope>(
-  err: unknown,
-  scope: S,
-): MappedError<S> {
+export function mapApiError<S extends ApiErrorScope>(err: unknown, scope: S): MappedError<S> {
   return _resolveErrorInternal(err, SCOPES[scope]) as MappedError<S>;
 }
 

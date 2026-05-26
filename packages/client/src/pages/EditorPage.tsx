@@ -40,7 +40,13 @@ import { api } from "../api/client";
 // only invariant holds at every call site. The barrel re-exports
 // the same class.
 import { ApiRequestError } from "../errors";
-import { mapApiError, mapApiErrorMessage, applyMappedError, isAborted, isNotFound } from "../errors";
+import {
+  mapApiError,
+  mapApiErrorMessage,
+  applyMappedError,
+  isAborted,
+  isNotFound,
+} from "../errors";
 import { clearCachedContent, clearAllCachedContent } from "../hooks/useContentCache";
 import { safeSetEditable } from "../utils/editorSafeOps";
 import { Logo } from "../components/Logo";
@@ -1256,7 +1262,9 @@ export function EditorPage() {
           if (s.aborted) return;
           console.warn("Failed to load chapter statuses:", err);
           if (attempts >= 2) {
-            applyMappedError(mapApiError(err, "chapterStatus.fetch"), { onMessage: setActionError });
+            applyMappedError(mapApiError(err, "chapterStatus.fetch"), {
+              onMessage: setActionError,
+            });
             return;
           }
           attempts++;

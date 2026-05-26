@@ -27,7 +27,12 @@ describe("errors/index barrel re-exports", () => {
 
 describe("MappedError shape", () => {
   it("has message, possiblyCommitted, transient, optional extras", () => {
-    const m: MappedError = { message: null, possiblyCommitted: false, transient: false, terminal: false };
+    const m: MappedError = {
+      message: null,
+      possiblyCommitted: false,
+      transient: false,
+      terminal: false,
+    };
     expect(m.message).toBeNull();
     expect(m.possiblyCommitted).toBe(false);
     expect(m.transient).toBe(false);
@@ -880,10 +885,7 @@ describe("image.delete extrasFrom — drop-only-malformed (4b.3c.1 S8)", () => {
     });
     const result = mapApiError(err, "image.delete");
     expect(result.extras).toEqual({
-      chapters: [
-        { title: "Chapter A" },
-        { title: "Chapter B", trashed: true },
-      ],
+      chapters: [{ title: "Chapter A" }, { title: "Chapter B", trashed: true }],
     });
   });
 
@@ -1277,7 +1279,12 @@ describe("MappedError<S> phantom propagation", () => {
   });
 
   it("default MappedError (no <S>) is structurally equivalent for existing destructured consumers", () => {
-    const m: MappedError = { message: null, possiblyCommitted: false, transient: false, terminal: false };
+    const m: MappedError = {
+      message: null,
+      possiblyCommitted: false,
+      transient: false,
+      terminal: false,
+    };
     expect(m.message).toBeNull();
     // Phantom field is optional; absence at runtime is fine.
     expect("__scope" in m).toBe(false);

@@ -8,10 +8,20 @@ import type { ScopeExtras } from "./scopeExtras";
  * ImageGallery.handleDelete's announce()). */
 export const STOP = Symbol("applyMappedError.STOP");
 
+// `void | typeof STOP` lets call sites pass either a void-returning
+// setter (`setError`) or an arrow that explicitly returns STOP. The
+// `no-invalid-void-type` rule flags `void` in unions, but the alternative
+// (`typeof STOP | undefined`) would forbid void-returning setters at the
+// call site — see Pattern P1 vs Pattern P2 in
+// docs/plans/2026-05-26-consumer-recovery-completeness-plan.md.
 export interface ApplyMappedErrorHandlers<S extends ApiErrorScope> {
+  // eslint-disable-next-line @typescript-eslint/no-invalid-void-type
   onMessage?: (message: string) => void | typeof STOP;
+  // eslint-disable-next-line @typescript-eslint/no-invalid-void-type
   onCommitted?: () => void | typeof STOP;
+  // eslint-disable-next-line @typescript-eslint/no-invalid-void-type
   onTransient?: () => void | typeof STOP;
+  // eslint-disable-next-line @typescript-eslint/no-invalid-void-type
   onExtras?: (extras: ScopeExtras<S>) => void | typeof STOP;
 }
 

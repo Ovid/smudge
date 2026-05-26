@@ -16,9 +16,15 @@ describe("applyMappedError", () => {
     const onCommitted = vi.fn();
     const onTransient = vi.fn();
     const onExtras = vi.fn();
-    applyMappedError({ message: null, possiblyCommitted: false, transient: false, terminal: false }, {
-      onMessage, onCommitted, onTransient, onExtras,
-    });
+    applyMappedError(
+      { message: null, possiblyCommitted: false, transient: false, terminal: false },
+      {
+        onMessage,
+        onCommitted,
+        onTransient,
+        onExtras,
+      },
+    );
     expect(onMessage).not.toHaveBeenCalled();
     expect(onCommitted).not.toHaveBeenCalled();
     expect(onTransient).not.toHaveBeenCalled();
@@ -34,8 +40,12 @@ describe("applyMappedError", () => {
   it("onCommitted fires before onMessage when possiblyCommitted", () => {
     const order: string[] = [];
     applyMappedError(ok({ possiblyCommitted: true }), {
-      onCommitted: () => { order.push("committed"); },
-      onMessage: () => { order.push("message"); },
+      onCommitted: () => {
+        order.push("committed");
+      },
+      onMessage: () => {
+        order.push("message");
+      },
     });
     expect(order).toEqual(["committed", "message"]);
   });
@@ -43,8 +53,12 @@ describe("applyMappedError", () => {
   it("onTransient fires before onMessage when transient", () => {
     const order: string[] = [];
     applyMappedError(ok({ transient: true }), {
-      onTransient: () => { order.push("transient"); },
-      onMessage: () => { order.push("message"); },
+      onTransient: () => {
+        order.push("transient");
+      },
+      onMessage: () => {
+        order.push("message");
+      },
     });
     expect(order).toEqual(["transient", "message"]);
   });
@@ -52,8 +66,12 @@ describe("applyMappedError", () => {
   it("onExtras fires before onMessage when extras present", () => {
     const order: string[] = [];
     applyMappedError(ok({ extras: { chapters: [] } }), {
-      onExtras: () => { order.push("extras"); },
-      onMessage: () => { order.push("message"); },
+      onExtras: () => {
+        order.push("extras");
+      },
+      onMessage: () => {
+        order.push("message");
+      },
     });
     expect(order).toEqual(["extras", "message"]);
   });
@@ -72,13 +90,12 @@ describe("applyMappedError", () => {
     const onTransient = vi.fn();
     const onExtras = vi.fn();
     const onMessage = vi.fn();
-    applyMappedError(
-      ok({ possiblyCommitted: true, transient: true, extras: { x: 1 } }),
-      {
-        onCommitted: () => STOP,
-        onTransient, onExtras, onMessage,
-      },
-    );
+    applyMappedError(ok({ possiblyCommitted: true, transient: true, extras: { x: 1 } }), {
+      onCommitted: () => STOP,
+      onTransient,
+      onExtras,
+      onMessage,
+    });
     expect(onTransient).not.toHaveBeenCalled();
     expect(onExtras).not.toHaveBeenCalled();
     expect(onMessage).not.toHaveBeenCalled();
@@ -87,29 +104,24 @@ describe("applyMappedError", () => {
   it("STOP from onTransient skips onExtras and onMessage", () => {
     const onExtras = vi.fn();
     const onMessage = vi.fn();
-    applyMappedError(
-      ok({ transient: true, extras: { x: 1 } }),
-      { onTransient: () => STOP, onExtras, onMessage },
-    );
+    applyMappedError(ok({ transient: true, extras: { x: 1 } }), {
+      onTransient: () => STOP,
+      onExtras,
+      onMessage,
+    });
     expect(onExtras).not.toHaveBeenCalled();
     expect(onMessage).not.toHaveBeenCalled();
   });
 
   it("STOP from onExtras skips onMessage", () => {
     const onMessage = vi.fn();
-    applyMappedError(
-      ok({ extras: { x: 1 } }),
-      { onExtras: () => STOP, onMessage },
-    );
+    applyMappedError(ok({ extras: { x: 1 } }), { onExtras: () => STOP, onMessage });
     expect(onMessage).not.toHaveBeenCalled();
   });
 
   it("returning undefined (default void) continues to next callback", () => {
     const onMessage = vi.fn();
-    applyMappedError(
-      ok({ possiblyCommitted: true }),
-      { onCommitted: () => undefined, onMessage },
-    );
+    applyMappedError(ok({ possiblyCommitted: true }), { onCommitted: () => undefined, onMessage });
     expect(onMessage).toHaveBeenCalledWith("boom");
   });
 });
