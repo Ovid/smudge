@@ -465,18 +465,20 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             //     retrying will not fix it.
             // Everything else under 500 (bare 500, transient NETWORK, etc.)
             // still retries with backoff.
-            if (
-              isApiError(err) &&
-              (err.code === "BAD_JSON" ||
-                err.code === "UPDATE_READ_FAILURE" ||
-                err.code === "CORRUPT_CONTENT")
-            ) {
+            const mapped = mapApiError(err, "chapter.save");
+            // S3/S7 (4b.3c.1): the OR is the documented bridge between two
+            // scope-driven flags that both mean "save loop must break and lock
+            // the editor":
+            //   - mapped.terminal: scopes.ts terminalCodes (5xx UPDATE_READ_FAILURE /
+            //     CORRUPT_CONTENT — the byCode-match branch sets terminal=true).
+            //   - mapped.possiblyCommitted: 2xx BAD_JSON (scope.committed routes
+            //     through the BAD_JSON early-return branch, which sets
+            //     possiblyCommitted=true). UPDATE_READ_FAILURE additionally has a
+            //     committedCodes entry so its mapped output sets both flags; the
+            //     OR is idempotent on that case.
+            if (isApiError(err) && (mapped.terminal || mapped.possiblyCommitted)) {
               console.warn("Save failed with terminal code:", err.code);
-              // mapApiError returns message: null only for ABORTED, which
-              // has already been filtered above — the three codes here all
-              // route to scope.committed / byCode matches, all non-null.
-              const { message } = mapApiError(err, "chapter.save");
-              terminal = { message: message as string, code: err.code, status: err.status };
+              terminal = { message: mapped.message as string, code: err.code, status: err.status };
               break;
             }
             if (isClientError(err)) {
@@ -489,8 +491,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
               // duplicated. err.code is preserved separately for the
               // cache-clear decision below. ABORTED is filtered above so
               // mapped.message is guaranteed non-null in this branch.
-              const { message } = mapApiError(err, "chapter.save");
-              terminal = { message: message as string, code: err.code, status: err.status };
+              // 4b.3c.1: reuse `mapped` computed above — one mapApiError
+              // call per catch iteration rather than two.
+              terminal = { message: mapped.message as string, code: err.code, status: err.status };
               break;
             }
             if (attempt < MAX_RETRIES) {

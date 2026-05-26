@@ -153,6 +153,17 @@ export const SCOPES = {
     // couldn't serialize the response. Surface possiblyCommitted so
     // callers route through the committed/lock path.
     committedCodes: ["UPDATE_READ_FAILURE"],
+    // S3/S7 (4b.3c.1): UPDATE_READ_FAILURE and CORRUPT_CONTENT are 5xx
+    // codes the server emits when a chapter PATCH cannot be served
+    // safely (the write may have landed; the read-back failed; or the
+    // existing content is corrupt). The save loop must break and lock
+    // the editor — retrying cannot fix it. Hoisted here so adding a
+    // fourth terminal code is a one-line scope edit. BAD_JSON is NOT
+    // listed: the mapper's 2xx BAD_JSON branch returns early before
+    // byCode-matching, so `terminalCodes: ["BAD_JSON"]` would be dead.
+    // The consumer's `mapped.terminal || mapped.possiblyCommitted` OR
+    // catches 2xx BAD_JSON via possiblyCommitted instead.
+    terminalCodes: ["UPDATE_READ_FAILURE", "CORRUPT_CONTENT"],
   },
   "chapter.create": {
     fallback: STRINGS.error.createChapterFailed,

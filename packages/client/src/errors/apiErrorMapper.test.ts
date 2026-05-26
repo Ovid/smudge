@@ -1227,3 +1227,38 @@ describe("MappedError<S> phantom propagation", () => {
     expect("__scope" in m).toBe(false);
   });
 });
+
+describe("chapter.save terminal-codes scope-level configuration", () => {
+  it("UPDATE_READ_FAILURE on chapter.save sets terminal:true (in terminalCodes)", () => {
+    const err = new ApiRequestError("update read failure", 500, "UPDATE_READ_FAILURE");
+    const result = mapApiError(err, "chapter.save");
+    expect(result.terminal).toBe(true);
+    // UPDATE_READ_FAILURE is also in committedCodes — both flags fire.
+    expect(result.possiblyCommitted).toBe(true);
+  });
+
+  it("CORRUPT_CONTENT on chapter.save sets terminal:true (in terminalCodes)", () => {
+    const err = new ApiRequestError("corrupt", 500, "CORRUPT_CONTENT");
+    const result = mapApiError(err, "chapter.save");
+    expect(result.terminal).toBe(true);
+    // CORRUPT_CONTENT is NOT in committedCodes — only terminal fires.
+    expect(result.possiblyCommitted).toBe(false);
+  });
+
+  it("BAD_JSON 2xx on chapter.save sets possiblyCommitted:true but terminal:false (BAD_JSON branch is structurally before byCode-match)", () => {
+    const err = new ApiRequestError("bad json", 200, "BAD_JSON");
+    const result = mapApiError(err, "chapter.save");
+    expect(result.terminal).toBe(false);
+    expect(result.possiblyCommitted).toBe(true);
+    // The consumer's `mapped.terminal || mapped.possiblyCommitted` OR catches
+    // this case via possiblyCommitted. terminalCodes deliberately omits
+    // BAD_JSON for this reason — adding it would be dead code.
+  });
+
+  it("Plain 500 INTERNAL_ERROR on chapter.save does NOT set terminal:true or possiblyCommitted:true", () => {
+    const err = new ApiRequestError("internal", 500, "INTERNAL_ERROR");
+    const result = mapApiError(err, "chapter.save");
+    expect(result.terminal).toBe(false);
+    expect(result.possiblyCommitted).toBe(false);
+  });
+});
