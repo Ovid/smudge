@@ -612,13 +612,20 @@ describe("SCOPES — image.delete extrasFrom", () => {
     expect(resolveError(err, scope).extras).toBeUndefined();
   });
   // S5 (2026-04-23 review): per-element validation, not just Array.isArray.
-  it("IMAGE_IN_USE with array-of-wrong-shape elements → extras undefined", () => {
+  // S8 (4b.3c.1, 2026-05-26): drop-only-malformed — malformed entries are
+  // filtered out and the valid subset is returned (was: all-or-nothing reject).
+  it("IMAGE_IN_USE with array-of-wrong-shape elements → drops malformed, returns valid subset", () => {
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
       chapters: [{ title: "ok" }, { missingTitle: true }],
     });
-    expect(resolveError(err, scope).extras).toBeUndefined();
+    expect(resolveError(err, scope).extras).toEqual({
+      chapters: [{ title: "ok" }],
+    });
   });
-  it("IMAGE_IN_USE with wrong trashed type → extras undefined", () => {
+  // S8 (4b.3c.1): single-entry envelope whose only entry is malformed (wrong
+  // trashed type) — valid filter empties, falling through to the
+  // `valid.length === 0` guard which still returns undefined.
+  it("IMAGE_IN_USE with wrong trashed type → extras undefined (single-entry, valid list empty)", () => {
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
       chapters: [{ title: "ok", trashed: "not-a-boolean" }],
     });
@@ -656,18 +663,20 @@ describe("SCOPES — image.delete extrasFrom", () => {
     expect(extras.chapters).toEqual([{ title: longTitle.slice(0, 200) }]);
   });
 
-  // I1 (review 2026-04-25): a hostile envelope of [50 valid, 1 invalid]
-  // would otherwise pass shape narrowing because the pre-fix code compared
-  // valid.length against the post-slice bounded.length (50), not the
-  // original chapters.length. Validate the full array before bounding
-  // so the all-or-nothing fallback fires.
-  it("returns undefined when an entry beyond the 50-cap has wrong shape (I1)", () => {
+  // I1 (review 2026-04-25): pre-S8, an envelope of [50 valid, 1 invalid at
+  // the cap boundary] triggered the all-or-nothing fallback so the malformed
+  // entry past the 50-cap could not silently inflate the visible list.
+  // S8 (4b.3c.1, 2026-05-26): drop-only-malformed supersedes that intent —
+  // the 50 valid entries are returned and the invalid 51st is dropped. The
+  // cap+1 input window still bounds work at 51 elements.
+  it("returns the 50 valid entries when the 51st entry has wrong shape (I1 / S8)", () => {
     const chapters: unknown[] = [
       ...Array.from({ length: 50 }, (_, i) => ({ id: `c-${i}`, title: `t-${i}` })),
       { missingTitle: true },
     ];
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", { chapters });
-    expect(resolveError(err, scope).extras).toBeUndefined();
+    const extras = resolveError(err, scope).extras as { chapters: unknown[] };
+    expect(extras.chapters).toHaveLength(50);
   });
 
   // S3 (review 2026-04-25): the previous spread `{ ...obj, title: ... }`
@@ -718,9 +727,13 @@ describe("SCOPES — image.delete extrasFrom", () => {
     expect(extras.chapters[0]?.title).not.toMatch(/�/);
   });
 
-  // S3 corollary: rejects entries whose `id` is the wrong type, so the
-  // narrowed shape stays honest.
-  it("returns undefined when id is present but not a string (S3)", () => {
+  // S3 corollary: drops entries whose `id` is the wrong type, so the
+  // narrowed shape stays honest. Single-entry envelope here — the lone
+  // wrong-id entry is filtered out, valid list empties, undefined returned
+  // via the `valid.length === 0` guard. (S8 drop-only-malformed: in a
+  // multi-entry envelope, wrong-id entries are silently dropped and the
+  // remaining valid entries are returned.)
+  it("returns undefined when id is present but not a string (S3, single-entry)", () => {
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
       chapters: [{ id: 42, title: "ok" }],
     });
@@ -745,12 +758,13 @@ describe("SCOPES — image.delete extrasFrom", () => {
   });
 
   // I2 (review 2026-04-25): an empty `chapters: []` envelope passes
-  // shape narrowing (`Array.isArray` is true, `valid.length ===
-  // chapters.length` is `0 === 0`) but produces a malformed
-  // `S.deleteBlocked([])` announcement ("This image is used in: .
-  // Remove..."). Server contract only emits the envelope when
-  // `referencingChapters.length > 0`, so this is hostile/malformed
-  // territory — but the validator is the right place to reject it.
+  // `Array.isArray` but produces a malformed `S.deleteBlocked([])`
+  // announcement ("This image is used in: . Remove..."). Server contract
+  // only emits the envelope when `referencingChapters.length > 0`, so this
+  // is hostile/malformed territory — but the validator is the right place
+  // to reject it. Post-S8 (4b.3c.1) the `valid.length === 0` guard fires
+  // here exactly as before; the all-or-nothing length check was the line
+  // S8 dropped.
   it("returns undefined for empty chapters array (I2)", () => {
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
       chapters: [],
@@ -759,13 +773,15 @@ describe("SCOPES — image.delete extrasFrom", () => {
   });
 
   // S1 (review 2026-04-26 round 3 follow-up): an envelope of all-empty-string
-  // titles passes the round-2 `valid.length === 0` guard (length is non-zero)
-  // and reaches `S.deleteBlocked([""])`, producing the malformed
+  // titles would (without the per-element `title.trim().length === 0`
+  // rejection) reach `S.deleteBlocked([""])`, producing the malformed
   // "This image is used in: , . Remove it from those chapters first." that
   // the round-2 I2 reasoning was meant to prevent. Server schema enforces
   // `z.string().trim().min(1)` on titles (`packages/shared/src/schemas.ts`),
   // so legitimate traffic never carries `""` — this is hostile-input
-  // territory only, but the validator is the right gatekeeper.
+  // territory only, but the validator is the right gatekeeper. Post-S8
+  // (4b.3c.1) all entries fail the per-element shape, the valid filter
+  // empties, and the `valid.length === 0` guard returns undefined.
   it("returns undefined when any chapter title is empty string (S1)", () => {
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
       chapters: [{ title: "" }, { title: "" }],
@@ -773,11 +789,15 @@ describe("SCOPES — image.delete extrasFrom", () => {
     expect(resolveError(err, scope).extras).toBeUndefined();
   });
 
-  it("returns undefined when a single chapter title is empty string (S1)", () => {
+  // S8 (4b.3c.1): the empty-title entry is dropped; the valid "Chapter 1"
+  // entry survives. (Pre-S8 this was an all-or-nothing reject.)
+  it("drops empty-string-title entries and returns the valid subset (S1 / S8)", () => {
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
       chapters: [{ title: "Chapter 1" }, { title: "" }],
     });
-    expect(resolveError(err, scope).extras).toBeUndefined();
+    expect(resolveError(err, scope).extras).toEqual({
+      chapters: [{ title: "Chapter 1" }],
+    });
   });
 
   // S4 (review 2026-04-26 inline): mirror the server's
@@ -803,11 +823,15 @@ describe("SCOPES — image.delete extrasFrom", () => {
     expect(resolveError(err, scope).extras).toBeUndefined();
   });
 
-  it("returns undefined when one of many titles is whitespace-only (S4)", () => {
+  // S8 (4b.3c.1): the whitespace-only entry is dropped; the valid
+  // "Chapter 1" entry survives. (Pre-S8 this was an all-or-nothing reject.)
+  it("drops whitespace-only-title entries and returns the valid subset (S4 / S8)", () => {
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
       chapters: [{ title: "Chapter 1" }, { title: " " }],
     });
-    expect(resolveError(err, scope).extras).toBeUndefined();
+    expect(resolveError(err, scope).extras).toEqual({
+      chapters: [{ title: "Chapter 1" }],
+    });
   });
 
   it("accepts titles whose interior contains whitespace (S4)", () => {
@@ -825,18 +849,15 @@ describe("SCOPES — image.delete extrasFrom", () => {
 
   // S* (review 2026-04-25 round 3): bound input processing at cap+1
   // entries so a hostile array of N items cannot drive O(N) filter work.
-  // Trade-off: invalid entries past index 50 are no longer detected —
-  // the all-or-nothing rule operates on the cap+1 window. An invalid
-  // entry at the cap boundary (index 50, the 51st element) is still
-  // caught, which is what the I1 test above exercises. This test pins
-  // the trade-off so a future round of review cannot silently revert to
-  // O(N) filter work without first weighing in.
+  // S8 (4b.3c.1, 2026-05-26): under drop-only-malformed, the cap+1 window
+  // still bounds work at 51 elements and invalid entries past index 50 are
+  // not seen by the validator. The envelope silently truncates to 50.
+  // This test pins the cap+1 bound so a future round of review cannot
+  // silently revert to O(N) filter work without first weighing in.
   it("validates only the first 51 entries (bound trade-off)", () => {
     // 100 entries, all valid, with one invalid injected at index 60 —
-    // outside the cap+1 (51-element) window. The pre-bound code would
-    // reject this entire envelope (valid.length 99 !== chapters.length
-    // 100); the bounded validator does not see the invalid entry and
-    // silently truncates to 50.
+    // outside the cap+1 (51-element) window. The bounded validator does
+    // not see the invalid entry and the envelope truncates to 50.
     const chapters: unknown[] = Array.from({ length: 100 }, (_, i) => ({
       id: `c-${i}`,
       title: `t-${i}`,
@@ -845,6 +866,40 @@ describe("SCOPES — image.delete extrasFrom", () => {
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", { chapters });
     const extras = resolveError(err, scope).extras as { chapters: unknown[] };
     expect(extras.chapters).toHaveLength(50);
+  });
+});
+
+describe("image.delete extrasFrom — drop-only-malformed (4b.3c.1 S8)", () => {
+  it("returns the valid chapters when some entries are malformed", () => {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: [
+        { title: "Chapter A" },
+        { not_a_title: true }, // malformed
+        { title: "Chapter B", trashed: true },
+      ],
+    });
+    const result = mapApiError(err, "image.delete");
+    expect(result.extras).toEqual({
+      chapters: [
+        { title: "Chapter A" },
+        { title: "Chapter B", trashed: true },
+      ],
+    });
+  });
+
+  it("still returns undefined when all entries are malformed", () => {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: [{ not_a_title: true }, { still_wrong: 42 }],
+    });
+    const result = mapApiError(err, "image.delete");
+    expect(result.extras).toBeUndefined();
+  });
+
+  it("preserves the cap+1 input window (51 candidates max)", () => {
+    const lots = Array.from({ length: 100 }, (_, i) => ({ title: `Chapter ${i}` }));
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", { chapters: lots });
+    const result = mapApiError(err, "image.delete");
+    expect((result.extras as { chapters: unknown[] }).chapters).toHaveLength(50);
   });
 });
 
