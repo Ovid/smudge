@@ -19,3 +19,4 @@ export { ApiRequestError } from "../api/client";
 export { applyMappedError, STOP } from "./applyMappedError";
 export type { ApplyMappedErrorHandlers } from "./applyMappedError";
 export type { ScopeExtras } from "./scopeExtras";
+export { devWarn } from "./devWarn";
