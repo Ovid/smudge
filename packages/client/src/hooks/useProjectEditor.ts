@@ -1033,8 +1033,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
                 // as if the project had no chapters left.
                 console.warn("Failed to load chapter after delete:", err);
                 if (token.isStale()) return true;
-                const { message } = mapApiError(err, "chapter.load");
-                if (message) onError?.(message);
+                applyMappedError(mapApiError(err, "chapter.load"), {
+                  onMessage: (message) => onError?.(message),
+                });
                 setActiveChapter(null);
                 setChapterWordCount(0);
               }
@@ -1050,8 +1051,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           // caller (happens in practice in tests too).
           if (s.aborted) return false;
           console.warn("Failed to delete chapter:", err);
-          const { message } = mapApiError(err, "chapter.delete");
-          if (message) onError?.(message);
+          applyMappedError(mapApiError(err, "chapter.delete"), {
+            onMessage: (message) => onError?.(message),
+          });
           return false;
         }
       });
