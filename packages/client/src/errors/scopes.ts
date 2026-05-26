@@ -55,7 +55,7 @@ export type ApiErrorScope =
   | "dashboard.load"
   | "project.velocity";
 
-export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
+export const SCOPES = {
   "project.load": {
     fallback: STRINGS.error.loadProjectFailed,
     network: STRINGS.error.loadProjectFailedNetwork,
@@ -485,4 +485,4 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     fallback: STRINGS.velocity.loadError,
     network: STRINGS.velocity.loadErrorNetwork,
   },
-};
+} satisfies Record<ApiErrorScope, ScopeEntry>;

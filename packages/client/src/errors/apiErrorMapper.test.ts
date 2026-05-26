@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, expectTypeOf } from "vitest";
-import type { MappedError } from "./apiErrorMapper";
+import type { MappedError, ScopeEntry } from "./apiErrorMapper";
 import {
   _resolveErrorInternal as resolveError,
   mapApiError,
@@ -1157,7 +1157,7 @@ describe("cross-cutting rules apply to every scope", () => {
   it.each(ALL_SCOPES)(
     "2xx BAD_JSON possiblyCommitted flag matches scope.committed for %s",
     (scopeName) => {
-      const scope = SCOPES[scopeName];
+      const scope: ScopeEntry = SCOPES[scopeName];
       const hasCommitted = scope.committed !== undefined;
       expect(
         mapApiError(new ApiRequestError("bad", 200, "BAD_JSON"), scopeName).possiblyCommitted,
