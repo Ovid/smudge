@@ -559,3 +559,39 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     expect(trashSignals[1]?.aborted).toBe(false);
   });
 });
+
+describe("useTrashManager.confirmDeleteChapter — I5 programming-bug warn (4b.3c.2)", () => {
+  it("dismisses the dialog AND warns when handleDeleteChapter throws unexpectedly", async () => {
+    // handleDeleteChapter is contracted to surface ALL API errors via its
+    // onError callback (never as a throw); the bare catch in
+    // confirmDeleteChapter exists only to keep the dialog from hanging
+    // open if a programming bug introduces a throw. Pre-I5 the catch was
+    // silent; this test pins the new console.warn so the programming-bug
+    // path is observable in dev.
+    const target = makeChapter({ id: "ch-target" });
+    const project = makeProject();
+    const handleDeleteChapter = vi.fn().mockRejectedValue(new Error("synthetic programming bug"));
+
+    const { result } = renderHook(() =>
+      useTrashManager(project, project.slug, vi.fn(), handleDeleteChapter, vi.fn()),
+    );
+
+    act(() => {
+      result.current.setDeleteTarget(target);
+    });
+
+    await act(async () => {
+      await result.current.confirmDeleteChapter();
+    });
+
+    // handleDeleteChapter was reached — the bug surfaces via its throw.
+    expect(handleDeleteChapter).toHaveBeenCalledWith(target, expect.any(Function));
+    // Dialog dismissed so the user isn't stuck behind a dead confirm.
+    expect(result.current.deleteTarget).toBeNull();
+    // The programming-bug path warns with a named context string.
+    expect(warnSpy).toHaveBeenCalledWith(
+      "confirmDeleteChapter programming-bug path:",
+      expect.any(Error),
+    );
+  });
+});

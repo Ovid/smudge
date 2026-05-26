@@ -11,6 +11,7 @@ import {
   mapApiError,
   mapApiErrorMessage,
   applyMappedError,
+  devWarn,
   isApiError,
   isAborted,
   isClientError,
@@ -820,9 +821,14 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
                 setChapterWordCount(countWords(newest.content));
               }
             }
-          } catch {
-            // Refresh is best-effort; the error copy instructs the user
-            // to refresh the page manually if this also failed.
+          } catch (err) {
+            // S10 (4b.3c.2): surface the recovery failure in dev. The
+            // recoveryController.signal gates the warn — supersede or
+            // unmount-driven aborts stay silent. Best-effort otherwise:
+            // the error copy still instructs the user to refresh if the
+            // post-recovery message lands.
+            devWarn("handleCreateChapter recovery GET failed", recoveryController.signal, err);
+            // Refresh is best-effort; fall through to the message dispatch.
           }
         }
         if (onError) {
@@ -1121,6 +1127,14 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           return;
         setProject((prev) => {
           if (!prev) return prev;
+          // S20 (4b.3c.2): defense-in-depth for the React-scheduling window
+          // between the outer check above and this updater running. A
+          // setProject queued from a concurrent project-switch could drain
+          // before this updater, making prev a different project than the
+          // one whose orderedIds we captured at handler entry. Without
+          // this guard, prev.chapters would be walked with A's ids and
+          // every miss filtered out, leaving project B empty.
+          if (prev.id !== projectId) return prev;
           const reordered = orderedIds
             .map((id, index) => {
               const ch = prev.chapters.find((c) => c.id === id);
@@ -1141,7 +1155,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // I4: route through the onError callback rather than setError so
         // a 400 on id-list mismatch (recoverable per CLAUDE.md) surfaces
         // as a dismissible banner instead of tearing down the editor.
-        const { message, possiblyCommitted } = mapApiError(err, "chapter.reorder");
+        const mapped = mapApiError(err, "chapter.reorder");
         // I6 (2026-04-23): 2xx BAD_JSON means the server committed the
         // reorder but the body was unreadable. Before this fix the
         // catch touched no state, so the drag-and-drop visually snapped
@@ -1151,9 +1165,19 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // client state on possiblyCommitted so the UI matches the
         // committed server state, and surface the committed copy so
         // the user knows the response was ambiguous.
-        if (possiblyCommitted) {
+        //
+        // The committed-branch setProject stays hand-rolled (outside of
+        // applyMappedError's onCommitted) because it pairs with the
+        // [S20] inside-updater epoch check — routing it through the
+        // helper would obscure the per-branch placement intent.
+        if (mapped.possiblyCommitted) {
           setProject((prev) => {
             if (!prev) return prev;
+            // S20 (4b.3c.2): same scheduling guard as the success branch
+            // above — the committed-path updater is reached via the catch,
+            // but the project could still have switched in the React queue
+            // between the catch-arm outer check (line 1144) and here.
+            if (prev.id !== projectId) return prev;
             const reordered = orderedIds
               .map((id, index) => {
                 const ch = prev.chapters.find((c) => c.id === id);
@@ -1163,12 +1187,15 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             return { ...prev, chapters: reordered };
           });
         }
-        if (!message) return;
-        if (onError) {
-          onError(message);
-        } else {
-          setError(message);
-        }
+        // 4b.3c.2 S15: migrate the message-dispatch tail to applyMappedError.
+        // ABORTED's message=null is handled inside the helper; onMessage
+        // mirrors the prior `if (onError) onError else setError` ladder.
+        applyMappedError(mapped, {
+          onMessage: (msg) => {
+            if (onError) onError(msg);
+            else setError(msg);
+          },
+        });
       }
     },
     [reorderOp],
@@ -1349,8 +1376,13 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
               );
               reverted = true;
             }
-          } catch {
-            // Reload failed — fall through to local revert
+          } catch (err) {
+            // S10 (4b.3c.2): surface the recovery failure in dev. The
+            // per-call recoveryController.signal gates the warn — if a
+            // newer status PATCH or unmount cancelled this GET, stay
+            // silent so test output isn't polluted by supersede races.
+            devWarn("handleStatusChange recovery GET failed", recoveryController.signal, err);
+            // Fall through to local revert.
           }
         }
         // Guard the local-revert fallback too: the catch above could be
@@ -1374,10 +1406,14 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // Status change failures are non-fatal — the revert already restored consistent state.
         // Call the optional onError callback for the caller to display (e.g., as a dismissible banner),
         // rather than setError which triggers the full-page error overlay.
-        // S4 fix (Task 29 in 4b.3c.2) will add a setError fallback when onError is absent; this
-        // migration mirrors the pre-S4 shape (only onError?.(message), no fallback).
+        // S4 (4b.3c.2): when no onError is wired (keyboard-shortcut path),
+        // fall back to setError so the failure surfaces via the full-page
+        // overlay rather than vanishing — mirrors handleReorderChapters.
         applyMappedError(mapped, {
-          onMessage: (message) => onError?.(message),
+          onMessage: (message) => {
+            if (onError) onError(message);
+            else setError(message);
+          },
         });
       }
     },

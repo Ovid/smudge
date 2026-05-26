@@ -212,3 +212,27 @@
 - **Last seen:** 2026-05-25 on branch `abortsignal-threading-completion` at `63c3049`
 - **Severity:** Suggestion
 
+## `a65acf76` — `handleCreateChapter` recovery `setProject(refreshed)` lacks S20-style inside-updater epoch guard
+- **File (at first sighting):** `packages/client/src/hooks/useProjectEditor.ts:800`
+- **Symbol:** `handleCreateChapter`
+- **Bug class:** Concurrency
+- **Description:** The recovery `setProject(refreshed)` at line 800 is gated only by the outer `projectRef.current?.id === projectId` check at line 799. Between that check and the queued setProject draining, a concurrent `loadProject(B)` can interleave a `setProject(B)`; because `projectRef` does not update until render commit, the outer guard can pass while a setProject(B) is already queued. If A's queued update drains after B's, project B is overwritten by A's refreshed snapshot. Plan Task 34 Step 5 (S20) explicitly identifies this site as analogous to `handleReorderChapters` and elects to leave as-is for 4b.3c.2, deferring the fix to 4b.3c.3 [I4] (Task 40).
+- **Suggested fix:** Convert to `setProject((prev) => prev && prev.id === projectId ? refreshed : prev)`. The `confirmedStatusRef` re-seed at lines 809-811 and the `setActiveChapter`/`setChapterWordCount` calls at 820-821 should be guarded similarly or moved into a render-keyed effect.
+- **Confidence:** Medium
+- **Found by:** Concurrency & State (`claude-opus-4-7[1m]`)
+- **First seen:** 2026-05-26 on branch `consumer-recovery-helper-consuming-fixes` at `490e351`
+- **Last seen:** 2026-05-26 on branch `consumer-recovery-helper-consuming-fixes` at `490e351`
+- **Severity:** Suggestion
+
+## `dc808129` — `handleUpdateProjectTitle` slug-recovery `setProject(refreshed)` lacks S20-style guard; paired `projectSlugRef` write compounds risk
+- **File (at first sighting):** `packages/client/src/hooks/useProjectEditor.ts:1254`
+- **Symbol:** `handleUpdateProjectTitle`
+- **Bug class:** Concurrency
+- **Description:** The slug-recovery `setProject(refreshed)` at line 1254 is gated only by the outer `projectRef.current?.id === projectId` check at line 1253. The same React-scheduling window S20 addressed in `handleReorderChapters` is open here: a concurrent `loadProject(B)` can queue a `setProject(B)` that drains either side of A's recovery update, and if A's drains last it overwrites project B with A's refreshed snapshot. Compounding risk: the imperative `projectSlugRef.current = refreshed.slug` write at line 1255 lands even if the queued `setProject(refreshed)` is overwritten — leaving project state on B while slugRef points at A's new slug. Subsequent save/create/reorder POSTs would 404 against A's slug under B's project context: exactly the cascading-silent-failure mode the I3 slug-desync recovery was added to prevent.
+- **Suggested fix:** Convert to `setProject((prev) => prev && prev.id === projectId ? refreshed : prev)` AND move the slugRef write into the updater (or guard it with the same predicate). Without moving the slugRef write, the structural guarantee that state.slug and slugRef agree is broken.
+- **Confidence:** Medium
+- **Found by:** Concurrency & State (`claude-opus-4-7[1m]`)
+- **First seen:** 2026-05-26 on branch `consumer-recovery-helper-consuming-fixes` at `490e351`
+- **Last seen:** 2026-05-26 on branch `consumer-recovery-helper-consuming-fixes` at `490e351`
+- **Severity:** Suggestion
+

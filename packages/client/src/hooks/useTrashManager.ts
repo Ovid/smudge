@@ -140,8 +140,15 @@ export function useTrashManager(
       success = await handleDeleteChapter(deleteTarget, (message) => {
         setActionError(message);
       });
-    } catch {
-      // Unexpected throw — dismiss dialog so the user isn't stuck.
+    } catch (err) {
+      // I5 (4b.3c.2, 2026-05-26 pushback): this catch is reachable only on
+      // a programming bug — handleDeleteChapter surfaces all API errors via
+      // its onError callback (which sets actionError above), never as a
+      // throw. The bare catch existed pre-I5 to keep the dialog from
+      // hanging open if a future refactor introduced a throw. Add a
+      // console.warn so the programming-bug path is observable in dev;
+      // the dialog still dismisses so the user isn't stuck.
+      console.warn("confirmDeleteChapter programming-bug path:", err);
       setDeleteTarget(null);
       return;
     }
