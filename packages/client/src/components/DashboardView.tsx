@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { STRINGS } from "../strings";
 import { STATUS_COLORS } from "../statusColors";
 import { ProgressStrip } from "./ProgressStrip";
-import { mapApiError } from "../errors";
+import { mapApiError, applyMappedError } from "../errors";
 
 type DashboardData = Awaited<ReturnType<typeof api.projects.dashboard>>;
 
@@ -57,8 +57,7 @@ export function DashboardView({
       .catch((err) => {
         if (controller.signal.aborted) return;
         console.warn("Failed to load dashboard:", err);
-        const { message } = mapApiError(err, "dashboard.load");
-        if (message) setError(message);
+        applyMappedError(mapApiError(err, "dashboard.load"), { onMessage: setError });
       });
     return () => {
       controller.abort();
