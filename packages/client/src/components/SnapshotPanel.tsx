@@ -3,7 +3,7 @@ import { api } from "../api/client";
 import { useAbortableSequence } from "../hooks/useAbortableSequence";
 import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 import { STRINGS } from "../strings";
-import { mapApiError, isNotFound } from "../errors";
+import { mapApiError, applyMappedError, isNotFound } from "../errors";
 import type { SnapshotListItem } from "@smudge/shared";
 
 const S = STRINGS.snapshots;
@@ -145,8 +145,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         // Surface the failure instead of silently showing an empty panel;
         // otherwise a network blip makes the user think a chapter with
         // snapshots has none.
-        const { message } = mapApiError(err, "snapshot.list");
-        if (message) setListError(message);
+        applyMappedError(mapApiError(err, "snapshot.list"), { onMessage: setListError });
       }
     }, [chapterId, onSnapshotsChange, chapterSeq, fetchOp]);
 
@@ -169,8 +168,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         })
         .catch((err) => {
           if (token.isStale()) return;
-          const { message } = mapApiError(err, "snapshot.list");
-          if (message) setListError(message);
+          applyMappedError(mapApiError(err, "snapshot.list"), { onMessage: setListError });
         });
       // S4 (review 2026-05-25): explicit cleanup. useAbortableAsyncOperation
       // auto-aborts on unmount AND on the next .run() call, but NOT on a
@@ -326,8 +324,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         // Keep the confirm dialog open and surface an error so the user
         // knows the delete didn't land — silently swallowing it makes
         // users believe a destructive action succeeded when it hadn't.
-        const { message } = mapApiError(err, "snapshot.delete");
-        if (message) setDeleteError(message);
+        applyMappedError(mapApiError(err, "snapshot.delete"), { onMessage: setDeleteError });
       }
     };
 
