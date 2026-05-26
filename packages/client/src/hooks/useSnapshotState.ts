@@ -275,7 +275,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       // I2: abort any prior in-flight View GET before issuing a new
       // one so the server stops reading the old snapshot as soon as
       // the user clicks a different entry.
-      const { promise } = viewOp.run((s) => api.snapshots.get(snapshot.id, s));
+      const { promise, signal } = viewOp.run((s) => api.snapshots.get(snapshot.id, s));
       try {
         const full = await promise;
         if (cToken.isStale()) return { ok: true, superseded: "chapter" };
@@ -321,16 +321,28 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         // "snapshot no longer exists" banner attributed to the new chapter.
         if (cToken.isStale()) return { ok: true, superseded: "chapter" };
         if (vToken.isStale()) return { ok: true, superseded: "sameChapterNewer" };
+        // 4b.3c.1 Task 10 (S15): belt-and-suspenders abort gate, mirroring
+        // useFindReplaceState's per-call signal contract (CLAUDE.md
+        // §Save-pipeline invariants rule 4). The signal.aborted check is
+        // the belt; the mapApiError-based message===null check below is the
+        // suspender. Order matters — placed BEFORE the isApiError branch so
+        // a non-ApiRequestError thrown while the controller is aborted
+        // (theoretical: apiFetch wraps every real abort as
+        // ApiRequestError{ABORTED}) bypasses error mapping entirely and
+        // returns silent supersession instead of falling through to
+        // makeClientNetworkError below.
+        if (signal.aborted) return { ok: true, superseded: "sameChapterNewer" };
         if (isApiError(err)) {
-          // S14 (2026-04-23 review): use mapApiError's `message === null`
-          // signal as the canonical "silent bail" check, matching
-          // useFindReplaceState's convention. ABORTED is not a user-
-          // visible error — mirror the supersession path with
-          // sameChapterNewer (abort is always same-chapter-triggered in
-          // this hook; a chapter switch would have surfaced via
-          // cToken.isStale() above). Routing through the mapper means
-          // call sites don't need to know the specific "ABORTED" code
-          // string — the contract lives in the mapper.
+          // S14 (2026-04-23 review) + 4b.3c.1 Task 10 (S15): mapApiError's
+          // `message === null` is the suspender to the signal.aborted belt
+          // above. It catches the edge case where apiFetch synthesizes
+          // ApiRequestError{ABORTED} after the controller fires but before
+          // our gate observes the controller state. Routing through the
+          // mapper means this site doesn't need to know the specific
+          // "ABORTED" code string — the contract lives in the mapper.
+          // Mirror the supersession path with sameChapterNewer (abort is
+          // always same-chapter-triggered in this hook; a chapter switch
+          // would have surfaced via cToken.isStale() above).
           if (mapApiError(err, "snapshot.view").message === null) {
             return { ok: true, superseded: "sameChapterNewer" };
           }
