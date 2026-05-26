@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, expectTypeOf } from "vitest";
 import type { MappedError } from "./apiErrorMapper";
 import {
   _resolveErrorInternal as resolveError,
@@ -1169,5 +1169,26 @@ describe("cross-cutting rules apply to every scope", () => {
     expect(r.message).toBeTruthy();
     expect(r.possiblyCommitted).toBe(false);
     expect(r.transient).toBe(false);
+  });
+});
+
+describe("MappedError<S> phantom propagation", () => {
+  it("mapApiError(err, 'image.delete') returns MappedError<'image.delete'>", () => {
+    const err = new ApiRequestError("oops", 500, "INTERNAL_ERROR");
+    const mapped = mapApiError(err, "image.delete");
+    expectTypeOf(mapped).toEqualTypeOf<MappedError<"image.delete">>();
+  });
+
+  it("mapApiError(err, 'chapter.load') returns MappedError<'chapter.load'>", () => {
+    const err = new ApiRequestError("oops", 500, "INTERNAL_ERROR");
+    const mapped = mapApiError(err, "chapter.load");
+    expectTypeOf(mapped).toEqualTypeOf<MappedError<"chapter.load">>();
+  });
+
+  it("default MappedError (no <S>) is structurally equivalent for existing destructured consumers", () => {
+    const m: MappedError = { message: null, possiblyCommitted: false, transient: false };
+    expect(m.message).toBeNull();
+    // Phantom field is optional; absence at runtime is fine.
+    expect("__scope" in m).toBe(false);
   });
 });

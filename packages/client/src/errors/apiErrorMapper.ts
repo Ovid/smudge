@@ -1,11 +1,14 @@
 import { ApiRequestError } from "../api/client";
 import { SCOPES, type ApiErrorScope } from "./scopes";
 
-export type MappedError = {
+export type MappedError<S extends ApiErrorScope = ApiErrorScope> = {
   message: string | null;
   possiblyCommitted: boolean;
   transient: boolean;
   extras?: Record<string, unknown>;
+  // Phantom — no runtime field; carries S through the type system so
+  // applyMappedError can require the same S on its handlers.
+  readonly __scope?: S;
 };
 
 export type ScopeEntry = {
@@ -182,8 +185,11 @@ function safeExtrasFrom(
   }
 }
 
-export function mapApiError(err: unknown, scope: ApiErrorScope): MappedError {
-  return _resolveErrorInternal(err, SCOPES[scope]);
+export function mapApiError<S extends ApiErrorScope>(
+  err: unknown,
+  scope: S,
+): MappedError<S> {
+  return _resolveErrorInternal(err, SCOPES[scope]) as MappedError<S>;
 }
 
 /**
