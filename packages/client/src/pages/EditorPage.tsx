@@ -40,7 +40,7 @@ import { api } from "../api/client";
 // only invariant holds at every call site. The barrel re-exports
 // the same class.
 import { ApiRequestError } from "../errors";
-import { mapApiError, mapApiErrorMessage, isAborted, isNotFound } from "../errors";
+import { mapApiError, mapApiErrorMessage, applyMappedError, isAborted, isNotFound } from "../errors";
 import { clearCachedContent, clearAllCachedContent } from "../hooks/useContentCache";
 import { safeSetEditable } from "../utils/editorSafeOps";
 import { Logo } from "../components/Logo";
@@ -1256,8 +1256,7 @@ export function EditorPage() {
           if (s.aborted) return;
           console.warn("Failed to load chapter statuses:", err);
           if (attempts >= 2) {
-            const { message } = mapApiError(err, "chapterStatus.fetch");
-            if (message) setActionError(message);
+            applyMappedError(mapApiError(err, "chapterStatus.fetch"), { onMessage: setActionError });
             return;
           }
           attempts++;
@@ -1509,8 +1508,12 @@ export function EditorPage() {
         await handleSelectChapter(chapterId);
       } catch (err) {
         console.warn("handleSelectChapterWithFlush failed", err);
-        const { message } = mapApiError(err, "chapter.load");
-        if (message) setActionError(message);
+        // S16 (4b.3c.1): chapter.flushBeforeNavigate distinguishes flush-on-navigate
+        // failures from chapter-load failures. The scope's copy points the user at
+        // the save problem rather than the navigation target.
+        applyMappedError(mapApiError(err, "chapter.flushBeforeNavigate"), {
+          onMessage: setActionError,
+        });
       }
     },
     [handleSelectChapter, switchToView, setActionError],
@@ -1578,8 +1581,7 @@ export function EditorPage() {
             navigate("/");
             return;
           }
-          const { message } = mapApiError(err, "project.load");
-          if (message) setActionError(message);
+          applyMappedError(mapApiError(err, "project.load"), { onMessage: setActionError });
         });
     }
   }, [slug, setProject, setActionError, navigate, mutation, isActionBusy, settingsRefreshOp]);
