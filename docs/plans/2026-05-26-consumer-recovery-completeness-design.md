@@ -436,7 +436,7 @@ Each sub-phase is independently shippable; "Done" applies per sub-phase.
 ### 4b.3c.1 — foundation + scope refactor + simple-ladder migrations
 
 - `MappedError<S>` / `mapApiError<S>` phantom + `applyMappedError` + `STOP` + `ScopeExtras<S>` + `devWarn` land with full unit-test coverage (CLAUDE.md §Testing Philosophy).
-- `ScopeExtras<S>` compile-time negative test passes: pairing `mapApiError(err, "chapter.load")` with an `onExtras` callback fails to type-check.
+- `ScopeExtras<S>` regression guard: pairing `mapApiError(err, "chapter.load")` with an `onExtras` callback narrows the callback's parameter to `never` (verified by an in-callback `expectTypeOf(e).toEqualTypeOf<never>()` assertion). The `@ts-expect-error`-over-a-no-op-callback form does NOT work because TS parameter contravariance accepts any callable when the expected parameter is `never`; the in-callback `expectTypeOf<never>` is the only structural guard (failure flips to a tsc error and a vitest typecheck error).
 - The structural [S3]/[S7] terminal-codes relocation does not change observable behaviour; existing `handleSave` tests continue to pass and the move is verified by `chapter.save` scope-level assertions.
 - [S8] `image.delete` `extrasFrom` drops the all-or-nothing reject; test reflects the new behaviour.
 - [S16] `chapter.flushBeforeNavigate` scope lives in `scopes.ts`; `EditorPage.handleSelectChapterWithFlush` consumes it (commit 21).
