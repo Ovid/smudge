@@ -915,13 +915,17 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // without flipping EditorPage into the full-screen error branch.
         // Falling back to setError preserves the legacy behavior when no
         // callback is supplied (e.g. snapshot restore reload).
-        const { message } = mapApiError(err, "chapter.load");
-        if (!message) return "failed";
-        if (onError) {
-          onError(message);
-        } else {
-          setError(message);
-        }
+        const mapped = mapApiError(err, "chapter.load");
+        if (mapped.message === null) return "failed";
+        applyMappedError(mapped, {
+          onMessage: (message) => {
+            if (onError) {
+              onError(message);
+            } else {
+              setError(message);
+            }
+          },
+        });
         return "failed";
       }
     },
