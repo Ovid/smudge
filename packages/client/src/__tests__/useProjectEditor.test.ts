@@ -1251,6 +1251,70 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("PINNED: handleCreateChapter recovery GET failure does NOT warn currently — flips on S10 fix (4b.3c.2)", async () => {
+    // Mirror of the handleStatusChange S10 pin for handleCreateChapter's
+    // possiblyCommitted recovery branch (api.projects.get with
+    // createRecoveryAbortRef). Pre-S10 the catch is bare.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // 200 BAD_JSON → mapper sets possiblyCommitted=true (chapter.create scope
+    // declares committed: copy), routing handleCreateChapter into the recovery
+    // branch which then awaits api.projects.get under createRecoveryAbortRef.
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError("body parse error", 200, "BAD_JSON"),
+    );
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockRejectedValueOnce(new Error("recovery GET boom")); // recovery GET fails
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleCreateChapter();
+    });
+
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      "handleCreateChapter recovery GET failed:",
+      expect.anything(),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("when the handleCreateChapter recovery GET is aborted, no console.warn fires (stable across S10 4b.3c.2 fix)", async () => {
+    // Abort-silence invariant mirror — unmount cleanup at
+    // useProjectEditor.ts:273-280 fires createRecoveryAbortRef.abort()
+    // mid-flight; devWarn (post-fix) must still bail on signal.aborted.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError("body parse error", 200, "BAD_JSON"),
+    );
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockImplementationOnce((_slug, signal) => pendingUntilAbort(signal)); // recovery hangs
+
+    const { result, unmount } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    let createPromise: Promise<unknown>;
+    await act(async () => {
+      createPromise = result.current.handleCreateChapter();
+    });
+    await waitFor(() => expect(api.projects.get).toHaveBeenCalledTimes(2));
+
+    unmount();
+    await act(async () => {
+      await createPromise!.catch(() => undefined);
+    });
+
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      "handleCreateChapter recovery GET failed:",
+      expect.anything(),
+    );
+    warnSpy.mockRestore();
+  });
+
   // I7 (review 2026-04-24): rapid renames used to race at the server;
   // the newer PATCH now severs the older one by installing a signal on
   // renameChapterAbortRef before issuing the new call.
