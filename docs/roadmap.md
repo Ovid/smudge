@@ -12,7 +12,7 @@
 
 Each phase below contains enough detail to serve as input for generating a full PRD. For each phase you'll find: the goal (what the writer gains), detailed feature descriptions, data model changes, API additions, UI/UX considerations, and implementation notes including dependencies on earlier phases.
 
-Phases are ordered by writer impact and dependency: Phases 1–2 are complete. Phase 2.5 simplifies the architecture before further feature work. Phases 3a–3b complete the core writing tool with export. Phases 4a–4c build the revision and annotation infrastructure. Phases 5a–5d differentiate Smudge as a *fiction writer's* tool. Phases 6a–6b serve non-fiction writers. Phases 7a–7f add polish and power features. Phase 8 prepares for desktop distribution.
+Phases are ordered by writer impact and dependency: Phases 1–2 are complete. Phase 2.5 simplifies the architecture before further feature work. Phases 3a–3b complete the core writing tool with export. Phases 4a–4c build the revision and annotation infrastructure. Phases 5a–5d differentiate Smudge as a _fiction writer's_ tool. Phases 6a–6b serve non-fiction writers. Phases 7a–7g add polish, power features, and the Electron runtime prep. Phase 8 introduces the per-project file model and portable bundle format.
 
 **A note on scope within phases:** Each phase is designed to be a single deliverable increment — something you can build, ship, and use before starting the next. Phases are sized to produce manageable PRs.
 
@@ -24,58 +24,60 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 
 ### Phase Structure
 
-| Phase | Name | Summary | Status |
-|-------|------|---------|--------|
-| 1 | Writer's Dashboard | Chapter status labels, project overview, chapter navigation shortcuts | Done |
-| 2 | Goals & Velocity | Word targets, deadlines, daily tracking, session stats, burndown | Done |
-| 2.5a | Simplify Progress Model | Reduce velocity to project-level targets + daily totals, demote save_events | Done |
-| 2.5b | Storage Architecture | ProjectStore/AssetStore/SnapshotStore abstractions, clean seams for future | Done |
-| 3a | Export Foundation | Export pipeline, HTML, Markdown, plain text, config dialog, download | Done |
-| 3b | Document Export | PDF, Word (.docx), EPUB | Done |
-| 4a | Reference Panel & Images | Collapsible side panel infrastructure, image upload/storage | Done |
-| 4b | Snapshots & Find-and-Replace | Manual/auto snapshots, project-wide search and replace | Done |
-| 4b.1 | Editor Orchestration Helper | Extract shared save-flush/markClean/setEditable/reload shape into one helper | Done |
-| 4b.2 | Abortable Sequence Hook | Unify ad-hoc seq-refs into a single `useAbortableSequence()` primitive | Done |
-| 4b.3 | Unified API Error Mapper | Single module mapping API errors to UI strings; no raw server text in UI | Done |
-| 4b.3a | 4b.3 Review Follow-ups (Clusters A, D, F) | Scope-coverage gaps, sanitizer hardening, PR-shape retrospective | Done |
-| 4b.3a.1 | Abortable Async Operation Hook | Extract `useAbortableAsyncOperation()` + unit tests + CLAUDE.md addition; consumer migrations follow in 4b.3a.2/3/4. Originally numbered 4b.14; renumbered 2026-04-29 when re-ordered to land before 4b.3b–d per dedup-pass collision (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` finding I3); narrowed and split into 4b.3a.1–4b.3a.4 on 2026-04-29 after the brainstorm's code survey found the named-site count undercounted shared-ref siblings (see `docs/plans/2026-04-29-abortable-async-operation-hook-design.md`). | Done |
-| 4b.3a.2 | Find/Replace Abort Migration | Migrate `useFindReplaceState.search` (sequence-paired single op) to `useAbortableAsyncOperation`. Cleanup effects at lines 99–104 and 130–131 are subsumed by the hook's auto-abort; `closePanel`'s explicit `searchAbortRef.current?.abort()` becomes `op.abort()`. | Done |
-| 4b.3a.3 | Trash Manager Abort Migration | Migrate `useTrashManager` to `useAbortableAsyncOperation`: `openTrash` + `confirmDeleteChapter` refresh share one hook instance (replaces `trashAbortRef`); `handleRestore` uses a second instance (replaces `restoreAbortRef`). Two instances stay separate because the operations can be in flight concurrently. | Done |
-| 4b.3a.4 | Image Gallery Abort Migration | Migrate `ImageGallery` to `useAbortableAsyncOperation`: 4 mutation operations (`handleFileSelect`, `handleSave`, `handleInsert`, `handleDelete`) share one hook instance (replaces `mutateAbortRef`); the click-time references-load refresh uses a second instance (replaces `refsAbortRef`). The list-load and detail-load `useEffect` controllers stay as-is (different lifecycle shape). | In Progress |
-| 4b.3b | AbortSignal Threading Completion | Finish Cluster B: thread signal through remaining call sites (HomePage create/delete, useProjectEditor `handleCreateChapter` + `loadProject` + remaining `chapters.get`, EditorPage chapterStatuses retry + `search.replace`). Now depends on 4b.3a.1; each site re-evaluated against the new hook before threading. | Planned |
-| 4b.3c | Consumer Recovery Completeness | Cluster C: introduce `applyMappedError` helper and migrate 15 consumers that mishandle `mapApiError` output | Planned |
-| 4b.3d | Mapper Internals & CLAUDE.md Updates | Cluster E: `safeExtrasFrom` try/catch, `ScopeExtras<S>` type, helper extractions, CLAUDE.md doc update | Planned |
-| 4b.4 | Raw-Strings ESLint Rule | Enforce strings.ts externalization via lint; fix existing violations | Planned |
-| 4b.5 | Editor State Machine | Unify `editable`/`locked`/`busy` editor state into one machine; add `committed_but_unreloaded` mutation stage for ambiguous server responses | Planned |
-| 4b.6 | E2E Test Isolation | Wire `playwright.config.ts` to set `SMUDGE_PORT` / `SMUDGE_CLIENT_PORT` / `DB_PATH` to test-only values so e2e cannot piggy-back on the dev server or share its database | Planned |
-| 4b.7 | Test Warning-Pin Audit | Audit the 52 console-spy installs across 9 client test files that suppress `console.warn`/`console.error` without asserting on the call; pin each spy to the contract its production path commits to (or remove if defensive) | Planned |
-| 4b.8 | TipTap Extension Consolidation | Move client+server TipTap extension config to `packages/shared/`; both packages re-export. Eliminates the parity test enforced by review. | Planned |
-| 4b.9 | Chapter Status Type Alignment | Replace `Chapter.status: string` with `ChapterStatusValue = z.infer<typeof ChapterStatus>` so the TS type matches the Zod 5-value enum. | Planned |
-| 4b.10 | Shared TipTap Unsafe-Keys Set | Extract `CANONICAL_UNSAFE_KEYS` into `packages/shared/` so `tiptap-text.ts` and `snapshots/content-hash.ts` share one declaration of `__proto__`/`prototype`/`constructor` strip. | Planned |
-| 4b.11 | 404 Route-Response Helper | Replace ~20 hand-written `res.status(404).json({ error: { code: "NOT_FOUND", … } })` blocks across `projects`/`chapters`/`snapshots`/`search` routes with a `notFound(res, resource)` helper in `app.ts`. | Planned |
-| 4b.12 | Validation Error Response Helper | Add `validationError(res, msg)` + `respondValidationParse(res, parsed)` helpers; migrate ~6 `safeParse` ladders so the 400 envelope has one owner. | Planned |
-| 4b.13 | TipTap Depth-Guard Regression Test | Add a single test that walks a depth-65 TipTap doc through every consumer (`extractText`, `canonicalize`, image `walk`, depth validator) and asserts each bails safely. Codifies the contract behind today's four independent depth checks. | Planned |
-| 4b.15 | Inline Title-Editing Hook | Extract a generic `useInlineTitleEditing(currentId, save, gates, options?)`; reduce `useChapterTitleEditing` and `useProjectTitleEditing` to thin wrappers that pass slug-drift check + post-save navigate as options. | Planned |
-| 4b.16 | Dialog Lifecycle Hook | Extract `useDialogLifecycle(dialogRef, { open, onClose, initialFocusRef, blockEscapePropagation, role })` and migrate the 5 dialogs (Confirm, Export, NewProject, ProjectSettings, ShortcutHelp) one at a time; preserve `stopImmediatePropagation` and happy-dom guards as opt-ins. | Planned |
-| 4c | Notes, Tags & Outtakes | Inline notes, paragraph tags, scratchpad for cut text | Planned |
-| 5a | Fiction: Characters | Character sheets with structured fields and freeform notes | Planned |
-| 5b | Fiction: Scene Cards | Scene cards / outline mode with drag-and-drop | Planned |
-| 5c | Fiction: World-Building | World-building bible, "who's in the room" tracker | Planned |
-| 5d | Fiction: Visualizations | Relationship map, timeline view | Planned |
-| 6a | Non-Fiction: Research & Citations | Research library, citation management, fact-check flags, research side panel | Planned |
-| 6b | Non-Fiction: Argument Structure | Argument tree visualization | Planned |
-| 7a | Writing Environment | Dark mode, distraction-free mode | Planned |
-| 7b | Self-Editing Tools | Style linting, text-to-speech | Planned |
-| 7c | Writing Journal | Per-project dated writing journal | Planned |
-| 7d | Split View | Side-by-side editor panes | Planned |
-| 7e | Import | Markdown, Word, plain text import | Planned |
-| 7f | i18n | Full UI translation with react-i18next | Planned |
-| 8a | Project Package Format | Per-project .smudge/ folder with own SQLite DB and assets | Planned |
-| 8b | Bundle Export (.smg) | Portable single-file format for sharing and backup | Planned |
+| Phase   | Name                                      | Summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Status  |
+| ------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| 1       | Writer's Dashboard                        | Chapter status labels, project overview, chapter navigation shortcuts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Done    |
+| 2       | Goals & Velocity                          | Word targets, deadlines, daily tracking, session stats, burndown                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Done    |
+| 2.5a    | Simplify Progress Model                   | Reduce velocity to project-level targets + daily totals, demote save_events                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Done    |
+| 2.5b    | Storage Architecture                      | ProjectStore/AssetStore/SnapshotStore abstractions, clean seams for future                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Done    |
+| 3a      | Export Foundation                         | Export pipeline, HTML, Markdown, plain text, config dialog, download                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Done    |
+| 3b      | Document Export                           | PDF, Word (.docx), EPUB                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Done    |
+| 4a      | Reference Panel & Images                  | Collapsible side panel infrastructure, image upload/storage                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Done    |
+| 4b      | Snapshots & Find-and-Replace              | Manual/auto snapshots, project-wide search and replace                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Done    |
+| 4b.1    | Editor Orchestration Helper               | Extract shared save-flush/markClean/setEditable/reload shape into one helper                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Done    |
+| 4b.2    | Abortable Sequence Hook                   | Unify ad-hoc seq-refs into a single `useAbortableSequence()` primitive                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Done    |
+| 4b.3    | Unified API Error Mapper                  | Single module mapping API errors to UI strings; no raw server text in UI                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Done    |
+| 4b.3a   | 4b.3 Review Follow-ups (Clusters A, D, F) | Scope-coverage gaps, sanitizer hardening, PR-shape retrospective                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Done    |
+| 4b.3a.1 | Abortable Async Operation Hook            | Extract `useAbortableAsyncOperation()` + unit tests + CLAUDE.md addition; consumer migrations follow in 4b.3a.2/3/4. Originally numbered 4b.14; renumbered 2026-04-29 when re-ordered to land before 4b.3b–d per dedup-pass collision (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` finding I3); narrowed and split into 4b.3a.1–4b.3a.4 on 2026-04-29 after the brainstorm's code survey found the named-site count undercounted shared-ref siblings (see `docs/plans/2026-04-29-abortable-async-operation-hook-design.md`). | Done    |
+| 4b.3a.2 | Find/Replace Abort Migration              | Migrate `useFindReplaceState.search` (sequence-paired single op) to `useAbortableAsyncOperation`. Cleanup effects at lines 99–104 and 130–131 are subsumed by the hook's auto-abort; `closePanel`'s explicit `searchAbortRef.current?.abort()` becomes `op.abort()`.                                                                                                                                                                                                                                                                                                  | Done    |
+| 4b.3a.3 | Trash Manager Abort Migration             | Migrate `useTrashManager` to `useAbortableAsyncOperation`: `openTrash` + `confirmDeleteChapter` refresh share one hook instance (replaces `trashAbortRef`); `handleRestore` uses a second instance (replaces `restoreAbortRef`). Two instances stay separate because the operations can be in flight concurrently.                                                                                                                                                                                                                                                    | Done    |
+| 4b.3a.4 | Image Gallery Abort Migration             | Migrate `ImageGallery` to `useAbortableAsyncOperation`: 4 mutation operations (`handleFileSelect`, `handleSave`, `handleInsert`, `handleDelete`) share one hook instance (replaces `mutateAbortRef`); the click-time references-load refresh uses a second instance (replaces `refsAbortRef`). The list-load and detail-load `useEffect` controllers stay as-is (different lifecycle shape).                                                                                                                                                                          | Done    |
+| 4b.3b   | AbortSignal Threading Completion          | Finish Cluster B: thread signal through remaining call sites (HomePage create/delete, useProjectEditor `handleCreateChapter` + `loadProject` + remaining `chapters.get`, EditorPage chapterStatuses retry + `search.replace`). Now depends on 4b.3a.1; each site re-evaluated against the new hook before threading. Scope expanded 2026-05-25 (Decision 2) to also sweep the `migrationStructuralCheck.test.ts` allowlist down from 7 files to 3, so Phase 4b.4's ESLint rule can use inline `eslint-disable` instead of a file-level allowlist.                     | Done    |
+| 4b.3c   | Consumer Recovery Completeness            | Cluster C: introduce `applyMappedError` helper and migrate 15 consumers that mishandle `mapApiError` output                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Planned |
+| 4b.3d   | Mapper Internals & CLAUDE.md Updates      | Cluster E: `safeExtrasFrom` try/catch, `ScopeExtras<S>` type, helper extractions, CLAUDE.md doc update                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Planned |
+| 4b.4    | Raw-Strings ESLint Rule                   | Enforce strings.ts externalization via lint; fix existing violations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Planned |
+| 4b.5    | Editor State Machine                      | Unify `editable`/`locked`/`busy` editor state into one machine; add `committed_but_unreloaded` mutation stage for ambiguous server responses                                                                                                                                                                                                                                                                                                                                                                                                                          | Planned |
+| 4b.6    | E2E Test Isolation                        | Wire `playwright.config.ts` to set `SMUDGE_PORT` / `SMUDGE_CLIENT_PORT` / `DB_PATH` to test-only values so e2e cannot piggy-back on the dev server or share its database                                                                                                                                                                                                                                                                                                                                                                                              | Planned |
+| 4b.7    | Test Warning-Pin Audit                    | Audit the 52 console-spy installs across 9 client test files that suppress `console.warn`/`console.error` without asserting on the call; pin each spy to the contract its production path commits to (or remove if defensive)                                                                                                                                                                                                                                                                                                                                         | Planned |
+| 4b.8    | TipTap Extension Consolidation            | Move client+server TipTap extension config to `packages/shared/`; both packages re-export. Eliminates the parity test enforced by review.                                                                                                                                                                                                                                                                                                                                                                                                                             | Planned |
+| 4b.9    | Chapter Status Type Alignment             | Replace `Chapter.status: string` with `ChapterStatusValue = z.infer<typeof ChapterStatus>` so the TS type matches the Zod 5-value enum.                                                                                                                                                                                                                                                                                                                                                                                                                               | Planned |
+| 4b.10   | Shared TipTap Unsafe-Keys Set             | Extract `CANONICAL_UNSAFE_KEYS` into `packages/shared/` so `tiptap-text.ts` and `snapshots/content-hash.ts` share one declaration of `__proto__`/`prototype`/`constructor` strip.                                                                                                                                                                                                                                                                                                                                                                                     | Planned |
+| 4b.11   | 404 Route-Response Helper                 | Replace ~20 hand-written `res.status(404).json({ error: { code: "NOT_FOUND", … } })` blocks across `projects`/`chapters`/`snapshots`/`search` routes with a `notFound(res, resource)` helper in `app.ts`.                                                                                                                                                                                                                                                                                                                                                             | Planned |
+| 4b.12   | Validation Error Response Helper          | Add `validationError(res, msg)` + `respondValidationParse(res, parsed)` helpers; migrate ~6 `safeParse` ladders so the 400 envelope has one owner.                                                                                                                                                                                                                                                                                                                                                                                                                    | Planned |
+| 4b.13   | TipTap Depth-Guard Regression Test        | Add a single test that walks a depth-65 TipTap doc through every consumer (`extractText`, `canonicalize`, image `walk`, depth validator) and asserts each bails safely. Codifies the contract behind today's four independent depth checks.                                                                                                                                                                                                                                                                                                                           | Planned |
+| 4b.15   | Inline Title-Editing Hook                 | Extract a generic `useInlineTitleEditing(currentId, save, gates, options?)`; reduce `useChapterTitleEditing` and `useProjectTitleEditing` to thin wrappers that pass slug-drift check + post-save navigate as options.                                                                                                                                                                                                                                                                                                                                                | Planned |
+| 4b.16   | Dialog Lifecycle Hook                     | Extract `useDialogLifecycle(dialogRef, { open, onClose, initialFocusRef, blockEscapePropagation, role })` and migrate the 5 dialogs (Confirm, Export, NewProject, ProjectSettings, ShortcutHelp) one at a time; preserve `stopImmediatePropagation` and happy-dom guards as opt-ins.                                                                                                                                                                                                                                                                                  | Planned |
+| 4c      | Notes, Tags & Outtakes                    | Inline notes, paragraph tags, scratchpad for cut text                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Planned |
+| 5a      | Fiction: Characters                       | Character sheets with structured fields and freeform notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Planned |
+| 5b      | Fiction: Scene Cards                      | Scene cards / outline mode with drag-and-drop                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Planned |
+| 5c      | Fiction: World-Building                   | World-building bible, "who's in the room" tracker                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Planned |
+| 5d      | Fiction: Visualizations                   | Relationship map, timeline view                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Planned |
+| 6a      | Non-Fiction: Research & Citations         | Research library, citation management, fact-check flags, research side panel                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Planned |
+| 6b      | Non-Fiction: Argument Structure           | Argument tree visualization                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Planned |
+| 7a      | Writing Environment                       | Dark mode, distraction-free mode                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Planned |
+| 7b      | Self-Editing Tools                        | Style linting, text-to-speech                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Planned |
+| 7c      | Writing Journal                           | Per-project dated writing journal                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Planned |
+| 7d      | Split View                                | Side-by-side editor panes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Planned |
+| 7e      | Import                                    | Markdown, Word, plain text import                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Planned |
+| 7f      | i18n                                      | Full UI translation with react-i18next                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Planned |
+| 7g      | Electron Runtime Prep                     | Configurable bind/port/data-dir, minimal Electron shell, secure renderer defaults                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Planned |
+| 8a      | Project Package Format                    | Per-project .smudge/ folder with own SQLite DB and assets                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Planned |
+| 8b      | Bundle Export (.smg)                      | Portable single-file format for sharing and backup                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Planned |
 
 ---
 
 ## Phase 1: Writer's Dashboard
+
 <!-- plan: 2026-03-30-writers-dashboard-design.md -->
 
 ### Goal
@@ -122,6 +124,7 @@ These trigger the same forced-save-then-switch behavior defined in the MVP.
 ### Data Model Changes
 
 **Chapter** — add column:
+
 - `status` — enum: "outline" | "rough_draft" | "revised" | "edited" | "final", default "outline"
 
 ### API Changes
@@ -143,6 +146,7 @@ These trigger the same forced-save-then-switch behavior defined in the MVP.
 ---
 
 ## Phase 2: Goals & Velocity
+
 <!-- plan: 2026-04-01-goals-velocity-design.md -->
 
 ### Goal
@@ -182,7 +186,7 @@ Session stats derived:
 
 - **Added words:** Sum of positive word count changes between consecutive saves within the session. This is an approximation — it undercounts on editing-heavy sessions where the writer simultaneously deletes and writes new text. But for most writing sessions (primarily adding new content), it's a useful signal. Transaction-level tracking could improve accuracy in a future iteration.
 - **Net words:** Net change in manuscript word count across the session (can be negative on editing days).
-- **Duration:** Time between first and last save in the session. This measures time spent *producing*, not time spent staring at a blank page.
+- **Duration:** Time between first and last save in the session. This measures time spent _producing_, not time spent staring at a blank page.
 - **Session summary:** Shown when the writer returns to the editor or opens the dashboard: "Last session: 45 minutes, +1,200 added words, +800 net words."
 
 #### 2.4 Writing Velocity Dashboard
@@ -200,16 +204,20 @@ A writer can optionally set a target word count for individual chapters ("this c
 ### Data Model Changes
 
 **Project** — add columns:
+
 - `target_word_count` — integer, nullable
 - `target_deadline` — date, nullable
 
 **Chapter** — add column:
+
 - `target_word_count` — integer, nullable
 
 **App-level settings** (new — a simple key-value table or config file):
+
 - `timezone` — text, e.g. "Europe/Malta". Defaults from browser on first launch.
 
 **New table: DailySnapshot**
+
 - `id` — UUID, primary key
 - `project_id` — foreign key -> Project
 - `date` — date (unique per project; in the writer's configured timezone)
@@ -241,6 +249,7 @@ No WritingSession table — sessions are derived from save timestamps on demand.
 ---
 
 ## Phase 2.5a: Simplify Progress Model
+
 <!-- plan: 2026-04-11-simplify-progress-model-design.md -->
 
 ### Goal
@@ -285,12 +294,15 @@ Replace the burndown chart and session-based stats with a simple daily word coun
 ### Data Model Changes
 
 **Remove columns:**
+
 - `projects.completion_threshold`
 
 **Demote tables:**
+
 - `save_events` — stop writing to this table from the save path; mark as deprecated
 
 **Keep unchanged:**
+
 - `projects.target_word_count`
 - `projects.target_deadline`
 - `daily_snapshots`
@@ -302,7 +314,7 @@ Replace the burndown chart and session-based stats with a simple daily word coun
 
 ### UI/UX Notes
 
-- The goal is *less* UI, not different UI. Remove complexity rather than replacing it.
+- The goal is _less_ UI, not different UI. Remove complexity rather than replacing it.
 - The velocity display should feel like a gentle status line, not an analytics dashboard.
 
 ### Dependencies
@@ -312,6 +324,7 @@ Replace the burndown chart and session-based stats with a simple daily word coun
 ---
 
 ## Phase 2.5b: Storage Architecture
+
 <!-- plan: 2026-04-12-storage-architecture-design.md -->
 
 ### Goal
@@ -354,6 +367,7 @@ No API changes. This is an internal refactoring.
 ---
 
 ## Phase 3a: Export Foundation
+
 <!-- plan: 2026-04-14-export-foundation-design.md -->
 
 ### Goal
@@ -364,11 +378,11 @@ Turn the manuscript into a deliverable. A book isn't finished until it can leave
 
 #### 3a.1 Export Formats
 
-| Format | Use Case | Implementation Approach |
-|--------|----------|------------------------|
-| **HTML** | Web publication, email to readers | TipTap `generateHTML()` on each chapter's JSON. Wrap in a complete HTML document with embedded CSS for reading typography. |
-| **Markdown** | Version control, portability, static site generators | Convert TipTap JSON to Markdown. Use a library like `tiptap-markdown` or write a custom serializer from the JSON tree. |
-| **Plain text** | Maximum portability, backup | Strip all formatting, concatenate chapter text with chapter title headers and separator lines. |
+| Format         | Use Case                                             | Implementation Approach                                                                                                    |
+| -------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **HTML**       | Web publication, email to readers                    | TipTap `generateHTML()` on each chapter's JSON. Wrap in a complete HTML document with embedded CSS for reading typography. |
+| **Markdown**   | Version control, portability, static site generators | Convert TipTap JSON to Markdown. Use a library like `tiptap-markdown` or write a custom serializer from the JSON tree.     |
+| **Plain text** | Maximum portability, backup                          | Strip all formatting, concatenate chapter text with chapter title headers and separator lines.                             |
 
 #### 3a.2 Export Structure
 
@@ -409,9 +423,11 @@ Steps 2 and 3 are initially no-ops or minimal in Phase 3a; later phases add new 
 ### Data Model Changes
 
 **Project** — add column:
+
 - `author_name` — text, nullable (used in export title page and metadata)
 
 **Extend app settings:**
+
 - Default export format
 
 ### API Changes
@@ -432,6 +448,7 @@ Steps 2 and 3 are initially no-ops or minimal in Phase 3a; later phases add new 
 ---
 
 ## Phase 3b: Document Export
+
 <!-- plan: 2026-04-14-document-export-design.md -->
 
 ### Goal
@@ -442,11 +459,11 @@ Add the heavyweight export formats that writers need for professional workflows:
 
 #### 3b.1 Export Formats
 
-| Format | Use Case | Implementation Approach |
-|--------|----------|------------------------|
-| **PDF** | Print, formal submissions | Generate HTML first, then convert to PDF via Puppeteer (headless Chrome) or a library like `pdf-lib` / `react-pdf`. Puppeteer gives the most accurate rendering but adds a heavy dependency; evaluate trade-offs. |
-| **Word (.docx)** | Editors, publishers, agents (the industry standard) | Use `docx` npm package to generate .docx programmatically from the TipTap JSON. Requires mapping TipTap node types to docx paragraph styles. |
-| **EPUB** | E-readers, Kindle, self-publishing | Use `epub-gen-memory` or similar. Each chapter becomes an EPUB section. Requires cover image support (optional, or a default). |
+| Format           | Use Case                                            | Implementation Approach                                                                                                                                                                                           |
+| ---------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **PDF**          | Print, formal submissions                           | Generate HTML first, then convert to PDF via Puppeteer (headless Chrome) or a library like `pdf-lib` / `react-pdf`. Puppeteer gives the most accurate rendering but adds a heavy dependency; evaluate trade-offs. |
+| **Word (.docx)** | Editors, publishers, agents (the industry standard) | Use `docx` npm package to generate .docx programmatically from the TipTap JSON. Requires mapping TipTap node types to docx paragraph styles.                                                                      |
+| **EPUB**         | E-readers, Kindle, self-publishing                  | Use `epub-gen-memory` or similar. Each chapter becomes an EPUB section. Requires cover image support (optional, or a default).                                                                                    |
 
 These formats extend the export pipeline and config dialog built in Phase 3a. The export dialog gains three new format options; the pipeline gains three new renderers in step 4.
 
@@ -476,6 +493,7 @@ These formats extend the export pipeline and config dialog built in Phase 3a. Th
 ---
 
 ## Phase 4a: Reference Panel & Images
+
 <!-- plan: 2026-04-15-reference-panel-images-design.md -->
 
 ### Goal
@@ -503,6 +521,7 @@ Building this as shared infrastructure now prevents duplicating effort between l
 Writers commonly want images in multiple contexts: reference photos for characters, maps for world-building, diagrams in non-fiction, illustrations within chapters. TipTap supports image nodes, so a writer might paste an image into the editor at any point.
 
 **Implementation:**
+
 - Images are stored as files on disk in the Docker volume alongside the SQLite database (e.g., `/app/data/images/`).
 - A simple `/api/images` upload endpoint accepts an image file and returns a URL path.
 - TipTap's built-in image extension is enabled, allowing images in chapter content, outtakes, and (in later phases) world-building entries, character sheet notes, research source notes, and journal entries.
@@ -526,6 +545,7 @@ No new database tables. The reference panel is UI-only state. Images are stored 
 ---
 
 ## Phase 4b: Snapshots & Find-and-Replace
+
 <!-- plan: 2026-04-16-snapshots-find-replace-design.md -->
 
 ### Goal
@@ -563,6 +583,7 @@ Project-wide find and replace — not just the current chapter. Critical for: re
 ### Data Model Changes
 
 **New table: ChapterSnapshot**
+
 - `id` — UUID, primary key
 - `chapter_id` — foreign key -> Chapter
 - `label` — text, nullable
@@ -591,6 +612,7 @@ Project-wide find and replace — not just the current chapter. Critical for: re
 ---
 
 ## Phase 4b.1: Editor Orchestration Helper
+
 <!-- plan: 2026-04-19-editor-orchestration-helper-design.md -->
 
 ### Goal
@@ -625,6 +647,7 @@ Editor mutation flows in `packages/client/src/` currently implemented ad-hoc in 
 ---
 
 ## Phase 4b.2: Abortable Sequence Hook
+
 <!-- plan: 2026-04-22-abortable-sequence-hook-design.md -->
 
 ### Goal
@@ -657,6 +680,7 @@ Introduce a hook — shape to be decided at design time — that returns a curre
 ---
 
 ## Phase 4b.3: Unified API Error Mapper
+
 <!-- plan: 2026-04-23-unified-error-mapper-design.md -->
 
 ### Goal
@@ -689,6 +713,7 @@ One module responsible for all API-error-to-UI-string mapping in the client. All
 ---
 
 ## Phase 4b.3a: 4b.3 Review Follow-ups (Clusters A, D, F)
+
 <!-- plan: 2026-04-25-4b3a-review-followups-design.md -->
 
 ### Goal
@@ -732,6 +757,7 @@ Cluster A merged via `ovid/cluster-a-error-mapping` (merge `a0cacec`).
 ---
 
 ## Phase 4b.3a.1: Abortable Async Operation Hook
+
 <!-- plan: 2026-04-29-abortable-async-operation-hook-design.md -->
 
 ### Goal
@@ -740,9 +766,9 @@ Extract `useAbortableAsyncOperation` covering the "abort prior controller, creat
 
 ### Why Now
 
-The prior dedup pass already landed `useAbortableSequence` for *response staleness*. `AbortController` solves the orthogonal problem of *network cancellation*; both are correct, neither subsumes the other. The cross-confirmed sites encode the same four-step state machine independently, with detailed inline comments in `useTrashManager` that exist only because the abstraction is missing. A new list/detail/upload pane is likely to copy the nearest neighbour, and off-by-one cleanup-on-unmount is easy to miss. (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` I3.)
+The prior dedup pass already landed `useAbortableSequence` for _response staleness_. `AbortController` solves the orthogonal problem of _network cancellation_; both are correct, neither subsumes the other. The cross-confirmed sites encode the same four-step state machine independently, with detailed inline comments in `useTrashManager` that exist only because the abstraction is missing. A new list/detail/upload pane is likely to copy the nearest neighbour, and off-by-one cleanup-on-unmount is easy to miss. (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md` I3.)
 
-**Originally numbered 4b.14; renumbered to 4b.3a.1 and re-ordered 2026-04-29** to land before Phase 4b.3b (AbortSignal Threading Completion). The /roadmap brainstorming pass on 2026-04-28 surfaced a collision: 4b.3b would add seven more hand-rolled instances of exactly the pattern this phase extracts, *before* the extraction lands. Doing this phase first means 4b.3b's per-site evaluation can adopt the new hook where it fits and justify hand-rolled threading where it does not, instead of growing the pattern footprint and then consolidating it later. The 2026-04-29 pushback review on the reorder produced the renumber per the document-order = execution-order contract.
+**Originally numbered 4b.14; renumbered to 4b.3a.1 and re-ordered 2026-04-29** to land before Phase 4b.3b (AbortSignal Threading Completion). The /roadmap brainstorming pass on 2026-04-28 surfaced a collision: 4b.3b would add seven more hand-rolled instances of exactly the pattern this phase extracts, _before_ the extraction lands. Doing this phase first means 4b.3b's per-site evaluation can adopt the new hook where it fits and justify hand-rolled threading where it does not, instead of growing the pattern footprint and then consolidating it later. The 2026-04-29 pushback review on the reorder produced the renumber per the document-order = execution-order contract.
 
 **Narrowed and split 2026-04-29.** The brainstorming pass for this phase (`docs/plans/2026-04-29-abortable-async-operation-hook-design.md`) found that the originally-named 5 migration sites undercounted shared-ref siblings: `mutateAbortRef` is used by 4 `ImageGallery` operations (not 2), and `trashAbortRef` is used by 2 `useTrashManager` operations (not 1). Because the new hook owns one `AbortController` ref per instance, you cannot migrate a subset of operations sharing one ref — doing so silently breaks the mutual-exclusion contract. The migration unit is therefore the file, not the named operation. The corrected in-scope set is 9 operations across 3 files; the original phase split into the hook PR (this phase) plus three file-PRs (4b.3a.2/3/4).
 
@@ -784,6 +810,7 @@ The prior dedup pass already landed `useAbortableSequence` for *response stalene
 ---
 
 ## Phase 4b.3a.2: Find/Replace Abort Migration
+
 <!-- plan: 2026-05-01-find-replace-abort-migration-design.md -->
 
 ### Goal
@@ -829,6 +856,7 @@ One PR for this single-file migration. Per CLAUDE.md `§Pull Request Scope` one-
 ---
 
 ## Phase 4b.3a.3: Trash Manager Abort Migration
+
 <!-- plan: 2026-05-24-trash-manager-abort-migration-design.md -->
 
 ### Goal
@@ -874,6 +902,7 @@ One PR for this single-file migration. Two hook instances are still one file's w
 ---
 
 ## Phase 4b.3a.4: Image Gallery Abort Migration
+
 <!-- plan: 2026-05-25-image-gallery-abort-migration-design.md -->
 
 ### Goal
@@ -922,6 +951,8 @@ One PR for this single-file migration. Five operations across two hook instances
 
 ## Phase 4b.3b: AbortSignal Threading Completion
 
+<!-- plan: 2026-05-25-abortsignal-threading-completion-design.md -->
+
 ### Goal
 
 Finish Cluster B from the Phase 4b.3 code review (`paad/code-reviews/ovid-unified-error-mapper-2026-04-25-10-32-46-a68afd1.md`). Phase 4b.3a shipped the `api/client.ts` surface so every endpoint accepts `signal?: AbortSignal` and shipped the [I12] ExportDialog cleanup. The remaining consumer call sites still either allocate ad-hoc `cancelled` flags or omit the signal entirely; this phase threads signals through them.
@@ -930,11 +961,11 @@ Finish Cluster B from the Phase 4b.3 code review (`paad/code-reviews/ovid-unifie
 
 CLAUDE.md `§Save-pipeline invariants` rule 4 (bump-the-sequence-before-the-request) is enforced by `useAbortableSequence`, but it depends on the underlying request being cancellable. While these consumers ship without signals, an in-flight response can land on a stale closure and re-set state after the user has navigated away — the same drift `useAbortableSequence` exists to prevent. Landing this before Phase 4b.3c's [S10] is required because the dev-warn gate uses `signal.aborted`.
 
-**Reordering (2026-04-28).** This phase now depends on Phase 4b.3a.1 (`useAbortableAsyncOperation`) landing first. The /roadmap brainstorming pass on 2026-04-28 surfaced a collision with finding I3 of the experimental-dedup pass (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md`): the eight client AbortController sites are deferred in I3 pending per-site evaluation after the new hook is proven on the cross-confirmed sites (`useTrashManager`, `useFindReplaceState`, `ImageGallery`). Threading hand-rolled signals through this phase's call sites *before* the hook lands would expand the pattern footprint that 4b.3a.1 was created to consolidate. Each call site below will be re-evaluated against the new hook at brainstorm time: where the hook fits, the site migrates to it; where the lifecycle does not match (e.g., sites paired with `useAbortableSequence`), the hand-rolled threading is justified per-site. [I6] has already been removed (see below).
+**Reordering (2026-04-28).** This phase now depends on Phase 4b.3a.1 (`useAbortableAsyncOperation`) landing first. The /roadmap brainstorming pass on 2026-04-28 surfaced a collision with finding I3 of the experimental-dedup pass (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-13-33-4129d99.md`): the eight client AbortController sites are deferred in I3 pending per-site evaluation after the new hook is proven on the cross-confirmed sites (`useTrashManager`, `useFindReplaceState`, `ImageGallery`). Threading hand-rolled signals through this phase's call sites _before_ the hook lands would expand the pattern footprint that 4b.3a.1 was created to consolidate. Each call site below will be re-evaluated against the new hook at brainstorm time: where the hook fits, the site migrates to it; where the lifecycle does not match (e.g., sites paired with `useAbortableSequence`), the hand-rolled threading is justified per-site. [I6] has already been removed (see below).
 
 ### Scope
 
-- ~~[I6] `Editor.tsx` paste/drop image upload~~ — **removed 2026-04-28; rationale clarified 2026-04-29.** The experimental-dedup pass finding I3 correctly observed that this site is not currently a member of the AbortController dedup set: the path uses a `projectIdRef.current !== uploadProjectId` stale-id check rather than abort semantics, and the original specialist hit was characterized as a false positive *with respect to dedup-set membership*. The original [I6] code review (`paad/code-reviews/ovid-unified-error-mapper-2026-04-25-10-32-46-a68afd1.md` line 59) cited two underlying impacts that the dedup author did not evaluate:
+- ~~[I6] `Editor.tsx` paste/drop image upload~~ — **removed 2026-04-28; rationale clarified 2026-04-29.** The experimental-dedup pass finding I3 correctly observed that this site is not currently a member of the AbortController dedup set: the path uses a `projectIdRef.current !== uploadProjectId` stale-id check rather than abort semantics, and the original specialist hit was characterized as a false positive _with respect to dedup-set membership_. The original [I6] code review (`paad/code-reviews/ovid-unified-error-mapper-2026-04-25-10-32-46-a68afd1.md` line 59) cited two underlying impacts that the dedup author did not evaluate:
   1. **Bytes-on-wire keep flowing post-navigation** (image upload runs to completion against a torn-down editor on chapter switch / unmount). Dropped from 4b.3b on the grounds that bandwidth is negligible for a single-user, localhost-only deployment shape; revisit if the deployment changes (e.g. server in cloud, slow connection) and bytes-on-wire becomes a measurable problem.
   2. **Success announcement fires on a torn-down editor instance** (cross-chapter same-project switch). Addressed separately by [S18] in Phase 4b.3c via `editor === editorInstanceRef.current` instance capture — the more direct fix that the original review itself suggested at line 158. The [I6] AbortController approach would have addressed this transitively; [S18] addresses it directly and stays in scope.
 - [I7] `HomePage` call-site threading — `HomePage.tsx:61` (`api.projects.create`) and `:104` (`api.projects.delete`) currently omit the signal even though the API surface accepts it. Re-evaluate against `useAbortableAsyncOperation` at brainstorm time; if the hook fits, migrate to it. Otherwise allocate per-handler `AbortController`s and abort on unmount, with a per-site justification for not using the hook.
@@ -989,9 +1020,9 @@ The Phase 4b.3 unified error mapper centralized code-to-string translation, but 
 - [I5] `useTrashManager.confirmDeleteChapter` — surface mapped error before dismissing the dialog.
 - [S3]/[S7] Move `chapter.save` non-2xx BAD_JSON dispatch into the scope (extend `committedCodes` semantics or add `terminalCodes`); remove the call-site allowlist hardcode in `useProjectEditor.ts:357-369, 441-448`.
 - [S4] `handleStatusChange` (`useProjectEditor.ts:1032-1040`) — fall back to `setError(message)` when `onError` is omitted (mirror `handleReorderChapters`).
-- [S5] `useSnapshotState.restoreSnapshot` (`useSnapshotState.ts:421-434`) — track a `dispatched` flag; only synthesize a 200 BAD_JSON for failures that occurred *after* the request was sent.
+- [S5] `useSnapshotState.restoreSnapshot` (`useSnapshotState.ts:421-434`) — track a `dispatched` flag; only synthesize a 200 BAD_JSON for failures that occurred _after_ the request was sent.
 - [S8] Reconcile `image.delete.extrasFrom` partial-malformed handling with the [I1]-era all-or-nothing guard. Three options documented in the original 4b.3a plan (drop, reconcile, replace [I1]); pick one and document the choice.
-- [S10] Dev-only `console.warn` on silent recovery-catches in `handleStatusChange:1079` and `handleCreateChapter:604`, gated on `!signal.aborted`. Depends on Phase 4b.3b's signal threading. **Reordering note (2026-04-29):** if the recovery sites at `handleStatusChange:1079` and `handleCreateChapter:604` migrate to `useAbortableAsyncOperation` in Phase 4b.3a.1 / 4b.3b, this gate consumes the per-call `signal` returned by `run()` (i.e. `run(...).signal.aborted`), **not** the hook's component-scoped `get aborted(): boolean` getter. The component-scoped getter reads true after *any* operation in that hook has aborted (including unmount cleanup), which would over-suppress the warn — firing it as silent for catches whose own operation had not aborted. Re-evaluate the gate's surface during 4b.3c brainstorming after Phase 4b.3a.1 lands; the per-call signal stays the right input.
+- [S10] Dev-only `console.warn` on silent recovery-catches in `handleStatusChange:1079` and `handleCreateChapter:604`, gated on `!signal.aborted`. Depends on Phase 4b.3b's signal threading. **Reordering note (2026-04-29):** if the recovery sites at `handleStatusChange:1079` and `handleCreateChapter:604` migrate to `useAbortableAsyncOperation` in Phase 4b.3a.1 / 4b.3b, this gate consumes the per-call `signal` returned by `run()` (i.e. `run(...).signal.aborted`), **not** the hook's component-scoped `get aborted(): boolean` getter. The component-scoped getter reads true after _any_ operation in that hook has aborted (including unmount cleanup), which would over-suppress the warn — firing it as silent for catches whose own operation had not aborted. Re-evaluate the gate's surface during 4b.3c brainstorming after Phase 4b.3a.1 lands; the per-call signal stays the right input.
 - [S11] `chapter.create` 404 — gate `isNotFound(err)` and call `navigate("/")` (mirror `EditorPage:1552`).
 - [S15] Migrate the 30+ `if (message === null) return; if (message) setX(message)` ladders to `applyMappedError`. One commit per migrated site; mixed-catch sites get a behaviour-pinning test before migration.
 - [S16] Add `chapter.flushBeforeNavigate` scope to `scopes.ts`; switch `EditorPage.tsx:1481-1485` to it.
@@ -1101,7 +1132,7 @@ Replace the scattered editor-state refs (`editable`, `editorLockedMessage`, `inF
 
 ### Why Now
 
-Pattern analysis across the six `ovid/architecture` code reviews (2026-04-19 to 2026-04-20) identified three recurring Critical findings that all trace to the same structural shape: editor state lives in N separate refs/state kept in sync by discipline. When any one diverges — stale `expectedChapterId` skip in `reloadActiveChapter`, 2xx `BAD_JSON` on a replace or restore response, a caller that forgets to clear the lock — the editor becomes editable while the banner still says "read-only", and the next keystroke's auto-save silently overwrites the committed server change. Phase 4b.1 centralized the *flow* but not the *state*; without this phase, Phases 4c / 5b / 7e will rediscover the same class of data-loss race.
+Pattern analysis across the six `ovid/architecture` code reviews (2026-04-19 to 2026-04-20) identified three recurring Critical findings that all trace to the same structural shape: editor state lives in N separate refs/state kept in sync by discipline. When any one diverges — stale `expectedChapterId` skip in `reloadActiveChapter`, 2xx `BAD_JSON` on a replace or restore response, a caller that forgets to clear the lock — the editor becomes editable while the banner still says "read-only", and the next keystroke's auto-save silently overwrites the committed server change. Phase 4b.1 centralized the _flow_ but not the _state_; without this phase, Phases 4c / 5b / 7e will rediscover the same class of data-loss race.
 
 ### Scope
 
@@ -1175,7 +1206,7 @@ Make the CLAUDE.md §Testing Philosophy "Zero warnings in test output" rule enfo
 
 ### Why Now
 
-CLAUDE.md §Testing Philosophy says: *"When a test deliberately triggers an error path that logs a warning, spy on the output, suppress it, and assert the expected message — e.g. `const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {}); ... expect(warnSpy).toHaveBeenCalledWith(...); warnSpy.mockRestore();`."* The 4b.3a Cluster A code review (`paad/code-reviews/ovid-cluster-a-error-mapping-2026-04-27-14-13-42-91476d8.md`, finding I1) surfaced two tests violating this rule; a follow-up audit found 52 more across 9 files. Each unasserted spy is a contract that isn't pinned: a future change that drops or alters the production warn would silently pass. This phase closes that gap before Phase 4b.4's raw-strings lint rule lands, so the test suite is clean of latent contract gaps when lint-driven cleanup begins.
+CLAUDE.md §Testing Philosophy says: _"When a test deliberately triggers an error path that logs a warning, spy on the output, suppress it, and assert the expected message — e.g. `const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {}); ... expect(warnSpy).toHaveBeenCalledWith(...); warnSpy.mockRestore();`."_ The 4b.3a Cluster A code review (`paad/code-reviews/ovid-cluster-a-error-mapping-2026-04-27-14-13-42-91476d8.md`, finding I1) surfaced two tests violating this rule; a follow-up audit found 52 more across 9 files. Each unasserted spy is a contract that isn't pinned: a future change that drops or alters the production warn would silently pass. This phase closes that gap before Phase 4b.4's raw-strings lint rule lands, so the test suite is clean of latent contract gaps when lint-driven cleanup begins.
 
 ### Scope
 
@@ -1187,17 +1218,17 @@ Audit and fix all `vi.spyOn(console, …).mockImplementation(() => {})` installs
 
 The 52 occurrences (post-I1 fix) are distributed:
 
-| Count | File |
-|---|---|
-| 27 | `packages/client/src/__tests__/useProjectEditor.test.ts` |
-| 6 | `packages/client/src/__tests__/DashboardView.test.tsx` |
-| 4 | `packages/client/src/__tests__/EditorPageFeatures.test.tsx` |
-| 4 | `packages/client/src/__tests__/HomePage.test.tsx` |
-| 3 | `packages/client/src/__tests__/ProjectSettingsDialog.test.tsx` |
-| 3 | `packages/client/src/hooks/useEditorMutation.test.tsx` |
-| 2 | `packages/client/src/__tests__/ExportDialog.test.tsx` |
-| 2 | `packages/client/src/hooks/useAbortableSequence.test.ts` |
-| 1 | `packages/client/src/__tests__/useSnapshotState.test.ts` |
+| Count | File                                                           |
+| ----- | -------------------------------------------------------------- |
+| 27    | `packages/client/src/__tests__/useProjectEditor.test.ts`       |
+| 6     | `packages/client/src/__tests__/DashboardView.test.tsx`         |
+| 4     | `packages/client/src/__tests__/EditorPageFeatures.test.tsx`    |
+| 4     | `packages/client/src/__tests__/HomePage.test.tsx`              |
+| 3     | `packages/client/src/__tests__/ProjectSettingsDialog.test.tsx` |
+| 3     | `packages/client/src/hooks/useEditorMutation.test.tsx`         |
+| 2     | `packages/client/src/__tests__/ExportDialog.test.tsx`          |
+| 2     | `packages/client/src/hooks/useAbortableSequence.test.ts`       |
+| 1     | `packages/client/src/__tests__/useSnapshotState.test.ts`       |
 
 Consider whether a small ESLint rule (or test-side helper that wraps spy + assertion) could prevent regressions. If so, fold it into the phase; if not, document the manual review checkpoint in CONTRIBUTING.md.
 
@@ -1301,7 +1332,7 @@ Eliminate the duplicate `__proto__`/`prototype`/`constructor` strip-set declared
 
 ### Why Now
 
-The two declarations describe the same prototype-pollution defense for TipTap canonicalization. A future change (e.g. adding `__defineGetter__` to the unsafe set) needs to land in both files; today nothing enforces that they agree (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-02-18-093074c.md` I4). Full canonicalizer extraction is *blocked* by return-type mismatch — `tiptap-text.ts` returns a string, `content-hash.ts` returns an object — so this phase scopes only to the unsafe-key set, which is trivially shareable.
+The two declarations describe the same prototype-pollution defense for TipTap canonicalization. A future change (e.g. adding `__defineGetter__` to the unsafe set) needs to land in both files; today nothing enforces that they agree (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-02-18-093074c.md` I4). Full canonicalizer extraction is _blocked_ by return-type mismatch — `tiptap-text.ts` returns a string, `content-hash.ts` returns an object — so this phase scopes only to the unsafe-key set, which is trivially shareable.
 
 ### Scope
 
@@ -1362,7 +1393,7 @@ The pattern is the implementation of one rule from CLAUDE.md §API Design (404 e
 ### Dependencies
 
 - None. Independently shippable. Pairs naturally with 4b.12 (both touch `app.ts`); CLAUDE.md one-feature rule allows bundling these two as "server error-envelope helpers" if scope stays tight, otherwise they are separate PRs.
-- Independent of Phase 4b.4 (Raw-Strings ESLint Rule): the template literal `\`${resource} not found.\`` in the helper body lives in `packages/server/src/app.ts`, which is outside 4b.4's scope (4b.4 explicitly excludes server-side strings — the lint rule applies to `packages/client/src/`). May land before, in parallel, or after 4b.4 with no interaction.
+- Independent of Phase 4b.4 (Raw-Strings ESLint Rule): the template literal `\`${resource} not found.\``in the helper body lives in`packages/server/src/app.ts`, which is outside 4b.4's scope (4b.4 explicitly excludes server-side strings — the lint rule applies to `packages/client/src/`). May land before, in parallel, or after 4b.4 with no interaction.
 
 ---
 
@@ -1408,7 +1439,7 @@ The validation envelope contract is implicit. Six sites parse Zod and emit a nea
 
 ### Goal
 
-Pin the contract that *every* consumer of TipTap JSON honors `MAX_TIPTAP_DEPTH = 64` and bails safely on a depth-65 document. The six current consumers — `validateTipTapDepth` (canonical, in `tiptap-depth.ts`), `extractText` (wordcount), `canonicalize` (content-hash), `walk` (images.references), plus `collectLeafBlocks` and `canonicalJSON` (both in `tiptap-text.ts`) — each implement their own depth-counted recursion; the constant is shared but the recursions are not.
+Pin the contract that _every_ consumer of TipTap JSON honors `MAX_TIPTAP_DEPTH = 64` and bails safely on a depth-65 document. The six current consumers — `validateTipTapDepth` (canonical, in `tiptap-depth.ts`), `extractText` (wordcount), `canonicalize` (content-hash), `walk` (images.references), plus `collectLeafBlocks` and `canonicalJSON` (both in `tiptap-text.ts`) — each implement their own depth-counted recursion; the constant is shared but the recursions are not.
 
 ### Why Now
 
@@ -1448,7 +1479,7 @@ Extract a generic `useInlineTitleEditing(currentId, save, gates, options?)` capt
 
 ### Why Now
 
-The two hooks are ~85% line-by-line identical (105 + 119 lines, same refs, same lifecycle, same gates). Bug fixes (a future Escape race or busy-gate tightening) require synchronized edits in two files; tests on one path don't cover the other. The slug-drift check and post-save navigate are load-bearing in the project hook and *intentionally absent* from the chapter hook (chapters have no slug). Extraction must preserve those differences as opt-in callbacks. (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-02-18-093074c.md` I1, cross-confirmed by two specialists in that pass.)
+The two hooks are ~85% line-by-line identical (105 + 119 lines, same refs, same lifecycle, same gates). Bug fixes (a future Escape race or busy-gate tightening) require synchronized edits in two files; tests on one path don't cover the other. The slug-drift check and post-save navigate are load-bearing in the project hook and _intentionally absent_ from the chapter hook (chapters have no slug). Extraction must preserve those differences as opt-in callbacks. (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-02-18-093074c.md` I1, cross-confirmed by two specialists in that pass.)
 
 ### Scope
 
@@ -1502,7 +1533,7 @@ The five dialogs reimplement the same three affordances with arbitrary inclusion
 ### Definition of Done
 
 - One canonical `useDialogLifecycle` hook with unit tests.
-- All four of `ConfirmDialog`, `ExportDialog`, `NewProjectDialog`, and `ShortcutHelpDialog` migrated; `ProjectSettingsDialog` migrated *or* explicitly documented as opt-out with the specific reason (slide-out positioning that does not factor through the hook's contract).
+- All four of `ConfirmDialog`, `ExportDialog`, `NewProjectDialog`, and `ShortcutHelpDialog` migrated; `ProjectSettingsDialog` migrated _or_ explicitly documented as opt-out with the specific reason (slide-out positioning that does not factor through the hook's contract).
 - All existing dialog component tests green without modification (focus, Escape, backdrop).
 - aXe-core e2e checks green.
 - `make all` green at PR close.
@@ -1519,9 +1550,9 @@ The five dialogs reimplement the same three affordances with arbitrary inclusion
 The two dedup reports under `paad/duplicate-code-reports/` flagged four Suggestion-tier findings; three are **deliberately not** captured as 4b.X phases and are recorded here so the evidence trail is not lost:
 
 - **Report 1 S2** — `author_name` column is unbounded `text` in migration `011_add_author_name.js` while the schema caps at 500. Standard "API cap with permissive DB" pattern; pick up only if a hardening pass is undertaken across all string-typed columns.
-- **Report 1 S3** — Chapter status is seeded by migration 003 (with `sort_order` and `label`) and *also* declared as a Zod enum (values only). DB is the source of truth for UI labels (via `/api/chapter-statuses`); enum exists for input validation. Document the sync requirement in `CLAUDE.md` rather than refactoring; pick up in a CLAUDE.md doc-pass.
+- **Report 1 S3** — Chapter status is seeded by migration 003 (with `sort_order` and `label`) and _also_ declared as a Zod enum (values only). DB is the source of truth for UI labels (via `/api/chapter-statuses`); enum exists for input validation. Document the sync requirement in `CLAUDE.md` rather than refactoring; pick up in a CLAUDE.md doc-pass.
 - **Report 2 S1** — `possiblyCommitted` refresh recipe is duplicated at three image-upload sites (`ImageGallery.handleFileSelect`, `ImageGallery.handleSave`, `Editor.tsx` paste/drop). Three sites with two in the same file is below the consolidation threshold; pick up only if a fourth image-upload entry point appears (e.g. drag-drop on detail view, bulk import).
-- **Report 1 S1** — *(partially addressed)*: `ProjectSettingsDialog`/`ExportDialog` hand-rolled `AbortController` is intentionally distinct from `useAbortableSequence` (different problems) and is now explicitly deferred under Phase 4b.3a.1's "Out of Scope" (originally numbered 4b.14) along with the other ~8 production AbortController sites.
+- **Report 1 S1** — _(partially addressed)_: `ProjectSettingsDialog`/`ExportDialog` hand-rolled `AbortController` is intentionally distinct from `useAbortableSequence` (different problems) and is now explicitly deferred under Phase 4b.3a.1's "Out of Scope" (originally numbered 4b.14) along with the other ~8 production AbortController sites.
 
 If a hardening pass (S2), a CLAUDE.md doc-pass (S3), or a fourth image-upload entry point (Report 2 S1) appears, surface the corresponding suggestion as a candidate phase.
 
@@ -1540,6 +1571,7 @@ Give the writer a private annotation layer on top of their manuscript — notes 
 Notes attached to specific text ranges in the manuscript. Visible while editing, invisible in preview and export.
 
 **Behavior:**
+
 - Select text, click "Add Note" (or keyboard shortcut), type a note in a popover.
 - The noted text is visually marked (e.g., a subtle highlight or underline in a distinct color — configurable).
 - Hovering or clicking the marked text shows the note.
@@ -1572,6 +1604,7 @@ Paragraph-level or section-level tags that allow the writer to find all content 
 ### Data Model Changes
 
 **New table: Outtake**
+
 - `id` — UUID, primary key
 - `project_id` — foreign key -> Project
 - `label` — text, nullable
@@ -1619,6 +1652,7 @@ Give novelists structured character records — the reference tool writers reach
 Structured records for each character in the story.
 
 **Structured fields:**
+
 - Name (required)
 - Aliases / nicknames
 - Age / date of birth
@@ -1639,6 +1673,7 @@ Characters are displayed in the reference panel (Phase 4a infrastructure). The w
 ### Data Model Changes
 
 **New table: Character**
+
 - `id` — UUID, primary key
 - `project_id` — foreign key -> Project
 - `name` — text, required
@@ -1690,6 +1725,7 @@ Each scene card captures:
 - **Chapter link:** Optional link to the chapter where this scene lives in prose
 
 Scene cards can be:
+
 - Viewed as a card grid (spatial overview of the story)
 - Reordered by drag-and-drop (to experiment with story structure without moving actual prose)
 - Filtered by POV character, location, mood, or status
@@ -1698,6 +1734,7 @@ Scene cards can be:
 ### Data Model Changes
 
 **New table: SceneCard**
+
 - `id` — UUID, primary key
 - `project_id` — foreign key -> Project
 - `title` — text, required
@@ -1713,6 +1750,7 @@ Scene cards can be:
 - `deleted_at` — timestamp, nullable
 
 **New table: SceneCharacter** (many-to-many)
+
 - `scene_card_id` — foreign key -> SceneCard
 - `character_id` — foreign key -> Character
 
@@ -1762,6 +1800,7 @@ This is stored as part of the scene card's "characters present" field (SceneChar
 ### Data Model Changes
 
 **New table: WorldEntry**
+
 - `id` — UUID, primary key
 - `project_id` — foreign key -> Project
 - `name` — text, required
@@ -1776,6 +1815,7 @@ This is stored as part of the scene card's "characters present" field (SceneChar
 - `deleted_at` — timestamp, nullable
 
 **New cross-reference tables:**
+
 - `CharacterWorldEntry` — many-to-many: Character <-> WorldEntry
 - `ChapterWorldEntry` — many-to-many: Chapter <-> WorldEntry
 
@@ -1807,7 +1847,7 @@ A visual graph showing connections between characters.
 - Edges are relationships, labeled with the relationship type (e.g., "married to," "rival of," "mentor," "sibling").
 - Relationships are directional when appropriate ("reports to" vs. "manages").
 - The graph is interactive: drag to rearrange, click a node to view the character sheet in the reference panel.
-- Relationships are defined as structured data and automatically reflected in the graph — the map is a *view*, not a separate data source.
+- Relationships are defined as structured data and automatically reflected in the graph — the map is a _view_, not a separate data source.
 
 #### 5d.2 Timeline View
 
@@ -1828,6 +1868,7 @@ The writer can view both timelines side by side to spot structural issues: "The 
 ### Data Model Changes
 
 **New table: Relationship** (replaces the freeform `relationships_text` in Character)
+
 - `id` — UUID, primary key
 - `project_id` — foreign key -> Project
 - `character_a_id` — foreign key -> Character
@@ -1838,6 +1879,7 @@ The writer can view both timelines side by side to spot structural issues: "The 
 - `updated_at` — timestamp
 
 **New table: TimelineEvent**
+
 - `id` — UUID, primary key
 - `project_id` — foreign key -> Project
 - `description` — text, required
@@ -1850,6 +1892,7 @@ The writer can view both timelines side by side to spot structural issues: "The 
 - `deleted_at` — timestamp, nullable
 
 **New cross-reference table:**
+
 - `TimelineEventCharacter` — many-to-many: TimelineEvent <-> Character
 
 ### UI/UX Notes
@@ -1869,7 +1912,7 @@ The writer can view both timelines side by side to spot structural issues: "The 
 
 ### Goal
 
-Give the non-fiction writer (specifically: the kind writing *Bread, Circuses, and GPUs* — research-heavy, argument-driven, historically grounded) the tools to manage sources, track claims, and link them to the prose.
+Give the non-fiction writer (specifically: the kind writing _Bread, Circuses, and GPUs_ — research-heavy, argument-driven, historically grounded) the tools to manage sources, track claims, and link them to the prose.
 
 ### Features
 
@@ -1893,6 +1936,7 @@ The library is searchable and filterable by tag, type, status, and full text. Wh
 A lightweight citation system — not full academic citation management (that's Zotero's job), but enough to track the connection between claims in the prose and their supporting sources.
 
 **Behavior:**
+
 - A writer can link any text selection to one or more sources from the research library.
 - The link is stored as a TipTap custom mark (similar to inline notes in Phase 4c), with the source ID(s) as attributes.
 - In the editor, cited text has a subtle visual indicator (e.g., a superscript number or a colored underline).
@@ -1900,6 +1944,7 @@ A lightweight citation system — not full academic citation management (that's 
 - A "Citations" panel in the reference panel lists all citations in the current chapter, in document order.
 
 **On export (Phase 3 pipeline integration):**
+
 - The writer chooses a citation style: footnotes, endnotes, inline references, or hidden (strip all citations).
 - For footnotes/endnotes, Smudge generates them automatically from the source data: Author, Title, Year (a simplified format — not trying to replicate Chicago/MLA/APA perfectly, but sufficient for a draft manuscript).
 - A bibliography/references section is generated at the end of the export.
@@ -1932,6 +1977,7 @@ The reference panel (built in Phase 4a) gets new tabs for research:
 ### Data Model Changes
 
 **New table: Source**
+
 - `id` — UUID, primary key
 - `project_id` — foreign key -> Project
 - `title` — text, required
@@ -1951,7 +1997,7 @@ Citations and fact-check flags live in the TipTap JSON as custom marks (no separ
 ### UI/UX Notes
 
 - The research library should feel like a personal card catalog, not an academic database. Keep the entry form simple — most writers will only fill in title, author, tags, and notes. The other fields are optional.
-- Citation style in export doesn't need to be publication-ready. This is a *working manuscript*, not a final typeset book. A consistent format (Author, Title, Year) is sufficient. If a publisher or editor wants Chicago style, that's a post-export concern.
+- Citation style in export doesn't need to be publication-ready. This is a _working manuscript_, not a final typeset book. A consistent format (Author, Title, Year) is sufficient. If a publisher or editor wants Chicago style, that's a post-export concern.
 
 ### Dependencies
 
@@ -1981,9 +2027,10 @@ Non-fiction, especially the kind Ovid writes, has a logical structure: thesis ->
 - Child nodes are the main supporting arguments (roughly corresponding to chapters or chapter groups).
 - Under each argument: evidence nodes (linked to specific passages and sources) and counterargument nodes (with rebuttals).
 
-This is a *separate view* in the reference panel, not embedded in the prose. It's a tool for the writer to ask: "Is my argument logically complete? Did I claim X but never provide evidence for it? Did I address the strongest counterargument?"
+This is a _separate view_ in the reference panel, not embedded in the prose. It's a tool for the writer to ask: "Is my argument logically complete? Did I claim X but never provide evidence for it? Did I address the strongest counterargument?"
 
 Each node in the argument tree can link to:
+
 - A chapter or passage (where the argument is made in prose)
 - A source (evidence, from the Phase 6a research library)
 - Another node (logical dependency)
@@ -1993,6 +2040,7 @@ Nodes can be reordered via drag-and-drop to experiment with argument structure.
 ### Data Model Changes
 
 **New table: ArgumentNode**
+
 - `id` — UUID, primary key
 - `project_id` — foreign key -> Project
 - `parent_id` — self-referential foreign key (nullable for root thesis)
@@ -2053,6 +2101,7 @@ A full-screen writing mode that strips all UI chrome: no sidebar, no toolbar, no
 ### Data Model Changes
 
 **Extend app settings:**
+
 - Theme preference (light/dark/system)
 
 ### Dependencies
@@ -2074,6 +2123,7 @@ Help the writer revise their own prose. Style linting makes patterns visible; te
 A non-prescriptive writing quality tool. It does not enforce rules — it makes patterns visible so the writer can decide what to change.
 
 **Detections:**
+
 - **Adverb density:** Highlights sentences with high adverb density, with a per-chapter ratio.
 - **Passive voice:** Identifies passive constructions.
 - **Repeated sentence openings:** Flags sequences of 3+ sentences starting with the same word (especially "I" or "The").
@@ -2099,6 +2149,7 @@ The browser's native SpeechSynthesis API reads the current chapter (or a selecte
 ### Data Model Changes
 
 **Extend app settings:**
+
 - Crutch words list
 
 ### Dependencies
@@ -2111,7 +2162,7 @@ The browser's native SpeechSynthesis API reads the current chapter (or a selecte
 
 ### Goal
 
-Give the writer a space for writing *about* their writing, separate from the manuscript. A place for daily reflections, process notes, and creative thinking.
+Give the writer a space for writing _about_ their writing, separate from the manuscript. A place for daily reflections, process notes, and creative thinking.
 
 ### Features
 
@@ -2128,6 +2179,7 @@ The journal is a simple dated-entry system using the same TipTap editor. It's se
 ### Data Model Changes
 
 **New table: JournalEntry**
+
 - `id` — UUID, primary key
 - `project_id` — foreign key -> Project
 - `date` — date
@@ -2160,7 +2212,7 @@ Side-by-side panels within the editor. Possible configurations:
 
 The split is created via a menu or shortcut. Each panel independently scrolls and can be any content type (chapter, reference, preview).
 
-Note: the reference panel (Phase 4a) already provides a side panel for reference material. Split view extends this by allowing *two full editor panes* or *two arbitrary content types*, not just "editor + reference."
+Note: the reference panel (Phase 4a) already provides a side panel for reference material. Split view extends this by allowing _two full editor panes_ or _two arbitrary content types_, not just "editor + reference."
 
 ### Dependencies
 
@@ -2209,11 +2261,86 @@ This also includes setting the `lang` attribute correctly on content regions bas
 ### Data Model Changes
 
 **Extend app settings:**
+
 - Language preference
 
 ### Dependencies
 
 - MVP string externalization.
+
+---
+
+## Phase 7g: Electron Runtime Prep
+
+### Goal
+
+Harden the server and client runtime so the codebase can be embedded in an Electron shell without rework, and ship a minimal Electron build target that proves the prep works. This phase changes runtime behavior only — no storage model changes (that's Phase 8a) and no portable file format (that's Phase 8b).
+
+### Why Now
+
+The bind/port/data-dir/security concerns this phase addresses are independent of the storage transition in Phase 8a, but Phase 8a's per-project folder model depends on them being in place. Splitting them out keeps Phase 8a focused on the storage migration and gives the runtime work its own review surface. Each individual change also improves the current web deployment (localhost binding, dynamic port, configurable data dir all are useful hardening regardless of Electron).
+
+### Features
+
+#### 7g.1 Configurable Bind Address
+
+`packages/server/src/index.ts:53` currently calls `app.listen(PORT)` with no host argument; Node defaults to `0.0.0.0`, exposing the API to anything that can reach the host's interfaces. Introduce a `SMUDGE_BIND_ADDRESS` env var (default `0.0.0.0` for backwards-compatibility with the Docker deploy, set to `127.0.0.1` by the Electron main script) and pass it to `app.listen`. Document the two modes in `CONTRIBUTING.md`.
+
+#### 7g.2 Dynamic Port Allocation
+
+Allow `SMUDGE_PORT=0` to let the OS assign a free port (`app.listen` already supports this — used today in `packages/server/src/__tests__/test-helpers.ts:20`). On startup, log the chosen port to stdout in a machine-readable form (e.g., `Smudge listening on http://127.0.0.1:<PORT>`) so the Electron main script can parse and plumb it to the renderer via a preload script. Avoids collisions with another Smudge instance or with whatever else may hold port 3456 on the host.
+
+#### 7g.3 Data Directory Resolution
+
+`DB_PATH` is currently read directly from env. Add a thin resolver in the server entry that, when `SMUDGE_USER_DATA_DIR` is set, derives the SQLite path and the image store dir from it (`${SMUDGE_USER_DATA_DIR}/smudge.sqlite` and `${SMUDGE_USER_DATA_DIR}/images/`). The Electron main script sets `SMUDGE_USER_DATA_DIR=app.getPath('userData')` before forking the server. Explicit `DB_PATH` still wins for Docker / dev so the existing deployment path is unaffected.
+
+#### 7g.4 better-sqlite3 Electron Rebuild
+
+`make ensure-native` currently rebuilds against the system Node ABI. Add an `npm run rebuild-electron` script that runs `@electron/rebuild` against the pinned Electron version. The Electron build pipeline runs this after `npm install`. No change to the Docker / web deploy path.
+
+#### 7g.5 Minimal Electron Shell
+
+A new `packages/desktop/` workspace containing:
+
+- `main.ts` — creates a `BrowserWindow` with `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`. Forks the server with `SMUDGE_BIND_ADDRESS=127.0.0.1`, `SMUDGE_PORT=0`, `SMUDGE_USER_DATA_DIR=app.getPath('userData')`. Parses the chosen port from server stdout. Loads the renderer pointing at `http://127.0.0.1:<port>`.
+- `preload.ts` — exposes only the discovered server URL on `window.__SMUDGE__.serverUrl` via `contextBridge.exposeInMainWorld`. No Node APIs leak to the renderer.
+
+The client uses `window.__SMUDGE__?.serverUrl` (when present) instead of the hardcoded base URL for API calls. Outside Electron the existing same-origin behavior continues.
+
+#### 7g.6 Electron Build Pipeline
+
+`electron-builder` configuration that handles the npm workspaces layout. Targets macOS (.dmg), Windows (.exe), Linux (.AppImage). Code signing and notarization wired as a manual step in this phase; automation can land in a follow-up.
+
+#### 7g.7 Renderer CSP for Electron
+
+The renderer in Electron loads from `http://127.0.0.1:<port>`, which is treated as an HTTP origin and warrants a tighter CSP than the dev-mode Vite default. Define a CSP that allows only the local server origin, self-hosted fonts, and the inline styles TipTap requires for some marks.
+
+### Data Model Changes
+
+None. This phase changes runtime behavior, not schema.
+
+### API Changes
+
+None. The server's HTTP surface is unchanged; only the bind address, port assignment, and data directory become runtime-configurable.
+
+### UI/UX Notes
+
+- No visible UI changes in web mode.
+- Electron mode: the app opens in a native window. Native menus (File → Open / New / Quit, Recent Projects) deferred to Phase 8a where "open a project" has a meaningful target (per-project folder).
+- The renderer cannot tell it is in Electron except via the presence of `window.__SMUDGE__` — feature detection only, no UA sniffing.
+
+### Out of Scope
+
+- **Per-project file model** — Phase 8a converts the shared SQLite database into per-project `.smudge/` folders. Phase 7g uses the existing shared-DB layout; the Electron build wraps it as-is.
+- **`.smg` bundle format and OS file association** — Phase 8b.
+- **Auto-updater** — `electron-updater` integration deferred until the storage model is stable enough that downgrade scenarios are tractable.
+- **Native menus and OS-level integrations beyond the basic window** — Phase 8a will add file-open, recent projects, quit; this phase only proves the runtime works.
+
+### Dependencies
+
+- MVP (server + client must exist).
+- No feature dependencies; 7g can land at any point in the Phase 7 sequence.
+- Phase 8a depends on 7g being in place.
 
 ---
 
@@ -2259,15 +2386,18 @@ With projects as folders, implement an "Open Recent" mechanism that tracks recen
 ### Data Model Changes
 
 **Per-project SQLite database** containing:
+
 - All project-specific tables (chapters, characters, scenes, world entries, sources, etc.)
 
 **Application-level database** (separate, for app settings):
+
 - `recent_projects` — path, last_opened_at
 - `settings` — app-level preferences
 
 ### Dependencies
 
 - Phase 2.5b (storage abstractions must exist to swap the backing store).
+- Phase 7g (Electron runtime hardening must be in place; the per-project folder migration assumes localhost binding, dynamic port, and user-data-dir resolution from `app.getPath('userData')`).
 - All feature phases that the writer uses should be stable, since migration affects the database structure.
 
 ---
@@ -2359,19 +2489,19 @@ Each phase extends the test suite established in the MVP. At minimum:
 
 These issues were identified during spec review and resolved. They are recorded here for context.
 
-| # | Issue | Decision |
-|---|-------|----------|
-| 1 | Phase 2 gross word tracking is inaccurate | Renamed to "added words," acknowledged as approximation, kept simple save-comparison approach |
-| 2 | Phase 5 is three phases of work | Split into 5a (characters + scenes), 5b (world-building + who's in room), 5c (relationship map + timeline) |
-| 3 | Phase 6 falsely lists Phase 5 as dependency | Reference panel extracted into Phase 4a as shared infrastructure; Phases 5 and 6 are fully independent |
-| 4 | Find-and-replace can corrupt entire manuscript with no recovery | Manual snapshots pulled forward into Phase 4b as prerequisite; auto-snapshot before replace-all |
-| 5 | Session lifecycle has orphaned state and edge cases | Sessions derived from save timestamps instead of explicit start/end; removed three API endpoints |
-| 6 | No image handling anywhere in roadmap | Image upload/storage added as Phase 4a cross-phase infrastructure |
-| 7 | Export doesn't address soft-deleted chapters | Soft-deleted chapters silently excluded from export |
-| 8 | Argument structure visualization is separate concern from research tools | Split into Phase 6a (research tools) and Phase 6b (argument tree) |
-| 9 | Chapter status defaults to "rough_draft" for empty chapters | Default changed to "outline" |
-| 10 | Dark mode needs MVP groundwork (CSS custom properties) | Flagged — owner is updating MVP PRD directly |
-| 11 | No import capability | Deferred to Phase 7e |
-| 12 | Find-and-replace conflicts with open editor state | Force-save before replace, reload affected chapter from server after |
-| 13 | Daily snapshots ignore timezone | Timezone setting added to Phase 2, defaults from browser |
-| 14 | PRs too large per phase | Phases restructured into smaller sub-phases (v0.5.0): Phase 3 split into 3a/3b, Phase 4 into 4a/4b/4c, Phase 5a into 5a/5b (old 5b->5c, 5c->5d), Phase 7 into 7a-7f, added Phase 2.5 (simplification) and Phase 8 (desktop packaging) |
+| #   | Issue                                                                    | Decision                                                                                                                                                                                                                              |
+| --- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Phase 2 gross word tracking is inaccurate                                | Renamed to "added words," acknowledged as approximation, kept simple save-comparison approach                                                                                                                                         |
+| 2   | Phase 5 is three phases of work                                          | Split into 5a (characters + scenes), 5b (world-building + who's in room), 5c (relationship map + timeline)                                                                                                                            |
+| 3   | Phase 6 falsely lists Phase 5 as dependency                              | Reference panel extracted into Phase 4a as shared infrastructure; Phases 5 and 6 are fully independent                                                                                                                                |
+| 4   | Find-and-replace can corrupt entire manuscript with no recovery          | Manual snapshots pulled forward into Phase 4b as prerequisite; auto-snapshot before replace-all                                                                                                                                       |
+| 5   | Session lifecycle has orphaned state and edge cases                      | Sessions derived from save timestamps instead of explicit start/end; removed three API endpoints                                                                                                                                      |
+| 6   | No image handling anywhere in roadmap                                    | Image upload/storage added as Phase 4a cross-phase infrastructure                                                                                                                                                                     |
+| 7   | Export doesn't address soft-deleted chapters                             | Soft-deleted chapters silently excluded from export                                                                                                                                                                                   |
+| 8   | Argument structure visualization is separate concern from research tools | Split into Phase 6a (research tools) and Phase 6b (argument tree)                                                                                                                                                                     |
+| 9   | Chapter status defaults to "rough_draft" for empty chapters              | Default changed to "outline"                                                                                                                                                                                                          |
+| 10  | Dark mode needs MVP groundwork (CSS custom properties)                   | Flagged — owner is updating MVP PRD directly                                                                                                                                                                                          |
+| 11  | No import capability                                                     | Deferred to Phase 7e                                                                                                                                                                                                                  |
+| 12  | Find-and-replace conflicts with open editor state                        | Force-save before replace, reload affected chapter from server after                                                                                                                                                                  |
+| 13  | Daily snapshots ignore timezone                                          | Timezone setting added to Phase 2, defaults from browser                                                                                                                                                                              |
+| 14  | PRs too large per phase                                                  | Phases restructured into smaller sub-phases (v0.5.0): Phase 3 split into 3a/3b, Phase 4 into 4a/4b/4c, Phase 5a into 5a/5b (old 5b->5c, 5c->5d), Phase 7 into 7a-7f, added Phase 2.5 (simplification) and Phase 8 (desktop packaging) |

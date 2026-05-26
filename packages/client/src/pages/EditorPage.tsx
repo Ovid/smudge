@@ -19,6 +19,8 @@ import { EditorFooter } from "../components/EditorFooter";
 import { STRINGS } from "../strings";
 import { useProjectEditor } from "../hooks/useProjectEditor";
 import { useEditorMutation } from "../hooks/useEditorMutation";
+import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
+import { sleep } from "../utils/abortable";
 import { useSidebarState } from "../hooks/useSidebarState";
 import { useReferencePanelState } from "../hooks/useReferencePanelState";
 import { useSnapshotState } from "../hooks/useSnapshotState";
@@ -38,7 +40,7 @@ import { api } from "../api/client";
 // only invariant holds at every call site. The barrel re-exports
 // the same class.
 import { ApiRequestError } from "../errors";
-import { mapApiError, mapApiErrorMessage, isNotFound } from "../errors";
+import { mapApiError, mapApiErrorMessage, isAborted, isNotFound } from "../errors";
 import { clearCachedContent, clearAllCachedContent } from "../hooks/useContentCache";
 import { safeSetEditable } from "../utils/editorSafeOps";
 import { Logo } from "../components/Logo";
@@ -725,6 +727,15 @@ export function EditorPage() {
     ],
   );
 
+  // Shared controller for the find-and-replace flow. executeReplace
+  // (replace-all) and handleReplaceOne (replace-one) are mutually
+  // exclusive at runtime — both are gated by isActionBusy() — so a
+  // single replaceOp is correct: starting either operation aborts any
+  // prior in-flight call, and unmount cancels whichever is open.
+  // useEditorMutation still owns staleness/locking; replaceOp is the
+  // orthogonal network-cancellation layer (per design §2.2 C-10/C-11).
+  const replaceOp = useAbortableAsyncOperation();
+
   const executeReplace = useCallback(
     async (frozen: {
       scope: { type: "project" } | { type: "chapter"; chapter_id: string };
@@ -772,13 +783,17 @@ export function EditorPage() {
         type ReplaceData = Awaited<ReturnType<typeof api.search.replace>>;
 
         const result = await mutation.run<ReplaceData>(async () => {
-          const resp = await api.search.replace(
-            slug,
-            frozen.query,
-            frozen.replacement,
-            frozen.options,
-            frozen.scope,
+          const { promise } = replaceOp.run((s) =>
+            api.search.replace(
+              slug,
+              frozen.query,
+              frozen.replacement,
+              frozen.options,
+              frozen.scope,
+              s,
+            ),
           );
+          const resp = await promise;
           // Read the CURRENT active chapter (not the closure value) so a
           // chapter switch between click and response still reloads when the
           // now-active chapter was affected.
@@ -914,6 +929,7 @@ export function EditorPage() {
       setActionError,
       mutation,
       isActionBusy,
+      replaceOp,
     ],
   );
 
@@ -1015,17 +1031,21 @@ export function EditorPage() {
         type ReplaceData = Awaited<ReturnType<typeof api.search.replace>>;
 
         const result = await mutation.run<ReplaceData>(async () => {
-          const resp = await api.search.replace(
-            slug,
-            frozenQuery,
-            frozenReplacement,
-            frozenOptions,
-            {
-              type: "chapter",
-              chapter_id: chapterId,
-              match_index: matchIndex,
-            },
+          const { promise } = replaceOp.run((s) =>
+            api.search.replace(
+              slug,
+              frozenQuery,
+              frozenReplacement,
+              frozenOptions,
+              {
+                type: "chapter",
+                chapter_id: chapterId,
+                match_index: matchIndex,
+              },
+              s,
+            ),
           );
+          const resp = await promise;
           const current = getActiveChapter();
           // Replace-one with 0 count means the match was gone on the server —
           // emit no cache clear / no reload; the ok branch will surface the
@@ -1141,6 +1161,7 @@ export function EditorPage() {
       setActionError,
       mutation,
       isActionBusy,
+      replaceOp,
     ],
   );
 
@@ -1190,7 +1211,7 @@ export function EditorPage() {
   // hook. Mirror the abort-on-unmount discipline used everywhere else
   // on this branch — one controller per call, aborted on the next
   // call AND on unmount.
-  const settingsRefreshAbortRef = useRef<AbortController | null>(null);
+  const settingsRefreshOp = useAbortableAsyncOperation();
   // I8 (review 2026-04-24): shared counter bumped when a paste/drop
   // upload falls into the possiblyCommitted branch; ImageGallery
   // re-fetches its list so a retry sees the already-stored row rather
@@ -1198,16 +1219,13 @@ export function EditorPage() {
   const [galleryExternalRefreshKey, setGalleryExternalRefreshKey] = useState(0);
   const [toolbarEditor, setToolbarEditor] = useState<TipTapEditor | null>(null);
 
-  // Clean up image announcement timer on unmount
+  // Clean up image announcement timer on unmount.
+  // settingsRefreshOp auto-aborts on unmount — no explicit call needed.
   useEffect(() => {
     return () => {
       if (imageAnnouncementTimerRef.current) {
         clearTimeout(imageAnnouncementTimerRef.current);
       }
-      // I11 (review 2026-04-25): drop any in-flight settings refresh GET
-      // so the .then/.catch can't fire setProject / navigate("/") on a
-      // torn-down hook.
-      settingsRefreshAbortRef.current?.abort();
     };
   }, []);
 
@@ -1219,35 +1237,46 @@ export function EditorPage() {
     setEditorLockedMessage(null);
   }, [activeChapter?.id, chapterReloadKey]);
 
-  // Fetch chapter statuses with retry
+  // Fetch chapter statuses with retry. statusesOp lives in the component
+  // body (not inside the effect) so its identity is stable across renders;
+  // the effect closes over the same controller-tracking hook each time.
+  const statusesOp = useAbortableAsyncOperation();
+
   useEffect(() => {
-    let cancelled = false;
-    let attempts = 0;
-    let timerId: ReturnType<typeof setTimeout> | null = null;
-    function fetchStatuses() {
-      api.chapterStatuses
-        .list()
-        .then((data) => {
-          if (!cancelled) setStatuses(data);
-        })
-        .catch((err) => {
-          if (cancelled) return;
+    const { promise } = statusesOp.run(async (s) => {
+      let attempts = 0;
+      while (true) {
+        if (s.aborted) return;
+        try {
+          const data = await api.chapterStatuses.list(s);
+          if (s.aborted) return;
+          setStatuses(data);
+          return;
+        } catch (err) {
+          if (s.aborted) return;
           console.warn("Failed to load chapter statuses:", err);
-          if (attempts < 2) {
-            attempts++;
-            timerId = setTimeout(fetchStatuses, 2000 * attempts);
-          } else {
+          if (attempts >= 2) {
             const { message } = mapApiError(err, "chapterStatus.fetch");
             if (message) setActionError(message);
+            return;
           }
-        });
-    }
-    fetchStatuses();
-    return () => {
-      cancelled = true;
-      if (timerId !== null) clearTimeout(timerId);
-    };
-  }, [setActionError]);
+          attempts++;
+          try {
+            await sleep(2000 * attempts, s);
+          } catch (sleepErr) {
+            // S7 (review 2026-05-25): narrow the catch to abort only —
+            // a bare `catch {}` would swallow a future non-abort throw
+            // from sleep (e.g. a refactor that throws synchronously
+            // before scheduling the timer) and mask the bug. Mirrors
+            // the same predicate used in useProjectEditor's save loop.
+            if (isAborted(sleepErr)) return;
+            throw sleepErr;
+          }
+        }
+      }
+    });
+    void promise;
+  }, [setActionError, statusesOp]);
 
   const handleStatusChangeWithError = useCallback(
     (chapterId: string, status: string) => {
@@ -1503,13 +1532,10 @@ export function EditorPage() {
     if (slug) {
       // I11 (review 2026-04-25): abort prior in-flight refresh and
       // thread the signal so the .then/.catch can drop on unmount.
-      settingsRefreshAbortRef.current?.abort();
-      const controller = new AbortController();
-      settingsRefreshAbortRef.current = controller;
-      api.projects
-        .get(slug, controller.signal)
+      const { promise, signal } = settingsRefreshOp.run((s) => api.projects.get(slug, s));
+      promise
         .then((data) => {
-          if (controller.signal.aborted) return;
+          if (signal.aborted) return;
           // S7 (review 2026-04-21): re-check busy before merging. The
           // entry gate above guarantees no mutation was in flight when
           // we dispatched the GET, but a mutation can start during the
@@ -1534,7 +1560,7 @@ export function EditorPage() {
         })
         .catch((err: unknown) => {
           // I11: drop on unmount or supersession.
-          if (controller.signal.aborted) return;
+          if (signal.aborted) return;
           // I12 (review 2026-04-25): mirror the success-path busy gate
           // in the catch branch. A settings GET that fails while the
           // editor is mid-mutation would otherwise surface a banner
@@ -1556,7 +1582,7 @@ export function EditorPage() {
           if (message) setActionError(message);
         });
     }
-  }, [slug, setProject, setActionError, navigate, mutation, isActionBusy]);
+  }, [slug, setProject, setActionError, navigate, mutation, isActionBusy, settingsRefreshOp]);
 
   useKeyboardShortcuts({
     shortcutHelpOpen,

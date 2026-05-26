@@ -1023,12 +1023,17 @@ describe("I10 — error-predicate helpers", () => {
     expect(isApiError("string")).toBe(false);
   });
 
-  it("isAborted matches ABORTED ApiRequestError only", () => {
+  it("isAborted matches ABORTED ApiRequestError and DOM AbortError", () => {
     expect(isAborted(new ApiRequestError("a", 0, "ABORTED"))).toBe(true);
     expect(isAborted(new ApiRequestError("n", 0, "NETWORK"))).toBe(false);
     expect(isAborted(new ApiRequestError("x", 500))).toBe(false);
     expect(isAborted(new Error("plain"))).toBe(false);
     expect(isAborted(undefined)).toBe(false);
+    // I1 (review 2026-05-25): sleep() rejects with a bare DOMException
+    // AbortError, not an ApiRequestError. Predicate must recognize both
+    // so retry-loop catches can use a single check.
+    expect(isAborted(new DOMException("Aborted", "AbortError"))).toBe(true);
+    expect(isAborted(new DOMException("Other", "NotSupportedError"))).toBe(false);
   });
 
   it("isNotFound matches status 404 ApiRequestError only", () => {

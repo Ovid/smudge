@@ -409,6 +409,65 @@ describe("useSnapshotState", () => {
     expect(capturedSignal?.aborted).toBe(true);
   });
 
+  // Phase 4b.3b S-16: restoreFollowupAbortRef stays hand-rolled because
+  // the follow-up GET fires from inside the restore's success branch,
+  // by which time restoreOp's controller has been replaced. Pin BOTH
+  // invariants that justify the retained ref:
+  //   (a) the follow-up list's signal is aborted when the hook unmounts
+  //       between the restore resolving and the follow-up settling, and
+  //   (b) a second restore aborts the prior restore's follow-up GET so
+  //       a rapid restore-then-restore doesn't leak a pending list call
+  //       (the badge re-fetches via the second restore's own follow-up).
+  // If these break, the I8 + S-16 comment block above is wrong: either
+  // the ref isn't actually being aborted, or someone migrated the
+  // follow-up to restoreOp and broke the simultaneously-live-controllers
+  // shape.
+  it("S-16: restoreFollowupAbortRef aborts the follow-up GET on unmount AND on a new restore", async () => {
+    // Two captured follow-up signals, in call order (the first restore's
+    // follow-up list, then the second restore's follow-up list).
+    const followupSignals: AbortSignal[] = [];
+    vi.mocked(api.snapshots.list).mockImplementation((_chapterId, signal) => {
+      if (signal) followupSignals.push(signal);
+      return pendingUntilAbort(signal);
+    });
+    // Each restore resolves immediately; the success branch then fires
+    // the follow-up list, whose signal we capture above.
+    vi.mocked(api.snapshots.restore).mockResolvedValue({} as never);
+
+    const { result, unmount } = renderHook(() => useSnapshotState("ch-1"));
+
+    // Invariant (b): new-restore aborts prior follow-up.
+    // First restore → follow-up #1 starts and hangs (pendingUntilAbort).
+    await act(async () => {
+      await result.current.restoreSnapshot("snap-1");
+    });
+    // The initial chapterId effect also calls api.snapshots.list; the
+    // follow-up GET is the call whose signal we want to track. Wait
+    // until the follow-up has been issued (at least 2 list calls so
+    // far: the chapterId-effect call + the restore follow-up).
+    await waitFor(() => {
+      expect(followupSignals.length).toBeGreaterThanOrEqual(2);
+    });
+    const followup1 = followupSignals[followupSignals.length - 1]!;
+    expect(followup1.aborted).toBe(false);
+
+    // Second restore → follow-up #2 starts; the hook must abort
+    // follow-up #1 before allocating the new controller.
+    await act(async () => {
+      await result.current.restoreSnapshot("snap-2");
+    });
+    await waitFor(() => {
+      expect(followupSignals.length).toBeGreaterThanOrEqual(3);
+    });
+    const followup2 = followupSignals[followupSignals.length - 1]!;
+    expect(followup1.aborted).toBe(true);
+    expect(followup2.aborted).toBe(false);
+
+    // Invariant (a): unmount aborts the currently-live follow-up.
+    unmount();
+    expect(followup2.aborted).toBe(true);
+  });
+
   it("restoreSnapshot flags staleChapterSwitch when chapter changes mid-flight", async () => {
     // Server-side restore succeeds, but the user switched chapters before the
     // promise resolved. We must signal staleChapterSwitch so the caller

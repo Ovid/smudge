@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
 import { mapApiError } from "../errors";
+import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 
 const TIMEZONES = (() => {
   try {
@@ -42,17 +43,17 @@ export function ProjectSettingsDialog({
   const [fieldSaveError, setFieldSaveError] = useState<string | null>(null);
   const [timezoneSaveError, setTimezoneSaveError] = useState<string | null>(null);
   const userChangedTimezoneRef = useRef(false);
-  const timezoneAbortRef = useRef<AbortController | null>(null);
+  const timezoneOp = useAbortableAsyncOperation();
   const confirmedTimezoneRef = useRef<string>("UTC");
   // I1 (review 2026-04-24): rapid edits (type → blur → type → blur)
   // fired overlapping PATCHes with no client-side ordering. Without
   // client abort, SQLite's writer-lock acquisition order determined
   // which value won at the server — the UI's last-typed value and the
-  // persisted value could disagree. Mirror timezoneAbortRef: one
-  // controller per saveField issue, aborted on the next issue and on
-  // unmount, so every dispatch that has been superseded is also
-  // cancelled at the network layer.
-  const fieldAbortRef = useRef<AbortController | null>(null);
+  // persisted value could disagree. Mirror timezoneOp: one controller
+  // per saveField issue, aborted on the next issue and on unmount, so
+  // every dispatch that has been superseded is also cancelled at the
+  // network layer.
+  const fieldOp = useAbortableAsyncOperation();
 
   // Track last confirmed values so reverts go to the right place after
   // successful save + failed second save (I5 fix).
@@ -87,12 +88,11 @@ export function ProjectSettingsDialog({
       // a stale PATCH's success handler write
       // confirmedFieldsRef.current.X = data.X against this fresh
       // baseline; the next save's revert would restore the wrong
-      // value. The unmount cleanup at the bottom of this file covers
-      // teardown; this open-transition abort covers re-open.
-      fieldAbortRef.current?.abort();
-      fieldAbortRef.current = null;
-      timezoneAbortRef.current?.abort();
-      timezoneAbortRef.current = null;
+      // value. S-10 (Phase 4b.3b): the hooks auto-abort on unmount;
+      // this open-transition abort covers re-open within the same
+      // component lifetime.
+      fieldOp.abort();
+      timezoneOp.abort();
       // Re-sync confirmed-values baseline from props when dialog opens
       confirmedFieldsRef.current = {
         wordCountTarget: project.target_word_count != null ? String(project.target_word_count) : "",
@@ -141,21 +141,13 @@ export function ProjectSettingsDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // I4 (2026-04-24 review): the timezone PATCH is only cancelled by a
-  // newer timezone click. If the dialog unmounts mid-save (parent
-  // navigates away, `key={project.slug}` remount on rename), the
-  // in-flight PATCH continues and the .then/.catch runs setTimezone /
-  // setTimezoneSaveError on an unmounted component — setState-on-
-  // unmount warning in test output. Abort on unmount so the request
-  // drops cleanly and state updates cannot fire after teardown. Empty
-  // dep array: this is a true unmount-only cleanup, not tied to `open`.
-  useEffect(
-    () => () => {
-      timezoneAbortRef.current?.abort();
-      fieldAbortRef.current?.abort();
-    },
-    [],
-  );
+  // I4 (2026-04-24 review): in-flight timezone and field PATCHes must
+  // not survive unmount (parent navigates away, `key={project.slug}`
+  // remount on rename), or the .then/.catch would run setState on an
+  // unmounted component — setState-on-unmount warning in test output.
+  // S-10 (Phase 4b.3b): both timezoneOp and fieldOp now auto-abort on
+  // unmount via the useAbortableAsyncOperation hook, so the explicit
+  // unmount-cleanup useEffect is no longer needed.
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -182,12 +174,10 @@ export function ProjectSettingsDialog({
     setFieldSaveError(null);
     // I1: abort any prior in-flight field PATCH before issuing a new
     // one so overlapping requests can't commit out of typing order.
-    fieldAbortRef.current?.abort();
-    const controller = new AbortController();
-    fieldAbortRef.current = controller;
+    const { promise, signal } = fieldOp.run((s) => api.projects.update(project.slug, data, s));
     try {
-      await api.projects.update(project.slug, data, controller.signal);
-      if (controller.signal.aborted) return; // superseded by a newer save
+      await promise;
+      if (signal.aborted) return; // superseded by a newer save
       // Update confirmed values on success before triggering parent refresh
       if ("target_word_count" in data) {
         confirmedFieldsRef.current.wordCountTarget =
@@ -201,7 +191,7 @@ export function ProjectSettingsDialog({
       }
       onUpdate();
     } catch (err) {
-      if (controller.signal.aborted) return; // superseded by a newer save
+      if (signal.aborted) return; // superseded by a newer save
       console.error("Failed to save project setting:", err);
       // I7 (2026-04-23): route through the unified mapper instead of
       // hardcoding STRINGS.projectSettings.saveError — VALIDATION_ERROR,
@@ -274,21 +264,20 @@ export function ProjectSettingsDialog({
 
   async function handleTimezoneChange(value: string) {
     // Cancel any in-flight timezone save to prevent out-of-order writes
-    timezoneAbortRef.current?.abort();
-    const controller = new AbortController();
-    timezoneAbortRef.current = controller;
-
     userChangedTimezoneRef.current = true;
     setTimezone(value);
     setTimezoneSaveError(null);
+    const { promise, signal } = timezoneOp.run((s) =>
+      api.settings.update([{ key: "timezone", value }], s),
+    );
     try {
-      await api.settings.update([{ key: "timezone", value }], controller.signal);
-      if (!controller.signal.aborted) {
+      await promise;
+      if (!signal.aborted) {
         confirmedTimezoneRef.current = value;
         onUpdate();
       }
     } catch (err) {
-      if (controller.signal.aborted) return; // superseded by a newer request
+      if (signal.aborted) return; // superseded by a newer request
       console.error("Failed to save timezone:", err);
       const { message, possiblyCommitted } = mapApiError(err, "settings.update");
       if (message) setTimezoneSaveError(message);

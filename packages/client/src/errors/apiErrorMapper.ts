@@ -45,14 +45,19 @@ export function isApiError(err: unknown): err is ApiRequestError {
   return isApiRequestError(err);
 }
 
-/** True when the error is the transport-layer ABORTED signal. Prefer
- * this over checking err.code === "ABORTED" at call sites; the mapper's
- * message===null convention is the other canonical way to spot an abort
- * and should continue to be used for catches that already call
- * mapApiError. Type guard so callers can read err.status/err.code if
- * needed after the check. */
-export function isAborted(err: unknown): err is ApiRequestError {
-  return isApiRequestError(err) && err.code === "ABORTED";
+/** True when the error represents an aborted operation, regardless of
+ * source: the transport-layer ABORTED ApiRequestError (from fetch/body
+ * abort via classifyFetchError) or a bare DOMException AbortError
+ * (from non-fetch awaitables like the `sleep()` helper in
+ * utils/abortable.ts). Both surface in retry-loop catches and the
+ * desired control flow is identical — exit silently. Prefer this over
+ * checking err.code === "ABORTED" at call sites; the mapper's
+ * message===null convention is the other canonical way to spot an
+ * abort and should continue to be used for catches that already call
+ * mapApiError. */
+export function isAborted(err: unknown): err is ApiRequestError | DOMException {
+  if (isApiRequestError(err) && err.code === "ABORTED") return true;
+  return err instanceof DOMException && err.name === "AbortError";
 }
 
 /** True when the error is an HTTP 404. Common short-circuit for GETs

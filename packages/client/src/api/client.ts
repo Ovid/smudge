@@ -238,10 +238,15 @@ export const api = {
     get: (slug: string, signal?: AbortSignal) =>
       apiFetch<ProjectWithChapters>(`/projects/${enc(slug)}`, signal ? { signal } : undefined),
 
-    create: (input: CreateProjectInput) =>
+    create: (input: CreateProjectInput, signal?: AbortSignal) =>
       apiFetch<Project>("/projects", {
         method: "POST",
         body: JSON.stringify(input),
+        // Only include `signal` when one was actually provided; otherwise
+        // the fetch options object differs from the no-signal callers in
+        // ways that break tests asserting the options shape (and can
+        // subtly differ in fetch polyfills). Matches chapters.update.
+        ...(signal ? { signal } : {}),
       }),
 
     update: (
@@ -270,8 +275,11 @@ export const api = {
         signal ? { signal } : undefined,
       ),
 
-    delete: (slug: string) =>
-      apiFetch<{ message: string }>(`/projects/${enc(slug)}`, { method: "DELETE" }),
+    delete: (slug: string, signal?: AbortSignal) =>
+      apiFetch<{ message: string }>(`/projects/${enc(slug)}`, {
+        method: "DELETE",
+        ...(signal ? { signal } : {}),
+      }),
 
     reorderChapters: (slug: string, chapterIds: string[], signal?: AbortSignal) =>
       apiFetch<{ message: string }>(`/projects/${enc(slug)}/chapters/order`, {
@@ -365,8 +373,11 @@ export const api = {
     get: (id: string, signal?: AbortSignal) =>
       apiFetch<Chapter>(`/chapters/${enc(id)}`, signal ? { signal } : undefined),
 
-    create: (projectSlug: string) =>
-      apiFetch<Chapter>(`/projects/${enc(projectSlug)}/chapters`, { method: "POST" }),
+    create: (projectSlug: string, signal?: AbortSignal) =>
+      apiFetch<Chapter>(`/projects/${enc(projectSlug)}/chapters`, {
+        method: "POST",
+        ...(signal ? { signal } : {}),
+      }),
 
     update: (
       id: string,
@@ -404,7 +415,8 @@ export const api = {
   },
 
   chapterStatuses: {
-    list: () => apiFetch<ChapterStatusRow[]>("/chapter-statuses"),
+    list: (signal?: AbortSignal) =>
+      apiFetch<ChapterStatusRow[]>("/chapter-statuses", signal ? { signal } : undefined),
   },
 
   images: {

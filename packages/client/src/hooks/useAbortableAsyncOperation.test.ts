@@ -125,6 +125,49 @@ describe("useAbortableAsyncOperation", () => {
     expect(bRun.signal.aborted).toBe(false);
   });
 
+  // S-7 (Phase 4b.3b): pins the dual-signal contract that
+  // useProjectEditor.handleDeleteChapter relies on — ONE per-call
+  // signal threads into TWO sequential api calls within a single
+  // run() callback, remains the SAME instance across awaits, and
+  // aborts BOTH calls when the next run() (or unmount) fires. The
+  // property is implicit in the current implementation; this test
+  // exists so a future hook refactor that breaks it fails here
+  // before it surfaces as a deleteChapter regression.
+  it("per-call signal passed to fn remains valid across multiple awaited calls within fn, and aborts all on next run()", async () => {
+    const { result } = renderHook(() => useAbortableAsyncOperation());
+    const seenSignals: AbortSignal[] = [];
+    let resolveFirst: () => void = () => {};
+    let resolveSecond: () => void = () => {};
+    const firstAwait = new Promise<void>((r) => {
+      resolveFirst = r;
+    });
+    const secondAwait = new Promise<void>((r) => {
+      resolveSecond = r;
+    });
+
+    const { promise } = result.current.run(async (s) => {
+      seenSignals.push(s);
+      await firstAwait;
+      seenSignals.push(s); // same instance — across-await stability
+      await secondAwait;
+      return "ok";
+    });
+
+    resolveFirst();
+    await Promise.resolve();
+    expect(seenSignals).toHaveLength(2);
+    expect(seenSignals[0]).toBe(seenSignals[1]);
+    expect(seenSignals[0]!.aborted).toBe(false);
+
+    // A new run() aborts the prior signal — both awaits would see it aborted.
+    result.current.run(async () => "second");
+    expect(seenSignals[0]!.aborted).toBe(true);
+
+    // Drain the first run's pending awaits to satisfy unhandled-rejection guards.
+    resolveSecond();
+    await expect(promise).resolves.toBe("ok");
+  });
+
   // Pins design §Test strategy: the hook never logs. Without an explicit
   // assertion, a future refactor could introduce a warn/error path that
   // the suite-level zero-warnings rule would catch but not attribute to

@@ -956,6 +956,58 @@ describe("EditorPage handleStatusChangeWithError", () => {
       warnSpy.mockRestore();
     }
   });
+
+  it("C-9: chapterStatuses retry threads an AbortSignal and aborts on unmount", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapterStatuses.list).mockRejectedValue(new Error("first attempt fails"));
+
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { unmount } = renderEditorPage();
+
+      // Wait for the project to load AND the first chapterStatuses attempt to fail.
+      // The retry useEffect fires immediately on mount; await the warn so we know
+      // the first .catch() has resolved before we unmount.
+      await waitFor(() => {
+        expect(screen.getByText(mockProject.title)).toBeInTheDocument();
+      });
+      await waitFor(() => {
+        expect(warnSpy).toHaveBeenCalledWith("Failed to load chapter statuses:", expect.any(Error));
+      });
+
+      // First attempt must have been invoked with an AbortSignal (the signal
+      // the statusesOp.run() callback receives). This is the C-9 contract:
+      // the retry loop threads the hook signal into the API call so an
+      // in-flight request can be aborted by unmount, not just future-pending
+      // setTimeout retries.
+      const firstCallArgs = vi.mocked(api.chapterStatuses.list).mock.calls[0];
+      expect(firstCallArgs).toBeDefined();
+      expect(firstCallArgs![0]).toBeInstanceOf(AbortSignal);
+      const capturedSignal = firstCallArgs![0] as AbortSignal;
+      expect(capturedSignal.aborted).toBe(false);
+
+      const callsAfterFirst = vi.mocked(api.chapterStatuses.list).mock.calls.length;
+
+      // Unmount during the 2s backoff window. The hook-level controller
+      // must abort the signal the first call received and short-circuit the
+      // sleep(2000) backoff so no second attempt fires.
+      unmount();
+      expect(capturedSignal.aborted).toBe(true);
+
+      // Advance past the backoff. With abortable sleep, the next attempt
+      // MUST NOT fire (and no further warn must be emitted).
+      const warnCallsBefore = warnSpy.mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      expect(vi.mocked(api.chapterStatuses.list).mock.calls.length).toBe(callsAfterFirst);
+      expect(warnSpy.mock.calls.length).toBe(warnCallsBefore);
+    } finally {
+      vi.useRealTimers();
+      warnSpy.mockRestore();
+    }
+  });
 });
 
 describe("EditorPage view mode toggles", () => {
@@ -1149,6 +1201,7 @@ describe("EditorPage find-and-replace confirmation", () => {
           regex: expect.any(Boolean),
         }),
         { type: "project" },
+        expect.any(AbortSignal),
       );
     });
 
@@ -2006,6 +2059,77 @@ describe("EditorPage find-and-replace confirmation", () => {
     });
 
     expect(vi.mocked(api.search.replace).mock.calls.length).toBe(callsAfterLock);
+  });
+
+  it("C-10/C-11: aborting replaceOp via unmount causes api.search.replace to receive an aborted signal", async () => {
+    // The replace flow (executeReplace + handleReplaceOne) routes its
+    // api.search.replace call through a shared replaceOp instance of
+    // useAbortableAsyncOperation. The hook threads its per-call signal
+    // into the API; component unmount aborts the controller and the
+    // signal the in-flight call received flips to aborted.
+    let capturedSignal: AbortSignal | undefined;
+    vi.mocked(api.search.replace).mockImplementationOnce(
+      (_slug, _search, _replace, _options, _scope, signal) => {
+        capturedSignal = signal;
+        return pendingUntilAbort<{ replaced_count: number; affected_chapter_ids: string[] }>(
+          signal,
+        );
+      },
+    );
+
+    const { unmount } = render(
+      <MemoryRouter initialEntries={["/projects/test-project"]}>
+        <Routes>
+          <Route path="/projects/:slug" element={<EditorPage />} />
+          <Route path="/" element={<div>Home</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "h", code: "KeyH", ctrlKey: true });
+      await Promise.resolve();
+    });
+
+    const searchInput = await screen.findByLabelText("Find");
+    const replaceInput = screen.getByLabelText("Replace");
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.change(searchInput, { target: { value: "foo" } });
+      fireEvent.change(replaceInput, { target: { value: "qux" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    // Trigger executeReplace via the Replace-All confirmation flow.
+    const replaceAllButton = await screen.findByRole(
+      "button",
+      { name: "Replace All in Manuscript" },
+      { timeout: 3000 },
+    );
+    await userEvent.click(replaceAllButton);
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    // The mock captured the signal the replaceOp.run() callback received.
+    await waitFor(() => {
+      expect(capturedSignal).toBeDefined();
+    });
+    expect(capturedSignal).toBeInstanceOf(AbortSignal);
+    expect(capturedSignal!.aborted).toBe(false);
+
+    // Unmounting must abort the hook's controller, flipping the signal
+    // the in-flight api.search.replace call received.
+    unmount();
+    expect(capturedSignal!.aborted).toBe(true);
   });
 });
 

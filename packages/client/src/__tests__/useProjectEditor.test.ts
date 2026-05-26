@@ -342,6 +342,43 @@ describe("useProjectEditor", () => {
     }
   });
 
+  it("S-2: cancelInFlightSave aborts an in-flight save (regression test)", async () => {
+    // Phase 4b.3b row S-2: locks the contract that cancelInFlightSave()
+    // — invoked by cancelPendingSaves, handleSelectChapter,
+    // handleDeleteChapter, handleCreateChapter, and unmount cleanup —
+    // actually aborts the AbortSignal threaded into api.chapters.update.
+    // Before the migration this came from saveAbortRef.current.abort();
+    // after the migration the same guarantee comes from
+    // saveOp.abort() via useAbortableAsyncOperation. The test asserts
+    // the externally-observable behavior so it passes against both
+    // implementations.
+    let capturedSignal: AbortSignal | undefined;
+    vi.mocked(api.chapters.update).mockImplementation((_id, _data, signal) => {
+      capturedSignal = signal;
+      return pendingUntilAbort<typeof mockChapter1>(signal);
+    });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy(), { timeout: 3000 });
+
+    let savePromise: Promise<boolean> = Promise.resolve(false);
+    act(() => {
+      savePromise = result.current.handleSave({ type: "doc", content: [] }, "ch1");
+    });
+    await waitFor(() => expect(capturedSignal).toBeDefined(), { timeout: 3000 });
+    expect(capturedSignal!.aborted).toBe(false);
+
+    await act(async () => {
+      result.current.cancelPendingSaves();
+      // Drain the pending save promise — the aborted fetch rejects with
+      // ABORTED, which the catch block in handleSave short-circuits via
+      // isAborted(err).
+      expect(await savePromise).toBe(false);
+    });
+
+    expect(capturedSignal!.aborted).toBe(true);
+  });
+
   it("unmount during save-backoff aborts the retry loop and does not fire a further PATCH", async () => {
     // Regression for a pre-existing leak: the retry loop inside handleSave
     // runs outside React's render cycle. Without unmount cleanup, a backoff
@@ -758,6 +795,37 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("C-6: unmount mid-api.projects.get does NOT call setProject (preserves cancelled-flag guarantee)", async () => {
+    // C-6 (Phase 4b.3b): the loadProject useEffect replaced its
+    // `let cancelled = false` flag with `loadProjectOp.run(...)`. The
+    // pre-migration guarantee was: a late-resolving api.projects.get
+    // landing after unmount must not call setProject. The hook's
+    // auto-abort-on-unmount + `if (s.aborted) return;` gate must
+    // preserve that guarantee.
+    let resolveGet: (data: typeof mockProject) => void = () => {};
+    vi.mocked(api.projects.get).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveGet = resolve as (data: typeof mockProject) => void;
+        }),
+    );
+
+    const { result, unmount } = renderHook(() => useProjectEditor("test-project"));
+    // Sanity: nothing has resolved yet, so project should still be null.
+    expect(result.current.project).toBeNull();
+    unmount();
+    // Resolve AFTER unmount — the post-await `if (s.aborted) return;`
+    // gate must short-circuit before any setState fires.
+    resolveGet(mockProject);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // The hook is unmounted, so result.current is frozen at its last
+    // pre-unmount value (project: null). If the guard regressed and
+    // setProject fired after unmount, React would log a "state update
+    // on unmounted component" warning — assert no console.error either.
+    expect(result.current.project).toBeNull();
+  });
+
   it("updates word count on content change", async () => {
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
@@ -896,6 +964,104 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  // I2 (review 2026-05-25): with Phase 4b.3b threading signals into
+  // chapter.create / chapter.get / chapter.delete, supersede and unmount
+  // now reject the in-flight call with ApiRequestError{ABORTED}. The
+  // pre-fix catches fired console.warn(...) BEFORE the abort/stale
+  // gate, violating CLAUDE.md §Testing Philosophy zero-warnings rule.
+  // These tests pin the silent-on-abort contract.
+  describe("I2: console.warn gated on abort", () => {
+    it("handleCreateChapter does not warn when superseded by unmount", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      vi.mocked(api.chapters.create).mockImplementation((_slug, signal) =>
+        pendingUntilAbort(signal),
+      );
+
+      const { result, unmount } = renderHook(() => useProjectEditor("test-project"));
+      await waitFor(() => expect(result.current.project).toBeTruthy());
+
+      void result.current.handleCreateChapter();
+      unmount();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(warnSpy).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it("handleSelectChapter does not warn when superseded by unmount", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      // Initial load resolves; subsequent select hangs until abort.
+      let callIndex = 0;
+      vi.mocked(api.chapters.get).mockImplementation((id, signal) => {
+        callIndex++;
+        if (callIndex === 1) return Promise.resolve(mockChapter1);
+        return pendingUntilAbort(signal);
+      });
+
+      const { result, unmount } = renderHook(() => useProjectEditor("test-project"));
+      await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+      void result.current.handleSelectChapter("ch2");
+      unmount();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(warnSpy).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it("reloadActiveChapter does not warn when superseded by unmount", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      let callIndex = 0;
+      vi.mocked(api.chapters.get).mockImplementation((_id, signal) => {
+        callIndex++;
+        if (callIndex === 1) return Promise.resolve(mockChapter1);
+        return pendingUntilAbort(signal);
+      });
+
+      const { result, unmount } = renderHook(() => useProjectEditor("test-project"));
+      await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+      void result.current.reloadActiveChapter();
+      unmount();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(warnSpy).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
+    it("handleDeleteChapter inner secondary-GET does not warn on abort", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      // Active chapter (ch1) is the deletion target so the deletion path
+      // enters the secondary-GET branch (lines around 956). The DELETE
+      // resolves; the post-delete GET hangs until the unmount-driven abort
+      // rejects it with ABORTED.
+      vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
+      let callIndex = 0;
+      vi.mocked(api.chapters.get).mockImplementation((_id, signal) => {
+        callIndex++;
+        if (callIndex === 1) return Promise.resolve(mockChapter1);
+        return pendingUntilAbort(signal);
+      });
+
+      const { result, unmount } = renderHook(() => useProjectEditor("test-project"));
+      await waitFor(() => expect(result.current.activeChapter?.id).toBe("ch1"));
+
+      void result.current.handleDeleteChapter(mockChapter1);
+      // Allow the DELETE to resolve and the secondary GET to start.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      unmount();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // Pre-fix, the secondary-GET catch warned BEFORE checking s.aborted.
+      const failedAfterDelete = warnSpy.mock.calls.filter(
+        (call) =>
+          typeof call[0] === "string" && call[0].includes("Failed to load chapter after delete"),
+      );
+      expect(failedAfterDelete).toEqual([]);
+      warnSpy.mockRestore();
+    });
+  });
+
   it("calls onError callback when handleRenameChapter fails (does not set full-page error)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.update).mockRejectedValue(new Error("rename boom"));
@@ -1009,6 +1175,69 @@ describe("useProjectEditor", () => {
 
     const callArgs = vi.mocked(api.chapters.delete).mock.calls[0];
     expect(callArgs?.[1]).toBeInstanceOf(AbortSignal);
+  });
+
+  it("S-7: the same signal threads into delete and the post-delete api.chapters.get; both abort together on unmount", async () => {
+    // Phase 4b.3b row S-7: the deleteChapterOp.run() callback wraps
+    // BOTH api.chapters.delete AND the post-delete api.chapters.get,
+    // so a single per-call signal `s` threads through both calls.
+    // One unmount aborts both. The hook-level cross-await stability
+    // contract in useAbortableAsyncOperation.test.ts pins the
+    // "same signal across awaits" property; this consumer test pins
+    // that useProjectEditor actually uses it that way.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let deleteSignal: AbortSignal | undefined;
+    let getSignal: AbortSignal | undefined;
+    vi.mocked(api.chapters.delete).mockImplementationOnce((_id, signal) => {
+      deleteSignal = signal;
+      return Promise.resolve({ message: "deleted" });
+    });
+    // The post-delete GET stays pending until the signal aborts. Using
+    // pendingUntilAbort (rather than `new Promise(() => {})`) mirrors the
+    // real api-client shape: a real fetch aborts with ApiRequestError(0,
+    // "ABORTED"), routing the consumer through the same catch arms it
+    // would hit in production. mockImplementationOnce so the once-queue
+    // is fully consumed by this test and doesn't leak to siblings.
+    vi.mocked(api.chapters.get).mockReset();
+    vi.mocked(api.chapters.get).mockResolvedValueOnce(mockChapter1); // initial load
+    vi.mocked(api.chapters.get).mockImplementationOnce((_id, signal) => {
+      getSignal = signal;
+      return pendingUntilAbort(signal);
+    });
+
+    const { result, unmount } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    // Fire the delete of the active chapter. After the delete resolves,
+    // the followup GET for the next active chapter will await.
+    let deletePromise: Promise<boolean> = Promise.resolve(false);
+    await act(async () => {
+      deletePromise = result.current.handleDeleteChapter(mockChapter1);
+      // Yield so the awaited DELETE settles and the followup GET starts.
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The post-delete GET should now be in flight with its signal captured.
+    expect(deleteSignal).toBeInstanceOf(AbortSignal);
+    expect(getSignal).toBeInstanceOf(AbortSignal);
+    // Load-bearing invariant: the SAME controller flows into BOTH calls.
+    expect(deleteSignal).toBe(getSignal);
+    expect(deleteSignal!.aborted).toBe(false);
+
+    // Unmount severs both calls together via the single hook's auto-abort.
+    // The followup GET's pendingUntilAbort rejects, the run() callback's
+    // catch arm sees s.aborted and returns true, and the deletePromise
+    // resolves under the aborted branch.
+    unmount();
+    expect(deleteSignal!.aborted).toBe(true);
+    expect(getSignal!.aborted).toBe(true);
+
+    await act(async () => {
+      await deletePromise;
+    });
+    warnSpy.mockRestore();
   });
 
   it("handleStatusChange threads AbortSignal into api.chapters.update (I11)", async () => {
@@ -2144,7 +2373,7 @@ describe("useProjectEditor", () => {
       await result.current.handleCreateChapter();
     });
 
-    expect(api.chapters.create).toHaveBeenCalledWith("other-project");
+    expect(api.chapters.create).toHaveBeenCalledWith("other-project", expect.any(AbortSignal));
     resolveOther(otherProject);
     await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
   });

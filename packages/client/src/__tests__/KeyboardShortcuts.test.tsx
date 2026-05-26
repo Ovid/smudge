@@ -274,7 +274,7 @@ describe("Ctrl+Shift+N creates a new chapter", () => {
 
     await waitFor(
       () => {
-        expect(api.chapters.create).toHaveBeenCalledWith("test-project");
+        expect(api.chapters.create).toHaveBeenCalledWith("test-project", expect.any(AbortSignal));
       },
       { timeout: 3000 },
     );
@@ -307,7 +307,7 @@ describe("Ctrl+Shift+Arrow chapter navigation", () => {
 
     await waitFor(
       () => {
-        expect(api.chapters.get).toHaveBeenCalledWith("ch-2");
+        expect(api.chapters.get).toHaveBeenCalledWith("ch-2", expect.any(AbortSignal));
       },
       { timeout: 3000 },
     );

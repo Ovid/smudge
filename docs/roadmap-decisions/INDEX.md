@@ -13,6 +13,7 @@ skimmed at a glance for patterns.
 
 | Date       | Phase                          | Model              | Pushback (C/I/M) | Alignment (C/I/M) | Entry |
 |------------|--------------------------------|--------------------|------------------|-------------------|-------|
+| 2026-05-25 | Phase 4b.3b: AbortSignal Threading Completion | claude-opus-4-7 | 1/7/2 | 0/0/2 | [link](2026-05-25-phase-4b-3b-abortsignal-threading-completion.md) |
 | 2026-05-25 | Phase 4b.3a.4: Image Gallery Abort Migration | claude-opus-4-7 | 0/1/3 | 0/0/0 | [link](2026-05-25-phase-4b-3a-4-image-gallery-abort-migration.md) |
 | 2026-05-25 | Phase 4b.3a.3: Trash Manager Abort Migration | claude-opus-4-7 | 0/1/0 | 0/1/0 | [link](2026-05-25-phase-4b-3a-3-trash-manager-abort-migration.md) |
 | 2026-05-01 | Phase 4b.3a.2: Find/Replace Abort Migration | claude-opus-4-7 | 0/2/1 | 0/1/1 | [link](2026-05-01-phase-4b-3a-2-find-replace-abort-migration.md) |

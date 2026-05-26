@@ -185,8 +185,20 @@
 - **Confidence:** Medium
 - **Found by:** Concurrency & State (`general-purpose (claude-opus-4-7)`)
 - **First seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `4b43b07`
-- **Last seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `4b43b07`
+- **Last seen:** 2026-05-25 on branch `abortsignal-threading-completion` at `63c3049`
 - **Severity:** Important
+
+## `20eccaf3` — `restoreFollowupAbortRef` allocation could leak controller past unmount in a theoretical microtask/commit interleaving (mountedRef gate prevents user-observable impact)
+- **File (at first sighting):** `packages/client/src/hooks/useSnapshotState.ts:408-410, 473-478`
+- **Symbol:** `restoreSnapshot`
+- **Bug class:** Contract
+- **Description:** Unmount cleanup at line 475 fires `restoreFollowupAbortRef.current?.abort()` once on tear-down. The follow-up controller is allocated synchronously after `await promise` resumes at line 376. If React committed an unmount between the microtask resolving `promise` and the continuation that runs the synchronous block at 408-410, the cleanup would have run against null/prior controller, and the new `followupController` would land AFTER cleanup. In practice the window is essentially closed (microtasks run before React's macrotask-scheduled commits) and the consuming `.then` is `mountedRef`-gated via `freshToken.isStale()`, so no setState-on-unmounted occurs even in the hypothetical case. Documents a theoretical hole in the S-16 hand-rolled-survivor contract for Phase 4b.4's inline justification.
+- **Suggested fix:** Thread a `mountedRef` check before the assignment (skip the GET when `mountedRef.current === false`), or attach the unmount-cleanup behavior to a local boolean checked synchronously at allocation time.
+- **Confidence:** Medium
+- **Found by:** Contract & Integration (`claude-opus-4-7[1m]`)
+- **First seen:** 2026-05-25 on branch `abortsignal-threading-completion` at `7d6e720`
+- **Last seen:** 2026-05-25 on branch `abortsignal-threading-completion` at `7d6e720`
+- **Severity:** Suggestion
 
 ## `8e3c1a47` — `cancelPendingSaves` clears `saveErrorMessage` but leaves `editorLockedMessage` banner stale
 - **File (at first sighting):** `packages/client/src/hooks/useProjectEditor.ts:1243`
@@ -197,6 +209,6 @@
 - **Confidence:** Medium
 - **Found by:** Error Handling & Edge Cases (`general-purpose (claude-opus-4-7)`)
 - **First seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `4b43b07`
-- **Last seen:** 2026-04-27 on branch `ovid/cluster-a-error-mapping` at `4b43b07`
+- **Last seen:** 2026-05-25 on branch `abortsignal-threading-completion` at `63c3049`
 - **Severity:** Suggestion
 

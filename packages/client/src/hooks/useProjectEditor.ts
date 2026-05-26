@@ -4,6 +4,8 @@ import { countWords } from "@smudge/shared";
 import { api } from "../api/client";
 import { getCachedContent, setCachedContent, clearCachedContent } from "./useContentCache";
 import { useAbortableSequence } from "./useAbortableSequence";
+import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
+import { sleep } from "../utils/abortable";
 import { STRINGS } from "../strings";
 import { mapApiError, mapApiErrorMessage, isApiError, isAborted, isClientError } from "../errors";
 
@@ -87,17 +89,58 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   }
   const selectChapterSeq = useAbortableSequence();
   const saveSeq = useAbortableSequence();
-  const saveAbortRef = useRef<AbortController | null>(null);
-  // Active retry backoff, if any: the timer id and a resolver so
-  // cancelPendingSaves can both clear the pending timer AND unblock the
-  // awaited sleep — otherwise the loop would hang forever (clearing only
-  // the timer without resolving the promise would leave the await pending
-  // forever and the seq check unreachable).
-  const saveBackoffRef = useRef<{
-    timer: ReturnType<typeof setTimeout>;
-    resolve: () => void;
-  } | null>(null);
+  // S-2 (Phase 4b.3b): the save loop's network controller + backoff
+  // teardown live behind useAbortableAsyncOperation. One saveOp.run()
+  // wraps the entire retry-with-backoff cycle: api.chapters.update and
+  // sleep(ms, signal) both receive the per-call signal, so abort()
+  // severs the in-flight PATCH AND unblocks the sleep in one call.
+  // Pre-migration this was a hand-rolled `useRef<AbortController>` plus
+  // a `saveBackoffRef` carrying `{ timer, resolve }` for the awaitable
+  // backoff — both have been deleted, the sleep helper subsumes the
+  // backoff-teardown bookkeeping. saveSeq still arbitrates response
+  // staleness via token.isStale(); the two hooks are orthogonal and
+  // both apply to every save.
+  const saveOp = useAbortableAsyncOperation();
   const statusChangeSeq = useAbortableSequence();
+  // C-4 (Phase 4b.3b): handleCreateChapter routes its POST through this
+  // hook so the in-flight fetch is severed on supersede/unmount. The
+  // existing projectRef/projectSlugRef drift checks after the await are
+  // orthogonal (response-discard) and remain.
+  const createChapterOp = useAbortableAsyncOperation();
+  // C-6 (Phase 4b.3b): loadProject routes both its api.projects.get and
+  // its api.chapters.get through this single hook so one unmount aborts
+  // both. Replaces the pre-migration `let cancelled = false` flag — the
+  // hook's auto-abort-on-unmount semantics now provide the same
+  // "discard late-resolving response" guarantee, and threading the
+  // per-call signal through the transport additionally severs the
+  // network request rather than just gating the post-await setState.
+  const loadProjectOp = useAbortableAsyncOperation();
+  // C-7 + C-8 (Phase 4b.3b): handleSelectChapter and reloadActiveChapter
+  // share a single instance. Both are mutually-compatible "load chapter
+  // content" operations that already share selectChapterSeq for
+  // response-staleness via token; a new call from either supersedes the
+  // prior. The hook layers network cancellation on top: the in-flight
+  // GET is severed rather than just having its setState gated by
+  // token.isStale(). useEditorMutation's expected-id supersession path
+  // (see useEditorMutation.ts:419-432) remains the cross-caller
+  // contract; this shared instance does not change that.
+  // useAbortableSequence and useAbortableAsyncOperation are orthogonal —
+  // both apply to every call.
+  //
+  // S6 (review 2026-05-25, follow-up to Pushback #8 in the decision log):
+  // verification that the shared instance is race-safe across the two
+  // callers — handleSelectChapter and reloadActiveChapter are never
+  // BOTH live with mutually-exclusive intents simultaneously. Both
+  // funnel through selectChapterSeq.start()/capture() at the top, and
+  // either caller's start() invalidates the other's pending token. The
+  // "abort prior controller" semantics of useAbortableAsyncOperation
+  // therefore align with the seq's "drop stale responses" semantics:
+  // when reloadActiveChapter supersedes a slow handleSelectChapter (or
+  // vice-versa), the prior fetch is severed AND the stale response
+  // would have been discarded anyway. Allocating a second instance
+  // would be wasteful, not safer — the two ops have identical
+  // supersede semantics (load-the-chapter, drop anything older).
+  const selectChapterOp = useAbortableAsyncOperation();
   // I11: rapid status clicks (A→B→C) used to issue overlapping PATCHes
   // with no server-side ordering guarantee. statusChangeSeq only
   // discarded response *processing*; both requests still reached the
@@ -105,7 +148,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // shows C. Mirror saveAbortRef: abort any prior in-flight PATCH
   // before issuing a new one, and thread the signal into
   // api.chapters.update so the abort actually severs the request.
-  const statusChangeAbortRef = useRef<AbortController | null>(null);
+  const statusChangeOp = useAbortableAsyncOperation();
   // I1 (review 2026-04-24): rapid title edits used to fire overlapping
   // PATCHes. The S7 drift guard discarded the stale response but the
   // SECOND PATCH had already reached the server — SQLite's writer-lock
@@ -113,7 +156,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // value. Mirror statusChangeAbortRef: abort any prior in-flight
   // rename before issuing a new one, and thread the signal into
   // api.projects.update so the network request is actually severed.
-  const titleChangeAbortRef = useRef<AbortController | null>(null);
+  const titleChangeOp = useAbortableAsyncOperation();
   // C5 (review 2026-04-24): rapid drag-drop reorders used to issue
   // overlapping PUTs to /chapters/order with no client-side ordering
   // guard — the persisted order was whichever PUT SQLite's writer lock
@@ -121,15 +164,24 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // statusChangeAbortRef: abort the prior in-flight PUT before issuing
   // a new one, and thread the signal into api.projects.reorderChapters
   // so the older request is actually severed.
-  const reorderAbortRef = useRef<AbortController | null>(null);
+  const reorderOp = useAbortableAsyncOperation();
   // I7 (review 2026-04-24): rename and delete-chapter siblings went
   // without AbortControllers. Rapid renames raced at the server with
   // no ordering guard; a delete that the user moved past kept running
   // setState paths on stale chapter ids. Mirror title/status abort
   // refs: the rename path aborts on supersede, the delete path aborts
   // on unmount.
-  const renameChapterAbortRef = useRef<AbortController | null>(null);
-  const deleteChapterAbortRef = useRef<AbortController | null>(null);
+  const renameChapterOp = useAbortableAsyncOperation();
+  // S-7 (Phase 4b.3b): handleDeleteChapter threads a single signal into
+  // TWO sequential api calls within one deleteChapterOp.run() callback:
+  // api.chapters.delete AND the post-delete api.chapters.get for the
+  // next active chapter. The hook's per-call signal is the SAME
+  // instance across both awaits (pinned by the hook-level contract
+  // test in useAbortableAsyncOperation.test.ts) — one unmount aborts
+  // both calls together. Replaces a hand-rolled
+  // `useRef<AbortController>` that paired an `abort()` with a
+  // self-clearing identity check; the hook owns that bookkeeping now.
+  const deleteChapterOp = useAbortableAsyncOperation();
   // I21 (review 2026-04-24): per-chapter cache of the last server-
   // confirmed status. Rapid X→A→B clicks used to capture
   // `previousStatus = A` for B because A's optimistic setProject had
@@ -151,29 +203,54 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // was silently swallowed and the new chapter never landed in the
   // sidebar. Per-handler refs scope the "latest wins" rule to its own
   // handler and leave siblings untouched.
+  //
+  // Phase 4b.3b decision matrix row C-5: createRecoveryAbortRef,
+  // statusRecoveryAbortRef, and titleRecoveryAbortRef are kept hand-rolled.
+  // Each fires from the catch branch of its respective primary mutation
+  // (handleCreateChapter / handleStatusChange / handleTitleChange) and
+  // runs a follow-up GET that must complete even after the primary
+  // mutation's hook has auto-aborted (e.g. on the next handleStatusChange
+  // after a failed one). Routing these through the primary's hook would
+  // cause the next mutation to cancel the previous mutation's recovery
+  // refresh — exactly the case where the previous error's user-visible
+  // state most needs the refresh to land. Phase 4b.4 replaces this
+  // file-level allowlist entry with inline `// eslint-disable-next-line`
+  // on each of the three lines below.
   const createRecoveryAbortRef = useRef<AbortController | null>(null);
   const statusRecoveryAbortRef = useRef<AbortController | null>(null);
   const titleRecoveryAbortRef = useRef<AbortController | null>(null);
 
   // Shared cancel-in-flight-save helper. Aborts the save sequence (so the
-  // retry loop short-circuits on its next iteration via token.isStale()),
-  // aborts the fetch, and unblocks any backoff sleep. handleSelectChapter,
-  // handleDeleteChapter, cancelPendingSaves, and unmount cleanup all go
-  // through this — before S3, the select/delete paths omitted the
-  // backoff-unblock step, leaving the retry loop asleep for up to 8s
-  // after a chapter switch/delete.
+  // retry loop short-circuits on its next iteration via token.isStale())
+  // AND aborts the saveOp controller, which both severs the in-flight
+  // PATCH and rejects the backoff sleep awaiting that signal — a single
+  // abort() call replaces the pre-migration trio (saveSeq.abort +
+  // saveAbortRef.current.abort + saveBackoffRef.current.resolve).
+  // handleSelectChapter, handleDeleteChapter, cancelPendingSaves, and
+  // unmount cleanup all go through this — before S3 the select/delete
+  // paths omitted the backoff-unblock step, leaving the retry loop
+  // asleep for up to 8s after a chapter switch/delete; routing through
+  // saveOp.abort() makes that class of bug structurally impossible.
+  //
+  // S8 (review 2026-05-25): the two calls are NOT redundant — they
+  // gate different things and dropping either re-opens a real race.
+  //   - saveSeq.abort() invalidates outstanding tokens. The retry loop
+  //     reads token.isStale() at the top of each iteration AND after
+  //     the PATCH resolves; a stale token short-circuits without
+  //     calling setSaveStatus/setProject, even if the PATCH has
+  //     already succeeded. Without this, a successful resolve from a
+  //     superseded save would still write through to React state.
+  //   - saveOp.abort() severs the in-flight network call AND rejects
+  //     the backoff sleep awaiting the same signal. Without this, the
+  //     PATCH continues to completion on the server (wasted work) and
+  //     a backoff sleep would hold the loop asleep for the rest of
+  //     the 2/4/8s window before its next iteration's seq-check could
+  //     fire — that's the 8-second-stale-PATCH bug S3 fixed.
+  // A future refactor that drops either is a regression — keep both.
   const cancelInFlightSave = useCallback(() => {
     saveSeq.abort();
-    if (saveAbortRef.current) {
-      saveAbortRef.current.abort();
-      saveAbortRef.current = null;
-    }
-    if (saveBackoffRef.current) {
-      clearTimeout(saveBackoffRef.current.timer);
-      saveBackoffRef.current.resolve();
-      saveBackoffRef.current = null;
-    }
-  }, [saveSeq]);
+    saveOp.abort();
+  }, [saveSeq, saveOp]);
 
   // Unmount cleanup: the retry loop inside handleSave runs outside React's
   // render phase, so without this teardown an in-flight save-backoff sleep
@@ -189,12 +266,8 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
     return () => {
       cancelInFlightSave();
       // I1: abort field PATCHes on unmount so a late-resolving rename
-      // can't fire setState on a torn-down hook.
-      titleChangeAbortRef.current?.abort();
-      statusChangeAbortRef.current?.abort();
-      reorderAbortRef.current?.abort();
-      renameChapterAbortRef.current?.abort();
-      deleteChapterAbortRef.current?.abort();
+      // can't fire setState on a torn-down hook. (S-7: deleteChapterOp
+      // auto-aborts on unmount via the hook; no manual entry here.)
       createRecoveryAbortRef.current?.abort();
       statusRecoveryAbortRef.current?.abort();
       titleRecoveryAbortRef.current?.abort();
@@ -202,7 +275,6 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   }, [cancelInFlightSave]);
 
   useEffect(() => {
-    let cancelled = false;
     // I7 (review 2026-04-25): reset the confirmed-status cache at the
     // start of every loadProject. The hook persists across slug changes
     // (refs survive), so on a failed loadProject (network, 5xx) the
@@ -214,11 +286,11 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
     // leaves the cache empty (correct: there's no project to revert).
     confirmedStatusRef.current = {};
 
-    async function loadProject() {
+    const { promise } = loadProjectOp.run(async (s) => {
       if (!slug) return;
       try {
-        const data = await api.projects.get(slug);
-        if (cancelled) return;
+        const data = await api.projects.get(slug, s);
+        if (s.aborted) return;
         setProject(data);
         // I21: seed the confirmed-status cache from the authoritative
         // server response. Every chapter's status here is server-truth
@@ -242,8 +314,8 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         }
         const firstChapter = data.chapters[0];
         if (firstChapter && !activeChapterRef.current) {
-          const chapter = await api.chapters.get(firstChapter.id);
-          if (cancelled) return;
+          const chapter = await api.chapters.get(firstChapter.id, s);
+          if (s.aborted) return;
           const cached = getCachedContent(chapter.id);
           const effectiveChapter = cached ? { ...chapter, content: cached } : chapter;
           setActiveChapter(effectiveChapter);
@@ -251,21 +323,17 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         }
       } catch (err) {
         // Copilot review 2026-04-24 (wider occurrence of HomePage race):
-        // gate console.warn on `cancelled` so a late rejection on
+        // gate console.warn on s.aborted so a late rejection on
         // unmount/slug-change does not leak noise into test output.
-        if (cancelled) return;
+        // (Replaces the pre-migration `cancelled` gate; C-6 Phase 4b.3b.)
+        if (s.aborted) return;
         console.warn("Failed to load project:", err);
         const { message } = mapApiError(err, "project.load");
         if (message) setError(message);
       }
-    }
-
-    loadProject();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [slug]);
+    });
+    void promise;
+  }, [slug, loadProjectOp]);
 
   const handleSave = useCallback(
     async (content: Record<string, unknown>, chapterId?: string): Promise<boolean> => {
@@ -278,15 +346,6 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       // Subsequent keystrokes during backoff replace this via handleContentChange.
       latestContentRef.current = { id: savingChapterId, content };
       const token = saveSeq.start();
-      // AbortController lets cancelPendingSaves actually abort an in-flight
-      // PATCH — without this, a retry could land on the server after a
-      // subsequent snapshot restore and overwrite it.
-      // Also: abort any prior in-flight save before issuing a new one. Debounce
-      // and onBlur can fire overlapping saves; without this, two PATCHes can
-      // commit out-of-order, regressing persisted content to the older version.
-      saveAbortRef.current?.abort();
-      const controller = new AbortController();
-      saveAbortRef.current = controller;
       const MAX_RETRIES = SAVE_BACKOFF_MS.length;
 
       setSaveStatus("saving");
@@ -301,138 +360,184 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       // the BAD_JSON / UPDATE_READ_FAILURE / CORRUPT_CONTENT and
       // status===404 branches — kept the variable single-purpose but
       // no longer 4xx-only.
-      let terminalSaveError: { message: string; code?: string; status: number } | null = null;
-      // I4 (Phase 4b.3a regression guard): capture the most recent
-      // non-aborted error so retry-exhaustion can route its banner copy
-      // through the unified mapper. Pre-fix, the post-loop fallback used
-      // the literal STRINGS.editor.saveFailed, bypassing chapter.save's
-      // network: mapping and surfacing "Save failed. Try again." even
-      // for NETWORK retry exhaustion. CLAUDE.md invariant: all
-      // user-visible API error messages flow through mapApiError.
-      let lastErr: unknown = null;
-      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        if (token.isStale()) return false; // chapter changed, abort retries
-        // Re-read latest content each attempt so backoff retries post keystrokes
-        // that arrived after the initial call.
-        const latest = latestContentRef.current;
-        const postedContent = latest && latest.id === savingChapterId ? latest.content : content;
-        try {
-          const updated = await api.chapters.update(
-            savingChapterId,
-            { content: postedContent },
-            controller.signal,
-          );
-          if (token.isStale()) return false; // chapter changed during request
-          // Keep activeChapter in sync so that re-mounting the editor
-          // (e.g. after toggling Preview → Editor) uses the latest content.
-          if (activeChapterRef.current?.id === savingChapterId) {
-            setActiveChapter((prev) =>
-              prev ? { ...prev, content: postedContent, word_count: updated.word_count } : prev,
+      type TerminalSaveError = { message: string; code?: string; status: number };
+      // S-2 (Phase 4b.3b): the retry-with-backoff loop returns a
+      // discriminated outcome so the post-loop block can drive banner /
+      // lock decisions without mutating outer-scope state from inside
+      // the saveOp.run() closure. A previous draft used a `{ value }`
+      // box to pass state out, which (a) the React Compiler flagged as
+      // a possible mutability hazard and (b) obscured the closure's
+      // contract. Returning an object is clearer: the closure either
+      // committed ("ok"), exited because of cancellation ("aborted",
+      // including supersede and bare AbortError from sleep/fetch), or
+      // exhausted retries with an error to surface ("exhausted").
+      type SaveLoopOutcome =
+        | { kind: "ok" }
+        | { kind: "aborted" }
+        | { kind: "exhausted"; terminal: TerminalSaveError | null; lastErr: unknown };
+
+      // S-2 (Phase 4b.3b): the entire retry-with-backoff cycle is one
+      // saveOp.run() invocation. Calling run() aborts any prior in-flight
+      // save (debounce + onBlur overlap), allocates a fresh controller,
+      // and hands its signal to api.chapters.update AND sleep — so a
+      // single saveOp.abort() (via cancelInFlightSave) severs the
+      // PATCH and rejects the backoff sleep in one call.
+      const { promise: saveRunPromise } = saveOp.run<SaveLoopOutcome>(async (s) => {
+        let terminal: TerminalSaveError | null = null;
+        // I4 (Phase 4b.3a regression guard): capture the most recent
+        // non-aborted error so retry-exhaustion can route its banner copy
+        // through the unified mapper. Pre-fix, the post-loop fallback used
+        // the literal STRINGS.editor.saveFailed, bypassing chapter.save's
+        // network: mapping and surfacing "Save failed. Try again." even
+        // for NETWORK retry exhaustion. CLAUDE.md invariant: all
+        // user-visible API error messages flow through mapApiError.
+        let lastErr: unknown = null;
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+          if (token.isStale()) return { kind: "aborted" }; // chapter changed
+          if (s.aborted) return { kind: "aborted" }; // cancelInFlightSave
+          // Re-read latest content each attempt so backoff retries post keystrokes
+          // that arrived after the initial call.
+          const latest = latestContentRef.current;
+          const postedContent = latest && latest.id === savingChapterId ? latest.content : content;
+          try {
+            const updated = await api.chapters.update(
+              savingChapterId,
+              { content: postedContent },
+              s,
             );
-          }
-          setProject((prev) => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              chapters: prev.chapters.map((c) =>
-                c.id === savingChapterId
-                  ? { ...c, word_count: updated.word_count, content: postedContent }
-                  : c,
-              ),
-            };
-          });
-          // Only clear the localStorage cache if no newer content has arrived
-          // since we started this attempt. Otherwise the pending typing would
-          // be dropped.
-          const stillLatest =
-            latestContentRef.current?.id === savingChapterId &&
-            latestContentRef.current.content === postedContent;
-          if (stillLatest) {
-            clearCachedContent(savingChapterId);
-            setCacheWarning(false);
-          }
-          if (activeChapterRef.current?.id === savingChapterId) {
-            setSaveStatus(stillLatest ? "saved" : "unsaved");
-          }
-          if (saveAbortRef.current === controller) saveAbortRef.current = null;
-          return true;
-        } catch (err) {
-          // Aborted: cancelPendingSaves intentionally cancelled this save
-          // (e.g. before a snapshot restore). Exit cleanly without flagging
-          // an error to the user.
-          if (isAborted(err)) {
-            return false;
-          }
-          // Track the most recent non-aborted error so the post-loop
-          // fallback (used when NETWORK / bare-5xx retries exhaust) can
-          // route through mapApiError(err, "chapter.save"). 4xx and
-          // terminal-code branches below still break early via
-          // terminalSaveError, which takes precedence over this lastErr.
-          lastErr = err;
-          // I5: a 2xx BAD_JSON or a 5xx whose code identifies a specific
-          // committed/terminal server state must not retry:
-          //   - 2xx BAD_JSON: server likely committed the PATCH but the
-          //     response body was unreadable. Retrying would either
-          //     commit-again the same content (wasteful, possibly
-          //     racing a concurrent keystroke) or land while the user
-          //     is reading the warning banner.
-          //   - 5xx UPDATE_READ_FAILURE: the server updated the row but
-          //     could not re-read it — the save committed; same UX as
-          //     2xx BAD_JSON.
-          //   - 5xx CORRUPT_CONTENT: the existing row is corrupt;
-          //     retrying will not fix it.
-          // Everything else under 500 (bare 500, transient NETWORK, etc.)
-          // still retries with backoff.
-          if (
-            isApiError(err) &&
-            (err.code === "BAD_JSON" ||
-              err.code === "UPDATE_READ_FAILURE" ||
-              err.code === "CORRUPT_CONTENT")
-          ) {
-            console.warn("Save failed with terminal code:", err.code);
-            // mapApiError returns message: null only for ABORTED, which
-            // has already been filtered above — the three codes here all
-            // route to scope.committed / byCode matches, all non-null.
-            const { message } = mapApiError(err, "chapter.save");
-            terminalSaveError = { message: message as string, code: err.code, status: err.status };
-            break;
-          }
-          if (isClientError(err)) {
-            console.warn("Save failed with 4xx:", err);
-            // I4 (2026-04-23 review): route through the unified mapper
-            // so chapter.save scope is the single source of truth. Raw
-            // err.message is never forwarded (CLAUDE.md invariant); the
-            // scope's byStatus[413] / byCode[VALIDATION_ERROR] / fallback
-            // produce the same strings.ts copy the inline mapSaveError
-            // duplicated. err.code is preserved separately for the
-            // cache-clear decision below. ABORTED is filtered above so
-            // mapped.message is guaranteed non-null in this branch.
-            const { message } = mapApiError(err, "chapter.save");
-            terminalSaveError = { message: message as string, code: err.code, status: err.status };
-            break;
-          }
-          if (attempt < MAX_RETRIES) {
-            await new Promise<void>((resolve) => {
-              const timer = setTimeout(() => {
-                // Only null the shared ref if it still points to OUR handle.
-                // If a concurrent save or cancellation has replaced it with
-                // a newer timer/resolve pair, clearing would drop the
-                // newer attempt's ability to be unblocked by
-                // cancelInFlightSave (S4).
-                if (saveBackoffRef.current?.timer === timer) {
-                  saveBackoffRef.current = null;
-                }
-                resolve();
-              }, SAVE_BACKOFF_MS[attempt]);
-              saveBackoffRef.current = { timer, resolve };
+            if (token.isStale()) return { kind: "aborted" };
+            // Keep activeChapter in sync so that re-mounting the editor
+            // (e.g. after toggling Preview → Editor) uses the latest content.
+            if (activeChapterRef.current?.id === savingChapterId) {
+              setActiveChapter((prev) =>
+                prev ? { ...prev, content: postedContent, word_count: updated.word_count } : prev,
+              );
+            }
+            setProject((prev) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                chapters: prev.chapters.map((c) =>
+                  c.id === savingChapterId
+                    ? { ...c, word_count: updated.word_count, content: postedContent }
+                    : c,
+                ),
+              };
             });
-            // If cancelInFlightSave cleared the timer and resolved early,
-            // the seq check at the top of the next loop iteration exits
-            // cleanly.
+            // Only clear the localStorage cache if no newer content has arrived
+            // since we started this attempt. Otherwise the pending typing would
+            // be dropped.
+            const stillLatest =
+              latestContentRef.current?.id === savingChapterId &&
+              latestContentRef.current.content === postedContent;
+            if (stillLatest) {
+              clearCachedContent(savingChapterId);
+              setCacheWarning(false);
+            }
+            if (activeChapterRef.current?.id === savingChapterId) {
+              setSaveStatus(stillLatest ? "saved" : "unsaved");
+            }
+            return { kind: "ok" };
+          } catch (err) {
+            // Aborted: cancelPendingSaves intentionally cancelled this save
+            // (e.g. before a snapshot restore). Exit cleanly without flagging
+            // an error to the user.
+            if (isAborted(err)) {
+              return { kind: "aborted" };
+            }
+            // Track the most recent non-aborted error so the post-loop
+            // fallback (used when NETWORK / bare-5xx retries exhaust) can
+            // route through mapApiError(err, "chapter.save"). 4xx and
+            // terminal-code branches below still break early via
+            // terminalSaveError, which takes precedence over this lastErr.
+            lastErr = err;
+            // I5: a 2xx BAD_JSON or a 5xx whose code identifies a specific
+            // committed/terminal server state must not retry:
+            //   - 2xx BAD_JSON: server likely committed the PATCH but the
+            //     response body was unreadable. Retrying would either
+            //     commit-again the same content (wasteful, possibly
+            //     racing a concurrent keystroke) or land while the user
+            //     is reading the warning banner.
+            //   - 5xx UPDATE_READ_FAILURE: the server updated the row but
+            //     could not re-read it — the save committed; same UX as
+            //     2xx BAD_JSON.
+            //   - 5xx CORRUPT_CONTENT: the existing row is corrupt;
+            //     retrying will not fix it.
+            // Everything else under 500 (bare 500, transient NETWORK, etc.)
+            // still retries with backoff.
+            if (
+              isApiError(err) &&
+              (err.code === "BAD_JSON" ||
+                err.code === "UPDATE_READ_FAILURE" ||
+                err.code === "CORRUPT_CONTENT")
+            ) {
+              console.warn("Save failed with terminal code:", err.code);
+              // mapApiError returns message: null only for ABORTED, which
+              // has already been filtered above — the three codes here all
+              // route to scope.committed / byCode matches, all non-null.
+              const { message } = mapApiError(err, "chapter.save");
+              terminal = { message: message as string, code: err.code, status: err.status };
+              break;
+            }
+            if (isClientError(err)) {
+              console.warn("Save failed with 4xx:", err);
+              // I4 (2026-04-23 review): route through the unified mapper
+              // so chapter.save scope is the single source of truth. Raw
+              // err.message is never forwarded (CLAUDE.md invariant); the
+              // scope's byStatus[413] / byCode[VALIDATION_ERROR] / fallback
+              // produce the same strings.ts copy the inline mapSaveError
+              // duplicated. err.code is preserved separately for the
+              // cache-clear decision below. ABORTED is filtered above so
+              // mapped.message is guaranteed non-null in this branch.
+              const { message } = mapApiError(err, "chapter.save");
+              terminal = { message: message as string, code: err.code, status: err.status };
+              break;
+            }
+            if (attempt < MAX_RETRIES) {
+              // S-2 (Phase 4b.3b): sleep(ms, signal) replaces the
+              // hand-rolled setTimeout/resolver dance that used to live
+              // in saveBackoffRef. The signal is the per-call saveOp
+              // signal — if cancelInFlightSave fires while we're
+              // asleep, sleep rejects with a DOMException AbortError
+              // and we exit cleanly (caught by isAborted below; the
+              // predicate matches DOMException AbortError in addition
+              // to ApiRequestError{ABORTED}). The seq-check at the top
+              // of the next iteration would short-circuit anyway, but
+              // the abortable sleep means we don't wait out the rest
+              // of the backoff window first.
+              //
+              // The `?? 0` guards a theoretical out-of-range index —
+              // `attempt < MAX_RETRIES === SAVE_BACKOFF_MS.length`
+              // makes this branch unreachable with an undefined
+              // backoff slot, but noUncheckedIndexedAccess otherwise
+              // flags the read. Falling back to 0ms in that
+              // unreachable path is a safe degenerate (next iteration
+              // immediately gates on token.isStale()/s.aborted).
+              const backoffMs = SAVE_BACKOFF_MS[attempt] ?? 0;
+              try {
+                await sleep(backoffMs, s);
+              } catch (sleepErr) {
+                if (isAborted(sleepErr)) return { kind: "aborted" };
+                // I1 (review 2026-05-25): the sleep helper only rejects
+                // on abort today; any other throw is a true programming
+                // error (e.g. a future refactor that throws synchronously
+                // before scheduling the timer) and must surface so the
+                // bug is visible instead of being swallowed as "aborted".
+                throw sleepErr;
+              }
+            }
           }
         }
-      }
-      if (saveAbortRef.current === controller) saveAbortRef.current = null;
+        // Retries exhausted without success / break — surface the
+        // captured terminal/lastErr to the post-loop block.
+        return { kind: "exhausted", terminal, lastErr };
+      });
+      const outcome = await saveRunPromise;
+      if (outcome.kind === "ok") return true;
+      if (outcome.kind === "aborted") return false;
+      // outcome.kind === "exhausted" — drive the post-loop banner/lock.
+      const terminalSaveError = outcome.terminal;
+      const lastErr = outcome.lastErr;
       // Only wipe the local draft when the server's intent is unambiguous:
       // VALIDATION_ERROR means the payload is malformed and will be
       // rejected on every retry, so the cache would otherwise feed an
@@ -518,7 +623,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       }
       return false;
     },
-    [saveSeq],
+    [saveSeq, saveOp],
   );
 
   const handleContentChange = useCallback((content: Record<string, unknown>) => {
@@ -574,7 +679,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       setSaveErrorMessage(null);
       setCacheWarning(false);
       try {
-        const newChapter = await api.chapters.create(slug);
+        const { promise, signal } = createChapterOp.run((s) => api.chapters.create(slug, s));
+        const newChapter = await promise;
+        if (signal.aborted) return;
         // C2 + C1: discard the response if the user navigated to a
         // different project mid-POST. Without this, `setActiveChapter`
         // and the `setProject` merge would write Project A's new
@@ -596,6 +703,14 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // never accepted it. Mirrors loadProject's seed.
         confirmedStatusRef.current[newChapter.id] = newChapter.status;
       } catch (err) {
+        // I2 (review 2026-05-25): chapter.create now threads the
+        // createChapterOp signal, so supersede/unmount rejects this
+        // catch with ApiRequestError{ABORTED}. The warn at this site
+        // (and the downstream mapApiError + onError) must short-circuit
+        // before logging — otherwise every navigate-away mid-POST emits
+        // a "Failed to create chapter: ABORTED" warning, violating
+        // CLAUDE.md §Testing Philosophy zero-warnings rule.
+        if (isAborted(err)) return;
         console.warn("Failed to create chapter:", err);
         if (projectRef.current?.id !== projectId) return;
         if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
@@ -682,7 +797,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         }
       }
     },
-    [cancelInFlightSave, selectChapterSeq],
+    [cancelInFlightSave, selectChapterSeq, createChapterOp],
   );
 
   const handleSelectChapter = useCallback(
@@ -701,20 +816,30 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       setCacheWarning(false);
       const token = selectChapterSeq.start();
       try {
-        const chapter = await api.chapters.get(chapterId);
+        // C-7 (Phase 4b.3b): the shared selectChapterOp severs the
+        // network request on supersede/unmount; token.isStale() remains
+        // for response-staleness gating. Both checks apply.
+        const { promise, signal } = selectChapterOp.run((s) => api.chapters.get(chapterId, s));
+        const chapter = await promise;
+        if (signal.aborted) return;
         if (token.isStale()) return; // superseded by a newer selection
         const cached = getCachedContent(chapterId);
         const effectiveChapter = cached ? { ...chapter, content: cached } : chapter;
         setActiveChapter(effectiveChapter);
         setChapterWordCount(countWords(effectiveChapter.content));
       } catch (err) {
+        // I2 (review 2026-05-25): selectChapterOp.run aborts prior
+        // requests on supersede and unmount, so ABORTED rejections are
+        // an intentional control-flow signal here — silence them
+        // before the warn so test output stays clean.
+        if (isAborted(err)) return;
         console.warn("Failed to load chapter:", err);
         if (token.isStale()) return;
         const { message } = mapApiError(err, "chapter.load");
         if (message) setError(message);
       }
     },
-    [cancelInFlightSave, selectChapterSeq],
+    [cancelInFlightSave, selectChapterSeq, selectChapterOp],
   );
 
   const reloadActiveChapter = useCallback(
@@ -754,7 +879,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       setCacheWarning(false);
       const token = selectChapterSeq.start();
       try {
-        const chapter = await api.chapters.get(current.id);
+        // C-8 (Phase 4b.3b): the shared selectChapterOp severs the
+        // network request on supersede/unmount; token.isStale() remains
+        // for response-staleness gating. Both checks apply.
+        const { promise, signal } = selectChapterOp.run((s) => api.chapters.get(current.id, s));
+        const chapter = await promise;
+        if (signal.aborted) return "superseded";
         if (token.isStale()) return "superseded";
         // Clear cache AFTER the server GET succeeds (invariant 3). Before
         // I3, this ran pre-GET — a failed GET would have already erased the
@@ -766,6 +896,13 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         setChapterReloadKey((k) => k + 1);
         return "reloaded";
       } catch (err) {
+        // I2 (review 2026-05-25): selectChapterOp.run aborts prior
+        // requests on supersede and unmount; ABORTED is intentional and
+        // must short-circuit before the warn to keep test output clean.
+        // Return "superseded" so callers (useEditorMutation) treat the
+        // abort as a non-fatal skip rather than a lock-worthy failure
+        // (mirrors the token.isStale() arm immediately below).
+        if (isAborted(err)) return "superseded";
         console.warn("Failed to reload chapter:", err);
         // Token stale during the GET → user navigated away. A newer
         // select owns state now; "superseded" is correct and must not
@@ -786,10 +923,30 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         return "failed";
       }
     },
-    [cancelInFlightSave, selectChapterSeq],
+    [cancelInFlightSave, selectChapterSeq, selectChapterOp],
   );
 
   const projectRef = useRef(project);
+  // S-2 (Phase 4b.3b): false-positive from the React Compiler's
+  // immutability analysis. The rule's own hint advises renaming the
+  // variable to end in "Ref" — it already does. The trigger is a
+  // forward-reference: handleSave / handleCreateChapter /
+  // handleReorderChapters / handleUpdateProjectTitle (all declared
+  // above this line) close over `projectRef`, and the compiler treats
+  // those closures as "passing projectRef into a hook". The
+  // subsequent `projectRef.current = project` then trips the rule.
+  // The S-2 retry-loop refactor expanded `handleSave` past the
+  // compiler's bailout threshold, surfacing this latent issue.
+  // Mirrors the sync-on-render pattern already used for
+  // activeChapterRef (line 54), onRequestEditorLockRef (line 42), and
+  // projectSlugRef (line 88) — none of which trip the rule because
+  // they're declared early enough. A structural fix (hoist this
+  // useRef above the handlers) would shift activeChapterRef et al.
+  // into the React Compiler's analysis path and surface six pre-
+  // existing `react-hooks/refs` errors that have been latent under
+  // the same bailout — a far larger blast radius than this one
+  // suppression and out of scope for S-2.
+  // eslint-disable-next-line react-hooks/immutability
   projectRef.current = project;
 
   const handleDeleteChapter = useCallback(
@@ -813,77 +970,89 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       setSaveStatus("idle");
       setSaveErrorMessage(null);
       setCacheWarning(false);
-      // I7: abort any prior in-flight delete before issuing a new one
-      // and cover this controller in the unmount cleanup so the browser
-      // drops the DELETE rather than running it for a torn-down caller.
-      deleteChapterAbortRef.current?.abort();
-      const controller = new AbortController();
-      deleteChapterAbortRef.current = controller;
-      try {
-        await api.chapters.delete(chapter.id, controller.signal);
-        if (controller.signal.aborted) return false;
-        if (deleteChapterAbortRef.current === controller) deleteChapterAbortRef.current = null;
-        clearCachedContent(chapter.id);
-        // Compute remaining from the ref (current state), not the stale closure
-        const remaining = projectRef.current?.chapters.filter((c) => c.id !== chapter.id) ?? [];
-        setProject((prev) => {
-          if (!prev) return prev;
-          return { ...prev, chapters: prev.chapters.filter((c) => c.id !== chapter.id) };
-        });
+      // S-7 (Phase 4b.3b): I7's "abort prior in-flight delete before
+      // issuing a new one" and "cover the controller in unmount cleanup"
+      // are now satisfied by deleteChapterOp's hook semantics — run()
+      // aborts the prior controller before allocating a fresh one, and
+      // the hook auto-aborts on unmount. The single per-call signal
+      // `s` threads into BOTH the DELETE and the post-delete GET so
+      // one abort severs both calls together (pinned by the
+      // useAbortableAsyncOperation hook-level contract test).
+      const { promise } = deleteChapterOp.run(async (s): Promise<boolean> => {
+        try {
+          await api.chapters.delete(chapter.id, s);
+          if (s.aborted) return false;
+          clearCachedContent(chapter.id);
+          // Compute remaining from the ref (current state), not the stale closure
+          const remaining = projectRef.current?.chapters.filter((c) => c.id !== chapter.id) ?? [];
+          setProject((prev) => {
+            if (!prev) return prev;
+            return { ...prev, chapters: prev.chapters.filter((c) => c.id !== chapter.id) };
+          });
 
-        // If deleting the active chapter, switch to the first remaining
-        if (activeChapterRef.current?.id === chapter.id) {
-          const first = remaining[0];
-          if (first) {
-            // Capture-and-compare the select token across the secondary
-            // GET (I5). Without this guard, a rapid click-then-click
-            // during delete (user selects another chapter after the
-            // delete POST resolves but before this GET does) would let
-            // the stale "next chapter after delete" fetch pin the
-            // sidebar over the user's explicit selection.
-            const token = selectChapterSeq.start();
-            try {
-              // I7: thread the delete controller through the follow-up
-              // GET so an unmount aborts both the DELETE-step and the
-              // post-delete active-chapter fetch together.
-              const ch = await api.chapters.get(first.id, controller.signal);
-              if (token.isStale()) return true;
-              setActiveChapter(ch);
-              setChapterWordCount(countWords(ch.content));
-            } catch (err) {
-              // Secondary fetch failed — fall through to the empty state
-              // rather than setting activeChapter to the list-level row
-              // (which has content=null). Surface the failure via the
-              // onError callback and a console.warn so the user and the
-              // dev console both learn something went wrong (I3); before
-              // I3 the catch was silent and the user saw "Add chapter"
-              // as if the project had no chapters left.
-              console.warn("Failed to load chapter after delete:", err);
-              if (token.isStale()) return true;
-              const { message } = mapApiError(err, "chapter.load");
-              if (message) onError?.(message);
+          // If deleting the active chapter, switch to the first remaining
+          if (activeChapterRef.current?.id === chapter.id) {
+            const first = remaining[0];
+            if (first) {
+              // Capture-and-compare the select token across the secondary
+              // GET (I5). Without this guard, a rapid click-then-click
+              // during delete (user selects another chapter after the
+              // delete POST resolves but before this GET does) would let
+              // the stale "next chapter after delete" fetch pin the
+              // sidebar over the user's explicit selection.
+              const token = selectChapterSeq.start();
+              try {
+                // I7: thread the delete signal through the follow-up GET
+                // so an unmount (or supersede via the next deleteChapterOp.run)
+                // aborts both the DELETE-step and the post-delete
+                // active-chapter fetch together.
+                const ch = await api.chapters.get(first.id, s);
+                if (s.aborted) return true;
+                if (token.isStale()) return true;
+                setActiveChapter(ch);
+                setChapterWordCount(countWords(ch.content));
+              } catch (err) {
+                // I2 (review 2026-05-25): the secondary GET now threads
+                // the deleteChapterOp signal `s`, so unmount or a
+                // superseding delete rejects with ABORTED. Gate the
+                // warn first to keep test output clean (matches the
+                // outer DELETE catch's discipline at line ~987).
+                if (s.aborted) return true;
+                // Secondary fetch failed — fall through to the empty state
+                // rather than setting activeChapter to the list-level row
+                // (which has content=null). Surface the failure via the
+                // onError callback and a console.warn so the user and the
+                // dev console both learn something went wrong (I3); before
+                // I3 the catch was silent and the user saw "Add chapter"
+                // as if the project had no chapters left.
+                console.warn("Failed to load chapter after delete:", err);
+                if (token.isStale()) return true;
+                const { message } = mapApiError(err, "chapter.load");
+                if (message) onError?.(message);
+                setActiveChapter(null);
+                setChapterWordCount(0);
+              }
+            } else {
               setActiveChapter(null);
               setChapterWordCount(0);
             }
-          } else {
-            setActiveChapter(null);
-            setChapterWordCount(0);
           }
+          return true;
+        } catch (err) {
+          // I7: ABORTED means unmount or a newer delete superseded this
+          // one; stay silent so we don't fire a banner on a torn-down
+          // caller (happens in practice in tests too).
+          if (s.aborted) return false;
+          console.warn("Failed to delete chapter:", err);
+          const { message } = mapApiError(err, "chapter.delete");
+          if (message) onError?.(message);
+          return false;
         }
-        return true;
-      } catch (err) {
-        if (deleteChapterAbortRef.current === controller) deleteChapterAbortRef.current = null;
-        // I7: ABORTED means unmount or a newer delete superseded this
-        // one; stay silent so we don't fire a banner on a torn-down
-        // caller (happens in practice in tests too).
-        if (controller.signal.aborted) return false;
-        console.warn("Failed to delete chapter:", err);
-        const { message } = mapApiError(err, "chapter.delete");
-        if (message) onError?.(message);
-        return false;
-      }
+      });
+
+      return promise;
     },
-    [cancelInFlightSave, selectChapterSeq],
+    [cancelInFlightSave, selectChapterSeq, deleteChapterOp],
   );
 
   const handleReorderChapters = useCallback(
@@ -895,14 +1064,13 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       // before issuing a new one so overlapping drag-drops cannot
       // commit out of drop order. The signal is threaded through the
       // transport so the browser actually drops the stale request.
-      reorderAbortRef.current?.abort();
-      const controller = new AbortController();
-      reorderAbortRef.current = controller;
+      const { promise, signal } = reorderOp.run((s) =>
+        api.projects.reorderChapters(slug, orderedIds, s),
+      );
       // S6 (review 2026-04-21) + C1 (review 2026-04-24): drift guard —
       // see handleCreateChapter for full rationale.
       try {
-        await api.projects.reorderChapters(slug, orderedIds, controller.signal);
-        if (reorderAbortRef.current === controller) reorderAbortRef.current = null;
+        await promise;
         // C2 + C1: discard if the user navigated away mid-PUT. Without
         // this, the reorder would apply Project A's ordered ids to
         // Project B's chapters array — the filter by id then drops
@@ -922,11 +1090,10 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           return { ...prev, chapters: reordered };
         });
       } catch (err) {
-        if (reorderAbortRef.current === controller) reorderAbortRef.current = null;
         // C5: ABORTED means a newer reorder superseded this one and is
         // driving its own PATCH. Reverting here would stomp the live
         // call; stay silent and let the newer reorder land.
-        if (controller.signal.aborted) return;
+        if (signal.aborted) return;
         console.warn("Failed to reorder chapters:", err);
         if (projectRef.current?.id !== projectId) return;
         if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
@@ -964,7 +1131,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         }
       }
     },
-    [],
+    [reorderOp],
   );
 
   const handleUpdateProjectTitle = useCallback(
@@ -977,12 +1144,10 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       setProjectTitleError(null);
       // I1: abort any prior in-flight title PATCH before issuing a new
       // one so overlapping renames can't commit out of typing order.
-      titleChangeAbortRef.current?.abort();
-      const controller = new AbortController();
-      titleChangeAbortRef.current = controller;
+      const { promise, signal } = titleChangeOp.run((s) => api.projects.update(slug, { title }, s));
       try {
-        const updated = await api.projects.update(slug, { title }, controller.signal);
-        if (controller.signal.aborted) return undefined;
+        const updated = await promise;
+        if (signal.aborted) return undefined;
         // C3 defense-in-depth: if the user navigated mid-PATCH, discard
         // the response. The primary C3 guard lives in useProjectTitleEditing
         // (refuses saveProjectTitle when project.slug !== slug), but this
@@ -995,7 +1160,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         setProject((prev) => (prev ? { ...prev, title: updated.title, slug: updated.slug } : prev));
         return updated.slug;
       } catch (err) {
-        if (controller.signal.aborted) return undefined; // superseded by a newer rename
+        if (signal.aborted) return undefined; // superseded by a newer rename
         console.warn("Failed to update project title:", err);
         // Don't call setError — that triggers the full-page error overlay.
         // Returning undefined keeps the title edit mode open so the user can retry.
@@ -1043,7 +1208,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         return undefined;
       }
     },
-    [],
+    [titleChangeOp],
   );
 
   const handleStatusChange = useCallback(
@@ -1051,9 +1216,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       const token = statusChangeSeq.start();
       // I11: abort the prior in-flight PATCH before issuing a new one so
       // overlapping status clicks cannot land out-of-order at the server.
-      statusChangeAbortRef.current?.abort();
-      const controller = new AbortController();
-      statusChangeAbortRef.current = controller;
+      const { promise: statusPromise, signal: statusSignal } = statusChangeOp.run((s) =>
+        api.chapters.update(chapterId, { status }, s),
+      );
       // I21 (review 2026-04-24): read previousStatus from the confirmed
       // cache, not projectRef. A rapid X→A→B click sequence would
       // otherwise capture `previousStatus = A` for B (A's optimistic
@@ -1075,14 +1240,13 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       // status to the wrong chapter if the user rapidly switches chapters.
       setActiveChapter((prev) => (prev?.id === chapterId ? { ...prev, status } : prev));
       try {
-        await api.chapters.update(chapterId, { status }, controller.signal);
-        if (statusChangeAbortRef.current === controller) statusChangeAbortRef.current = null;
+        await statusPromise;
         // I21: advance the confirmed cache only on server-confirmed
         // success so the next call's previousStatus reads the right
         // value.
         confirmedStatusRef.current[chapterId] = status;
       } catch (err) {
-        if (statusChangeAbortRef.current === controller) statusChangeAbortRef.current = null;
+        if (statusSignal.aborted) return;
         if (token.isStale()) return; // newer call owns state
         const { message, possiblyCommitted } = mapApiError(err, "chapter.updateStatus");
         // I11 (follow-on from the new AbortController): an ABORTED
@@ -1173,7 +1337,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         if (message) onError?.(message);
       }
     },
-    [statusChangeSeq],
+    [statusChangeSeq, statusChangeOp],
   );
 
   const handleRenameChapter = useCallback(
@@ -1181,13 +1345,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       // I7: abort any prior in-flight rename before issuing a new one
       // so overlapping renames cannot commit out of typing order at the
       // server (same rationale as title/status abort refs).
-      renameChapterAbortRef.current?.abort();
-      const controller = new AbortController();
-      renameChapterAbortRef.current = controller;
+      const { promise, signal } = renameChapterOp.run((s) =>
+        api.chapters.update(chapterId, { title }, s),
+      );
       try {
-        await api.chapters.update(chapterId, { title }, controller.signal);
-        if (controller.signal.aborted) return;
-        if (renameChapterAbortRef.current === controller) renameChapterAbortRef.current = null;
+        await promise;
+        if (signal.aborted) return;
         if (activeChapterRef.current?.id === chapterId) {
           // Only update the title — don't overwrite content with stale server data.
           // The editor holds the current truth (same principle as handleSave).
@@ -1202,11 +1365,10 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           };
         });
       } catch (err) {
-        if (renameChapterAbortRef.current === controller) renameChapterAbortRef.current = null;
         // I7: ABORTED means a newer rename superseded this one; stay
         // silent so the newer call's state update is not contradicted
         // by a stale error banner.
-        if (controller.signal.aborted) return;
+        if (signal.aborted) return;
         console.warn("Failed to rename chapter:", err);
         // Don't call setError — that triggers the full-page error overlay.
         // Rename failures are non-fatal; surface via the optional callback
@@ -1215,7 +1377,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         if (message) onError?.(message);
       }
     },
-    [],
+    [renameChapterOp],
   );
 
   return {

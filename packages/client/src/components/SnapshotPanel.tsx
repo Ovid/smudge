@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from "react";
 import { api } from "../api/client";
 import { useAbortableSequence } from "../hooks/useAbortableSequence";
+import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 import { STRINGS } from "../strings";
 import { mapApiError, isNotFound } from "../errors";
 import type { SnapshotListItem } from "@smudge/shared";
@@ -122,28 +123,19 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
     // the unmount-cleanup effect below — without that cleanup, an
     // imperative refresh whose parent unmounts while it is in flight
     // leaked the server request to completion.
-    const fetchAbortRef = useRef<AbortController | null>(null);
+    const fetchOp = useAbortableAsyncOperation();
     // I6 (review 2026-04-24): distinct controller for create/delete
-    // POST/DELETE. Kept separate from fetchAbortRef so a new list
-    // fetch does not sever an in-flight mutation, and a mutation
-    // supersede does not sever the list fetch. Both are covered by
-    // the unmount cleanup below.
-    const mutateAbortRef = useRef<AbortController | null>(null);
-    useEffect(() => {
-      return () => {
-        fetchAbortRef.current?.abort();
-        mutateAbortRef.current?.abort();
-      };
-    }, []);
+    // POST/DELETE. Kept separate from fetchOp so a new list fetch
+    // does not sever an in-flight mutation, and a mutation supersede
+    // does not sever the list fetch. Both hooks auto-abort on unmount.
+    const mutateOp = useAbortableAsyncOperation();
 
     const fetchSnapshots = useCallback(async () => {
       if (!chapterId) return;
       const token = chapterSeq.capture();
-      fetchAbortRef.current?.abort();
-      const controller = new AbortController();
-      fetchAbortRef.current = controller;
+      const { promise } = fetchOp.run((s) => api.snapshots.list(chapterId, s));
       try {
-        const data = await api.snapshots.list(chapterId, controller.signal);
+        const data = await promise;
         if (token.isStale()) return;
         setSnapshots(data);
         setListError(null);
@@ -156,7 +148,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         const { message } = mapApiError(err, "snapshot.list");
         if (message) setListError(message);
       }
-    }, [chapterId, onSnapshotsChange, chapterSeq]);
+    }, [chapterId, onSnapshotsChange, chapterSeq, fetchOp]);
 
     useImperativeHandle(ref, () => ({ refreshSnapshots: fetchSnapshots }), [fetchSnapshots]);
 
@@ -167,11 +159,8 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
       chapterSeq.abort();
       if (!isOpen || !chapterId) return;
       const token = chapterSeq.capture();
-      fetchAbortRef.current?.abort();
-      const controller = new AbortController();
-      fetchAbortRef.current = controller;
-      api.snapshots
-        .list(chapterId, controller.signal)
+      const { promise } = fetchOp.run((s) => api.snapshots.list(chapterId, s));
+      promise
         .then((data) => {
           if (token.isStale()) return;
           setSnapshots(data);
@@ -183,10 +172,20 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
           const { message } = mapApiError(err, "snapshot.list");
           if (message) setListError(message);
         });
+      // S4 (review 2026-05-25): explicit cleanup. useAbortableAsyncOperation
+      // auto-aborts on unmount AND on the next .run() call, but NOT on a
+      // bare effect-rerun (e.g. the isOpen=true→false transition that early-
+      // returns above without re-issuing run()). In practice SnapshotPanel
+      // is conditionally rendered on `snapshotPanelOpen && activeChapter`,
+      // so a close-while-mounted transition doesn't occur today — but a
+      // future refactor that keeps the panel mounted with isOpen=false
+      // would leave the prior in-flight server work running to completion.
+      // Mirror sibling ExportDialog's explicit op.abort() in its
+      // open→closed transition.
       return () => {
-        controller.abort();
+        fetchOp.abort();
       };
-    }, [isOpen, chapterId, onSnapshotsChange, chapterSeq]);
+    }, [isOpen, chapterId, onSnapshotsChange, chapterSeq, fetchOp]);
 
     // Focus management
     useEffect(() => {
@@ -284,16 +283,12 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
           return;
         }
       }
-      mutateAbortRef.current?.abort();
-      const controller = new AbortController();
-      mutateAbortRef.current = controller;
+      const { promise, signal } = mutateOp.run((s) =>
+        api.snapshots.create(chapterId, createLabel.trim() || undefined, s),
+      );
       try {
-        const result = await api.snapshots.create(
-          chapterId,
-          createLabel.trim() || undefined,
-          controller.signal,
-        );
-        if (controller.signal.aborted) return;
+        const result = await promise;
+        if (signal.aborted) return;
         if (result.status === "duplicate") {
           setDuplicateMessage(true);
           return;
@@ -303,7 +298,7 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
         setDuplicateMessage(false);
         await fetchSnapshots();
       } catch (err) {
-        if (controller.signal.aborted) return;
+        if (signal.aborted) return;
         const { message } = mapApiError(err, "snapshot.create");
         if (message) setCreateError(message);
       }
@@ -311,16 +306,14 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
 
     const handleDelete = async (id: string) => {
       setDeleteError(null);
-      mutateAbortRef.current?.abort();
-      const controller = new AbortController();
-      mutateAbortRef.current = controller;
+      const { promise, signal } = mutateOp.run((s) => api.snapshots.delete(id, s));
       try {
-        await api.snapshots.delete(id, controller.signal);
-        if (controller.signal.aborted) return;
+        await promise;
+        if (signal.aborted) return;
         setConfirmDeleteId(null);
         await fetchSnapshots();
       } catch (err) {
-        if (controller.signal.aborted) return;
+        if (signal.aborted) return;
         // 404 means the snapshot is already gone (deleted in another tab,
         // or the parent chapter was soft-deleted). The server already
         // agrees with the user's intent; refresh the list and close the

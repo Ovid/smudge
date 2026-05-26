@@ -7,6 +7,7 @@ import { api } from "../api/client";
 import { mapApiError, isApiError, ApiRequestError } from "../errors";
 import { clearCachedContent } from "./useContentCache";
 import { useAbortableSequence } from "./useAbortableSequence";
+import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
 import type { SnapshotPanelHandle } from "../components/SnapshotPanel";
 
 // Synthetic ApiRequestErrors for failure paths where the hook caught a
@@ -168,14 +169,14 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   // already superseded. One controller per viewSnapshot / refreshCount
   // call; aborted on the next call AND on unmount (via a cleanup
   // useEffect below).
-  const viewAbortRef = useRef<AbortController | null>(null);
-  const refreshCountAbortRef = useRef<AbortController | null>(null);
+  const viewOp = useAbortableAsyncOperation();
+  const refreshCountOp = useAbortableAsyncOperation();
   // I3 (review 2026-04-24): restore + follow-up list had no
   // AbortController. A chapter switch or unmount mid-flight left the
   // server fetching/writing for a caller that already discarded the
   // response. Thread the signal through both calls and abort on
   // unmount so the browser drops them cleanly.
-  const restoreAbortRef = useRef<AbortController | null>(null);
+  const restoreOp = useAbortableAsyncOperation();
   // I8 (review 2026-04-25): the follow-up snapshot list after a successful
   // restore must NOT share the restore POST's controller. Sharing meant
   // a subsequent restore aborted the prior follow-up list (the new
@@ -183,6 +184,17 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   // through rapid restore-then-restore until the next chapter-switch
   // refetch. Allocating its own controller scopes "latest wins" to the
   // follow-up list itself, not to the parent restore.
+  // Phase 4b.3b decision matrix row S-16: kept hand-rolled. The follow-up
+  // GET fires from inside the restore's success branch — by the time
+  // it runs, restoreOp's controller has been replaced by the next
+  // restore (if any), so routing this through restoreOp would
+  // auto-abort the follow-up. Two simultaneously-live controllers from
+  // one useAbortableAsyncOperation instance are not expressible —
+  // run() aborts the prior on each call. Splitting into two hook
+  // instances loses the entangled-lifecycle context documented at the
+  // existing I8 comment block above. Phase 4b.4 replaces this
+  // file-level allowlist entry with an inline `// eslint-disable-next-line`
+  // on the line below.
   const restoreFollowupAbortRef = useRef<AbortController | null>(null);
   // Mirror the current chapterId so async handlers can check the live value
   // against their captured one (needed for A→B→A restore detection).
@@ -263,11 +275,9 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       // I2: abort any prior in-flight View GET before issuing a new
       // one so the server stops reading the old snapshot as soon as
       // the user clicks a different entry.
-      viewAbortRef.current?.abort();
-      const controller = new AbortController();
-      viewAbortRef.current = controller;
+      const { promise } = viewOp.run((s) => api.snapshots.get(snapshot.id, s));
       try {
-        const full = await api.snapshots.get(snapshot.id, controller.signal);
+        const full = await promise;
         if (cToken.isStale()) return { ok: true, superseded: "chapter" };
         if (vToken.isStale()) return { ok: true, superseded: "sameChapterNewer" };
         // S11 (2026-04-23 review): defensive undefined guard. apiFetch
@@ -343,7 +353,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         return { ok: false, error: makeClientNetworkError() };
       }
     },
-    [chapterSeq, viewSeq],
+    [chapterSeq, viewSeq, viewOp],
   );
 
   const exitSnapshotView = useCallback(() => {
@@ -358,14 +368,12 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       // reset viewingSnapshot for the new chapter.
       const token = chapterSeq.capture();
       const restoringChapterId = chapterId;
-      // I3: abort any prior in-flight restore before issuing a new one
-      // and install the controller on the shared ref so the unmount
-      // effect can sever a mid-flight restore.
-      restoreAbortRef.current?.abort();
-      const controller = new AbortController();
-      restoreAbortRef.current = controller;
+      // I3: abort any prior in-flight restore before issuing a new one;
+      // useAbortableAsyncOperation auto-aborts on unmount so a mid-
+      // flight restore is severed cleanly when the hook tears down.
+      const { promise } = restoreOp.run((s) => api.snapshots.restore(snapshotId, s));
       try {
-        await api.snapshots.restore(snapshotId, controller.signal);
+        await promise;
         // A→B→A round-trip: epoch moved but the current chapter is once
         // again the one we restored. Treat that as a NOT-stale completion
         // — the caller should reload the editor because the restore
@@ -392,11 +400,11 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
           const freshToken = chapterSeq.capture();
           // I8 (review 2026-04-25): allocate a separate controller for
           // the follow-up list. Sharing the restore POST's controller
-          // meant the next restore (which abort()s restoreAbortRef)
-          // also aborted the prior follow-up list, leaving the badge
-          // stale until a chapter-switch refetch. The unmount cleanup
-          // covers this ref too so a torn-down hook drops the list
-          // cleanly.
+          // meant the next restore (which aborts the prior restore
+          // controller) also aborted the prior follow-up list, leaving
+          // the badge stale until a chapter-switch refetch. The unmount
+          // cleanup covers this ref too so a torn-down hook drops the
+          // list cleanly.
           restoreFollowupAbortRef.current?.abort();
           const followupController = new AbortController();
           restoreFollowupAbortRef.current = followupController;
@@ -434,24 +442,23 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         return { ok: false, error: makeClientCommittedError() };
       }
     },
-    [chapterId, chapterSeq],
+    [chapterId, chapterSeq, restoreOp],
   );
 
   const refreshCount = useCallback(() => {
     if (!chapterId) return;
     const token = chapterSeq.capture();
     // I2: abort any prior in-flight count refresh before issuing a new
-    // one (and on unmount, via the cleanup useEffect below).
-    refreshCountAbortRef.current?.abort();
-    const controller = new AbortController();
-    refreshCountAbortRef.current = controller;
-    api.snapshots
-      .list(chapterId, controller.signal)
+    // one (and on unmount, via the hook's own cleanup). The hook's
+    // run() aborts the prior controller per call; unmount cleanup is
+    // baked into useAbortableAsyncOperation.
+    const { promise } = refreshCountOp.run((s) => api.snapshots.list(chapterId, s));
+    promise
       .then((data) => {
         if (!token.isStale()) setSnapshotCount(data.length);
       })
       .catch(() => {});
-  }, [chapterId, chapterSeq]);
+  }, [chapterId, chapterSeq, refreshCountOp]);
 
   // Feeds the hook's count from the panel's own list fetch so the toolbar
   // badge stays in sync without duplicating the GET.
@@ -461,11 +468,10 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
 
   // I2: abort outstanding snapshot fetches on unmount so a late-
   // resolving .then/.catch can't fire setState on a torn-down hook.
+  // refreshCountOp and restoreOp self-clean on unmount via
+  // useAbortableAsyncOperation.
   useEffect(
     () => () => {
-      viewAbortRef.current?.abort();
-      refreshCountAbortRef.current?.abort();
-      restoreAbortRef.current?.abort();
       restoreFollowupAbortRef.current?.abort();
     },
     [],
