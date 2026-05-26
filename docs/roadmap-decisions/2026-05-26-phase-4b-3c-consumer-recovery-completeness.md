@@ -97,8 +97,18 @@ plan, and ran alignment.
 - **Summary:** `_resolveErrorInternal` returns early on 2xx BAD_JSON before byCode-matching, so `terminalCodes: ["BAD_JSON"]` would be dead. The consumer's `mapped.terminal || mapped.possiblyCommitted` OR catches 2xx BAD_JSON via `possiblyCommitted` instead. The design's framing ("the dispatch reads `mapped.terminal`") was misleading because the dispatch actually reads the OR of both flags.
 - **Resolution:** fixed-in-design + fixed-in-plan — option A. Dropped BAD_JSON from `chapter.save.terminalCodes` (now `["UPDATE_READ_FAILURE", "CORRUPT_CONTENT"]`). Updated the design doc's framing to name the OR pattern as the documented bridge between terminal codes and committed codes. Updated Task 6's code comment to explain the OR's role. Updated the Step 1 test assertions to verify the BAD_JSON-via-possiblyCommitted path explicitly.
 
+## Scope Exceptions
+
+### [1] Bundle 4b.14 + 8b planning docs into the 4b.3c.1 PR (commit `a1eb3a4`)
+
+- **Severity:** Important (one-feature rule)
+- **Category:** Scope
+- **Summary:** Commit `a1eb3a4` lands ~880 lines of planning documentation for two roadmap phases unrelated to consumer recovery: `docs/plans/2026-05-26-bundle-export-roundtrip-design.md` (Phase 8b, 360 lines), `docs/plans/2026-05-26-operational-backup-stopgap-design.md` (Phase 4b.14, 240 lines), `paad/pushback-reviews/2026-05-26-bundle-export-roundtrip-pushback.md` (118 lines), plus `docs/roadmap.md` edits adding Phase 4b.14 and expanding Phase 8b. CLAUDE.md §Pull Request Scope: "A PR delivers a single feature *or* a single refactor — never both, and never two features." The 2026-05-25 Phase 4b.3b allowlist sweep is the only prior recorded exception; this is the second.
+- **Resolution:** kept-on-branch — user decision. The planning docs are already written; pulling them onto their own branch+PR would be churn for files that don't touch production code, and a later `/roadmap` run is expected to pick the phases up automatically from `docs/roadmap.md`. Keeping the docs here ensures the next roadmap pass sees them and avoids the risk of the work being lost in a stash. Restricted to docs/plans + roadmap edits; no production code or test files in the commit.
+
 ## Summary
 
 - Pushback raised 7 issues; all 7 resulted in design changes (`fixed-in-design`). Most consequential: Issue 2 split the phase into three sub-phases per CLAUDE.md §Pull Request Scope; Issue 4 introduced the `MappedError<S>` phantom-type pattern.
 - Alignment raised 3 issues; Issue 1 resulted in plan changes (template + per-task metadata table); Issue 2 added REFACTOR steps to ~20 tasks; Issue 3 touched both design and plan to drop the dead `BAD_JSON` terminal-codes entry and update the framing.
+- One scope exception accepted post-implementation: commit `a1eb3a4` bundles 4b.14 + 8b planning docs into the 4b.3c.1 PR (docs-only; second recorded exception after Phase 4b.3b).
 - Status: aligned; ready for implementation. CLAUDE.md drift (the "three justified-survivor files" wording in Save-Pipeline Invariants Rule 4) is deferred to Phase 4b.3d per user decision (the file count becomes four when 4b.3c.3 adds `useTrashManager.ts` to the allowlist).
