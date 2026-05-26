@@ -310,6 +310,45 @@ describe("SnapshotPanel", () => {
     });
   });
 
+  describe("SnapshotPanel.handleCreate possiblyCommitted (4b.3c.2 I3)", () => {
+    it("PINNED: 200 BAD_JSON currently surfaces createError but does NOT close form, clear label, or refetch — flips on I3 fix", async () => {
+      const user = userEvent.setup();
+      const { ApiRequestError } = await import("../api/client");
+      vi.mocked(api.snapshots.list).mockResolvedValue([]);
+      vi.mocked(api.snapshots.create).mockRejectedValueOnce(
+        new ApiRequestError("body parse error", 200, "BAD_JSON"),
+      );
+      render(<SnapshotPanel {...defaultProps} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(S.createButton)).toBeInTheDocument();
+      });
+
+      // Initial mount-time fetch counts as call #1. Captured before the
+      // create attempt so the post-failure count can be compared.
+      expect(api.snapshots.list).toHaveBeenCalledTimes(1);
+
+      await user.click(screen.getByText(S.createButton));
+      await user.type(screen.getByPlaceholderText(S.labelPlaceholder), "My label");
+      await user.click(screen.getByText(S.save));
+
+      // (a) Committed banner displayed — mapper returns possiblyCommitted=true
+      //     with the committed copy because snapshot.create has committed: defined.
+      await waitFor(() => {
+        expect(screen.getByText(STRINGS.error.possiblyCommitted)).toBeInTheDocument();
+      });
+
+      // (b) Form is NOT closed — the label input is still rendered.
+      expect(screen.getByPlaceholderText(S.labelPlaceholder)).toBeInTheDocument();
+
+      // (c) Label is NOT cleared.
+      expect(screen.getByPlaceholderText(S.labelPlaceholder)).toHaveValue("My label");
+
+      // (d) No refetch — list-call count is still 1 (the mount-time fetch).
+      expect(api.snapshots.list).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("view snapshot", () => {
     it("calls onView with snapshot data when View is clicked", async () => {
       const user = userEvent.setup();
