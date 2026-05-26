@@ -1155,7 +1155,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // I4: route through the onError callback rather than setError so
         // a 400 on id-list mismatch (recoverable per CLAUDE.md) surfaces
         // as a dismissible banner instead of tearing down the editor.
-        const { message, possiblyCommitted } = mapApiError(err, "chapter.reorder");
+        const mapped = mapApiError(err, "chapter.reorder");
         // I6 (2026-04-23): 2xx BAD_JSON means the server committed the
         // reorder but the body was unreadable. Before this fix the
         // catch touched no state, so the drag-and-drop visually snapped
@@ -1165,7 +1165,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // client state on possiblyCommitted so the UI matches the
         // committed server state, and surface the committed copy so
         // the user knows the response was ambiguous.
-        if (possiblyCommitted) {
+        //
+        // The committed-branch setProject stays hand-rolled (outside of
+        // applyMappedError's onCommitted) because it pairs with the
+        // [S20] inside-updater epoch check — routing it through the
+        // helper would obscure the per-branch placement intent.
+        if (mapped.possiblyCommitted) {
           setProject((prev) => {
             if (!prev) return prev;
             // S20 (4b.3c.2): same scheduling guard as the success branch
@@ -1182,12 +1187,15 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             return { ...prev, chapters: reordered };
           });
         }
-        if (!message) return;
-        if (onError) {
-          onError(message);
-        } else {
-          setError(message);
-        }
+        // 4b.3c.2 S15: migrate the message-dispatch tail to applyMappedError.
+        // ABORTED's message=null is handled inside the helper; onMessage
+        // mirrors the prior `if (onError) onError else setError` ladder.
+        applyMappedError(mapped, {
+          onMessage: (msg) => {
+            if (onError) onError(msg);
+            else setError(msg);
+          },
+        });
       }
     },
     [reorderOp],
