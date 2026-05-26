@@ -1374,10 +1374,14 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // Status change failures are non-fatal — the revert already restored consistent state.
         // Call the optional onError callback for the caller to display (e.g., as a dismissible banner),
         // rather than setError which triggers the full-page error overlay.
-        // S4 fix (Task 29 in 4b.3c.2) will add a setError fallback when onError is absent; this
-        // migration mirrors the pre-S4 shape (only onError?.(message), no fallback).
+        // S4 (4b.3c.2): when no onError is wired (keyboard-shortcut path),
+        // fall back to setError so the failure surfaces via the full-page
+        // overlay rather than vanishing — mirrors handleReorderChapters.
         applyMappedError(mapped, {
-          onMessage: (message) => onError?.(message),
+          onMessage: (message) => {
+            if (onError) onError(message);
+            else setError(message);
+          },
         });
       }
     },

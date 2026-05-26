@@ -1145,6 +1145,48 @@ describe("useProjectEditor", () => {
     expect(result.current.project?.chapters[0]!.status).toBe("outline");
   });
 
+  it("handleStatusChange falls back to setError when onError is omitted (S4 4b.3c.2)", async () => {
+    // Pre-S4: an omitted onError silently swallowed the mapped message —
+    // keyboard-shortcut callers had no way to surface a status-change
+    // failure. The fallback mirrors handleReorderChapters: prefer onError
+    // when provided, otherwise route through setError so the failure
+    // surfaces via the full-page error overlay rather than vanishing.
+    vi.mocked(api.chapters.update).mockRejectedValue(new Error("status boom"));
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockResolvedValueOnce(mockProject); // reload after failure
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      // No onError argument — the fallback path.
+      await result.current.handleStatusChange("ch1", "revised");
+    });
+
+    expect(result.current.error).toBe(STRINGS.error.statusChangeFailed);
+  });
+
+  it("handleStatusChange routes to onError (not setError) when one is provided (S4 4b.3c.2)", async () => {
+    // Regression guard: the onError path still wins over the new setError
+    // fallback when the caller supplies a callback.
+    vi.mocked(api.chapters.update).mockRejectedValue(new Error("status boom"));
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject)
+      .mockResolvedValueOnce(mockProject);
+
+    const onError = vi.fn();
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "revised", onError);
+    });
+
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.statusChangeFailed);
+    expect(result.current.error).toBeNull();
+  });
+
   // I7 (review 2026-04-24): rapid renames used to race at the server;
   // the newer PATCH now severs the older one by installing a signal on
   // renameChapterAbortRef before issuing the new call.
