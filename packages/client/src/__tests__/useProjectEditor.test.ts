@@ -1187,6 +1187,71 @@ describe("useProjectEditor", () => {
     expect(result.current.error).toBeNull();
   });
 
+  it("PINNED: handleStatusChange recovery GET failure does NOT warn currently — flips on S10 fix (4b.3c.2)", async () => {
+    // The recovery catch around api.projects.get is currently a bare
+    // `} catch {}` — a failed recovery silently falls through to local
+    // revert with no observability. S10's fix introduces a devWarn so
+    // the path is visible in dev; this pin captures the pre-fix silence.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(new Error("status boom"));
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockRejectedValueOnce(new Error("recovery GET boom")); // recovery GET fails
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleStatusChange("ch1", "revised");
+    });
+
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      "handleStatusChange recovery GET failed:",
+      expect.anything(),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("when the handleStatusChange recovery GET is aborted, no console.warn fires (stable across S10 4b.3c.2 fix)", async () => {
+    // Abort-silence invariant: even after S10 introduces devWarn at
+    // the recovery catch, an aborted signal must stay silent so unmount
+    // and rapid-supersede races don't pollute test output. Driven via
+    // unmount, which fires the cleanup at useProjectEditor.ts:273-280
+    // (statusRecoveryAbortRef.current?.abort()).
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.update).mockRejectedValue(new Error("status boom"));
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockImplementationOnce((_slug, signal) => pendingUntilAbort(signal)); // recovery hangs until abort
+
+    const { result, unmount } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    // Start the status change; do NOT await — the recovery GET is hanging.
+    let statusPromise: Promise<unknown>;
+    await act(async () => {
+      statusPromise = result.current.handleStatusChange("ch1", "revised");
+    });
+
+    // Let the chapters.update rejection settle and the recovery GET issue.
+    await waitFor(() => expect(api.projects.get).toHaveBeenCalledTimes(2));
+
+    // Unmount triggers statusRecoveryAbortRef.abort() → recovery rejects
+    // with ABORTED → catch fires.
+    unmount();
+    await act(async () => {
+      await statusPromise!.catch(() => undefined);
+    });
+
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      "handleStatusChange recovery GET failed:",
+      expect.anything(),
+    );
+    warnSpy.mockRestore();
+  });
+
   // I7 (review 2026-04-24): rapid renames used to race at the server;
   // the newer PATCH now severs the older one by installing a signal on
   // renameChapterAbortRef before issuing the new call.
