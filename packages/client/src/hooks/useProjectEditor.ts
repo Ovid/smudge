@@ -11,6 +11,7 @@ import {
   mapApiError,
   mapApiErrorMessage,
   applyMappedError,
+  devWarn,
   isApiError,
   isAborted,
   isClientError,
@@ -1349,8 +1350,13 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
               );
               reverted = true;
             }
-          } catch {
-            // Reload failed — fall through to local revert
+          } catch (err) {
+            // S10 (4b.3c.2): surface the recovery failure in dev. The
+            // per-call recoveryController.signal gates the warn — if a
+            // newer status PATCH or unmount cancelled this GET, stay
+            // silent so test output isn't polluted by supersede races.
+            devWarn("handleStatusChange recovery GET failed", recoveryController.signal, err);
+            // Fall through to local revert.
           }
         }
         // Guard the local-revert fallback too: the catch above could be

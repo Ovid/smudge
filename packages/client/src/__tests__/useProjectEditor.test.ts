@@ -1187,11 +1187,10 @@ describe("useProjectEditor", () => {
     expect(result.current.error).toBeNull();
   });
 
-  it("PINNED: handleStatusChange recovery GET failure does NOT warn currently — flips on S10 fix (4b.3c.2)", async () => {
-    // The recovery catch around api.projects.get is currently a bare
-    // `} catch {}` — a failed recovery silently falls through to local
-    // revert with no observability. S10's fix introduces a devWarn so
-    // the path is visible in dev; this pin captures the pre-fix silence.
+  it("handleStatusChange recovery GET failure warns via devWarn (S10 4b.3c.2)", async () => {
+    // The recovery catch around api.projects.get now routes through
+    // devWarn so a failed recovery is observable in dev. The bare
+    // `} catch {}` shape pre-S10 silently swallowed the failure.
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.update).mockRejectedValue(new Error("status boom"));
     vi.mocked(api.projects.get).mockReset();
@@ -1206,9 +1205,9 @@ describe("useProjectEditor", () => {
       await result.current.handleStatusChange("ch1", "revised");
     });
 
-    expect(warnSpy).not.toHaveBeenCalledWith(
+    expect(warnSpy).toHaveBeenCalledWith(
       "handleStatusChange recovery GET failed:",
-      expect.anything(),
+      expect.any(Error),
     );
     warnSpy.mockRestore();
   });
