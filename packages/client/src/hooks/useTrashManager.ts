@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { Chapter, ProjectWithChapters } from "@smudge/shared";
 import { api } from "../api/client";
-import { mapApiError } from "../errors";
+import { mapApiError, applyMappedError } from "../errors";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
 
 export interface UseTrashManagerOptions {
@@ -58,11 +58,10 @@ export function useTrashManager(
       setTrashOpen(true);
     } catch (err) {
       if (signal.aborted) return;
-      const { message } = mapApiError(err, "trash.load");
+      const mapped = mapApiError(err, "trash.load");
       // message:null for ABORTED — skip both the log and the banner.
-      if (message === null) return;
-      console.error("Failed to load trash:", err);
-      setActionError(message);
+      if (mapped.message !== null) console.error("Failed to load trash:", err);
+      applyMappedError(mapped, { onMessage: setActionError });
     }
   }, [project, trashOp]);
 
@@ -106,11 +105,10 @@ export function useTrashManager(
         // warnings invariant) and risking React's setState-on-unmount
         // warning.
         if (signal.aborted) return;
-        const { message, possiblyCommitted } = mapApiError(err, "trash.restoreChapter");
+        const mapped = mapApiError(err, "trash.restoreChapter");
         // ABORTED returns message: null. Skip log + state update so a
         // late abort does not surface noise.
-        if (message === null) return;
-        console.error("Failed to restore chapter:", err);
+        if (mapped.message !== null) console.error("Failed to restore chapter:", err);
         // I2 (2026-04-24 review) + S8 (2026-04-24 review): on a
         // committed-but-unreadable response (2xx BAD_JSON or 500
         // RESTORE_READ_FAILURE) the server actually restored the
@@ -123,10 +121,12 @@ export function useTrashManager(
         // code too, so the call site doesn't need the inline code
         // check — adding a new committed-intent code in the future
         // only touches the scope definition.
-        if (possiblyCommitted) {
-          setTrashedChapters((prev) => prev.filter((c) => c.id !== chapterId));
-        }
-        setActionError(message);
+        applyMappedError(mapped, {
+          onCommitted: () => {
+            setTrashedChapters((prev) => prev.filter((c) => c.id !== chapterId));
+          },
+          onMessage: setActionError,
+        });
       }
     },
     [slug, setProject, navigate, restoreOp],
@@ -162,8 +162,7 @@ export function useTrashManager(
         setTrashedChapters(trashed);
       } catch (err) {
         if (signal.aborted) return;
-        const { message } = mapApiError(err, "trash.load");
-        if (message) setActionError(message);
+        applyMappedError(mapApiError(err, "trash.load"), { onMessage: setActionError });
       }
     }
   }, [deleteTarget, handleDeleteChapter, trashOpen, project, trashOp]);
