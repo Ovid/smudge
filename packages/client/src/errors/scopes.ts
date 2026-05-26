@@ -165,6 +165,16 @@ export const SCOPES = {
     // The consumer's `mapped.terminal || mapped.possiblyCommitted` OR
     // catches 2xx BAD_JSON via possiblyCommitted instead.
     terminalCodes: ["UPDATE_READ_FAILURE", "CORRUPT_CONTENT"],
+    // S1 (agentic-review 2026-05-26): 404 is terminal on the byStatus
+    // axis — the chapter is gone server-side (purge, hard-delete, or
+    // another tab), retry will deterministically 404 again, and the
+    // editor must lock so debounced auto-saves stop firing into a
+    // chapter the server has rejected. Covers both the coded NOT_FOUND
+    // path AND the bare 404 path (proxy chains that strip the
+    // envelope), since byStatus matches regardless of err.code.
+    // useProjectEditor.handleSave reads `mapped.terminal` instead of
+    // hand-coding the status check — see lock-banner block.
+    terminalStatuses: [404],
   },
   "chapter.create": {
     fallback: STRINGS.error.createChapterFailed,

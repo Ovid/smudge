@@ -367,7 +367,18 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       // the BAD_JSON / UPDATE_READ_FAILURE / CORRUPT_CONTENT and
       // status===404 branches — kept the variable single-purpose but
       // no longer 4xx-only.
-      type TerminalSaveError = { message: string; code?: string; status: number };
+      // S1 (agentic-review 2026-05-26): `terminal` and `possiblyCommitted`
+      // mirror the matching MappedError flags so the post-loop lock-banner
+      // can route through `terminal || possiblyCommitted` instead of
+      // hand-coding the code/status list. Adding a new terminal condition
+      // (code OR status) is now a one-line scope edit.
+      type TerminalSaveError = {
+        message: string;
+        code?: string;
+        status: number;
+        terminal: boolean;
+        possiblyCommitted: boolean;
+      };
       // S-2 (Phase 4b.3b): the retry-with-backoff loop returns a
       // discriminated outcome so the post-loop block can drive banner /
       // lock decisions without mutating outer-scope state from inside
@@ -473,19 +484,28 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             // Everything else under 500 (bare 500, transient NETWORK, etc.)
             // still retries with backoff.
             const mapped = mapApiError(err, "chapter.save");
-            // S3/S7 (4b.3c.1): the OR is the documented bridge between two
-            // scope-driven flags that both mean "save loop must break and lock
-            // the editor":
+            // S3/S7 (4b.3c.1) + S1 (2026-05-26 review): the OR is the
+            // documented bridge between three scope-driven flags that all
+            // mean "save loop must break and lock the editor":
             //   - mapped.terminal: scopes.ts terminalCodes (5xx UPDATE_READ_FAILURE /
-            //     CORRUPT_CONTENT — the byCode-match branch sets terminal=true).
+            //     CORRUPT_CONTENT — the byCode-match branch sets terminal=true)
+            //     OR terminalStatuses (404 — the byStatus-match branch sets
+            //     terminal=true after S1 added the byStatus axis to the scope
+            //     contract).
             //   - mapped.possiblyCommitted: 2xx BAD_JSON (scope.committed routes
             //     through the BAD_JSON early-return branch, which sets
             //     possiblyCommitted=true). UPDATE_READ_FAILURE additionally has a
             //     committedCodes entry so its mapped output sets both flags; the
             //     OR is idempotent on that case.
             if (isApiError(err) && (mapped.terminal || mapped.possiblyCommitted)) {
-              console.warn("Save failed with terminal code:", err.code);
-              terminal = { message: mapped.message as string, code: err.code, status: err.status };
+              console.warn("Save failed terminally:", err);
+              terminal = {
+                message: mapped.message as string,
+                code: err.code,
+                status: err.status,
+                terminal: mapped.terminal,
+                possiblyCommitted: mapped.possiblyCommitted,
+              };
               break;
             }
             if (isClientError(err)) {
@@ -500,7 +520,18 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
               // mapped.message is guaranteed non-null in this branch.
               // 4b.3c.1: reuse `mapped` computed above — one mapApiError
               // call per catch iteration rather than two.
-              terminal = { message: mapped.message as string, code: err.code, status: err.status };
+              // S1 (2026-05-26): copy mapped flags too — keeps the
+              // TerminalSaveError shape uniform across both break sites.
+              // For bare 4xx (no terminalCodes / terminalStatuses match),
+              // both flags are false and the lock-banner branch below
+              // skips locking, exactly mirroring pre-S1 behaviour.
+              terminal = {
+                message: mapped.message as string,
+                code: err.code,
+                status: err.status,
+                terminal: mapped.terminal,
+                possiblyCommitted: mapped.possiblyCommitted,
+              };
               break;
             }
             if (attempt < MAX_RETRIES) {
@@ -604,30 +635,21 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // invariant-pair helper (applyReloadFailedLock) fires alongside
         // the banner. Bare 4xx (VALIDATION_ERROR, 413) are recoverable
         // and keep the editor writable.
-        // I2 (review 2026-04-26): NOT_FOUND is also a terminal condition —
-        // the chapter is gone server-side (purge, hard-delete, or another
-        // tab). Without the lock, the user keeps typing into content the
-        // server has rejected and every debounced auto-save 404s in a
-        // loop. The chapter.save byStatus[404] mapping already surfaces
-        // the saveFailedChapterGone banner; this completes the invariant
-        // pair.
-        // S3 (review 2026-04-26): a 404 that arrives WITHOUT a parseable
-        // JSON envelope — e.g. a reverse-proxy HTML 404 page, an
-        // upstream that bypassed the express error handler — has no
-        // `code` on the ApiRequestError. Pre-fix, the code-only check
-        // missed those: the saveFailedChapterGone banner fired (via
-        // byStatus[404]) but the editor stayed writable, every
-        // debounced auto-save deterministically 404'd, and the banner
-        // re-fired on each save. Lock on status === 404 too so the
-        // pair holds whether or not the envelope survived the proxy
-        // chain.
-        if (
-          terminalSaveError &&
-          (terminalSaveError.status === 404 ||
-            terminalSaveError.code === "BAD_JSON" ||
-            terminalSaveError.code === "UPDATE_READ_FAILURE" ||
-            terminalSaveError.code === "CORRUPT_CONTENT")
-        ) {
+        //
+        // S1 (agentic-review 2026-05-26): the lock predicate is now
+        // `terminal || possiblyCommitted`, both captured from the
+        // MappedError at the in-loop break sites. The scope is the
+        // single source of truth: chapter.save.terminalCodes lists
+        // UPDATE_READ_FAILURE + CORRUPT_CONTENT (5xx terminal codes),
+        // chapter.save.terminalStatuses lists 404 (covers both coded
+        // NOT_FOUND and bare-status 404 from envelope-stripping proxies
+        // per S3 review 2026-04-26), and chapter.save.committed flips
+        // possiblyCommitted on 2xx BAD_JSON. Adding a fourth terminal
+        // code or status is now genuinely a one-line scope edit — the
+        // hand-coded list this branch used to carry (status === 404 ||
+        // code === "BAD_JSON" || code === "UPDATE_READ_FAILURE" ||
+        // code === "CORRUPT_CONTENT") is gone.
+        if (terminalSaveError && (terminalSaveError.terminal || terminalSaveError.possiblyCommitted)) {
           onRequestEditorLockRef.current?.(terminalSaveError.message);
         }
       }

@@ -332,6 +332,39 @@ describe("mapApiError — terminalCodes plumbing", () => {
   });
 });
 
+describe("mapApiError — terminalStatuses plumbing (S1)", () => {
+  // S1 (agentic-review 2026-05-26): terminalStatuses is the byStatus
+  // analogue of terminalCodes. Lets a scope declare e.g. "404 is
+  // terminal for save" so consumers read `mapped.terminal` without
+  // hand-coding status numbers. Closes the asymmetry the original
+  // terminalCodes design left behind.
+  const scopeWithTerminalStatus: ScopeEntry = {
+    fallback: "fallback",
+    byStatus: { 404: "gone", 500: "boom" },
+    terminalStatuses: [404],
+  };
+
+  it("MappedError.terminal is true on a byStatus hit listed in terminalStatuses", () => {
+    const err = new ApiRequestError("not found", 404);
+    const result = resolveError(err, scopeWithTerminalStatus);
+    expect(result.terminal).toBe(true);
+    expect(result.message).toBe("gone");
+  });
+
+  it("MappedError.terminal is false on a byStatus hit NOT listed in terminalStatuses", () => {
+    const err = new ApiRequestError("server error", 500);
+    const result = resolveError(err, scopeWithTerminalStatus);
+    expect(result.terminal).toBe(false);
+    expect(result.message).toBe("boom");
+  });
+
+  it("MappedError.terminal is false on a byStatus hit when terminalStatuses is undefined", () => {
+    const err = new ApiRequestError("not found", 404);
+    const result = resolveError(err, { fallback: "fallback", byStatus: { 404: "gone" } });
+    expect(result.terminal).toBe(false);
+  });
+});
+
 describe("SCOPES — chapter.save", () => {
   const scope = SCOPES["chapter.save"];
   it("413 → saveFailedTooLarge", () => {
@@ -390,6 +423,35 @@ describe("SCOPES — chapter.save", () => {
   it("404 → saveFailedChapterGone (I2)", () => {
     const err = new ApiRequestError("gone", 404, "NOT_FOUND");
     expect(resolveError(err, scope).message).toBe(STRINGS.editor.saveFailedChapterGone);
+  });
+  // S1 (agentic-review 2026-05-26): chapter.save lists 404 in
+  // terminalStatuses so the lock-banner consumer in handleSave reads
+  // `mapped.terminal` instead of hand-coding `status === 404`.
+  it("404 NOT_FOUND sets terminal:true (in terminalStatuses) (S1)", () => {
+    const err = new ApiRequestError("gone", 404, "NOT_FOUND");
+    const result = resolveError(err, scope);
+    expect(result.terminal).toBe(true);
+    expect(result.message).toBe(STRINGS.editor.saveFailedChapterGone);
+  });
+  it("bare 404 (no code) sets terminal:true (in terminalStatuses) (S1)", () => {
+    // Reverse-proxy 404 with no envelope. byCode is undefined; falls
+    // through to byStatus[404], which is in terminalStatuses.
+    const err = new ApiRequestError("Not Found", 404);
+    const result = resolveError(err, scope);
+    expect(result.terminal).toBe(true);
+    expect(result.message).toBe(STRINGS.editor.saveFailedChapterGone);
+  });
+  it("413 PAYLOAD_TOO_LARGE does NOT set terminal (recoverable) (S1)", () => {
+    // Only 404 is in terminalStatuses; other byStatus entries stay
+    // non-terminal so the user can recover (editor stays writable).
+    const err = new ApiRequestError("too large", 413, "PAYLOAD_TOO_LARGE");
+    const result = resolveError(err, scope);
+    expect(result.terminal).toBe(false);
+  });
+  it("500 INTERNAL_ERROR does NOT set terminal (transient) (S1)", () => {
+    const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
+    const result = resolveError(err, scope);
+    expect(result.terminal).toBe(false);
   });
 });
 

@@ -38,6 +38,15 @@ export type ScopeEntry = {
   // instead of inline in useProjectEditor.handleSave. Adding a fourth
   // terminal code is a single-line scope edit.
   terminalCodes?: string[];
+  // S1 (agentic-review 2026-05-26): byStatus analogue of terminalCodes.
+  // Lets a scope declare that certain HTTP statuses are terminal even
+  // when no byCode entry matches (e.g. a reverse-proxy 404 with no
+  // envelope). chapter.save's `terminalStatuses: [404]` closes the
+  // structural asymmetry that previously forced
+  // useProjectEditor.handleSave to hand-code `status === 404` alongside
+  // the code-name list. Adding a new terminal status is now a one-line
+  // scope edit, matching terminalCodes' promise on the byStatus axis.
+  terminalStatuses?: number[];
 };
 
 function isApiRequestError(err: unknown): err is ApiRequestError {
@@ -168,7 +177,11 @@ export function _resolveErrorInternal(
       message: byStatusMatch,
       possiblyCommitted: false,
       transient: false,
-      terminal: false,
+      // S1 (agentic-review 2026-05-26): byStatus hits set terminal=true
+      // when the scope's terminalStatuses includes the status. Mirrors
+      // the byCode → terminalCodes plumbing so consumers read
+      // `mapped.terminal` without hand-coding numeric status checks.
+      terminal: scope.terminalStatuses?.includes(err.status) === true,
       extras: safeExtrasFrom(scope, err),
     };
   }
