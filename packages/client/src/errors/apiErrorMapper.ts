@@ -210,7 +210,11 @@ export function mapApiError<S extends ApiErrorScope>(err: unknown, scope: S): Ma
  * that call sites cannot accidentally drop the ?? defense and produce
  * a literal "null" or empty banner.
  */
-export function mapApiErrorMessage(err: unknown, scope: ApiErrorScope, fallback: string): string {
+export function mapApiErrorMessage<S extends ApiErrorScope>(
+  err: unknown,
+  scope: S,
+  fallback: string,
+): string {
   return mapApiError(err, scope).message ?? fallback;
 }
 
