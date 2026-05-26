@@ -16,3 +16,6 @@ export type { ApiErrorScope } from "./scopes";
 // instantiate ApiRequestError" invariant that a future ESLint rule
 // will enforce.
 export { ApiRequestError } from "../api/client";
+export { applyMappedError, STOP } from "./applyMappedError";
+export type { ApplyMappedErrorHandlers } from "./applyMappedError";
+export type { ScopeExtras } from "./scopeExtras";
