@@ -1127,6 +1127,14 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           return;
         setProject((prev) => {
           if (!prev) return prev;
+          // S20 (4b.3c.2): defense-in-depth for the React-scheduling window
+          // between the outer check above and this updater running. A
+          // setProject queued from a concurrent project-switch could drain
+          // before this updater, making prev a different project than the
+          // one whose orderedIds we captured at handler entry. Without
+          // this guard, prev.chapters would be walked with A's ids and
+          // every miss filtered out, leaving project B empty.
+          if (prev.id !== projectId) return prev;
           const reordered = orderedIds
             .map((id, index) => {
               const ch = prev.chapters.find((c) => c.id === id);
@@ -1160,6 +1168,11 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         if (possiblyCommitted) {
           setProject((prev) => {
             if (!prev) return prev;
+            // S20 (4b.3c.2): same scheduling guard as the success branch
+            // above — the committed-path updater is reached via the catch,
+            // but the project could still have switched in the React queue
+            // between the catch-arm outer check (line 1144) and here.
+            if (prev.id !== projectId) return prev;
             const reordered = orderedIds
               .map((id, index) => {
                 const ch = prev.chapters.find((c) => c.id === id);

@@ -1316,6 +1316,68 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("handleReorderChapters does not corrupt project B when reorder PATCH for project A resolves mid-switch (S20 4b.3c.2)", async () => {
+    // S20 adds an inside-updater `prev.id !== projectId` guard to both
+    // setProject calls in handleReorderChapters as defense-in-depth for
+    // the React-scheduling window between the line 1125 outer check and
+    // the updater running. The narrow race itself is hard to engineer
+    // in renderHook tests (projectRef updates commit atomically with the
+    // React state); this integration test drives the broader project-
+    // switch-mid-PATCH scenario and asserts project B's chapters are
+    // unchanged after project A's deferred PATCH resolves. The inside-
+    // updater guard's structural presence is enforced by code review.
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [
+        { ...mockChapter1, id: "ch3", project_id: "p2" },
+        { ...mockChapter2, id: "ch4", project_id: "p2" },
+      ],
+    };
+
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get).mockImplementation(async (slug) =>
+      slug === "other-project" ? otherProject : mockProject,
+    );
+
+    let resolveReorder!: () => void;
+    vi.mocked(api.projects.reorderChapters).mockImplementationOnce(
+      () =>
+        new Promise<{ message: string }>((resolve) => {
+          resolveReorder = () => resolve({ message: "ok" });
+        }),
+    );
+
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.id).toBe("p1"));
+
+    // Issue reorder against project A — captures projectId="p1", PATCH pending.
+    await act(async () => {
+      void result.current.handleReorderChapters(["ch2", "ch1"]);
+    });
+
+    // Switch to project B; hook loads project B and sets it.
+    rerender({ slug: "other-project" });
+    await waitFor(() => expect(result.current.project?.id).toBe("p2"));
+
+    // Now resolve project A's PATCH. Without the project-switch guards
+    // (both outer and inside-updater), the updater would walk project B's
+    // chapters with project A's orderedIds — every id miss filtered out,
+    // leaving project B with an empty chapter list.
+    await act(async () => {
+      resolveReorder();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    // Project B's chapters survive intact.
+    expect(result.current.project?.id).toBe("p2");
+    expect(result.current.project?.chapters.map((c) => c.id)).toEqual(["ch3", "ch4"]);
+  });
+
   // I7 (review 2026-04-24): rapid renames used to race at the server;
   // the newer PATCH now severs the older one by installing a signal on
   // renameChapterAbortRef before issuing the new call.
