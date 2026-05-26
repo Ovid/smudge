@@ -821,9 +821,14 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
                 setChapterWordCount(countWords(newest.content));
               }
             }
-          } catch {
-            // Refresh is best-effort; the error copy instructs the user
-            // to refresh the page manually if this also failed.
+          } catch (err) {
+            // S10 (4b.3c.2): surface the recovery failure in dev. The
+            // recoveryController.signal gates the warn — supersede or
+            // unmount-driven aborts stay silent. Best-effort otherwise:
+            // the error copy still instructs the user to refresh if the
+            // post-recovery message lands.
+            devWarn("handleCreateChapter recovery GET failed", recoveryController.signal, err);
+            // Refresh is best-effort; fall through to the message dispatch.
           }
         }
         if (onError) {

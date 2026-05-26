@@ -1251,10 +1251,11 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
-  it("PINNED: handleCreateChapter recovery GET failure does NOT warn currently — flips on S10 fix (4b.3c.2)", async () => {
-    // Mirror of the handleStatusChange S10 pin for handleCreateChapter's
-    // possiblyCommitted recovery branch (api.projects.get with
-    // createRecoveryAbortRef). Pre-S10 the catch is bare.
+  it("handleCreateChapter recovery GET failure warns via devWarn (S10 4b.3c.2)", async () => {
+    // Mirror of Task 31's S10 fix for handleCreateChapter's
+    // possiblyCommitted recovery branch (api.projects.get under
+    // createRecoveryAbortRef). The pre-fix bare catch silently
+    // swallowed the failure.
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     // 200 BAD_JSON → mapper sets possiblyCommitted=true (chapter.create scope
     // declares committed: copy), routing handleCreateChapter into the recovery
@@ -1274,9 +1275,9 @@ describe("useProjectEditor", () => {
       await result.current.handleCreateChapter();
     });
 
-    expect(warnSpy).not.toHaveBeenCalledWith(
+    expect(warnSpy).toHaveBeenCalledWith(
       "handleCreateChapter recovery GET failed:",
-      expect.anything(),
+      expect.any(Error),
     );
     warnSpy.mockRestore();
   });
