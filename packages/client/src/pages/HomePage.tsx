@@ -6,7 +6,7 @@ import { NewProjectDialog } from "../components/NewProjectDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { STRINGS } from "../strings";
 import { Logo } from "../components/Logo";
-import { mapApiError } from "../errors";
+import { mapApiError, applyMappedError } from "../errors";
 import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 
 export function HomePage() {
@@ -59,8 +59,7 @@ export function HomePage() {
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
         console.warn("Failed to load projects:", err);
-        const { message } = mapApiError(err, "projectList.load");
-        if (message) setError(message);
+        applyMappedError(mapApiError(err, "projectList.load"), { onMessage: setError });
       });
 
     return () => {
