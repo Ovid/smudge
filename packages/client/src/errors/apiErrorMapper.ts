@@ -13,6 +13,7 @@ export type MappedError<S extends ApiErrorScope> = {
   // of `ApiErrorScope` would let a bare `MappedError` widen S to the
   // full scope union, silently defeating the phantom narrowing that
   // ScopeExtras<S> depends on at the applyMappedError boundary.
+  readonly __scope?: S;
 };
 
 export type ScopeEntry = {
