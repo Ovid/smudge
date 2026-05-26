@@ -5,6 +5,7 @@ export type MappedError<S extends ApiErrorScope = ApiErrorScope> = {
   message: string | null;
   possiblyCommitted: boolean;
   transient: boolean;
+  terminal: boolean;
   extras?: Record<string, unknown>;
   // Phantom — no runtime field; carries S through the type system so
   // applyMappedError can require the same S on its handlers.
@@ -28,6 +29,12 @@ export type ScopeEntry = {
   // a new committed-intent code in the future means updating the scope
   // alone rather than every call site.
   committedCodes?: string[];
+  // S3/S7 (4b.3c.1): codes whose byCode hit means the save loop must
+  // break and lock the editor without retrying. chapter.save's
+  // BAD_JSON / UPDATE_READ_FAILURE / CORRUPT_CONTENT triple lives here
+  // instead of inline in useProjectEditor.handleSave. Adding a fourth
+  // terminal code is a single-line scope edit.
+  terminalCodes?: string[];
 };
 
 function isApiRequestError(err: unknown): err is ApiRequestError {
@@ -86,10 +93,10 @@ export function isClientError(err: unknown): err is ApiRequestError {
 // for testing." The barrel does not re-export this.
 export function _resolveErrorInternal(err: unknown, scope: ScopeEntry): MappedError {
   if (!isApiRequestError(err)) {
-    return { message: scope.fallback, possiblyCommitted: false, transient: false };
+    return { message: scope.fallback, possiblyCommitted: false, transient: false, terminal: false };
   }
   if (err.code === "ABORTED") {
-    return { message: null, possiblyCommitted: false, transient: false };
+    return { message: null, possiblyCommitted: false, transient: false, terminal: false };
   }
   if (err.code === "BAD_JSON" && err.status >= 200 && err.status < 300) {
     // S7 (2026-04-23 review): gate possiblyCommitted on scope.committed
@@ -104,6 +111,7 @@ export function _resolveErrorInternal(err: unknown, scope: ScopeEntry): MappedEr
       message: scope.committed ?? scope.fallback,
       possiblyCommitted: scope.committed !== undefined,
       transient: false,
+      terminal: false,
     };
   }
   if (err.code === "NETWORK") {
@@ -111,6 +119,7 @@ export function _resolveErrorInternal(err: unknown, scope: ScopeEntry): MappedEr
       message: scope.network ?? scope.fallback,
       possiblyCommitted: false,
       transient: true,
+      terminal: false,
     };
   }
   // S8 (2026-04-23 review, acknowledged): byCode precedes byStatus.
@@ -143,6 +152,8 @@ export function _resolveErrorInternal(err: unknown, scope: ScopeEntry): MappedEr
       possiblyCommitted:
         err.code !== undefined && scope.committedCodes?.includes(err.code) === true,
       transient: false,
+      terminal:
+        err.code !== undefined && scope.terminalCodes?.includes(err.code) === true,
       extras: safeExtrasFrom(scope, err),
     };
   }
@@ -152,6 +163,7 @@ export function _resolveErrorInternal(err: unknown, scope: ScopeEntry): MappedEr
       message: byStatusMatch,
       possiblyCommitted: false,
       transient: false,
+      terminal: false,
       extras: safeExtrasFrom(scope, err),
     };
   }
@@ -159,6 +171,7 @@ export function _resolveErrorInternal(err: unknown, scope: ScopeEntry): MappedEr
     message: scope.fallback,
     possiblyCommitted: false,
     transient: false,
+    terminal: false,
     extras: safeExtrasFrom(scope, err),
   };
 }

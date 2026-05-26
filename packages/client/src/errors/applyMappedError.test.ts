@@ -6,6 +6,7 @@ const ok = (overrides: Partial<MappedError> = {}): MappedError => ({
   message: "boom",
   possiblyCommitted: false,
   transient: false,
+  terminal: false,
   ...overrides,
 });
 
@@ -15,7 +16,7 @@ describe("applyMappedError", () => {
     const onCommitted = vi.fn();
     const onTransient = vi.fn();
     const onExtras = vi.fn();
-    applyMappedError({ message: null, possiblyCommitted: false, transient: false }, {
+    applyMappedError({ message: null, possiblyCommitted: false, transient: false, terminal: false }, {
       onMessage, onCommitted, onTransient, onExtras,
     });
     expect(onMessage).not.toHaveBeenCalled();

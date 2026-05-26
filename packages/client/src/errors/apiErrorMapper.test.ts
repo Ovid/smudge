@@ -27,7 +27,7 @@ describe("errors/index barrel re-exports", () => {
 
 describe("MappedError shape", () => {
   it("has message, possiblyCommitted, transient, optional extras", () => {
-    const m: MappedError = { message: null, possiblyCommitted: false, transient: false };
+    const m: MappedError = { message: null, possiblyCommitted: false, transient: false, terminal: false };
     expect(m.message).toBeNull();
     expect(m.possiblyCommitted).toBe(false);
     expect(m.transient).toBe(false);
@@ -43,6 +43,7 @@ describe("mapApiError — fallback-only resolution", () => {
       message: "test-fallback",
       possiblyCommitted: false,
       transient: false,
+      terminal: false,
     });
   });
   it("returns fallback when code and status match nothing in the scope", () => {
@@ -52,6 +53,7 @@ describe("mapApiError — fallback-only resolution", () => {
       message: "test-fallback",
       possiblyCommitted: false,
       transient: false,
+      terminal: false,
     });
   });
 });
@@ -79,6 +81,7 @@ describe("mapApiError — 2xx BAD_JSON", () => {
       message: "server may have committed",
       possiblyCommitted: true,
       transient: false,
+      terminal: false,
     });
   });
   // S7 (2026-04-23 review): a scope without committed: copy does NOT
@@ -92,6 +95,7 @@ describe("mapApiError — 2xx BAD_JSON", () => {
       message: "test-fallback",
       possiblyCommitted: false,
       transient: false,
+      terminal: false,
     });
   });
   it("does NOT trigger possiblyCommitted for BAD_JSON on non-2xx (defensive)", () => {
@@ -111,6 +115,7 @@ describe("mapApiError — NETWORK", () => {
       message: "check your connection",
       possiblyCommitted: false,
       transient: true,
+      terminal: false,
     });
   });
   it("falls back to fallback with transient:true when scope has no network override", () => {
@@ -120,6 +125,7 @@ describe("mapApiError — NETWORK", () => {
       message: "test-fallback",
       possiblyCommitted: false,
       transient: true,
+      terminal: false,
     });
   });
 });
@@ -286,6 +292,35 @@ describe("mapApiError — extras", () => {
       expect.any(Error),
     );
     errorSpy.mockRestore();
+  });
+});
+
+describe("mapApiError — terminalCodes plumbing", () => {
+  const scopeWithTerminal: ScopeEntry = {
+    fallback: "fallback",
+    committed: "committed",
+    byCode: { BAD_JSON: "bad-json-msg", FOO: "foo-msg" },
+    committedCodes: ["BAD_JSON"],
+    terminalCodes: ["BAD_JSON", "FOO"],
+  };
+
+  it("MappedError defaults terminal to false on a scope without terminalCodes", () => {
+    const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
+    const result = resolveError(err, { fallback: "fallback" });
+    expect(result.terminal).toBe(false);
+  });
+
+  it("MappedError.terminal is true on a byCode hit listed in terminalCodes", () => {
+    const err = new ApiRequestError("boom", 500, "FOO");
+    const result = resolveError(err, scopeWithTerminal);
+    expect(result.terminal).toBe(true);
+    expect(result.message).toBe("foo-msg");
+  });
+
+  it("MappedError.terminal is false on a byCode hit NOT listed in terminalCodes", () => {
+    const err = new ApiRequestError("boom", 500, "BAR");
+    const result = resolveError(err, { ...scopeWithTerminal, byCode: { BAR: "bar-msg" } });
+    expect(result.terminal).toBe(false);
   });
 });
 
@@ -1186,7 +1221,7 @@ describe("MappedError<S> phantom propagation", () => {
   });
 
   it("default MappedError (no <S>) is structurally equivalent for existing destructured consumers", () => {
-    const m: MappedError = { message: null, possiblyCommitted: false, transient: false };
+    const m: MappedError = { message: null, possiblyCommitted: false, transient: false, terminal: false };
     expect(m.message).toBeNull();
     // Phantom field is optional; absence at runtime is fine.
     expect("__scope" in m).toBe(false);
