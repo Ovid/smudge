@@ -55,6 +55,7 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.11   | 404 Route-Response Helper                 | Replace ~20 hand-written `res.status(404).json({ error: { code: "NOT_FOUND", … } })` blocks across `projects`/`chapters`/`snapshots`/`search` routes with a `notFound(res, resource)` helper in `app.ts`.                                                                                                                                                                                                                                                                                                                                                             | Planned |
 | 4b.12   | Validation Error Response Helper          | Add `validationError(res, msg)` + `respondValidationParse(res, parsed)` helpers; migrate ~6 `safeParse` ladders so the 400 envelope has one owner.                                                                                                                                                                                                                                                                                                                                                                                                                    | Planned |
 | 4b.13   | TipTap Depth-Guard Regression Test        | Add a single test that walks a depth-65 TipTap doc through every consumer (`extractText`, `canonicalize`, image `walk`, depth validator) and asserts each bails safely. Codifies the contract behind today's four independent depth checks.                                                                                                                                                                                                                                                                                                                           | Planned |
+| 4b.14   | Operational Backup Stopgap                | `make backup` / `make restore` Makefile targets producing a zip archive of `<data-dir>/smudge.db` + `<data-dir>/images/` (data dir defaults to `packages/server/data/`, honors `DB_PATH`). Interim escape hatch for SQLite corruption until Phase 8b ships. Uses SQLite `VACUUM INTO` for live-safe snapshots; restore moves existing data aside, never deletes.                                                                                                                                                                                                       | Planned |
 | 4b.15   | Inline Title-Editing Hook                 | Extract a generic `useInlineTitleEditing(currentId, save, gates, options?)`; reduce `useChapterTitleEditing` and `useProjectTitleEditing` to thin wrappers that pass slug-drift check + post-save navigate as options.                                                                                                                                                                                                                                                                                                                                                | Planned |
 | 4b.16   | Dialog Lifecycle Hook                     | Extract `useDialogLifecycle(dialogRef, { open, onClose, initialFocusRef, blockEscapePropagation, role })` and migrate the 5 dialogs (Confirm, Export, NewProject, ProjectSettings, ShortcutHelp) one at a time; preserve `stopImmediatePropagation` and happy-dom guards as opt-ins.                                                                                                                                                                                                                                                                                  | Planned |
 | 4c      | Notes, Tags & Outtakes                    | Inline notes, paragraph tags, scratchpad for cut text                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Planned |
@@ -1471,6 +1472,77 @@ The prior dedup pass (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-
 
 ---
 
+## Phase 4b.14: Operational Backup Stopgap
+
+<!-- plan: 2026-05-26-operational-backup-stopgap-design.md -->
+
+### Goal
+
+Give the writer a reliable, repeatable manual-backup recipe **today** — a `make backup` / `make restore` pair that snapshots the current shared-data layout (`<data-dir>/smudge.db` + `<data-dir>/images/`, where the data dir defaults to `packages/server/data/` and honors the `DB_PATH` env override) into a single timestamped zip archive. Bridges the gap between now and Phase 8b shipping, so a corrupted SQLite file is recoverable without depending on host-level filesystem snapshots the user may or may not have configured.
+
+### Why Now
+
+Phase 8b is the long-term answer for per-project, portable, versioned backup, but it depends on Phase 8a (per-project folder layout) which depends on Phase 7g (Electron runtime prep). That's months out. Until then there is no Smudge-blessed escape hatch from SQLite corruption. The stopgap is deliberately **separate from 8b**: folding the urgent thing into the slow thing inverts the priority, and the two have almost no shared code (8b uses the post-8a per-project layout; the stopgap uses the current shared layout).
+
+### Scope
+
+#### 4b.14.1 `make backup` target
+
+Produces `backups/smudge-<ISO-8601-local-time>.zip` containing a consistent point-in-time snapshot of the SQLite DB plus the image directory:
+
+```
+backups/smudge-2026-05-26-143211.zip
+  smudge.db          # snapshotted via SQLite VACUUM INTO
+  images/...
+```
+
+Uses SQLite's **`VACUUM INTO`** to take the DB snapshot — safe to run while Smudge is up (the live `cp`-on-WAL footgun is avoided). Images are added to the archive from `<data-dir>/images/` after the SQLite snapshot finishes; a small inconsistency window can leave an extra unreferenced image in the archive (harmless on restore). The data dir is resolved from `DB_PATH` (dirname) if set, otherwise the package-relative default (`packages/server/data/`).
+
+Format choice is zip (not tar.gz): consistent with Phase 8b's `.smg` (also a zip), and avoids `tar.gz` portability friction on older Windows hosts. Library choice (`jszip` — already a server devDep, would be promoted to dep — or `archiver` for streaming on image-heavy projects) is deferred to implementation.
+
+#### 4b.14.2 `make restore BACKUP=<file>` target
+
+Restores a zip archive after explicit confirmation. Refuses if Smudge is currently running (probes via flock on the DB file). Moves the existing `<data-dir>/` to `<data-dir>.before-restore-<timestamp>/` rather than deleting it — restore is destructive enough that the cost of one extra copy is much smaller than the cost of an unrecoverable mistake. Confirmation prompt requires the user to type the backup filename, not just "yes" — Word-Document-Inspector pattern, mechanized.
+
+#### 4b.14.3 `docs/backup.md`
+
+One-page recipe: what it is, what it isn't (not 8b's `.smg`, not per-project, not automated, not offsite), how to back up, how to restore, suggested cadence ("before every Smudge upgrade; weekly otherwise"), how to handle offsite copying (user's job: copy `backups/` to a USB drive or cloud sync folder), and a forward note that this recipe stays readable by `make restore` against the Smudge version that wrote the archive.
+
+### Data Model Changes
+
+None.
+
+### API Changes
+
+None. CLI-only.
+
+### Out of Scope
+
+- Per-project export — that's Phase 8b.
+- Format versioning, manifest, content hash — the archive is "whatever the current data layout is"; cross-version readability is 8b's job.
+- Scheduled / cron-based automation. The user runs `make backup` themselves.
+- Off-host copying (rsync, S3, etc.) — user-side concern.
+- A UI for backup/restore. CLI only.
+- Encryption, signing, differential backups, auto-purge of old backups.
+
+### Definition of Done
+
+- `make backup` produces a zip archive containing a consistent SQLite snapshot + images.
+- `make restore BACKUP=<file>` round-trips the data identically to the pre-backup state.
+- Tests cover round-trip, live-DB safety (running backup while a write transaction is open), and restore safety (refuses missing-file archives and typoed confirmations without touching the data dir).
+- `docs/backup.md` written.
+- `make all` green at PR close.
+
+### Forward-Compatibility Commitment
+
+`make restore` (or its successor) must read any archive written by any prior Smudge version, indefinitely. A backup that becomes unreadable because the user upgraded Smudge is not a backup. When Phase 8a's storage layout change ships, the obligation to translate old-layout archives into the new per-project folders falls to **Phase 8a** (see Phase 8a §8a.4, added by this design). 4b.14 itself does not need to do anything special — its job is to write an honest snapshot of the current layout; 8a-at-8a-time is responsible for keeping those old snapshots readable.
+
+### Dependencies
+
+- None. Independent of all other 4b.X phases. May land at any time.
+
+---
+
 ## Phase 4b.15: Inline Title-Editing Hook
 
 ### Goal
@@ -2383,6 +2455,12 @@ Migrate existing projects from the shared application database to individual pro
 
 With projects as folders, implement an "Open Recent" mechanism that tracks recently opened project paths. This is the natural behavior for a desktop app.
 
+#### 8a.4 Legacy 4b.14 Archive Compatibility
+
+8a inherits responsibility for restoring pre-8a archives (created by Phase 4b.14's `make backup`). Specifically, `make restore` (or its successor) must detect when an archive contains the pre-8a layout (top-level `smudge.db` + `images/` instead of per-project `<slug>.smudge/` folders) and run the same shared-DB → per-project-folder migration logic that 8a.2 already implements for live upgrades. Without this, users who made a backup before upgrading to 8a-or-later lose the ability to restore it — a violation of the "backup means recoverable, indefinitely" commitment stated in `docs/plans/2026-05-26-operational-backup-stopgap-design.md` "Forward-compatibility policy."
+
+The migration code path lives in 8a (alongside 8a.2's live-upgrade code, reused for archive restore); 4b.14's restore script learns to dispatch on archive layout and call into 8a's migration when needed.
+
 ### Data Model Changes
 
 **Per-project SQLite database** containing:
@@ -2404,37 +2482,126 @@ With projects as folders, implement an "Open Recent" mechanism that tracks recen
 
 ## Phase 8b: Bundle Export (.smg)
 
+<!-- plan: 2026-05-26-bundle-export-roundtrip-design.md -->
+
 ### Goal
 
-Provide a portable single-file format for sharing, backup, and future OS-level "double-click to open" integration.
+Provide a portable single-file backup format with a testable "import it later with no change" guarantee. The bundle is a writer's escape hatch — a lossless point-in-time snapshot of a single project that can be re-imported into any future Smudge version that knows about the format.
+
+`.smg` is **for backup**, not for sharing manuscript content with non-Smudge users. Smudge already has share-exports via Phase 3a/3b (PDF, DOCX, EPUB, HTML, Markdown, plain text); those formats can't physically carry trash, snapshots, or daily-velocity data and are inherently sanitized. `.smg` keeps everything — matching the established Scrivener `.scriv` archive model (Scrivener treats backup and Compile as fundamentally separate operations; so do we).
 
 ### Features
 
 #### 8b.1 .smg Export
 
-Export a project as a `.smg` file — a zip archive of the `.smudge/` project folder. This is the portable format for:
+`GET /api/projects/{id}/bundle` produces a zip archive of the `.smudge/` project folder. **Always lossless** — there are no query parameters to scrub content. The bundle includes:
 
-- Backup and archival
-- Sharing with others
-- Moving between machines
-- Email attachment
+- The full per-project SQLite DB (all chapters including soft-deleted, all snapshots, all daily-snapshot history, all future per-project tables added in Phases 5/6/7)
+- All image assets referenced by the project
+- A `manifest.json` (see 8b.2)
 
-#### 8b.2 .smg Import
+The `exports/` subdirectory from Phase 8a's `.smudge/` layout is deliberately excluded — generated artifacts are reproducible from the source content and would bloat the bundle.
 
-Import a `.smg` file to create a new project. This unpacks the archive into a `.smudge/` folder and registers it with the application.
+#### 8b.2 Manifest format
 
-#### 8b.3 OS Integration (Electron)
+Every `.smg` contains a root-level `manifest.json`:
+
+```json
+{
+  "format_version": 1,
+  "schema_version": 47,
+  "app_version": "0.7.2",
+  "created_at": "2026-05-26T14:32:11Z",
+  "project": { "title": "...", "slug": "...", "chapter_count": 23, "total_word_count": 41200 },
+  "source_timezone": "Europe/Malta",
+  "content_hash_algorithm": "v1",
+  "content_hash": "sha256:..."
+}
+```
+
+`source_timezone` is informational — the exporting Smudge's `settings.timezone` at export time. Daily-snapshot dates are implicitly interpreted in this timezone; on import, if the target's timezone differs, the import succeeds but attaches a `timezone_mismatch` warning to the response (no data conversion is attempted — calendar-day data has no clean cross-timezone conversion). The warning is the load-bearing UX: the user is told their past pace data may be off by up to one day at boundaries, and can either re-align their timezone or accept the drift.
+
+Three version numbers are deliberately separate:
+
+- **`format_version`** — the zip layout itself (filenames, directory structure). Bumped only when the on-disk shape changes (a new top-level directory, a renamed file, snapshots moved between rows and files). New columns inside `project.sqlite` do **not** bump this.
+- **`schema_version`** — the Knex migration version of the embedded SQLite. Read by import to decide which forward migrations to run.
+- **`content_hash_algorithm`** — the canonicalization-function version that computed `content_hash`. Bumped only when we **fix a bug** in the hash transformation rules (so the same input data would hash differently). Old algorithm versions are frozen and kept reachable so historical bundles still verify; new exports always use the latest. Adding new project-scoped data does NOT bump this.
+
+**`content_hash`** is a SHA-256 over a deterministic canonicalization of (all project-scoped tables in fixed order, with timestamps normalized) + (all asset bytes in name order) + (all snapshot files in path-sorted order), computed via the algorithm named by `content_hash_algorithm`. It is the **testable lossless contract** — see 8b.4.
+
+#### 8b.3 .smg Import
+
+`POST /api/projects/import` accepts a multipart upload, validates the manifest, runs forward migrations on the embedded SQLite if needed, recomputes the content hash and compares against the manifest, then extracts to a fresh `.smudge/` folder (auto-suffixing if a folder of that name already exists). UUIDs are preserved end-to-end; because the post-8a layout is per-project, UUIDs are project-scoped and cannot collide across projects.
+
+**Versioning is forward-only.** A v4-format bundle imports into v7 Smudge by running Knex migrations 5, 6, 7 against the embedded SQLite. A v7-format bundle does *not* import into v4 Smudge — it's refused with a clear "this backup was made by Smudge vN, you're running vM; upgrade to open" message. Single-user app; the user controls what version is installed.
+
+**Failure modes** (precise behavior the import endpoint owes):
+
+| Condition | Response |
+|---|---|
+| Upload is not a valid zip | `400 INVALID_BUNDLE` |
+| Missing `manifest.json` | `400 INVALID_BUNDLE` |
+| Manifest fails schema validation | `400 INVALID_BUNDLE` |
+| `format_version` > known | `409 BUNDLE_TOO_NEW` with both versions in the message |
+| `schema_version` > known | `409 BUNDLE_TOO_NEW` |
+| `schema_version` < current | Run Knex migrations forward, continue |
+| `content_hash` mismatch on recompute | `409 BUNDLE_TAMPERED` (extracted folder cleaned up) |
+| `content_hash_algorithm` unknown | `409 BUNDLE_TOO_NEW` (bundle was hashed with an algorithm version we don't ship yet) |
+| Zip entry path fails zip-slip validation | `400 INVALID_BUNDLE` (no extraction occurs; offending entry name in message) |
+| Upload body exceeds `SMUDGE_IMPORT_MAX_UPLOAD_BYTES` (default 1 GiB) | `413 PAYLOAD_TOO_LARGE` (refused at body-parse boundary) |
+| Declared uncompressed total or compression ratio exceeds limits | `400 INVALID_BUNDLE` "appears to be a decompression bomb" (no extraction; bomb-defense thresholds env-configurable) |
+| Streamed bytes during extraction exceed declared total | `400 INVALID_BUNDLE` "declared size doesn't match contents" (extraction aborted, partial folder cleaned up) |
+| Asset file in manifest missing from zip | `400 INVALID_BUNDLE` |
+| Knex migration fails | `500 MIGRATION_FAILED` (extracted folder cleaned up) |
+| Project folder name collision on disk | Auto-suffix `<slug>-N.smudge/`, no prompt |
+
+The `BUNDLE_TAMPERED` refusal has one escape hatch: an `?allow_tampered=true` query parameter for power users who've intentionally edited a bundle (e.g., manual SQLite surgery). Default behavior remains "refuse."
+
+All response codes are within CLAUDE.md's allowlist (400, 409, 500); the new `error.code` strings (`INVALID_BUNDLE`, `BUNDLE_TOO_NEW`, `BUNDLE_TAMPERED`, `MIGRATION_FAILED`) discriminate within the existing status codes.
+
+#### 8b.4 Roundtrip test contract
+
+The lossless guarantee is enforced by tests, not aspiration. The equality contract is single-line:
+
+> `content_hash(original) == content_hash(import_and_re_export(original))`
+
+Test surface:
+- **Unit:** `canonical-hash-v1.ts` (and one test file per future algorithm version) determinism (same project hashed twice = same hash; reordered rows = same hash; one byte changed in an asset = different hash); plus a frozen-implementation pin (hardcoded hash for a fixture project) so any edit to a non-latest algorithm version fails the build.
+- **Security:** the import path refuses bundles with `../`, absolute-path, or `..`-after-normalization entries (zip-slip defense, see 8b.3 failure modes).
+- **Integration:** for each project shape (empty, single-chapter, multi-chapter with all status values, with soft-deleted chapters, with images, with snapshots, with daily-snapshot history, with targets/deadlines, kitchen-sink combining everything), assert `hash(orig) == hash(roundtripped)`.
+- **E2e:** export from the running app, re-import via the UI, assert the new project matches.
+
+#### 8b.5 Future-phase extension contract
+
+This is what makes "lossless across phases" a real guarantee. **Every future phase that adds project-scoped data takes on three obligations:**
+
+1. Update the **current-latest** canonicalization function (e.g., `canonical-hash-v1.ts` while v1 is current; `canonical-hash-v2.ts` once v2 ships) to include the new field/table. **Do not edit a non-latest algorithm version** — those are frozen so historical bundles still verify against their original hash.
+2. Add a roundtrip-test case for the new data shape, including a kitchen-sink update.
+3. Bump `format_version` **only** if the zip layout itself changes — not for new columns inside `project.sqlite` (those flow through `schema_version` via Knex migrations).
+4. Do NOT bump `content_hash_algorithm` for new data. Algorithm-version bumps are reserved for fixing bugs in the hash transformation rules (e.g., non-deterministic sort, BLOB encoding fix). When a bump is needed, the fix lands in a new `canonical-hash-vN+1.ts`; the previous version stays frozen.
+
+This contract is reproduced here so it's visible to every future phase author when they consult the roadmap.
+
+#### 8b.6 OS Integration (Electron)
 
 Register `.smg` as a file type so double-clicking opens it in Smudge. This is Electron-specific and depends on the desktop distribution being available.
 
 ### API Changes
 
-- `POST /api/projects/import` — accept a `.smg` file upload, unpack, and create a project.
-- `GET /api/projects/{id}/bundle` — download the project as a `.smg` file.
+- `POST /api/projects/import` — accept a `.smg` file upload, validate manifest, run forward migrations on embedded SQLite, verify content hash, extract to a fresh `.smudge/` folder, return `{ project, warnings: [...] }`. Warnings are non-fatal (e.g. `timezone_mismatch`). Optional `?allow_tampered=true` for the manifest-hash override case.
+- `GET /api/projects/{id}/bundle` — download the project as a `.smg` file with `Content-Type: application/x-smudge-bundle` and `Content-Disposition: attachment; filename="<slug>.smg"`. Always lossless; no query parameters.
+
+### Out of Scope
+
+- **Share-time scrubbing.** Not in v1. If demand emerges later, a future phase can add a Word-Document-Inspector-style export dialog with checkboxes — `Include snapshots`, `Include soft-deleted chapters`, `Include daily history` — all defaulting ON. None of that changes the format spec; scrubbing happens before zipping.
+- **Reverse migrations** (newer bundle into older Smudge). Forward-only is sufficient for single-user.
+- **Multi-project bundles.** A `.smg` is one project. "Back up everything" is what Phase 4b.14 stopgap is for; once 8b ships, a "back up everything" complement could remain there or land as a follow-up that produces N `.smg`s.
+- **Encryption, signing, `.smg` diff/merge, cloud sync.** All explicitly out — see `docs/plans/2026-05-26-bundle-export-roundtrip-design.md` §5 for rationale.
 
 ### Dependencies
 
-- Phase 8a (project package format must exist to bundle it).
+- Phase 8a (per-project `.smudge/` folder layout must exist for `.smg` to wrap it).
+- The Phase 4b.14 operational backup stopgap is *not* a dependency — it's a sibling that bridges the gap until 8b ships and may live alongside 8b post-ship as a "full-machine snapshot" complement to per-project `.smg`.
 
 ---
 
