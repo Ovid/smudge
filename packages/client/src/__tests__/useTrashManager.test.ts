@@ -570,9 +570,7 @@ describe("useTrashManager.confirmDeleteChapter — I5 programming-bug warn (4b.3
     // path is observable in dev.
     const target = makeChapter({ id: "ch-target" });
     const project = makeProject();
-    const handleDeleteChapter = vi
-      .fn()
-      .mockRejectedValue(new Error("synthetic programming bug"));
+    const handleDeleteChapter = vi.fn().mockRejectedValue(new Error("synthetic programming bug"));
 
     const { result } = renderHook(() =>
       useTrashManager(project, project.slug, vi.fn(), handleDeleteChapter, vi.fn()),
