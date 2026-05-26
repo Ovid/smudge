@@ -7,7 +7,7 @@ import { useAbortableSequence } from "./useAbortableSequence";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
 import { sleep } from "../utils/abortable";
 import { STRINGS } from "../strings";
-import { mapApiError, mapApiErrorMessage, isApiError, isAborted, isClientError } from "../errors";
+import { mapApiError, mapApiErrorMessage, applyMappedError, isApiError, isAborted, isClientError } from "../errors";
 
 export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
 
@@ -327,9 +327,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // unmount/slug-change does not leak noise into test output.
         // (Replaces the pre-migration `cancelled` gate; C-6 Phase 4b.3b.)
         if (s.aborted) return;
-        console.warn("Failed to load project:", err);
-        const { message } = mapApiError(err, "project.load");
-        if (message) setError(message);
+        const mapped = mapApiError(err, "project.load");
+        if (mapped.message !== null) console.warn("Failed to load project:", err);
+        applyMappedError(mapped, { onMessage: setError });
       }
     });
     void promise;
