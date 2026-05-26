@@ -144,16 +144,17 @@ export function HomePage() {
       // "abort exits silently").
       if (signal.aborted) return;
       console.warn("Failed to delete project:", err);
-      const { message, possiblyCommitted } = mapApiError(err, "project.delete");
-      // I1 (review 2026-04-24): on possiblyCommitted (2xx BAD_JSON) the
-      // server already deleted the project; leaving the row in state
-      // would show a phantom and a user retry would 404. Drop the row
-      // optimistically so the list matches the committed server state
-      // and surface the committed copy so the user knows to refresh.
-      if (possiblyCommitted) {
-        setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
-      }
-      if (message) setError(message);
+      applyMappedError(mapApiError(err, "project.delete"), {
+        onCommitted: () => {
+          // I1 (review 2026-04-24): on possiblyCommitted (2xx BAD_JSON) the
+          // server already deleted the project; leaving the row in state
+          // would show a phantom and a user retry would 404. Drop the row
+          // optimistically so the list matches the committed server state
+          // and surface the committed copy so the user knows to refresh.
+          setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
+        },
+        onMessage: setError,
+      });
       setDeleteTarget(null);
     }
   }
