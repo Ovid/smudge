@@ -31,6 +31,7 @@ export type ApiErrorScope =
   | "chapter.save"
   | "chapter.create"
   | "chapter.delete"
+  | "chapter.flushBeforeNavigate"
   | "chapter.rename"
   | "chapter.reorder"
   | "chapter.updateStatus"
@@ -55,7 +56,7 @@ export type ApiErrorScope =
   | "dashboard.load"
   | "project.velocity";
 
-export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
+export const SCOPES = {
   "project.load": {
     fallback: STRINGS.error.loadProjectFailed,
     network: STRINGS.error.loadProjectFailedNetwork,
@@ -153,6 +154,27 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     // couldn't serialize the response. Surface possiblyCommitted so
     // callers route through the committed/lock path.
     committedCodes: ["UPDATE_READ_FAILURE"],
+    // S3/S7 (4b.3c.1): UPDATE_READ_FAILURE and CORRUPT_CONTENT are 5xx
+    // codes the server emits when a chapter PATCH cannot be served
+    // safely (the write may have landed; the read-back failed; or the
+    // existing content is corrupt). The save loop must break and lock
+    // the editor — retrying cannot fix it. Hoisted here so adding a
+    // fourth terminal code is a one-line scope edit. BAD_JSON is NOT
+    // listed: the mapper's 2xx BAD_JSON branch returns early before
+    // byCode-matching, so `terminalCodes: ["BAD_JSON"]` would be dead.
+    // The consumer's `mapped.terminal || mapped.possiblyCommitted` OR
+    // catches 2xx BAD_JSON via possiblyCommitted instead.
+    terminalCodes: ["UPDATE_READ_FAILURE", "CORRUPT_CONTENT"],
+    // S1 (agentic-review 2026-05-26): 404 is terminal on the byStatus
+    // axis — the chapter is gone server-side (purge, hard-delete, or
+    // another tab), retry will deterministically 404 again, and the
+    // editor must lock so debounced auto-saves stop firing into a
+    // chapter the server has rejected. Covers both the coded NOT_FOUND
+    // path AND the bare 404 path (proxy chains that strip the
+    // envelope), since byStatus matches regardless of err.code.
+    // useProjectEditor.handleSave reads `mapped.terminal` instead of
+    // hand-coding the status check — see lock-banner block.
+    terminalStatuses: [404],
   },
   "chapter.create": {
     fallback: STRINGS.error.createChapterFailed,
@@ -173,6 +195,10 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     fallback: STRINGS.error.deleteChapterFailed,
     network: STRINGS.error.deleteChapterFailedNetwork,
     committed: STRINGS.error.possiblyCommitted,
+  },
+  "chapter.flushBeforeNavigate": {
+    fallback: STRINGS.editor.flushBeforeNavigateFailed,
+    network: STRINGS.editor.flushBeforeNavigateFailedNetwork,
   },
   "chapter.rename": {
     fallback: STRINGS.error.renameChapterFailed,
@@ -242,6 +268,18 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     network: STRINGS.imageGallery.deleteFailedNetwork,
     committed: STRINGS.error.possiblyCommitted,
     byCode: { IMAGE_IN_USE: STRINGS.imageGallery.deleteBlockedInUse },
+    // S8 (4b.3c.1, 2026-05-26): drop-only-malformed. The server contract
+    // is the authoritative defense against hostile envelopes; scopes.ts is
+    // the second line. Showing 49 valid chapter titles when the server
+    // returned 50 (one with a corrupted title) is materially better UX
+    // than the generic deleteBlocked fallback with no list. The cap+1
+    // window still bounds work at 51 elements; a hostile envelope of
+    // [N valid, M bogus] truncates rather than rejects.
+    //
+    // Earlier review comments referencing I1's all-or-nothing intent are
+    // superseded by this trade-off. The cap-boundary case (invalid at
+    // index 50 in a 51-entry array) now falls through to the valid filter
+    // and returns the 50-entry valid slice rather than rejecting outright.
     // S5 (2026-04-23 review): validate per-element shape, not just that
     // `chapters` is an array. ImageGallery casts elements to
     // {title: string; trashed?: boolean} — a hostile or malformed
@@ -255,16 +293,6 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     // calls `listAllChapterContentByProject` for the image's project and
     // includes both active and trashed chapters; >50 referencing chapters
     // is unreachable in normal Smudge use).
-    // I1 (review 2026-04-25): validate beyond the cap — pre-I1 the
-    // comparison was `valid.length === bounded.length` (post-slice),
-    // which let an envelope of [50 valid, N invalid past the cap]
-    // silently surface 50 chapters instead of triggering the all-or-
-    // nothing fallback that S5 was added to enforce.
-    // S* (review 2026-04-25 round 3): bound the validation window at
-    // cap+1. The all-or-nothing rule still fires for invalid entries at
-    // the cap boundary (the I1 case — invalid at index 50 in a 51-entry
-    // array), but does NOT see invalid entries strictly past index 50.
-    // This is the explicit trade-off for bounded CPU under hostile inputs.
     // S3 (review 2026-04-25): construct an explicit allowlisted shape per
     // entry. The previous spread propagated every non-allowlisted server
     // field — a hostile `description` field bypassed the API client's
@@ -282,15 +310,16 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     // dead plumbing. Leaving it in left an unbounded copy-through that
     // bypassed S21's "30KB max" intent (only `title` was length-capped).
     // The input still validates `id` as string-or-undefined for
-    // defense-in-depth — a wrong-type `id` triggers the all-or-nothing
-    // fallback rather than silently passing through.
+    // defense-in-depth — a wrong-type `id` is now silently dropped from
+    // the output rather than rejecting the envelope (S8 trade-off above).
     // I2 (review 2026-04-25 round 2): reject `chapters: []` outright. An
-    // empty array passes shape narrowing (`valid.length ===
-    // chapters.length` is `0 === 0`) but produces a malformed
-    // `S.deleteBlocked([])` announcement ("This image is used in: .
-    // Remove..."). Server contract only emits the envelope when
-    // `referencingChapters.length > 0`, so this is hostile/malformed
-    // territory — but the validator is the right gatekeeper.
+    // empty array passes shape narrowing (`Array.isArray` is true) but
+    // produces a malformed `S.deleteBlocked([])` announcement
+    // ("This image is used in: . Remove..."). Server contract only emits
+    // the envelope when `referencingChapters.length > 0`, so this is
+    // hostile/malformed territory — but the validator is the right
+    // gatekeeper. Post-S8 the same guard fires when every entry is
+    // malformed (valid filter empties the list).
     // S1 (review 2026-04-26 round 3 follow-up): also reject any chapter
     // whose `title` is `""`. Empty-string titles pass the round-2
     // empty-array guard (length is non-zero) but produce the same
@@ -314,13 +343,10 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
       if (!Array.isArray(chapters)) return undefined;
       // S* (review 2026-04-25 round 3): bound input processing at cap+1
       // entries so a hostile envelope of N items cannot drive O(N) filter
-      // work. Slicing to 51 before validating preserves the all-or-nothing
-      // detection at the cap boundary (the 51st element is in the window,
-      // so [50 valid, 1 invalid at index 50] still triggers reject — the
-      // I1 case). The trade-off is intentional: invalid entries strictly
-      // past index 50 are not detected, so the envelope silently truncates
-      // to 50. This is reviewer-approved (round 3 inline comment); the
-      // alternative is O(chapters.length) filter under hostile inputs.
+      // work. Slicing to 51 before validating bounds the work even before
+      // S8 dropped the all-or-nothing reject — under S8 the surplus index
+      // (cap+1) only matters for the empty-list fallback (if 51 candidates
+      // all fail the per-element shape, we still emit undefined).
       const candidates: unknown[] = chapters.slice(0, 51);
       const valid = candidates.filter(
         (c): c is { id?: string; title: string; trashed?: boolean } => {
@@ -332,7 +358,6 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
           return true;
         },
       );
-      if (valid.length !== candidates.length) return undefined;
       if (valid.length === 0) return undefined;
       const bounded = valid.slice(0, 50).map((c) => ({
         title: truncateCodePoints(c.title, 200),
@@ -485,4 +510,4 @@ export const SCOPES: Record<ApiErrorScope, ScopeEntry> = {
     fallback: STRINGS.velocity.loadError,
     network: STRINGS.velocity.loadErrorNetwork,
   },
-};
+} satisfies Record<ApiErrorScope, ScopeEntry>;

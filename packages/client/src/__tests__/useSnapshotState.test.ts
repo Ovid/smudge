@@ -244,6 +244,33 @@ describe("useSnapshotState", () => {
     expect(mapApiError(r.error, "snapshot.view").transient).toBe(false);
   });
 
+  it("viewSnapshot treats ABORTED as supersession (4b.3c.1 S15 Task 10 regression guard)", async () => {
+    // An in-flight viewSnapshot whose AbortController is fired (panel close,
+    // unmount, or a newer view click) surfaces as an ApiRequestError{ABORTED}
+    // from apiFetch. The contract: silent supersession via ok:true +
+    // superseded:"sameChapterNewer", NOT a banner-bearing ok:false error.
+    // Pinned ahead of the Pattern P1 migration so any future swap (signal
+    // gate / applyMappedError / both) preserves the observable behaviour.
+    vi.mocked(api.snapshots.get).mockRejectedValue(
+      new ApiRequestError("Request aborted", 0, "ABORTED"),
+    );
+
+    const { result } = renderHook(() => useSnapshotState("ch-1"));
+    let r: Awaited<ReturnType<typeof result.current.viewSnapshot>> = { ok: true };
+    await act(async () => {
+      r = await result.current.viewSnapshot({
+        id: "snap-1",
+        label: null,
+        created_at: new Date().toISOString(),
+      });
+    });
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("unreachable");
+    expect(r.superseded).toBe("sameChapterNewer");
+    expect(result.current.viewingSnapshot).toBeNull();
+  });
+
   it("viewSnapshot returns superseded='chapter' on chapter switch (S6)", async () => {
     // Review S6 (2026-04-22): the old shape `{ok:true, staleChapterSwitch:true}`
     // conflated two different causes of supersession into one discriminant,

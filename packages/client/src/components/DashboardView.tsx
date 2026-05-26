@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { STRINGS } from "../strings";
 import { STATUS_COLORS } from "../statusColors";
 import { ProgressStrip } from "./ProgressStrip";
-import { mapApiError } from "../errors";
+import { mapApiError, applyMappedError } from "../errors";
 
 type DashboardData = Awaited<ReturnType<typeof api.projects.dashboard>>;
 
@@ -57,8 +57,7 @@ export function DashboardView({
       .catch((err) => {
         if (controller.signal.aborted) return;
         console.warn("Failed to load dashboard:", err);
-        const { message } = mapApiError(err, "dashboard.load");
-        if (message) setError(message);
+        applyMappedError(mapApiError(err, "dashboard.load"), { onMessage: setError });
       });
     return () => {
       controller.abort();
@@ -76,11 +75,6 @@ export function DashboardView({
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
         console.warn("Failed to load velocity:", err);
-        const { message } = mapApiError(err, "project.velocity");
-        // ABORTED → message: null: the caller cancelled (navigation/
-        // unmount), so leave the previous velocity state in place and
-        // do not surface an error banner.
-        if (message === null) return;
         // I3 (review 2026-04-24): preserve prior good data on a
         // transient refresh failure so the progress strip doesn't
         // blank on a network blip (the error banner renders below
@@ -88,11 +82,18 @@ export function DashboardView({
         // useFindReplaceState convention of keeping prior results on
         // transient errors. Preserve only when the slug matches —
         // stale data from a different project is not worth keeping.
-        setVelocityWithSlug((prev) => ({
-          slug,
-          data: prev?.slug === slug ? prev.data : null,
-          error: message,
-        }));
+        // applyMappedError's onMessage callback is the canonical
+        // "non-ABORTED, non-null message" hook — ABORTED short-circuits
+        // (message: null) so the previous velocity state stays put.
+        applyMappedError(mapApiError(err, "project.velocity"), {
+          onMessage: (message) => {
+            setVelocityWithSlug((prev) => ({
+              slug,
+              data: prev?.slug === slug ? prev.data : null,
+              error: message,
+            }));
+          },
+        });
       });
     return () => {
       controller.abort();

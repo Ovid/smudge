@@ -43,8 +43,10 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.3a.3 | Trash Manager Abort Migration             | Migrate `useTrashManager` to `useAbortableAsyncOperation`: `openTrash` + `confirmDeleteChapter` refresh share one hook instance (replaces `trashAbortRef`); `handleRestore` uses a second instance (replaces `restoreAbortRef`). Two instances stay separate because the operations can be in flight concurrently.                                                                                                                                                                                                                                                    | Done    |
 | 4b.3a.4 | Image Gallery Abort Migration             | Migrate `ImageGallery` to `useAbortableAsyncOperation`: 4 mutation operations (`handleFileSelect`, `handleSave`, `handleInsert`, `handleDelete`) share one hook instance (replaces `mutateAbortRef`); the click-time references-load refresh uses a second instance (replaces `refsAbortRef`). The list-load and detail-load `useEffect` controllers stay as-is (different lifecycle shape).                                                                                                                                                                          | Done    |
 | 4b.3b   | AbortSignal Threading Completion          | Finish Cluster B: thread signal through remaining call sites (HomePage create/delete, useProjectEditor `handleCreateChapter` + `loadProject` + remaining `chapters.get`, EditorPage chapterStatuses retry + `search.replace`). Now depends on 4b.3a.1; each site re-evaluated against the new hook before threading. Scope expanded 2026-05-25 (Decision 2) to also sweep the `migrationStructuralCheck.test.ts` allowlist down from 7 files to 3, so Phase 4b.4's ESLint rule can use inline `eslint-disable` instead of a file-level allowlist.                     | Done    |
-| 4b.3c   | Consumer Recovery Completeness            | Cluster C: introduce `applyMappedError` helper and migrate 15 consumers that mishandle `mapApiError` output                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Planned |
-| 4b.3d   | Mapper Internals & CLAUDE.md Updates      | Cluster E: `safeExtrasFrom` try/catch, `ScopeExtras<S>` type, helper extractions, CLAUDE.md doc update                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Planned |
+| 4b.3c.1 | Consumer Recovery: Foundation             | Land `applyMappedError` (with `STOP` sentinel) + `MappedError<S>` phantom + `ScopeExtras<S>` + `devWarn`; [S3]/[S7] `terminalCodes` relocation; [S8] `extrasFrom` tweak; [S16] new `chapter.flushBeforeNavigate` scope; ~16 simple-ladder migrations (no functional change at consumer sites). Split from 4b.3c per 2026-05-26 pushback (CLAUDE.md §Pull Request Scope one-feature rule).                                                                                                                                                                              | In Progress |
+| 4b.3c.2 | Consumer Recovery: Helper-Consuming Fixes | Behavioural fixes that newly route through the helper's `onCommitted` / `STOP` / `devWarn` callbacks ([I3], [I5], [S4], [S10], [S20]). Depends on 4b.3c.1's foundation.                                                                                                                                                                                                                                                                                                                                                                                              | In Progress |
+| 4b.3c.3 | Consumer Recovery: Independent Fixes      | Behavioural fixes independent of the helper: [I4] (+ `useTrashManager.ts` allowlist update), [S5], [S11], [S17], [S18], [S19]. Can land in parallel with 4b.3c.1.                                                                                                                                                                                                                                                                                                                                                                                                    | In Progress |
+| 4b.3d   | Mapper Internals & CLAUDE.md Updates      | Cluster E remainder: [S6] `safeExtrasFrom` dev-log try/catch; [S13] `refreshTrashList` extract from `useTrashManager`; [S14] `SnapshotPanel` mount-effect dedupe; CLAUDE.md updates (`§Unified API error mapping`, `§Save-Pipeline Invariants` Rule 4 four-file allowlist, `§Pull Request Scope` bundling/split exceptions). `ScopeExtras<S>` and [S9] `ImageGallery` cast both shipped in 4b.3c.1.                                                                                                                                                                    | Planned |
 | 4b.4    | Raw-Strings ESLint Rule                   | Enforce strings.ts externalization via lint; fix existing violations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Planned |
 | 4b.5    | Editor State Machine                      | Unify `editable`/`locked`/`busy` editor state into one machine; add `committed_but_unreloaded` mutation stage for ambiguous server responses                                                                                                                                                                                                                                                                                                                                                                                                                          | Planned |
 | 4b.6    | E2E Test Isolation                        | Wire `playwright.config.ts` to set `SMUDGE_PORT` / `SMUDGE_CLIENT_PORT` / `DB_PATH` to test-only values so e2e cannot piggy-back on the dev server or share its database                                                                                                                                                                                                                                                                                                                                                                                              | Planned |
@@ -55,6 +57,7 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.11   | 404 Route-Response Helper                 | Replace ~20 hand-written `res.status(404).json({ error: { code: "NOT_FOUND", … } })` blocks across `projects`/`chapters`/`snapshots`/`search` routes with a `notFound(res, resource)` helper in `app.ts`.                                                                                                                                                                                                                                                                                                                                                             | Planned |
 | 4b.12   | Validation Error Response Helper          | Add `validationError(res, msg)` + `respondValidationParse(res, parsed)` helpers; migrate ~6 `safeParse` ladders so the 400 envelope has one owner.                                                                                                                                                                                                                                                                                                                                                                                                                    | Planned |
 | 4b.13   | TipTap Depth-Guard Regression Test        | Add a single test that walks a depth-65 TipTap doc through every consumer (`extractText`, `canonicalize`, image `walk`, depth validator) and asserts each bails safely. Codifies the contract behind today's four independent depth checks.                                                                                                                                                                                                                                                                                                                           | Planned |
+| 4b.14   | Operational Backup Stopgap                | `make backup` / `make restore` Makefile targets producing a zip archive of `<data-dir>/smudge.db` + `<data-dir>/images/` (data dir defaults to `packages/server/data/`, honors `DB_PATH`). Interim escape hatch for SQLite corruption until Phase 8b ships. Uses SQLite `VACUUM INTO` for live-safe snapshots; restore moves existing data aside, never deletes.                                                                                                                                                                                                       | Planned |
 | 4b.15   | Inline Title-Editing Hook                 | Extract a generic `useInlineTitleEditing(currentId, save, gates, options?)`; reduce `useChapterTitleEditing` and `useProjectTitleEditing` to thin wrappers that pass slug-drift check + post-save navigate as options.                                                                                                                                                                                                                                                                                                                                                | Planned |
 | 4b.16   | Dialog Lifecycle Hook                     | Extract `useDialogLifecycle(dialogRef, { open, onClose, initialFocusRef, blockEscapePropagation, role })` and migrate the 5 dialogs (Confirm, Export, NewProject, ProjectSettings, ShortcutHelp) one at a time; preserve `stopImmediatePropagation` and happy-dom guards as opt-ins.                                                                                                                                                                                                                                                                                  | Planned |
 | 4c      | Notes, Tags & Outtakes                    | Inline notes, paragraph tags, scratchpad for cut text                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Planned |
@@ -996,58 +999,144 @@ CLAUDE.md `§Save-pipeline invariants` rule 4 (bump-the-sequence-before-the-requ
 
 ---
 
-## Phase 4b.3c: Consumer Recovery Completeness
+## Phase 4b.3c.1: Consumer Recovery — Foundation
+
+<!-- plan: 2026-05-26-consumer-recovery-completeness-design.md -->
 
 ### Goal
 
-Address Cluster C from the Phase 4b.3 code review (`paad/code-reviews/ovid-unified-error-mapper-2026-04-25-10-32-46-a68afd1.md`): 15 items where consumers of `mapApiError` mishandle the mapper's output (drop `possiblyCommitted`, silently dismiss errors, duplicate consumer ladders) or where flows lack a dedicated scope. Foundation for the work is `applyMappedError`, a small helper that replaces the 30+ hand-rolled `if (message === null) return; if (message) setX(message)` ladders.
+Land the three foundation primitives + scope-registry refactor + mechanical ladder migrations for Phase 4b.3c. Brainstormed jointly with 4b.3c.2 and 4b.3c.3 in the shared design doc; this sub-phase is the foundation other consumer fixes build on.
 
 ### Why Now
 
-The Phase 4b.3 unified error mapper centralized code-to-string translation, but the 4b.3 review found consumer-side drift: scopes declare `committed:` copy that consumers ignore; recovery branches silently drop dialogs; one-shot recovery `AbortRef`s leak across renders. Each item is small individually, but the absence of a shared `applyMappedError` helper means the same mistake is reintroduced every time a new caller is written. Ships before Phase 4b.4 so the raw-strings lint rule runs against a clean baseline.
+The Phase 4b.3 unified error mapper centralized code-to-string translation, but the 4b.3 review found consumer-side drift: scopes declare `committed:` copy that consumers ignore; recovery branches silently drop dialogs; one-shot recovery `AbortRef`s leak across renders. The absence of a shared `applyMappedError` helper means the same mistake is reintroduced every time a new caller is written. Ships before Phase 4b.4 so the raw-strings lint rule runs against a clean baseline.
 
 ### Scope
 
-**Foundation**
+**Foundation primitives**
 
-- Introduce `packages/client/src/errors/applyMappedError.ts` accepting a `MappedError<S>` plus `{ onMessage, onTransient?, onCommitted?, onExtras? }`. Tests-first; export from `errors/index.ts`. Consumed by [S15] migrations.
-- Introduce `ScopeExtras<S>` type alongside the helper (paired with [S9] in Phase 4b.3d).
+- `MappedError<S>` / `mapApiError<S>` phantom-parameter addition (source-compatible; existing destructured consumers unchanged).
+- `applyMappedError(mapped, handlers)` + `STOP` sentinel in `packages/client/src/errors/applyMappedError.ts`.
+- `ScopeExtras<S>` type in `packages/client/src/errors/scopeExtras.ts`.
+- `devWarn(context, signal, err)` in `packages/client/src/errors/devWarn.ts`.
 
-**Consumer fixes**
+**Scope-registry refactor**
 
-- [I3] `SnapshotPanel.handleCreate` (`packages/client/src/components/SnapshotPanel.tsx:305`) — destructure `possiblyCommitted` from `mapApiError`; on success-but-committed, hide create form, clear label, refetch snapshots.
-- [I4] `useTrashManager.handleRestore` `possiblyCommitted` branch — refresh `project.chapters` and reseed `confirmedStatusRef` (mirror `handleCreateChapter`'s recovery branch).
-- [I5] `useTrashManager.confirmDeleteChapter` — surface mapped error before dismissing the dialog.
-- [S3]/[S7] Move `chapter.save` non-2xx BAD_JSON dispatch into the scope (extend `committedCodes` semantics or add `terminalCodes`); remove the call-site allowlist hardcode in `useProjectEditor.ts:357-369, 441-448`.
-- [S4] `handleStatusChange` (`useProjectEditor.ts:1032-1040`) — fall back to `setError(message)` when `onError` is omitted (mirror `handleReorderChapters`).
-- [S5] `useSnapshotState.restoreSnapshot` (`useSnapshotState.ts:421-434`) — track a `dispatched` flag; only synthesize a 200 BAD_JSON for failures that occurred _after_ the request was sent.
-- [S8] Reconcile `image.delete.extrasFrom` partial-malformed handling with the [I1]-era all-or-nothing guard. Three options documented in the original 4b.3a plan (drop, reconcile, replace [I1]); pick one and document the choice.
-- [S10] Dev-only `console.warn` on silent recovery-catches in `handleStatusChange:1079` and `handleCreateChapter:604`, gated on `!signal.aborted`. Depends on Phase 4b.3b's signal threading. **Reordering note (2026-04-29):** if the recovery sites at `handleStatusChange:1079` and `handleCreateChapter:604` migrate to `useAbortableAsyncOperation` in Phase 4b.3a.1 / 4b.3b, this gate consumes the per-call `signal` returned by `run()` (i.e. `run(...).signal.aborted`), **not** the hook's component-scoped `get aborted(): boolean` getter. The component-scoped getter reads true after _any_ operation in that hook has aborted (including unmount cleanup), which would over-suppress the warn — firing it as silent for catches whose own operation had not aborted. Re-evaluate the gate's surface during 4b.3c brainstorming after Phase 4b.3a.1 lands; the per-call signal stays the right input.
-- [S11] `chapter.create` 404 — gate `isNotFound(err)` and call `navigate("/")` (mirror `EditorPage:1552`).
-- [S15] Migrate the 30+ `if (message === null) return; if (message) setX(message)` ladders to `applyMappedError`. One commit per migrated site; mixed-catch sites get a behaviour-pinning test before migration.
-- [S16] Add `chapter.flushBeforeNavigate` scope to `scopes.ts`; switch `EditorPage.tsx:1481-1485` to it.
-- [S17] Null `createRecoveryAbortRef` after successful create.
-- [S18] `Editor.tsx` paste announcement — capture `editorInstanceRef.current` at upload start; gate announcement on `editor === editorInstanceRef.current` to avoid firing on torn-down editor.
-- [S19] Null `viewAbortRef` after successful `viewSnapshot`.
-- [S20] `handleReorderChapters` — epoch re-check before `setProject` in the `possiblyCommitted` branch.
+- [S3]/[S7] Add `terminalCodes` field to `ScopeEntry`; mapper plumbing for `terminal: boolean` on `MappedError`; move `chapter.save` BAD_JSON/UPDATE_READ_FAILURE/CORRUPT_CONTENT allowlist from `useProjectEditor.ts:468-481` into the scope.
+- [S8] Drop the all-or-nothing reject in `image.delete.extrasFrom`; preserve cap+1 input window and empty-result reject.
+- [S16] Add `chapter.flushBeforeNavigate` scope to `scopes.ts` (consumer swap is the EditorPage ladder migration below).
+
+**Simple-ladder migrations** (~16 sites)
+
+- `useTrashManager`, `useSnapshotState.viewSnapshot`, `useFindReplaceState.search`, `useProjectEditor` (loadProject / handleSelectChapter / reloadActiveChapter / handleDeleteChapter / handleStatusChange tail / handleRenameChapter), `SnapshotPanel.fetchSnapshots+handleDelete`, `DashboardView`, `ExportDialog`, `EditorPage.handleSelectChapterWithFlush` (consumes new [S16] scope) + remaining EditorPage ladder sites, `ImageGallery.handleDelete` (drops `as { chapters: … }` cast via `onExtras` + `STOP`), `HomePage` ladder sites.
+
+**E2e coverage backfill**
+
+- New `e2e/chapter-create-recovery.spec.ts` exercises the existing `handleCreateChapter` committed branch (no behavioural change here; coverage backfill).
 
 ### Out of Scope
 
-- Phase 4b.3b's signal-threading work (depended on by [S10]).
-- Phase 4b.3d's CLAUDE.md / `ScopeExtras<S>` documentation.
-- New API error codes or HTTP status codes (allowlist stays per CLAUDE.md `§API Design`).
+- Phase 4b.3b's signal-threading work (depended on by [S10] in 4b.3c.2).
+- Behavioural fixes that depend on the helper (4b.3c.2) or are independent of it (4b.3c.3).
+- Phase 4b.3d's CLAUDE.md updates and `ScopeExtras<S>` documentation.
+- New API error codes or HTTP status codes (allowlist stays per CLAUDE.md §API Design).
 
 ### Definition of Done
 
-- `applyMappedError` lands with full unit-test coverage (CLAUDE.md `§Testing Philosophy`).
-- All 15 consumer items have a behaviour-pinning test before migration; tests pass after.
-- `ScopeExtras<S>` type exported from `errors/index.ts`.
-- `make all` green.
+- All four primitives land with full unit-test coverage (CLAUDE.md §Testing Philosophy).
+- `ScopeExtras<S>` compile-time negative test passes (wrong-scope `onExtras` fails to type-check).
+- [S3]/[S7] relocation is observably no-op; [S8] reject change reflected in tests; [S16] new scope present.
+- All ~16 simple-ladder sites migrated.
+- E2e coverage backfill spec lands.
+- `make all` green; coverage at or above thresholds.
 
 ### Dependencies
 
 - Phase 4b.3a (Unified API Error Mapper baseline + `committedCodes`).
-- Phase 4b.3b ([S10] dev-warn gate uses `signal.aborted`).
+- Phase 4b.3a.1 (`useAbortableAsyncOperation`).
+- Phase 4b.3b (AbortSignal threading; landed 2026-05-25).
+
+---
+
+## Phase 4b.3c.2: Consumer Recovery — Helper-Consuming Fixes
+
+<!-- plan: 2026-05-26-consumer-recovery-completeness-design.md -->
+
+### Goal
+
+Behavioural fixes that newly route through 4b.3c.1's `applyMappedError` / `onCommitted` / `STOP` / `devWarn` callbacks. Brainstormed jointly with 4b.3c.1/.3 in the shared design doc.
+
+### Scope
+
+- [I3] `SnapshotPanel.handleCreate` — `if (possiblyCommitted) { close form, clear label, refetch }` via `onCommitted`.
+- [I5] `useTrashManager.confirmDeleteChapter` — drop mapper routing per 2026-05-26 pushback decision (the bare catch is a programming-bug path; `handleDeleteChapter` surfaces all API errors via `onError`); add `console.warn` + naming comment instead.
+- [S4] `handleStatusChange` non-committed branch — fall back to `setError(message)` when `onError` is omitted (mirror `handleReorderChapters`).
+- [S10] `devWarn` adoption at `handleStatusChange:1312` and `handleCreateChapter:788` recovery catches. Per-call `recoveryController.signal` is the gate input.
+- [S20] `handleReorderChapters` inside-updater `prev.id !== projectId` re-check on both success and `possiblyCommitted` `setProject` updaters. Defense-in-depth for the React-scheduling window.
+- `useProjectEditor.handleReorderChapters` catch ladder migration (bundled here because [S20] also touches the handler).
+- New `e2e/snapshot-create-recovery.spec.ts` exercises [I3]'s committed-recovery cycle.
+
+### Out of Scope
+
+- Foundation primitives (4b.3c.1).
+- Independent fixes (4b.3c.3).
+- Phase 4b.3d's CLAUDE.md updates.
+
+### Definition of Done
+
+- 3 behavioural items land with pinning tests before fix ([I3], [S10] at both sites).
+- 1 behavioural item bundled pin+fix ([I5] — warn IS the fix).
+- 2 behavioural items land with direct tests ([S4], [S20]).
+- E2e spec 1 lands.
+- `make all` green; coverage at or above thresholds.
+
+### Dependencies
+
+- Phase 4b.3c.1 (foundation primitives).
+- Phase 4b.3a.1 (`useAbortableAsyncOperation`).
+- Phase 4b.3b (AbortSignal threading).
+
+---
+
+## Phase 4b.3c.3: Consumer Recovery — Independent Fixes
+
+<!-- plan: 2026-05-26-consumer-recovery-completeness-design.md -->
+
+### Goal
+
+Behavioural fixes independent of the helper. Touches flows that don't consume `applyMappedError`; can land in parallel with 4b.3c.1. Brainstormed jointly with 4b.3c.1/.2 in the shared design doc.
+
+### Scope
+
+- **[I4] allowlist update** (own commit, lands before the [I4] behavioural fix): add `useTrashManager.ts` to the justified-survivor list in `packages/client/src/__tests__/migrationStructuralCheck.test.ts` with a justification block mirroring `useProjectEditor.ts:207-218`. Per 2026-05-26 pushback Issue 1 (option A).
+- [I4] `useTrashManager.handleRestore` `possiblyCommitted` — introduce `restoreRecoveryAbortRef` + `api.projects.get` + setProject + bulk reseed of `confirmedStatusRef` via new `replaceConfirmedStatusesFromProject(refreshed)` exposed from `useProjectEditor`.
+- [S5] `restoreSnapshot` `dispatched` flag — only synthesize the 200 BAD_JSON committed-error path for post-send throws; pre-send branch returns `makeClientNetworkError` so the banner reads via `scope.network` (no caller change). Per 2026-05-26 pushback Issue 3 (option B).
+- [S11] `handleCreateChapter` 404 — `if (isNotFound(err)) { navigate("/"); return; }` at top of catch.
+- [S17] `createRecoveryAbortRef` null-on-success.
+- [S18] `Editor.tsx` paste announcement — capture `editorInstanceRef.current` at upload start; gate announcement on `editor === editorInstanceRef.current`.
+- [S19] `restoreFollowupAbortRef` null-on-success.
+- New `e2e/trash-restore-recovery.spec.ts` exercises [I4]'s committed-recovery cycle.
+
+### Out of Scope
+
+- Foundation primitives (4b.3c.1).
+- Helper-consuming fixes (4b.3c.2).
+- Phase 4b.3d's CLAUDE.md updates.
+
+### Definition of Done
+
+- `useTrashManager.ts` allowlist entry lands as its own commit, before the [I4] behavioural fix.
+- 4 behavioural items land with pinning tests before fix ([I4], [S5], [S11], [S18]).
+- 3 behavioural items land with direct tests ([S17], [S19], [S8] consumer-side verification — the scope test is in 4b.3c.1 but end-to-end verified here through `ImageGallery.handleDelete`'s migration in 4b.3c.1; if any consumer-side fallout shows, fix here).
+- E2e spec 2 lands.
+- `make all` green; coverage at or above thresholds.
+
+### Dependencies
+
+- Phase 4b.3a (Unified API Error Mapper baseline + `committedCodes`).
+- Phase 4b.3a.1 (`useAbortableAsyncOperation`).
+- Phase 4b.3b (AbortSignal threading).
+- Independent of 4b.3c.1 and 4b.3c.2 at the file level.
 
 ---
 
@@ -1063,10 +1152,10 @@ The CLAUDE.md update is the artifact that keeps the next contributor (or the nex
 
 ### Scope
 
-- [S2] Update CLAUDE.md `§Key Architecture Decisions / "Unified API error mapping"` to describe (a) the `committedCodes` extension and the codes it handles, (b) `ScopeExtras<S>` as the typed `extras` accessor, (c) `applyMappedError(mapped, handlers)` as the canonical consumer pattern (parallel with `useEditorMutation` and `useAbortableSequence` references already in the doc).
-- Update CLAUDE.md `§Pull Request Scope` with a one-line acknowledgement of the 4b.3 bundling exception (Cluster F [I15] follow-through).
+- [S2] Update CLAUDE.md `§Key Architecture Decisions / "Unified API error mapping"` to describe (a) the `committedCodes` extension and the codes it handles, (b) `ScopeExtras<S>` as the typed `extras` accessor, (c) `applyMappedError(mapped, handlers)` (including the `STOP` sentinel) and the `MappedError<S>` phantom as the canonical consumer pattern (parallel with `useEditorMutation` and `useAbortableSequence` references already in the doc).
+- Update CLAUDE.md `§Save-Pipeline Invariants` Rule 4 to reflect the four-file allowlist (HomePage.tsx, useProjectEditor.ts, useSnapshotState.ts, useTrashManager.ts) — `useTrashManager.ts` was added in Phase 4b.3c.3. Deferred from 4b.3c.3 per 2026-05-26 user decision.
+- Update CLAUDE.md `§Pull Request Scope` with a one-line acknowledgement of the 4b.3 bundling exception (Cluster F [I15] follow-through), and a second acknowledgement of the 4b.3c three-way split (4b.3c.1/.2/.3 per 2026-05-26 pushback).
 - [S6] Wrap `safeExtrasFrom` dev-log in try/catch (`packages/client/src/errors/apiErrorMapper.ts`) — `import.meta.env?.DEV` access can throw under some test environments, inverting the must-never-throw guard.
-- [S9] Drop the `extras.chapters` cast in `ImageGallery` once `ScopeExtras<S>` (introduced in Phase 4b.3c) makes it redundant; add a compile-time type-test in `errors/apiErrorMapper.test.ts`.
 - [S13] Extract `refreshTrashList()` helper from `useTrashManager.ts:53-71` and `:158-178`; both sites call it.
 - [S14] Dedupe `SnapshotPanel` mount effect at `:139-159` and `:164-189` — mount effect calls `fetchSnapshots()` directly; remove the duplicate.
 - [S22]/[S23] PR-shape transparency for already-merged 4b.3 commits (`vitest.config.ts` worker cap and ESLint sequence-rule test infra adjustments). The 4b.3 PR is already merged, so retroactive splitting is impossible; instead, accept the bundling as part of the same exception logged for [I15], and verify the 4b.3 PR description contains a justification line for each. If missing, append a postscript comment to the merged PR rather than amending history. No code change.
@@ -1468,6 +1557,77 @@ The prior dedup pass (`paad/duplicate-code-reports/ovid-experimental-dedup-2026-
 ### Dependencies
 
 - None. Test-only phase. May land in any order relative to 4b.10 (both touch the canonicalize area but they don't conflict).
+
+---
+
+## Phase 4b.14: Operational Backup Stopgap
+
+<!-- plan: 2026-05-26-operational-backup-stopgap-design.md -->
+
+### Goal
+
+Give the writer a reliable, repeatable manual-backup recipe **today** — a `make backup` / `make restore` pair that snapshots the current shared-data layout (`<data-dir>/smudge.db` + `<data-dir>/images/`, where the data dir defaults to `packages/server/data/` and honors the `DB_PATH` env override) into a single timestamped zip archive. Bridges the gap between now and Phase 8b shipping, so a corrupted SQLite file is recoverable without depending on host-level filesystem snapshots the user may or may not have configured.
+
+### Why Now
+
+Phase 8b is the long-term answer for per-project, portable, versioned backup, but it depends on Phase 8a (per-project folder layout) which depends on Phase 7g (Electron runtime prep). That's months out. Until then there is no Smudge-blessed escape hatch from SQLite corruption. The stopgap is deliberately **separate from 8b**: folding the urgent thing into the slow thing inverts the priority, and the two have almost no shared code (8b uses the post-8a per-project layout; the stopgap uses the current shared layout).
+
+### Scope
+
+#### 4b.14.1 `make backup` target
+
+Produces `backups/smudge-<ISO-8601-local-time>.zip` containing a consistent point-in-time snapshot of the SQLite DB plus the image directory:
+
+```
+backups/smudge-2026-05-26-143211.zip
+  smudge.db          # snapshotted via SQLite VACUUM INTO
+  images/...
+```
+
+Uses SQLite's **`VACUUM INTO`** to take the DB snapshot — safe to run while Smudge is up (the live `cp`-on-WAL footgun is avoided). Images are added to the archive from `<data-dir>/images/` after the SQLite snapshot finishes; a small inconsistency window can leave an extra unreferenced image in the archive (harmless on restore). The data dir is resolved from `DB_PATH` (dirname) if set, otherwise the package-relative default (`packages/server/data/`).
+
+Format choice is zip (not tar.gz): consistent with Phase 8b's `.smg` (also a zip), and avoids `tar.gz` portability friction on older Windows hosts. Library choice (`jszip` — already a server devDep, would be promoted to dep — or `archiver` for streaming on image-heavy projects) is deferred to implementation.
+
+#### 4b.14.2 `make restore BACKUP=<file>` target
+
+Restores a zip archive after explicit confirmation. Refuses if Smudge is currently running (probes via flock on the DB file). Moves the existing `<data-dir>/` to `<data-dir>.before-restore-<timestamp>/` rather than deleting it — restore is destructive enough that the cost of one extra copy is much smaller than the cost of an unrecoverable mistake. Confirmation prompt requires the user to type the backup filename, not just "yes" — Word-Document-Inspector pattern, mechanized.
+
+#### 4b.14.3 `docs/backup.md`
+
+One-page recipe: what it is, what it isn't (not 8b's `.smg`, not per-project, not automated, not offsite), how to back up, how to restore, suggested cadence ("before every Smudge upgrade; weekly otherwise"), how to handle offsite copying (user's job: copy `backups/` to a USB drive or cloud sync folder), and a forward note that this recipe stays readable by `make restore` against the Smudge version that wrote the archive.
+
+### Data Model Changes
+
+None.
+
+### API Changes
+
+None. CLI-only.
+
+### Out of Scope
+
+- Per-project export — that's Phase 8b.
+- Format versioning, manifest, content hash — the archive is "whatever the current data layout is"; cross-version readability is 8b's job.
+- Scheduled / cron-based automation. The user runs `make backup` themselves.
+- Off-host copying (rsync, S3, etc.) — user-side concern.
+- A UI for backup/restore. CLI only.
+- Encryption, signing, differential backups, auto-purge of old backups.
+
+### Definition of Done
+
+- `make backup` produces a zip archive containing a consistent SQLite snapshot + images.
+- `make restore BACKUP=<file>` round-trips the data identically to the pre-backup state.
+- Tests cover round-trip, live-DB safety (running backup while a write transaction is open), and restore safety (refuses missing-file archives and typoed confirmations without touching the data dir).
+- `docs/backup.md` written.
+- `make all` green at PR close.
+
+### Forward-Compatibility Commitment
+
+`make restore` (or its successor) must read any archive written by any prior Smudge version, indefinitely. A backup that becomes unreadable because the user upgraded Smudge is not a backup. When Phase 8a's storage layout change ships, the obligation to translate old-layout archives into the new per-project folders falls to **Phase 8a** (see Phase 8a §8a.4, added by this design). 4b.14 itself does not need to do anything special — its job is to write an honest snapshot of the current layout; 8a-at-8a-time is responsible for keeping those old snapshots readable.
+
+### Dependencies
+
+- None. Independent of all other 4b.X phases. May land at any time.
 
 ---
 
@@ -2383,6 +2543,12 @@ Migrate existing projects from the shared application database to individual pro
 
 With projects as folders, implement an "Open Recent" mechanism that tracks recently opened project paths. This is the natural behavior for a desktop app.
 
+#### 8a.4 Legacy 4b.14 Archive Compatibility
+
+8a inherits responsibility for restoring pre-8a archives (created by Phase 4b.14's `make backup`). Specifically, `make restore` (or its successor) must detect when an archive contains the pre-8a layout (top-level `smudge.db` + `images/` instead of per-project `<slug>.smudge/` folders) and run the same shared-DB → per-project-folder migration logic that 8a.2 already implements for live upgrades. Without this, users who made a backup before upgrading to 8a-or-later lose the ability to restore it — a violation of the "backup means recoverable, indefinitely" commitment stated in `docs/plans/2026-05-26-operational-backup-stopgap-design.md` "Forward-compatibility policy."
+
+The migration code path lives in 8a (alongside 8a.2's live-upgrade code, reused for archive restore); 4b.14's restore script learns to dispatch on archive layout and call into 8a's migration when needed.
+
 ### Data Model Changes
 
 **Per-project SQLite database** containing:
@@ -2404,37 +2570,126 @@ With projects as folders, implement an "Open Recent" mechanism that tracks recen
 
 ## Phase 8b: Bundle Export (.smg)
 
+<!-- plan: 2026-05-26-bundle-export-roundtrip-design.md -->
+
 ### Goal
 
-Provide a portable single-file format for sharing, backup, and future OS-level "double-click to open" integration.
+Provide a portable single-file backup format with a testable "import it later with no change" guarantee. The bundle is a writer's escape hatch — a lossless point-in-time snapshot of a single project that can be re-imported into any future Smudge version that knows about the format.
+
+`.smg` is **for backup**, not for sharing manuscript content with non-Smudge users. Smudge already has share-exports via Phase 3a/3b (PDF, DOCX, EPUB, HTML, Markdown, plain text); those formats can't physically carry trash, snapshots, or daily-velocity data and are inherently sanitized. `.smg` keeps everything — matching the established Scrivener `.scriv` archive model (Scrivener treats backup and Compile as fundamentally separate operations; so do we).
 
 ### Features
 
 #### 8b.1 .smg Export
 
-Export a project as a `.smg` file — a zip archive of the `.smudge/` project folder. This is the portable format for:
+`GET /api/projects/{id}/bundle` produces a zip archive of the `.smudge/` project folder. **Always lossless** — there are no query parameters to scrub content. The bundle includes:
 
-- Backup and archival
-- Sharing with others
-- Moving between machines
-- Email attachment
+- The full per-project SQLite DB (all chapters including soft-deleted, all snapshots, all daily-snapshot history, all future per-project tables added in Phases 5/6/7)
+- All image assets referenced by the project
+- A `manifest.json` (see 8b.2)
 
-#### 8b.2 .smg Import
+The `exports/` subdirectory from Phase 8a's `.smudge/` layout is deliberately excluded — generated artifacts are reproducible from the source content and would bloat the bundle.
 
-Import a `.smg` file to create a new project. This unpacks the archive into a `.smudge/` folder and registers it with the application.
+#### 8b.2 Manifest format
 
-#### 8b.3 OS Integration (Electron)
+Every `.smg` contains a root-level `manifest.json`:
+
+```json
+{
+  "format_version": 1,
+  "schema_version": 47,
+  "app_version": "0.7.2",
+  "created_at": "2026-05-26T14:32:11Z",
+  "project": { "title": "...", "slug": "...", "chapter_count": 23, "total_word_count": 41200 },
+  "source_timezone": "Europe/Malta",
+  "content_hash_algorithm": "v1",
+  "content_hash": "sha256:..."
+}
+```
+
+`source_timezone` is informational — the exporting Smudge's `settings.timezone` at export time. Daily-snapshot dates are implicitly interpreted in this timezone; on import, if the target's timezone differs, the import succeeds but attaches a `timezone_mismatch` warning to the response (no data conversion is attempted — calendar-day data has no clean cross-timezone conversion). The warning is the load-bearing UX: the user is told their past pace data may be off by up to one day at boundaries, and can either re-align their timezone or accept the drift.
+
+Three version numbers are deliberately separate:
+
+- **`format_version`** — the zip layout itself (filenames, directory structure). Bumped only when the on-disk shape changes (a new top-level directory, a renamed file, snapshots moved between rows and files). New columns inside `project.sqlite` do **not** bump this.
+- **`schema_version`** — the Knex migration version of the embedded SQLite. Read by import to decide which forward migrations to run.
+- **`content_hash_algorithm`** — the canonicalization-function version that computed `content_hash`. Bumped only when we **fix a bug** in the hash transformation rules (so the same input data would hash differently). Old algorithm versions are frozen and kept reachable so historical bundles still verify; new exports always use the latest. Adding new project-scoped data does NOT bump this.
+
+**`content_hash`** is a SHA-256 over a deterministic canonicalization of (all project-scoped tables in fixed order, with timestamps normalized) + (all asset bytes in name order) + (all snapshot files in path-sorted order), computed via the algorithm named by `content_hash_algorithm`. It is the **testable lossless contract** — see 8b.4.
+
+#### 8b.3 .smg Import
+
+`POST /api/projects/import` accepts a multipart upload, validates the manifest, runs forward migrations on the embedded SQLite if needed, recomputes the content hash and compares against the manifest, then extracts to a fresh `.smudge/` folder (auto-suffixing if a folder of that name already exists). UUIDs are preserved end-to-end; because the post-8a layout is per-project, UUIDs are project-scoped and cannot collide across projects.
+
+**Versioning is forward-only.** A v4-format bundle imports into v7 Smudge by running Knex migrations 5, 6, 7 against the embedded SQLite. A v7-format bundle does *not* import into v4 Smudge — it's refused with a clear "this backup was made by Smudge vN, you're running vM; upgrade to open" message. Single-user app; the user controls what version is installed.
+
+**Failure modes** (precise behavior the import endpoint owes):
+
+| Condition | Response |
+|---|---|
+| Upload is not a valid zip | `400 INVALID_BUNDLE` |
+| Missing `manifest.json` | `400 INVALID_BUNDLE` |
+| Manifest fails schema validation | `400 INVALID_BUNDLE` |
+| `format_version` > known | `409 BUNDLE_TOO_NEW` with both versions in the message |
+| `schema_version` > known | `409 BUNDLE_TOO_NEW` |
+| `schema_version` < current | Run Knex migrations forward, continue |
+| `content_hash` mismatch on recompute | `409 BUNDLE_TAMPERED` (extracted folder cleaned up) |
+| `content_hash_algorithm` unknown | `409 BUNDLE_TOO_NEW` (bundle was hashed with an algorithm version we don't ship yet) |
+| Zip entry path fails zip-slip validation | `400 INVALID_BUNDLE` (no extraction occurs; offending entry name in message) |
+| Upload body exceeds `SMUDGE_IMPORT_MAX_UPLOAD_BYTES` (default 1 GiB) | `413 PAYLOAD_TOO_LARGE` (refused at body-parse boundary) |
+| Declared uncompressed total or compression ratio exceeds limits | `400 INVALID_BUNDLE` "appears to be a decompression bomb" (no extraction; bomb-defense thresholds env-configurable) |
+| Streamed bytes during extraction exceed declared total | `400 INVALID_BUNDLE` "declared size doesn't match contents" (extraction aborted, partial folder cleaned up) |
+| Asset file in manifest missing from zip | `400 INVALID_BUNDLE` |
+| Knex migration fails | `500 MIGRATION_FAILED` (extracted folder cleaned up) |
+| Project folder name collision on disk | Auto-suffix `<slug>-N.smudge/`, no prompt |
+
+The `BUNDLE_TAMPERED` refusal has one escape hatch: an `?allow_tampered=true` query parameter for power users who've intentionally edited a bundle (e.g., manual SQLite surgery). Default behavior remains "refuse."
+
+All response codes are within CLAUDE.md's allowlist (400, 409, 500); the new `error.code` strings (`INVALID_BUNDLE`, `BUNDLE_TOO_NEW`, `BUNDLE_TAMPERED`, `MIGRATION_FAILED`) discriminate within the existing status codes.
+
+#### 8b.4 Roundtrip test contract
+
+The lossless guarantee is enforced by tests, not aspiration. The equality contract is single-line:
+
+> `content_hash(original) == content_hash(import_and_re_export(original))`
+
+Test surface:
+- **Unit:** `canonical-hash-v1.ts` (and one test file per future algorithm version) determinism (same project hashed twice = same hash; reordered rows = same hash; one byte changed in an asset = different hash); plus a frozen-implementation pin (hardcoded hash for a fixture project) so any edit to a non-latest algorithm version fails the build.
+- **Security:** the import path refuses bundles with `../`, absolute-path, or `..`-after-normalization entries (zip-slip defense, see 8b.3 failure modes).
+- **Integration:** for each project shape (empty, single-chapter, multi-chapter with all status values, with soft-deleted chapters, with images, with snapshots, with daily-snapshot history, with targets/deadlines, kitchen-sink combining everything), assert `hash(orig) == hash(roundtripped)`.
+- **E2e:** export from the running app, re-import via the UI, assert the new project matches.
+
+#### 8b.5 Future-phase extension contract
+
+This is what makes "lossless across phases" a real guarantee. **Every future phase that adds project-scoped data takes on three obligations:**
+
+1. Update the **current-latest** canonicalization function (e.g., `canonical-hash-v1.ts` while v1 is current; `canonical-hash-v2.ts` once v2 ships) to include the new field/table. **Do not edit a non-latest algorithm version** — those are frozen so historical bundles still verify against their original hash.
+2. Add a roundtrip-test case for the new data shape, including a kitchen-sink update.
+3. Bump `format_version` **only** if the zip layout itself changes — not for new columns inside `project.sqlite` (those flow through `schema_version` via Knex migrations).
+4. Do NOT bump `content_hash_algorithm` for new data. Algorithm-version bumps are reserved for fixing bugs in the hash transformation rules (e.g., non-deterministic sort, BLOB encoding fix). When a bump is needed, the fix lands in a new `canonical-hash-vN+1.ts`; the previous version stays frozen.
+
+This contract is reproduced here so it's visible to every future phase author when they consult the roadmap.
+
+#### 8b.6 OS Integration (Electron)
 
 Register `.smg` as a file type so double-clicking opens it in Smudge. This is Electron-specific and depends on the desktop distribution being available.
 
 ### API Changes
 
-- `POST /api/projects/import` — accept a `.smg` file upload, unpack, and create a project.
-- `GET /api/projects/{id}/bundle` — download the project as a `.smg` file.
+- `POST /api/projects/import` — accept a `.smg` file upload, validate manifest, run forward migrations on embedded SQLite, verify content hash, extract to a fresh `.smudge/` folder, return `{ project, warnings: [...] }`. Warnings are non-fatal (e.g. `timezone_mismatch`). Optional `?allow_tampered=true` for the manifest-hash override case.
+- `GET /api/projects/{id}/bundle` — download the project as a `.smg` file with `Content-Type: application/x-smudge-bundle` and `Content-Disposition: attachment; filename="<slug>.smg"`. Always lossless; no query parameters.
+
+### Out of Scope
+
+- **Share-time scrubbing.** Not in v1. If demand emerges later, a future phase can add a Word-Document-Inspector-style export dialog with checkboxes — `Include snapshots`, `Include soft-deleted chapters`, `Include daily history` — all defaulting ON. None of that changes the format spec; scrubbing happens before zipping.
+- **Reverse migrations** (newer bundle into older Smudge). Forward-only is sufficient for single-user.
+- **Multi-project bundles.** A `.smg` is one project. "Back up everything" is what Phase 4b.14 stopgap is for; once 8b ships, a "back up everything" complement could remain there or land as a follow-up that produces N `.smg`s.
+- **Encryption, signing, `.smg` diff/merge, cloud sync.** All explicitly out — see `docs/plans/2026-05-26-bundle-export-roundtrip-design.md` §5 for rationale.
 
 ### Dependencies
 
-- Phase 8a (project package format must exist to bundle it).
+- Phase 8a (per-project `.smudge/` folder layout must exist for `.smg` to wrap it).
+- The Phase 4b.14 operational backup stopgap is *not* a dependency — it's a sibling that bridges the gap until 8b ships and may live alongside 8b post-ship as a "full-machine snapshot" complement to per-project `.smg`.
 
 ---
 

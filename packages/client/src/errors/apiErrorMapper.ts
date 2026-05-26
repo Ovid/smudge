@@ -1,11 +1,19 @@
 import { ApiRequestError } from "../api/client";
 import { SCOPES, type ApiErrorScope } from "./scopes";
 
-export type MappedError = {
+export type MappedError<S extends ApiErrorScope> = {
   message: string | null;
   possiblyCommitted: boolean;
   transient: boolean;
+  terminal: boolean;
   extras?: Record<string, unknown>;
+  // Phantom — no runtime field; carries S through the type system so
+  // applyMappedError can require the same S on its handlers. The
+  // generic has no default (S4, agentic-review 2026-05-26): a default
+  // of `ApiErrorScope` would let a bare `MappedError` widen S to the
+  // full scope union, silently defeating the phantom narrowing that
+  // ScopeExtras<S> depends on at the applyMappedError boundary.
+  readonly __scope?: S;
 };
 
 export type ScopeEntry = {
@@ -25,6 +33,21 @@ export type ScopeEntry = {
   // a new committed-intent code in the future means updating the scope
   // alone rather than every call site.
   committedCodes?: string[];
+  // S3/S7 (4b.3c.1): codes whose byCode hit means the save loop must
+  // break and lock the editor without retrying. chapter.save's
+  // BAD_JSON / UPDATE_READ_FAILURE / CORRUPT_CONTENT triple lives here
+  // instead of inline in useProjectEditor.handleSave. Adding a fourth
+  // terminal code is a single-line scope edit.
+  terminalCodes?: string[];
+  // S1 (agentic-review 2026-05-26): byStatus analogue of terminalCodes.
+  // Lets a scope declare that certain HTTP statuses are terminal even
+  // when no byCode entry matches (e.g. a reverse-proxy 404 with no
+  // envelope). chapter.save's `terminalStatuses: [404]` closes the
+  // structural asymmetry that previously forced
+  // useProjectEditor.handleSave to hand-code `status === 404` alongside
+  // the code-name list. Adding a new terminal status is now a one-line
+  // scope edit, matching terminalCodes' promise on the byStatus axis.
+  terminalStatuses?: number[];
 };
 
 function isApiRequestError(err: unknown): err is ApiRequestError {
@@ -81,12 +104,12 @@ export function isClientError(err: unknown): err is ApiRequestError {
 // should go through mapApiError in tests too. The underscore prefix
 // is the convention for "intended to be internal but must be exported
 // for testing." The barrel does not re-export this.
-export function _resolveErrorInternal(err: unknown, scope: ScopeEntry): MappedError {
+export function _resolveErrorInternal(err: unknown, scope: ScopeEntry): MappedError<ApiErrorScope> {
   if (!isApiRequestError(err)) {
-    return { message: scope.fallback, possiblyCommitted: false, transient: false };
+    return { message: scope.fallback, possiblyCommitted: false, transient: false, terminal: false };
   }
   if (err.code === "ABORTED") {
-    return { message: null, possiblyCommitted: false, transient: false };
+    return { message: null, possiblyCommitted: false, transient: false, terminal: false };
   }
   if (err.code === "BAD_JSON" && err.status >= 200 && err.status < 300) {
     // S7 (2026-04-23 review): gate possiblyCommitted on scope.committed
@@ -101,6 +124,7 @@ export function _resolveErrorInternal(err: unknown, scope: ScopeEntry): MappedEr
       message: scope.committed ?? scope.fallback,
       possiblyCommitted: scope.committed !== undefined,
       transient: false,
+      terminal: false,
     };
   }
   if (err.code === "NETWORK") {
@@ -108,6 +132,7 @@ export function _resolveErrorInternal(err: unknown, scope: ScopeEntry): MappedEr
       message: scope.network ?? scope.fallback,
       possiblyCommitted: false,
       transient: true,
+      terminal: false,
     };
   }
   // S8 (2026-04-23 review, acknowledged): byCode precedes byStatus.
@@ -140,6 +165,7 @@ export function _resolveErrorInternal(err: unknown, scope: ScopeEntry): MappedEr
       possiblyCommitted:
         err.code !== undefined && scope.committedCodes?.includes(err.code) === true,
       transient: false,
+      terminal: err.code !== undefined && scope.terminalCodes?.includes(err.code) === true,
       extras: safeExtrasFrom(scope, err),
     };
   }
@@ -149,6 +175,11 @@ export function _resolveErrorInternal(err: unknown, scope: ScopeEntry): MappedEr
       message: byStatusMatch,
       possiblyCommitted: false,
       transient: false,
+      // S1 (agentic-review 2026-05-26): byStatus hits set terminal=true
+      // when the scope's terminalStatuses includes the status. Mirrors
+      // the byCode → terminalCodes plumbing so consumers read
+      // `mapped.terminal` without hand-coding numeric status checks.
+      terminal: scope.terminalStatuses?.includes(err.status) === true,
       extras: safeExtrasFrom(scope, err),
     };
   }
@@ -156,6 +187,7 @@ export function _resolveErrorInternal(err: unknown, scope: ScopeEntry): MappedEr
     message: scope.fallback,
     possiblyCommitted: false,
     transient: false,
+    terminal: false,
     extras: safeExtrasFrom(scope, err),
   };
 }
@@ -182,8 +214,8 @@ function safeExtrasFrom(
   }
 }
 
-export function mapApiError(err: unknown, scope: ApiErrorScope): MappedError {
-  return _resolveErrorInternal(err, SCOPES[scope]);
+export function mapApiError<S extends ApiErrorScope>(err: unknown, scope: S): MappedError<S> {
+  return _resolveErrorInternal(err, SCOPES[scope]) as MappedError<S>;
 }
 
 /**
@@ -195,7 +227,11 @@ export function mapApiError(err: unknown, scope: ApiErrorScope): MappedError {
  * that call sites cannot accidentally drop the ?? defense and produce
  * a literal "null" or empty banner.
  */
-export function mapApiErrorMessage(err: unknown, scope: ApiErrorScope, fallback: string): string {
+export function mapApiErrorMessage<S extends ApiErrorScope>(
+  err: unknown,
+  scope: S,
+  fallback: string,
+): string {
   return mapApiError(err, scope).message ?? fallback;
 }
 

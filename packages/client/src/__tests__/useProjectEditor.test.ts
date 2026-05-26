@@ -1683,8 +1683,14 @@ describe("useProjectEditor", () => {
     expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedChapterGone);
     // No retry — chapter is gone; retrying would deterministically 404 again.
     expect(api.chapters.update).toHaveBeenCalledTimes(1);
+    // S1 (agentic-review 2026-05-26): 404 is now in
+    // chapter.save.terminalStatuses, so the in-loop break takes the
+    // `mapped.terminal` branch (logs "Save failed terminally:") instead
+    // of the `isClientError` branch (which logged "Save failed with
+    // 4xx:"). Same lock + banner outcome — only the diagnostic warn
+    // path changed.
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Save failed with 4xx:"),
+      expect.stringContaining("Save failed terminally:"),
       expect.any(ApiRequestError),
     );
     warnSpy.mockRestore();
@@ -1700,7 +1706,8 @@ describe("useProjectEditor", () => {
   // debounced auto-save 404'd in a loop, and the banner re-fired on
   // each 404. The fix locks on status === 404 too — same UX as the
   // coded NOT_FOUND case but resilient to envelopes the proxy chain
-  // strips.
+  // strips. S1 (2026-05-26): the status === 404 hand-coding is gone
+  // — chapter.save.terminalStatuses owns the 404 lock now.
   it("handleSave fires onRequestEditorLock on bare 404 (no envelope code) (S3)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.update).mockRejectedValue(
@@ -1720,8 +1727,10 @@ describe("useProjectEditor", () => {
     expect(onRequestEditorLock).toHaveBeenCalledWith(STRINGS.editor.saveFailedChapterGone);
     expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedChapterGone);
     expect(api.chapters.update).toHaveBeenCalledTimes(1);
+    // S1 (agentic-review 2026-05-26): see neighbour test above —
+    // bare 404 also routes through the terminal branch.
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Save failed with 4xx:"),
+      expect.stringContaining("Save failed terminally:"),
       expect.any(ApiRequestError),
     );
     warnSpy.mockRestore();

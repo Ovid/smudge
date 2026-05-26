@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import type { MappedError } from "./apiErrorMapper";
+import { describe, it, expect, vi, expectTypeOf } from "vitest";
+import type { MappedError, ScopeEntry } from "./apiErrorMapper";
 import {
   _resolveErrorInternal as resolveError,
   mapApiError,
@@ -27,7 +27,15 @@ describe("errors/index barrel re-exports", () => {
 
 describe("MappedError shape", () => {
   it("has message, possiblyCommitted, transient, optional extras", () => {
-    const m: MappedError = { message: null, possiblyCommitted: false, transient: false };
+    // Explicit scope arg required after S4 (agentic-review 2026-05-26)
+    // dropped the default parameter on MappedError. chapter.load is a
+    // generic enough scope to assert the structural fields.
+    const m: MappedError<"chapter.load"> = {
+      message: null,
+      possiblyCommitted: false,
+      transient: false,
+      terminal: false,
+    };
     expect(m.message).toBeNull();
     expect(m.possiblyCommitted).toBe(false);
     expect(m.transient).toBe(false);
@@ -43,6 +51,7 @@ describe("mapApiError — fallback-only resolution", () => {
       message: "test-fallback",
       possiblyCommitted: false,
       transient: false,
+      terminal: false,
     });
   });
   it("returns fallback when code and status match nothing in the scope", () => {
@@ -52,6 +61,7 @@ describe("mapApiError — fallback-only resolution", () => {
       message: "test-fallback",
       possiblyCommitted: false,
       transient: false,
+      terminal: false,
     });
   });
 });
@@ -79,6 +89,7 @@ describe("mapApiError — 2xx BAD_JSON", () => {
       message: "server may have committed",
       possiblyCommitted: true,
       transient: false,
+      terminal: false,
     });
   });
   // S7 (2026-04-23 review): a scope without committed: copy does NOT
@@ -92,6 +103,7 @@ describe("mapApiError — 2xx BAD_JSON", () => {
       message: "test-fallback",
       possiblyCommitted: false,
       transient: false,
+      terminal: false,
     });
   });
   it("does NOT trigger possiblyCommitted for BAD_JSON on non-2xx (defensive)", () => {
@@ -111,6 +123,7 @@ describe("mapApiError — NETWORK", () => {
       message: "check your connection",
       possiblyCommitted: false,
       transient: true,
+      terminal: false,
     });
   });
   it("falls back to fallback with transient:true when scope has no network override", () => {
@@ -120,6 +133,7 @@ describe("mapApiError — NETWORK", () => {
       message: "test-fallback",
       possiblyCommitted: false,
       transient: true,
+      terminal: false,
     });
   });
 });
@@ -289,6 +303,68 @@ describe("mapApiError — extras", () => {
   });
 });
 
+describe("mapApiError — terminalCodes plumbing", () => {
+  const scopeWithTerminal: ScopeEntry = {
+    fallback: "fallback",
+    committed: "committed",
+    byCode: { BAD_JSON: "bad-json-msg", FOO: "foo-msg" },
+    committedCodes: ["BAD_JSON"],
+    terminalCodes: ["BAD_JSON", "FOO"],
+  };
+
+  it("MappedError defaults terminal to false on a scope without terminalCodes", () => {
+    const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
+    const result = resolveError(err, { fallback: "fallback" });
+    expect(result.terminal).toBe(false);
+  });
+
+  it("MappedError.terminal is true on a byCode hit listed in terminalCodes", () => {
+    const err = new ApiRequestError("boom", 500, "FOO");
+    const result = resolveError(err, scopeWithTerminal);
+    expect(result.terminal).toBe(true);
+    expect(result.message).toBe("foo-msg");
+  });
+
+  it("MappedError.terminal is false on a byCode hit NOT listed in terminalCodes", () => {
+    const err = new ApiRequestError("boom", 500, "BAR");
+    const result = resolveError(err, { ...scopeWithTerminal, byCode: { BAR: "bar-msg" } });
+    expect(result.terminal).toBe(false);
+  });
+});
+
+describe("mapApiError — terminalStatuses plumbing (S1)", () => {
+  // S1 (agentic-review 2026-05-26): terminalStatuses is the byStatus
+  // analogue of terminalCodes. Lets a scope declare e.g. "404 is
+  // terminal for save" so consumers read `mapped.terminal` without
+  // hand-coding status numbers. Closes the asymmetry the original
+  // terminalCodes design left behind.
+  const scopeWithTerminalStatus: ScopeEntry = {
+    fallback: "fallback",
+    byStatus: { 404: "gone", 500: "boom" },
+    terminalStatuses: [404],
+  };
+
+  it("MappedError.terminal is true on a byStatus hit listed in terminalStatuses", () => {
+    const err = new ApiRequestError("not found", 404);
+    const result = resolveError(err, scopeWithTerminalStatus);
+    expect(result.terminal).toBe(true);
+    expect(result.message).toBe("gone");
+  });
+
+  it("MappedError.terminal is false on a byStatus hit NOT listed in terminalStatuses", () => {
+    const err = new ApiRequestError("server error", 500);
+    const result = resolveError(err, scopeWithTerminalStatus);
+    expect(result.terminal).toBe(false);
+    expect(result.message).toBe("boom");
+  });
+
+  it("MappedError.terminal is false on a byStatus hit when terminalStatuses is undefined", () => {
+    const err = new ApiRequestError("not found", 404);
+    const result = resolveError(err, { fallback: "fallback", byStatus: { 404: "gone" } });
+    expect(result.terminal).toBe(false);
+  });
+});
+
 describe("SCOPES — chapter.save", () => {
   const scope = SCOPES["chapter.save"];
   it("413 → saveFailedTooLarge", () => {
@@ -347,6 +423,35 @@ describe("SCOPES — chapter.save", () => {
   it("404 → saveFailedChapterGone (I2)", () => {
     const err = new ApiRequestError("gone", 404, "NOT_FOUND");
     expect(resolveError(err, scope).message).toBe(STRINGS.editor.saveFailedChapterGone);
+  });
+  // S1 (agentic-review 2026-05-26): chapter.save lists 404 in
+  // terminalStatuses so the lock-banner consumer in handleSave reads
+  // `mapped.terminal` instead of hand-coding `status === 404`.
+  it("404 NOT_FOUND sets terminal:true (in terminalStatuses) (S1)", () => {
+    const err = new ApiRequestError("gone", 404, "NOT_FOUND");
+    const result = resolveError(err, scope);
+    expect(result.terminal).toBe(true);
+    expect(result.message).toBe(STRINGS.editor.saveFailedChapterGone);
+  });
+  it("bare 404 (no code) sets terminal:true (in terminalStatuses) (S1)", () => {
+    // Reverse-proxy 404 with no envelope. byCode is undefined; falls
+    // through to byStatus[404], which is in terminalStatuses.
+    const err = new ApiRequestError("Not Found", 404);
+    const result = resolveError(err, scope);
+    expect(result.terminal).toBe(true);
+    expect(result.message).toBe(STRINGS.editor.saveFailedChapterGone);
+  });
+  it("413 PAYLOAD_TOO_LARGE does NOT set terminal (recoverable) (S1)", () => {
+    // Only 404 is in terminalStatuses; other byStatus entries stay
+    // non-terminal so the user can recover (editor stays writable).
+    const err = new ApiRequestError("too large", 413, "PAYLOAD_TOO_LARGE");
+    const result = resolveError(err, scope);
+    expect(result.terminal).toBe(false);
+  });
+  it("500 INTERNAL_ERROR does NOT set terminal (transient) (S1)", () => {
+    const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
+    const result = resolveError(err, scope);
+    expect(result.terminal).toBe(false);
   });
 });
 
@@ -577,13 +682,20 @@ describe("SCOPES — image.delete extrasFrom", () => {
     expect(resolveError(err, scope).extras).toBeUndefined();
   });
   // S5 (2026-04-23 review): per-element validation, not just Array.isArray.
-  it("IMAGE_IN_USE with array-of-wrong-shape elements → extras undefined", () => {
+  // S8 (4b.3c.1, 2026-05-26): drop-only-malformed — malformed entries are
+  // filtered out and the valid subset is returned (was: all-or-nothing reject).
+  it("IMAGE_IN_USE with array-of-wrong-shape elements → drops malformed, returns valid subset", () => {
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
       chapters: [{ title: "ok" }, { missingTitle: true }],
     });
-    expect(resolveError(err, scope).extras).toBeUndefined();
+    expect(resolveError(err, scope).extras).toEqual({
+      chapters: [{ title: "ok" }],
+    });
   });
-  it("IMAGE_IN_USE with wrong trashed type → extras undefined", () => {
+  // S8 (4b.3c.1): single-entry envelope whose only entry is malformed (wrong
+  // trashed type) — valid filter empties, falling through to the
+  // `valid.length === 0` guard which still returns undefined.
+  it("IMAGE_IN_USE with wrong trashed type → extras undefined (single-entry, valid list empty)", () => {
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
       chapters: [{ title: "ok", trashed: "not-a-boolean" }],
     });
@@ -621,18 +733,20 @@ describe("SCOPES — image.delete extrasFrom", () => {
     expect(extras.chapters).toEqual([{ title: longTitle.slice(0, 200) }]);
   });
 
-  // I1 (review 2026-04-25): a hostile envelope of [50 valid, 1 invalid]
-  // would otherwise pass shape narrowing because the pre-fix code compared
-  // valid.length against the post-slice bounded.length (50), not the
-  // original chapters.length. Validate the full array before bounding
-  // so the all-or-nothing fallback fires.
-  it("returns undefined when an entry beyond the 50-cap has wrong shape (I1)", () => {
+  // I1 (review 2026-04-25): pre-S8, an envelope of [50 valid, 1 invalid at
+  // the cap boundary] triggered the all-or-nothing fallback so the malformed
+  // entry past the 50-cap could not silently inflate the visible list.
+  // S8 (4b.3c.1, 2026-05-26): drop-only-malformed supersedes that intent —
+  // the 50 valid entries are returned and the invalid 51st is dropped. The
+  // cap+1 input window still bounds work at 51 elements.
+  it("returns the 50 valid entries when the 51st entry has wrong shape (I1 / S8)", () => {
     const chapters: unknown[] = [
       ...Array.from({ length: 50 }, (_, i) => ({ id: `c-${i}`, title: `t-${i}` })),
       { missingTitle: true },
     ];
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", { chapters });
-    expect(resolveError(err, scope).extras).toBeUndefined();
+    const extras = resolveError(err, scope).extras as { chapters: unknown[] };
+    expect(extras.chapters).toHaveLength(50);
   });
 
   // S3 (review 2026-04-25): the previous spread `{ ...obj, title: ... }`
@@ -683,9 +797,13 @@ describe("SCOPES — image.delete extrasFrom", () => {
     expect(extras.chapters[0]?.title).not.toMatch(/�/);
   });
 
-  // S3 corollary: rejects entries whose `id` is the wrong type, so the
-  // narrowed shape stays honest.
-  it("returns undefined when id is present but not a string (S3)", () => {
+  // S3 corollary: drops entries whose `id` is the wrong type, so the
+  // narrowed shape stays honest. Single-entry envelope here — the lone
+  // wrong-id entry is filtered out, valid list empties, undefined returned
+  // via the `valid.length === 0` guard. (S8 drop-only-malformed: in a
+  // multi-entry envelope, wrong-id entries are silently dropped and the
+  // remaining valid entries are returned.)
+  it("returns undefined when id is present but not a string (S3, single-entry)", () => {
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
       chapters: [{ id: 42, title: "ok" }],
     });
@@ -710,12 +828,13 @@ describe("SCOPES — image.delete extrasFrom", () => {
   });
 
   // I2 (review 2026-04-25): an empty `chapters: []` envelope passes
-  // shape narrowing (`Array.isArray` is true, `valid.length ===
-  // chapters.length` is `0 === 0`) but produces a malformed
-  // `S.deleteBlocked([])` announcement ("This image is used in: .
-  // Remove..."). Server contract only emits the envelope when
-  // `referencingChapters.length > 0`, so this is hostile/malformed
-  // territory — but the validator is the right place to reject it.
+  // `Array.isArray` but produces a malformed `S.deleteBlocked([])`
+  // announcement ("This image is used in: . Remove..."). Server contract
+  // only emits the envelope when `referencingChapters.length > 0`, so this
+  // is hostile/malformed territory — but the validator is the right place
+  // to reject it. Post-S8 (4b.3c.1) the `valid.length === 0` guard fires
+  // here exactly as before; the all-or-nothing length check was the line
+  // S8 dropped.
   it("returns undefined for empty chapters array (I2)", () => {
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
       chapters: [],
@@ -724,13 +843,15 @@ describe("SCOPES — image.delete extrasFrom", () => {
   });
 
   // S1 (review 2026-04-26 round 3 follow-up): an envelope of all-empty-string
-  // titles passes the round-2 `valid.length === 0` guard (length is non-zero)
-  // and reaches `S.deleteBlocked([""])`, producing the malformed
+  // titles would (without the per-element `title.trim().length === 0`
+  // rejection) reach `S.deleteBlocked([""])`, producing the malformed
   // "This image is used in: , . Remove it from those chapters first." that
   // the round-2 I2 reasoning was meant to prevent. Server schema enforces
   // `z.string().trim().min(1)` on titles (`packages/shared/src/schemas.ts`),
   // so legitimate traffic never carries `""` — this is hostile-input
-  // territory only, but the validator is the right gatekeeper.
+  // territory only, but the validator is the right gatekeeper. Post-S8
+  // (4b.3c.1) all entries fail the per-element shape, the valid filter
+  // empties, and the `valid.length === 0` guard returns undefined.
   it("returns undefined when any chapter title is empty string (S1)", () => {
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
       chapters: [{ title: "" }, { title: "" }],
@@ -738,11 +859,15 @@ describe("SCOPES — image.delete extrasFrom", () => {
     expect(resolveError(err, scope).extras).toBeUndefined();
   });
 
-  it("returns undefined when a single chapter title is empty string (S1)", () => {
+  // S8 (4b.3c.1): the empty-title entry is dropped; the valid "Chapter 1"
+  // entry survives. (Pre-S8 this was an all-or-nothing reject.)
+  it("drops empty-string-title entries and returns the valid subset (S1 / S8)", () => {
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
       chapters: [{ title: "Chapter 1" }, { title: "" }],
     });
-    expect(resolveError(err, scope).extras).toBeUndefined();
+    expect(resolveError(err, scope).extras).toEqual({
+      chapters: [{ title: "Chapter 1" }],
+    });
   });
 
   // S4 (review 2026-04-26 inline): mirror the server's
@@ -768,11 +893,15 @@ describe("SCOPES — image.delete extrasFrom", () => {
     expect(resolveError(err, scope).extras).toBeUndefined();
   });
 
-  it("returns undefined when one of many titles is whitespace-only (S4)", () => {
+  // S8 (4b.3c.1): the whitespace-only entry is dropped; the valid
+  // "Chapter 1" entry survives. (Pre-S8 this was an all-or-nothing reject.)
+  it("drops whitespace-only-title entries and returns the valid subset (S4 / S8)", () => {
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
       chapters: [{ title: "Chapter 1" }, { title: " " }],
     });
-    expect(resolveError(err, scope).extras).toBeUndefined();
+    expect(resolveError(err, scope).extras).toEqual({
+      chapters: [{ title: "Chapter 1" }],
+    });
   });
 
   it("accepts titles whose interior contains whitespace (S4)", () => {
@@ -790,18 +919,15 @@ describe("SCOPES — image.delete extrasFrom", () => {
 
   // S* (review 2026-04-25 round 3): bound input processing at cap+1
   // entries so a hostile array of N items cannot drive O(N) filter work.
-  // Trade-off: invalid entries past index 50 are no longer detected —
-  // the all-or-nothing rule operates on the cap+1 window. An invalid
-  // entry at the cap boundary (index 50, the 51st element) is still
-  // caught, which is what the I1 test above exercises. This test pins
-  // the trade-off so a future round of review cannot silently revert to
-  // O(N) filter work without first weighing in.
+  // S8 (4b.3c.1, 2026-05-26): under drop-only-malformed, the cap+1 window
+  // still bounds work at 51 elements and invalid entries past index 50 are
+  // not seen by the validator. The envelope silently truncates to 50.
+  // This test pins the cap+1 bound so a future round of review cannot
+  // silently revert to O(N) filter work without first weighing in.
   it("validates only the first 51 entries (bound trade-off)", () => {
     // 100 entries, all valid, with one invalid injected at index 60 —
-    // outside the cap+1 (51-element) window. The pre-bound code would
-    // reject this entire envelope (valid.length 99 !== chapters.length
-    // 100); the bounded validator does not see the invalid entry and
-    // silently truncates to 50.
+    // outside the cap+1 (51-element) window. The bounded validator does
+    // not see the invalid entry and the envelope truncates to 50.
     const chapters: unknown[] = Array.from({ length: 100 }, (_, i) => ({
       id: `c-${i}`,
       title: `t-${i}`,
@@ -810,6 +936,37 @@ describe("SCOPES — image.delete extrasFrom", () => {
     const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", { chapters });
     const extras = resolveError(err, scope).extras as { chapters: unknown[] };
     expect(extras.chapters).toHaveLength(50);
+  });
+});
+
+describe("image.delete extrasFrom — drop-only-malformed (4b.3c.1 S8)", () => {
+  it("returns the valid chapters when some entries are malformed", () => {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: [
+        { title: "Chapter A" },
+        { not_a_title: true }, // malformed
+        { title: "Chapter B", trashed: true },
+      ],
+    });
+    const result = mapApiError(err, "image.delete");
+    expect(result.extras).toEqual({
+      chapters: [{ title: "Chapter A" }, { title: "Chapter B", trashed: true }],
+    });
+  });
+
+  it("still returns undefined when all entries are malformed", () => {
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", {
+      chapters: [{ not_a_title: true }, { still_wrong: 42 }],
+    });
+    const result = mapApiError(err, "image.delete");
+    expect(result.extras).toBeUndefined();
+  });
+
+  it("preserves the cap+1 input window (51 candidates max)", () => {
+    const lots = Array.from({ length: 100 }, (_, i) => ({ title: `Chapter ${i}` }));
+    const err = new ApiRequestError("in use", 409, "IMAGE_IN_USE", { chapters: lots });
+    const result = mapApiError(err, "image.delete");
+    expect((result.extras as { chapters: unknown[] }).chapters).toHaveLength(50);
   });
 });
 
@@ -980,6 +1137,7 @@ describe("SCOPES registry", () => {
       "chapter.save",
       "chapter.create",
       "chapter.delete",
+      "chapter.flushBeforeNavigate",
       "chapter.rename",
       "chapter.reorder",
       "chapter.updateStatus",
@@ -1157,7 +1315,7 @@ describe("cross-cutting rules apply to every scope", () => {
   it.each(ALL_SCOPES)(
     "2xx BAD_JSON possiblyCommitted flag matches scope.committed for %s",
     (scopeName) => {
-      const scope = SCOPES[scopeName];
+      const scope: ScopeEntry = SCOPES[scopeName];
       const hasCommitted = scope.committed !== undefined;
       expect(
         mapApiError(new ApiRequestError("bad", 200, "BAD_JSON"), scopeName).possiblyCommitted,
@@ -1169,5 +1327,92 @@ describe("cross-cutting rules apply to every scope", () => {
     expect(r.message).toBeTruthy();
     expect(r.possiblyCommitted).toBe(false);
     expect(r.transient).toBe(false);
+  });
+});
+
+describe("MappedError<S> phantom propagation", () => {
+  it("mapApiError(err, 'image.delete') returns MappedError<'image.delete'>", () => {
+    const err = new ApiRequestError("oops", 500, "INTERNAL_ERROR");
+    const mapped = mapApiError(err, "image.delete");
+    expectTypeOf(mapped).toEqualTypeOf<MappedError<"image.delete">>();
+  });
+
+  it("mapApiError(err, 'chapter.load') returns MappedError<'chapter.load'>", () => {
+    const err = new ApiRequestError("oops", 500, "INTERNAL_ERROR");
+    const mapped = mapApiError(err, "chapter.load");
+    expectTypeOf(mapped).toEqualTypeOf<MappedError<"chapter.load">>();
+  });
+
+  it("bare MappedError (no <S>) fails to typecheck after S4 — regression guard", () => {
+    // After S4 (agentic-review 2026-05-26) dropped the default
+    // parameter, bare `MappedError` (without `<S>`) is no longer a
+    // valid type. The @ts-expect-error directive flips to TS2314
+    // "Generic type 'MappedError' requires 1 type argument(s)" if a
+    // future refactor restores the default. Runtime structural
+    // equivalence is now redundant with the `MappedError<"chapter.load">`
+    // assertion in the "MappedError shape" describe block above.
+    //
+    // The cast on the explicit-scope object pins the phantom field as
+    // absent (optional `__scope` carries no runtime value).
+    const m: MappedError<"chapter.load"> = {
+      message: null,
+      possiblyCommitted: false,
+      transient: false,
+      terminal: false,
+    };
+    expect("__scope" in m).toBe(false);
+    // @ts-expect-error — Generic type 'MappedError<S>' requires 1 type argument; default was dropped (S4).
+    const _bare: MappedError = m;
+    expect(_bare).toBe(m);
+  });
+});
+
+describe("chapter.save terminal-codes scope-level configuration", () => {
+  it("UPDATE_READ_FAILURE on chapter.save sets terminal:true (in terminalCodes)", () => {
+    const err = new ApiRequestError("update read failure", 500, "UPDATE_READ_FAILURE");
+    const result = mapApiError(err, "chapter.save");
+    expect(result.terminal).toBe(true);
+    // UPDATE_READ_FAILURE is also in committedCodes — both flags fire.
+    expect(result.possiblyCommitted).toBe(true);
+  });
+
+  it("CORRUPT_CONTENT on chapter.save sets terminal:true (in terminalCodes)", () => {
+    const err = new ApiRequestError("corrupt", 500, "CORRUPT_CONTENT");
+    const result = mapApiError(err, "chapter.save");
+    expect(result.terminal).toBe(true);
+    // CORRUPT_CONTENT is NOT in committedCodes — only terminal fires.
+    expect(result.possiblyCommitted).toBe(false);
+  });
+
+  it("BAD_JSON 2xx on chapter.save sets possiblyCommitted:true but terminal:false (BAD_JSON branch is structurally before byCode-match)", () => {
+    const err = new ApiRequestError("bad json", 200, "BAD_JSON");
+    const result = mapApiError(err, "chapter.save");
+    expect(result.terminal).toBe(false);
+    expect(result.possiblyCommitted).toBe(true);
+    // The consumer's `mapped.terminal || mapped.possiblyCommitted` OR catches
+    // this case via possiblyCommitted. terminalCodes deliberately omits
+    // BAD_JSON for this reason — adding it would be dead code.
+  });
+
+  it("Plain 500 INTERNAL_ERROR on chapter.save does NOT set terminal:true or possiblyCommitted:true", () => {
+    const err = new ApiRequestError("internal", 500, "INTERNAL_ERROR");
+    const result = mapApiError(err, "chapter.save");
+    expect(result.terminal).toBe(false);
+    expect(result.possiblyCommitted).toBe(false);
+  });
+});
+
+describe("chapter.flushBeforeNavigate scope (4b.3c.1 S16)", () => {
+  it("maps a NETWORK error to the flush-before-navigate network copy", () => {
+    const err = new ApiRequestError("net", 0, "NETWORK");
+    const result = mapApiError(err, "chapter.flushBeforeNavigate");
+    expect(result.message).toBe(STRINGS.editor.flushBeforeNavigateFailedNetwork);
+    expect(result.transient).toBe(true);
+  });
+
+  it("maps a non-routed error to the fallback", () => {
+    const err = new ApiRequestError("internal", 500, "INTERNAL_ERROR");
+    const result = mapApiError(err, "chapter.flushBeforeNavigate");
+    expect(result.message).toBe(STRINGS.editor.flushBeforeNavigateFailed);
   });
 });

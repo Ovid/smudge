@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useReducer } from "react";
 import type { ImageRow } from "@smudge/shared";
 import { api } from "../api/client";
-import { mapApiError } from "../errors";
+import { mapApiError, applyMappedError, STOP } from "../errors";
 import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 import { STRINGS } from "../strings";
 
@@ -307,33 +307,38 @@ export function ImageGallery({
       incrementRefreshKey();
     } catch (err: unknown) {
       if (signal.aborted) return;
-      const { message, possiblyCommitted, extras } = mapApiError(err, "image.delete");
-      // ABORTED: silent (mapper returned message: null). Leave the detail
-      // view and confirmation state as-is so the user can retry.
-      if (!message) return;
-      // C3 (review 2026-04-24): on 2xx BAD_JSON the server already
-      // deleted the row but the client couldn't parse the response.
-      // Without the refresh the detail view stays on a phantom image
-      // and a user retry 409s because the image is gone. Close the
-      // detail view, reset the confirm gate, and bump the refresh key
-      // so the authoritative gallery list is fetched. The mapped
-      // committed copy is announced so the user knows to refresh.
-      if (possiblyCommitted) {
-        announce(message);
-        setSelectedImage(null);
-        setConfirmingDelete(false);
-        incrementRefreshKey();
-        return;
-      }
-      if (extras?.chapters) {
-        const chapters = (extras.chapters as Array<{ title: string; trashed?: boolean }>).map(
-          (c) => (c.trashed ? `${c.title} (${S.inTrash})` : c.title),
-        );
-        announce(S.deleteBlocked(chapters));
-      } else {
-        announce(message);
-      }
-      setConfirmingDelete(false);
+      const mapped = mapApiError(err, "image.delete");
+      applyMappedError(mapped, {
+        onCommitted: () => {
+          // C3 (review 2026-04-24): on 2xx BAD_JSON the server already
+          // deleted the row but the client couldn't parse the response.
+          // Without the refresh the detail view stays on a phantom image
+          // and a user retry 409s because the image is gone. Close the
+          // detail view, reset the confirm gate, and bump the refresh key
+          // so the authoritative gallery list is fetched. The mapped
+          // committed copy is announced so the user knows to refresh.
+          // S8 (4b.3c.1): the server likely committed the delete but the
+          // response body was unreadable. Announce the committed copy;
+          // STOP so the extras/message branches don't double-announce.
+          if (mapped.message !== null) announce(mapped.message);
+          setSelectedImage(null);
+          setConfirmingDelete(false);
+          incrementRefreshKey();
+          return STOP;
+        },
+        onExtras: ({ chapters }) => {
+          // 4b.3c.1: ScopeExtras<"image.delete"> narrows the type via the
+          // MappedError<S> phantom — no `as Array<{ title; trashed?: boolean }>` cast.
+          const labels = chapters.map((c) => (c.trashed ? `${c.title} (${S.inTrash})` : c.title));
+          announce(S.deleteBlocked(labels));
+          setConfirmingDelete(false);
+          return STOP;
+        },
+        onMessage: (msg) => {
+          announce(msg);
+          setConfirmingDelete(false);
+        },
+      });
     }
   }
 

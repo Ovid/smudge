@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { EXPORT_FILE_EXTENSIONS, type ExportFormatType } from "@smudge/shared";
 import { api } from "../api/client";
-import { mapApiError } from "../errors";
+import { mapApiError, applyMappedError } from "../errors";
 import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 import { STRINGS } from "../strings";
 
@@ -105,9 +105,6 @@ export function ExportDialog({
         })
         .catch((err: unknown) => {
           if (controller.signal.aborted) return;
-          const { message } = mapApiError(err, "image.list");
-          // ABORTED surfaces as message === null; silent no-op.
-          if (message === null) return;
           // C4 (review 2026-04-24): previously setCoverImages([]) ran
           // silently on any non-abort failure, so a real 4xx/5xx looked
           // identical to "this project has no images" — the user
@@ -115,8 +112,12 @@ export function ExportDialog({
           // mapped scope copy in the existing error banner and leave
           // coverImages empty so the dropdown stays hidden. The user
           // sees the failure and can retry.
-          setCoverImages([]);
-          setError(message);
+          applyMappedError(mapApiError(err, "image.list"), {
+            onMessage: (message) => {
+              setCoverImages([]);
+              setError(message);
+            },
+          });
         });
       return () => {
         controller.abort();
@@ -169,8 +170,7 @@ export function ExportDialog({
       onClose();
     } catch (err) {
       if (signal.aborted) return;
-      const { message } = mapApiError(err, "export.run");
-      if (message) setError(message);
+      applyMappedError(mapApiError(err, "export.run"), { onMessage: setError });
     } finally {
       exportingRef.current = false;
       setExporting(false);

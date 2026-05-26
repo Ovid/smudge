@@ -7,7 +7,14 @@ import { useAbortableSequence } from "./useAbortableSequence";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
 import { sleep } from "../utils/abortable";
 import { STRINGS } from "../strings";
-import { mapApiError, mapApiErrorMessage, isApiError, isAborted, isClientError } from "../errors";
+import {
+  mapApiError,
+  mapApiErrorMessage,
+  applyMappedError,
+  isApiError,
+  isAborted,
+  isClientError,
+} from "../errors";
 
 export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
 
@@ -327,9 +334,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // unmount/slug-change does not leak noise into test output.
         // (Replaces the pre-migration `cancelled` gate; C-6 Phase 4b.3b.)
         if (s.aborted) return;
-        console.warn("Failed to load project:", err);
-        const { message } = mapApiError(err, "project.load");
-        if (message) setError(message);
+        const mapped = mapApiError(err, "project.load");
+        if (mapped.message !== null) console.warn("Failed to load project:", err);
+        applyMappedError(mapped, { onMessage: setError });
       }
     });
     void promise;
@@ -360,7 +367,18 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       // the BAD_JSON / UPDATE_READ_FAILURE / CORRUPT_CONTENT and
       // status===404 branches — kept the variable single-purpose but
       // no longer 4xx-only.
-      type TerminalSaveError = { message: string; code?: string; status: number };
+      // S1 (agentic-review 2026-05-26): `terminal` and `possiblyCommitted`
+      // mirror the matching MappedError flags so the post-loop lock-banner
+      // can route through `terminal || possiblyCommitted` instead of
+      // hand-coding the code/status list. Adding a new terminal condition
+      // (code OR status) is now a one-line scope edit.
+      type TerminalSaveError = {
+        message: string;
+        code?: string;
+        status: number;
+        terminal: boolean;
+        possiblyCommitted: boolean;
+      };
       // S-2 (Phase 4b.3b): the retry-with-backoff loop returns a
       // discriminated outcome so the post-loop block can drive banner /
       // lock decisions without mutating outer-scope state from inside
@@ -465,18 +483,29 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             //     retrying will not fix it.
             // Everything else under 500 (bare 500, transient NETWORK, etc.)
             // still retries with backoff.
-            if (
-              isApiError(err) &&
-              (err.code === "BAD_JSON" ||
-                err.code === "UPDATE_READ_FAILURE" ||
-                err.code === "CORRUPT_CONTENT")
-            ) {
-              console.warn("Save failed with terminal code:", err.code);
-              // mapApiError returns message: null only for ABORTED, which
-              // has already been filtered above — the three codes here all
-              // route to scope.committed / byCode matches, all non-null.
-              const { message } = mapApiError(err, "chapter.save");
-              terminal = { message: message as string, code: err.code, status: err.status };
+            const mapped = mapApiError(err, "chapter.save");
+            // S3/S7 (4b.3c.1) + S1 (2026-05-26 review): the OR is the
+            // documented bridge between three scope-driven flags that all
+            // mean "save loop must break and lock the editor":
+            //   - mapped.terminal: scopes.ts terminalCodes (5xx UPDATE_READ_FAILURE /
+            //     CORRUPT_CONTENT — the byCode-match branch sets terminal=true)
+            //     OR terminalStatuses (404 — the byStatus-match branch sets
+            //     terminal=true after S1 added the byStatus axis to the scope
+            //     contract).
+            //   - mapped.possiblyCommitted: 2xx BAD_JSON (scope.committed routes
+            //     through the BAD_JSON early-return branch, which sets
+            //     possiblyCommitted=true). UPDATE_READ_FAILURE additionally has a
+            //     committedCodes entry so its mapped output sets both flags; the
+            //     OR is idempotent on that case.
+            if (isApiError(err) && (mapped.terminal || mapped.possiblyCommitted)) {
+              console.warn("Save failed terminally:", err);
+              terminal = {
+                message: mapped.message as string,
+                code: err.code,
+                status: err.status,
+                terminal: mapped.terminal,
+                possiblyCommitted: mapped.possiblyCommitted,
+              };
               break;
             }
             if (isClientError(err)) {
@@ -489,8 +518,20 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
               // duplicated. err.code is preserved separately for the
               // cache-clear decision below. ABORTED is filtered above so
               // mapped.message is guaranteed non-null in this branch.
-              const { message } = mapApiError(err, "chapter.save");
-              terminal = { message: message as string, code: err.code, status: err.status };
+              // 4b.3c.1: reuse `mapped` computed above — one mapApiError
+              // call per catch iteration rather than two.
+              // S1 (2026-05-26): copy mapped flags too — keeps the
+              // TerminalSaveError shape uniform across both break sites.
+              // For bare 4xx (no terminalCodes / terminalStatuses match),
+              // both flags are false and the lock-banner branch below
+              // skips locking, exactly mirroring pre-S1 behaviour.
+              terminal = {
+                message: mapped.message as string,
+                code: err.code,
+                status: err.status,
+                terminal: mapped.terminal,
+                possiblyCommitted: mapped.possiblyCommitted,
+              };
               break;
             }
             if (attempt < MAX_RETRIES) {
@@ -594,29 +635,23 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // invariant-pair helper (applyReloadFailedLock) fires alongside
         // the banner. Bare 4xx (VALIDATION_ERROR, 413) are recoverable
         // and keep the editor writable.
-        // I2 (review 2026-04-26): NOT_FOUND is also a terminal condition —
-        // the chapter is gone server-side (purge, hard-delete, or another
-        // tab). Without the lock, the user keeps typing into content the
-        // server has rejected and every debounced auto-save 404s in a
-        // loop. The chapter.save byStatus[404] mapping already surfaces
-        // the saveFailedChapterGone banner; this completes the invariant
-        // pair.
-        // S3 (review 2026-04-26): a 404 that arrives WITHOUT a parseable
-        // JSON envelope — e.g. a reverse-proxy HTML 404 page, an
-        // upstream that bypassed the express error handler — has no
-        // `code` on the ApiRequestError. Pre-fix, the code-only check
-        // missed those: the saveFailedChapterGone banner fired (via
-        // byStatus[404]) but the editor stayed writable, every
-        // debounced auto-save deterministically 404'd, and the banner
-        // re-fired on each save. Lock on status === 404 too so the
-        // pair holds whether or not the envelope survived the proxy
-        // chain.
+        //
+        // S1 (agentic-review 2026-05-26): the lock predicate is now
+        // `terminal || possiblyCommitted`, both captured from the
+        // MappedError at the in-loop break sites. The scope is the
+        // single source of truth: chapter.save.terminalCodes lists
+        // UPDATE_READ_FAILURE + CORRUPT_CONTENT (5xx terminal codes),
+        // chapter.save.terminalStatuses lists 404 (covers both coded
+        // NOT_FOUND and bare-status 404 from envelope-stripping proxies
+        // per S3 review 2026-04-26), and chapter.save.committed flips
+        // possiblyCommitted on 2xx BAD_JSON. Adding a fourth terminal
+        // code or status is now genuinely a one-line scope edit — the
+        // hand-coded list this branch used to carry (status === 404 ||
+        // code === "BAD_JSON" || code === "UPDATE_READ_FAILURE" ||
+        // code === "CORRUPT_CONTENT") is gone.
         if (
           terminalSaveError &&
-          (terminalSaveError.status === 404 ||
-            terminalSaveError.code === "BAD_JSON" ||
-            terminalSaveError.code === "UPDATE_READ_FAILURE" ||
-            terminalSaveError.code === "CORRUPT_CONTENT")
+          (terminalSaveError.terminal || terminalSaveError.possiblyCommitted)
         ) {
           onRequestEditorLockRef.current?.(terminalSaveError.message);
         }
@@ -835,8 +870,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         if (isAborted(err)) return;
         console.warn("Failed to load chapter:", err);
         if (token.isStale()) return;
-        const { message } = mapApiError(err, "chapter.load");
-        if (message) setError(message);
+        applyMappedError(mapApiError(err, "chapter.load"), { onMessage: setError });
       }
     },
     [cancelInFlightSave, selectChapterSeq, selectChapterOp],
@@ -913,13 +947,17 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // without flipping EditorPage into the full-screen error branch.
         // Falling back to setError preserves the legacy behavior when no
         // callback is supplied (e.g. snapshot restore reload).
-        const { message } = mapApiError(err, "chapter.load");
-        if (!message) return "failed";
-        if (onError) {
-          onError(message);
-        } else {
-          setError(message);
-        }
+        const mapped = mapApiError(err, "chapter.load");
+        if (mapped.message === null) return "failed";
+        applyMappedError(mapped, {
+          onMessage: (message) => {
+            if (onError) {
+              onError(message);
+            } else {
+              setError(message);
+            }
+          },
+        });
         return "failed";
       }
     },
@@ -1027,8 +1065,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
                 // as if the project had no chapters left.
                 console.warn("Failed to load chapter after delete:", err);
                 if (token.isStale()) return true;
-                const { message } = mapApiError(err, "chapter.load");
-                if (message) onError?.(message);
+                applyMappedError(mapApiError(err, "chapter.load"), {
+                  onMessage: (message) => onError?.(message),
+                });
                 setActiveChapter(null);
                 setChapterWordCount(0);
               }
@@ -1044,8 +1083,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           // caller (happens in practice in tests too).
           if (s.aborted) return false;
           console.warn("Failed to delete chapter:", err);
-          const { message } = mapApiError(err, "chapter.delete");
-          if (message) onError?.(message);
+          applyMappedError(mapApiError(err, "chapter.delete"), {
+            onMessage: (message) => onError?.(message),
+          });
           return false;
         }
       });
@@ -1248,13 +1288,13 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       } catch (err) {
         if (statusSignal.aborted) return;
         if (token.isStale()) return; // newer call owns state
-        const { message, possiblyCommitted } = mapApiError(err, "chapter.updateStatus");
+        const mapped = mapApiError(err, "chapter.updateStatus");
         // I11 (follow-on from the new AbortController): an ABORTED
         // error means a later click cancelled this PATCH mid-flight —
         // the newer click already owns the optimistic state and is
         // driving its own PATCH. Reverting here would stomp the live
         // call. Mirror saveAbortRef's ABORTED short-circuit.
-        if (message === null) return;
+        if (mapped.message === null) return;
         // I6 (2026-04-23): 2xx BAD_JSON means the server committed the
         // new status but the response body was unreadable. A revert
         // here either silently no-ops (the reload GET returns the new
@@ -1262,13 +1302,13 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // state (local revert). Keep the optimistic update — the
         // committed copy below tells the user the response was
         // ambiguous, and the next chapter load will reconcile state.
-        if (possiblyCommitted) {
+        if (mapped.possiblyCommitted) {
           // I21: the server likely committed the new status despite
           // the unreadable body. Advance the confirmed cache so a
           // later status change captures this value, not the previous
           // one, as the baseline.
           confirmedStatusRef.current[chapterId] = status;
-          if (message) onError?.(message);
+          if (mapped.message) onError?.(mapped.message);
           return;
         }
         // Revert by reloading from server, falling back to local revert
@@ -1334,7 +1374,11 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // Status change failures are non-fatal — the revert already restored consistent state.
         // Call the optional onError callback for the caller to display (e.g., as a dismissible banner),
         // rather than setError which triggers the full-page error overlay.
-        if (message) onError?.(message);
+        // S4 fix (Task 29 in 4b.3c.2) will add a setError fallback when onError is absent; this
+        // migration mirrors the pre-S4 shape (only onError?.(message), no fallback).
+        applyMappedError(mapped, {
+          onMessage: (message) => onError?.(message),
+        });
       }
     },
     [statusChangeSeq, statusChangeOp],
@@ -1373,8 +1417,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // Don't call setError — that triggers the full-page error overlay.
         // Rename failures are non-fatal; surface via the optional callback
         // so callers can display inline (same pattern as handleStatusChange).
-        const { message } = mapApiError(err, "chapter.rename");
-        if (message) onError?.(message);
+        applyMappedError(mapApiError(err, "chapter.rename"), {
+          onMessage: (message) => onError?.(message),
+        });
       }
     },
     [renameChapterOp],

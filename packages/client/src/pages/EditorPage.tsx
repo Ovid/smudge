@@ -40,7 +40,13 @@ import { api } from "../api/client";
 // only invariant holds at every call site. The barrel re-exports
 // the same class.
 import { ApiRequestError } from "../errors";
-import { mapApiError, mapApiErrorMessage, isAborted, isNotFound } from "../errors";
+import {
+  mapApiError,
+  mapApiErrorMessage,
+  applyMappedError,
+  isAborted,
+  isNotFound,
+} from "../errors";
 import { clearCachedContent, clearAllCachedContent } from "../hooks/useContentCache";
 import { safeSetEditable } from "../utils/editorSafeOps";
 import { Logo } from "../components/Logo";
@@ -1256,8 +1262,9 @@ export function EditorPage() {
           if (s.aborted) return;
           console.warn("Failed to load chapter statuses:", err);
           if (attempts >= 2) {
-            const { message } = mapApiError(err, "chapterStatus.fetch");
-            if (message) setActionError(message);
+            applyMappedError(mapApiError(err, "chapterStatus.fetch"), {
+              onMessage: setActionError,
+            });
             return;
           }
           attempts++;
@@ -1398,9 +1405,21 @@ export function EditorPage() {
         // handleSelectChapterWithFlush void this promise via the sidebar
         // click handler and have no try/catch. Convert to a save-failed
         // banner + false return — the same shape as a flushed:false reject.
+        //
+        // S2 (agentic-review 2026-05-26): the chapter.flushBeforeNavigate
+        // scope was added in this PR for this exact case (flush failure
+        // observed BEFORE navigation completes) but had been wired only
+        // to handleSelectChapterWithFlush's defensive outer catch, which
+        // is unreachable today (this catch already converts throws to a
+        // banner+false return). Route the mapping here so the scope has
+        // a real reachable site and the NETWORK case gets the scope's
+        // transient-specific `flushBeforeNavigateFailedNetwork` copy
+        // instead of the generic viewSwitchSaveFailed string.
         safeSetEditable(editorRef, true);
         console.warn("switchToView: flushSave threw", err);
-        setActionError(STRINGS.editor.viewSwitchSaveFailed);
+        applyMappedError(mapApiError(err, "chapter.flushBeforeNavigate"), {
+          onMessage: setActionError,
+        });
         return false;
       }
       if (!flushed) {
@@ -1509,8 +1528,17 @@ export function EditorPage() {
         await handleSelectChapter(chapterId);
       } catch (err) {
         console.warn("handleSelectChapterWithFlush failed", err);
-        const { message } = mapApiError(err, "chapter.load");
-        if (message) setActionError(message);
+        // S2 (agentic-review 2026-05-26): this outer catch is defensive
+        // — switchToView converts its own throws to false+banner, and
+        // handleSelectChapter catches all its own errors. The only path
+        // that can reach this catch is a future refactor that
+        // reintroduces a throw from handleSelectChapter (chapter.load
+        // context). The chapter.flushBeforeNavigate scope was relocated
+        // to switchToView's catch (the actual flush-throw site) where
+        // its copy is meaningful.
+        applyMappedError(mapApiError(err, "chapter.load"), {
+          onMessage: setActionError,
+        });
       }
     },
     [handleSelectChapter, switchToView, setActionError],
@@ -1578,8 +1606,7 @@ export function EditorPage() {
             navigate("/");
             return;
           }
-          const { message } = mapApiError(err, "project.load");
-          if (message) setActionError(message);
+          applyMappedError(mapApiError(err, "project.load"), { onMessage: setActionError });
         });
     }
   }, [slug, setProject, setActionError, navigate, mutation, isActionBusy, settingsRefreshOp]);
