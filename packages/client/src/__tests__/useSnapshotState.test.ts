@@ -728,17 +728,13 @@ describe("useSnapshotState", () => {
     expect(mapApiError(r.error, "snapshot.restore").message).toBeNull();
   });
 
-  it("PINNED (4b.3c.3 S5): a pre-send sync throw currently propagates uncaught — fix routes it to NETWORK via dispatched flag", async () => {
-    // restoreOp.run sits OUTSIDE the try block, so a synchronous throw
-    // from api.snapshots.restore (a "pre-send programming bug" — the
-    // request never reached the wire) propagates out of restoreSnapshot
-    // as a rejected promise instead of being normalized into the
-    // discriminated RestoreResult shape that callers expect. Plan-vs-
-    // code finding: the 4b.3c.3 plan claimed current behaviour was
-    // makeClientCommittedError, but the empirical probe (subsequently
-    // removed) confirmed uncaught rejection. Task 42's fix restructures
-    // restoreOp.run inside the try and uses a `dispatched` flag to route
-    // post-send throws to committed and pre-send throws to NETWORK.
+  it("S5 (4b.3c.3): a pre-send sync throw is caught and routed to NETWORK", async () => {
+    // restoreOp.run now lives inside the try, so a sync throw from
+    // api.snapshots.restore (request never reached the wire) is caught
+    // here. The dispatched flag stays false because api.snapshots.restore
+    // never returned a promise, so the catch routes to
+    // makeClientNetworkError — which mapApiError("snapshot.restore")
+    // surfaces via the scope.network banner (transient retry copy).
     vi.mocked(api.snapshots.restore).mockImplementation(() => {
       throw new Error("pre-send programming bug");
     });
@@ -759,11 +755,46 @@ describe("useSnapshotState", () => {
         caught = err;
       }
     });
-    // PINNED: current code throws uncaught; restoreSnapshot's return
-    // value is never assigned.
-    expect(caught).toBeInstanceOf(Error);
-    expect((caught as Error).message).toBe("pre-send programming bug");
-    expect(r).toBeUndefined();
+    expect(caught).toBeUndefined();
+    expect(r?.ok).toBe(false);
+    if (!r?.error) throw new Error("unreachable");
+    expect(r.error.status).toBe(0);
+    expect(r.error.code).toBe("NETWORK");
+    const mapped = mapApiError(r.error, "snapshot.restore");
+    expect(mapped.transient).toBe(true);
+    expect(mapped.message).toBe(STRINGS.snapshots.restoreNetworkFailed);
+  });
+
+  it("S5 (4b.3c.3): a post-send non-ApiRequestError throw still routes to committed", async () => {
+    // Complement to the pre-send pin: when api.snapshots.restore
+    // successfully returns a promise (dispatched=true) and a later
+    // bookkeeping step throws (e.g. localStorage.removeItem in Safari
+    // private mode), the conservative committed path stands — the
+    // server likely persisted the restore and its auto-snapshot, so the
+    // user must see the persistent lock banner rather than a retry
+    // prompt that would double-commit. mockRejectedValue is the
+    // post-send equivalent: api.snapshots.restore returns a promise
+    // (dispatched=true) that then rejects.
+    vi.mocked(api.snapshots.restore).mockRejectedValue(new Error("post-send bookkeeping"));
+    const { result } = renderHook(() => useSnapshotState("ch-1"));
+    let r:
+      | {
+          ok: boolean;
+          error?: ApiRequestError;
+          staleChapterSwitch?: boolean;
+          restoredChapterId?: string;
+        }
+      | undefined;
+    await act(async () => {
+      r = await result.current.restoreSnapshot("snap-1");
+    });
+    expect(r?.ok).toBe(false);
+    if (!r?.error) throw new Error("unreachable");
+    expect(r.error.status).toBe(200);
+    expect(r.error.code).toBe("BAD_JSON");
+    const mapped = mapApiError(r.error, "snapshot.restore");
+    expect(mapped.possiblyCommitted).toBe(true);
+    expect(mapped.message).toBe(STRINGS.snapshots.restoreResponseUnreadable);
   });
 
   it("leaves count null when list fetch fails so badge stays hidden", async () => {
