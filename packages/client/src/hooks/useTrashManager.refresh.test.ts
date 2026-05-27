@@ -14,13 +14,15 @@ function makeProject(id: string, slug: string): ProjectWithChapters {
     target_deadline: null,
     created_at: "2026-05-27T00:00:00.000Z",
     updated_at: "2026-05-27T00:00:00.000Z",
+    deleted_at: null,
+    author_name: null,
     chapters: [],
   };
 }
 
 function makeTrashOp(promise: Promise<Chapter[]>, signal: AbortSignal): AbortableAsyncOperation {
   return {
-    run: vi.fn(() => ({ promise, signal })),
+    run: vi.fn(() => ({ promise, signal })) as unknown as AbortableAsyncOperation["run"],
     abort: vi.fn(),
   };
 }
@@ -70,10 +72,7 @@ describe("refreshTrashList", () => {
     const project = makeProject("p-1", "alpha");
     const projectRef = { current: project };
     const controller = new AbortController();
-    const err = new ApiRequestError("Internal Server Error", 500, {
-      code: "INTERNAL",
-      message: "Internal Server Error",
-    });
+    const err = new ApiRequestError("Internal Server Error", 500, "INTERNAL");
     const trashOp = makeTrashOp(Promise.reject(err), controller.signal);
 
     const result = await refreshTrashList(project, projectRef, trashOp);
@@ -100,10 +99,7 @@ describe("refreshTrashList", () => {
     const projectB = makeProject("p-2", "beta");
     const projectRef = { current: projectA };
     const controller = new AbortController();
-    const err = new ApiRequestError("Internal Server Error", 500, {
-      code: "INTERNAL",
-      message: "Internal Server Error",
-    });
+    const err = new ApiRequestError("Internal Server Error", 500, "INTERNAL");
     const promise = Promise.reject(err).catch((e) => {
       projectRef.current = projectB;
       throw e;
