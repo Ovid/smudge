@@ -15,6 +15,7 @@ import {
   isApiError,
   isAborted,
   isClientError,
+  isNotFound,
 } from "../errors";
 
 export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
@@ -44,11 +45,20 @@ export interface UseProjectEditorOptions {
   // Hook consumers that don't own an editor (tests, storybook) may
   // omit it.
   onRequestEditorLock?: (message: string) => void;
+  // S11 (4b.3c.3): fires when handleCreateChapter's POST hits a 404,
+  // i.e. the project was deleted between sidebar render and the POST
+  // landing. EditorPage wires this to navigate("/"); the hook itself
+  // stays router-agnostic (no useNavigate import). Hook consumers that
+  // can't navigate (tests, storybook) may omit it — falls back to the
+  // pre-fix onError banner.
+  onProjectNotFound?: () => void;
 }
 
 export function useProjectEditor(slug: string | undefined, options?: UseProjectEditorOptions) {
   const onRequestEditorLockRef = useRef(options?.onRequestEditorLock);
   onRequestEditorLockRef.current = options?.onRequestEditorLock;
+  const onProjectNotFoundRef = useRef(options?.onProjectNotFound);
+  onProjectNotFoundRef.current = options?.onProjectNotFound;
   const [project, setProject] = useState<ProjectWithChapters | null>(null);
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
   const [chapterReloadKey, setChapterReloadKey] = useState(0);
@@ -115,6 +125,16 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // existing projectRef/projectSlugRef drift checks after the await are
   // orthogonal (response-discard) and remain.
   const createChapterOp = useAbortableAsyncOperation();
+  // I1 (review 2026-05-27 round 2): per-create epoch token. Bumped at
+  // every handleCreateChapter entry; the recovery branch's post-await
+  // .then checks the token before touching state, so a recovery GET
+  // from Create-A is silently discarded once Create-B has started
+  // (whether B succeeded or also entered its own recovery branch).
+  // Closes the cross-create race where A's stale recovery snapshot
+  // would overwrite B's successful chapter merge and silently drop B
+  // from the sidebar. Mirrors useTrashManager's restoreSeq (I2 round 1)
+  // and the existing statusChangeSeq pattern at line 122.
+  const createChapterSeq = useAbortableSequence();
   // C-6 (Phase 4b.3b): loadProject routes both its api.projects.get and
   // its api.chapters.get through this single hook so one unmount aborts
   // both. Replaces the pre-migration `let cancelled = false` flag — the
@@ -199,6 +219,26 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // target the actual server-side value. Parallels
   // confirmedTimezoneRef / confirmedFieldsRef in ProjectSettingsDialog.
   const confirmedStatusRef = useRef<Record<string, string | undefined>>({});
+  // S1 (review 2026-05-27): one helper for the bulk reseed shape. The
+  // three pre-existing call sites (loadProject success, handleCreateChapter
+  // committed-recovery, and the public replaceConfirmedStatusesFromProject
+  // exposed to useTrashManager) all wrote the identical
+  // `Object.fromEntries(refreshed.chapters.map(...))` body inline. The
+  // ref is stable, so empty deps is correct.
+  const replaceConfirmedStatusesFromProject = useCallback((refreshed: ProjectWithChapters) => {
+    confirmedStatusRef.current = Object.fromEntries(
+      refreshed.chapters.map((c) => [c.id, c.status]),
+    );
+  }, []);
+  // OOSS3 (review 2026-05-27 round 3): memoize seedConfirmedStatus
+  // so useTrashManager's seedConfirmedStatusRef effect (which lists it
+  // as a dep) doesn't re-run on every parent render. The new sibling
+  // replaceConfirmedStatusesFromProject above IS memoized; the
+  // asymmetry was visible after the I4 (4b.3c.3) change. Ref is
+  // stable, so empty deps is correct.
+  const seedConfirmedStatus = useCallback((id: string, status: string) => {
+    confirmedStatusRef.current[id] = status;
+  }, []);
   // I22 (review 2026-04-24): recovery GETs fired by BAD_JSON catches
   // in handleCreateChapter / handleUpdateProjectTitle / handleStatusChange
   // need an AbortController so unmount drops the in-flight recovery.
@@ -304,7 +344,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // server response. Every chapter's status here is server-truth
         // at load time; subsequent revert paths read from this ref so
         // they don't stomp to an optimistic value.
-        confirmedStatusRef.current = Object.fromEntries(data.chapters.map((c) => [c.id, c.status]));
+        replaceConfirmedStatusesFromProject(data);
         // If the cached activeChapter belongs to a different project (e.g.
         // in-place slug change that isn't a rename), the `!activeChapterRef`
         // guard would skip loading the new project's first chapter, and the
@@ -341,7 +381,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       }
     });
     void promise;
-  }, [slug, loadProjectOp]);
+  }, [slug, loadProjectOp, replaceConfirmedStatusesFromProject]);
 
   const handleSave = useCallback(
     async (content: Record<string, unknown>, chapterId?: string): Promise<boolean> => {
@@ -679,6 +719,14 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       const slug = projectSlugRef.current;
       const projectId = projectRef.current?.id;
       if (!slug || !projectId) return;
+      // I1 (review 2026-05-27 round 2): bump the per-create epoch BEFORE
+      // anything else so any older create's still-pending recovery GET is
+      // invalidated. The token is checked inside that GET's await branch
+      // (below) so a stale recovery response from Create-A is silently
+      // discarded once Create-B has started — closing the cross-create
+      // race where A's snapshot would overwrite B's successful chapter
+      // merge and silently drop B from the sidebar.
+      const createToken = createChapterSeq.start();
       // S6 (review 2026-04-21) + C1 (review 2026-04-24): the post-await
       // drift guard below combines two checks.
       //   1. Project id captured at POST time vs projectRef.current?.id
@@ -747,10 +795,33 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // a "Failed to create chapter: ABORTED" warning, violating
         // CLAUDE.md §Testing Philosophy zero-warnings rule.
         if (isAborted(err)) return;
-        console.warn("Failed to create chapter:", err);
+        // I3 (review 2026-05-27): drift guards run BEFORE the S11 404
+        // short-circuit. If the user navigated A → B mid-POST and A
+        // returned 404 (A was deleted server-side), onProjectNotFound
+        // (wired to navigate("/") in EditorPage) would otherwise yank
+        // the user out of project B for an event that's irrelevant
+        // there. The drift guards convert that stale-A 404 into a
+        // silent no-op — same discipline as the existing onError gate
+        // below, just hoisted above the navigation side-effect.
         if (projectRef.current?.id !== projectId) return;
         if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
           return;
+        // S11 (4b.3c.3): a 404 means the project was deleted between
+        // the sidebar render and the POST landing. The default banner
+        // (createChapterProjectGone) was the wrong UX because the
+        // project no longer exists for the user to act on — fire the
+        // navigate-home hook instead. The createChapterProjectGone
+        // string stays in scopes.ts as a defensive fallback for the
+        // option-omitted consumer (tests, storybook).
+        if (isNotFound(err)) {
+          if (onProjectNotFoundRef.current) {
+            onProjectNotFoundRef.current();
+            return;
+          }
+          // No navigation hook wired: fall through so the dismissible
+          // banner stands as a recoverable UX.
+        }
+        console.warn("Failed to create chapter:", err);
         // I4: route through the onError callback (same pattern as
         // handleRenameChapter / handleStatusChange / handleDeleteChapter)
         // so a recoverable failure surfaces as a dismissible banner
@@ -786,39 +857,75 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           createRecoveryAbortRef.current?.abort();
           const recoveryController = new AbortController();
           createRecoveryAbortRef.current = recoveryController;
+          // S1 (review 2026-05-27 round 2): use the freshest slug at
+          // the time we know we need it. The handler-entry `slug`
+          // closure can lag if handleUpdateProjectTitle lands between
+          // create POST dispatch and this catch firing — the rename
+          // writes projectSlugRef.current to the new slug, but the
+          // captured `slug` still points at the dead old one. A GET
+          // against the old slug 404s, the catch's devWarn logs and
+          // the post-recovery banner surfaces with no sidebar refresh.
+          // Mirrors useTrashManager.handleRestore's S2 fix.
+          //
+          // S2 (review 2026-05-27 round 3): drop the `?? slug`
+          // fallback. The entry-time guards at 797-799 protect against
+          // cross-project navigation, so projectSlugRef.current being
+          // undefined here is unreachable in practice. If a future
+          // refactor weakens those guards, falling back to the
+          // (known-stale) captured `slug` would fire a doomed GET
+          // (404 → devWarn) against a dead slug; skip the recovery
+          // GET entirely and fall through to the committed banner
+          // dispatch below.
+          const recoverySlug = projectSlugRef.current;
           try {
-            const refreshed = await api.projects.get(slug, recoveryController.signal);
-            if (recoveryController.signal.aborted) return;
-            // Merge only if the user is still on the same project (by
-            // id — stable across rename, changes on cross-project
-            // navigation). The prior slug-OR check let a stale
-            // recovery response merge into a different project's
-            // state after the user navigated away AND the new project
-            // finished loading (the two refs then realign to the new
-            // slug, making the OR evaluate true).
-            if (projectRef.current?.id === projectId) {
-              setProject(refreshed);
-              // C2 (review 2026-04-25): re-seed the confirmed-status cache
-              // from the refreshed project. The recovery branch is a fresh
-              // server snapshot, so it carries the authoritative status
-              // for every chapter — same discipline as loadProject's seed.
-              // Without this, the newly-created chapter (and any other row
-              // whose status changed server-side between initial load and
-              // recovery) has no cache entry, and a later revert silently
-              // skips.
-              confirmedStatusRef.current = Object.fromEntries(
-                refreshed.chapters.map((c) => [c.id, c.status]),
-              );
-              const added = refreshed.chapters.filter((c) => !previousChapterIds.has(c.id));
-              if (added.length > 0) {
-                // Pick the highest sort_order: the server appends new
-                // chapters to the end. If somehow more than one row
-                // appeared (unexpected), the most-recently-appended
-                // one is still the best candidate for the user's
-                // intended click.
-                const newest = added.reduce((a, b) => (a.sort_order > b.sort_order ? a : b));
-                setActiveChapter(newest);
-                setChapterWordCount(countWords(newest.content));
+            // S2 (round 3): no slug → skip the GET entirely. We stay
+            // inside the try so the finally still nulls the ref, and
+            // fall through to the message dispatch below.
+            if (recoverySlug) {
+              const refreshed = await api.projects.get(recoverySlug, recoveryController.signal);
+              if (recoveryController.signal.aborted) return;
+              // I1 (review 2026-05-27 round 2): sequence guard. If a newer
+              // handleCreateChapter has started between this recovery GET's
+              // dispatch and resolution, createToken is stale and the
+              // stale snapshot must not touch state. Pre-fix, a successful
+              // Create-B landing while Create-A's recovery GET was in
+              // flight could see GET-A overwrite B's chapter merge —
+              // silently dropping B from the sidebar and (via the
+              // previousChapterIds capture inside the catch) yanking the
+              // user back onto one of A's chapters. The seq guard makes
+              // the previousChapterIds capture-timing subsidiary moot
+              // because the whole post-await block bails before reaching
+              // it.
+              if (createToken.isStale()) return;
+              // Merge only if the user is still on the same project (by
+              // id — stable across rename, changes on cross-project
+              // navigation). The prior slug-OR check let a stale
+              // recovery response merge into a different project's
+              // state after the user navigated away AND the new project
+              // finished loading (the two refs then realign to the new
+              // slug, making the OR evaluate true).
+              if (projectRef.current?.id === projectId) {
+                setProject(refreshed);
+                // C2 (review 2026-04-25): re-seed the confirmed-status cache
+                // from the refreshed project. The recovery branch is a fresh
+                // server snapshot, so it carries the authoritative status
+                // for every chapter — same discipline as loadProject's seed.
+                // Without this, the newly-created chapter (and any other row
+                // whose status changed server-side between initial load and
+                // recovery) has no cache entry, and a later revert silently
+                // skips.
+                replaceConfirmedStatusesFromProject(refreshed);
+                const added = refreshed.chapters.filter((c) => !previousChapterIds.has(c.id));
+                if (added.length > 0) {
+                  // Pick the highest sort_order: the server appends new
+                  // chapters to the end. If somehow more than one row
+                  // appeared (unexpected), the most-recently-appended
+                  // one is still the best candidate for the user's
+                  // intended click.
+                  const newest = added.reduce((a, b) => (a.sort_order > b.sort_order ? a : b));
+                  setActiveChapter(newest);
+                  setChapterWordCount(countWords(newest.content));
+                }
               }
             }
           } catch (err) {
@@ -829,8 +936,31 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             // post-recovery message lands.
             devWarn("handleCreateChapter recovery GET failed", recoveryController.signal, err);
             // Refresh is best-effort; fall through to the message dispatch.
+          } finally {
+            // S1 (review 2026-05-27 round 3): null the ref in finally
+            // so a recovery-GET reject also clears it (the original
+            // S17 fix sat at the success-arm tail and was skipped on
+            // catch and on early returns). Mirrors sibling patterns
+            // T1 (useTrashManager.handleRestore) and S19
+            // (useSnapshotState restoreFollowupAbortRef). Identity-
+            // checked so we don't clobber a controller a later handler
+            // already replaced.
+            if (createRecoveryAbortRef.current === recoveryController) {
+              createRecoveryAbortRef.current = null;
+            }
           }
         }
+        // I3 (review 2026-05-27 round 3): drift recheck before the
+        // onError/setError dispatch. The entry-time guards at 797-799
+        // ran BEFORE the possiblyCommitted recovery GET awaited; the
+        // success arm has its own createToken.isStale() guard plus a
+        // projectRef.id check at the inside-updater, but the catch
+        // arm's devWarn falls through to here. The recovery GET can
+        // take seconds — A→B nav within the window is realistic, and
+        // without this recheck the failure-axis banner fires on B for
+        // an A event (worst case: setError surfaces the full-page
+        // overlay when no onError is wired, tearing down B's editor).
+        if (projectRef.current?.id !== projectId) return;
         if (onError) {
           onError(message);
         } else {
@@ -838,7 +968,13 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         }
       }
     },
-    [cancelInFlightSave, selectChapterSeq, createChapterOp],
+    [
+      cancelInFlightSave,
+      selectChapterSeq,
+      createChapterOp,
+      createChapterSeq,
+      replaceConfirmedStatusesFromProject,
+    ],
   );
 
   const handleSelectChapter = useCallback(
@@ -984,17 +1120,31 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // Mirrors the sync-on-render pattern already used for
   // activeChapterRef (line 54), onRequestEditorLockRef (line 42), and
   // projectSlugRef (line 88) — none of which trip the rule because
-  // they're declared early enough. A structural fix (hoist this
-  // useRef above the handlers) would shift activeChapterRef et al.
-  // into the React Compiler's analysis path and surface six pre-
-  // existing `react-hooks/refs` errors that have been latent under
-  // the same bailout — a far larger blast radius than this one
-  // suppression and out of scope for S-2.
-  // eslint-disable-next-line react-hooks/immutability
+  // they're declared early enough. A previous
+  // `eslint-disable-next-line react-hooks/immutability` lived here for
+  // a React Compiler false-positive surfaced by the S-2 retry-loop
+  // expansion; the round-3 restructure of handleCreateChapter's
+  // possiblyCommitted branch (S1/S2/I3) reshaped the surrounding
+  // closure enough that the analysis bailout no longer fires, so the
+  // suppression has been removed. If a future refactor brings the
+  // warning back, the rule's hint to rename the variable is
+  // misleading (the name already ends in `Ref`); restore the disable
+  // comment with this context.
   projectRef.current = project;
 
   const handleDeleteChapter = useCallback(
     async (chapter: Chapter, onError?: (message: string) => void): Promise<boolean> => {
+      // I2 (review 2026-05-27 round 2, sweep): capture project id at
+      // entry so the catch can bail before applyMappedError → onError
+      // if the user has navigated A → B mid-delete. Pre-fix, the
+      // catch fired onError unconditionally and useTrashManager's
+      // confirmDeleteChapter (which wires onError to setActionError)
+      // surfaced A's "failed to delete" banner on B. Mirrors the
+      // captured-id discipline in handleCreateChapter / handleReorderChapters /
+      // handleUpdateProjectTitle.
+      const startedForProjectId = projectRef.current?.id;
+      const isStaleProject = () =>
+        startedForProjectId !== undefined && projectRef.current?.id !== startedForProjectId;
       // Sequence abort + controller abort + backoff-unblock. Before S3
       // this path omitted the backoff-unblock, so a retry asleep in
       // backoff could wake up after the chapter was gone. The isStale()
@@ -1071,6 +1221,11 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
                 // as if the project had no chapters left.
                 console.warn("Failed to load chapter after delete:", err);
                 if (token.isStale()) return true;
+                // I2 (review 2026-05-27 round 2, sweep): drift guard
+                // covers the inner secondary-GET catch too — without
+                // it, the post-delete chapter-load failure on A's
+                // server bubble through onError onto B's UI.
+                if (isStaleProject()) return true;
                 applyMappedError(mapApiError(err, "chapter.load"), {
                   onMessage: (message) => onError?.(message),
                 });
@@ -1089,6 +1244,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           // caller (happens in practice in tests too).
           if (s.aborted) return false;
           console.warn("Failed to delete chapter:", err);
+          // I2 (review 2026-05-27 round 2, sweep): drift guard before
+          // surfacing the failure. The catch already runs after the
+          // optimistic-no-op setProject (line 1130, walks new project's
+          // chapter list, no match, no change) — only the onError leak
+          // matters here.
+          if (isStaleProject()) return false;
           applyMappedError(mapApiError(err, "chapter.delete"), {
             onMessage: (message) => onError?.(message),
           });
@@ -1281,6 +1442,14 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   const handleStatusChange = useCallback(
     async (chapterId: string, status: string, onError?: (message: string) => void) => {
       const token = statusChangeSeq.start();
+      // I2 (review 2026-05-27 round 2, sweep): capture project id at
+      // entry. The catch's applyMappedError tail falls back to setError
+      // (full-page overlay) when onError is omitted — both surfaces are
+      // wrong-project leaks on A→B nav mid-PATCH. The drift guard bails
+      // before either fires.
+      const startedForProjectId = projectRef.current?.id;
+      const isStaleProject = () =>
+        startedForProjectId !== undefined && projectRef.current?.id !== startedForProjectId;
       // I11: abort the prior in-flight PATCH before issuing a new one so
       // overlapping status clicks cannot land out-of-order at the server.
       const { promise: statusPromise, signal: statusSignal } = statusChangeOp.run((s) =>
@@ -1322,6 +1491,17 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // driving its own PATCH. Reverting here would stomp the live
         // call. Mirror saveAbortRef's ABORTED short-circuit.
         if (mapped.message === null) return;
+        // I2 (review 2026-05-27 round 3): hoist the drift guard above
+        // the possiblyCommitted branch. The round-2 sweep added the
+        // late guard at the catch tail (still present below as
+        // defense-in-depth covering the recovery-GET await window),
+        // but the possiblyCommitted branch returns BEFORE reaching it.
+        // Without this hoist, an A→B nav mid-PATCH followed by a 200
+        // BAD_JSON would (a) write A's chapter id into B's
+        // confirmed-status cache and (b) surface A's "couldn't be read
+        // back" banner on B via onError or, when no onError is wired,
+        // setError (full-page overlay).
+        if (isStaleProject()) return;
         // I6 (2026-04-23): 2xx BAD_JSON means the server committed the
         // new status but the response body was unreadable. A revert
         // here either silently no-ops (the reload GET returns the new
@@ -1409,6 +1589,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // S4 (4b.3c.2): when no onError is wired (keyboard-shortcut path),
         // fall back to setError so the failure surfaces via the full-page
         // overlay rather than vanishing — mirrors handleReorderChapters.
+        // I2 (review 2026-05-27 round 2, sweep): bail before either
+        // surface fires if the user navigated to a different project
+        // mid-PATCH. The optimistic-update / revert state writes above
+        // already no-op on B (chapterId belongs to A, not in B's
+        // chapter list) — only the user-visible error leak matters.
+        if (isStaleProject()) return;
         applyMappedError(mapped, {
           onMessage: (message) => {
             if (onError) onError(message);
@@ -1422,6 +1608,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
 
   const handleRenameChapter = useCallback(
     async (chapterId: string, title: string, onError?: (message: string) => void) => {
+      // I2 (review 2026-05-27 round 2, sweep): capture project id at
+      // entry so the catch's onError bails when the user has navigated
+      // A → B mid-rename.
+      const startedForProjectId = projectRef.current?.id;
+      const isStaleProject = () =>
+        startedForProjectId !== undefined && projectRef.current?.id !== startedForProjectId;
       // I7: abort any prior in-flight rename before issuing a new one
       // so overlapping renames cannot commit out of typing order at the
       // server (same rationale as title/status abort refs).
@@ -1453,6 +1645,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // Don't call setError — that triggers the full-page error overlay.
         // Rename failures are non-fatal; surface via the optional callback
         // so callers can display inline (same pattern as handleStatusChange).
+        // I2 (review 2026-05-27 round 2, sweep): drift guard before
+        // onError — useTrashManager-style wrong-project leak.
+        if (isStaleProject()) return;
         applyMappedError(mapApiError(err, "chapter.rename"), {
           onMessage: (message) => onError?.(message),
         });
@@ -1489,9 +1684,17 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
     // baseline if both the PATCH and the recovery GET fail. Exposed as
     // a function rather than the ref itself so call sites cannot mutate
     // the cache to arbitrary values — only seed (id, status) pairs.
-    seedConfirmedStatus: (id: string, status: string) => {
-      confirmedStatusRef.current[id] = status;
-    },
+    // OOSS3 (round 3): see the memoized definition above.
+    seedConfirmedStatus,
+    // I4 (4b.3c.3): bulk reseed for the trash-restore committed-
+    // recovery branch. After a 200 BAD_JSON / RESTORE_READ_FAILURE on
+    // restore, the trash hook does a follow-up GET to repopulate
+    // server-truth state; the entire chapter status table needs to be
+    // replaced from that snapshot so a later PATCH on any chapter (not
+    // just the restored row) can fall back to a real baseline. Shares
+    // the internal helper used by loadProject and handleCreateChapter
+    // recovery (S1 dedup, review 2026-05-27).
+    replaceConfirmedStatusesFromProject,
     // Getter for reading the current active chapter from inside async
     // callbacks whose closure would otherwise see a stale value.
     getActiveChapter: () => activeChapterRef.current,

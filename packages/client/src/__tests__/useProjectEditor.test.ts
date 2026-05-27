@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
-import { UNTITLED_CHAPTER } from "@smudge/shared";
+import { UNTITLED_CHAPTER, type ProjectWithChapters } from "@smudge/shared";
 
 import { api, ApiRequestError } from "../api/client";
 import { useProjectEditor } from "../hooks/useProjectEditor";
@@ -2894,6 +2894,567 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("S11 (4b.3c.3): a 404 on chapter-create fires onProjectNotFound and does NOT surface the gone-banner", async () => {
+    // Post-fix: a 404 on POST /projects/:slug/chapters fires the
+    // onProjectNotFound option (EditorPage wires this to navigate("/")
+    // so the project list rehydrates), bypasses the createChapterProjectGone
+    // banner, and silences the "Failed to create chapter:" warn — a
+    // gone-project 404 is the explicit happy-recovery, not a programming
+    // bug that needs dev visibility.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError("project deleted", 404, "NOT_FOUND"),
+    );
+
+    const onProjectNotFound = vi.fn();
+    const { result } = renderHook(() => useProjectEditor("test-project", { onProjectNotFound }));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    const onError = vi.fn();
+    await act(async () => {
+      await result.current.handleCreateChapter(onError);
+    });
+
+    expect(onProjectNotFound).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
+    // Suggestion (review 2026-05-27 round 3): tighter matcher. The old
+    // form `not.toHaveBeenCalledWith("Failed to create chapter:", ...)`
+    // would silently pass if the warn shape changed but warn still
+    // fired. CLAUDE.md zero-warnings rule wants `not.toHaveBeenCalled()`
+    // on the local spy so any unexpected warn surfaces.
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("S1 (review 2026-05-27 round 3): createRecoveryAbortRef is nulled even when the recovery GET rejects — subsequent committed paths don't re-abort the prior signal", async () => {
+    // Pre-fix: the S17 null-out lived inside the recovery `try` body
+    // and only ran on the success arm. On a recovery-GET reject, the
+    // ref still pointed at the (settled) controller. A later committed
+    // handleCreateChapter's preamble `.abort()` would then flip the
+    // prior controller's signal to aborted — harmless today (no
+    // consumer reads it after settlement) but inconsistent with sibling
+    // patterns T1 (useTrashManager) and S19 (useSnapshotState) which
+    // restructure the try as try/catch/finally and put the
+    // identity-checked null in finally.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError("bad json", 200, "BAD_JSON"),
+    );
+
+    const recoverySignals: AbortSignal[] = [];
+    let getCallCount = 0;
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get).mockImplementation((_slug, signal) => {
+      getCallCount++;
+      // First call is the initial loadProject; second+ are recovery
+      // GETs.
+      if (getCallCount > 1 && signal) recoverySignals.push(signal);
+      if (getCallCount === 1) return Promise.resolve(mockProject);
+      // 2nd call (first recovery GET) — reject so the catch arm runs
+      // and finally nulls the ref.
+      if (getCallCount === 2) return Promise.reject(new ApiRequestError("get boom", 500));
+      // 3rd call (second recovery GET) — succeed.
+      return Promise.resolve(mockProject);
+    });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project?.chapters).toHaveLength(2));
+
+    const onError = vi.fn();
+    await act(async () => {
+      await result.current.handleCreateChapter(onError);
+    });
+
+    expect(recoverySignals).toHaveLength(1);
+    const firstSignal = recoverySignals[0];
+    // The recovery GET rejected, but the controller itself was never
+    // .abort()'d, so its signal.aborted starts at false.
+    expect(firstSignal?.aborted).toBe(false);
+
+    // Fire a second committed handleCreateChapter. Its recovery
+    // preamble calls `createRecoveryAbortRef.current?.abort()` — post-S1
+    // the ref is null (finally nulled it on the prior reject), so the
+    // first controller's signal stays unaborted.
+    await act(async () => {
+      await result.current.handleCreateChapter(onError);
+    });
+
+    expect(firstSignal?.aborted).toBe(false);
+    expect(recoverySignals).toHaveLength(2);
+    warnSpy.mockRestore();
+  });
+
+  it("S17 (4b.3c.3): createRecoveryAbortRef is nulled on successful recovery merge — subsequent committed paths don't re-abort the prior signal", async () => {
+    // Indirect assertion: after a successful committed-recovery merge,
+    // the recovery ref is nulled. A second committed handleCreateChapter
+    // calls `createRecoveryAbortRef.current?.abort()` at the top of its
+    // recovery branch; if the prior ref is null, that's a no-op and the
+    // first recovery controller's signal stays unaborted. Without the
+    // S17 fix the prior ref still points to the completed controller,
+    // and the second call's preamble .abort() would flip the prior
+    // signal to aborted.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const ch3 = {
+      id: "ch3",
+      project_id: "p1",
+      title: UNTITLED_CHAPTER,
+      content: null,
+      sort_order: 2,
+      word_count: 0,
+      status: "outline" as const,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+      deleted_at: null,
+    };
+    const ch4 = { ...ch3, id: "ch4", sort_order: 3 };
+    const refreshed1 = { ...mockProject, chapters: [mockChapter1, mockChapter2, ch3] };
+    const refreshed2 = { ...mockProject, chapters: [mockChapter1, mockChapter2, ch3, ch4] };
+
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError("bad json", 200, "BAD_JSON"),
+    );
+
+    const recoverySignals: AbortSignal[] = [];
+    let getCallCount = 0;
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get).mockImplementation((_slug, signal) => {
+      getCallCount++;
+      // First call is the initial loadProject; second+ are recovery GETs.
+      if (getCallCount > 1 && signal) recoverySignals.push(signal);
+      if (getCallCount === 1) return Promise.resolve(mockProject);
+      if (getCallCount === 2) return Promise.resolve(refreshed1);
+      return Promise.resolve(refreshed2);
+    });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project?.chapters).toHaveLength(2));
+
+    const onError = vi.fn();
+    await act(async () => {
+      await result.current.handleCreateChapter(onError);
+    });
+
+    // First recovery succeeded.
+    expect(recoverySignals).toHaveLength(1);
+    const firstSignal = recoverySignals[0];
+    expect(firstSignal?.aborted).toBe(false);
+
+    // Fire a second committed handleCreateChapter.
+    await act(async () => {
+      await result.current.handleCreateChapter(onError);
+    });
+
+    // S17: the first recovery's signal must stay unaborted; the ref was
+    // nulled on success so the second recovery's preamble .abort() is
+    // a no-op on null.
+    expect(firstSignal?.aborted).toBe(false);
+    expect(recoverySignals).toHaveLength(2);
+    // The second recovery's own signal is also unaborted (its own
+    // operation succeeded).
+    expect(recoverySignals[1]?.aborted).toBe(false);
+    warnSpy.mockRestore();
+  });
+
+  it("I3 (review 2026-05-27 round 3): handleCreateChapter recovery-GET catch fall-through does NOT fire onError after A→B nav", async () => {
+    // Pre-fix: the drift guards at lines 797-799 ran BEFORE entering
+    // the possiblyCommitted branch. The createToken.isStale() guard at
+    // line 876 only fires on the recovery GET's success arm. When the
+    // recovery GET catch (line 916-924) runs `devWarn(...)` and falls
+    // through, control reaches `if (onError) onError(message); else
+    // setError(message)` at lines 926-930 unconditionally. The recovery
+    // GET can take seconds (full project GET), so an A→B nav within
+    // that window is realistic. With no drift recheck, the failure-axis
+    // banner fires on B for an A event; setError (no onError wired)
+    // surfaces the full-page error overlay, tearing down B's editor
+    // session. Post-fix: add a drift recheck right before the
+    // onError/setError dispatch.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    // Order of api.projects.get calls in this test:
+    //   1. initial loadProject(slug="test-project") on first render → A
+    //   2. possiblyCommitted recovery GET (deferred — stays pending
+    //      until we navigate and reject it)
+    //   3. loadProject(slug="other-project") after rerender → B
+    let resolveRecovery!: (refreshed: unknown) => void;
+    let rejectRecovery!: (err: unknown) => void;
+    vi.mocked(api.projects.get)
+      .mockReset()
+      .mockResolvedValueOnce(mockProject) // call 1: initial load for A
+      .mockImplementationOnce(
+        () =>
+          new Promise<ProjectWithChapters>((resolve, reject) => {
+            resolveRecovery = resolve as (r: unknown) => void;
+            rejectRecovery = reject;
+          }),
+      ) // call 2: recovery GET, pending
+      .mockResolvedValueOnce(otherProject); // call 3: load for B after rerender
+
+    // 200 BAD_JSON on create → routes through possiblyCommitted (the
+    // recovery GET fires).
+    vi.mocked(api.chapters.create)
+      .mockReset()
+      .mockRejectedValueOnce(new ApiRequestError("bad body", 200, "BAD_JSON"));
+
+    const onError = vi.fn();
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    // Kick off the create — chapters.create rejects synchronously, then
+    // the catch enters possiblyCommitted and fires the recovery GET.
+    let createPromise!: Promise<void>;
+    act(() => {
+      createPromise = result.current.handleCreateChapter(onError);
+    });
+    // Wait for the recovery GET to have been dispatched.
+    await waitFor(() => expect(api.projects.get).toHaveBeenCalledTimes(2));
+
+    // Navigate A → B while the recovery GET is still pending. This
+    // fires a third api.projects.get for the new slug.
+    rerender({ slug: "other-project" });
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    // Reject the recovery GET. The catch fires devWarn and falls
+    // through to the onError dispatch — pre-fix, that ran
+    // unconditionally on B for an event that happened on A.
+    await act(async () => {
+      rejectRecovery(new ApiRequestError("recovery boom", 500, "INTERNAL_ERROR"));
+      await createPromise;
+    });
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(result.current.error).toBeNull();
+    // Suppress unused-warning lint
+    void resolveRecovery;
+    warnSpy.mockRestore();
+  });
+
+  it("I3 (review 2026-05-27): a 404 on a stale cross-project POST does NOT fire onProjectNotFound after A→B nav", async () => {
+    // Pre-fix: the S11 isNotFound short-circuit at lines 767-774 fired
+    // BEFORE the cross-project drift guards at 776-778. If the user
+    // navigated A → B while A's create-POST was in flight and A
+    // returned 404, onProjectNotFound (wired to navigate("/") in
+    // EditorPage) ran and yanked the user back to the project list
+    // even though they were actively viewing B. Post-fix: the drift
+    // guards run first, so a stale-A 404 after the user is on B is
+    // silently dropped — the user keeps editing B.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    let rejectCreate!: (err: unknown) => void;
+    vi.mocked(api.chapters.create)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectCreate = reject;
+          }),
+      );
+
+    const onProjectNotFound = vi.fn();
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug, { onProjectNotFound }),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    // Kick off the create against Project A.
+    let createPromise!: Promise<void>;
+    act(() => {
+      createPromise = result.current.handleCreateChapter();
+    });
+
+    // Navigate to Project B before the POST settles.
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    rerender({ slug: "other-project" });
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    // Reject the stale A POST with a 404 (A was just deleted server-side).
+    await act(async () => {
+      rejectCreate(new ApiRequestError("project deleted", 404, "NOT_FOUND"));
+      await createPromise;
+    });
+
+    // The user is on B — onProjectNotFound must NOT fire; the stale-A
+    // 404 is irrelevant to B and is silently dropped.
+    expect(onProjectNotFound).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("cross-project nav guard (sweep): handleDeleteChapter does NOT fire onError on the wrong project after A→B nav", async () => {
+    // Sibling of I2 (handleRestore) and I1/I3 (handleCreateChapter):
+    // handleDeleteChapter's catch routed straight through onError with no
+    // project-identity drift guard. If the user clicked Delete on
+    // project A and navigated A → B before the POST settled,
+    // useTrashManager's confirmDeleteChapter (which passes setActionError
+    // as onError) surfaced A's "failed to delete" banner on B.
+    // Post-fix: capture projectId at entry; the catch bails before
+    // applyMappedError when projectRef has drifted away from the
+    // captured id.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    let rejectDelete!: (err: unknown) => void;
+    vi.mocked(api.chapters.delete)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectDelete = reject;
+          }),
+      );
+
+    const onError = vi.fn();
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    // Fire delete against project A — POST is pending.
+    let deletePromise!: Promise<unknown>;
+    act(() => {
+      deletePromise = result.current.handleDeleteChapter(mockChapter2, onError);
+    });
+    await waitFor(() => expect(api.chapters.delete).toHaveBeenCalled());
+
+    // Navigate to project B before the delete settles.
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    rerender({ slug: "other-project" });
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    // Reject the stale-A delete POST.
+    await act(async () => {
+      rejectDelete(new ApiRequestError("server gone", 500, "INTERNAL_ERROR"));
+      await deletePromise;
+    });
+
+    // Drift guard: onError must NOT fire on B for an event that happened on A.
+    expect(onError).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("cross-project nav guard (sweep): handleStatusChange does NOT setError or fire onError on the wrong project after A→B nav", async () => {
+    // handleStatusChange's catch tail routed through applyMappedError
+    // with an `if (onError) onError else setError` fallback — both
+    // surfaces leak on cross-project nav. setError is the worst case
+    // (full-page error overlay).
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    let rejectPatch!: (err: unknown) => void;
+    vi.mocked(api.chapters.update)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectPatch = reject;
+          }),
+      );
+
+    const onError = vi.fn();
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    // Fire status change against A — PATCH is pending.
+    let statusPromise!: Promise<unknown>;
+    act(() => {
+      statusPromise = result.current.handleStatusChange("ch1", "revised", onError);
+    });
+    await waitFor(() => expect(api.chapters.update).toHaveBeenCalled());
+
+    // Navigate to project B.
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    rerender({ slug: "other-project" });
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    // Reject the stale-A PATCH.
+    await act(async () => {
+      rejectPatch(new ApiRequestError("server gone", 500, "INTERNAL_ERROR"));
+      await statusPromise;
+    });
+
+    expect(onError).not.toHaveBeenCalled();
+    // setError fallback also must not have fired.
+    expect(result.current.error).toBeNull();
+    warnSpy.mockRestore();
+  });
+
+  it("I2 (review 2026-05-27 round 3): handleStatusChange possiblyCommitted branch does NOT fire onError on the wrong project after A→B nav", async () => {
+    // Pre-fix: the round-2 sweep added an isStaleProject() helper and
+    // gated the catch tail's applyMappedError at line ~1545 — but the
+    // mapped.possiblyCommitted branch returns BEFORE reaching that
+    // guard. On A→B nav mid-PATCH followed by a 200 BAD_JSON
+    // (committedCodes routes through the possiblyCommitted branch),
+    // both side effects in that branch ran unconditionally:
+    //   - confirmedStatusRef.current[chapterId] = status  (writes A's
+    //     chapter id into B's confirmed-status cache; corruption bounded
+    //     by next loadProject, but still wrong)
+    //   - onError?.(mapped.message)                       (surfaces A's
+    //     "Status updated but couldn't be read back" banner on B)
+    // Post-fix: hoist `if (isStaleProject()) return;` immediately after
+    // the `mapped.message === null` ABORTED short-circuit so it gates
+    // BOTH the possiblyCommitted branch and the trailing
+    // applyMappedError.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    // 200 BAD_JSON — routes through possiblyCommitted (chapter.updateStatus
+    // declares `committed:` copy, so the mapper marks 200 BAD_JSON as
+    // possiblyCommitted: true).
+    let rejectPatch!: (err: unknown) => void;
+    vi.mocked(api.chapters.update)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectPatch = reject;
+          }),
+      );
+
+    const onError = vi.fn();
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    let statusPromise!: Promise<unknown>;
+    act(() => {
+      statusPromise = result.current.handleStatusChange("ch1", "revised", onError);
+    });
+    await waitFor(() => expect(api.chapters.update).toHaveBeenCalled());
+
+    // Navigate to project B before the PATCH settles.
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    rerender({ slug: "other-project" });
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    // Reject with 200 BAD_JSON — possiblyCommitted branch fires.
+    await act(async () => {
+      rejectPatch(new ApiRequestError("bad body", 200, "BAD_JSON"));
+      await statusPromise;
+    });
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(result.current.error).toBeNull();
+    warnSpy.mockRestore();
+  });
+
+  it("cross-project nav guard (sweep): handleRenameChapter does NOT fire onError on the wrong project after A→B nav", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    let rejectRename!: (err: unknown) => void;
+    vi.mocked(api.chapters.update)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectRename = reject;
+          }),
+      );
+
+    const onError = vi.fn();
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    let renamePromise!: Promise<unknown>;
+    act(() => {
+      renamePromise = result.current.handleRenameChapter("ch2", "New Title", onError);
+    });
+    await waitFor(() => expect(api.chapters.update).toHaveBeenCalled());
+
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    rerender({ slug: "other-project" });
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    await act(async () => {
+      rejectRename(new ApiRequestError("server gone", 500, "INTERNAL_ERROR"));
+      await renamePromise;
+    });
+
+    expect(onError).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("S11 (4b.3c.3): a 404 falls back to the createChapterProjectGone banner when onProjectNotFound is omitted", async () => {
+    // Defensive fallback for hook consumers that can't navigate (tests,
+    // storybook, or a future caller that wants the dismissible banner).
+    // The scope's byStatus[404] string stays in scopes.ts for this path.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError("project deleted", 404, "NOT_FOUND"),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    const onError = vi.fn();
+    await act(async () => {
+      await result.current.handleCreateChapter(onError);
+    });
+
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.createChapterProjectGone);
+    warnSpy.mockRestore();
+  });
+
   it("handleCreateChapter routes failures through onError callback (I4)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.create).mockRejectedValue(new Error("create boom"));
@@ -3311,6 +3872,184 @@ describe("useProjectEditor", () => {
     // The create's recovery setProject must have run — chapter ch3 lands.
     expect(result.current.project?.chapters.find((c) => c.id === "ch3")).toBeDefined();
     expect(result.current.activeChapter?.id).toBe("ch3");
+    warnSpy.mockRestore();
+  });
+
+  it("I1 (review 2026-05-27 round 2): rapid Add Chapter — a stale recovery GET-A does NOT clobber Create-B's successful merge", async () => {
+    // Pre-fix: handleCreateChapter's recovery branch had no
+    // sequence-token guard around its post-await setProject /
+    // replaceConfirmedStatusesFromProject / setActiveChapter writes.
+    // Reachable sequence:
+    //   1. POST-A returns 200 BAD_JSON → catch dispatches recovery GET-A
+    //      (pending).
+    //   2. Before GET-A resolves, user clicks Add Chapter again →
+    //      POST-B succeeds → happy-path setProject merges ch-b.
+    //   3. GET-A resolves with a snapshot captured BEFORE ch-b landed.
+    //      Pre-fix: setProject(refreshed-A) replaced the whole project,
+    //      silently dropping ch-b from the sidebar; the post-S17
+    //      ref-nulling made the race more likely because the second
+    //      create no longer aborted A's still-pending recovery.
+    // Post-fix: useAbortableSequence's createToken captured at
+    // handleCreateChapter-A entry goes stale when Create-B's start()
+    // bumps the epoch; GET-A's .then bails before touching state.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const chB = {
+      id: "ch-b",
+      project_id: "p1",
+      title: UNTITLED_CHAPTER,
+      content: null,
+      sort_order: 2,
+      word_count: 0,
+      status: "outline" as const,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+      deleted_at: null,
+    };
+    // Stale snapshot captured BEFORE B landed — no ch-b in chapters.
+    const staleSnapshotA = {
+      ...mockProject,
+      chapters: [mockChapter1, mockChapter2],
+    };
+
+    // Create A rejects 200 BAD_JSON; Create B resolves with ch-b.
+    vi.mocked(api.chapters.create)
+      .mockReset()
+      .mockImplementationOnce(() =>
+        Promise.reject(new ApiRequestError("bad json", 200, "BAD_JSON")),
+      )
+      .mockImplementationOnce(() => Promise.resolve(chB));
+
+    // Defer recovery GET-A so Create-B can run before it resolves.
+    let resolveGetA!: (p: typeof staleSnapshotA) => void;
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockImplementationOnce(
+        () =>
+          new Promise<typeof staleSnapshotA>((resolve) => {
+            resolveGetA = resolve;
+          }),
+      );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project?.chapters).toHaveLength(2));
+
+    // Fire Create-A — POST rejects synchronously → catch enters the
+    // recovery branch and `await api.projects.get(...)` pins the
+    // handleCreateChapter promise on GET-A (recovery is awaited by the
+    // handler, not fire-and-forget). Do NOT await it here.
+    let createAPromise!: Promise<void>;
+    act(() => {
+      createAPromise = result.current.handleCreateChapter();
+    });
+    // Let microtasks run so the POST-A rejection and the GET-A dispatch
+    // both settle into their pending state.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // Suggestion (review 2026-05-27 round 3): toHaveBeenCalledTimes(2)
+    // would still pass if a future regression fired GET against the
+    // wrong slug. Pin the call-args so cross-create test catches
+    // recovery-GET targeting drift.
+    expect(api.projects.get).toHaveBeenCalledTimes(2);
+    expect(api.projects.get).toHaveBeenLastCalledWith("test-project", expect.any(AbortSignal));
+
+    // Fire Create-B → POST-B resolves with ch-b → happy-path setProject
+    // merges ch-b into project state. createSeq.start() at Create-B
+    // entry also invalidates Create-A's token.
+    await act(async () => {
+      await result.current.handleCreateChapter();
+    });
+    const chapterIdsAfterB = result.current.project?.chapters.map((c) => c.id);
+    expect(chapterIdsAfterB).toContain("ch-b");
+
+    // Resolve GET-A with the stale snapshot (no ch-b). Create-A's
+    // recovery branch now runs its post-await checks — with the
+    // sequence guard, it must bail before setProject / reseed /
+    // setActiveChapter.
+    await act(async () => {
+      resolveGetA(staleSnapshotA);
+      await createAPromise;
+    });
+
+    // Sequence guard: GET-A's .then must bail before touching state, so
+    // ch-b stays in the sidebar.
+    expect(result.current.project?.chapters.map((c) => c.id)).toContain("ch-b");
+    // And the active chapter stays on ch-b (Create-B's setActiveChapter),
+    // not silently pulled back to one of A's snapshot's chapters.
+    expect(result.current.activeChapter?.id).toBe("ch-b");
+    warnSpy.mockRestore();
+  });
+
+  it("S1 (review 2026-05-27 round 2): handleCreateChapter recovery GET uses the current slug, not the captured one (survives mid-flight rename)", async () => {
+    // Pre-fix: handleCreateChapter captured `slug` at handler entry
+    // and reused it for the recovery GET in the possiblyCommitted
+    // branch. If handleUpdateProjectTitle landed between create POST
+    // dispatch and the catch firing, projectSlugRef.current had
+    // already advanced to the new slug — but the captured `slug` was
+    // stale. The recovery GET then fetched /projects/old-slug, 404'd,
+    // and the user saw the committed banner with no sidebar refresh.
+    // Post-fix: read projectSlugRef.current at the GET call site so
+    // the freshest slug is used. Mirrors S2 in useTrashManager.ts.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const renamedProject = {
+      ...mockProject,
+      slug: "renamed-project",
+      title: "Renamed",
+    };
+
+    // Defer the create POST so the rename can land first.
+    let rejectCreate!: (err: unknown) => void;
+    vi.mocked(api.chapters.create)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectCreate = reject;
+          }),
+      );
+
+    // Rename PATCH resolves with the new slug; this updates
+    // projectSlugRef.current to "renamed-project".
+    vi.mocked(api.projects.update).mockReset().mockResolvedValue(renamedProject);
+
+    // Capture the slug the recovery GET is called with.
+    let recoveryGetSlug: string | undefined;
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockImplementationOnce((slug, _signal) => {
+        recoveryGetSlug = slug;
+        return Promise.resolve({ ...renamedProject, chapters: [mockChapter1, mockChapter2] });
+      });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project?.chapters).toHaveLength(2));
+
+    // Fire create — POST is pending.
+    let createPromise!: Promise<void>;
+    act(() => {
+      createPromise = result.current.handleCreateChapter();
+    });
+    // Wait for the POST to be dispatched.
+    await waitFor(() => expect(api.chapters.create).toHaveBeenCalled());
+
+    // Rename the project while the create POST is still in flight.
+    // This writes projectSlugRef.current = "renamed-project".
+    await act(async () => {
+      await result.current.handleUpdateProjectTitle("Renamed");
+    });
+    expect(result.current.project?.slug).toBe("renamed-project");
+
+    // Reject the create POST with 200 BAD_JSON → catch enters the
+    // recovery branch. Pre-fix: GET uses captured "test-project" →
+    // 404. Post-fix: GET uses projectSlugRef.current === "renamed-project".
+    await act(async () => {
+      rejectCreate(new ApiRequestError("bad json", 200, "BAD_JSON"));
+      await createPromise;
+    });
+
+    expect(recoveryGetSlug).toBe("renamed-project");
     warnSpy.mockRestore();
   });
 

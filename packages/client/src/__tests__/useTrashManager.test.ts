@@ -13,7 +13,7 @@ vi.mock("../api/client", async () => {
   return {
     ...actual,
     api: {
-      projects: { trash: vi.fn() },
+      projects: { trash: vi.fn(), get: vi.fn() },
       chapters: { restore: vi.fn() },
     },
   };
@@ -80,6 +80,9 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     );
 
     vi.mocked(api.projects.trash).mockResolvedValue([deleted]);
+    // I4 (4b.3c.3): committed branch now fires a recovery GET; default
+    // the mock so this test can focus on the committed-banner UX.
+    vi.mocked(api.projects.get).mockResolvedValue({ ...project, chapters: [] });
 
     const { result } = renderHook(() =>
       useTrashManager(project, project.slug, setProject, handleDeleteChapter, navigate),
@@ -101,8 +104,6 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
       expect(result.current.trashedChapters.find((c) => c.id === "ch-committed")).toBeUndefined();
     });
     expect(result.current.actionError).toBe(STRINGS.error.restoreChapterCommitted);
-    // No optimistic project mutation — we don't have the restored row.
-    expect(setProject).not.toHaveBeenCalled();
   });
 
   it("on 2xx BAD_JSON (possiblyCommitted), removes the chapter from trash and shows the committed message", async () => {
@@ -116,6 +117,9 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
       new ApiRequestError("bad body", 200, "BAD_JSON"),
     );
     vi.mocked(api.projects.trash).mockResolvedValue([deleted]);
+    // I4 (4b.3c.3): default the recovery GET so the committed branch
+    // doesn't reject on undefined.then.
+    vi.mocked(api.projects.get).mockResolvedValue({ ...project, chapters: [] });
 
     const { result } = renderHook(() =>
       useTrashManager(project, project.slug, setProject, handleDeleteChapter, navigate),
@@ -133,7 +137,6 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
       expect(result.current.trashedChapters.find((c) => c.id === "ch-badjson")).toBeUndefined();
     });
     expect(result.current.actionError).toBe(STRINGS.error.restoreChapterCommitted);
-    expect(setProject).not.toHaveBeenCalled();
   });
 
   // I5 (review 2026-04-24): api.projects.trash now accepts a signal
@@ -557,6 +560,624 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     // Sanity: the second trash signal (allocated by the second openTrash)
     // is still fresh — handleRestore did not reach into trashOp.
     expect(trashSignals[1]?.aborted).toBe(false);
+  });
+});
+
+describe("handleRestore possiblyCommitted (4b.3c.3 I4)", () => {
+  it("on 200 BAD_JSON, fires a recovery GET, merges the refreshed project, and reseeds the confirmed-status cache", async () => {
+    // The committed-recovery branch optimistically removes the row from
+    // trashedChapters (existing I2/S8 behaviour), AND now (4b.3c.3 I4)
+    // fires api.projects.get so the sidebar reflects server-truth state
+    // and the confirmed-status cache is reseeded.
+    const deleted = makeChapter({ id: "ch-pin-i4" });
+    const project = makeProject();
+    const refreshed: ProjectWithChapters = {
+      ...project,
+      chapters: [
+        makeChapter({
+          id: "ch-pin-i4",
+          status: "outline",
+          deleted_at: null,
+          sort_order: 0,
+        }),
+      ],
+    };
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    const handleDeleteChapter = vi.fn();
+    const seedConfirmedStatus = vi.fn();
+    const replaceConfirmedStatusesFromProject = vi.fn();
+
+    vi.mocked(api.chapters.restore).mockRejectedValue(
+      new ApiRequestError("bad body", 200, "BAD_JSON"),
+    );
+    vi.mocked(api.projects.trash).mockResolvedValue([deleted]);
+    vi.mocked(api.projects.get).mockResolvedValue(refreshed);
+
+    const { result } = renderHook(() =>
+      useTrashManager(project, project.slug, setProject, handleDeleteChapter, navigate, {
+        seedConfirmedStatus,
+        replaceConfirmedStatusesFromProject,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.openTrash();
+    });
+
+    await act(async () => {
+      await result.current.handleRestore("ch-pin-i4");
+    });
+
+    // Optimistic drop (carried over from existing I2 behaviour).
+    await waitFor(() => {
+      expect(result.current.trashedChapters.find((c) => c.id === "ch-pin-i4")).toBeUndefined();
+    });
+    expect(result.current.actionError).toBe(STRINGS.error.restoreChapterCommitted);
+    // Recovery GET fires against the committed-restore slug.
+    await waitFor(() => {
+      expect(api.projects.get).toHaveBeenCalledTimes(1);
+    });
+    expect(api.projects.get).toHaveBeenCalledWith(project.slug, expect.any(AbortSignal));
+    // Bulk reseed runs against the refreshed snapshot.
+    await waitFor(() => {
+      expect(replaceConfirmedStatusesFromProject).toHaveBeenCalledTimes(1);
+    });
+    expect(replaceConfirmedStatusesFromProject).toHaveBeenCalledWith(refreshed);
+    // The setProject updater is invoked; calling it with the prior
+    // project state must return the refreshed snapshot.
+    expect(setProject).toHaveBeenCalled();
+    const updater = setProject.mock.calls.at(-1)?.[0] as (
+      prev: ProjectWithChapters | null,
+    ) => ProjectWithChapters | null;
+    expect(updater(project)).toBe(refreshed);
+    // Identity guard: if the user navigated to a different project, the
+    // refreshed snapshot must NOT clobber the new project's state.
+    const otherProject: ProjectWithChapters = { ...project, id: "other-project" };
+    expect(updater(otherProject)).toBe(otherProject);
+  });
+
+  it("T1 (review 2026-05-27): restoreRecoveryAbortRef is nulled on success — subsequent restore's preamble does not re-abort the prior controller", async () => {
+    // Indirect assertion mirrors S17 (useProjectEditor createRecoveryAbortRef)
+    // and S19 (useSnapshotState restoreFollowupAbortRef): after the
+    // recovery GET .then resolves, the ref is nulled. A second
+    // committed restore calls `restoreRecoveryAbortRef.current?.abort()`
+    // at the top of its recovery branch; if the prior ref is null,
+    // that's a no-op and the first recovery controller's signal stays
+    // unaborted. Without the T1 fix the prior ref still points at the
+    // completed controller, and the second call's preamble .abort()
+    // would flip the prior signal to aborted.
+    const deletedA = makeChapter({ id: "ch-a" });
+    const deletedB = makeChapter({ id: "ch-b" });
+    const project = makeProject();
+    const refreshed: ProjectWithChapters = {
+      ...project,
+      chapters: [
+        makeChapter({ id: "ch-a", deleted_at: null, sort_order: 0 }),
+        makeChapter({ id: "ch-b", deleted_at: null, sort_order: 1 }),
+      ],
+    };
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    const handleDeleteChapter = vi.fn();
+    const replaceConfirmedStatusesFromProject = vi.fn();
+
+    vi.mocked(api.chapters.restore).mockRejectedValue(
+      new ApiRequestError("bad body", 200, "BAD_JSON"),
+    );
+    vi.mocked(api.projects.trash).mockResolvedValue([deletedA, deletedB]);
+    const recoverySignals: AbortSignal[] = [];
+    vi.mocked(api.projects.get).mockImplementation((_slug, signal) => {
+      if (signal) recoverySignals.push(signal);
+      return Promise.resolve(refreshed);
+    });
+
+    const { result } = renderHook(() =>
+      useTrashManager(project, project.slug, setProject, handleDeleteChapter, navigate, {
+        replaceConfirmedStatusesFromProject,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.openTrash();
+    });
+
+    // First committed restore — captures the first recovery signal.
+    await act(async () => {
+      await result.current.handleRestore("ch-a");
+    });
+    await waitFor(() => {
+      expect(recoverySignals).toHaveLength(1);
+    });
+    const firstSignal = recoverySignals[0];
+    expect(firstSignal?.aborted).toBe(false);
+
+    // Second committed restore — its recovery preamble runs
+    // `restoreRecoveryAbortRef.current?.abort()`. Post-T1 the ref is null,
+    // so the prior (completed) signal stays unaborted.
+    await act(async () => {
+      await result.current.handleRestore("ch-b");
+    });
+    await waitFor(() => {
+      expect(recoverySignals).toHaveLength(2);
+    });
+
+    expect(firstSignal?.aborted).toBe(false);
+    expect(recoverySignals[1]?.aborted).toBe(false);
+  });
+
+  it("I1 (review 2026-05-27): replaceConfirmedStatusesFromProject is NOT called after A→B nav during the recovery GET", async () => {
+    // Pre-fix: setProject's identity-guard updater correctly bailed when
+    // prev (project B) didn't match refreshed (A's data), but the next
+    // line `replaceConfirmedStatusesRef.current?.(refreshed)` ran
+    // unconditionally and wiped B's confirmed-status cache with A's
+    // chapter→status mapping — the C2 cache-corruption hazard. Post-fix:
+    // a projectRef captured sync-on-render gates BOTH setProject and
+    // the reseed by current-project identity. The reseed is only
+    // invoked when the user is still on the project whose recovery
+    // GET just resolved.
+    const deletedA = makeChapter({ id: "ch-a", project_id: "p1" });
+    const projectA = makeProject();
+    const projectB: ProjectWithChapters = {
+      ...projectA,
+      id: "p2",
+      slug: "project-2",
+      chapters: [],
+    };
+    const refreshedA: ProjectWithChapters = {
+      ...projectA,
+      chapters: [makeChapter({ id: "ch-a", deleted_at: null, sort_order: 0 })],
+    };
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    const handleDeleteChapter = vi.fn();
+    const replaceConfirmedStatusesFromProject = vi.fn();
+
+    vi.mocked(api.chapters.restore).mockRejectedValue(
+      new ApiRequestError("bad body", 200, "BAD_JSON"),
+    );
+    vi.mocked(api.projects.trash).mockResolvedValue([deletedA]);
+
+    // Defer the recovery GET so we can rerender with project B BEFORE
+    // .then resolves.
+    let resolveGet!: (p: ProjectWithChapters) => void;
+    vi.mocked(api.projects.get).mockImplementation(
+      () => new Promise<ProjectWithChapters>((resolve) => (resolveGet = resolve)),
+    );
+
+    const { rerender, result } = renderHook(
+      ({ project, slug }: { project: ProjectWithChapters; slug: string }) =>
+        useTrashManager(project, slug, setProject, handleDeleteChapter, navigate, {
+          replaceConfirmedStatusesFromProject,
+        }),
+      { initialProps: { project: projectA, slug: projectA.slug } },
+    );
+
+    await act(async () => {
+      await result.current.openTrash();
+    });
+
+    // Trigger the committed-recovery branch. The catch fires synchronously
+    // off the mockRejectedValue, the recovery GET is dispatched, but it
+    // stays pending until we call resolveGet below.
+    await act(async () => {
+      await result.current.handleRestore("ch-a");
+    });
+
+    expect(api.projects.get).toHaveBeenCalledTimes(1);
+    expect(replaceConfirmedStatusesFromProject).not.toHaveBeenCalled();
+
+    // Navigate A → B while the recovery GET is still in flight.
+    rerender({ project: projectB, slug: projectB.slug });
+
+    // Now resolve the GET with A's refreshed data.
+    await act(async () => {
+      resolveGet(refreshedA);
+      await Promise.resolve();
+    });
+
+    // Identity-guard pin: the reseed must NOT have run, because the
+    // user is on project B and A's snapshot would corrupt B's cache.
+    expect(replaceConfirmedStatusesFromProject).not.toHaveBeenCalled();
+  });
+
+  it("I2 (review 2026-05-27): Restore-A's recovery GET does NOT clobber Restore-B's successful state", async () => {
+    // Pre-fix: restoreRecoveryAbortRef was deliberately separate from
+    // restoreOp so a recovery GET from a prior failed restore survived
+    // the next handleRestore's restoreOp.abort(). Exploitable
+    // sequence: Restore-A returns 200 BAD_JSON → recovery GET-A
+    // fires. Before GET-A resolves, user clicks Restore-B; B's POST
+    // succeeds and setProject merges B's chapter. GET-A finally
+    // resolves with a snapshot captured BEFORE B's restore landed
+    // (no ch-b in the chapter list). Without I2's sequence-version
+    // guard, that stale snapshot would have been written into
+    // project state, silently dropping B's restored chapter from
+    // the sidebar. Post-fix: useAbortableSequence's token captured
+    // at Restore-A start goes stale when Restore-B's start() bumps
+    // the epoch; GET-A's .then bails before touching state.
+    const deletedA = makeChapter({ id: "ch-a" });
+    const deletedB = makeChapter({ id: "ch-b" });
+    const restoredB = makeChapter({
+      id: "ch-b",
+      project_id: "p1",
+      deleted_at: null,
+      sort_order: 1,
+    });
+    const project = makeProject();
+    const staleSnapshotA: ProjectWithChapters = {
+      ...project,
+      chapters: [makeChapter({ id: "ch-a", deleted_at: null, sort_order: 0 })],
+    };
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    const handleDeleteChapter = vi.fn();
+    const replaceConfirmedStatusesFromProject = vi.fn();
+
+    // Restore-A rejects 200 BAD_JSON; Restore-B resolves with the
+    // restored chapter.
+    vi.mocked(api.chapters.restore)
+      .mockReset()
+      .mockImplementation((chapterId: string) => {
+        if (chapterId === "ch-a") {
+          return Promise.reject(new ApiRequestError("bad body", 200, "BAD_JSON"));
+        }
+        return Promise.resolve({ ...restoredB, project_slug: project.slug });
+      });
+    vi.mocked(api.projects.trash).mockResolvedValue([deletedA, deletedB]);
+
+    // Defer the recovery GET so Restore-B can run before GET-A
+    // resolves.
+    let resolveGetA!: (p: ProjectWithChapters) => void;
+    vi.mocked(api.projects.get).mockImplementation(
+      () => new Promise<ProjectWithChapters>((resolve) => (resolveGetA = resolve)),
+    );
+
+    const { result } = renderHook(() =>
+      useTrashManager(project, project.slug, setProject, handleDeleteChapter, navigate, {
+        replaceConfirmedStatusesFromProject,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.openTrash();
+    });
+
+    // Fire Restore-A → catch → recovery GET-A scheduled (pending).
+    await act(async () => {
+      await result.current.handleRestore("ch-a");
+    });
+    expect(api.projects.get).toHaveBeenCalledTimes(1);
+    expect(replaceConfirmedStatusesFromProject).not.toHaveBeenCalled();
+
+    // Fire Restore-B → resolves immediately → setProject merges B.
+    await act(async () => {
+      await result.current.handleRestore("ch-b");
+    });
+    const setProjectCallsBefore = setProject.mock.calls.length;
+
+    // Now resolve A's recovery GET with a stale snapshot (no ch-b).
+    await act(async () => {
+      resolveGetA(staleSnapshotA);
+      await Promise.resolve();
+    });
+
+    // Sequence guard: the stale GET-A response must be discarded —
+    // setProject must NOT have received a new updater call after
+    // Restore-B's merge, and the reseed must NOT have fired with
+    // the stale snapshot.
+    expect(setProject.mock.calls.length).toBe(setProjectCallsBefore);
+    expect(replaceConfirmedStatusesFromProject).not.toHaveBeenCalledWith(staleSnapshotA);
+  });
+});
+
+describe("handleRestore cross-project nav guard (review 2026-05-27 round 2)", () => {
+  it("does NOT set actionError when project changes mid-restore-failure", async () => {
+    // Pre-fix: handleRestore's catch passed `mapped` to
+    // `applyMappedError(..., { onMessage: setActionError })` unconditionally.
+    // The committed sub-branch's setProject already gated on
+    // projectRef-vs-refreshed.id, but the actionError banner did not.
+    // Reachable sequence: user clicks Restore on project A → navigates
+    // A → B before the POST settles → POST rejects (any non-ABORTED
+    // failure) → catch runs while projectRef.current points at B →
+    // setActionError fires the restore-failure copy on B for an event
+    // that happened on A. Confusing and unactionable.
+    // Post-fix: capture project id at handleRestore entry; the catch
+    // bails before applyMappedError when projectRef has drifted away
+    // from the captured id.
+    const projectA = makeProject();
+    const projectB: ProjectWithChapters = {
+      ...projectA,
+      id: "p2",
+      slug: "project-2",
+      chapters: [],
+    };
+    const deletedA = makeChapter({ id: "ch-a" });
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    const handleDeleteChapter = vi.fn();
+
+    // Defer the restore POST so we can navigate A → B before the catch
+    // fires.
+    let rejectRestore!: (err: Error) => void;
+    vi.mocked(api.chapters.restore).mockImplementation(
+      () =>
+        new Promise<Chapter & { project_slug: string }>((_resolve, reject) => {
+          rejectRestore = reject;
+        }),
+    );
+    vi.mocked(api.projects.trash).mockResolvedValue([deletedA]);
+
+    const { rerender, result } = renderHook(
+      ({ project, slug }: { project: ProjectWithChapters; slug: string }) =>
+        useTrashManager(project, slug, setProject, handleDeleteChapter, navigate),
+      { initialProps: { project: projectA, slug: projectA.slug } },
+    );
+
+    await act(async () => {
+      await result.current.openTrash();
+    });
+
+    // Fire the restore — POST stays pending until rejectRestore is called.
+    let restorePromise!: Promise<void>;
+    act(() => {
+      restorePromise = result.current.handleRestore("ch-a");
+    });
+
+    // Navigate A → B while the POST is still in flight. The hook
+    // re-renders with project B; projectRef.current now points at B.
+    rerender({ project: projectB, slug: projectB.slug });
+
+    // Reject the POST with a non-committed failure (500 with no
+    // committed code maps to a recoverable error path, not the
+    // possiblyCommitted branch). The catch fires while the user is on B.
+    await act(async () => {
+      rejectRestore(new ApiRequestError("server gone", 500, "INTERNAL_ERROR"));
+      await restorePromise;
+    });
+
+    // Identity guard: the catch must have bailed before applyMappedError,
+    // so B's UI does not flash a banner about an event that happened on A.
+    expect(result.current.actionError).toBeNull();
+  });
+
+  it("I1 (review 2026-05-27 round 3): handleRestore success branch does NOT mutate state when project drifted A→B mid-POST", async () => {
+    // Pre-fix: the success arm after `await promise` only checked
+    // `signal.aborted`. EditorPage stays mounted across cross-project
+    // navigation (one Route, two slugs), so a Restore-A POST that
+    // resolves AFTER the user navigates A→B leaves signal.aborted=false
+    // and the success branch then: (a) splices A's restored chapter
+    // into B's `prev.chapters`, (b) overwrites B's slug with A's
+    // restored.project_slug (if the parent project was also restored),
+    // (c) seeds the confirmed-status cache with A's chapter id, and
+    // (d) navigates the user away from B. Post-fix: the catch's drift
+    // guard is hoisted into the success path, so a stale-A success
+    // silently no-ops on B.
+    const projectA = makeProject();
+    const projectB: ProjectWithChapters = {
+      ...projectA,
+      id: "p2",
+      slug: "project-2",
+      chapters: [],
+    };
+    const deletedA = makeChapter({ id: "ch-a" });
+    const restoredA = {
+      ...makeChapter({ id: "ch-a", deleted_at: null, sort_order: 0 }),
+      project_slug: projectA.slug,
+    };
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    const handleDeleteChapter = vi.fn();
+    const seedConfirmedStatus = vi.fn();
+
+    // Defer the restore POST so we can navigate A → B before the success
+    // arm fires.
+    let resolveRestore!: (chapter: typeof restoredA) => void;
+    vi.mocked(api.chapters.restore).mockImplementation(
+      () =>
+        new Promise<typeof restoredA>((resolve) => {
+          resolveRestore = resolve;
+        }),
+    );
+    vi.mocked(api.projects.trash).mockResolvedValue([deletedA]);
+
+    const { rerender, result } = renderHook(
+      ({ project, slug }: { project: ProjectWithChapters; slug: string }) =>
+        useTrashManager(project, slug, setProject, handleDeleteChapter, navigate, {
+          seedConfirmedStatus,
+        }),
+      { initialProps: { project: projectA, slug: projectA.slug } },
+    );
+
+    await act(async () => {
+      await result.current.openTrash();
+    });
+    // openTrash uses setTrashedChapters, not setProject — sanity-check
+    // the baseline.
+    expect(setProject).not.toHaveBeenCalled();
+
+    // Fire the restore — POST stays pending until resolveRestore is called.
+    let restorePromise!: Promise<void>;
+    act(() => {
+      restorePromise = result.current.handleRestore("ch-a");
+    });
+
+    // Navigate A → B while the POST is still in flight. The hook
+    // re-renders with project B; projectRef.current now points at B.
+    rerender({ project: projectB, slug: projectB.slug });
+
+    // Resolve the POST with success. The success arm fires while the
+    // user is on B.
+    await act(async () => {
+      resolveRestore(restoredA);
+      await restorePromise;
+    });
+
+    // Identity guard pins: the success arm must have bailed before any
+    // state-mutating side effect.
+    expect(setProject).not.toHaveBeenCalled();
+    expect(seedConfirmedStatus).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("openTrash does NOT set actionError when project changes mid-fetch-failure", async () => {
+    // Sibling pattern to handleRestore: openTrash's catch ran
+    // `applyMappedError(..., { onMessage: setActionError })` unconditionally
+    // and `setTrashedChapters(trashed)` on success unconditionally. If the
+    // user clicked "Trash" on project A and navigated A → B before the
+    // GET settled, B saw A's failure banner (or A's trash list as B's).
+    const projectA = makeProject();
+    const projectB: ProjectWithChapters = {
+      ...projectA,
+      id: "p2",
+      slug: "project-2",
+      chapters: [],
+    };
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    const handleDeleteChapter = vi.fn();
+
+    let rejectTrash!: (err: Error) => void;
+    vi.mocked(api.projects.trash).mockImplementation(
+      () =>
+        new Promise<Chapter[]>((_resolve, reject) => {
+          rejectTrash = reject;
+        }),
+    );
+
+    const { rerender, result } = renderHook(
+      ({ project, slug }: { project: ProjectWithChapters; slug: string }) =>
+        useTrashManager(project, slug, setProject, handleDeleteChapter, navigate),
+      { initialProps: { project: projectA, slug: projectA.slug } },
+    );
+
+    // Fire openTrash — GET stays pending.
+    let openPromise!: Promise<void>;
+    act(() => {
+      openPromise = result.current.openTrash();
+    });
+
+    // Navigate A → B.
+    rerender({ project: projectB, slug: projectB.slug });
+
+    // Reject the trash GET. The catch fires while the user is on B.
+    await act(async () => {
+      rejectTrash(new ApiRequestError("server gone", 500, "INTERNAL_ERROR"));
+      await openPromise;
+    });
+
+    expect(result.current.actionError).toBeNull();
+    expect(result.current.trashOpen).toBe(false);
+  });
+
+  it("openTrash does NOT setTrashedChapters when project changes mid-fetch-success", async () => {
+    // Symmetric: a successful response from project A must not populate
+    // B's UI with A's trashed chapters (and must not flip B's trashOpen).
+    const deletedA = makeChapter({ id: "ch-a" });
+    const projectA = makeProject();
+    const projectB: ProjectWithChapters = {
+      ...projectA,
+      id: "p2",
+      slug: "project-2",
+      chapters: [],
+    };
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    const handleDeleteChapter = vi.fn();
+
+    let resolveTrash!: (list: Chapter[]) => void;
+    vi.mocked(api.projects.trash).mockImplementation(
+      () =>
+        new Promise<Chapter[]>((resolve) => {
+          resolveTrash = resolve;
+        }),
+    );
+
+    const { rerender, result } = renderHook(
+      ({ project, slug }: { project: ProjectWithChapters; slug: string }) =>
+        useTrashManager(project, slug, setProject, handleDeleteChapter, navigate),
+      { initialProps: { project: projectA, slug: projectA.slug } },
+    );
+
+    let openPromise!: Promise<void>;
+    act(() => {
+      openPromise = result.current.openTrash();
+    });
+
+    rerender({ project: projectB, slug: projectB.slug });
+
+    await act(async () => {
+      resolveTrash([deletedA]);
+      await openPromise;
+    });
+
+    expect(result.current.trashedChapters).toEqual([]);
+    expect(result.current.trashOpen).toBe(false);
+  });
+
+  it("confirmDeleteChapter's trash refresh does NOT set actionError on wrong project after A→B nav", async () => {
+    // Same wrong-project leak as openTrash / handleRestore. After a
+    // successful delete on A, the catch in the trash-refresh GET would
+    // surface a "failed to load trash" banner on B if the user navigated
+    // mid-refresh.
+    const projectA = makeProject();
+    const projectB: ProjectWithChapters = {
+      ...projectA,
+      id: "p2",
+      slug: "project-2",
+      chapters: [],
+    };
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    // handleDeleteChapter succeeds — the trash refresh is what we want to
+    // exercise.
+    const handleDeleteChapter = vi.fn().mockResolvedValue(true);
+
+    // First call resolves (openTrash); second call hangs (confirm refresh).
+    let trashCallCount = 0;
+    let rejectRefresh!: (err: Error) => void;
+    vi.mocked(api.projects.trash).mockImplementation(() => {
+      trashCallCount++;
+      if (trashCallCount === 1) return Promise.resolve([makeChapter({ id: "ch-a" })]);
+      return new Promise<Chapter[]>((_resolve, reject) => {
+        rejectRefresh = reject;
+      });
+    });
+
+    const { rerender, result } = renderHook(
+      ({ project, slug }: { project: ProjectWithChapters; slug: string }) =>
+        useTrashManager(project, slug, setProject, handleDeleteChapter, navigate),
+      { initialProps: { project: projectA, slug: projectA.slug } },
+    );
+
+    // Open trash so the post-delete refresh branch is reachable.
+    await act(async () => {
+      await result.current.openTrash();
+    });
+    expect(result.current.trashOpen).toBe(true);
+
+    // Set delete target and fire confirmDeleteChapter — handleDeleteChapter
+    // succeeds, then the trash refresh GET hangs on rejectRefresh.
+    act(() => {
+      result.current.setDeleteTarget(makeChapter({ id: "ch-target" }));
+    });
+    let confirmPromise!: Promise<void>;
+    act(() => {
+      confirmPromise = result.current.confirmDeleteChapter();
+    });
+
+    // Wait for the refresh GET to be in flight.
+    await waitFor(() => expect(trashCallCount).toBe(2));
+
+    // Navigate A → B.
+    rerender({ project: projectB, slug: projectB.slug });
+
+    // Reject the refresh GET. Catch fires while user is on B.
+    await act(async () => {
+      rejectRefresh(new ApiRequestError("server gone", 500, "INTERNAL_ERROR"));
+      await confirmPromise;
+    });
+
+    expect(result.current.actionError).toBeNull();
   });
 });
 

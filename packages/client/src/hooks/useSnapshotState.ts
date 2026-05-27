@@ -4,7 +4,7 @@ import { api } from "../api/client";
 // I16 (review 2026-04-24): import ApiRequestError via the errors
 // barrel so the file observes the boundary — only errors/ and
 // api/client are allowed to reach for the constructor.
-import { mapApiError, isApiError, ApiRequestError } from "../errors";
+import { mapApiError, isApiError, ApiRequestError, devWarn } from "../errors";
 import { clearCachedContent } from "./useContentCache";
 import { useAbortableSequence } from "./useAbortableSequence";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
@@ -238,9 +238,15 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       .then((data) => {
         if (!token.isStale()) setSnapshotCount(data.length);
       })
-      .catch(() => {
-        // Leave count as null so the badge stays hidden. The next panel
+      .catch((err) => {
+        // OOSS1 (review 2026-05-27 round 3): surface the failure in dev
+        // so a broken snapshot list path on chapter-switch isn't
+        // silently swallowed. Mirrors the S2 round-2 sibling on the
+        // restore-followup snapshot list. The controller.signal gates
+        // the warn so chapter-switch / unmount aborts stay silent.
+        // Count stays null so the badge remains hidden; the next panel
         // interaction will retry via refreshCount.
+        devWarn("snapshot list (chapter-switch) failed", controller.signal, err);
       });
     return () => {
       controller.abort();
@@ -380,11 +386,40 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       // reset viewingSnapshot for the new chapter.
       const token = chapterSeq.capture();
       const restoringChapterId = chapterId;
-      // I3: abort any prior in-flight restore before issuing a new one;
-      // useAbortableAsyncOperation auto-aborts on unmount so a mid-
-      // flight restore is severed cleanly when the hook tears down.
-      const { promise } = restoreOp.run((s) => api.snapshots.restore(snapshotId, s));
+      // S5 (4b.3c.3): the dispatched flag distinguishes a pre-send
+      // programming-bug throw (api.snapshots.restore throws synchronously,
+      // request never reached the wire) from any non-ApiRequestError
+      // throw observed AFTER api.snapshots.restore returned a promise.
+      // Pre-send → NETWORK (transient retry banner via scope.network).
+      // Post-send → committed (persistent lock banner, no retry prompt).
+      // The restoreOp.run call moves inside the try so a sync throw
+      // lands here instead of propagating uncaught (pre-fix behaviour
+      // pinned by `PINNED (4b.3c.3 S5): a pre-send sync throw currently
+      // propagates uncaught`).
+      //
+      // S3 (review 2026-05-27): the `dispatched=true && !isApiError`
+      // post-send branch is a defense-in-depth reserve, not a
+      // currently-exercised path. apiFetch contract wraps every real
+      // network/fetch error in ApiRequestError, and no code between
+      // `await promise` and the catch throws synchronously today —
+      // so the only realistic way to reach this branch in production
+      // would be a future change introducing a non-ApiRequestError
+      // throw (e.g. a localStorage.removeItem at a future cache-clear
+      // step in Safari private mode). Keeping the branch conservative
+      // (committed) avoids prompting a retry that would double-commit
+      // if such a change ever lands.
+      let dispatched = false;
       try {
+        // I3: abort any prior in-flight restore before issuing a new one;
+        // useAbortableAsyncOperation auto-aborts on unmount so a mid-
+        // flight restore is severed cleanly when the hook tears down.
+        const { promise } = restoreOp.run((s) => {
+          const p = api.snapshots.restore(snapshotId, s);
+          // Reached only when api.snapshots.restore returned (i.e. the
+          // request was scheduled). A sync throw skips this line.
+          dispatched = true;
+          return p;
+        });
         await promise;
         // A→B→A round-trip: epoch moved but the current chapter is once
         // again the one we restored. Treat that as a NOT-stale completion
@@ -425,7 +460,30 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
             .then((data) => {
               if (!freshToken.isStale()) setSnapshotCount(data.length);
             })
-            .catch(() => {});
+            .catch((err) => {
+              // S2 (review 2026-05-27 round 2): surface the follow-up
+              // failure in dev so the swallowed-into-the-void shape of
+              // the pre-fix `.catch(() => {})` no longer hides real
+              // bugs. The followupController.signal gates the warn —
+              // supersede or unmount-driven aborts stay silent.
+              // Mirrors useTrashManager.ts and useProjectEditor.ts.
+              devWarn("snapshot follow-up list failed", followupController.signal, err);
+            })
+            .finally(() => {
+              // S19 (4b.3c.3) + S2 (review 2026-05-27 round 2): null
+              // the ref once this follow-up list has settled so a later
+              // restore's preamble .abort() is a no-op on the prior
+              // (completed) controller. Identity-checked so we don't
+              // clobber a controller a later restore has already
+              // replaced. Lives in `.finally` so the null also runs on
+              // failure — pre-fix the null lived in `.then` only,
+              // leaving the ref dangling after a follow-up rejection.
+              // Mirrors S17 (createRecoveryAbortRef in useProjectEditor)
+              // and T1 (restoreRecoveryAbortRef in useTrashManager).
+              if (restoreFollowupAbortRef.current === followupController) {
+                restoreFollowupAbortRef.current = null;
+              }
+            });
         }
         return {
           ok: true,
@@ -439,19 +497,25 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
           // without needing a dedicated discriminant.
           return { ok: false, error: err };
         }
-        // I2 (2026-04-23): apiFetch wraps every real network/fetch error
-        // in ApiRequestError, so any bare throw here is either a pre-send
-        // client bug (vanishingly rare) or a post-success bookkeeping
-        // throw (realistic: localStorage.removeItem can throw in Safari
-        // private mode at line 299; setState on a torn-down boundary;
-        // extension-proxied storage). For restore the conservative default
-        // is post-success — the server likely committed the restore and
-        // its auto-snapshot. Synthesize 200 BAD_JSON so mapApiError routes
-        // through the possiblyCommitted arm → persistent lock banner, no
-        // retry prompt. This matches the EditorPage handler's comment at
+        // I2 (2026-04-23) + S5 (4b.3c.3): apiFetch wraps every real
+        // network/fetch error in ApiRequestError, so reaching this point
+        // means either a pre-send client bug (sync throw before
+        // api.snapshots.restore returned a promise) or — as a
+        // defense-in-depth reserve — a future non-ApiRequestError throw
+        // observed after the request was scheduled. The `dispatched`
+        // flag distinguishes them: false means api.snapshots.restore
+        // never returned a promise → server never received the request
+        // → NETWORK (transient retry); true means the request landed →
+        // server likely committed the restore + its auto-snapshot →
+        // route through committed (persistent lock banner, no retry
+        // prompt) to avoid double-committing on retry. See the S3
+        // (review 2026-05-27) note above the `let dispatched = false`
+        // for why the post-send branch is reserve, not currently-live.
+        // This matches the EditorPage handler's comment at
         // `handleRestoreSnapshot` ("hook synthesizes a 200 BAD_JSON
         // ApiRequestError for non-ApiRequestError post-success throws").
-        return { ok: false, error: makeClientCommittedError() };
+        if (dispatched) return { ok: false, error: makeClientCommittedError() };
+        return { ok: false, error: makeClientNetworkError() };
       }
     },
     [chapterId, chapterSeq, restoreOp],
@@ -464,12 +528,18 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
     // one (and on unmount, via the hook's own cleanup). The hook's
     // run() aborts the prior controller per call; unmount cleanup is
     // baked into useAbortableAsyncOperation.
-    const { promise } = refreshCountOp.run((s) => api.snapshots.list(chapterId, s));
+    const { promise, signal } = refreshCountOp.run((s) => api.snapshots.list(chapterId, s));
     promise
       .then((data) => {
         if (!token.isStale()) setSnapshotCount(data.length);
       })
-      .catch(() => {});
+      .catch((err) => {
+        // OOSS2 (review 2026-05-27 round 3): surface the failure in
+        // dev so a broken refreshCount path isn't silently swallowed.
+        // Same sibling-divergence shape as OOSS1. The per-call signal
+        // gates the warn so supersede / unmount aborts stay silent.
+        devWarn("snapshot refreshCount failed", signal, err);
+      });
   }, [chapterId, chapterSeq, refreshCountOp]);
 
   // Feeds the hook's count from the panel's own list fetch so the toolbar

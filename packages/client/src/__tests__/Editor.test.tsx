@@ -940,6 +940,160 @@ describe("Editor", () => {
     await waitFor(() => expect(onImageUploadCommitted).toHaveBeenCalled());
   });
 
+  it("S18 (4b.3c.3): same-project chapter switch during paste upload does NOT fire announce on the torn-down editor", async () => {
+    // Post-fix: the OLD Editor's useEffect cleanup nulls
+    // editorInstanceRef.current on unmount. The handler captured
+    // startEditorInstance at upload-start (= the OLD editor). On the
+    // response, editorInstanceRef.current is null (cleared by the
+    // cleanup) so the identity check `editorInstanceRef.current ===
+    // startEditorInstance` fails → no announce, no insert.
+    const onImageAnnouncement = vi.fn();
+    let resolveUpload!: (img: ImageRow) => void;
+    vi.mocked(api.images.upload).mockImplementation(
+      () =>
+        new Promise<ImageRow>((res) => {
+          resolveUpload = res;
+        }),
+    );
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+    const { unmount } = render(
+      <Editor
+        projectId="project-a"
+        chapterId="chapter-a"
+        content={null}
+        onSave={mockOnSave()}
+        editorRef={editorRef}
+        onImageAnnouncement={onImageAnnouncement}
+      />,
+    );
+    await waitFor(() => expect(editorRef.current?.editor).not.toBeNull());
+    const editor = editorRef.current!.editor!;
+    const file = new File(["pixels"], "x.png", { type: "image/png" });
+    const imagePastePlugin = findImagePastePlugin(editor);
+
+    (imagePastePlugin.props.handlePaste as (...args: unknown[]) => unknown)(
+      editor.view,
+      {
+        preventDefault: vi.fn(),
+        clipboardData: { items: [{ type: "image/png", getAsFile: () => file }] },
+      },
+      editor.view.state.doc.slice(0),
+    );
+    await waitFor(() => expect(api.images.upload).toHaveBeenCalled());
+
+    // Simulate same-project chapter switch — Editor unmounts (parent
+    // changes key={chapterId:reloadKey} on chapter change), new Editor
+    // mounts for chapter-b. The OLD handler is still in flight.
+    unmount();
+    const editorRef2 = { current: null } as React.MutableRefObject<EditorHandle | null>;
+    render(
+      <Editor
+        projectId="project-a"
+        chapterId="chapter-b"
+        content={null}
+        onSave={mockOnSave()}
+        editorRef={editorRef2}
+        onImageAnnouncement={onImageAnnouncement}
+      />,
+    );
+
+    // Resolve the upload that landed against chapter-a.
+    resolveUpload({
+      id: "img-1",
+      project_id: "project-a",
+      filename: "x.png",
+      alt_text: "",
+      caption: "",
+      source: "",
+      license: "",
+      mime_type: "image/png",
+      size_bytes: 100,
+      created_at: "2026-01-01T00:00:00Z",
+      reference_count: 0,
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Post-fix: no announce. The OLD editor's instance identity was
+    // captured at upload-start; unmount nulled the ref; the identity
+    // check failed → handler bailed before announce.
+    expect(onImageAnnouncement).not.toHaveBeenCalledWith(
+      STRINGS.imageGallery.insertSuccess("x.png"),
+    );
+  });
+
+  it("I4 (review 2026-05-27 round 3): same-project chapter switch during paste upload FAILURE does NOT fire announce on the torn-down editor", async () => {
+    // Sibling of the S18 success test above for the catch arm. The
+    // catch-branch S18 identity check at lines 357-361 has no
+    // editor.isDestroyed backstop (unlike the success arm at line
+    // 328). The Verifier read TipTap source confirming
+    // scheduleDestroy uses setTimeout(..., 1) — so the catch's .catch
+    // microtask runs before TipTap's macrotask destroy fires; an
+    // isDestroyed check would NOT catch the regression on its own.
+    // The instance-identity check is the load-bearing guard. Without
+    // a sibling test for the failure path, a revert of the catch-arm
+    // fix would silently re-introduce cross-chapter failure-announce
+    // on upload errors during chapter switches.
+    const onImageAnnouncement = vi.fn();
+    let rejectUpload!: (err: Error) => void;
+    vi.mocked(api.images.upload).mockImplementation(
+      () =>
+        new Promise<ImageRow>((_resolve, reject) => {
+          rejectUpload = reject;
+        }),
+    );
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+    const { unmount } = render(
+      <Editor
+        projectId="project-a"
+        chapterId="chapter-a"
+        content={null}
+        onSave={mockOnSave()}
+        editorRef={editorRef}
+        onImageAnnouncement={onImageAnnouncement}
+      />,
+    );
+    await waitFor(() => expect(editorRef.current?.editor).not.toBeNull());
+    const editor = editorRef.current!.editor!;
+    const file = new File(["pixels"], "x.png", { type: "image/png" });
+    const imagePastePlugin = findImagePastePlugin(editor);
+
+    (imagePastePlugin.props.handlePaste as (...args: unknown[]) => unknown)(
+      editor.view,
+      {
+        preventDefault: vi.fn(),
+        clipboardData: { items: [{ type: "image/png", getAsFile: () => file }] },
+      },
+      editor.view.state.doc.slice(0),
+    );
+    await waitFor(() => expect(api.images.upload).toHaveBeenCalled());
+
+    // Simulate same-project chapter switch — OLD Editor unmounts, NEW
+    // Editor mounts for chapter-b. The OLD handler is still in flight.
+    unmount();
+    const editorRef2 = { current: null } as React.MutableRefObject<EditorHandle | null>;
+    render(
+      <Editor
+        projectId="project-a"
+        chapterId="chapter-b"
+        content={null}
+        onSave={mockOnSave()}
+        editorRef={editorRef2}
+        onImageAnnouncement={onImageAnnouncement}
+      />,
+    );
+
+    // Reject the upload that landed against chapter-a. The catch fires
+    // mapApiError → message resolves → S18 identity check must gate
+    // the failure announce.
+    rejectUpload(new ApiRequestError("File too large", 413, "PAYLOAD_TOO_LARGE"));
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Post-fix: no failure announce. A revert of the catch-arm fix
+    // would call onImageAnnouncement with the upload-too-large copy on
+    // the NEW (chapter-b) editor for an upload that targeted chapter-a.
+    expect(onImageAnnouncement).not.toHaveBeenCalled();
+  });
+
   it("paste-upload does not fire gallery refresh after a project switch (I9 2026-04-25)", async () => {
     // I9 (review 2026-04-25): the Editor doesn't necessarily remount on
     // cross-project navigation, so projectIdRef.current can advance

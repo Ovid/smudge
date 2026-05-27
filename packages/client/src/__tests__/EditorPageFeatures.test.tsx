@@ -891,6 +891,12 @@ describe("EditorPage handleStatusChangeWithError", () => {
 
   it("catches error from handleStatusChange and shows actionError banner", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    // CLAUDE.md §Testing Philosophy: spy + suppress + assert the warn
+    // the recovery GET failure path emits via devWarn. Without this
+    // spy the rejected reload mock at line ~907 emits
+    // "handleStatusChange recovery GET failed: Error: reload failed"
+    // to stderr, violating the zero-warnings rule.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     // The status change API call will fail
     vi.mocked(api.chapters.update).mockRejectedValue(new Error("status boom"));
 
@@ -921,6 +927,15 @@ describe("EditorPage handleStatusChangeWithError", () => {
       expect(screen.getByText("Failed to update chapter status")).toBeInTheDocument();
     });
 
+    // Pin the devWarn so a future refactor that drops the warn (or
+    // changes its context string) breaks the test instead of silently
+    // returning to the noisy state.
+    expect(warnSpy).toHaveBeenCalledWith(
+      "handleStatusChange recovery GET failed:",
+      expect.any(Error),
+    );
+
+    warnSpy.mockRestore();
     consoleSpy.mockRestore();
   });
 

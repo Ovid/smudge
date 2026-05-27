@@ -283,6 +283,28 @@ export function Editor({
 
   useEffect(() => {
     editorInstanceRef.current = editor;
+    // S18 (4b.3c.3): clear the ref on unmount (and on editor swap)
+    // so an in-flight paste/drop upload's `.then` handler can detect
+    // that THIS Editor instance is no longer live and skip the
+    // announce. Without this clear, the OLD instance's closure still
+    // sees its captured `editor` equal to `editorInstanceRef.current`
+    // and announces against the unmounted Editor — e.g. a same-project
+    // chapter switch mid-upload fires "Image inserted: x.png" while
+    // the user is now looking at a different chapter.
+    //
+    // S9 (review 2026-05-27 round 3): the ordering of this effect
+    // relative to the unmount-save effect above (line ~206) is
+    // load-bearing. React runs effect CLEANUPS in registration order,
+    // so on unmount: the save effect's cleanup fires first while
+    // `editorInstanceRef.current` is still the live editor (the save
+    // closure reads it at the moment cleanup runs), THEN this effect's
+    // cleanup nulls the ref. Reordering or merging these two effects
+    // would silently break the unmount-save path: the save guard `if
+    // (dirtyRef.current && editorInstanceRef.current)` would
+    // short-circuit because the ref had already been nulled.
+    return () => {
+      editorInstanceRef.current = null;
+    };
   }, [editor]);
 
   // Register instance-scoped image upload handler
@@ -300,9 +322,20 @@ export function Editor({
       // until they navigate back. Gate the committed callback and the
       // success announcement on the captured project id still being live.
       const uploadProjectId = projectIdRef.current;
+      // S18 (4b.3c.3): capture the editor-instance pointer at upload-
+      // start. On response the same-instance check
+      // `editor === editorInstanceRef.current` distinguishes:
+      // - this Editor still live (ref equals captured pointer) →
+      //   announce + insert,
+      // - this Editor unmounted (ref was nulled in the useEffect
+      //   cleanup) → skip — applies to same-project chapter switch
+      //   where projectIdRef stays equal and `editor.isDestroyed`
+      //   hasn't flipped yet in the response microtask.
+      const startEditorInstance = editorInstanceRef.current;
       try {
         const image = await api.images.upload(uploadProjectId, file);
         if (projectIdRef.current !== uploadProjectId) return;
+        if (editorInstanceRef.current !== startEditorInstance) return;
         if (editor && !editor.isDestroyed) {
           editor
             .chain()
@@ -328,7 +361,15 @@ export function Editor({
         if (possiblyCommitted && projectIdRef.current === uploadProjectId) {
           onImageUploadCommittedRef.current?.();
         }
-        if (message && projectIdRef.current === uploadProjectId) {
+        // S18 (4b.3c.3): same instance-identity gate applied to the
+        // failure announce. A same-project chapter switch mid-upload
+        // would otherwise surface the failure copy on the new chapter's
+        // editor for an upload that landed against the old chapter.
+        if (
+          message &&
+          projectIdRef.current === uploadProjectId &&
+          editorInstanceRef.current === startEditorInstance
+        ) {
           onImageAnnouncementRef.current?.(message);
         }
       }

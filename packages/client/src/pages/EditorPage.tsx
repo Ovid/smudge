@@ -114,10 +114,16 @@ export function EditorPage() {
     getActiveChapter,
     cancelPendingSaves,
     seedConfirmedStatus,
+    replaceConfirmedStatusesFromProject,
   } = useProjectEditor(slug, {
     // I2: route terminal save-fail codes through the invariant-pair
     // helper so the banner and setEditable(false) stay in lock-step.
     onRequestEditorLock: (msg) => applyReloadFailedLockRef.current(msg),
+    // S11 (4b.3c.3): handleCreateChapter 404 means the project was
+    // deleted between sidebar render and the POST landing. The
+    // dismissible banner is the wrong UX (project doesn't exist for
+    // the user to act on); navigate home so the project list rehydrates.
+    onProjectNotFound: () => navigate("/"),
   });
 
   const { sidebarWidth, sidebarOpen, handleSidebarResize, toggleSidebar } = useSidebarState();
@@ -156,6 +162,9 @@ export function EditorPage() {
     // baseline in the confirmed-status cache so a later status PATCH
     // double-failure can fall back to a real value rather than skipping.
     seedConfirmedStatus,
+    // I4 (4b.3c.3): bulk reseed for the committed-recovery branch's
+    // follow-up GET, where the entire project snapshot is refreshed.
+    replaceConfirmedStatusesFromProject,
   });
 
   // Refs on the toolbar buttons so each panel can return focus to its
