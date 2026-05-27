@@ -256,6 +256,17 @@ export function useTrashManager(
             // closure can lag if a parent-project restore changed it
             // between user clicks; slugRef is sync-on-render.
             const currentSlug = slugRef.current;
+            // S8 (review 2026-05-27 round 3): accepted silent skip.
+            // slugRef.current is undefined only if the user navigated
+            // to a route without a slug (e.g. HomePage) between
+            // clicking Restore and this catch firing. The committed-
+            // restore banner has already surfaced via applyMappedError's
+            // onCommitted dispatch; the recovery refresh is best-effort
+            // sidebar reconciliation and can be safely dropped — the
+            // sidebar will rehydrate the next time the user returns to
+            // the project. A devWarn here would require gating on a
+            // signal (which doesn't exist yet at this point) and risks
+            // tripping CLAUDE.md's zero-warnings rule in tests.
             if (!currentSlug) return;
             restoreRecoveryAbortRef.current?.abort();
             const recoveryController = new AbortController();
@@ -280,6 +291,16 @@ export function useTrashManager(
                 // state. Pre-fix, only the setProject updater bailed.
                 if (projectRef.current?.id !== refreshed.id) return;
                 setProject((prev) => (prev?.id === refreshed.id ? refreshed : prev));
+                // S7 (review 2026-05-27 round 3): defense-in-depth
+                // inner identity recheck. The outer guard above is
+                // statement-time; the setProject updater has its own
+                // re-check, but the reseed is synchronous from here.
+                // Safe today (no awaits between this point and the
+                // outer guard), but a future await insertion would
+                // silently corrupt the cache with the prior project's
+                // chapter→status mapping. Mirroring the setProject
+                // updater's inside guard pattern.
+                if (projectRef.current?.id !== refreshed.id) return;
                 replaceConfirmedStatusesRef.current?.(refreshed);
               })
               .catch((recoveryErr) => {
