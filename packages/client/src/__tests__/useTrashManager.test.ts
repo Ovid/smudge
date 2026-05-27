@@ -780,6 +780,94 @@ describe("handleRestore possiblyCommitted (4b.3c.3 I4)", () => {
     // user is on project B and A's snapshot would corrupt B's cache.
     expect(replaceConfirmedStatusesFromProject).not.toHaveBeenCalled();
   });
+
+  it("I2 (review 2026-05-27): Restore-A's recovery GET does NOT clobber Restore-B's successful state", async () => {
+    // Pre-fix: restoreRecoveryAbortRef was deliberately separate from
+    // restoreOp so a recovery GET from a prior failed restore survived
+    // the next handleRestore's restoreOp.abort(). Exploitable
+    // sequence: Restore-A returns 200 BAD_JSON → recovery GET-A
+    // fires. Before GET-A resolves, user clicks Restore-B; B's POST
+    // succeeds and setProject merges B's chapter. GET-A finally
+    // resolves with a snapshot captured BEFORE B's restore landed
+    // (no ch-b in the chapter list). Without I2's sequence-version
+    // guard, that stale snapshot would have been written into
+    // project state, silently dropping B's restored chapter from
+    // the sidebar. Post-fix: useAbortableSequence's token captured
+    // at Restore-A start goes stale when Restore-B's start() bumps
+    // the epoch; GET-A's .then bails before touching state.
+    const deletedA = makeChapter({ id: "ch-a" });
+    const deletedB = makeChapter({ id: "ch-b" });
+    const restoredB = makeChapter({
+      id: "ch-b",
+      project_id: "p1",
+      deleted_at: null,
+      sort_order: 1,
+    });
+    const project = makeProject();
+    const staleSnapshotA: ProjectWithChapters = {
+      ...project,
+      chapters: [makeChapter({ id: "ch-a", deleted_at: null, sort_order: 0 })],
+    };
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    const handleDeleteChapter = vi.fn();
+    const replaceConfirmedStatusesFromProject = vi.fn();
+
+    // Restore-A rejects 200 BAD_JSON; Restore-B resolves with the
+    // restored chapter.
+    vi.mocked(api.chapters.restore)
+      .mockReset()
+      .mockImplementation((chapterId: string) => {
+        if (chapterId === "ch-a") {
+          return Promise.reject(new ApiRequestError("bad body", 200, "BAD_JSON"));
+        }
+        return Promise.resolve({ ...restoredB, project_slug: project.slug });
+      });
+    vi.mocked(api.projects.trash).mockResolvedValue([deletedA, deletedB]);
+
+    // Defer the recovery GET so Restore-B can run before GET-A
+    // resolves.
+    let resolveGetA!: (p: ProjectWithChapters) => void;
+    vi.mocked(api.projects.get).mockImplementation(
+      () => new Promise<ProjectWithChapters>((resolve) => (resolveGetA = resolve)),
+    );
+
+    const { result } = renderHook(() =>
+      useTrashManager(project, project.slug, setProject, handleDeleteChapter, navigate, {
+        replaceConfirmedStatusesFromProject,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.openTrash();
+    });
+
+    // Fire Restore-A → catch → recovery GET-A scheduled (pending).
+    await act(async () => {
+      await result.current.handleRestore("ch-a");
+    });
+    expect(api.projects.get).toHaveBeenCalledTimes(1);
+    expect(replaceConfirmedStatusesFromProject).not.toHaveBeenCalled();
+
+    // Fire Restore-B → resolves immediately → setProject merges B.
+    await act(async () => {
+      await result.current.handleRestore("ch-b");
+    });
+    const setProjectCallsBefore = setProject.mock.calls.length;
+
+    // Now resolve A's recovery GET with a stale snapshot (no ch-b).
+    await act(async () => {
+      resolveGetA(staleSnapshotA);
+      await Promise.resolve();
+    });
+
+    // Sequence guard: the stale GET-A response must be discarded —
+    // setProject must NOT have received a new updater call after
+    // Restore-B's merge, and the reseed must NOT have fired with
+    // the stale snapshot.
+    expect(setProject.mock.calls.length).toBe(setProjectCallsBefore);
+    expect(replaceConfirmedStatusesFromProject).not.toHaveBeenCalledWith(staleSnapshotA);
+  });
 });
 
 describe("useTrashManager.confirmDeleteChapter — I5 programming-bug warn (4b.3c.2)", () => {

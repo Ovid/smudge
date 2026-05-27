@@ -3,6 +3,7 @@ import type { Chapter, ProjectWithChapters } from "@smudge/shared";
 import { api } from "../api/client";
 import { mapApiError, applyMappedError, devWarn } from "../errors";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
+import { useAbortableSequence } from "./useAbortableSequence";
 
 export interface UseTrashManagerOptions {
   // C2 (review 2026-04-25): wire through to useProjectEditor's
@@ -91,6 +92,15 @@ export function useTrashManager(
   const slugRef = useRef(slug);
   // eslint-disable-next-line react-hooks/refs
   slugRef.current = slug;
+  // I2 (review 2026-05-27): per-restore epoch token. Each handleRestore
+  // call bumps the sequence; the committed-recovery GET's .then checks
+  // the token before touching state, so a recovery GET from Restore-A
+  // is silently discarded once Restore-B has started (whether B
+  // succeeded or also entered its own recovery branch). This closes
+  // the cross-restore race where A's stale recovery snapshot would
+  // overwrite B's successful chapter merge, silently dropping B's
+  // restored row from the sidebar.
+  const restoreSeq = useAbortableSequence();
 
   const openTrash = useCallback(async () => {
     if (!project) return;
@@ -111,6 +121,14 @@ export function useTrashManager(
 
   const handleRestore = useCallback(
     async (chapterId: string) => {
+      // I2 (review 2026-05-27): bump the per-restore epoch BEFORE the
+      // POST starts so any older restore's still-pending recovery GET
+      // is invalidated. The token is checked inside that GET's .then
+      // (below) so a stale recovery response from Restore-A is
+      // silently discarded once Restore-B has started — closing the
+      // cross-restore race where A's snapshot would overwrite B's
+      // successful chapter merge.
+      const restoreToken = restoreSeq.start();
       // User callout (2026-04-25): abort any prior in-flight restore
       // before issuing the new one. The restoreOp instance threads the
       // signal into api.chapters.restore so the abort propagates to the
@@ -189,6 +207,14 @@ export function useTrashManager(
               .get(currentSlug, recoveryController.signal)
               .then((refreshed) => {
                 if (recoveryController.signal.aborted) return;
+                // I2 (review 2026-05-27): sequence guard. If a newer
+                // handleRestore has started (success or failure)
+                // between this recovery GET's dispatch and resolution,
+                // restoreToken is stale and the stale snapshot must
+                // not touch state. Pre-fix, a successful Restore-B
+                // landing while Restore-A's recovery GET was in
+                // flight could see GET-A overwrite B's chapter merge.
+                if (restoreToken.isStale()) return;
                 // I1 (review 2026-05-27): single identity guard for
                 // BOTH setProject and replaceConfirmedStatuses. If the
                 // user navigated to a different project mid-GET,
@@ -225,7 +251,7 @@ export function useTrashManager(
         });
       }
     },
-    [slug, setProject, navigate, restoreOp],
+    [slug, setProject, navigate, restoreOp, restoreSeq],
   );
 
   const confirmDeleteChapter = useCallback(async () => {
