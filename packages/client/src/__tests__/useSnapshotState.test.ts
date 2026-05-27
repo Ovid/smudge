@@ -797,6 +797,60 @@ describe("useSnapshotState", () => {
     expect(mapped.message).toBe(STRINGS.snapshots.restoreResponseUnreadable);
   });
 
+  it("S19 (4b.3c.3): restoreFollowupAbortRef is nulled on success — subsequent restore's pre-amble does not re-abort the prior controller", async () => {
+    // Indirect assertion: after the follow-up snapshots.list .then
+    // resolves, restoreFollowupAbortRef is nulled. A second
+    // restoreSnapshot calls `restoreFollowupAbortRef.current?.abort()`
+    // at the top of the follow-up branch; if the prior ref is null,
+    // that's a no-op and the first follow-up controller's signal stays
+    // unaborted. Without the S19 fix the prior ref still points to the
+    // completed controller, and the second call's pre-amble .abort()
+    // would flip the prior signal to aborted.
+    const listSignals: AbortSignal[] = [];
+    vi.mocked(api.snapshots.list).mockImplementation((_chapterId, signal) => {
+      if (signal) listSignals.push(signal);
+      return Promise.resolve([makeListItem()]);
+    });
+    vi.mocked(api.snapshots.restore).mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useSnapshotState("ch-1"));
+
+    // First restore — fires the follow-up snapshots.list. The initial
+    // list-on-mount also fires through this same mock, so we count
+    // only signals captured AFTER the restore.
+    const baseline = listSignals.length;
+    let r1: Awaited<ReturnType<typeof result.current.restoreSnapshot>> | undefined;
+    await act(async () => {
+      r1 = await result.current.restoreSnapshot("snap-1");
+    });
+    expect(r1?.ok).toBe(true);
+
+    // Wait for the follow-up list .then to resolve.
+    await waitFor(() => {
+      expect(listSignals.length).toBeGreaterThan(baseline);
+    });
+    const firstFollowupSignal = listSignals[baseline];
+    expect(firstFollowupSignal?.aborted).toBe(false);
+
+    // Fire a second restoreSnapshot. The pre-amble would re-abort the
+    // first follow-up controller without the S19 fix.
+    let r2: Awaited<ReturnType<typeof result.current.restoreSnapshot>> | undefined;
+    await act(async () => {
+      r2 = await result.current.restoreSnapshot("snap-2");
+    });
+    expect(r2?.ok).toBe(true);
+    await waitFor(() => {
+      expect(listSignals.length).toBeGreaterThan(baseline + 1);
+    });
+
+    // S19: the first follow-up controller's signal stayed unaborted —
+    // the ref was nulled on success so the second restore's pre-amble
+    // .abort() was a no-op on null.
+    expect(firstFollowupSignal?.aborted).toBe(false);
+    // Second follow-up's own signal is also unaborted (its op succeeded).
+    expect(listSignals[baseline + 1]?.aborted).toBe(false);
+  });
+
   it("leaves count null when list fetch fails so badge stays hidden", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.snapshots.list).mockRejectedValue(new Error("network error"));
