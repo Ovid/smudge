@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
+import { interceptWith200BadJson } from "./helpers/interceptWith200BadJson";
 
 interface TestProject {
   id: string;
@@ -86,21 +87,10 @@ test.describe("Chapter create recovery (4b.3c.1)", () => {
     // GET path is `/api/projects/<slug>` (no `/chapters` suffix) so it
     // is not matched by this glob — recovery proceeds against a real
     // server response.
-    await page.route("**/api/projects/*/chapters", async (route) => {
-      if (route.request().method() !== "POST") {
-        await route.continue();
-        return;
-      }
-      // Forward the POST to the real server so the chapter is created;
-      // then replace the response body with unparseable JSON so the
-      // client surfaces createChapterResponseUnreadable.
-      const response = await route.fetch();
-      await route.fulfill({
-        response,
-        body: '{"invalid":"json"', // missing closing brace — body unparseable
-        headers: { ...response.headers(), "content-type": "application/json" },
-      });
-    });
+    // Forward the POST to the real server so the chapter is created;
+    // then replace the response body with unparseable JSON so the
+    // client surfaces createChapterResponseUnreadable.
+    await interceptWith200BadJson(page, "**/api/projects/*/chapters");
 
     // Click "Add Chapter" (STRINGS.sidebar.addChapter).
     await page.getByRole("button", { name: /add chapter/i }).click();
