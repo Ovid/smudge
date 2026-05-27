@@ -104,14 +104,26 @@ export function useTrashManager(
 
   const openTrash = useCallback(async () => {
     if (!project) return;
+    // I2 (review 2026-05-27 round 2, sibling of handleRestore): capture
+    // project id at entry so we can bail any state writes after the
+    // user has navigated A → B mid-fetch. Pre-fix, both the success
+    // path (setTrashedChapters / setTrashOpen) and the catch
+    // (applyMappedError) ran unconditionally — B saw A's trash list
+    // pinned, or A's failure banner attributed to B. EditorPage stays
+    // mounted across project navigation so this is a routine race.
+    const startedForProjectId = project.id;
+    const isStaleProject = () =>
+      startedForProjectId !== undefined && projectRef.current?.id !== startedForProjectId;
     const { promise, signal } = trashOp.run((s) => api.projects.trash(project.slug, s));
     try {
       const trashed = await promise;
       if (signal.aborted) return;
+      if (isStaleProject()) return;
       setTrashedChapters(trashed);
       setTrashOpen(true);
     } catch (err) {
       if (signal.aborted) return;
+      if (isStaleProject()) return;
       const mapped = mapApiError(err, "trash.load");
       // message:null for ABORTED — skip both the log and the banner.
       if (mapped.message !== null) console.error("Failed to load trash:", err);
@@ -312,13 +324,25 @@ export function useTrashManager(
       // ABORTED failure surfaces an actionable banner instead of being
       // silently swallowed by `catch {}`. ABORTED stays silent
       // (mapper returns message: null).
+      //
+      // I2 (review 2026-05-27 round 2, sibling of handleRestore /
+      // openTrash): capture project id at refresh entry so the post-
+      // await state writes bail when the user has navigated A → B
+      // mid-refresh. Pre-fix, the catch's setActionError would surface
+      // A's "failed to load trash" copy on B's UI for a refresh that
+      // happened against A.
+      const startedForProjectId = project.id;
+      const isStaleProject = () =>
+        startedForProjectId !== undefined && projectRef.current?.id !== startedForProjectId;
       const { promise, signal } = trashOp.run((s) => api.projects.trash(project.slug, s));
       try {
         const trashed = await promise;
         if (signal.aborted) return;
+        if (isStaleProject()) return;
         setTrashedChapters(trashed);
       } catch (err) {
         if (signal.aborted) return;
+        if (isStaleProject()) return;
         applyMappedError(mapApiError(err, "trash.load"), { onMessage: setActionError });
       }
     }

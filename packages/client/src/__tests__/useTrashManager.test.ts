@@ -939,6 +939,167 @@ describe("handleRestore cross-project nav guard (review 2026-05-27 round 2)", ()
     // so B's UI does not flash a banner about an event that happened on A.
     expect(result.current.actionError).toBeNull();
   });
+
+  it("openTrash does NOT set actionError when project changes mid-fetch-failure", async () => {
+    // Sibling pattern to handleRestore: openTrash's catch ran
+    // `applyMappedError(..., { onMessage: setActionError })` unconditionally
+    // and `setTrashedChapters(trashed)` on success unconditionally. If the
+    // user clicked "Trash" on project A and navigated A → B before the
+    // GET settled, B saw A's failure banner (or A's trash list as B's).
+    const projectA = makeProject();
+    const projectB: ProjectWithChapters = {
+      ...projectA,
+      id: "p2",
+      slug: "project-2",
+      chapters: [],
+    };
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    const handleDeleteChapter = vi.fn();
+
+    let rejectTrash!: (err: Error) => void;
+    vi.mocked(api.projects.trash).mockImplementation(
+      () =>
+        new Promise<Chapter[]>((_resolve, reject) => {
+          rejectTrash = reject;
+        }),
+    );
+
+    const { rerender, result } = renderHook(
+      ({ project, slug }: { project: ProjectWithChapters; slug: string }) =>
+        useTrashManager(project, slug, setProject, handleDeleteChapter, navigate),
+      { initialProps: { project: projectA, slug: projectA.slug } },
+    );
+
+    // Fire openTrash — GET stays pending.
+    let openPromise!: Promise<void>;
+    act(() => {
+      openPromise = result.current.openTrash();
+    });
+
+    // Navigate A → B.
+    rerender({ project: projectB, slug: projectB.slug });
+
+    // Reject the trash GET. The catch fires while the user is on B.
+    await act(async () => {
+      rejectTrash(new ApiRequestError("server gone", 500, "INTERNAL_ERROR"));
+      await openPromise;
+    });
+
+    expect(result.current.actionError).toBeNull();
+    expect(result.current.trashOpen).toBe(false);
+  });
+
+  it("openTrash does NOT setTrashedChapters when project changes mid-fetch-success", async () => {
+    // Symmetric: a successful response from project A must not populate
+    // B's UI with A's trashed chapters (and must not flip B's trashOpen).
+    const deletedA = makeChapter({ id: "ch-a" });
+    const projectA = makeProject();
+    const projectB: ProjectWithChapters = {
+      ...projectA,
+      id: "p2",
+      slug: "project-2",
+      chapters: [],
+    };
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    const handleDeleteChapter = vi.fn();
+
+    let resolveTrash!: (list: Chapter[]) => void;
+    vi.mocked(api.projects.trash).mockImplementation(
+      () =>
+        new Promise<Chapter[]>((resolve) => {
+          resolveTrash = resolve;
+        }),
+    );
+
+    const { rerender, result } = renderHook(
+      ({ project, slug }: { project: ProjectWithChapters; slug: string }) =>
+        useTrashManager(project, slug, setProject, handleDeleteChapter, navigate),
+      { initialProps: { project: projectA, slug: projectA.slug } },
+    );
+
+    let openPromise!: Promise<void>;
+    act(() => {
+      openPromise = result.current.openTrash();
+    });
+
+    rerender({ project: projectB, slug: projectB.slug });
+
+    await act(async () => {
+      resolveTrash([deletedA]);
+      await openPromise;
+    });
+
+    expect(result.current.trashedChapters).toEqual([]);
+    expect(result.current.trashOpen).toBe(false);
+  });
+
+  it("confirmDeleteChapter's trash refresh does NOT set actionError on wrong project after A→B nav", async () => {
+    // Same wrong-project leak as openTrash / handleRestore. After a
+    // successful delete on A, the catch in the trash-refresh GET would
+    // surface a "failed to load trash" banner on B if the user navigated
+    // mid-refresh.
+    const projectA = makeProject();
+    const projectB: ProjectWithChapters = {
+      ...projectA,
+      id: "p2",
+      slug: "project-2",
+      chapters: [],
+    };
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    // handleDeleteChapter succeeds — the trash refresh is what we want to
+    // exercise.
+    const handleDeleteChapter = vi.fn().mockResolvedValue(true);
+
+    // First call resolves (openTrash); second call hangs (confirm refresh).
+    let trashCallCount = 0;
+    let rejectRefresh!: (err: Error) => void;
+    vi.mocked(api.projects.trash).mockImplementation(() => {
+      trashCallCount++;
+      if (trashCallCount === 1) return Promise.resolve([makeChapter({ id: "ch-a" })]);
+      return new Promise<Chapter[]>((_resolve, reject) => {
+        rejectRefresh = reject;
+      });
+    });
+
+    const { rerender, result } = renderHook(
+      ({ project, slug }: { project: ProjectWithChapters; slug: string }) =>
+        useTrashManager(project, slug, setProject, handleDeleteChapter, navigate),
+      { initialProps: { project: projectA, slug: projectA.slug } },
+    );
+
+    // Open trash so the post-delete refresh branch is reachable.
+    await act(async () => {
+      await result.current.openTrash();
+    });
+    expect(result.current.trashOpen).toBe(true);
+
+    // Set delete target and fire confirmDeleteChapter — handleDeleteChapter
+    // succeeds, then the trash refresh GET hangs on rejectRefresh.
+    act(() => {
+      result.current.setDeleteTarget(makeChapter({ id: "ch-target" }));
+    });
+    let confirmPromise!: Promise<void>;
+    act(() => {
+      confirmPromise = result.current.confirmDeleteChapter();
+    });
+
+    // Wait for the refresh GET to be in flight.
+    await waitFor(() => expect(trashCallCount).toBe(2));
+
+    // Navigate A → B.
+    rerender({ project: projectB, slug: projectB.slug });
+
+    // Reject the refresh GET. Catch fires while user is on B.
+    await act(async () => {
+      rejectRefresh(new ApiRequestError("server gone", 500, "INTERNAL_ERROR"));
+      await confirmPromise;
+    });
+
+    expect(result.current.actionError).toBeNull();
+  });
 });
 
 describe("useTrashManager.confirmDeleteChapter — I5 programming-bug warn (4b.3c.2)", () => {
