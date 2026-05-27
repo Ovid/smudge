@@ -31,8 +31,7 @@ export async function refreshTrashList(
 ): Promise<RefreshTrashResult> {
   const startedForProjectId = project.id;
   const isStaleProject = () =>
-    startedForProjectId !== undefined &&
-    projectRef.current?.id !== startedForProjectId;
+    startedForProjectId !== undefined && projectRef.current?.id !== startedForProjectId;
   const { promise, signal } = trashOp.run((s) => api.projects.trash(project.slug, s));
   try {
     const trashed = await promise;

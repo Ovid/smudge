@@ -18,10 +18,7 @@ function makeProject(id: string, slug: string): ProjectWithChapters {
   };
 }
 
-function makeTrashOp(
-  promise: Promise<Chapter[]>,
-  signal: AbortSignal,
-): AbortableAsyncOperation {
+function makeTrashOp(promise: Promise<Chapter[]>, signal: AbortSignal): AbortableAsyncOperation {
   return {
     run: vi.fn(() => ({ promise, signal })),
     abort: vi.fn(),

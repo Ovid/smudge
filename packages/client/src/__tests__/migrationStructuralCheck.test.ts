@@ -301,9 +301,7 @@ describe("client source-tree migration structural check", () => {
         // The helper's own tests confirm it calls .run() on the param,
         // so this is not a drift-detection hole.
         const delegated = KNOWN_DELEGATION_HELPERS.some((helper) => {
-          const delegationPattern = new RegExp(
-            `\\b${helper}\\s*\\([^)]*\\b${name}\\b[^)]*\\)`,
-          );
+          const delegationPattern = new RegExp(`\\b${helper}\\s*\\([^)]*\\b${name}\\b[^)]*\\)`);
           return delegationPattern.test(source);
         });
         if (!delegated) {
