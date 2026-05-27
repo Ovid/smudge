@@ -136,15 +136,24 @@ For mutation-via-server flows (snapshot restore, project-wide replace, and futur
 
 **Unified API error mapping.** All client code that surfaces a user-visible
 message from an API error must route through `mapApiError(err, scope)` in
-`packages/client/src/errors/`. The mapper returns `{ message,
-possiblyCommitted, transient, extras? }`; it is the single owner of
-code/status-to-string translation and of the cross-cutting rules (ABORTED
-is silent, 2xx BAD_JSON is `possiblyCommitted: true` when the scope declares
-`committed:` copy and `false` for read scopes that do not, NETWORK is
-`transient`). Raw `err.message` must never reach the UI. New API surfaces
-add a scope entry to `scopes.ts`; they do not write ad-hoc ladders at call
-sites. This invariant will be enforced by ESLint in Phase 4b.4; until then,
-it is enforced by review.
+`packages/client/src/errors/`. The mapper returns `MappedError<S> = { message,
+possiblyCommitted, transient, extras? }`; the `<S>` phantom parameter ties
+the `extras` shape to the scope, accessible via `ScopeExtras<S>`. The mapper
+is the single owner of code/status-to-string translation and of the cross-
+cutting rules (ABORTED is silent, 2xx BAD_JSON is `possiblyCommitted: true`
+when the scope declares `committed:` copy and `false` for read scopes that do
+not, NETWORK is `transient`). The `committedCodes` scope field extends
+`possiblyCommitted: true` beyond the 2xx-BAD_JSON case to specific server
+codes (e.g. `UPDATE_READ_FAILURE`, `READ_AFTER_CREATE_FAILURE`,
+`RESTORE_READ_FAILURE`) where the write may or may not have landed. Raw
+`err.message` must never reach the UI. New API surfaces add a scope entry to
+`scopes.ts`; they do not write ad-hoc ladders at call sites. Consumer call
+sites route through `applyMappedError(mapped, { onMessage, onTransient?,
+onCommitted?, onExtras? })` from `packages/client/src/errors/applyMappedError.ts`
+— its `STOP` sentinel lets a callback short-circuit the rest of the chain.
+This is the canonical consumer pattern, parallel with `useEditorMutation` and
+`useAbortableSequence`. This invariant will be enforced by ESLint in Phase
+4b.4; until then, it is enforced by review.
 
 **String externalization.** All UI strings in `packages/client/src/strings.ts` as constants, never raw literals in components. Prepares for future i18n without architectural changes.
 
@@ -210,7 +219,7 @@ The `ovid/snapshots-find-and-replace` branch (merged 2026-04-19) bundled two fea
 
 Line count is not a hard limit — a 3,000-line migration can be fine, a 500-line cross-cutting refactor may not be. The shape of the change matters more than the size.
 
-**Exceptions to the one-feature rule require an explicit decision recorded in the phase's decision log; the rule defaults to enforcement.** The 2026-05-25 Phase 4b.3b decision log entry is the first such recorded exception (bundling Cluster B threading with the allowlist sweep).
+**Exceptions to the one-feature rule require an explicit decision recorded in the phase's decision log; the rule defaults to enforcement.** The 2026-05-25 Phase 4b.3b decision log entry is the first such recorded exception (bundling Cluster B threading with the allowlist sweep). Earlier and subsequent exceptions follow the same machinery: the 2026-04-19 Phase 4b.3 PR bundled sanitizer + CONTRIBUTING.md + Node-engines pin with the unified-error-mapper migration (per Cluster F [I15] in `docs/plans/2026-04-25-4b3a-review-followups-design.md`); the 2026-05-26 Phase 4b.3c three-way split (4b.3c.1/.2/.3) is recorded in `docs/roadmap-decisions/2026-05-26-phase-4b-3c-consumer-recovery-completeness.md`; and the 2026-05-27 Phase 4b.3d bundling of two small refactors plus the docs that codify the consumer pattern is recorded in `docs/roadmap-decisions/2026-05-27-phase-4b-3d-mapper-internals-claude-md-updates.md`.
 
 ## Dependency Licenses
 
