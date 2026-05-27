@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
-import { interceptWith200BadJson } from "./helpers/interceptWith200BadJson";
+import { interceptWithSuccessBadJson } from "./helpers/interceptWithSuccessBadJson";
 
 interface TestProject {
   id: string;
@@ -90,7 +90,7 @@ test.describe("Chapter create recovery (4b.3c.1)", () => {
     // Forward the POST to the real server so the chapter is created;
     // then replace the response body with unparseable JSON so the
     // client surfaces createChapterResponseUnreadable.
-    await interceptWith200BadJson(page, "**/api/projects/*/chapters");
+    await interceptWithSuccessBadJson(page, "**/api/projects/*/chapters");
 
     // Click "Add Chapter" (STRINGS.sidebar.addChapter).
     await page.getByRole("button", { name: /add chapter/i }).click();

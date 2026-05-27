@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
-import { interceptWith200BadJson } from "./helpers/interceptWith200BadJson";
+import { interceptWithSuccessBadJson } from "./helpers/interceptWithSuccessBadJson";
 
 interface TestProject {
   id: string;
@@ -114,7 +114,7 @@ test.describe("Trash restore recovery (4b.3c.3 I4)", () => {
     // committed-banner + recovery-GET path runs. The recovery GET goes
     // to /api/projects/:slug (no /chapters/ segment) and is not matched
     // by this glob.
-    await interceptWith200BadJson(page, "**/api/chapters/*/restore");
+    await interceptWithSuccessBadJson(page, "**/api/chapters/*/restore");
 
     await trashRow.getByRole("button", { name: /^Restore$/ }).click();
 

@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
-import { interceptWith200BadJson } from "./helpers/interceptWith200BadJson";
+import { interceptWithSuccessBadJson } from "./helpers/interceptWithSuccessBadJson";
 
 interface TestProject {
   id: string;
@@ -88,7 +88,7 @@ test.describe("Snapshot create recovery (4b.3c.2 I3)", () => {
     // the client's JSON parse fails and the committed-banner path runs.
     // The list refresh path (GET `/api/chapters/:id/snapshots`) is the
     // same URL family but only POST is mangled here.
-    await interceptWith200BadJson(page, "**/api/chapters/*/snapshots");
+    await interceptWithSuccessBadJson(page, "**/api/chapters/*/snapshots");
 
     await page.getByRole("button", { name: "Save" }).click();
 
