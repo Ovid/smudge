@@ -47,6 +47,22 @@ export function useTrashManager(
   // call, threaded into api.chapters.restore, aborted on the next
   // call AND on unmount via the hook's auto-abort.
   const restoreOp = useAbortableAsyncOperation();
+  // I4 (4b.3c.3, 2026-05-26 pushback Issue 1 option A):
+  // restoreRecoveryAbortRef is kept hand-rolled. It fires from the
+  // catch branch of handleRestore's possiblyCommitted arm and runs a
+  // follow-up GET that must complete even after the primary restoreOp
+  // has auto-aborted (e.g. on the next handleRestore after a failed
+  // one). Routing this through restoreOp would cause the next restore
+  // to cancel the previous restore's recovery refresh — exactly the
+  // case where the previous error's user-visible state most needs the
+  // refresh to land. Phase 4b.4 replaces this file-level allowlist
+  // entry with inline `// eslint-disable-next-line` on the line below.
+  const restoreRecoveryAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    return () => {
+      restoreRecoveryAbortRef.current?.abort();
+    };
+  }, []);
 
   const openTrash = useCallback(async () => {
     if (!project) return;

@@ -186,6 +186,7 @@ describe("client source-tree migration structural check", () => {
   const PHASE_4B_3B_ALLOWLIST = new Set([
     resolve(clientSrcRoot, "hooks/useProjectEditor.ts"),
     resolve(clientSrcRoot, "hooks/useSnapshotState.ts"),
+    resolve(clientSrcRoot, "hooks/useTrashManager.ts"), // 4b.3c.3 I4: restoreRecoveryAbortRef
     // EditorPage.tsx removed by Phase 4b.3b row S-1 (settingsRefreshAbortRef migrated)
     // ProjectSettingsDialog.tsx removed by Phase 4b.3b row S-10 (fieldAbortRef + timezoneAbortRef migrated)
     // SnapshotPanel.tsx removed by Phase 4b.3b row S-12 (fetchAbortRef + mutateAbortRef migrated)
