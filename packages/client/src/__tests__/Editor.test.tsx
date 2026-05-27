@@ -940,18 +940,13 @@ describe("Editor", () => {
     await waitFor(() => expect(onImageUploadCommitted).toHaveBeenCalled());
   });
 
-  it("PINNED (4b.3c.3 S18): same-project chapter switch during paste upload still fires success announce on the torn-down editor — fix gates this", async () => {
-    // S18 (review 2026-04-25): the existing `projectIdRef.current ===
-    // uploadProjectId` guard catches cross-project switches but not a
-    // same-project chapter switch (projectIdRef stays equal). The
-    // existing `if (editor && !editor.isDestroyed)` block looks like it
-    // would block the announce post-unmount, but the empirical probe
-    // (subsequently removed) confirmed that the announce DOES fire even
-    // after unmount — TipTap's destroy lifecycle has not flipped
-    // isDestroyed by the time the upload's `.then` resolves in
-    // happy-dom + React 18. Task 47's fix gates the announce on an
-    // editor-instance identity check via editorInstanceRef + an
-    // unmount-clear cleanup.
+  it("S18 (4b.3c.3): same-project chapter switch during paste upload does NOT fire announce on the torn-down editor", async () => {
+    // Post-fix: the OLD Editor's useEffect cleanup nulls
+    // editorInstanceRef.current on unmount. The handler captured
+    // startEditorInstance at upload-start (= the OLD editor). On the
+    // response, editorInstanceRef.current is null (cleared by the
+    // cleanup) so the identity check `editorInstanceRef.current ===
+    // startEditorInstance` fails → no announce, no insert.
     const onImageAnnouncement = vi.fn();
     let resolveUpload!: (img: ImageRow) => void;
     vi.mocked(api.images.upload).mockImplementation(
@@ -1018,10 +1013,12 @@ describe("Editor", () => {
     });
     await new Promise((r) => setTimeout(r, 20));
 
-    // PINNED: announce fires for chapter-a's upload on chapter-b's
-    // screen. The success message references the chapter-a image but
-    // the user is now looking at chapter-b — confusing UX.
-    expect(onImageAnnouncement).toHaveBeenCalledWith(STRINGS.imageGallery.insertSuccess("x.png"));
+    // Post-fix: no announce. The OLD editor's instance identity was
+    // captured at upload-start; unmount nulled the ref; the identity
+    // check failed → handler bailed before announce.
+    expect(onImageAnnouncement).not.toHaveBeenCalledWith(
+      STRINGS.imageGallery.insertSuccess("x.png"),
+    );
   });
 
   it("paste-upload does not fire gallery refresh after a project switch (I9 2026-04-25)", async () => {
