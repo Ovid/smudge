@@ -1093,6 +1093,17 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
 
   const handleDeleteChapter = useCallback(
     async (chapter: Chapter, onError?: (message: string) => void): Promise<boolean> => {
+      // I2 (review 2026-05-27 round 2, sweep): capture project id at
+      // entry so the catch can bail before applyMappedError → onError
+      // if the user has navigated A → B mid-delete. Pre-fix, the
+      // catch fired onError unconditionally and useTrashManager's
+      // confirmDeleteChapter (which wires onError to setActionError)
+      // surfaced A's "failed to delete" banner on B. Mirrors the
+      // captured-id discipline in handleCreateChapter / handleReorderChapters /
+      // handleUpdateProjectTitle.
+      const startedForProjectId = projectRef.current?.id;
+      const isStaleProject = () =>
+        startedForProjectId !== undefined && projectRef.current?.id !== startedForProjectId;
       // Sequence abort + controller abort + backoff-unblock. Before S3
       // this path omitted the backoff-unblock, so a retry asleep in
       // backoff could wake up after the chapter was gone. The isStale()
@@ -1169,6 +1180,11 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
                 // as if the project had no chapters left.
                 console.warn("Failed to load chapter after delete:", err);
                 if (token.isStale()) return true;
+                // I2 (review 2026-05-27 round 2, sweep): drift guard
+                // covers the inner secondary-GET catch too — without
+                // it, the post-delete chapter-load failure on A's
+                // server bubble through onError onto B's UI.
+                if (isStaleProject()) return true;
                 applyMappedError(mapApiError(err, "chapter.load"), {
                   onMessage: (message) => onError?.(message),
                 });
@@ -1187,6 +1203,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           // caller (happens in practice in tests too).
           if (s.aborted) return false;
           console.warn("Failed to delete chapter:", err);
+          // I2 (review 2026-05-27 round 2, sweep): drift guard before
+          // surfacing the failure. The catch already runs after the
+          // optimistic-no-op setProject (line 1130, walks new project's
+          // chapter list, no match, no change) — only the onError leak
+          // matters here.
+          if (isStaleProject()) return false;
           applyMappedError(mapApiError(err, "chapter.delete"), {
             onMessage: (message) => onError?.(message),
           });
@@ -1379,6 +1401,14 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   const handleStatusChange = useCallback(
     async (chapterId: string, status: string, onError?: (message: string) => void) => {
       const token = statusChangeSeq.start();
+      // I2 (review 2026-05-27 round 2, sweep): capture project id at
+      // entry. The catch's applyMappedError tail falls back to setError
+      // (full-page overlay) when onError is omitted — both surfaces are
+      // wrong-project leaks on A→B nav mid-PATCH. The drift guard bails
+      // before either fires.
+      const startedForProjectId = projectRef.current?.id;
+      const isStaleProject = () =>
+        startedForProjectId !== undefined && projectRef.current?.id !== startedForProjectId;
       // I11: abort the prior in-flight PATCH before issuing a new one so
       // overlapping status clicks cannot land out-of-order at the server.
       const { promise: statusPromise, signal: statusSignal } = statusChangeOp.run((s) =>
@@ -1507,6 +1537,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // S4 (4b.3c.2): when no onError is wired (keyboard-shortcut path),
         // fall back to setError so the failure surfaces via the full-page
         // overlay rather than vanishing — mirrors handleReorderChapters.
+        // I2 (review 2026-05-27 round 2, sweep): bail before either
+        // surface fires if the user navigated to a different project
+        // mid-PATCH. The optimistic-update / revert state writes above
+        // already no-op on B (chapterId belongs to A, not in B's
+        // chapter list) — only the user-visible error leak matters.
+        if (isStaleProject()) return;
         applyMappedError(mapped, {
           onMessage: (message) => {
             if (onError) onError(message);
@@ -1520,6 +1556,12 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
 
   const handleRenameChapter = useCallback(
     async (chapterId: string, title: string, onError?: (message: string) => void) => {
+      // I2 (review 2026-05-27 round 2, sweep): capture project id at
+      // entry so the catch's onError bails when the user has navigated
+      // A → B mid-rename.
+      const startedForProjectId = projectRef.current?.id;
+      const isStaleProject = () =>
+        startedForProjectId !== undefined && projectRef.current?.id !== startedForProjectId;
       // I7: abort any prior in-flight rename before issuing a new one
       // so overlapping renames cannot commit out of typing order at the
       // server (same rationale as title/status abort refs).
@@ -1551,6 +1593,9 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // Don't call setError — that triggers the full-page error overlay.
         // Rename failures are non-fatal; surface via the optional callback
         // so callers can display inline (same pattern as handleStatusChange).
+        // I2 (review 2026-05-27 round 2, sweep): drift guard before
+        // onError — useTrashManager-style wrong-project leak.
+        if (isStaleProject()) return;
         applyMappedError(mapApiError(err, "chapter.rename"), {
           onMessage: (message) => onError?.(message),
         });

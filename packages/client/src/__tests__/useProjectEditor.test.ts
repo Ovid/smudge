@@ -3055,6 +3055,172 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("cross-project nav guard (sweep): handleDeleteChapter does NOT fire onError on the wrong project after A→B nav", async () => {
+    // Sibling of I2 (handleRestore) and I1/I3 (handleCreateChapter):
+    // handleDeleteChapter's catch routed straight through onError with no
+    // project-identity drift guard. If the user clicked Delete on
+    // project A and navigated A → B before the POST settled,
+    // useTrashManager's confirmDeleteChapter (which passes setActionError
+    // as onError) surfaced A's "failed to delete" banner on B.
+    // Post-fix: capture projectId at entry; the catch bails before
+    // applyMappedError when projectRef has drifted away from the
+    // captured id.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    let rejectDelete!: (err: unknown) => void;
+    vi.mocked(api.chapters.delete)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectDelete = reject;
+          }),
+      );
+
+    const onError = vi.fn();
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    // Fire delete against project A — POST is pending.
+    let deletePromise!: Promise<unknown>;
+    act(() => {
+      deletePromise = result.current.handleDeleteChapter(mockChapter2, onError);
+    });
+    await waitFor(() => expect(api.chapters.delete).toHaveBeenCalled());
+
+    // Navigate to project B before the delete settles.
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    rerender({ slug: "other-project" });
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    // Reject the stale-A delete POST.
+    await act(async () => {
+      rejectDelete(new ApiRequestError("server gone", 500, "INTERNAL_ERROR"));
+      await deletePromise;
+    });
+
+    // Drift guard: onError must NOT fire on B for an event that happened on A.
+    expect(onError).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it("cross-project nav guard (sweep): handleStatusChange does NOT setError or fire onError on the wrong project after A→B nav", async () => {
+    // handleStatusChange's catch tail routed through applyMappedError
+    // with an `if (onError) onError else setError` fallback — both
+    // surfaces leak on cross-project nav. setError is the worst case
+    // (full-page error overlay).
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    let rejectPatch!: (err: unknown) => void;
+    vi.mocked(api.chapters.update)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectPatch = reject;
+          }),
+      );
+
+    const onError = vi.fn();
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    // Fire status change against A — PATCH is pending.
+    let statusPromise!: Promise<unknown>;
+    act(() => {
+      statusPromise = result.current.handleStatusChange("ch1", "revised", onError);
+    });
+    await waitFor(() => expect(api.chapters.update).toHaveBeenCalled());
+
+    // Navigate to project B.
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    rerender({ slug: "other-project" });
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    // Reject the stale-A PATCH.
+    await act(async () => {
+      rejectPatch(new ApiRequestError("server gone", 500, "INTERNAL_ERROR"));
+      await statusPromise;
+    });
+
+    expect(onError).not.toHaveBeenCalled();
+    // setError fallback also must not have fired.
+    expect(result.current.error).toBeNull();
+    warnSpy.mockRestore();
+  });
+
+  it("cross-project nav guard (sweep): handleRenameChapter does NOT fire onError on the wrong project after A→B nav", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    let rejectRename!: (err: unknown) => void;
+    vi.mocked(api.chapters.update)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectRename = reject;
+          }),
+      );
+
+    const onError = vi.fn();
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    let renamePromise!: Promise<unknown>;
+    act(() => {
+      renamePromise = result.current.handleRenameChapter("ch2", "New Title", onError);
+    });
+    await waitFor(() => expect(api.chapters.update).toHaveBeenCalled());
+
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    rerender({ slug: "other-project" });
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    await act(async () => {
+      rejectRename(new ApiRequestError("server gone", 500, "INTERNAL_ERROR"));
+      await renamePromise;
+    });
+
+    expect(onError).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
   it("S11 (4b.3c.3): a 404 falls back to the createChapterProjectGone banner when onProjectNotFound is omitted", async () => {
     // Defensive fallback for hook consumers that can't navigate (tests,
     // storybook, or a future caller that wants the dismissible banner).
