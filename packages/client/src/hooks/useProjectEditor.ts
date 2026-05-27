@@ -1450,6 +1450,17 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // driving its own PATCH. Reverting here would stomp the live
         // call. Mirror saveAbortRef's ABORTED short-circuit.
         if (mapped.message === null) return;
+        // I2 (review 2026-05-27 round 3): hoist the drift guard above
+        // the possiblyCommitted branch. The round-2 sweep added the
+        // late guard at the catch tail (still present below as
+        // defense-in-depth covering the recovery-GET await window),
+        // but the possiblyCommitted branch returns BEFORE reaching it.
+        // Without this hoist, an A→B nav mid-PATCH followed by a 200
+        // BAD_JSON would (a) write A's chapter id into B's
+        // confirmed-status cache and (b) surface A's "couldn't be read
+        // back" banner on B via onError or, when no onError is wired,
+        // setError (full-page overlay).
+        if (isStaleProject()) return;
         // I6 (2026-04-23): 2xx BAD_JSON means the server committed the
         // new status but the response body was unreadable. A revert
         // here either silently no-ops (the reload GET returns the new

@@ -3173,6 +3173,75 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("I2 (review 2026-05-27 round 3): handleStatusChange possiblyCommitted branch does NOT fire onError on the wrong project after A→B nav", async () => {
+    // Pre-fix: the round-2 sweep added an isStaleProject() helper and
+    // gated the catch tail's applyMappedError at line ~1545 — but the
+    // mapped.possiblyCommitted branch returns BEFORE reaching that
+    // guard. On A→B nav mid-PATCH followed by a 200 BAD_JSON
+    // (committedCodes routes through the possiblyCommitted branch),
+    // both side effects in that branch ran unconditionally:
+    //   - confirmedStatusRef.current[chapterId] = status  (writes A's
+    //     chapter id into B's confirmed-status cache; corruption bounded
+    //     by next loadProject, but still wrong)
+    //   - onError?.(mapped.message)                       (surfaces A's
+    //     "Status updated but couldn't be read back" banner on B)
+    // Post-fix: hoist `if (isStaleProject()) return;` immediately after
+    // the `mapped.message === null` ABORTED short-circuit so it gates
+    // BOTH the possiblyCommitted branch and the trailing
+    // applyMappedError.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    // 200 BAD_JSON — routes through possiblyCommitted (chapter.updateStatus
+    // declares `committed:` copy, so the mapper marks 200 BAD_JSON as
+    // possiblyCommitted: true).
+    let rejectPatch!: (err: unknown) => void;
+    vi.mocked(api.chapters.update)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectPatch = reject;
+          }),
+      );
+
+    const onError = vi.fn();
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    let statusPromise!: Promise<unknown>;
+    act(() => {
+      statusPromise = result.current.handleStatusChange("ch1", "revised", onError);
+    });
+    await waitFor(() => expect(api.chapters.update).toHaveBeenCalled());
+
+    // Navigate to project B before the PATCH settles.
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    rerender({ slug: "other-project" });
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    // Reject with 200 BAD_JSON — possiblyCommitted branch fires.
+    await act(async () => {
+      rejectPatch(new ApiRequestError("bad body", 200, "BAD_JSON"));
+      await statusPromise;
+    });
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(result.current.error).toBeNull();
+    warnSpy.mockRestore();
+  });
+
   it("cross-project nav guard (sweep): handleRenameChapter does NOT fire onError on the wrong project after A→B nav", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const otherProject = {
