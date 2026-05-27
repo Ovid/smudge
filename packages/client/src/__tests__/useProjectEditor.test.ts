@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
-import { UNTITLED_CHAPTER } from "@smudge/shared";
+import { UNTITLED_CHAPTER, type ProjectWithChapters } from "@smudge/shared";
 
 import { api, ApiRequestError } from "../api/client";
 import { useProjectEditor } from "../hooks/useProjectEditor";

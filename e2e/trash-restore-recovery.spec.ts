@@ -123,8 +123,7 @@ test.describe("Trash restore recovery (4b.3c.3 I4)", () => {
     // rather than a regression).
     const recoveryGetPromise = page.waitForRequest(
       (req) =>
-        req.method() === "GET" &&
-        new URL(req.url()).pathname === `/api/projects/${project.slug}`,
+        req.method() === "GET" && new URL(req.url()).pathname === `/api/projects/${project.slug}`,
     );
 
     await trashRow.getByRole("button", { name: /^Restore$/ }).click();

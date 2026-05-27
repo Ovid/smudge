@@ -1120,13 +1120,16 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // Mirrors the sync-on-render pattern already used for
   // activeChapterRef (line 54), onRequestEditorLockRef (line 42), and
   // projectSlugRef (line 88) — none of which trip the rule because
-  // they're declared early enough. A structural fix (hoist this
-  // useRef above the handlers) would shift activeChapterRef et al.
-  // into the React Compiler's analysis path and surface six pre-
-  // existing `react-hooks/refs` errors that have been latent under
-  // the same bailout — a far larger blast radius than this one
-  // suppression and out of scope for S-2.
-  // eslint-disable-next-line react-hooks/immutability
+  // they're declared early enough. A previous
+  // `eslint-disable-next-line react-hooks/immutability` lived here for
+  // a React Compiler false-positive surfaced by the S-2 retry-loop
+  // expansion; the round-3 restructure of handleCreateChapter's
+  // possiblyCommitted branch (S1/S2/I3) reshaped the surrounding
+  // closure enough that the analysis bailout no longer fires, so the
+  // suppression has been removed. If a future refactor brings the
+  // warning back, the rule's hint to rename the variable is
+  // misleading (the name already ends in `Ref`); restore the disable
+  // comment with this context.
   projectRef.current = project;
 
   const handleDeleteChapter = useCallback(
