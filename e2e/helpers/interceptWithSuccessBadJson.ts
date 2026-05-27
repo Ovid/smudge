@@ -24,10 +24,21 @@ export async function interceptWithSuccessBadJson(page: Page, urlGlob: string): 
       return;
     }
     const response = await route.fetch();
+    // S3 (review 2026-05-27 round 3): strip the original
+    // `content-length` before forwarding. The mangled body is 17 bytes
+    // while the upstream content-length advertises the original
+    // payload size. Chromium's behavior on mismatched content-length
+    // is browser-version dependent; under some conditions the
+    // response surfaces as a NETWORK error (classifyFetchError →
+    // NETWORK, transient) rather than 2xx BAD_JSON
+    // (possiblyCommitted), which would silently switch the recovery
+    // spec under test from the committed path to the transient one
+    // on future Playwright/Chromium upgrades.
+    const { "content-length": _drop, ...passthroughHeaders } = response.headers();
     await route.fulfill({
       response,
       body: '{"invalid":"json"', // missing closing brace — unparseable
-      headers: { ...response.headers(), "content-type": "application/json" },
+      headers: { ...passthroughHeaders, "content-type": "application/json" },
     });
   });
 }

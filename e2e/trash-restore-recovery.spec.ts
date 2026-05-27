@@ -116,7 +116,21 @@ test.describe("Trash restore recovery (4b.3c.3 I4)", () => {
     // by this glob.
     await interceptWithSuccessBadJson(page, "**/api/chapters/*/restore");
 
+    // S4 (review 2026-05-27 round 3): observe the recovery GET
+    // dispatch explicitly so a broken recovery path fails fast with
+    // a clear "request never fired" error instead of timing out on a
+    // downstream chapter-count assertion (which would look like flake
+    // rather than a regression).
+    const recoveryGetPromise = page.waitForRequest(
+      (req) =>
+        req.method() === "GET" &&
+        new URL(req.url()).pathname === `/api/projects/${project.slug}`,
+    );
+
     await trashRow.getByRole("button", { name: /^Restore$/ }).click();
+
+    // Recovery GET fires while the committed banner is rendering.
+    await recoveryGetPromise;
 
     // (a) Committed banner surfaces via the action error banner.
     //     Copy: STRINGS.error.restoreChapterCommitted — "The chapter may
@@ -136,6 +150,14 @@ test.describe("Trash restore recovery (4b.3c.3 I4)", () => {
     await page.getByRole("button", { name: /back to editor/i }).click();
     const chapterItems = page.locator("aside[aria-label='Chapters'] li");
     await expect(chapterItems).toHaveCount(2, { timeout: 10_000 });
+
+    // S4 (review 2026-05-27 round 3): banner persists after the
+    // recovery refresh lands. Pre-S4 the spec ended on the
+    // chapter-count assertion only, so a regression where the
+    // refresh accidentally cleared actionError would have passed
+    // silently — the banner copy is the user-facing signal that the
+    // restore was committed-but-unreadable.
+    await expect(banner).toBeVisible();
 
     // Clean up the route so afterEach's DELETE is not intercepted.
     await page.unroute("**/api/chapters/*/restore");
