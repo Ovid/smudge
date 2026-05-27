@@ -115,6 +115,16 @@ export function collectTsSources(root: string): string[] {
   return results;
 }
 
+// 4b.3d S13: known delegation helpers — functions that accept an
+// AbortableAsyncOperation as an argument and call .run() on it
+// internally. A binding passed as an argument to one of these helpers
+// satisfies the "binding is consumed" contract just as well as a
+// direct <binding>.run() call. The helper itself is unit-tested
+// separately (see useTrashManager.refresh.test.ts) to confirm it
+// actually calls .run() on the parameter. Add new entries here when
+// new delegation helpers are introduced.
+const KNOWN_DELEGATION_HELPERS = ["refreshTrashList"];
+
 describe("client source-tree migration structural check", () => {
   it("no file in packages/client/src (excluding __tests__) uses raw *SeqRef naming", () => {
     const files = collectTsSources(clientSrcRoot);
@@ -285,10 +295,21 @@ describe("client source-tree migration structural check", () => {
         // call would surface as an offender, forcing the regex to be
         // extended deliberately rather than silently false-passing.
         const callPattern = new RegExp(`\\b${name}\\.run\\s*(?:<[^>]*>)?\\s*\\(`);
-        if (!callPattern.test(source)) {
+        if (callPattern.test(source)) continue;
+        // 4b.3d S13: accept delegation — the binding passed as an
+        // argument to a known helper that calls .run() internally.
+        // The helper's own tests confirm it calls .run() on the param,
+        // so this is not a drift-detection hole.
+        const delegated = KNOWN_DELEGATION_HELPERS.some((helper) => {
+          const delegationPattern = new RegExp(
+            `\\b${helper}\\s*\\([^)]*\\b${name}\\b[^)]*\\)`,
+          );
+          return delegationPattern.test(source);
+        });
+        if (!delegated) {
           offenders.push({
             file: relative,
-            reason: `binding "${name}" is never .run() — dead variable or drifted import`,
+            reason: `binding "${name}" is never .run() and not delegated to a known helper — dead variable or drifted import`,
           });
         }
       }
@@ -344,6 +365,35 @@ describe("client source-tree migration structural check", () => {
     expect(pattern.test(`const op = useAbortableAsyncOperation();`)).toBe(false);
     // Word boundary: a longer identifier with the same prefix must not match.
     expect(pattern.test(`import { useAbortableAsyncOperationX } from "./x";`)).toBe(false);
+  });
+
+  it("accepts a binding consumed via a known delegation helper (4b.3d S13)", () => {
+    // The 4b.3d migration extracted refreshTrashList from useTrashManager.ts.
+    // After the migration, trashOp = useAbortableAsyncOperation() is never
+    // .run()-ed directly in useTrashManager.ts — it's passed to
+    // refreshTrashList, which does .run() internally. The check must
+    // accept this pattern; without it, every consumer migrating to a
+    // helper would surface as a "dead binding" offender.
+    const fixture = `
+      import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
+      import { refreshTrashList } from "./useTrashManager.refresh";
+      function C() {
+        const trashOp = useAbortableAsyncOperation();
+        const result = refreshTrashList(project, projectRef, trashOp);
+        return result;
+      }
+    `;
+    const bindings = extractAbortableAsyncOperationBindings(fixture);
+    expect(bindings).toEqual(["trashOp"]);
+    // The direct .run( pattern does NOT match (no `trashOp.run(` in source).
+    const directPattern = new RegExp(`\\b${bindings[0]}\\.run\\s*(?:<[^>]*>)?\\s*\\(`);
+    expect(directPattern.test(fixture)).toBe(false);
+    // The delegation pattern DOES match (trashOp appears as an argument
+    // to refreshTrashList).
+    const delegationPattern = new RegExp(
+      `\\brefreshTrashList\\s*\\([^)]*\\b${bindings[0]}\\b[^)]*\\)`,
+    );
+    expect(delegationPattern.test(fixture)).toBe(true);
   });
 
   it("useRef<AbortController> regex catches all realistic drift forms (S1)", () => {

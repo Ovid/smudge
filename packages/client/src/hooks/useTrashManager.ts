@@ -353,34 +353,28 @@ export function useTrashManager(
     setDeleteTarget(null);
     if (!success) return;
     if (trashOpen && project) {
-      // S4 + S5 (review 2026-04-25): thread a signal so an unmount
-      // between the successful delete and the trash refresh drops the
-      // GET cleanly (was risking setTrashedChapters on a torn-down
-      // hook), and route the catch through mapApiError so a non-
-      // ABORTED failure surfaces an actionable banner instead of being
-      // silently swallowed by `catch {}`. ABORTED stays silent
-      // (mapper returns message: null).
+      // S4 + S5 (review 2026-04-25): refreshTrashList threads a signal
+      // so an unmount between the successful delete and the trash
+      // refresh drops the GET cleanly, and routes the catch through
+      // mapApiError so a non-ABORTED failure surfaces an actionable
+      // banner instead of being silently swallowed. ABORTED stays silent.
       //
       // I2 (review 2026-05-27 round 2, sibling of handleRestore /
-      // openTrash): capture project id at refresh entry so the post-
-      // await state writes bail when the user has navigated A → B
-      // mid-refresh. Pre-fix, the catch's setActionError would surface
-      // A's "failed to load trash" copy on B's UI for a refresh that
-      // happened against A.
-      const startedForProjectId = project.id;
-      const isStaleProject = () =>
-        startedForProjectId !== undefined && projectRef.current?.id !== startedForProjectId;
-      const { promise, signal } = trashOp.run((s) => api.projects.trash(project.slug, s));
-      try {
-        const trashed = await promise;
-        if (signal.aborted) return;
-        if (isStaleProject()) return;
-        setTrashedChapters(trashed);
-      } catch (err) {
-        if (signal.aborted) return;
-        if (isStaleProject()) return;
-        applyMappedError(mapApiError(err, "trash.load"), { onMessage: setActionError });
+      // openTrash): refreshTrashList captures project id at entry, so
+      // post-await state writes bail when the user has navigated
+      // A → B mid-refresh.
+      //
+      // 4b.3d S13: migrated to refreshTrashList. Caller still owns
+      // setTrashedChapters; unlike openTrash this site does NOT set
+      // setTrashOpen (already open) and does NOT log (the failure
+      // banner via applyMappedError is sufficient signal).
+      const result = await refreshTrashList(project, projectRef, trashOp);
+      if (result.kind === "aborted" || result.kind === "stale") return;
+      if (result.kind === "ok") {
+        setTrashedChapters(result.trashed);
+        return;
       }
+      applyMappedError(result.mapped, { onMessage: setActionError });
     }
   }, [deleteTarget, handleDeleteChapter, trashOpen, project, trashOp]);
 
