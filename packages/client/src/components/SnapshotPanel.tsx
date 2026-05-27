@@ -132,6 +132,12 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
 
     const fetchSnapshots = useCallback(async () => {
       if (!chapterId) return;
+      // 4b.3d S14: bump the chapterSeq epoch before capturing a token so
+      // any prior in-flight fetchSnapshots's .then/.catch checks see
+      // token.isStale() === true. Hoisted from the mount useEffect (now
+      // a single fetchSnapshots() call) so both call paths get the same
+      // chapter-switch invalidation semantics.
+      chapterSeq.abort();
       const token = chapterSeq.capture();
       const { promise } = fetchOp.run((s) => api.snapshots.list(chapterId, s));
       try {
@@ -153,23 +159,12 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
 
     // Fetch on mount and when chapterId changes
     useEffect(() => {
-      // Abort before fetching so any in-flight list response from the
-      // prior chapter is discarded via token.isStale() checks below.
-      chapterSeq.abort();
       if (!isOpen || !chapterId) return;
-      const token = chapterSeq.capture();
-      const { promise } = fetchOp.run((s) => api.snapshots.list(chapterId, s));
-      promise
-        .then((data) => {
-          if (token.isStale()) return;
-          setSnapshots(data);
-          setListError(null);
-          onSnapshotsChange?.(data.length);
-        })
-        .catch((err) => {
-          if (token.isStale()) return;
-          applyMappedError(mapApiError(err, "snapshot.list"), { onMessage: setListError });
-        });
+      // 4b.3d S14: chapterSeq.abort() now lives at the top of
+      // fetchSnapshots, so this effect doesn't need to re-implement the
+      // inlined fetch — it just calls fetchSnapshots() and lets the
+      // hoisted abort do the chapter-switch invalidation work.
+      //
       // S4 (review 2026-05-25): explicit cleanup. useAbortableAsyncOperation
       // auto-aborts on unmount AND on the next .run() call, but NOT on a
       // bare effect-rerun (e.g. the isOpen=true→false transition that early-
@@ -180,10 +175,11 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
       // would leave the prior in-flight server work running to completion.
       // Mirror sibling ExportDialog's explicit op.abort() in its
       // open→closed transition.
+      void fetchSnapshots();
       return () => {
         fetchOp.abort();
       };
-    }, [isOpen, chapterId, onSnapshotsChange, chapterSeq, fetchOp]);
+    }, [isOpen, chapterId, fetchSnapshots, fetchOp]);
 
     // Focus management
     useEffect(() => {

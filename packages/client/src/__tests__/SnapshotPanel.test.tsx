@@ -1,6 +1,6 @@
 import { createRef } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, cleanup, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SnapshotPanel, type SnapshotPanelHandle } from "../components/SnapshotPanel";
 import { api } from "../api/client";
@@ -743,6 +743,64 @@ describe("SnapshotPanel", () => {
       unmount();
 
       expect(imperativeSignal.aborted).toBe(true);
+    });
+
+    it("imperative refreshSnapshots() invalidates a concurrent in-flight mount fetch (4b.3d S14)", async () => {
+      // The hoist (4b.3d S14) moves chapterSeq.abort() into fetchSnapshots
+      // itself. Pre-hoist, the imperative path (used post-create / post-
+      // delete) called capture() only — so if a mount-fetch was still in
+      // flight when the user mutated, the mount-fetch's token captured at
+      // the same epoch as the imperative call's token. When the stale
+      // mount-fetch resolved late, token.isStale() returned false, and
+      // its data overwrote the imperative refresh's fresh data.
+      //
+      // Post-hoist, fetchSnapshots calls chapterSeq.abort() before
+      // capture(), so the imperative call bumps the epoch and marks the
+      // mount-fetch's token stale.
+
+      // Mount fetch hangs until we explicitly resolve it; imperative
+      // fetch resolves immediately with "Fresh snapshot".
+      let resolveMount!: (v: SnapshotListItem[]) => void;
+      const mountPromise = new Promise<SnapshotListItem[]>((r) => {
+        resolveMount = r;
+      });
+      const impPromise = Promise.resolve<SnapshotListItem[]>([
+        makeSnapshot({ id: "snap-fresh", label: "Fresh snapshot" }),
+      ]);
+
+      let callIndex = 0;
+      vi.mocked(api.snapshots.list).mockImplementation(async () => {
+        callIndex += 1;
+        if (callIndex === 1) return mountPromise;
+        return impPromise;
+      });
+
+      const ref = createRef<SnapshotPanelHandle>();
+      render(<SnapshotPanel {...defaultProps} ref={ref} />);
+
+      // Wait for the mount fetch to fire.
+      await waitFor(() => {
+        expect(api.snapshots.list).toHaveBeenCalledTimes(1);
+      });
+
+      // Trigger imperative refresh BEFORE the mount fetch resolves.
+      await act(async () => {
+        await ref.current?.refreshSnapshots();
+      });
+
+      // Imperative fetch completed; "Fresh snapshot" is visible.
+      await waitFor(() => {
+        expect(screen.getByText("Fresh snapshot")).toBeInTheDocument();
+      });
+
+      // Now resolve the stale mount fetch with a recognisable label.
+      resolveMount([makeSnapshot({ id: "snap-stale", label: "Stale snapshot" })]);
+      // Give the .then chain time to run.
+      await new Promise((r) => setTimeout(r, 0));
+
+      // The stale mount fetch MUST NOT overwrite the fresh data.
+      expect(screen.queryByText("Stale snapshot")).not.toBeInTheDocument();
+      expect(screen.getByText("Fresh snapshot")).toBeInTheDocument();
     });
 
     it("moves focus to panel on first mount when already open", async () => {
