@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { mapApiError, applyMappedError, devWarn } from "../errors";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
 import { useAbortableSequence } from "./useAbortableSequence";
+import { refreshTrashList } from "./useTrashManager.refresh";
 
 export interface UseTrashManagerOptions {
   // C2 (review 2026-04-25): wire through to useProjectEditor's
@@ -106,29 +107,26 @@ export function useTrashManager(
     if (!project) return;
     // I2 (review 2026-05-27 round 2, sibling of handleRestore): capture
     // project id at entry so we can bail any state writes after the
-    // user has navigated A → B mid-fetch. Pre-fix, both the success
-    // path (setTrashedChapters / setTrashOpen) and the catch
-    // (applyMappedError) ran unconditionally — B saw A's trash list
-    // pinned, or A's failure banner attributed to B. EditorPage stays
-    // mounted across project navigation so this is a routine race.
-    const startedForProjectId = project.id;
-    const isStaleProject = () =>
-      startedForProjectId !== undefined && projectRef.current?.id !== startedForProjectId;
-    const { promise, signal } = trashOp.run((s) => api.projects.trash(project.slug, s));
-    try {
-      const trashed = await promise;
-      if (signal.aborted) return;
-      if (isStaleProject()) return;
-      setTrashedChapters(trashed);
+    // user has navigated A → B mid-fetch. The capture + isStale
+    // mechanism lives in refreshTrashList (4b.3d S13). EditorPage
+    // stays mounted across project navigation so this is a routine
+    // race.
+    const result = await refreshTrashList(project, projectRef, trashOp);
+    if (result.kind === "aborted" || result.kind === "stale") return;
+    if (result.kind === "ok") {
+      setTrashedChapters(result.trashed);
       setTrashOpen(true);
-    } catch (err) {
-      if (signal.aborted) return;
-      if (isStaleProject()) return;
-      const mapped = mapApiError(err, "trash.load");
-      // message:null for ABORTED — skip both the log and the banner.
-      if (mapped.message !== null) console.error("Failed to load trash:", err);
-      applyMappedError(mapped, { onMessage: setActionError });
+      return;
     }
+    // result.kind === "error"
+    // message:null for ABORTED is impossible here — the helper returns
+    // { kind: "aborted" } before reaching the error branch. Mapped
+    // message is non-null on the trash.load scope; log it for
+    // debuggability and surface via applyMappedError.
+    if (result.mapped.message !== null) {
+      console.error("Failed to load trash:", result.mapped.message);
+    }
+    applyMappedError(result.mapped, { onMessage: setActionError });
   }, [project, trashOp]);
 
   const handleRestore = useCallback(

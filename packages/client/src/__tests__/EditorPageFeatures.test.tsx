@@ -517,7 +517,7 @@ describe("EditorPage openTrash failure", () => {
     await userEvent.click(screen.getByText("Trash"));
 
     await waitFor(() => {
-      expect(consoleSpy).toHaveBeenCalledWith("Failed to load trash:", expect.any(Error));
+      expect(consoleSpy).toHaveBeenCalledWith("Failed to load trash:", expect.any(String));
     });
 
     consoleSpy.mockRestore();
