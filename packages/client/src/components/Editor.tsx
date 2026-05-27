@@ -291,6 +291,17 @@ export function Editor({
     // and announces against the unmounted Editor — e.g. a same-project
     // chapter switch mid-upload fires "Image inserted: x.png" while
     // the user is now looking at a different chapter.
+    //
+    // S9 (review 2026-05-27 round 3): the ordering of this effect
+    // relative to the unmount-save effect above (line ~206) is
+    // load-bearing. React runs effect CLEANUPS in registration order,
+    // so on unmount: the save effect's cleanup fires first while
+    // `editorInstanceRef.current` is still the live editor (the save
+    // closure reads it at the moment cleanup runs), THEN this effect's
+    // cleanup nulls the ref. Reordering or merging these two effects
+    // would silently break the unmount-save path: the save guard `if
+    // (dirtyRef.current && editorInstanceRef.current)` would
+    // short-circuit because the ref had already been nulled.
     return () => {
       editorInstanceRef.current = null;
     };
