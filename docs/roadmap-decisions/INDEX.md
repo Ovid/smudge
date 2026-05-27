@@ -13,6 +13,7 @@ skimmed at a glance for patterns.
 
 | Date       | Phase                          | Model              | Pushback (C/I/M) | Alignment (C/I/M) | Entry |
 |------------|--------------------------------|--------------------|------------------|-------------------|-------|
+| 2026-05-27 | Phase 4b.3d: Mapper Internals & CLAUDE.md Updates | claude-opus-4-7 | 0/3/5 | 0/0/0 | [link](2026-05-27-phase-4b-3d-mapper-internals-claude-md-updates.md) |
 | 2026-05-26 | Phase 4b.3c: Consumer Recovery Completeness | claude-opus-4-7 | 1/3/3 | 0/1/2 | [link](2026-05-26-phase-4b-3c-consumer-recovery-completeness.md) |
 | 2026-05-25 | Phase 4b.3b: AbortSignal Threading Completion | claude-opus-4-7 | 1/7/2 | 0/0/2 | [link](2026-05-25-phase-4b-3b-abortsignal-threading-completion.md) |
 | 2026-05-25 | Phase 4b.3a.4: Image Gallery Abort Migration | claude-opus-4-7 | 0/1/3 | 0/0/0 | [link](2026-05-25-phase-4b-3a-4-image-gallery-abort-migration.md) |
