@@ -901,7 +901,7 @@ describe("handleRestore cross-project nav guard (review 2026-05-27 round 2)", ()
     let rejectRestore!: (err: Error) => void;
     vi.mocked(api.chapters.restore).mockImplementation(
       () =>
-        new Promise<Chapter>((_resolve, reject) => {
+        new Promise<Chapter & { project_slug: string }>((_resolve, reject) => {
           rejectRestore = reject;
         }),
     );
