@@ -382,16 +382,26 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       const restoringChapterId = chapterId;
       // S5 (4b.3c.3): the dispatched flag distinguishes a pre-send
       // programming-bug throw (api.snapshots.restore throws synchronously,
-      // request never reached the wire) from a post-send bookkeeping
-      // throw (request was scheduled, then something rejected — most
-      // realistic case is a post-success localStorage.removeItem throw
-      // in Safari private mode at the cache-clear step). Pre-send →
-      // NETWORK (transient retry banner via scope.network). Post-send →
-      // committed (persistent lock banner, no retry prompt). The
-      // restoreOp.run call moves inside the try so a sync throw lands
-      // here instead of propagating uncaught (pre-fix behaviour pinned
-      // by `PINNED (4b.3c.3 S5): a pre-send sync throw currently
+      // request never reached the wire) from any non-ApiRequestError
+      // throw observed AFTER api.snapshots.restore returned a promise.
+      // Pre-send → NETWORK (transient retry banner via scope.network).
+      // Post-send → committed (persistent lock banner, no retry prompt).
+      // The restoreOp.run call moves inside the try so a sync throw
+      // lands here instead of propagating uncaught (pre-fix behaviour
+      // pinned by `PINNED (4b.3c.3 S5): a pre-send sync throw currently
       // propagates uncaught`).
+      //
+      // S3 (review 2026-05-27): the `dispatched=true && !isApiError`
+      // post-send branch is a defense-in-depth reserve, not a
+      // currently-exercised path. apiFetch contract wraps every real
+      // network/fetch error in ApiRequestError, and no code between
+      // `await promise` and the catch throws synchronously today —
+      // so the only realistic way to reach this branch in production
+      // would be a future change introducing a non-ApiRequestError
+      // throw (e.g. a localStorage.removeItem at a future cache-clear
+      // step in Safari private mode). Keeping the branch conservative
+      // (committed) avoids prompting a retry that would double-commit
+      // if such a change ever lands.
       let dispatched = false;
       try {
         // I3: abort any prior in-flight restore before issuing a new one;
@@ -468,18 +478,20 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
           return { ok: false, error: err };
         }
         // I2 (2026-04-23) + S5 (4b.3c.3): apiFetch wraps every real
-        // network/fetch error in ApiRequestError, so any bare throw here
-        // is either a pre-send client bug (sync throw before the request
-        // is scheduled) or a post-success bookkeeping throw (realistic:
-        // localStorage.removeItem can throw in Safari private mode at
-        // the cache-clear step; setState on a torn-down boundary;
-        // extension-proxied storage). The `dispatched` flag distinguishes
-        // them: false means api.snapshots.restore never returned a
-        // promise → the server never received the request → NETWORK
-        // (transient retry); true means the request landed → the server
-        // likely committed the restore + its auto-snapshot → 200 BAD_JSON
-        // routes through possiblyCommitted → persistent lock banner. This
-        // matches the EditorPage handler's comment at
+        // network/fetch error in ApiRequestError, so reaching this point
+        // means either a pre-send client bug (sync throw before
+        // api.snapshots.restore returned a promise) or — as a
+        // defense-in-depth reserve — a future non-ApiRequestError throw
+        // observed after the request was scheduled. The `dispatched`
+        // flag distinguishes them: false means api.snapshots.restore
+        // never returned a promise → server never received the request
+        // → NETWORK (transient retry); true means the request landed →
+        // server likely committed the restore + its auto-snapshot →
+        // route through committed (persistent lock banner, no retry
+        // prompt) to avoid double-committing on retry. See the S3
+        // (review 2026-05-27) note above the `let dispatched = false`
+        // for why the post-send branch is reserve, not currently-live.
+        // This matches the EditorPage handler's comment at
         // `handleRestoreSnapshot` ("hook synthesizes a 200 BAD_JSON
         // ApiRequestError for non-ApiRequestError post-success throws").
         if (dispatched) return { ok: false, error: makeClientCommittedError() };

@@ -766,15 +766,22 @@ describe("useSnapshotState", () => {
   });
 
   it("S5 (4b.3c.3): a post-send non-ApiRequestError throw still routes to committed", async () => {
-    // Complement to the pre-send pin: when api.snapshots.restore
-    // successfully returns a promise (dispatched=true) and a later
-    // bookkeeping step throws (e.g. localStorage.removeItem in Safari
-    // private mode), the conservative committed path stands — the
-    // server likely persisted the restore and its auto-snapshot, so the
-    // user must see the persistent lock banner rather than a retry
-    // prompt that would double-commit. mockRejectedValue is the
-    // post-send equivalent: api.snapshots.restore returns a promise
-    // (dispatched=true) that then rejects.
+    // Complement to the pre-send pin: once api.snapshots.restore has
+    // returned a promise (dispatched=true), any non-ApiRequestError
+    // rejection routes through the conservative committed path — the
+    // server may have persisted the restore and its auto-snapshot, so
+    // the user must see the persistent lock banner rather than a
+    // retry prompt that would double-commit.
+    //
+    // S3 (review 2026-05-27): mockRejectedValue returns a promise that
+    // rejects when awaited. That's structurally the same shape an
+    // ApiRequestError-bypassing failure would take if a future change
+    // introduced one (e.g. a post-`await promise` localStorage write
+    // throw in Safari private mode). Under the current apiFetch
+    // contract no production code throws non-ApiRequestErrors after
+    // the await, so this branch is defense-in-depth — the test pins
+    // the routing decision so a regression that drops the dispatched
+    // discriminant would surface here.
     vi.mocked(api.snapshots.restore).mockRejectedValue(new Error("post-send bookkeeping"));
     const { result } = renderHook(() => useSnapshotState("ch-1"));
     let r:
