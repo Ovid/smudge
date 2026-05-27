@@ -870,6 +870,77 @@ describe("handleRestore possiblyCommitted (4b.3c.3 I4)", () => {
   });
 });
 
+describe("handleRestore cross-project nav guard (review 2026-05-27 round 2)", () => {
+  it("does NOT set actionError when project changes mid-restore-failure", async () => {
+    // Pre-fix: handleRestore's catch passed `mapped` to
+    // `applyMappedError(..., { onMessage: setActionError })` unconditionally.
+    // The committed sub-branch's setProject already gated on
+    // projectRef-vs-refreshed.id, but the actionError banner did not.
+    // Reachable sequence: user clicks Restore on project A → navigates
+    // A → B before the POST settles → POST rejects (any non-ABORTED
+    // failure) → catch runs while projectRef.current points at B →
+    // setActionError fires the restore-failure copy on B for an event
+    // that happened on A. Confusing and unactionable.
+    // Post-fix: capture project id at handleRestore entry; the catch
+    // bails before applyMappedError when projectRef has drifted away
+    // from the captured id.
+    const projectA = makeProject();
+    const projectB: ProjectWithChapters = {
+      ...projectA,
+      id: "p2",
+      slug: "project-2",
+      chapters: [],
+    };
+    const deletedA = makeChapter({ id: "ch-a" });
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    const handleDeleteChapter = vi.fn();
+
+    // Defer the restore POST so we can navigate A → B before the catch
+    // fires.
+    let rejectRestore!: (err: Error) => void;
+    vi.mocked(api.chapters.restore).mockImplementation(
+      () =>
+        new Promise<Chapter>((_resolve, reject) => {
+          rejectRestore = reject;
+        }),
+    );
+    vi.mocked(api.projects.trash).mockResolvedValue([deletedA]);
+
+    const { rerender, result } = renderHook(
+      ({ project, slug }: { project: ProjectWithChapters; slug: string }) =>
+        useTrashManager(project, slug, setProject, handleDeleteChapter, navigate),
+      { initialProps: { project: projectA, slug: projectA.slug } },
+    );
+
+    await act(async () => {
+      await result.current.openTrash();
+    });
+
+    // Fire the restore — POST stays pending until rejectRestore is called.
+    let restorePromise!: Promise<void>;
+    act(() => {
+      restorePromise = result.current.handleRestore("ch-a");
+    });
+
+    // Navigate A → B while the POST is still in flight. The hook
+    // re-renders with project B; projectRef.current now points at B.
+    rerender({ project: projectB, slug: projectB.slug });
+
+    // Reject the POST with a non-committed failure (500 with no
+    // committed code maps to a recoverable error path, not the
+    // possiblyCommitted branch). The catch fires while the user is on B.
+    await act(async () => {
+      rejectRestore(new ApiRequestError("server gone", 500, "INTERNAL_ERROR"));
+      await restorePromise;
+    });
+
+    // Identity guard: the catch must have bailed before applyMappedError,
+    // so B's UI does not flash a banner about an event that happened on A.
+    expect(result.current.actionError).toBeNull();
+  });
+});
+
 describe("useTrashManager.confirmDeleteChapter — I5 programming-bug warn (4b.3c.2)", () => {
   it("dismisses the dialog AND warns when handleDeleteChapter throws unexpectedly", async () => {
     // handleDeleteChapter is contracted to surface ALL API errors via its

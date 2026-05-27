@@ -129,6 +129,17 @@ export function useTrashManager(
       // cross-restore race where A's snapshot would overwrite B's
       // successful chapter merge.
       const restoreToken = restoreSeq.start();
+      // I2 (review 2026-05-27 round 2): capture the project id at
+      // handleRestore entry so the catch can identity-guard
+      // setActionError before flashing a wrong-project banner. EditorPage
+      // stays mounted across project navigation (one Route for both
+      // slugs), so a restore POST that resolves after the user has
+      // navigated A → B would otherwise land setActionError on B for an
+      // event that happened on A. Pre-fix only the committed sub-branch's
+      // setProject was identity-gated; the unconditional applyMappedError
+      // at the catch tail surfaced the failure banner on whichever
+      // project the user was looking at when the response landed.
+      const restoreStartedForProjectId = projectRef.current?.id;
       // User callout (2026-04-25): abort any prior in-flight restore
       // before issuing the new one. The restoreOp instance threads the
       // signal into api.chapters.restore so the abort propagates to the
@@ -167,6 +178,23 @@ export function useTrashManager(
         // warnings invariant) and risking React's setState-on-unmount
         // warning.
         if (signal.aborted) return;
+        // I2 (review 2026-05-27 round 2): drift guard — bail entirely
+        // when the user has navigated to a different project mid-restore.
+        // Pre-fix the committed sub-branch's setProject was already
+        // identity-gated (see line ~225) but the applyMappedError at
+        // line ~258 was unconditional, so a stale-A restore failure
+        // would fire setActionError on B. Skipping the whole catch
+        // here is correct: the committed recovery GET (if reached)
+        // targets A's slug and its .then has its own identity guard,
+        // so any post-navigation state corruption was already covered
+        // — the only remaining cross-project leak was the actionError
+        // banner, which this guard now closes.
+        if (
+          restoreStartedForProjectId !== undefined &&
+          projectRef.current?.id !== restoreStartedForProjectId
+        ) {
+          return;
+        }
         const mapped = mapApiError(err, "trash.restoreChapter");
         // ABORTED returns message: null. Skip log + state update so a
         // late abort does not surface noise.
