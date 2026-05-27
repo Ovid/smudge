@@ -728,6 +728,44 @@ describe("useSnapshotState", () => {
     expect(mapApiError(r.error, "snapshot.restore").message).toBeNull();
   });
 
+  it("PINNED (4b.3c.3 S5): a pre-send sync throw currently propagates uncaught — fix routes it to NETWORK via dispatched flag", async () => {
+    // restoreOp.run sits OUTSIDE the try block, so a synchronous throw
+    // from api.snapshots.restore (a "pre-send programming bug" — the
+    // request never reached the wire) propagates out of restoreSnapshot
+    // as a rejected promise instead of being normalized into the
+    // discriminated RestoreResult shape that callers expect. Plan-vs-
+    // code finding: the 4b.3c.3 plan claimed current behaviour was
+    // makeClientCommittedError, but the empirical probe (subsequently
+    // removed) confirmed uncaught rejection. Task 42's fix restructures
+    // restoreOp.run inside the try and uses a `dispatched` flag to route
+    // post-send throws to committed and pre-send throws to NETWORK.
+    vi.mocked(api.snapshots.restore).mockImplementation(() => {
+      throw new Error("pre-send programming bug");
+    });
+    const { result } = renderHook(() => useSnapshotState("ch-1"));
+    let r:
+      | {
+          ok: boolean;
+          error?: ApiRequestError;
+          staleChapterSwitch?: boolean;
+          restoredChapterId?: string;
+        }
+      | undefined;
+    let caught: unknown;
+    await act(async () => {
+      try {
+        r = await result.current.restoreSnapshot("snap-1");
+      } catch (err) {
+        caught = err;
+      }
+    });
+    // PINNED: current code throws uncaught; restoreSnapshot's return
+    // value is never assigned.
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toBe("pre-send programming bug");
+    expect(r).toBeUndefined();
+  });
+
   it("leaves count null when list fetch fails so badge stays hidden", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.snapshots.list).mockRejectedValue(new Error("network error"));
