@@ -2917,10 +2917,12 @@ describe("useProjectEditor", () => {
 
     expect(onProjectNotFound).toHaveBeenCalledTimes(1);
     expect(onError).not.toHaveBeenCalled();
-    expect(warnSpy).not.toHaveBeenCalledWith(
-      expect.stringContaining("Failed to create chapter:"),
-      expect.anything(),
-    );
+    // Suggestion (review 2026-05-27 round 3): tighter matcher. The old
+    // form `not.toHaveBeenCalledWith("Failed to create chapter:", ...)`
+    // would silently pass if the warn shape changed but warn still
+    // fired. CLAUDE.md zero-warnings rule wants `not.toHaveBeenCalled()`
+    // on the local spy so any unexpected warn surfaces.
+    expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
   });
 
@@ -3886,7 +3888,12 @@ describe("useProjectEditor", () => {
     await act(async () => {
       await Promise.resolve();
     });
+    // Suggestion (review 2026-05-27 round 3): toHaveBeenCalledTimes(2)
+    // would still pass if a future regression fired GET against the
+    // wrong slug. Pin the call-args so cross-create test catches
+    // recovery-GET targeting drift.
     expect(api.projects.get).toHaveBeenCalledTimes(2);
+    expect(api.projects.get).toHaveBeenLastCalledWith("test-project", expect.any(AbortSignal));
 
     // Fire Create-B → POST-B resolves with ch-b → happy-path setProject
     // merges ch-b into project state. createSeq.start() at Create-B
