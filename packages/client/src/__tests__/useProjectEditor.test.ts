@@ -2894,6 +2894,37 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("PINNED (4b.3c.3 S11): a 404 on chapter-create currently surfaces createChapterProjectGone via onError but does NOT navigate home — fix flips this", async () => {
+    // Current behaviour: a 404 on POST /projects/:slug/chapters means the
+    // project was deleted between sidebar render and the create POST
+    // landing. The mapper surfaces STRINGS.error.createChapterProjectGone
+    // via the scope's byStatus[404], and onError displays a dismissable
+    // banner. Task 44 adds an onProjectNotFound option so EditorPage can
+    // navigate("/") on this branch — the project no longer exists, so
+    // the banner is the wrong UX (the user has nothing to dismiss it
+    // back to). Currently this option does not exist, so the pin asserts
+    // both that onError fires AND that no equivalent navigation hook is
+    // available yet.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError("project deleted", 404, "NOT_FOUND"),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    const onError = vi.fn();
+    await act(async () => {
+      await result.current.handleCreateChapter(onError);
+    });
+
+    // PINNED: pre-fix behaviour — onError surfaces the gone-banner copy.
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.createChapterProjectGone);
+    // PINNED: pre-fix behaviour — no navigation-home hook exists on the
+    // useProjectEditor options surface yet.
+    warnSpy.mockRestore();
+  });
+
   it("handleCreateChapter routes failures through onError callback (I4)", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.create).mockRejectedValue(new Error("create boom"));
