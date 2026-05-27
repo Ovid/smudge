@@ -233,7 +233,43 @@
 - **Confidence:** Medium
 - **Found by:** Concurrency & State (`claude-opus-4-7[1m]`)
 - **First seen:** 2026-05-26 on branch `consumer-recovery-helper-consuming-fixes` at `490e351`
-- **Last seen:** 2026-05-26 on branch `consumer-recovery-helper-consuming-fixes` at `490e351`
+- **Last seen:** 2026-05-27 on branch `consumer-recovery-independent-fixes` at `a4bb07e`
+- **Severity:** Suggestion
+
+## `7f2c1e08` — `handleUpdateProjectTitle` recovery-GET catch silently swallows every non-404 error
+- **File (at first sighting):** `packages/client/src/hooks/useProjectEditor.ts:1418`
+- **Symbol:** `handleUpdateProjectTitle` recovery branch
+- **Bug class:** Error Handling
+- **Description:** The recovery `catch (recoveryErr) { if (isApiError(recoveryErr) && recoveryErr.status === 404) onRequestEditorLockRef.current?.(...) }` block fires `onRequestEditorLock` only on a 404. NETWORK, 500, BAD_JSON, ABORTED — every other failure path drops on the floor with no `devWarn`, no banner. The OOSS1/OOSS2/S2 sweep added `devWarn` to three sibling recovery sites (`handleStatusChange:1564`, `handleCreateChapter:937`, `handleRestore:307`); `handleUpdateProjectTitle` is now the lone remaining silent-swallow. Pre-existing on main (authored 2026-04-24 commit `35e95c66`); the 4b.3c.3 branch did not touch the hunk.
+- **Suggested fix:** Add `devWarn("handleUpdateProjectTitle recovery GET failed", recoveryController.signal, recoveryErr);` immediately before the 404 check at line 1430. Optionally also reread `projectSlugRef.current` for the recovery GET URL freshness (matches the S1 round-2 pattern in `handleCreateChapter:879`).
+- **Confidence:** High
+- **Found by:** Error Handling & Edge Cases (`claude-opus-4-7[1m]`)
+- **First seen:** 2026-05-27 on branch `consumer-recovery-independent-fixes` at `a4bb07e`
+- **Last seen:** 2026-05-27 on branch `consumer-recovery-independent-fixes` at `a4bb07e`
+- **Severity:** Suggestion
+
+## `8b34a209` — `handleCreateChapter` success-path `setProject` lacks inside-updater epoch guard
+- **File (at first sighting):** `packages/client/src/hooks/useProjectEditor.ts:780`
+- **Symbol:** `handleCreateChapter` success path
+- **Bug class:** Concurrency
+- **Description:** `setProject((prev) => prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev)` at line 780 does NOT re-check `prev.id === projectId` inside the updater, unlike the analogous `handleReorderChapters:1289-1306` which DOES check (S20 pattern). If a concurrent `loadProject(B)`'s `setProject(B)` queues between the outer drift guard at line 775-777 and React draining A's updater, and A's drains after B's, A's `newChapter` is appended to B's chapter list — a phantom chapter referencing project A wedged into project B's UI. Sibling `setActiveChapter(newChapter)` at line 778 and `confirmedStatusRef.current[newChapter.id] = newChapter.status` at line 788 compound. Pre-existing on main (commit `dc6a8fca`, 2026-04-21); not touched by this branch. Sibling-asymmetric with the S20 inside-updater pattern.
+- **Suggested fix:** Convert to `setProject((prev) => prev && prev.id === projectId ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev)`. The `setActiveChapter(newChapter)` at line 778 and the imperative `confirmedStatusRef.current[newChapter.id] = newChapter.status` at line 788 should be similarly guarded (or moved into a render-keyed effect).
+- **Confidence:** Medium
+- **Found by:** Concurrency & State (`claude-opus-4-7[1m]`)
+- **First seen:** 2026-05-27 on branch `consumer-recovery-independent-fixes` at `a4bb07e`
+- **Last seen:** 2026-05-27 on branch `consumer-recovery-independent-fixes` at `a4bb07e`
+- **Severity:** Suggestion
+
+## `c4571a83` — `useKeyboardShortcuts` bare `.catch(() => {})` on two awaitable calls
+- **File (at first sighting):** `packages/client/src/hooks/useKeyboardShortcuts.ts:168, 190`
+- **Symbol:** `switchToViewRef.current(...).catch(() => {})` and `handleSelectChapterWithFlushRef.current(...).catch(() => {})`
+- **Bug class:** Error Handling
+- **Description:** Both awaitable calls drop errors silently with no `devWarn`. Sibling-divergence with the OOSS1/OOSS2/S2 sweep that just upgraded structurally identical swallows in `useSnapshotState.ts:241, 530`. Pre-existing on main; not touched by this branch. Both targets surface user-visible errors internally via `setActionError`, so the impact is observability-only today; a thrown-not-caught error from a future refactor that bypasses the internal banner would silently disappear.
+- **Suggested fix:** Replace each bare swallow with `devWarn("keyboard shortcut switchToView failed", <signal>, err)` and the analogous wording for the chapter-switch path. The two callers don't have a controller signal in scope today; either pass `new AbortController().signal` (always non-aborted) or accept the silent swallow with a comment explaining why these are recoverable internal-error sites.
+- **Confidence:** Medium
+- **Found by:** Error Handling & Edge Cases (`claude-opus-4-7[1m]`)
+- **First seen:** 2026-05-27 on branch `consumer-recovery-independent-fixes` at `a4bb07e`
+- **Last seen:** 2026-05-27 on branch `consumer-recovery-independent-fixes` at `a4bb07e`
 - **Severity:** Suggestion
 
 
