@@ -940,6 +940,90 @@ describe("Editor", () => {
     await waitFor(() => expect(onImageUploadCommitted).toHaveBeenCalled());
   });
 
+  it("PINNED (4b.3c.3 S18): same-project chapter switch during paste upload still fires success announce on the torn-down editor — fix gates this", async () => {
+    // S18 (review 2026-04-25): the existing `projectIdRef.current ===
+    // uploadProjectId` guard catches cross-project switches but not a
+    // same-project chapter switch (projectIdRef stays equal). The
+    // existing `if (editor && !editor.isDestroyed)` block looks like it
+    // would block the announce post-unmount, but the empirical probe
+    // (subsequently removed) confirmed that the announce DOES fire even
+    // after unmount — TipTap's destroy lifecycle has not flipped
+    // isDestroyed by the time the upload's `.then` resolves in
+    // happy-dom + React 18. Task 47's fix gates the announce on an
+    // editor-instance identity check via editorInstanceRef + an
+    // unmount-clear cleanup.
+    const onImageAnnouncement = vi.fn();
+    let resolveUpload!: (img: ImageRow) => void;
+    vi.mocked(api.images.upload).mockImplementation(
+      () =>
+        new Promise<ImageRow>((res) => {
+          resolveUpload = res;
+        }),
+    );
+    const editorRef = { current: null } as React.MutableRefObject<EditorHandle | null>;
+    const { unmount } = render(
+      <Editor
+        projectId="project-a"
+        chapterId="chapter-a"
+        content={null}
+        onSave={mockOnSave()}
+        editorRef={editorRef}
+        onImageAnnouncement={onImageAnnouncement}
+      />,
+    );
+    await waitFor(() => expect(editorRef.current?.editor).not.toBeNull());
+    const editor = editorRef.current!.editor!;
+    const file = new File(["pixels"], "x.png", { type: "image/png" });
+    const imagePastePlugin = findImagePastePlugin(editor);
+
+    (imagePastePlugin.props.handlePaste as (...args: unknown[]) => unknown)(
+      editor.view,
+      {
+        preventDefault: vi.fn(),
+        clipboardData: { items: [{ type: "image/png", getAsFile: () => file }] },
+      },
+      editor.view.state.doc.slice(0),
+    );
+    await waitFor(() => expect(api.images.upload).toHaveBeenCalled());
+
+    // Simulate same-project chapter switch — Editor unmounts (parent
+    // changes key={chapterId:reloadKey} on chapter change), new Editor
+    // mounts for chapter-b. The OLD handler is still in flight.
+    unmount();
+    const editorRef2 = { current: null } as React.MutableRefObject<EditorHandle | null>;
+    render(
+      <Editor
+        projectId="project-a"
+        chapterId="chapter-b"
+        content={null}
+        onSave={mockOnSave()}
+        editorRef={editorRef2}
+        onImageAnnouncement={onImageAnnouncement}
+      />,
+    );
+
+    // Resolve the upload that landed against chapter-a.
+    resolveUpload({
+      id: "img-1",
+      project_id: "project-a",
+      filename: "x.png",
+      alt_text: "",
+      caption: "",
+      source: "",
+      license: "",
+      mime_type: "image/png",
+      size_bytes: 100,
+      created_at: "2026-01-01T00:00:00Z",
+      reference_count: 0,
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    // PINNED: announce fires for chapter-a's upload on chapter-b's
+    // screen. The success message references the chapter-a image but
+    // the user is now looking at chapter-b — confusing UX.
+    expect(onImageAnnouncement).toHaveBeenCalledWith(STRINGS.imageGallery.insertSuccess("x.png"));
+  });
+
   it("paste-upload does not fire gallery refresh after a project switch (I9 2026-04-25)", async () => {
     // I9 (review 2026-04-25): the Editor doesn't necessarily remount on
     // cross-project navigation, so projectIdRef.current can advance
