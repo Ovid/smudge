@@ -225,7 +225,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // exposed to useTrashManager) all wrote the identical
   // `Object.fromEntries(refreshed.chapters.map(...))` body inline. The
   // ref is stable, so empty deps is correct.
-  const reseedConfirmedStatusesFromProject = useCallback((refreshed: ProjectWithChapters) => {
+  const replaceConfirmedStatusesFromProject = useCallback((refreshed: ProjectWithChapters) => {
     confirmedStatusRef.current = Object.fromEntries(
       refreshed.chapters.map((c) => [c.id, c.status]),
     );
@@ -335,7 +335,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // server response. Every chapter's status here is server-truth
         // at load time; subsequent revert paths read from this ref so
         // they don't stomp to an optimistic value.
-        reseedConfirmedStatusesFromProject(data);
+        replaceConfirmedStatusesFromProject(data);
         // If the cached activeChapter belongs to a different project (e.g.
         // in-place slug change that isn't a rename), the `!activeChapterRef`
         // guard would skip loading the new project's first chapter, and the
@@ -372,7 +372,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       }
     });
     void promise;
-  }, [slug, loadProjectOp, reseedConfirmedStatusesFromProject]);
+  }, [slug, loadProjectOp, replaceConfirmedStatusesFromProject]);
 
   const handleSave = useCallback(
     async (content: Record<string, unknown>, chapterId?: string): Promise<boolean> => {
@@ -891,7 +891,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
               // whose status changed server-side between initial load and
               // recovery) has no cache entry, and a later revert silently
               // skips.
-              reseedConfirmedStatusesFromProject(refreshed);
+              replaceConfirmedStatusesFromProject(refreshed);
               const added = refreshed.chapters.filter((c) => !previousChapterIds.has(c.id));
               if (added.length > 0) {
                 // Pick the highest sort_order: the server appends new
@@ -946,7 +946,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       selectChapterSeq,
       createChapterOp,
       createChapterSeq,
-      reseedConfirmedStatusesFromProject,
+      replaceConfirmedStatusesFromProject,
     ],
   );
 
@@ -1665,7 +1665,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
     // just the restored row) can fall back to a real baseline. Shares
     // the internal helper used by loadProject and handleCreateChapter
     // recovery (S1 dedup, review 2026-05-27).
-    replaceConfirmedStatusesFromProject: reseedConfirmedStatusesFromProject,
+    replaceConfirmedStatusesFromProject,
     // Getter for reading the current active chapter from inside async
     // callbacks whose closure would otherwise see a stale value.
     getActiveChapter: () => activeChapterRef.current,

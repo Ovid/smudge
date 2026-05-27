@@ -3819,7 +3819,7 @@ describe("useProjectEditor", () => {
   it("I1 (review 2026-05-27 round 2): rapid Add Chapter — a stale recovery GET-A does NOT clobber Create-B's successful merge", async () => {
     // Pre-fix: handleCreateChapter's recovery branch had no
     // sequence-token guard around its post-await setProject /
-    // reseedConfirmedStatusesFromProject / setActiveChapter writes.
+    // replaceConfirmedStatusesFromProject / setActiveChapter writes.
     // Reachable sequence:
     //   1. POST-A returns 200 BAD_JSON → catch dispatches recovery GET-A
     //      (pending).
