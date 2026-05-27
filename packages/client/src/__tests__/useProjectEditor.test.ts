@@ -2907,9 +2907,7 @@ describe("useProjectEditor", () => {
     );
 
     const onProjectNotFound = vi.fn();
-    const { result } = renderHook(() =>
-      useProjectEditor("test-project", { onProjectNotFound }),
-    );
+    const { result } = renderHook(() => useProjectEditor("test-project", { onProjectNotFound }));
     await waitFor(() => expect(result.current.project).toBeTruthy());
 
     const onError = vi.fn();

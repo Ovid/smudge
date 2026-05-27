@@ -811,7 +811,7 @@ describe("useSnapshotState", () => {
       if (signal) listSignals.push(signal);
       return Promise.resolve([makeListItem()]);
     });
-    vi.mocked(api.snapshots.restore).mockResolvedValue(undefined);
+    vi.mocked(api.snapshots.restore).mockResolvedValue({} as never);
 
     const { result } = renderHook(() => useSnapshotState("ch-1"));
 

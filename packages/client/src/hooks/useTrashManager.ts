@@ -175,7 +175,11 @@ export function useTrashManager(
                 replaceConfirmedStatusesRef.current?.(refreshed);
               })
               .catch((recoveryErr) => {
-                devWarn("handleRestore recovery GET failed", recoveryController.signal, recoveryErr);
+                devWarn(
+                  "handleRestore recovery GET failed",
+                  recoveryController.signal,
+                  recoveryErr,
+                );
               });
           },
           onMessage: setActionError,
