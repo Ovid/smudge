@@ -846,6 +846,15 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
                 setChapterWordCount(countWords(newest.content));
               }
             }
+            // S17 (4b.3c.3): null the ref on success so a later
+            // handleCreateChapter committed-path doesn't call .abort()
+            // on the prior (already-completed) controller. Identity-
+            // checked so we don't clobber a controller a later handler
+            // already replaced. Mirrors Task 48's S19 fix for
+            // restoreFollowupAbortRef in useSnapshotState.
+            if (createRecoveryAbortRef.current === recoveryController) {
+              createRecoveryAbortRef.current = null;
+            }
           } catch (err) {
             // S10 (4b.3c.2): surface the recovery failure in dev. The
             // recoveryController.signal gates the warn — supersede or

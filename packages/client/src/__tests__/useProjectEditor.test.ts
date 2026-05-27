@@ -2926,6 +2926,77 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("S17 (4b.3c.3): createRecoveryAbortRef is nulled on successful recovery merge — subsequent committed paths don't re-abort the prior signal", async () => {
+    // Indirect assertion: after a successful committed-recovery merge,
+    // the recovery ref is nulled. A second committed handleCreateChapter
+    // calls `createRecoveryAbortRef.current?.abort()` at the top of its
+    // recovery branch; if the prior ref is null, that's a no-op and the
+    // first recovery controller's signal stays unaborted. Without the
+    // S17 fix the prior ref still points to the completed controller,
+    // and the second call's pre-amble .abort() would flip the prior
+    // signal to aborted.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const ch3 = {
+      id: "ch3",
+      project_id: "p1",
+      title: UNTITLED_CHAPTER,
+      content: null,
+      sort_order: 2,
+      word_count: 0,
+      status: "outline" as const,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+      deleted_at: null,
+    };
+    const ch4 = { ...ch3, id: "ch4", sort_order: 3 };
+    const refreshed1 = { ...mockProject, chapters: [mockChapter1, mockChapter2, ch3] };
+    const refreshed2 = { ...mockProject, chapters: [mockChapter1, mockChapter2, ch3, ch4] };
+
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError("bad json", 200, "BAD_JSON"),
+    );
+
+    const recoverySignals: AbortSignal[] = [];
+    let getCallCount = 0;
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get).mockImplementation((_slug, signal) => {
+      getCallCount++;
+      // First call is the initial loadProject; second+ are recovery GETs.
+      if (getCallCount > 1 && signal) recoverySignals.push(signal);
+      if (getCallCount === 1) return Promise.resolve(mockProject);
+      if (getCallCount === 2) return Promise.resolve(refreshed1);
+      return Promise.resolve(refreshed2);
+    });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project?.chapters).toHaveLength(2));
+
+    const onError = vi.fn();
+    await act(async () => {
+      await result.current.handleCreateChapter(onError);
+    });
+
+    // First recovery succeeded.
+    expect(recoverySignals).toHaveLength(1);
+    const firstSignal = recoverySignals[0];
+    expect(firstSignal?.aborted).toBe(false);
+
+    // Fire a second committed handleCreateChapter.
+    await act(async () => {
+      await result.current.handleCreateChapter(onError);
+    });
+
+    // S17: the first recovery's signal must stay unaborted; the ref was
+    // nulled on success so the second recovery's pre-amble .abort() is
+    // a no-op on null.
+    expect(firstSignal?.aborted).toBe(false);
+    expect(recoverySignals).toHaveLength(2);
+    // The second recovery's own signal is also unaborted (its own
+    // operation succeeded).
+    expect(recoverySignals[1]?.aborted).toBe(false);
+    warnSpy.mockRestore();
+  });
+
   it("S11 (4b.3c.3): a 404 falls back to the createChapterProjectGone banner when onProjectNotFound is omitted", async () => {
     // Defensive fallback for hook consumers that can't navigate (tests,
     // storybook, or a future caller that wants the dismissable banner).
