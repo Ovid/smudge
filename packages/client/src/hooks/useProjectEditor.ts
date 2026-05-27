@@ -230,6 +230,15 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       refreshed.chapters.map((c) => [c.id, c.status]),
     );
   }, []);
+  // OOSS3 (review 2026-05-27 round 3): memoize seedConfirmedStatus
+  // so useTrashManager's seedConfirmedStatusRef effect (which lists it
+  // as a dep) doesn't re-run on every parent render. The new sibling
+  // replaceConfirmedStatusesFromProject above IS memoized; the
+  // asymmetry was visible after the I4 (4b.3c.3) change. Ref is
+  // stable, so empty deps is correct.
+  const seedConfirmedStatus = useCallback((id: string, status: string) => {
+    confirmedStatusRef.current[id] = status;
+  }, []);
   // I22 (review 2026-04-24): recovery GETs fired by BAD_JSON catches
   // in handleCreateChapter / handleUpdateProjectTitle / handleStatusChange
   // need an AbortController so unmount drops the in-flight recovery.
@@ -1672,9 +1681,8 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
     // baseline if both the PATCH and the recovery GET fail. Exposed as
     // a function rather than the ref itself so call sites cannot mutate
     // the cache to arbitrary values — only seed (id, status) pairs.
-    seedConfirmedStatus: (id: string, status: string) => {
-      confirmedStatusRef.current[id] = status;
-    },
+    // OOSS3 (round 3): see the memoized definition above.
+    seedConfirmedStatus,
     // I4 (4b.3c.3): bulk reseed for the trash-restore committed-
     // recovery branch. After a 200 BAD_JSON / RESTORE_READ_FAILURE on
     // restore, the trash hook does a follow-up GET to repopulate

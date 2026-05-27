@@ -238,9 +238,15 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
       .then((data) => {
         if (!token.isStale()) setSnapshotCount(data.length);
       })
-      .catch(() => {
-        // Leave count as null so the badge stays hidden. The next panel
+      .catch((err) => {
+        // OOSS1 (review 2026-05-27 round 3): surface the failure in dev
+        // so a broken snapshot list path on chapter-switch isn't
+        // silently swallowed. Mirrors the S2 round-2 sibling on the
+        // restore-followup snapshot list. The controller.signal gates
+        // the warn so chapter-switch / unmount aborts stay silent.
+        // Count stays null so the badge remains hidden; the next panel
         // interaction will retry via refreshCount.
+        devWarn("snapshot list (chapter-switch) failed", controller.signal, err);
       });
     return () => {
       controller.abort();
@@ -522,12 +528,18 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
     // one (and on unmount, via the hook's own cleanup). The hook's
     // run() aborts the prior controller per call; unmount cleanup is
     // baked into useAbortableAsyncOperation.
-    const { promise } = refreshCountOp.run((s) => api.snapshots.list(chapterId, s));
+    const { promise, signal } = refreshCountOp.run((s) => api.snapshots.list(chapterId, s));
     promise
       .then((data) => {
         if (!token.isStale()) setSnapshotCount(data.length);
       })
-      .catch(() => {});
+      .catch((err) => {
+        // OOSS2 (review 2026-05-27 round 3): surface the failure in
+        // dev so a broken refreshCount path isn't silently swallowed.
+        // Same sibling-divergence shape as OOSS1. The per-call signal
+        // gates the warn so supersede / unmount aborts stay silent.
+        devWarn("snapshot refreshCount failed", signal, err);
+      });
   }, [chapterId, chapterSeq, refreshCountOp]);
 
   // Feeds the hook's count from the panel's own list fetch so the toolbar
