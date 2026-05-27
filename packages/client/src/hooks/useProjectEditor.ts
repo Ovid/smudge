@@ -857,51 +857,66 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           // against the old slug 404s, the catch's devWarn logs and
           // the post-recovery banner surfaces with no sidebar refresh.
           // Mirrors useTrashManager.handleRestore's S2 fix.
-          const recoverySlug = projectSlugRef.current ?? slug;
+          //
+          // S2 (review 2026-05-27 round 3): drop the `?? slug`
+          // fallback. The entry-time guards at 797-799 protect against
+          // cross-project navigation, so projectSlugRef.current being
+          // undefined here is unreachable in practice. If a future
+          // refactor weakens those guards, falling back to the
+          // (known-stale) captured `slug` would fire a doomed GET
+          // (404 → devWarn) against a dead slug; skip the recovery
+          // GET entirely and fall through to the committed banner
+          // dispatch below.
+          const recoverySlug = projectSlugRef.current;
           try {
-            const refreshed = await api.projects.get(recoverySlug, recoveryController.signal);
-            if (recoveryController.signal.aborted) return;
-            // I1 (review 2026-05-27 round 2): sequence guard. If a newer
-            // handleCreateChapter has started between this recovery GET's
-            // dispatch and resolution, createToken is stale and the
-            // stale snapshot must not touch state. Pre-fix, a successful
-            // Create-B landing while Create-A's recovery GET was in
-            // flight could see GET-A overwrite B's chapter merge —
-            // silently dropping B from the sidebar and (via the
-            // previousChapterIds capture inside the catch) yanking the
-            // user back onto one of A's chapters. The seq guard makes
-            // the previousChapterIds capture-timing subsidiary moot
-            // because the whole post-await block bails before reaching
-            // it.
-            if (createToken.isStale()) return;
-            // Merge only if the user is still on the same project (by
-            // id — stable across rename, changes on cross-project
-            // navigation). The prior slug-OR check let a stale
-            // recovery response merge into a different project's
-            // state after the user navigated away AND the new project
-            // finished loading (the two refs then realign to the new
-            // slug, making the OR evaluate true).
-            if (projectRef.current?.id === projectId) {
-              setProject(refreshed);
-              // C2 (review 2026-04-25): re-seed the confirmed-status cache
-              // from the refreshed project. The recovery branch is a fresh
-              // server snapshot, so it carries the authoritative status
-              // for every chapter — same discipline as loadProject's seed.
-              // Without this, the newly-created chapter (and any other row
-              // whose status changed server-side between initial load and
-              // recovery) has no cache entry, and a later revert silently
-              // skips.
-              replaceConfirmedStatusesFromProject(refreshed);
-              const added = refreshed.chapters.filter((c) => !previousChapterIds.has(c.id));
-              if (added.length > 0) {
-                // Pick the highest sort_order: the server appends new
-                // chapters to the end. If somehow more than one row
-                // appeared (unexpected), the most-recently-appended
-                // one is still the best candidate for the user's
-                // intended click.
-                const newest = added.reduce((a, b) => (a.sort_order > b.sort_order ? a : b));
-                setActiveChapter(newest);
-                setChapterWordCount(countWords(newest.content));
+            // S2 (round 3): no slug → skip the GET entirely. We stay
+            // inside the try so the finally still nulls the ref, and
+            // fall through to the message dispatch below.
+            if (recoverySlug) {
+              const refreshed = await api.projects.get(recoverySlug, recoveryController.signal);
+              if (recoveryController.signal.aborted) return;
+              // I1 (review 2026-05-27 round 2): sequence guard. If a newer
+              // handleCreateChapter has started between this recovery GET's
+              // dispatch and resolution, createToken is stale and the
+              // stale snapshot must not touch state. Pre-fix, a successful
+              // Create-B landing while Create-A's recovery GET was in
+              // flight could see GET-A overwrite B's chapter merge —
+              // silently dropping B from the sidebar and (via the
+              // previousChapterIds capture inside the catch) yanking the
+              // user back onto one of A's chapters. The seq guard makes
+              // the previousChapterIds capture-timing subsidiary moot
+              // because the whole post-await block bails before reaching
+              // it.
+              if (createToken.isStale()) return;
+              // Merge only if the user is still on the same project (by
+              // id — stable across rename, changes on cross-project
+              // navigation). The prior slug-OR check let a stale
+              // recovery response merge into a different project's
+              // state after the user navigated away AND the new project
+              // finished loading (the two refs then realign to the new
+              // slug, making the OR evaluate true).
+              if (projectRef.current?.id === projectId) {
+                setProject(refreshed);
+                // C2 (review 2026-04-25): re-seed the confirmed-status cache
+                // from the refreshed project. The recovery branch is a fresh
+                // server snapshot, so it carries the authoritative status
+                // for every chapter — same discipline as loadProject's seed.
+                // Without this, the newly-created chapter (and any other row
+                // whose status changed server-side between initial load and
+                // recovery) has no cache entry, and a later revert silently
+                // skips.
+                replaceConfirmedStatusesFromProject(refreshed);
+                const added = refreshed.chapters.filter((c) => !previousChapterIds.has(c.id));
+                if (added.length > 0) {
+                  // Pick the highest sort_order: the server appends new
+                  // chapters to the end. If somehow more than one row
+                  // appeared (unexpected), the most-recently-appended
+                  // one is still the best candidate for the user's
+                  // intended click.
+                  const newest = added.reduce((a, b) => (a.sort_order > b.sort_order ? a : b));
+                  setActiveChapter(newest);
+                  setChapterWordCount(countWords(newest.content));
+                }
               }
             }
           } catch (err) {
