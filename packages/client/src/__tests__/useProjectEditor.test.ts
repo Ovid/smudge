@@ -2995,6 +2995,66 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("I3 (review 2026-05-27): a 404 on a stale cross-project POST does NOT fire onProjectNotFound after A→B nav", async () => {
+    // Pre-fix: the S11 isNotFound short-circuit at lines 767-774 fired
+    // BEFORE the cross-project drift guards at 776-778. If the user
+    // navigated A → B while A's create-POST was in flight and A
+    // returned 404, onProjectNotFound (wired to navigate("/") in
+    // EditorPage) ran and yanked the user back to the project list
+    // even though they were actively viewing B. Post-fix: the drift
+    // guards run first, so a stale-A 404 after the user is on B is
+    // silently dropped — the user keeps editing B.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
+
+    let rejectCreate!: (err: unknown) => void;
+    vi.mocked(api.chapters.create)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectCreate = reject;
+          }),
+      );
+
+    const onProjectNotFound = vi.fn();
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug, { onProjectNotFound }),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    // Kick off the create against Project A.
+    let createPromise!: Promise<void>;
+    act(() => {
+      createPromise = result.current.handleCreateChapter();
+    });
+
+    // Navigate to Project B before the POST settles.
+    vi.mocked(api.projects.get).mockResolvedValueOnce(otherProject);
+    rerender({ slug: "other-project" });
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    // Reject the stale A POST with a 404 (A was just deleted server-side).
+    await act(async () => {
+      rejectCreate(new ApiRequestError("project deleted", 404, "NOT_FOUND"));
+      await createPromise;
+    });
+
+    // The user is on B — onProjectNotFound must NOT fire; the stale-A
+    // 404 is irrelevant to B and is silently dropped.
+    expect(onProjectNotFound).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
   it("S11 (4b.3c.3): a 404 falls back to the createChapterProjectGone banner when onProjectNotFound is omitted", async () => {
     // Defensive fallback for hook consumers that can't navigate (tests,
     // storybook, or a future caller that wants the dismissable banner).

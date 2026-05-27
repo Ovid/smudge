@@ -757,6 +757,17 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // a "Failed to create chapter: ABORTED" warning, violating
         // CLAUDE.md §Testing Philosophy zero-warnings rule.
         if (isAborted(err)) return;
+        // I3 (review 2026-05-27): drift guards run BEFORE the S11 404
+        // short-circuit. If the user navigated A → B mid-POST and A
+        // returned 404 (A was deleted server-side), onProjectNotFound
+        // (wired to navigate("/") in EditorPage) would otherwise yank
+        // the user out of project B for an event that's irrelevant
+        // there. The drift guards convert that stale-A 404 into a
+        // silent no-op — same discipline as the existing onError gate
+        // below, just hoisted above the navigation side-effect.
+        if (projectRef.current?.id !== projectId) return;
+        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
+          return;
         // S11 (4b.3c.3): a 404 means the project was deleted between
         // the sidebar render and the POST landing. The default banner
         // (createChapterProjectGone) was the wrong UX because the
@@ -773,9 +784,6 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           // banner stands as a recoverable UX.
         }
         console.warn("Failed to create chapter:", err);
-        if (projectRef.current?.id !== projectId) return;
-        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
-          return;
         // I4: route through the onError callback (same pattern as
         // handleRenameChapter / handleStatusChange / handleDeleteChapter)
         // so a recoverable failure surfaces as a dismissible banner
