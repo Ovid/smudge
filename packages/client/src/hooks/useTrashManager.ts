@@ -235,7 +235,7 @@ export function useTrashManager(
               .finally(() => {
                 // T1 (review 2026-05-27): null the ref once this
                 // recovery GET has settled so a later committed
-                // restore's pre-amble `.abort()` is a no-op on the
+                // restore's preamble `.abort()` is a no-op on the
                 // completed controller rather than flipping its
                 // signal.aborted. Identity-checked so we don't clobber
                 // a controller a later restore has already replaced.

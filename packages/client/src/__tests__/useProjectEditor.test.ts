@@ -2931,7 +2931,7 @@ describe("useProjectEditor", () => {
     // recovery branch; if the prior ref is null, that's a no-op and the
     // first recovery controller's signal stays unaborted. Without the
     // S17 fix the prior ref still points to the completed controller,
-    // and the second call's pre-amble .abort() would flip the prior
+    // and the second call's preamble .abort() would flip the prior
     // signal to aborted.
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const ch3 = {
@@ -2985,7 +2985,7 @@ describe("useProjectEditor", () => {
     });
 
     // S17: the first recovery's signal must stay unaborted; the ref was
-    // nulled on success so the second recovery's pre-amble .abort() is
+    // nulled on success so the second recovery's preamble .abort() is
     // a no-op on null.
     expect(firstSignal?.aborted).toBe(false);
     expect(recoverySignals).toHaveLength(2);
@@ -3057,7 +3057,7 @@ describe("useProjectEditor", () => {
 
   it("S11 (4b.3c.3): a 404 falls back to the createChapterProjectGone banner when onProjectNotFound is omitted", async () => {
     // Defensive fallback for hook consumers that can't navigate (tests,
-    // storybook, or a future caller that wants the dismissable banner).
+    // storybook, or a future caller that wants the dismissible banner).
     // The scope's byStatus[404] string stays in scopes.ts for this path.
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.chapters.create).mockRejectedValue(

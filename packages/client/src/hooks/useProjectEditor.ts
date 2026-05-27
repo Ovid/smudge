@@ -791,7 +791,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             onProjectNotFoundRef.current();
             return;
           }
-          // No navigation hook wired: fall through so the dismissable
+          // No navigation hook wired: fall through so the dismissible
           // banner stands as a recoverable UX.
         }
         console.warn("Failed to create chapter:", err);

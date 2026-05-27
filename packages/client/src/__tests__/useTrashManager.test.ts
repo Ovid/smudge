@@ -637,7 +637,7 @@ describe("handleRestore possiblyCommitted (4b.3c.3 I4)", () => {
     expect(updater(otherProject)).toBe(otherProject);
   });
 
-  it("T1 (review 2026-05-27): restoreRecoveryAbortRef is nulled on success — subsequent restore's pre-amble does not re-abort the prior controller", async () => {
+  it("T1 (review 2026-05-27): restoreRecoveryAbortRef is nulled on success — subsequent restore's preamble does not re-abort the prior controller", async () => {
     // Indirect assertion mirrors S17 (useProjectEditor createRecoveryAbortRef)
     // and S19 (useSnapshotState restoreFollowupAbortRef): after the
     // recovery GET .then resolves, the ref is nulled. A second
@@ -645,7 +645,7 @@ describe("handleRestore possiblyCommitted (4b.3c.3 I4)", () => {
     // at the top of its recovery branch; if the prior ref is null,
     // that's a no-op and the first recovery controller's signal stays
     // unaborted. Without the T1 fix the prior ref still points at the
-    // completed controller, and the second call's pre-amble .abort()
+    // completed controller, and the second call's preamble .abort()
     // would flip the prior signal to aborted.
     const deletedA = makeChapter({ id: "ch-a" });
     const deletedB = makeChapter({ id: "ch-b" });
@@ -692,7 +692,7 @@ describe("handleRestore possiblyCommitted (4b.3c.3 I4)", () => {
     const firstSignal = recoverySignals[0];
     expect(firstSignal?.aborted).toBe(false);
 
-    // Second committed restore — its recovery pre-amble runs
+    // Second committed restore — its recovery preamble runs
     // `restoreRecoveryAbortRef.current?.abort()`. Post-T1 the ref is null,
     // so the prior (completed) signal stays unaborted.
     await act(async () => {

@@ -454,7 +454,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
             .then((data) => {
               if (!freshToken.isStale()) setSnapshotCount(data.length);
               // S19 (4b.3c.3): null the ref on success so a later
-              // restore's pre-amble .abort() is a no-op on the prior
+              // restore's preamble .abort() is a no-op on the prior
               // (completed) controller. Identity-checked so we don't
               // clobber a controller a later restore has already
               // replaced. Mirrors Task 45's S17 fix for

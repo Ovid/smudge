@@ -121,7 +121,7 @@ export function EditorPage() {
     onRequestEditorLock: (msg) => applyReloadFailedLockRef.current(msg),
     // S11 (4b.3c.3): handleCreateChapter 404 means the project was
     // deleted between sidebar render and the POST landing. The
-    // dismissable banner is the wrong UX (project doesn't exist for
+    // dismissible banner is the wrong UX (project doesn't exist for
     // the user to act on); navigate home so the project list rehydrates.
     onProjectNotFound: () => navigate("/"),
   });

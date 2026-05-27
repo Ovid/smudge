@@ -804,14 +804,14 @@ describe("useSnapshotState", () => {
     expect(mapped.message).toBe(STRINGS.snapshots.restoreResponseUnreadable);
   });
 
-  it("S19 (4b.3c.3): restoreFollowupAbortRef is nulled on success — subsequent restore's pre-amble does not re-abort the prior controller", async () => {
+  it("S19 (4b.3c.3): restoreFollowupAbortRef is nulled on success — subsequent restore's preamble does not re-abort the prior controller", async () => {
     // Indirect assertion: after the follow-up snapshots.list .then
     // resolves, restoreFollowupAbortRef is nulled. A second
     // restoreSnapshot calls `restoreFollowupAbortRef.current?.abort()`
     // at the top of the follow-up branch; if the prior ref is null,
     // that's a no-op and the first follow-up controller's signal stays
     // unaborted. Without the S19 fix the prior ref still points to the
-    // completed controller, and the second call's pre-amble .abort()
+    // completed controller, and the second call's preamble .abort()
     // would flip the prior signal to aborted.
     const listSignals: AbortSignal[] = [];
     vi.mocked(api.snapshots.list).mockImplementation((_chapterId, signal) => {
@@ -839,7 +839,7 @@ describe("useSnapshotState", () => {
     const firstFollowupSignal = listSignals[baseline];
     expect(firstFollowupSignal?.aborted).toBe(false);
 
-    // Fire a second restoreSnapshot. The pre-amble would re-abort the
+    // Fire a second restoreSnapshot. The preamble would re-abort the
     // first follow-up controller without the S19 fix.
     let r2: Awaited<ReturnType<typeof result.current.restoreSnapshot>> | undefined;
     await act(async () => {
@@ -851,7 +851,7 @@ describe("useSnapshotState", () => {
     });
 
     // S19: the first follow-up controller's signal stayed unaborted —
-    // the ref was nulled on success so the second restore's pre-amble
+    // the ref was nulled on success so the second restore's preamble
     // .abort() was a no-op on null.
     expect(firstFollowupSignal?.aborted).toBe(false);
     // Second follow-up's own signal is also unaborted (its op succeeded).
