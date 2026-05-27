@@ -125,6 +125,16 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // existing projectRef/projectSlugRef drift checks after the await are
   // orthogonal (response-discard) and remain.
   const createChapterOp = useAbortableAsyncOperation();
+  // I1 (review 2026-05-27 round 2): per-create epoch token. Bumped at
+  // every handleCreateChapter entry; the recovery branch's post-await
+  // .then checks the token before touching state, so a recovery GET
+  // from Create-A is silently discarded once Create-B has started
+  // (whether B succeeded or also entered its own recovery branch).
+  // Closes the cross-create race where A's stale recovery snapshot
+  // would overwrite B's successful chapter merge and silently drop B
+  // from the sidebar. Mirrors useTrashManager's restoreSeq (I2 round 1)
+  // and the existing statusChangeSeq pattern at line 122.
+  const createChapterSeq = useAbortableSequence();
   // C-6 (Phase 4b.3b): loadProject routes both its api.projects.get and
   // its api.chapters.get through this single hook so one unmount aborts
   // both. Replaces the pre-migration `let cancelled = false` flag — the
@@ -700,6 +710,14 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       const slug = projectSlugRef.current;
       const projectId = projectRef.current?.id;
       if (!slug || !projectId) return;
+      // I1 (review 2026-05-27 round 2): bump the per-create epoch BEFORE
+      // anything else so any older create's still-pending recovery GET is
+      // invalidated. The token is checked inside that GET's await branch
+      // (below) so a stale recovery response from Create-A is silently
+      // discarded once Create-B has started — closing the cross-create
+      // race where A's snapshot would overwrite B's successful chapter
+      // merge and silently drop B from the sidebar.
+      const createToken = createChapterSeq.start();
       // S6 (review 2026-04-21) + C1 (review 2026-04-24): the post-await
       // drift guard below combines two checks.
       //   1. Project id captured at POST time vs projectRef.current?.id
@@ -833,6 +851,19 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           try {
             const refreshed = await api.projects.get(slug, recoveryController.signal);
             if (recoveryController.signal.aborted) return;
+            // I1 (review 2026-05-27 round 2): sequence guard. If a newer
+            // handleCreateChapter has started between this recovery GET's
+            // dispatch and resolution, createToken is stale and the
+            // stale snapshot must not touch state. Pre-fix, a successful
+            // Create-B landing while Create-A's recovery GET was in
+            // flight could see GET-A overwrite B's chapter merge —
+            // silently dropping B from the sidebar and (via the
+            // previousChapterIds capture inside the catch) yanking the
+            // user back onto one of A's chapters. The seq guard makes
+            // the previousChapterIds capture-timing subsidiary moot
+            // because the whole post-await block bails before reaching
+            // it.
+            if (createToken.isStale()) return;
             // Merge only if the user is still on the same project (by
             // id — stable across rename, changes on cross-project
             // navigation). The prior slug-OR check let a stale
@@ -889,7 +920,13 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         }
       }
     },
-    [cancelInFlightSave, selectChapterSeq, createChapterOp, reseedConfirmedStatusesFromProject],
+    [
+      cancelInFlightSave,
+      selectChapterSeq,
+      createChapterOp,
+      createChapterSeq,
+      reseedConfirmedStatusesFromProject,
+    ],
   );
 
   const handleSelectChapter = useCallback(

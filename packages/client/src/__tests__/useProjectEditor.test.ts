@@ -3496,6 +3496,107 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("I1 (review 2026-05-27 round 2): rapid Add Chapter — a stale recovery GET-A does NOT clobber Create-B's successful merge", async () => {
+    // Pre-fix: handleCreateChapter's recovery branch had no
+    // sequence-token guard around its post-await setProject /
+    // reseedConfirmedStatusesFromProject / setActiveChapter writes.
+    // Reachable sequence:
+    //   1. POST-A returns 200 BAD_JSON → catch dispatches recovery GET-A
+    //      (pending).
+    //   2. Before GET-A resolves, user clicks Add Chapter again →
+    //      POST-B succeeds → happy-path setProject merges ch-b.
+    //   3. GET-A resolves with a snapshot captured BEFORE ch-b landed.
+    //      Pre-fix: setProject(refreshed-A) replaced the whole project,
+    //      silently dropping ch-b from the sidebar; the post-S17
+    //      ref-nulling made the race more likely because the second
+    //      create no longer aborted A's still-pending recovery.
+    // Post-fix: useAbortableSequence's createToken captured at
+    // handleCreateChapter-A entry goes stale when Create-B's start()
+    // bumps the epoch; GET-A's .then bails before touching state.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const chB = {
+      id: "ch-b",
+      project_id: "p1",
+      title: UNTITLED_CHAPTER,
+      content: null,
+      sort_order: 2,
+      word_count: 0,
+      status: "outline" as const,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01",
+      deleted_at: null,
+    };
+    // Stale snapshot captured BEFORE B landed — no ch-b in chapters.
+    const staleSnapshotA = {
+      ...mockProject,
+      chapters: [mockChapter1, mockChapter2],
+    };
+
+    // Create A rejects 200 BAD_JSON; Create B resolves with ch-b.
+    vi.mocked(api.chapters.create)
+      .mockReset()
+      .mockImplementationOnce(() =>
+        Promise.reject(new ApiRequestError("bad json", 200, "BAD_JSON")),
+      )
+      .mockImplementationOnce(() => Promise.resolve(chB));
+
+    // Defer recovery GET-A so Create-B can run before it resolves.
+    let resolveGetA!: (p: typeof staleSnapshotA) => void;
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockImplementationOnce(
+        () =>
+          new Promise<typeof staleSnapshotA>((resolve) => {
+            resolveGetA = resolve;
+          }),
+      );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project?.chapters).toHaveLength(2));
+
+    // Fire Create-A — POST rejects synchronously → catch enters the
+    // recovery branch and `await api.projects.get(...)` pins the
+    // handleCreateChapter promise on GET-A (recovery is awaited by the
+    // handler, not fire-and-forget). Do NOT await it here.
+    let createAPromise!: Promise<void>;
+    act(() => {
+      createAPromise = result.current.handleCreateChapter();
+    });
+    // Let microtasks run so the POST-A rejection and the GET-A dispatch
+    // both settle into their pending state.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(api.projects.get).toHaveBeenCalledTimes(2);
+
+    // Fire Create-B → POST-B resolves with ch-b → happy-path setProject
+    // merges ch-b into project state. createSeq.start() at Create-B
+    // entry also invalidates Create-A's token.
+    await act(async () => {
+      await result.current.handleCreateChapter();
+    });
+    const chapterIdsAfterB = result.current.project?.chapters.map((c) => c.id);
+    expect(chapterIdsAfterB).toContain("ch-b");
+
+    // Resolve GET-A with the stale snapshot (no ch-b). Create-A's
+    // recovery branch now runs its post-await checks — with the
+    // sequence guard, it must bail before setProject / reseed /
+    // setActiveChapter.
+    await act(async () => {
+      resolveGetA(staleSnapshotA);
+      await createAPromise;
+    });
+
+    // Sequence guard: GET-A's .then must bail before touching state, so
+    // ch-b stays in the sidebar.
+    expect(result.current.project?.chapters.map((c) => c.id)).toContain("ch-b");
+    // And the active chapter stays on ch-b (Create-B's setActiveChapter),
+    // not silently pulled back to one of A's snapshot's chapters.
+    expect(result.current.activeChapter?.id).toBe("ch-b");
+    warnSpy.mockRestore();
+  });
+
   it("handleStatusChange preserves optimistic status on 2xx BAD_JSON + surfaces committed copy (I6)", async () => {
     // 2xx BAD_JSON means the server committed the new status but the
     // response body was unreadable. Reverting (locally or from the
