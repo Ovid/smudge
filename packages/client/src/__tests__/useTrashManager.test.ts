@@ -13,7 +13,7 @@ vi.mock("../api/client", async () => {
   return {
     ...actual,
     api: {
-      projects: { trash: vi.fn() },
+      projects: { trash: vi.fn(), get: vi.fn() },
       chapters: { restore: vi.fn() },
     },
   };
@@ -557,6 +557,53 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     // Sanity: the second trash signal (allocated by the second openTrash)
     // is still fresh — handleRestore did not reach into trashOp.
     expect(trashSignals[1]?.aborted).toBe(false);
+  });
+});
+
+describe("handleRestore possiblyCommitted (4b.3c.3 I4)", () => {
+  it("PINNED: 200 BAD_JSON optimistically drops the trash row but does NOT refresh project chapters or reseed confirmedStatus — fix flips this", async () => {
+    // Pre-fix behaviour: the committed-recovery branch only optimistically
+    // removes the row from trashedChapters and surfaces a banner. It does
+    // NOT issue a follow-up GET to repopulate the sidebar with the
+    // server-truth project state, nor does it reseed the confirmed-status
+    // cache. Task 40 adds api.projects.get + replaceConfirmedStatusesFromProject.
+    const deleted = makeChapter({ id: "ch-pin-i4" });
+    const project = makeProject();
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    const handleDeleteChapter = vi.fn();
+    const seedConfirmedStatus = vi.fn();
+
+    vi.mocked(api.chapters.restore).mockRejectedValue(
+      new ApiRequestError("bad body", 200, "BAD_JSON"),
+    );
+    vi.mocked(api.projects.trash).mockResolvedValue([deleted]);
+
+    const { result } = renderHook(() =>
+      useTrashManager(project, project.slug, setProject, handleDeleteChapter, navigate, {
+        seedConfirmedStatus,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.openTrash();
+    });
+
+    await act(async () => {
+      await result.current.handleRestore("ch-pin-i4");
+    });
+
+    // Optimistic drop (existing behaviour).
+    await waitFor(() => {
+      expect(result.current.trashedChapters.find((c) => c.id === "ch-pin-i4")).toBeUndefined();
+    });
+    expect(result.current.actionError).toBe(STRINGS.error.restoreChapterCommitted);
+    // PINNED: pre-fix, no recovery GET fires.
+    expect(api.projects.get).not.toHaveBeenCalled();
+    // PINNED: pre-fix, the single-row seedConfirmedStatus is not called on
+    // the committed branch (it only fires on the success path), and no
+    // bulk reseed exists yet either.
+    expect(seedConfirmedStatus).not.toHaveBeenCalled();
   });
 });
 
