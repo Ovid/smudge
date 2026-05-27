@@ -923,6 +923,17 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             // Refresh is best-effort; fall through to the message dispatch.
           }
         }
+        // I3 (review 2026-05-27 round 3): drift recheck before the
+        // onError/setError dispatch. The entry-time guards at 797-799
+        // ran BEFORE the possiblyCommitted recovery GET awaited; the
+        // success arm has its own createToken.isStale() guard plus a
+        // projectRef.id check at the inside-updater, but the catch
+        // arm's devWarn falls through to here. The recovery GET can
+        // take seconds — A→B nav within the window is realistic, and
+        // without this recheck the failure-axis banner fires on B for
+        // an A event (worst case: setError surfaces the full-page
+        // overlay when no onError is wired, tearing down B's editor).
+        if (projectRef.current?.id !== projectId) return;
         if (onError) {
           onError(message);
         } else {

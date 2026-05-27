@@ -2995,6 +2995,89 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("I3 (review 2026-05-27 round 3): handleCreateChapter recovery-GET catch fall-through does NOT fire onError after A→B nav", async () => {
+    // Pre-fix: the drift guards at lines 797-799 ran BEFORE entering
+    // the possiblyCommitted branch. The createToken.isStale() guard at
+    // line 876 only fires on the recovery GET's success arm. When the
+    // recovery GET catch (line 916-924) runs `devWarn(...)` and falls
+    // through, control reaches `if (onError) onError(message); else
+    // setError(message)` at lines 926-930 unconditionally. The recovery
+    // GET can take seconds (full project GET), so an A→B nav within
+    // that window is realistic. With no drift recheck, the failure-axis
+    // banner fires on B for an A event; setError (no onError wired)
+    // surfaces the full-page error overlay, tearing down B's editor
+    // session. Post-fix: add a drift recheck right before the
+    // onError/setError dispatch.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const otherProject = {
+      ...mockProject,
+      id: "p2",
+      slug: "other-project",
+      chapters: [],
+    };
+
+    vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
+    // Order of api.projects.get calls in this test:
+    //   1. initial loadProject(slug="test-project") on first render → A
+    //   2. possiblyCommitted recovery GET (deferred — stays pending
+    //      until we navigate and reject it)
+    //   3. loadProject(slug="other-project") after rerender → B
+    let resolveRecovery!: (refreshed: unknown) => void;
+    let rejectRecovery!: (err: unknown) => void;
+    vi.mocked(api.projects.get)
+      .mockReset()
+      .mockResolvedValueOnce(mockProject) // call 1: initial load for A
+      .mockImplementationOnce(
+        () =>
+          new Promise<ProjectWithChapters>((resolve, reject) => {
+            resolveRecovery = resolve as (r: unknown) => void;
+            rejectRecovery = reject;
+          }),
+      ) // call 2: recovery GET, pending
+      .mockResolvedValueOnce(otherProject); // call 3: load for B after rerender
+
+    // 200 BAD_JSON on create → routes through possiblyCommitted (the
+    // recovery GET fires).
+    vi.mocked(api.chapters.create)
+      .mockReset()
+      .mockRejectedValueOnce(new ApiRequestError("bad body", 200, "BAD_JSON"));
+
+    const onError = vi.fn();
+    const { rerender, result } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      { initialProps: { slug: "test-project" } },
+    );
+    await waitFor(() => expect(result.current.project?.slug).toBe("test-project"));
+
+    // Kick off the create — chapters.create rejects synchronously, then
+    // the catch enters possiblyCommitted and fires the recovery GET.
+    let createPromise!: Promise<void>;
+    act(() => {
+      createPromise = result.current.handleCreateChapter(onError);
+    });
+    // Wait for the recovery GET to have been dispatched.
+    await waitFor(() => expect(api.projects.get).toHaveBeenCalledTimes(2));
+
+    // Navigate A → B while the recovery GET is still pending. This
+    // fires a third api.projects.get for the new slug.
+    rerender({ slug: "other-project" });
+    await waitFor(() => expect(result.current.project?.slug).toBe("other-project"));
+
+    // Reject the recovery GET. The catch fires devWarn and falls
+    // through to the onError dispatch — pre-fix, that ran
+    // unconditionally on B for an event that happened on A.
+    await act(async () => {
+      rejectRecovery(new ApiRequestError("recovery boom", 500, "INTERNAL_ERROR"));
+      await createPromise;
+    });
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(result.current.error).toBeNull();
+    // Suppress unused-warning lint
+    void resolveRecovery;
+    warnSpy.mockRestore();
+  });
+
   it("I3 (review 2026-05-27): a 404 on a stale cross-project POST does NOT fire onProjectNotFound after A→B nav", async () => {
     // Pre-fix: the S11 isNotFound short-circuit at lines 767-774 fired
     // BEFORE the cross-project drift guards at 776-778. If the user
