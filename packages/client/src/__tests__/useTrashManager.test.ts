@@ -80,6 +80,9 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     );
 
     vi.mocked(api.projects.trash).mockResolvedValue([deleted]);
+    // I4 (4b.3c.3): committed branch now fires a recovery GET; default
+    // the mock so this test can focus on the committed-banner UX.
+    vi.mocked(api.projects.get).mockResolvedValue({ ...project, chapters: [] });
 
     const { result } = renderHook(() =>
       useTrashManager(project, project.slug, setProject, handleDeleteChapter, navigate),
@@ -101,8 +104,6 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
       expect(result.current.trashedChapters.find((c) => c.id === "ch-committed")).toBeUndefined();
     });
     expect(result.current.actionError).toBe(STRINGS.error.restoreChapterCommitted);
-    // No optimistic project mutation — we don't have the restored row.
-    expect(setProject).not.toHaveBeenCalled();
   });
 
   it("on 2xx BAD_JSON (possiblyCommitted), removes the chapter from trash and shows the committed message", async () => {
@@ -116,6 +117,9 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
       new ApiRequestError("bad body", 200, "BAD_JSON"),
     );
     vi.mocked(api.projects.trash).mockResolvedValue([deleted]);
+    // I4 (4b.3c.3): default the recovery GET so the committed branch
+    // doesn't reject on undefined.then.
+    vi.mocked(api.projects.get).mockResolvedValue({ ...project, chapters: [] });
 
     const { result } = renderHook(() =>
       useTrashManager(project, project.slug, setProject, handleDeleteChapter, navigate),
@@ -133,7 +137,6 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
       expect(result.current.trashedChapters.find((c) => c.id === "ch-badjson")).toBeUndefined();
     });
     expect(result.current.actionError).toBe(STRINGS.error.restoreChapterCommitted);
-    expect(setProject).not.toHaveBeenCalled();
   });
 
   // I5 (review 2026-04-24): api.projects.trash now accepts a signal
@@ -561,27 +564,40 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
 });
 
 describe("handleRestore possiblyCommitted (4b.3c.3 I4)", () => {
-  it("PINNED: 200 BAD_JSON optimistically drops the trash row but does NOT refresh project chapters or reseed confirmedStatus — fix flips this", async () => {
-    // Pre-fix behaviour: the committed-recovery branch only optimistically
-    // removes the row from trashedChapters and surfaces a banner. It does
-    // NOT issue a follow-up GET to repopulate the sidebar with the
-    // server-truth project state, nor does it reseed the confirmed-status
-    // cache. Task 40 adds api.projects.get + replaceConfirmedStatusesFromProject.
+  it("on 200 BAD_JSON, fires a recovery GET, merges the refreshed project, and reseeds the confirmed-status cache", async () => {
+    // The committed-recovery branch optimistically removes the row from
+    // trashedChapters (existing I2/S8 behaviour), AND now (4b.3c.3 I4)
+    // fires api.projects.get so the sidebar reflects server-truth state
+    // and the confirmed-status cache is reseeded.
     const deleted = makeChapter({ id: "ch-pin-i4" });
     const project = makeProject();
+    const refreshed: ProjectWithChapters = {
+      ...project,
+      chapters: [
+        makeChapter({
+          id: "ch-pin-i4",
+          status: "outline",
+          deleted_at: null,
+          sort_order: 0,
+        }),
+      ],
+    };
     const setProject = vi.fn();
     const navigate = vi.fn();
     const handleDeleteChapter = vi.fn();
     const seedConfirmedStatus = vi.fn();
+    const replaceConfirmedStatusesFromProject = vi.fn();
 
     vi.mocked(api.chapters.restore).mockRejectedValue(
       new ApiRequestError("bad body", 200, "BAD_JSON"),
     );
     vi.mocked(api.projects.trash).mockResolvedValue([deleted]);
+    vi.mocked(api.projects.get).mockResolvedValue(refreshed);
 
     const { result } = renderHook(() =>
       useTrashManager(project, project.slug, setProject, handleDeleteChapter, navigate, {
         seedConfirmedStatus,
+        replaceConfirmedStatusesFromProject,
       }),
     );
 
@@ -593,17 +609,32 @@ describe("handleRestore possiblyCommitted (4b.3c.3 I4)", () => {
       await result.current.handleRestore("ch-pin-i4");
     });
 
-    // Optimistic drop (existing behaviour).
+    // Optimistic drop (carried over from existing I2 behaviour).
     await waitFor(() => {
       expect(result.current.trashedChapters.find((c) => c.id === "ch-pin-i4")).toBeUndefined();
     });
     expect(result.current.actionError).toBe(STRINGS.error.restoreChapterCommitted);
-    // PINNED: pre-fix, no recovery GET fires.
-    expect(api.projects.get).not.toHaveBeenCalled();
-    // PINNED: pre-fix, the single-row seedConfirmedStatus is not called on
-    // the committed branch (it only fires on the success path), and no
-    // bulk reseed exists yet either.
-    expect(seedConfirmedStatus).not.toHaveBeenCalled();
+    // Recovery GET fires against the committed-restore slug.
+    await waitFor(() => {
+      expect(api.projects.get).toHaveBeenCalledTimes(1);
+    });
+    expect(api.projects.get).toHaveBeenCalledWith(project.slug, expect.any(AbortSignal));
+    // Bulk reseed runs against the refreshed snapshot.
+    await waitFor(() => {
+      expect(replaceConfirmedStatusesFromProject).toHaveBeenCalledTimes(1);
+    });
+    expect(replaceConfirmedStatusesFromProject).toHaveBeenCalledWith(refreshed);
+    // The setProject updater is invoked; calling it with the prior
+    // project state must return the refreshed snapshot.
+    expect(setProject).toHaveBeenCalled();
+    const updater = setProject.mock.calls.at(-1)?.[0] as (
+      prev: ProjectWithChapters | null,
+    ) => ProjectWithChapters | null;
+    expect(updater(project)).toBe(refreshed);
+    // Identity guard: if the user navigated to a different project, the
+    // refreshed snapshot must NOT clobber the new project's state.
+    const otherProject: ProjectWithChapters = { ...project, id: "other-project" };
+    expect(updater(otherProject)).toBe(otherProject);
   });
 });
 

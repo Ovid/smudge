@@ -1492,6 +1492,19 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
     seedConfirmedStatus: (id: string, status: string) => {
       confirmedStatusRef.current[id] = status;
     },
+    // I4 (4b.3c.3): bulk reseed for the trash-restore committed-
+    // recovery branch. After a 200 BAD_JSON / RESTORE_READ_FAILURE on
+    // restore, the trash hook does a follow-up GET to repopulate
+    // server-truth state; the entire chapter status table needs to be
+    // replaced from that snapshot so a later PATCH on any chapter (not
+    // just the restored row) can fall back to a real baseline. Mirrors
+    // the loadProject reseed shape at line 307 above and the
+    // handleCreateChapter recovery reseed at line 809 below.
+    replaceConfirmedStatusesFromProject: (refreshed: ProjectWithChapters) => {
+      confirmedStatusRef.current = Object.fromEntries(
+        refreshed.chapters.map((c) => [c.id, c.status]),
+      );
+    },
     // Getter for reading the current active chapter from inside async
     // callbacks whose closure would otherwise see a stale value.
     getActiveChapter: () => activeChapterRef.current,

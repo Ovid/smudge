@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { Chapter, ProjectWithChapters } from "@smudge/shared";
 import { api } from "../api/client";
-import { mapApiError, applyMappedError } from "../errors";
+import { mapApiError, applyMappedError, devWarn } from "../errors";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
 
 export interface UseTrashManagerOptions {
@@ -11,6 +11,11 @@ export interface UseTrashManagerOptions {
   // it, a later status PATCH on the restored row double-failing would
   // skip the local revert and leave the optimistic status on screen.
   seedConfirmedStatus?: (id: string, status: string) => void;
+  // I4 (4b.3c.3): bulk reseed of the confirmed-status cache from a fresh
+  // ProjectWithChapters snapshot. Used by handleRestore's committed-
+  // recovery branch after a 200 BAD_JSON / RESTORE_READ_FAILURE, where
+  // the recovery GET returns the post-restore project state.
+  replaceConfirmedStatusesFromProject?: (refreshed: ProjectWithChapters) => void;
 }
 
 export function useTrashManager(
@@ -25,6 +30,10 @@ export function useTrashManager(
   useEffect(() => {
     seedConfirmedStatusRef.current = options?.seedConfirmedStatus;
   }, [options?.seedConfirmedStatus]);
+  const replaceConfirmedStatusesRef = useRef(options?.replaceConfirmedStatusesFromProject);
+  useEffect(() => {
+    replaceConfirmedStatusesRef.current = options?.replaceConfirmedStatusesFromProject;
+  }, [options?.replaceConfirmedStatusesFromProject]);
   const [trashOpen, setTrashOpen] = useState(false);
   const [trashedChapters, setTrashedChapters] = useState<Chapter[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<Chapter | null>(null);
@@ -140,6 +149,34 @@ export function useTrashManager(
         applyMappedError(mapped, {
           onCommitted: () => {
             setTrashedChapters((prev) => prev.filter((c) => c.id !== chapterId));
+            // I4 (4b.3c.3): the server may have committed the restore
+            // but the response was unreadable. Fire a recovery GET so
+            // the sidebar reflects server-truth state and reseed the
+            // confirmed-status cache for the freshly-merged chapters.
+            // Uses restoreRecoveryAbortRef (second-tier; survives the
+            // next handleRestore's restoreOp abort) so the recovery
+            // refresh from a failed restore can finish even if the user
+            // immediately retries.
+            if (!slug) return;
+            restoreRecoveryAbortRef.current?.abort();
+            const recoveryController = new AbortController();
+            restoreRecoveryAbortRef.current = recoveryController;
+            api.projects
+              .get(slug, recoveryController.signal)
+              .then((refreshed) => {
+                if (recoveryController.signal.aborted) return;
+                setProject((prev) => {
+                  if (!prev) return refreshed;
+                  // S20-style identity guard: the user may have switched
+                  // projects while the recovery GET was in flight.
+                  if (prev.id !== refreshed.id) return prev;
+                  return refreshed;
+                });
+                replaceConfirmedStatusesRef.current?.(refreshed);
+              })
+              .catch((recoveryErr) => {
+                devWarn("handleRestore recovery GET failed", recoveryController.signal, recoveryErr);
+              });
           },
           onMessage: setActionError,
         });
