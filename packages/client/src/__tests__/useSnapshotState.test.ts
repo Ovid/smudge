@@ -886,10 +886,7 @@ describe("useSnapshotState", () => {
 
     // Wait for the follow-up list rejection to surface through devWarn.
     await waitFor(() => {
-      expect(warnSpy).toHaveBeenCalledWith(
-        "snapshot follow-up list failed:",
-        expect.any(Error),
-      );
+      expect(warnSpy).toHaveBeenCalledWith("snapshot follow-up list failed:", expect.any(Error));
     });
     warnSpy.mockRestore();
   });
@@ -932,10 +929,7 @@ describe("useSnapshotState", () => {
     const firstFollowupSignal = listSignals[baseline];
     // Settle the rejection's microtask + the .finally block.
     await waitFor(() => {
-      expect(warnSpy).toHaveBeenCalledWith(
-        "snapshot follow-up list failed:",
-        expect.any(Error),
-      );
+      expect(warnSpy).toHaveBeenCalledWith("snapshot follow-up list failed:", expect.any(Error));
     });
 
     // Second restore — its preamble runs `restoreFollowupAbortRef.current?.abort()`.
