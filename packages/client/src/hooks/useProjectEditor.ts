@@ -15,6 +15,7 @@ import {
   isApiError,
   isAborted,
   isClientError,
+  isNotFound,
 } from "../errors";
 
 export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
@@ -44,11 +45,20 @@ export interface UseProjectEditorOptions {
   // Hook consumers that don't own an editor (tests, storybook) may
   // omit it.
   onRequestEditorLock?: (message: string) => void;
+  // S11 (4b.3c.3): fires when handleCreateChapter's POST hits a 404,
+  // i.e. the project was deleted between sidebar render and the POST
+  // landing. EditorPage wires this to navigate("/"); the hook itself
+  // stays router-agnostic (no useNavigate import). Hook consumers that
+  // can't navigate (tests, storybook) may omit it — falls back to the
+  // pre-fix onError banner.
+  onProjectNotFound?: () => void;
 }
 
 export function useProjectEditor(slug: string | undefined, options?: UseProjectEditorOptions) {
   const onRequestEditorLockRef = useRef(options?.onRequestEditorLock);
   onRequestEditorLockRef.current = options?.onRequestEditorLock;
+  const onProjectNotFoundRef = useRef(options?.onProjectNotFound);
+  onProjectNotFoundRef.current = options?.onProjectNotFound;
   const [project, setProject] = useState<ProjectWithChapters | null>(null);
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
   const [chapterReloadKey, setChapterReloadKey] = useState(0);
@@ -747,6 +757,21 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // a "Failed to create chapter: ABORTED" warning, violating
         // CLAUDE.md §Testing Philosophy zero-warnings rule.
         if (isAborted(err)) return;
+        // S11 (4b.3c.3): a 404 means the project was deleted between
+        // the sidebar render and the POST landing. The default banner
+        // (createChapterProjectGone) was the wrong UX because the
+        // project no longer exists for the user to act on — fire the
+        // navigate-home hook instead. The createChapterProjectGone
+        // string stays in scopes.ts as a defensive fallback for the
+        // option-omitted consumer (tests, storybook).
+        if (isNotFound(err)) {
+          if (onProjectNotFoundRef.current) {
+            onProjectNotFoundRef.current();
+            return;
+          }
+          // No navigation hook wired: fall through so the dismissable
+          // banner stands as a recoverable UX.
+        }
         console.warn("Failed to create chapter:", err);
         if (projectRef.current?.id !== projectId) return;
         if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
