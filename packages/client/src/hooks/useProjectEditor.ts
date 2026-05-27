@@ -209,6 +209,17 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // target the actual server-side value. Parallels
   // confirmedTimezoneRef / confirmedFieldsRef in ProjectSettingsDialog.
   const confirmedStatusRef = useRef<Record<string, string | undefined>>({});
+  // S1 (review 2026-05-27): one helper for the bulk reseed shape. The
+  // three pre-existing call sites (loadProject success, handleCreateChapter
+  // committed-recovery, and the public replaceConfirmedStatusesFromProject
+  // exposed to useTrashManager) all wrote the identical
+  // `Object.fromEntries(refreshed.chapters.map(...))` body inline. The
+  // ref is stable, so empty deps is correct.
+  const reseedConfirmedStatusesFromProject = useCallback((refreshed: ProjectWithChapters) => {
+    confirmedStatusRef.current = Object.fromEntries(
+      refreshed.chapters.map((c) => [c.id, c.status]),
+    );
+  }, []);
   // I22 (review 2026-04-24): recovery GETs fired by BAD_JSON catches
   // in handleCreateChapter / handleUpdateProjectTitle / handleStatusChange
   // need an AbortController so unmount drops the in-flight recovery.
@@ -314,7 +325,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // server response. Every chapter's status here is server-truth
         // at load time; subsequent revert paths read from this ref so
         // they don't stomp to an optimistic value.
-        confirmedStatusRef.current = Object.fromEntries(data.chapters.map((c) => [c.id, c.status]));
+        reseedConfirmedStatusesFromProject(data);
         // If the cached activeChapter belongs to a different project (e.g.
         // in-place slug change that isn't a rename), the `!activeChapterRef`
         // guard would skip loading the new project's first chapter, and the
@@ -351,7 +362,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
       }
     });
     void promise;
-  }, [slug, loadProjectOp]);
+  }, [slug, loadProjectOp, reseedConfirmedStatusesFromProject]);
 
   const handleSave = useCallback(
     async (content: Record<string, unknown>, chapterId?: string): Promise<boolean> => {
@@ -839,9 +850,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
               // whose status changed server-side between initial load and
               // recovery) has no cache entry, and a later revert silently
               // skips.
-              confirmedStatusRef.current = Object.fromEntries(
-                refreshed.chapters.map((c) => [c.id, c.status]),
-              );
+              reseedConfirmedStatusesFromProject(refreshed);
               const added = refreshed.chapters.filter((c) => !previousChapterIds.has(c.id));
               if (added.length > 0) {
                 // Pick the highest sort_order: the server appends new
@@ -880,7 +889,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         }
       }
     },
-    [cancelInFlightSave, selectChapterSeq, createChapterOp],
+    [cancelInFlightSave, selectChapterSeq, createChapterOp, reseedConfirmedStatusesFromProject],
   );
 
   const handleSelectChapter = useCallback(
@@ -1539,14 +1548,10 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
     // restore, the trash hook does a follow-up GET to repopulate
     // server-truth state; the entire chapter status table needs to be
     // replaced from that snapshot so a later PATCH on any chapter (not
-    // just the restored row) can fall back to a real baseline. Mirrors
-    // the loadProject reseed shape at line 307 above and the
-    // handleCreateChapter recovery reseed at line 809 below.
-    replaceConfirmedStatusesFromProject: (refreshed: ProjectWithChapters) => {
-      confirmedStatusRef.current = Object.fromEntries(
-        refreshed.chapters.map((c) => [c.id, c.status]),
-      );
-    },
+    // just the restored row) can fall back to a real baseline. Shares
+    // the internal helper used by loadProject and handleCreateChapter
+    // recovery (S1 dedup, review 2026-05-27).
+    replaceConfirmedStatusesFromProject: reseedConfirmedStatusesFromProject,
     // Getter for reading the current active chapter from inside async
     // callbacks whose closure would otherwise see a stale value.
     getActiveChapter: () => activeChapterRef.current,
