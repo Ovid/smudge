@@ -858,6 +858,99 @@ describe("useSnapshotState", () => {
     expect(listSignals[baseline + 1]?.aborted).toBe(false);
   });
 
+  it("S2 (review 2026-05-27 round 2): follow-up snapshots.list failure routes through devWarn", async () => {
+    // Pre-fix: useSnapshotState.ts ended the follow-up list promise with
+    // `.catch(() => {})`, swallowing real failures with no log. Sibling
+    // recovery paths (useTrashManager.ts, useProjectEditor.ts) already
+    // route through devWarn so a dev seeing the failure can investigate.
+    // Post-fix: the catch goes through devWarn, gated on the
+    // followupController signal so unmount-driven aborts stay silent.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let listCallCount = 0;
+    vi.mocked(api.snapshots.list).mockImplementation(() => {
+      listCallCount++;
+      // First call is the initial mount fetch; second is the post-restore
+      // follow-up list whose failure we want to observe.
+      if (listCallCount === 1) return Promise.resolve([]);
+      return Promise.reject(new Error("follow-up list boom"));
+    });
+
+    const { result } = renderHook(() => useSnapshotState("ch-1"));
+    // Let the mount-time list fetch settle so listCallCount === 1.
+    await waitFor(() => expect(listCallCount).toBeGreaterThanOrEqual(1));
+
+    await act(async () => {
+      const r = await result.current.restoreSnapshot("snap-1");
+      expect(r.ok).toBe(true);
+    });
+
+    // Wait for the follow-up list rejection to surface through devWarn.
+    await waitFor(() => {
+      expect(warnSpy).toHaveBeenCalledWith(
+        "snapshot follow-up list failed:",
+        expect.any(Error),
+      );
+    });
+    warnSpy.mockRestore();
+  });
+
+  it("S2 (review 2026-05-27 round 2): restoreFollowupAbortRef is nulled on follow-up failure too (finally placement)", async () => {
+    // Pre-fix: the S19 identity-checked null lived in `.then`, so a
+    // follow-up failure left the ref dangling at the completed
+    // controller. Post-fix: the null moves into `.finally` so it runs
+    // on both success and failure, mirroring T1's `.finally` placement
+    // in useTrashManager. Without the finally placement, a second
+    // restore's preamble `restoreFollowupAbortRef.current?.abort()`
+    // would flip the prior (settled) signal's aborted flag — benign
+    // (abort on a settled controller is a no-op for the consumer) but
+    // inconsistent with the sibling pattern.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const listSignals: AbortSignal[] = [];
+    let listCallCount = 0;
+    vi.mocked(api.snapshots.list).mockImplementation((_chapterId, signal) => {
+      listCallCount++;
+      if (signal) listSignals.push(signal);
+      if (listCallCount === 1) return Promise.resolve([]);
+      // First follow-up rejects; second follow-up resolves so we can
+      // observe whether the first controller's signal stayed unaborted.
+      if (listCallCount === 2) return Promise.reject(new Error("follow-up list boom"));
+      return Promise.resolve([]);
+    });
+
+    const { result } = renderHook(() => useSnapshotState("ch-1"));
+    await waitFor(() => expect(listCallCount).toBeGreaterThanOrEqual(1));
+    const baseline = listSignals.length;
+
+    // First restore — its follow-up list rejects.
+    await act(async () => {
+      const r = await result.current.restoreSnapshot("snap-1");
+      expect(r.ok).toBe(true);
+    });
+    await waitFor(() => {
+      expect(listSignals.length).toBeGreaterThan(baseline);
+    });
+    const firstFollowupSignal = listSignals[baseline];
+    // Settle the rejection's microtask + the .finally block.
+    await waitFor(() => {
+      expect(warnSpy).toHaveBeenCalledWith(
+        "snapshot follow-up list failed:",
+        expect.any(Error),
+      );
+    });
+
+    // Second restore — its preamble runs `restoreFollowupAbortRef.current?.abort()`.
+    // With the .finally null, the ref is null by now and the abort is a no-op.
+    // Without the .finally null (pre-fix), the prior controller's signal
+    // would flip to aborted here.
+    await act(async () => {
+      const r = await result.current.restoreSnapshot("snap-2");
+      expect(r.ok).toBe(true);
+    });
+
+    expect(firstFollowupSignal?.aborted).toBe(false);
+    warnSpy.mockRestore();
+  });
+
   it("leaves count null when list fetch fails so badge stays hidden", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.snapshots.list).mockRejectedValue(new Error("network error"));

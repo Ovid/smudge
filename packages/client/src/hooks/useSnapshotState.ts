@@ -4,7 +4,7 @@ import { api } from "../api/client";
 // I16 (review 2026-04-24): import ApiRequestError via the errors
 // barrel so the file observes the boundary — only errors/ and
 // api/client are allowed to reach for the constructor.
-import { mapApiError, isApiError, ApiRequestError } from "../errors";
+import { mapApiError, isApiError, ApiRequestError, devWarn } from "../errors";
 import { clearCachedContent } from "./useContentCache";
 import { useAbortableSequence } from "./useAbortableSequence";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
@@ -453,17 +453,31 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
             .list(restoringChapterId, followupController.signal)
             .then((data) => {
               if (!freshToken.isStale()) setSnapshotCount(data.length);
-              // S19 (4b.3c.3): null the ref on success so a later
+            })
+            .catch((err) => {
+              // S2 (review 2026-05-27 round 2): surface the follow-up
+              // failure in dev so the swallowed-into-the-void shape of
+              // the pre-fix `.catch(() => {})` no longer hides real
+              // bugs. The followupController.signal gates the warn —
+              // supersede or unmount-driven aborts stay silent.
+              // Mirrors useTrashManager.ts and useProjectEditor.ts.
+              devWarn("snapshot follow-up list failed", followupController.signal, err);
+            })
+            .finally(() => {
+              // S19 (4b.3c.3) + S2 (review 2026-05-27 round 2): null
+              // the ref once this follow-up list has settled so a later
               // restore's preamble .abort() is a no-op on the prior
               // (completed) controller. Identity-checked so we don't
               // clobber a controller a later restore has already
-              // replaced. Mirrors Task 45's S17 fix for
-              // createRecoveryAbortRef in useProjectEditor.
+              // replaced. Lives in `.finally` so the null also runs on
+              // failure — pre-fix the null lived in `.then` only,
+              // leaving the ref dangling after a follow-up rejection.
+              // Mirrors S17 (createRecoveryAbortRef in useProjectEditor)
+              // and T1 (restoreRecoveryAbortRef in useTrashManager).
               if (restoreFollowupAbortRef.current === followupController) {
                 restoreFollowupAbortRef.current = null;
               }
-            })
-            .catch(() => {});
+            });
         }
         return {
           ok: true,
