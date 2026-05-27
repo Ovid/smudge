@@ -2926,6 +2926,65 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("S1 (review 2026-05-27 round 3): createRecoveryAbortRef is nulled even when the recovery GET rejects — subsequent committed paths don't re-abort the prior signal", async () => {
+    // Pre-fix: the S17 null-out lived inside the recovery `try` body
+    // and only ran on the success arm. On a recovery-GET reject, the
+    // ref still pointed at the (settled) controller. A later committed
+    // handleCreateChapter's preamble `.abort()` would then flip the
+    // prior controller's signal to aborted — harmless today (no
+    // consumer reads it after settlement) but inconsistent with sibling
+    // patterns T1 (useTrashManager) and S19 (useSnapshotState) which
+    // restructure the try as try/catch/finally and put the
+    // identity-checked null in finally.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError("bad json", 200, "BAD_JSON"),
+    );
+
+    const recoverySignals: AbortSignal[] = [];
+    let getCallCount = 0;
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get).mockImplementation((_slug, signal) => {
+      getCallCount++;
+      // First call is the initial loadProject; second+ are recovery
+      // GETs.
+      if (getCallCount > 1 && signal) recoverySignals.push(signal);
+      if (getCallCount === 1) return Promise.resolve(mockProject);
+      // 2nd call (first recovery GET) — reject so the catch arm runs
+      // and finally nulls the ref.
+      if (getCallCount === 2) return Promise.reject(new ApiRequestError("get boom", 500));
+      // 3rd call (second recovery GET) — succeed.
+      return Promise.resolve(mockProject);
+    });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project?.chapters).toHaveLength(2));
+
+    const onError = vi.fn();
+    await act(async () => {
+      await result.current.handleCreateChapter(onError);
+    });
+
+    expect(recoverySignals).toHaveLength(1);
+    const firstSignal = recoverySignals[0];
+    // The recovery GET rejected, but the controller itself was never
+    // .abort()'d, so its signal.aborted starts at false.
+    expect(firstSignal?.aborted).toBe(false);
+
+    // Fire a second committed handleCreateChapter. Its recovery
+    // preamble calls `createRecoveryAbortRef.current?.abort()` — post-S1
+    // the ref is null (finally nulled it on the prior reject), so the
+    // first controller's signal stays unaborted.
+    await act(async () => {
+      await result.current.handleCreateChapter(onError);
+    });
+
+    expect(firstSignal?.aborted).toBe(false);
+    expect(recoverySignals).toHaveLength(2);
+    warnSpy.mockRestore();
+  });
+
   it("S17 (4b.3c.3): createRecoveryAbortRef is nulled on successful recovery merge — subsequent committed paths don't re-abort the prior signal", async () => {
     // Indirect assertion: after a successful committed-recovery merge,
     // the recovery ref is nulled. A second committed handleCreateChapter

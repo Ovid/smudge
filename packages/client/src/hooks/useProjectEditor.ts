@@ -904,15 +904,6 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
                 setChapterWordCount(countWords(newest.content));
               }
             }
-            // S17 (4b.3c.3): null the ref on success so a later
-            // handleCreateChapter committed-path doesn't call .abort()
-            // on the prior (already-completed) controller. Identity-
-            // checked so we don't clobber a controller a later handler
-            // already replaced. Mirrors Task 48's S19 fix for
-            // restoreFollowupAbortRef in useSnapshotState.
-            if (createRecoveryAbortRef.current === recoveryController) {
-              createRecoveryAbortRef.current = null;
-            }
           } catch (err) {
             // S10 (4b.3c.2): surface the recovery failure in dev. The
             // recoveryController.signal gates the warn — supersede or
@@ -921,6 +912,18 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             // post-recovery message lands.
             devWarn("handleCreateChapter recovery GET failed", recoveryController.signal, err);
             // Refresh is best-effort; fall through to the message dispatch.
+          } finally {
+            // S1 (review 2026-05-27 round 3): null the ref in finally
+            // so a recovery-GET reject also clears it (the original
+            // S17 fix sat at the success-arm tail and was skipped on
+            // catch and on early returns). Mirrors sibling patterns
+            // T1 (useTrashManager.handleRestore) and S19
+            // (useSnapshotState restoreFollowupAbortRef). Identity-
+            // checked so we don't clobber a controller a later handler
+            // already replaced.
+            if (createRecoveryAbortRef.current === recoveryController) {
+              createRecoveryAbortRef.current = null;
+            }
           }
         }
         // I3 (review 2026-05-27 round 3): drift recheck before the
