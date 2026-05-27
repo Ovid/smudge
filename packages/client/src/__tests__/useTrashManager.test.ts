@@ -940,6 +940,85 @@ describe("handleRestore cross-project nav guard (review 2026-05-27 round 2)", ()
     expect(result.current.actionError).toBeNull();
   });
 
+  it("I1 (review 2026-05-27 round 3): handleRestore success branch does NOT mutate state when project drifted A→B mid-POST", async () => {
+    // Pre-fix: the success arm after `await promise` only checked
+    // `signal.aborted`. EditorPage stays mounted across cross-project
+    // navigation (one Route, two slugs), so a Restore-A POST that
+    // resolves AFTER the user navigates A→B leaves signal.aborted=false
+    // and the success branch then: (a) splices A's restored chapter
+    // into B's `prev.chapters`, (b) overwrites B's slug with A's
+    // restored.project_slug (if the parent project was also restored),
+    // (c) seeds the confirmed-status cache with A's chapter id, and
+    // (d) navigates the user away from B. Post-fix: the catch's drift
+    // guard is hoisted into the success path, so a stale-A success
+    // silently no-ops on B.
+    const projectA = makeProject();
+    const projectB: ProjectWithChapters = {
+      ...projectA,
+      id: "p2",
+      slug: "project-2",
+      chapters: [],
+    };
+    const deletedA = makeChapter({ id: "ch-a" });
+    const restoredA = {
+      ...makeChapter({ id: "ch-a", deleted_at: null, sort_order: 0 }),
+      project_slug: projectA.slug,
+    };
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    const handleDeleteChapter = vi.fn();
+    const seedConfirmedStatus = vi.fn();
+
+    // Defer the restore POST so we can navigate A → B before the success
+    // arm fires.
+    let resolveRestore!: (chapter: typeof restoredA) => void;
+    vi.mocked(api.chapters.restore).mockImplementation(
+      () =>
+        new Promise<typeof restoredA>((resolve) => {
+          resolveRestore = resolve;
+        }),
+    );
+    vi.mocked(api.projects.trash).mockResolvedValue([deletedA]);
+
+    const { rerender, result } = renderHook(
+      ({ project, slug }: { project: ProjectWithChapters; slug: string }) =>
+        useTrashManager(project, slug, setProject, handleDeleteChapter, navigate, {
+          seedConfirmedStatus,
+        }),
+      { initialProps: { project: projectA, slug: projectA.slug } },
+    );
+
+    await act(async () => {
+      await result.current.openTrash();
+    });
+    // openTrash uses setTrashedChapters, not setProject — sanity-check
+    // the baseline.
+    expect(setProject).not.toHaveBeenCalled();
+
+    // Fire the restore — POST stays pending until resolveRestore is called.
+    let restorePromise!: Promise<void>;
+    act(() => {
+      restorePromise = result.current.handleRestore("ch-a");
+    });
+
+    // Navigate A → B while the POST is still in flight. The hook
+    // re-renders with project B; projectRef.current now points at B.
+    rerender({ project: projectB, slug: projectB.slug });
+
+    // Resolve the POST with success. The success arm fires while the
+    // user is on B.
+    await act(async () => {
+      resolveRestore(restoredA);
+      await restorePromise;
+    });
+
+    // Identity guard pins: the success arm must have bailed before any
+    // state-mutating side effect.
+    expect(setProject).not.toHaveBeenCalled();
+    expect(seedConfirmedStatus).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
   it("openTrash does NOT set actionError when project changes mid-fetch-failure", async () => {
     // Sibling pattern to handleRestore: openTrash's catch ran
     // `applyMappedError(..., { onMessage: setActionError })` unconditionally

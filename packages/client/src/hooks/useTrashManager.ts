@@ -161,9 +161,26 @@ export function useTrashManager(
       try {
         const restored = await promise;
         if (signal.aborted) return;
+        // I1 (review 2026-05-27 round 3): hoist the catch-arm drift
+        // guard into the success path. EditorPage stays mounted across
+        // /projects/:slug navigation, so a Restore-A POST that resolves
+        // after the user navigates A→B leaves signal.aborted=false; the
+        // success arm would otherwise splice A's restored chapter into
+        // B's chapter list, overwrite B's slug, seed A's chapter into
+        // the confirmed-status cache, and navigate the user out of B.
+        if (
+          restoreStartedForProjectId !== undefined &&
+          projectRef.current?.id !== restoreStartedForProjectId
+        ) {
+          return;
+        }
         setTrashedChapters((prev) => prev.filter((c) => c.id !== chapterId));
         setProject((prev) => {
           if (!prev) return prev;
+          // Defense-in-depth: re-check identity inside the updater so a
+          // future async reorder between the outer guard and React's
+          // commit cannot land A's merge on B's state.
+          if (prev.id !== restoreStartedForProjectId) return prev;
           const updatedProject = {
             ...prev,
             chapters: [...prev.chapters, restored].sort((a, b) => a.sort_order - b.sort_order),
