@@ -705,6 +705,81 @@ describe("handleRestore possiblyCommitted (4b.3c.3 I4)", () => {
     expect(firstSignal?.aborted).toBe(false);
     expect(recoverySignals[1]?.aborted).toBe(false);
   });
+
+  it("I1 (review 2026-05-27): replaceConfirmedStatusesFromProject is NOT called after A→B nav during the recovery GET", async () => {
+    // Pre-fix: setProject's identity-guard updater correctly bailed when
+    // prev (project B) didn't match refreshed (A's data), but the next
+    // line `replaceConfirmedStatusesRef.current?.(refreshed)` ran
+    // unconditionally and wiped B's confirmed-status cache with A's
+    // chapter→status mapping — the C2 cache-corruption hazard. Post-fix:
+    // a projectRef captured sync-on-render gates BOTH setProject and
+    // the reseed by current-project identity. The reseed is only
+    // invoked when the user is still on the project whose recovery
+    // GET just resolved.
+    const deletedA = makeChapter({ id: "ch-a", project_id: "p1" });
+    const projectA = makeProject();
+    const projectB: ProjectWithChapters = {
+      ...projectA,
+      id: "p2",
+      slug: "project-2",
+      chapters: [],
+    };
+    const refreshedA: ProjectWithChapters = {
+      ...projectA,
+      chapters: [makeChapter({ id: "ch-a", deleted_at: null, sort_order: 0 })],
+    };
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    const handleDeleteChapter = vi.fn();
+    const replaceConfirmedStatusesFromProject = vi.fn();
+
+    vi.mocked(api.chapters.restore).mockRejectedValue(
+      new ApiRequestError("bad body", 200, "BAD_JSON"),
+    );
+    vi.mocked(api.projects.trash).mockResolvedValue([deletedA]);
+
+    // Defer the recovery GET so we can rerender with project B BEFORE
+    // .then resolves.
+    let resolveGet!: (p: ProjectWithChapters) => void;
+    vi.mocked(api.projects.get).mockImplementation(
+      () => new Promise<ProjectWithChapters>((resolve) => (resolveGet = resolve)),
+    );
+
+    const { rerender, result } = renderHook(
+      ({ project, slug }: { project: ProjectWithChapters; slug: string }) =>
+        useTrashManager(project, slug, setProject, handleDeleteChapter, navigate, {
+          replaceConfirmedStatusesFromProject,
+        }),
+      { initialProps: { project: projectA, slug: projectA.slug } },
+    );
+
+    await act(async () => {
+      await result.current.openTrash();
+    });
+
+    // Trigger the committed-recovery branch. The catch fires synchronously
+    // off the mockRejectedValue, the recovery GET is dispatched, but it
+    // stays pending until we call resolveGet below.
+    await act(async () => {
+      await result.current.handleRestore("ch-a");
+    });
+
+    expect(api.projects.get).toHaveBeenCalledTimes(1);
+    expect(replaceConfirmedStatusesFromProject).not.toHaveBeenCalled();
+
+    // Navigate A → B while the recovery GET is still in flight.
+    rerender({ project: projectB, slug: projectB.slug });
+
+    // Now resolve the GET with A's refreshed data.
+    await act(async () => {
+      resolveGet(refreshedA);
+      await Promise.resolve();
+    });
+
+    // Identity-guard pin: the reseed must NOT have run, because the
+    // user is on project B and A's snapshot would corrupt B's cache.
+    expect(replaceConfirmedStatusesFromProject).not.toHaveBeenCalled();
+  });
 });
 
 describe("useTrashManager.confirmDeleteChapter — I5 programming-bug warn (4b.3c.2)", () => {

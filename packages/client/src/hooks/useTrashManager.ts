@@ -72,6 +72,25 @@ export function useTrashManager(
       restoreRecoveryAbortRef.current?.abort();
     };
   }, []);
+  // I1 + S2 (review 2026-05-27): sync-on-render refs for the current
+  // project id and slug. The recovery .then callback closes over the
+  // captured-at-catch project prop, which goes stale once the user
+  // navigates A → B mid-GET. Pre-fix, setProject's identity-guard
+  // updater bailed for A's refreshed data on B's state, but the
+  // unconditional `replaceConfirmedStatusesRef.current?.(refreshed)`
+  // call wiped B's confirmed-status cache with A's chapter→status
+  // mapping (the C2 cache-corruption hazard). Post-fix, projectRef
+  // reflects the latest project on every render — the .then bails if
+  // it no longer matches refreshed.id, gating BOTH setProject and the
+  // reseed. slugRef mirrors useProjectEditor's projectSlugRef pattern
+  // (S2 closure-staleness for the GET URL when a parent-project
+  // restore changes the slug between user clicks).
+  const projectRef = useRef(project);
+  // eslint-disable-next-line react-hooks/refs
+  projectRef.current = project;
+  const slugRef = useRef(slug);
+  // eslint-disable-next-line react-hooks/refs
+  slugRef.current = slug;
 
   const openTrash = useCallback(async () => {
     if (!project) return;
@@ -157,21 +176,27 @@ export function useTrashManager(
             // next handleRestore's restoreOp abort) so the recovery
             // refresh from a failed restore can finish even if the user
             // immediately retries.
-            if (!slug) return;
+            // S2 (review 2026-05-27): use the freshest slug at the
+            // time we know we need it. The useCallback's `slug`
+            // closure can lag if a parent-project restore changed it
+            // between user clicks; slugRef is sync-on-render.
+            const currentSlug = slugRef.current;
+            if (!currentSlug) return;
             restoreRecoveryAbortRef.current?.abort();
             const recoveryController = new AbortController();
             restoreRecoveryAbortRef.current = recoveryController;
             api.projects
-              .get(slug, recoveryController.signal)
+              .get(currentSlug, recoveryController.signal)
               .then((refreshed) => {
                 if (recoveryController.signal.aborted) return;
-                setProject((prev) => {
-                  if (!prev) return refreshed;
-                  // S20-style identity guard: the user may have switched
-                  // projects while the recovery GET was in flight.
-                  if (prev.id !== refreshed.id) return prev;
-                  return refreshed;
-                });
+                // I1 (review 2026-05-27): single identity guard for
+                // BOTH setProject and replaceConfirmedStatuses. If the
+                // user navigated to a different project mid-GET,
+                // projectRef.current.id reflects that — bail entirely
+                // so the stale snapshot can't touch either piece of
+                // state. Pre-fix, only the setProject updater bailed.
+                if (projectRef.current?.id !== refreshed.id) return;
+                setProject((prev) => (prev?.id === refreshed.id ? refreshed : prev));
                 replaceConfirmedStatusesRef.current?.(refreshed);
               })
               .catch((recoveryErr) => {
