@@ -848,8 +848,18 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
           createRecoveryAbortRef.current?.abort();
           const recoveryController = new AbortController();
           createRecoveryAbortRef.current = recoveryController;
+          // S1 (review 2026-05-27 round 2): use the freshest slug at
+          // the time we know we need it. The handler-entry `slug`
+          // closure can lag if handleUpdateProjectTitle lands between
+          // create POST dispatch and this catch firing — the rename
+          // writes projectSlugRef.current to the new slug, but the
+          // captured `slug` still points at the dead old one. A GET
+          // against the old slug 404s, the catch's devWarn logs and
+          // the post-recovery banner surfaces with no sidebar refresh.
+          // Mirrors useTrashManager.handleRestore's S2 fix.
+          const recoverySlug = projectSlugRef.current ?? slug;
           try {
-            const refreshed = await api.projects.get(slug, recoveryController.signal);
+            const refreshed = await api.projects.get(recoverySlug, recoveryController.signal);
             if (recoveryController.signal.aborted) return;
             // I1 (review 2026-05-27 round 2): sequence guard. If a newer
             // handleCreateChapter has started between this recovery GET's

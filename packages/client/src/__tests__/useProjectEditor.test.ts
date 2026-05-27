@@ -3597,6 +3597,78 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("S1 (review 2026-05-27 round 2): handleCreateChapter recovery GET uses the current slug, not the captured one (survives mid-flight rename)", async () => {
+    // Pre-fix: handleCreateChapter captured `slug` at handler entry
+    // and reused it for the recovery GET in the possiblyCommitted
+    // branch. If handleUpdateProjectTitle landed between create POST
+    // dispatch and the catch firing, projectSlugRef.current had
+    // already advanced to the new slug — but the captured `slug` was
+    // stale. The recovery GET then fetched /projects/old-slug, 404'd,
+    // and the user saw the committed banner with no sidebar refresh.
+    // Post-fix: read projectSlugRef.current at the GET call site so
+    // the freshest slug is used. Mirrors S2 in useTrashManager.ts.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const renamedProject = {
+      ...mockProject,
+      slug: "renamed-project",
+      title: "Renamed",
+    };
+
+    // Defer the create POST so the rename can land first.
+    let rejectCreate!: (err: unknown) => void;
+    vi.mocked(api.chapters.create)
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectCreate = reject;
+          }),
+      );
+
+    // Rename PATCH resolves with the new slug; this updates
+    // projectSlugRef.current to "renamed-project".
+    vi.mocked(api.projects.update).mockReset().mockResolvedValue(renamedProject);
+
+    // Capture the slug the recovery GET is called with.
+    let recoveryGetSlug: string | undefined;
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load
+      .mockImplementationOnce((slug, _signal) => {
+        recoveryGetSlug = slug;
+        return Promise.resolve({ ...renamedProject, chapters: [mockChapter1, mockChapter2] });
+      });
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project?.chapters).toHaveLength(2));
+
+    // Fire create — POST is pending.
+    let createPromise!: Promise<void>;
+    act(() => {
+      createPromise = result.current.handleCreateChapter();
+    });
+    // Wait for the POST to be dispatched.
+    await waitFor(() => expect(api.chapters.create).toHaveBeenCalled());
+
+    // Rename the project while the create POST is still in flight.
+    // This writes projectSlugRef.current = "renamed-project".
+    await act(async () => {
+      await result.current.handleUpdateProjectTitle("Renamed");
+    });
+    expect(result.current.project?.slug).toBe("renamed-project");
+
+    // Reject the create POST with 200 BAD_JSON → catch enters the
+    // recovery branch. Pre-fix: GET uses captured "test-project" →
+    // 404. Post-fix: GET uses projectSlugRef.current === "renamed-project".
+    await act(async () => {
+      rejectCreate(new ApiRequestError("bad json", 200, "BAD_JSON"));
+      await createPromise;
+    });
+
+    expect(recoveryGetSlug).toBe("renamed-project");
+    warnSpy.mockRestore();
+  });
+
   it("handleStatusChange preserves optimistic status on 2xx BAD_JSON + surfaces committed copy (I6)", async () => {
     // 2xx BAD_JSON means the server committed the new status but the
     // response body was unreadable. Reverting (locally or from the
