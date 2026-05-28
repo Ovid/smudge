@@ -1,6 +1,6 @@
 import { createRef } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, cleanup, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SnapshotPanel, type SnapshotPanelHandle } from "../components/SnapshotPanel";
 import { api } from "../api/client";
@@ -743,6 +743,210 @@ describe("SnapshotPanel", () => {
       unmount();
 
       expect(imperativeSignal.aborted).toBe(true);
+    });
+
+    it("imperative refreshSnapshots() invalidates a concurrent in-flight mount fetch (4b.3d S14)", async () => {
+      // The hoist (4b.3d S14) moves chapterSeq.abort() into fetchSnapshots
+      // itself. Pre-hoist, the imperative path (used post-create / post-
+      // delete) called capture() only — so if a mount-fetch was still in
+      // flight when the user mutated, the mount-fetch's token captured at
+      // the same epoch as the imperative call's token. When the stale
+      // mount-fetch resolved late, token.isStale() returned false, and
+      // its data overwrote the imperative refresh's fresh data.
+      //
+      // Post-hoist, fetchSnapshots calls chapterSeq.abort() before
+      // capture(), so the imperative call bumps the epoch and marks the
+      // mount-fetch's token stale.
+
+      // Mount fetch hangs until we explicitly resolve it; imperative
+      // fetch resolves immediately with "Fresh snapshot".
+      let resolveMount!: (v: SnapshotListItem[]) => void;
+      const mountPromise = new Promise<SnapshotListItem[]>((r) => {
+        resolveMount = r;
+      });
+      const impPromise = Promise.resolve<SnapshotListItem[]>([
+        makeSnapshot({ id: "snap-fresh", label: "Fresh snapshot" }),
+      ]);
+
+      let callIndex = 0;
+      vi.mocked(api.snapshots.list).mockImplementation(async () => {
+        callIndex += 1;
+        if (callIndex === 1) return mountPromise;
+        return impPromise;
+      });
+
+      const ref = createRef<SnapshotPanelHandle>();
+      render(<SnapshotPanel {...defaultProps} ref={ref} />);
+
+      // Wait for the mount fetch to fire.
+      await waitFor(() => {
+        expect(api.snapshots.list).toHaveBeenCalledTimes(1);
+      });
+
+      // Trigger imperative refresh BEFORE the mount fetch resolves.
+      await act(async () => {
+        await ref.current?.refreshSnapshots();
+      });
+
+      // Imperative fetch completed; "Fresh snapshot" is visible.
+      await waitFor(() => {
+        expect(screen.getByText("Fresh snapshot")).toBeInTheDocument();
+      });
+
+      // Now resolve the stale mount fetch with a recognisable label.
+      resolveMount([makeSnapshot({ id: "snap-stale", label: "Stale snapshot" })]);
+      // Give the .then chain time to run.
+      await new Promise((r) => setTimeout(r, 0));
+
+      // The stale mount fetch MUST NOT overwrite the fresh data.
+      expect(screen.queryByText("Stale snapshot")).not.toBeInTheDocument();
+      expect(screen.getByText("Fresh snapshot")).toBeInTheDocument();
+    });
+
+    it("discards stale chapter-A response after chapter switch to B (4b.3d S14 design contract)", async () => {
+      // Sibling of the imperative-vs-mount test above, pinning the
+      // *chapter-switch* contract the design (docs/plans/2026-05-27-mapper-
+      // internals-claude-md-updates-design.md:108-131) called load-bearing:
+      // without chapterSeq.abort() before capture() on chapter switch,
+      // capture() returns a token at the same epoch as the prior chapter's
+      // still-outstanding token, both are "current", and chapter A's late
+      // response could overwrite chapter B's panel state. Post-hoist, the
+      // mount-effect's fetchSnapshots() call runs chapterSeq.abort() first,
+      // bumping the epoch so A's token is stale by the time its .then
+      // resolves.
+      let resolveA!: (v: SnapshotListItem[]) => void;
+      const aPromise = new Promise<SnapshotListItem[]>((r) => {
+        resolveA = r;
+      });
+      const bPromise = Promise.resolve<SnapshotListItem[]>([
+        makeSnapshot({ id: "snap-B", label: "B snapshot" }),
+      ]);
+
+      vi.mocked(api.snapshots.list).mockImplementation(async (chapterId: string) => {
+        if (chapterId === "ch-A") return aPromise;
+        if (chapterId === "ch-B") return bPromise;
+        return [];
+      });
+
+      const { rerender } = render(<SnapshotPanel {...defaultProps} chapterId="ch-A" />);
+
+      // Wait for chapter A's mount fetch to fire and hang.
+      await waitFor(() => {
+        expect(api.snapshots.list).toHaveBeenCalledWith("ch-A", expect.anything());
+      });
+
+      // Switch to chapter B — mount-effect re-runs; fetchSnapshots calls
+      // chapterSeq.abort() (post-hoist) then capture() at a bumped epoch.
+      rerender(<SnapshotPanel {...defaultProps} chapterId="ch-B" />);
+
+      // Chapter B's fetch resolves first; panel shows B's snapshot.
+      await waitFor(() => {
+        expect(screen.getByText("B snapshot")).toBeInTheDocument();
+      });
+
+      // Now resolve A's still-held promise with a recognisable label.
+      resolveA([makeSnapshot({ id: "snap-A", label: "A snapshot" })]);
+      // Give the .then chain time to run.
+      await new Promise((r) => setTimeout(r, 0));
+
+      // A's stale response MUST NOT appear; B's stays visible.
+      expect(screen.queryByText("A snapshot")).not.toBeInTheDocument();
+      expect(screen.getByText("B snapshot")).toBeInTheDocument();
+    });
+
+    it("discards a late-resolving response after isOpen flips true→false (S2 round 4)", async () => {
+      // The S14 hoist moved chapterSeq.abort() inside fetchSnapshots, so a
+      // mount-effect re-run that takes the early-return path (isOpen=true→
+      // false or chapterId=X→null) no longer bumps the chapterSeq epoch.
+      // Today the panel is conditionally rendered, so the early-return
+      // path isn't hit in production — but the cleanup must still stale
+      // the prior token, because fetchOp.abort() only severs the network
+      // and a response that has already left the wire can resolve despite
+      // the abort. Without chapterSeq.abort() in the cleanup, that late
+      // response writes panel state (setSnapshots / onSnapshotsChange) on
+      // a closed panel, and on the next open a chapter-switch path would
+      // see the parent's badge driven by a stale chapter's count.
+      //
+      // The mock ignores the AbortSignal deliberately — it simulates a
+      // promise resolving "despite/around" the abort, which is the
+      // condition the cleanup must defend against.
+      let resolveListPromise!: (v: SnapshotListItem[]) => void;
+      const listPromise = new Promise<SnapshotListItem[]>((r) => {
+        resolveListPromise = r;
+      });
+      vi.mocked(api.snapshots.list).mockReturnValue(listPromise);
+
+      const onSnapshotsChange = vi.fn();
+      const { rerender } = render(
+        <SnapshotPanel
+          {...defaultProps}
+          chapterId="ch-1"
+          isOpen={true}
+          onSnapshotsChange={onSnapshotsChange}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(api.snapshots.list).toHaveBeenCalledTimes(1);
+      });
+
+      // Close the panel without unmounting. Cleanup must bump chapterSeq.
+      rerender(
+        <SnapshotPanel
+          {...defaultProps}
+          chapterId="ch-1"
+          isOpen={false}
+          onSnapshotsChange={onSnapshotsChange}
+        />,
+      );
+
+      // Resolve the in-flight promise *after* the close — simulating a
+      // response that landed despite cleanup's fetchOp.abort().
+      resolveListPromise([makeSnapshot({ id: "snap-late", label: "Late" })]);
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(onSnapshotsChange).not.toHaveBeenCalled();
+    });
+
+    it("discards a late-resolving response after chapterId flips X→null (S2 round 4)", async () => {
+      // Sibling of the isOpen flip test above — same defect, alternate
+      // trigger. A chapterId=X→null transition with the panel still
+      // isOpen=true also takes the early-return path (line 162 of
+      // SnapshotPanel: `if (!isOpen || !chapterId) return`), so the
+      // cleanup must stale the prior token here too.
+      let resolveListPromise!: (v: SnapshotListItem[]) => void;
+      const listPromise = new Promise<SnapshotListItem[]>((r) => {
+        resolveListPromise = r;
+      });
+      vi.mocked(api.snapshots.list).mockReturnValue(listPromise);
+
+      const onSnapshotsChange = vi.fn();
+      const { rerender } = render(
+        <SnapshotPanel
+          {...defaultProps}
+          chapterId="ch-1"
+          isOpen={true}
+          onSnapshotsChange={onSnapshotsChange}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(api.snapshots.list).toHaveBeenCalledTimes(1);
+      });
+
+      rerender(
+        <SnapshotPanel
+          {...defaultProps}
+          chapterId={null}
+          isOpen={true}
+          onSnapshotsChange={onSnapshotsChange}
+        />,
+      );
+
+      resolveListPromise([makeSnapshot({ id: "snap-late", label: "Late" })]);
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(onSnapshotsChange).not.toHaveBeenCalled();
     });
 
     it("moves focus to panel on first mount when already open", async () => {

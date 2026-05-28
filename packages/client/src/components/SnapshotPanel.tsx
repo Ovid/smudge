@@ -30,7 +30,7 @@ function fullDate(iso: string): string {
 }
 
 export interface SnapshotPanelHandle {
-  refreshSnapshots: () => void;
+  refreshSnapshots: () => Promise<void>;
 }
 
 interface SnapshotPanelProps {
@@ -132,6 +132,12 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
 
     const fetchSnapshots = useCallback(async () => {
       if (!chapterId) return;
+      // 4b.3d S14: bump the chapterSeq epoch before capturing a token so
+      // any prior in-flight fetchSnapshots's .then/.catch checks see
+      // token.isStale() === true. Hoisted from the mount useEffect (now
+      // a single fetchSnapshots() call) so both call paths get the same
+      // chapter-switch invalidation semantics.
+      chapterSeq.abort();
       const token = chapterSeq.capture();
       const { promise } = fetchOp.run((s) => api.snapshots.list(chapterId, s));
       try {
@@ -153,37 +159,49 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
 
     // Fetch on mount and when chapterId changes
     useEffect(() => {
-      // Abort before fetching so any in-flight list response from the
-      // prior chapter is discarded via token.isStale() checks below.
-      chapterSeq.abort();
       if (!isOpen || !chapterId) return;
-      const token = chapterSeq.capture();
-      const { promise } = fetchOp.run((s) => api.snapshots.list(chapterId, s));
-      promise
-        .then((data) => {
-          if (token.isStale()) return;
-          setSnapshots(data);
-          setListError(null);
-          onSnapshotsChange?.(data.length);
-        })
-        .catch((err) => {
-          if (token.isStale()) return;
-          applyMappedError(mapApiError(err, "snapshot.list"), { onMessage: setListError });
-        });
+      // 4b.3d S14: chapterSeq.abort() now lives at the top of
+      // fetchSnapshots, so this effect doesn't need to re-implement the
+      // inlined fetch — it just calls fetchSnapshots() and lets the
+      // hoisted abort do the chapter-switch invalidation work.
+      //
+      // Cleanup symmetrically aborts BOTH the chapterSeq epoch and the
+      // fetchOp AbortController (review 2026-05-28 round 4 [S2]). The
+      // hoist made the early-return path (isOpen=true→false or
+      // chapterId=X→null) skip the in-fetchSnapshots abort, so a
+      // late-resolving response — one that left the wire before
+      // fetchOp.abort() landed — could pass token.isStale() === false
+      // and write setSnapshots / onSnapshotsChange on a closed panel.
+      // Today this is unreachable because SnapshotPanel is conditionally
+      // mounted on `snapshotPanelOpen && activeChapter`, but the
+      // defensive cleanup means a future refactor that keeps the panel
+      // mounted across opens won't reintroduce the gap. The chapter-
+      // switch path also benefits: the cleanup bumps chapterSeq before
+      // the next fetchSnapshots() call bumps it again, doubly-staling
+      // the prior chapter's outstanding token at no semantic cost.
+      //
       // S4 (review 2026-05-25): explicit cleanup. useAbortableAsyncOperation
       // auto-aborts on unmount AND on the next .run() call, but NOT on a
       // bare effect-rerun (e.g. the isOpen=true→false transition that early-
-      // returns above without re-issuing run()). In practice SnapshotPanel
-      // is conditionally rendered on `snapshotPanelOpen && activeChapter`,
-      // so a close-while-mounted transition doesn't occur today — but a
-      // future refactor that keeps the panel mounted with isOpen=false
-      // would leave the prior in-flight server work running to completion.
-      // Mirror sibling ExportDialog's explicit op.abort() in its
-      // open→closed transition.
+      // returns above without re-issuing run()). Mirror sibling
+      // ExportDialog's explicit op.abort() in its open→closed transition.
+      //
+      // react-hooks/set-state-in-effect: fetchSnapshots is async; its
+      // setSnapshots/setListError calls happen after `await promise`, not
+      // synchronously in the effect body. The rule's static analysis can't
+      // see through the await boundary — it flags any call to a function
+      // that statically contains setState. This is the canonical
+      // "subscribe + setState in a callback" shape the rule's prose
+      // endorses. Pre-Task-4 the same effect inlined the .then((data) =>
+      // setSnapshots(data)) form, which the rule accepted for the same
+      // semantic reason. The disable is on the call site, not the rule.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      void fetchSnapshots();
       return () => {
+        chapterSeq.abort();
         fetchOp.abort();
       };
-    }, [isOpen, chapterId, onSnapshotsChange, chapterSeq, fetchOp]);
+    }, [isOpen, chapterId, fetchSnapshots, fetchOp, chapterSeq]);
 
     // Focus management
     useEffect(() => {

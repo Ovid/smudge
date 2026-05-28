@@ -8,6 +8,18 @@
 
 ---
 
+## `b7e3f9a1` — `startedForProjectId` + `isStaleProject` drift-guard duplicated three times in `useProjectEditor.ts`
+- **File (at first sighting):** `packages/client/src/hooks/useProjectEditor.ts:1145-1147`, `:1450-1452`, `:1614-1616`
+- **Symbol:** Three sibling `startedForProjectId` + `isStaleProject` closures
+- **Bug class:** Contract
+- **Description:** Three additional sites in `useProjectEditor.ts` carry the same `const startedForProjectId = …; const isStaleProject = () => startedForProjectId !== undefined && projectRef.current?.id !== startedForProjectId;` shape that Phase 4b.3d's [S13] just extracted into `refreshTrashList` for the trash flow. Phase 4b.3d's stated motivation ("consolidate the drift-guard pipeline") leaves the sibling sites unconsolidated. Pre-existing — not introduced or worsened by this branch. A general-purpose `withStaleProjectGuard<T>(projectRef, project, fn)` helper would absorb all four call sites; the trash-flavour discriminated-union shape may not transfer cleanly because the sibling state-write shapes differ, so a brainstorming pass is warranted before extraction.
+- **Suggested fix:** File as a Phase 4b.4+ follow-up. Brainstorm whether the helper shape should mirror `RefreshTrashResult`'s discriminated-union or take a callback-injection shape that matches each call site's state-write needs.
+- **Confidence:** Medium
+- **Found by:** Contract & Integration (`general-purpose (claude-opus-4-7[1m])`)
+- **First seen:** 2026-05-28 on branch `mapper-internals-claude-md-updates` at `76a47b1`
+- **Last seen:** 2026-05-28 on branch `mapper-internals-claude-md-updates` at `76a47b1`
+- **Severity:** Suggestion
+
 ## `f4b4b15c` — `EditorFooter.tsx` `saveFailed` fallback is structurally unreachable
 - **File (at first sighting):** `packages/client/src/components/EditorFooter.tsx:40`
 - **Symbol:** `EditorFooter` (saveStatus="error" branch)
@@ -271,5 +283,4 @@
 - **First seen:** 2026-05-27 on branch `consumer-recovery-independent-fixes` at `a4bb07e`
 - **Last seen:** 2026-05-27 on branch `consumer-recovery-independent-fixes` at `a4bb07e`
 - **Severity:** Suggestion
-
 
