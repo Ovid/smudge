@@ -130,6 +130,8 @@ useEffect(() => {
 
 Existing `SnapshotPanel` chapter-switch tests continue to pass without modification.
 
+**Implementation note (review I1, 2026-05-28):** the branch as originally pushed shipped a same-chapter imperative-refresh-vs-mount-fetch test ("imperative refreshSnapshots() invalidates a concurrent in-flight mount fetch") in place of the chapter-switch test above — the design called out the chapter-switch case as load-bearing (load-bearing wording at lines 107-112) and the imperative case as "harmless / arguably more correct" (less load-bearing). Round 2 review surfaced the divergence; the chapter-switch test described above was added in a follow-up commit (test pinned by temporary revert of the hoist to confirm RED). The imperative test stays — it pins a real adjacent contract distinct from chapter-switch and the two together pin the post-hoist semantics more completely than the chapter-switch test alone.
+
 ### [S2] CLAUDE.md updates
 
 Three sections touched. Two are writes; one is a verify-only.

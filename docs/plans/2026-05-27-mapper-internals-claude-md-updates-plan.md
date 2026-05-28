@@ -29,7 +29,7 @@
 **Modify:**
 - `packages/client/src/hooks/useTrashManager.ts` — `openTrash` (lines 105–132) and `confirmDeleteChapter`'s post-delete refresh (lines 357–386) become callers of `refreshTrashList`. Each loses ~25 lines of inlined fetch/abort/stale/error machinery.
 - `packages/client/src/components/SnapshotPanel.tsx` — `fetchSnapshots` (lines 133–150) gains `chapterSeq.abort()` at its top; mount useEffect (lines 155–186) shrinks to ~5 lines (early-return + `void fetchSnapshots()` + cleanup).
-- `packages/client/src/__tests__/SnapshotPanel.test.tsx` — add one component-level chapter-switch test asserting stale chapter-A response is discarded after switch to chapter B.
+- `packages/client/src/__tests__/SnapshotPanel.test.tsx` — add two tests pinning the post-hoist contract: (a) the component-level chapter-switch test the design (pushback Issue 3) specified, asserting stale chapter-A response is discarded after switch to chapter B (the *load-bearing* case); and (b) a same-chapter imperative-refresh-vs-mount-fetch sibling that pins the imperative-path contract (the "harmless / arguably more correct" case in the design). Both ride the same hoisted `chapterSeq.abort()` mechanism but assert observably distinct contracts. Test (b) shipped on the branch as originally pushed; test (a) was added in a 2026-05-28 follow-up after round 2 review (I1) — see `Self-Review Notes` below.
 - `CLAUDE.md` — §Unified API error mapping paragraph expanded; §Pull Request Scope exception list grown to four entries; §Save-Pipeline Invariants Rule 4 verified unchanged.
 
 **Do not touch:**
@@ -793,6 +793,13 @@ This task produces no commit. If Step 6.2 surfaced a `make lint` autofix, that l
 - **Placeholders:** none. All code blocks are concrete; commit messages are concrete; expected outputs are concrete.
 - **Type consistency:** `refreshTrashList` signature, `RefreshTrashResult` type, and the four return kinds match across Task 1, 2, and 3. The `MappedError<"trash.load">` parameterization matches the existing `scopes.ts` entry.
 - **Caller dependency arrays:** `openTrash`'s deps stay `[project, trashOp]`; `confirmDeleteChapter`'s deps unchanged (it's not modified at the `useCallback` boundary, only inside its body). React's exhaustive-deps lint rule should accept both — verify in Task 6's `make lint`.
+
+### Post-execution amendments (2026-05-28, review round 2)
+
+The branch as originally pushed deviated from this plan in two ways that round 2 review surfaced:
+
+1. **[S14] test scope diverged from the plan** — Task 4.1's embedded test code is the chapter-switch test, but during execution an additional same-chapter imperative-refresh-vs-mount-fetch test ("imperative refreshSnapshots() invalidates a concurrent in-flight mount fetch") was committed in place of the chapter-switch test. Both ride the same hoisted `chapterSeq.abort()` mechanism but pin observably distinct contracts. The chapter-switch test (the design's load-bearing case) was added in a 2026-05-28 follow-up commit after review I1; the imperative test was kept. See the design's `[S14] Implementation note (review I1)` paragraph for details.
+2. **[S13] migration required `migrationStructuralCheck.test.ts` changes the plan did not enumerate** — extracting `refreshTrashList` out of `useTrashManager.ts` meant `trashOp = useAbortableAsyncOperation()` was no longer `.run()`-ed directly inside the hook. The structural-binding check would have flagged `trashOp` as a "dead binding" without an allowlist branch. The branch added a `KNOWN_DELEGATION_HELPERS` allowlist + an "accept delegation" branch in the binding-check loop + a new test pinning the contract. This was a structurally necessary prerequisite for [S13] (without it, [S13]'s migration would fail the structural check at green-gate time), but Task 1's `File Structure → Create/Modify` enumeration did not list `migrationStructuralCheck.test.ts`. The omission was a planning gap, not scope creep: the work was a load-bearing dependency of [S13], not an opportunistic "while I'm here" cleanup. Reverting the structural-check changes alone would have broken the structural check; reverting both the helper extraction AND the structural-check changes would have reverted [S13] entirely. Round 2 review acknowledged the additions as legitimate prerequisites (OOSA1, 2026-05-28).
 
 ---
 
