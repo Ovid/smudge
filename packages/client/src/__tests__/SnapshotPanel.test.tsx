@@ -854,6 +854,101 @@ describe("SnapshotPanel", () => {
       expect(screen.getByText("B snapshot")).toBeInTheDocument();
     });
 
+    it("discards a late-resolving response after isOpen flips true→false (S2 round 4)", async () => {
+      // The S14 hoist moved chapterSeq.abort() inside fetchSnapshots, so a
+      // mount-effect re-run that takes the early-return path (isOpen=true→
+      // false or chapterId=X→null) no longer bumps the chapterSeq epoch.
+      // Today the panel is conditionally rendered, so the early-return
+      // path isn't hit in production — but the cleanup must still stale
+      // the prior token, because fetchOp.abort() only severs the network
+      // and a response that has already left the wire can resolve despite
+      // the abort. Without chapterSeq.abort() in the cleanup, that late
+      // response writes panel state (setSnapshots / onSnapshotsChange) on
+      // a closed panel, and on the next open a chapter-switch path would
+      // see the parent's badge driven by a stale chapter's count.
+      //
+      // The mock ignores the AbortSignal deliberately — it simulates a
+      // promise resolving "despite/around" the abort, which is the
+      // condition the cleanup must defend against.
+      let resolveListPromise!: (v: SnapshotListItem[]) => void;
+      const listPromise = new Promise<SnapshotListItem[]>((r) => {
+        resolveListPromise = r;
+      });
+      vi.mocked(api.snapshots.list).mockReturnValue(listPromise);
+
+      const onSnapshotsChange = vi.fn();
+      const { rerender } = render(
+        <SnapshotPanel
+          {...defaultProps}
+          chapterId="ch-1"
+          isOpen={true}
+          onSnapshotsChange={onSnapshotsChange}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(api.snapshots.list).toHaveBeenCalledTimes(1);
+      });
+
+      // Close the panel without unmounting. Cleanup must bump chapterSeq.
+      rerender(
+        <SnapshotPanel
+          {...defaultProps}
+          chapterId="ch-1"
+          isOpen={false}
+          onSnapshotsChange={onSnapshotsChange}
+        />,
+      );
+
+      // Resolve the in-flight promise *after* the close — simulating a
+      // response that landed despite cleanup's fetchOp.abort().
+      resolveListPromise([makeSnapshot({ id: "snap-late", label: "Late" })]);
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(onSnapshotsChange).not.toHaveBeenCalled();
+    });
+
+    it("discards a late-resolving response after chapterId flips X→null (S2 round 4)", async () => {
+      // Sibling of the isOpen flip test above — same defect, alternate
+      // trigger. A chapterId=X→null transition with the panel still
+      // isOpen=true also takes the early-return path (line 162 of
+      // SnapshotPanel: `if (!isOpen || !chapterId) return`), so the
+      // cleanup must stale the prior token here too.
+      let resolveListPromise!: (v: SnapshotListItem[]) => void;
+      const listPromise = new Promise<SnapshotListItem[]>((r) => {
+        resolveListPromise = r;
+      });
+      vi.mocked(api.snapshots.list).mockReturnValue(listPromise);
+
+      const onSnapshotsChange = vi.fn();
+      const { rerender } = render(
+        <SnapshotPanel
+          {...defaultProps}
+          chapterId="ch-1"
+          isOpen={true}
+          onSnapshotsChange={onSnapshotsChange}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(api.snapshots.list).toHaveBeenCalledTimes(1);
+      });
+
+      rerender(
+        <SnapshotPanel
+          {...defaultProps}
+          chapterId={null}
+          isOpen={true}
+          onSnapshotsChange={onSnapshotsChange}
+        />,
+      );
+
+      resolveListPromise([makeSnapshot({ id: "snap-late", label: "Late" })]);
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(onSnapshotsChange).not.toHaveBeenCalled();
+    });
+
     it("moves focus to panel on first mount when already open", async () => {
       // The panel is conditionally mounted in EditorPage (only rendered
       // when open), so on first render isOpen is already true. Previously
