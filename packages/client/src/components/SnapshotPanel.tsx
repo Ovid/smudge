@@ -165,6 +165,23 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
       // inlined fetch — it just calls fetchSnapshots() and lets the
       // hoisted abort do the chapter-switch invalidation work.
       //
+      // Behavioural delta vs pre-hoist (review 2026-05-28 round 3 [S2]):
+      // the effect early-returns above BEFORE fetchSnapshots() is called,
+      // so on an isOpen=true→false or chapterId=X→null re-run the
+      // chapterSeq epoch is NOT bumped — pre-hoist, the abort fired
+      // unconditionally before the early return. Today this is benign:
+      // SnapshotPanel is conditionally rendered on `snapshotPanelOpen &&
+      // activeChapter`, so the early-return path is unreachable in
+      // production, and any prior in-flight fetch is still severed by
+      // the cleanup fetchOp.abort() below — its AbortError maps to
+      // message:null on the snapshot.list scope and is silently dropped
+      // by applyMappedError. A future refactor that keeps the panel
+      // mounted with isOpen=false would expose the gap (prior chapter's
+      // late response would no longer see token.isStale() === true and
+      // could land setSnapshots on a closed panel); if that refactor
+      // lands, restore chapterSeq.abort() in the effect cleanup
+      // alongside fetchOp.abort().
+      //
       // S4 (review 2026-05-25): explicit cleanup. useAbortableAsyncOperation
       // auto-aborts on unmount AND on the next .run() call, but NOT on a
       // bare effect-rerun (e.g. the isOpen=true→false transition that early-
