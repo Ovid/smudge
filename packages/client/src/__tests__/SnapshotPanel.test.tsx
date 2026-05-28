@@ -803,6 +803,57 @@ describe("SnapshotPanel", () => {
       expect(screen.getByText("Fresh snapshot")).toBeInTheDocument();
     });
 
+    it("discards stale chapter-A response after chapter switch to B (4b.3d S14 design contract)", async () => {
+      // Sibling of the imperative-vs-mount test above, pinning the
+      // *chapter-switch* contract the design (docs/plans/2026-05-27-mapper-
+      // internals-claude-md-updates-design.md:108-131) called load-bearing:
+      // without chapterSeq.abort() before capture() on chapter switch,
+      // capture() returns a token at the same epoch as the prior chapter's
+      // still-outstanding token, both are "current", and chapter A's late
+      // response could overwrite chapter B's panel state. Post-hoist, the
+      // mount-effect's fetchSnapshots() call runs chapterSeq.abort() first,
+      // bumping the epoch so A's token is stale by the time its .then
+      // resolves.
+      let resolveA!: (v: SnapshotListItem[]) => void;
+      const aPromise = new Promise<SnapshotListItem[]>((r) => {
+        resolveA = r;
+      });
+      const bPromise = Promise.resolve<SnapshotListItem[]>([
+        makeSnapshot({ id: "snap-B", label: "B snapshot" }),
+      ]);
+
+      vi.mocked(api.snapshots.list).mockImplementation(async (chapterId: string) => {
+        if (chapterId === "ch-A") return aPromise;
+        if (chapterId === "ch-B") return bPromise;
+        return [];
+      });
+
+      const { rerender } = render(<SnapshotPanel {...defaultProps} chapterId="ch-A" />);
+
+      // Wait for chapter A's mount fetch to fire and hang.
+      await waitFor(() => {
+        expect(api.snapshots.list).toHaveBeenCalledWith("ch-A", expect.anything());
+      });
+
+      // Switch to chapter B — mount-effect re-runs; fetchSnapshots calls
+      // chapterSeq.abort() (post-hoist) then capture() at a bumped epoch.
+      rerender(<SnapshotPanel {...defaultProps} chapterId="ch-B" />);
+
+      // Chapter B's fetch resolves first; panel shows B's snapshot.
+      await waitFor(() => {
+        expect(screen.getByText("B snapshot")).toBeInTheDocument();
+      });
+
+      // Now resolve A's still-held promise with a recognisable label.
+      resolveA([makeSnapshot({ id: "snap-A", label: "A snapshot" })]);
+      // Give the .then chain time to run.
+      await new Promise((r) => setTimeout(r, 0));
+
+      // A's stale response MUST NOT appear; B's stays visible.
+      expect(screen.queryByText("A snapshot")).not.toBeInTheDocument();
+      expect(screen.getByText("B snapshot")).toBeInTheDocument();
+    });
+
     it("moves focus to panel on first mount when already open", async () => {
       // The panel is conditionally mounted in EditorPage (only rendered
       // when open), so on first render isOpen is already true. Previously
