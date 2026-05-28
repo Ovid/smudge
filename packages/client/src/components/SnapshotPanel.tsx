@@ -175,6 +175,17 @@ export const SnapshotPanel = forwardRef<SnapshotPanelHandle, SnapshotPanelProps>
       // would leave the prior in-flight server work running to completion.
       // Mirror sibling ExportDialog's explicit op.abort() in its
       // open→closed transition.
+      //
+      // react-hooks/set-state-in-effect: fetchSnapshots is async; its
+      // setSnapshots/setListError calls happen after `await promise`, not
+      // synchronously in the effect body. The rule's static analysis can't
+      // see through the await boundary — it flags any call to a function
+      // that statically contains setState. This is the canonical
+      // "subscribe + setState in a callback" shape the rule's prose
+      // endorses. Pre-Task-4 the same effect inlined the .then((data) =>
+      // setSnapshots(data)) form, which the rule accepted for the same
+      // semantic reason. The disable is on the call site, not the rule.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       void fetchSnapshots();
       return () => {
         fetchOp.abort();
