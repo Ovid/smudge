@@ -30,7 +30,7 @@ function fullDate(iso: string): string {
 }
 
 export interface SnapshotPanelHandle {
-  refreshSnapshots: () => void;
+  refreshSnapshots: () => Promise<void>;
 }
 
 interface SnapshotPanelProps {
