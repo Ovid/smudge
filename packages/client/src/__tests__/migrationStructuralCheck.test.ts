@@ -121,8 +121,26 @@ export function collectTsSources(root: string): string[] {
 // satisfies the "binding is consumed" contract just as well as a
 // direct <binding>.run() call. The helper itself is unit-tested
 // separately (see useTrashManager.refresh.test.ts) to confirm it
-// actually calls .run() on the parameter. Add new entries here when
-// new delegation helpers are introduced.
+// actually calls .run() on the parameter AND that the factory passed
+// to .run() invokes the wrapped endpoint with the project's slug and
+// the captured signal (review I2, 2026-05-28 — the prior mock shape
+// never invoked the factory, so the inner-pipeline guarantee was
+// inaccurate; the rewritten mock is a passthrough that exercises the
+// real factory). Add new entries here when new delegation helpers
+// are introduced.
+//
+// Limitation (review S1, 2026-05-28): the matching pattern below at
+// line ~304 uses `[^)]*` to span the argument list. `[^)]*` cannot
+// match a delegation call with nested parens — a future call like
+// `refreshTrashList(getProject(), projectRef, trashOp)` would silently
+// fail to recognize `trashOp` as consumed and surface a false-positive
+// "dead binding" offender. Today the only delegation site is
+// `refreshTrashList(project, projectRef, trashOp)` (no nested parens),
+// so the check works. When a delegation call site needs nested parens,
+// extend the matcher with a paren-counting walker rather than tweaking
+// the regex — the symmetry with the inner `[^>]*` non-nested generic
+// note at line ~290 is deliberate (each false-pass/false-fail surfaces
+// as a forcing function rather than silent drift).
 const KNOWN_DELEGATION_HELPERS = ["refreshTrashList"];
 
 describe("client source-tree migration structural check", () => {
