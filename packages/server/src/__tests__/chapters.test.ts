@@ -1,8 +1,9 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import request from "supertest";
 import { UNTITLED_CHAPTER } from "@smudge/shared";
 import { setupTestDb } from "./test-helpers";
 import { logger } from "../logger";
+import * as ChapterService from "../chapters/chapters.service";
 
 const t = setupTestDb();
 
@@ -426,6 +427,60 @@ describe("POST /api/chapters/:id/restore", () => {
     );
     errorSpy.mockRestore();
     warnSpy.mockRestore();
+  });
+});
+
+// The route maps each service outcome onto a specific HTTP status + machine
+// `error.code`. Those codes are load-bearing — the client error scopes map
+// them by name. A few outcomes are defensive race conditions that can't be
+// provoked through the real DB path, so we drive them by stubbing the service
+// and assert the wiring directly.
+describe("chapter route error-code mappings (service-outcome wiring)", () => {
+  const VALID_ID = "00000000-0000-0000-0000-000000000000";
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("PATCH maps read_after_update_failure → 500 UPDATE_READ_FAILURE", async () => {
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    vi.spyOn(ChapterService, "updateChapter").mockResolvedValue("read_after_update_failure");
+    const res = await request(t.app).patch(`/api/chapters/${VALID_ID}`).send({ title: "x" });
+    expect(res.status).toBe(500);
+    expect(res.body.error.code).toBe("UPDATE_READ_FAILURE");
+    errorSpy.mockRestore();
+  });
+
+  it("PATCH maps a corrupt post-update read → 500 CORRUPT_CONTENT", async () => {
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    vi.spyOn(ChapterService, "updateChapter").mockResolvedValue({ corrupt: true });
+    const res = await request(t.app).patch(`/api/chapters/${VALID_ID}`).send({ title: "x" });
+    expect(res.status).toBe(500);
+    expect(res.body.error.code).toBe("CORRUPT_CONTENT");
+    errorSpy.mockRestore();
+  });
+
+  it("restore maps chapter_purged → 404 CHAPTER_PURGED", async () => {
+    vi.spyOn(ChapterService, "restoreChapter").mockResolvedValue("chapter_purged");
+    const res = await request(t.app).post(`/api/chapters/${VALID_ID}/restore`);
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("CHAPTER_PURGED");
+  });
+
+  it("restore maps conflict → 409 RESTORE_CONFLICT", async () => {
+    vi.spyOn(ChapterService, "restoreChapter").mockResolvedValue("conflict");
+    const res = await request(t.app).post(`/api/chapters/${VALID_ID}/restore`);
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("RESTORE_CONFLICT");
+  });
+
+  it("restore maps read_failure → 500 RESTORE_READ_FAILURE", async () => {
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    vi.spyOn(ChapterService, "restoreChapter").mockResolvedValue("read_failure");
+    const res = await request(t.app).post(`/api/chapters/${VALID_ID}/restore`);
+    expect(res.status).toBe(500);
+    expect(res.body.error.code).toBe("RESTORE_READ_FAILURE");
+    errorSpy.mockRestore();
   });
 });
 

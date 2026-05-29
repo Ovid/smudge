@@ -116,6 +116,23 @@ describe("images.service", () => {
       expect((result as { validationError: string }).validationError).toBe("File is empty");
     });
 
+    it("returns validationError when content does not match the declared MIME type", async () => {
+      // Declared image/png but the buffer lacks the PNG magic bytes — a
+      // mismatched/spoofed upload must be rejected by the magic-byte check.
+      const projectId = await createTestProject();
+      const result = await imagesService.uploadImage(projectId, {
+        buffer: Buffer.from("this is plain text, not a PNG"),
+        originalname: "fake.png",
+        mimetype: "image/png",
+        size: 29,
+      });
+
+      expect(result).toHaveProperty("validationError");
+      expect((result as { validationError: string }).validationError).toContain(
+        "does not match declared type",
+      );
+    });
+
     it("returns notFound for non-existent project", async () => {
       const result = await imagesService.uploadImage("00000000-0000-0000-0000-000000000000", {
         buffer: TEST_PNG,

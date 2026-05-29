@@ -139,6 +139,51 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     expect(result.current.actionError).toBe(STRINGS.error.restoreChapterCommitted);
   });
 
+  it("swallows a failed committed-branch recovery GET without breaking the committed UX", async () => {
+    const deleted = makeChapter({ id: "ch-recovery-fail" });
+    const project = makeProject();
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    const handleDeleteChapter = vi.fn();
+
+    vi.mocked(api.chapters.restore).mockRejectedValue(
+      new ApiRequestError("read failed", 500, "RESTORE_READ_FAILURE"),
+    );
+    vi.mocked(api.projects.trash).mockResolvedValue([deleted]);
+    // The committed branch fires a best-effort recovery GET to reseed project
+    // state. If that GET itself fails it must be logged and swallowed — never
+    // throw, never reseed stale state, never undo the committed UX.
+    vi.mocked(api.projects.get).mockRejectedValue(
+      new ApiRequestError("recovery boom", 500, "INTERNAL"),
+    );
+
+    const { result } = renderHook(() =>
+      useTrashManager(project, project.slug, setProject, handleDeleteChapter, navigate),
+    );
+
+    await act(async () => {
+      await result.current.openTrash();
+    });
+
+    await act(async () => {
+      await result.current.handleRestore("ch-recovery-fail");
+    });
+
+    // The recovery GET was attempted...
+    await waitFor(() => expect(api.projects.get).toHaveBeenCalled(), { timeout: 3000 });
+    // ...but its failure leaves the committed UX intact and reseeds nothing.
+    await waitFor(
+      () => {
+        expect(
+          result.current.trashedChapters.find((c) => c.id === "ch-recovery-fail"),
+        ).toBeUndefined();
+      },
+      { timeout: 3000 },
+    );
+    expect(result.current.actionError).toBe(STRINGS.error.restoreChapterCommitted);
+    expect(setProject).not.toHaveBeenCalled();
+  });
+
   // I5 (review 2026-04-24): api.projects.trash now accepts a signal
   // and the hook wires a controller. Unmount aborts the in-flight
   // fetch so a late .then/.catch can't fire setState on a gone

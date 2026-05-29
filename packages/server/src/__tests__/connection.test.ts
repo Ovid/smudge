@@ -60,6 +60,28 @@ describe("db/connection", () => {
     expect(result[0].timeout).toBe(5000);
   });
 
+  it("initDb destroys the prior connection when called again", async () => {
+    const first = await initDb(createTestKnexConfig());
+    await first("projects").select("*"); // confirm first is live
+    const second = await initDb(createTestKnexConfig());
+    expect(second).not.toBe(first);
+    // The first connection was destroyed, so querying it now rejects.
+    await expect(first.raw("SELECT 1")).rejects.toThrow();
+    // The replacement is the live singleton.
+    expect(getDb()).toBe(second);
+  });
+
+  it("setDb destroys the previously-set instance when replaced", async () => {
+    const { setDb } = await import("../db/connection");
+    const a = knex(createTestKnexConfig());
+    const b = knex(createTestKnexConfig());
+    await setDb(a);
+    await setDb(b); // db === a, a !== b → a is destroyed
+    expect(getDb()).toBe(b);
+    await expect(a.raw("SELECT 1")).rejects.toThrow();
+    // afterEach/closeDb() owns destruction of b (the stored singleton).
+  });
+
   it("closeDb destroys the connection without error", async () => {
     await initDb(createTestKnexConfig());
     await expect(closeDb()).resolves.toBeUndefined();

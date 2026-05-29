@@ -122,6 +122,20 @@ describe("searchInDoc", () => {
     expect(results).toHaveLength(2);
   });
 
+  it("advances past zero-length matches without splitting surrogate pairs", () => {
+    // A pure lookahead yields a zero-length match before every code point.
+    // The cursor must step forward by a whole code point — two UTF-16 units
+    // for the emoji — so it never lands mid-surrogate (which would re-match
+    // forever or corrupt offsets). "a😀b" is 4 UTF-16 units: a, D83D, DE00, b.
+    const d = doc(paragraph(text("a\u{1F600}b")));
+    const results = searchInDoc(d, "(?=.)", { regex: true });
+    // One zero-length match before each of the 3 code points (a, 😀, b);
+    // offsets 0, 1, 3 prove the emoji was stepped over as a single unit.
+    expect(results).toHaveLength(3);
+    expect(results.map((r) => r.offset)).toEqual([0, 1, 3]);
+    expect(results.every((r) => r.length === 0)).toBe(true);
+  });
+
   it("returns context around matches", () => {
     const longText =
       "This is a very long sentence that goes on and on and eventually mentions the target word somewhere in the middle of it all";

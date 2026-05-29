@@ -270,6 +270,30 @@ describe("search.service", () => {
       expect(row.word_count).toBe(4);
     });
 
+    it("chapter scope with match_index replaces only the targeted occurrence", async () => {
+      const { replaceInProject } = await import("../search/search.service");
+      const projectId = await createProject();
+      const chId = await createChapter(projectId, "Ch", JSON.stringify(makeDoc("cat cat cat")), 0);
+      const other = await createChapter(projectId, "Other", JSON.stringify(makeDoc("cat here")), 1);
+
+      // Replace only the 2nd "cat" (0-based match_index 1) in the scoped chapter.
+      const result = await replaceInProject(projectId, "cat", "dog", undefined, {
+        type: "chapter",
+        chapter_id: chId,
+        match_index: 1,
+      });
+      const r = result as { replaced_count: number; affected_chapter_ids: string[] };
+      expect(r.replaced_count).toBe(1);
+      expect(r.affected_chapter_ids).toEqual([chId]);
+
+      const row = await t.db("chapters").where({ id: chId }).first();
+      expect(JSON.parse(row.content).content[0].content[0].text).toBe("cat dog cat");
+
+      // The chapter outside the scope is untouched.
+      const otherRow = await t.db("chapters").where({ id: other }).first();
+      expect(JSON.parse(otherRow.content).content[0].content[0].text).toBe("cat here");
+    });
+
     it("chapters with no matches are not snapshotted or modified", async () => {
       const { replaceInProject } = await import("../search/search.service");
       const projectId = await createProject();
@@ -599,6 +623,59 @@ describe("search.service", () => {
 
       expect(result && typeof result === "object" && "validationError" in result).toBe(true);
       expect((result as { code: string }).code).toBe("REGEX_TIMEOUT");
+    });
+
+    it("searchProject returns the match cap error when the running total across chapters exceeds it", async () => {
+      // Each chapter stays under MAX_MATCHES_PER_REQUEST individually (so
+      // searchInDoc itself doesn't throw), but their combined total trips the
+      // cross-chapter cap that bounds the response size.
+      const shared = await import("@smudge/shared");
+      const { searchProject } = await import("../search/search.service");
+      const projectId = await createProject();
+      await createChapter(projectId, "Ch1", JSON.stringify(makeDoc("a")), 0);
+      await createChapter(projectId, "Ch2", JSON.stringify(makeDoc("a")), 1);
+
+      const fakeMatches = new Array(6000).fill({
+        index: 0,
+        offset: 0,
+        length: 1,
+        blockIndex: 0,
+        context: "a",
+      });
+      const spy = vi.spyOn(shared, "searchInDoc").mockReturnValue(fakeMatches);
+      const result = await searchProject(projectId, "a");
+      spy.mockRestore();
+
+      expect(result && typeof result === "object" && "validationError" in result).toBe(true);
+      expect((result as { validationError: string }).validationError).toMatch(/too many matches/i);
+    });
+
+    it("searchProject propagates an unexpected error from the matcher (not swallowed)", async () => {
+      const shared = await import("@smudge/shared");
+      const { searchProject } = await import("../search/search.service");
+      const projectId = await createProject();
+      await createChapter(projectId, "Ch", JSON.stringify(makeDoc("hello")), 0);
+
+      const spy = vi.spyOn(shared, "searchInDoc").mockImplementation(() => {
+        throw new Error("unexpected matcher failure");
+      });
+      await expect(searchProject(projectId, "hello")).rejects.toThrow("unexpected matcher failure");
+      spy.mockRestore();
+    });
+
+    it("replaceInProject propagates an unexpected error from the replacer (not swallowed)", async () => {
+      const shared = await import("@smudge/shared");
+      const { replaceInProject } = await import("../search/search.service");
+      const projectId = await createProject();
+      await createChapter(projectId, "Ch", JSON.stringify(makeDoc("hello")), 0);
+
+      const spy = vi.spyOn(shared, "replaceInDoc").mockImplementation(() => {
+        throw new Error("unexpected replacer failure");
+      });
+      await expect(replaceInProject(projectId, "hello", "bye")).rejects.toThrow(
+        "unexpected replacer failure",
+      );
+      spy.mockRestore();
     });
 
     it("does not create a duplicate auto-snapshot when pre-replace content already matches the latest snapshot (F-15)", async () => {

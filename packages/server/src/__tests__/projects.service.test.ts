@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { randomUUID } from "crypto";
 import { setupTestDb } from "./test-helpers";
 import {
   createProject,
@@ -78,6 +79,54 @@ describe("projects.service", () => {
     it("returns false for a non-existent project slug", async () => {
       const result = await deleteProject("no-such-project");
       expect(result).toBe(false);
+    });
+
+    it("decrements reference counts for images referenced by deleted chapters", async () => {
+      const created = await createProject({ title: "Has Images", mode: "fiction" });
+      if (!("project" in created)) throw new Error("unexpected");
+      const projectId = created.project.id;
+      const chapter = await t.db("chapters").where({ project_id: projectId }).first();
+
+      // An image referenced once by the chapter, seeded with a refcount of 1.
+      const imageId = randomUUID();
+      await t.db("images").insert({
+        id: imageId,
+        project_id: projectId,
+        filename: "pic.png",
+        mime_type: "image/png",
+        size_bytes: 10,
+        reference_count: 1,
+        created_at: new Date().toISOString(),
+      });
+      await t
+        .db("chapters")
+        .where({ id: chapter.id })
+        .update({
+          content: JSON.stringify({
+            type: "doc",
+            content: [{ type: "image", attrs: { src: `/api/images/${imageId}` } }],
+          }),
+        });
+
+      const deleted = await deleteProject(created.project.slug);
+      expect(deleted).toBe(true);
+
+      // The reference released by the deleted chapter brings the count to 0.
+      const img = await t.db("images").where({ id: imageId }).first();
+      expect(img.reference_count).toBe(0);
+    });
+
+    it("skips chapters whose content is not valid JSON during delete", async () => {
+      const created = await createProject({ title: "Corrupt Content", mode: "fiction" });
+      if (!("project" in created)) throw new Error("unexpected");
+      const projectId = created.project.id;
+      const chapter = await t.db("chapters").where({ project_id: projectId }).first();
+      await t.db("chapters").where({ id: chapter.id }).update({ content: "{not valid json" });
+
+      // The unparseable chapter must be skipped, not abort the whole delete.
+      await expect(deleteProject(created.project.slug)).resolves.toBe(true);
+      const project = await t.db("projects").where({ id: projectId }).first();
+      expect(project.deleted_at).not.toBeNull();
     });
   });
 });

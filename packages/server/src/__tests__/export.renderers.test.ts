@@ -359,6 +359,38 @@ describe("renderPlainText", () => {
     expect(text).not.toContain("&mdash;");
     expect(text).not.toContain("&hellip;");
   });
+
+  it("decodes valid numeric/hex entities and drops out-of-range code points", async () => {
+    // generateHTML escapes a literal "&" to "&amp;", which stripHtmlTags
+    // restores before running the numeric (&#nn;) and hex (&#xnn;) decoders.
+    // Valid code points decode; code points above U+10FFFF are dropped.
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Numeric Entity Test",
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "text",
+                  text: "dec[&#8212;] hex[&#x41;] baddec[&#1114112;] badhex[&#xFFFFFF;]",
+                },
+              ],
+            },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const text = await renderPlainText(projectInfo, chapters, { includeToc: false }, imageSrc);
+    expect(text).toContain("dec[\u2014]"); // U+2014 em-dash via decimal entity
+    expect(text).toContain("hex[A]"); // U+0041 via hex entity
+    expect(text).toContain("baddec[]"); // 0x110000 > U+10FFFF \u2192 stripped
+    expect(text).toContain("badhex[]"); // 0xFFFFFF > U+10FFFF \u2192 stripped
+  });
 });
 
 describe("renderDocx", () => {
@@ -483,6 +515,47 @@ describe("renderDocx", () => {
     expect(xml).toMatch(/Heading2/); // H3
     expect(xml).toMatch(/Heading3/); // H4
     expect(xml).toMatch(/Heading4/); // H5
+  });
+
+  it("renders an unmapped heading level (H1/H2) as a normal paragraph with a warning", async () => {
+    // HEADING_MAP only covers levels 3–5; the editor restricts body headings
+    // to that range, but pasted content could introduce H1/H2. Those must
+    // degrade gracefully to a normal paragraph (no heading style) and log a warning.
+    const chapters = [
+      {
+        id: "ch-1",
+        title: "Unmapped Heading",
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "heading",
+              attrs: { level: 1 },
+              content: [{ type: "text", text: "Top Level" }],
+            },
+            {
+              type: "heading",
+              attrs: { level: 2 },
+              content: [{ type: "text", text: "Second Level" }],
+            },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false }, imageSrc);
+    const xml = await docxXml(buf);
+    // Text survives, rendered as body text rather than a heading style.
+    expect(xml).toContain("Top Level");
+    expect(xml).toContain("Second Level");
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ level: 1 }),
+      expect.stringContaining("Unmapped TipTap heading level"),
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ level: 2 }),
+      expect.stringContaining("Unmapped TipTap heading level"),
+    );
   });
 
   it("renders blockquote as indented italic paragraphs", async () => {

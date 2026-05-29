@@ -14,7 +14,12 @@ import {
 } from "../stores/project-store.injectable";
 import { SqliteProjectStore } from "../stores";
 import * as imagesRepo from "../images/images.repository";
-import { resolveImage, resolveImagesInHtml, type ImageSource } from "../export/image-resolver";
+import {
+  resolveImage,
+  resolveImagesInHtml,
+  resolveImagesForEpub,
+  type ImageSource,
+} from "../export/image-resolver";
 import { renderHtml, renderMarkdown, renderPlainText } from "../export/export.renderers";
 import { renderDocx } from "../export/docx.renderer";
 import { renderEpub } from "../export/epub.renderer";
@@ -188,6 +193,35 @@ describe("resolveImagesInHtml", () => {
   });
 });
 
+describe("resolveImagesForEpub", () => {
+  it("rewrites resolvable images to file:// URLs", async () => {
+    const html = `<p>x</p><img src="/api/images/${imageId}" alt="A"><p>y</p>`;
+    const resolved = await resolveImagesForEpub(html, imageSrc);
+    expect(resolved).toContain("file://");
+    expect(resolved).not.toContain(`/api/images/${imageId}`);
+  });
+
+  it("drops images whose file is missing on disk", async () => {
+    // Image row exists but no file was written — the fs.access check fails,
+    // the resolver returns null, and the unresolved <img> tag is removed.
+    const missingId = uuidv4();
+    await imagesRepo.insert(testDb, {
+      id: missingId,
+      project_id: projectId,
+      filename: "gone.png",
+      mime_type: "image/png",
+      size_bytes: 100,
+      created_at: new Date().toISOString(),
+    });
+    const html = `<p>before</p><img src="/api/images/${missingId}" alt="Gone"><p>after</p>`;
+    const resolved = await resolveImagesForEpub(html, imageSrc);
+    expect(resolved).not.toContain(`/api/images/${missingId}`);
+    expect(resolved).not.toContain("file://");
+    expect(resolved).toContain("before");
+    expect(resolved).toContain("after");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Renderer integration tests with images
 // ---------------------------------------------------------------------------
@@ -290,6 +324,22 @@ describe("renderDocx with images", () => {
     const mediaFiles = Object.keys(zip.files).filter((f) => f.startsWith("word/media/"));
     expect(mediaFiles.length).toBeGreaterThan(0);
   });
+
+  it("renders a caption paragraph beneath a captioned image", async () => {
+    const chapters: ExportChapter[] = [
+      {
+        id: "ch-1",
+        title: "Chapter with Captioned Image",
+        content: makeChapterWithImage(imageIdWithCaption),
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false }, imageSrc);
+    const zip = await JSZip.loadAsync(buf);
+    const docXml = await zip.file("word/document.xml")!.async("string");
+    // The caption text is emitted as an italic paragraph below the image.
+    expect(docXml).toContain("A lovely caption");
+  });
 });
 
 describe("renderEpub with images", () => {
@@ -354,6 +404,77 @@ describe("renderEpub with images", () => {
       projectInfo,
       chapters,
       { includeToc: false, coverImageId: imageId },
+      imageSrc,
+    );
+    expect(buf).toBeInstanceOf(Buffer);
+    expect(buf[0]).toBe(0x50);
+    expect(buf[1]).toBe(0x4b);
+  });
+
+  it("embeds the cover when the cover image belongs to the project", async () => {
+    // projectInfo.id is a synthetic string, so its cover never matches the
+    // image's real project_id. Use a project info whose id is the real UUID
+    // so `row.project_id === project.id` holds and the cover file resolves.
+    const coverProject: ExportProjectInfo = {
+      id: projectId,
+      title: "Cover Project",
+      author_name: null,
+    };
+    const chapters: ExportChapter[] = [
+      {
+        id: "ch-1",
+        title: "Chapter",
+        content: {
+          type: "doc",
+          content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderEpub(
+      coverProject,
+      chapters,
+      { includeToc: false, coverImageId: imageId },
+      imageSrc,
+    );
+    const zip = await JSZip.loadAsync(buf);
+    // epub-gen-memory writes the cover image into the package when a cover URL resolves.
+    const hasCover = Object.keys(zip.files).some((f) => /cover/i.test(f));
+    expect(hasCover).toBe(true);
+  });
+
+  it("produces a valid EPUB when the cover image file is missing", async () => {
+    // Cover row exists for the project but its file was never written — the
+    // fs.access guard fails and generation proceeds without a cover.
+    const missingCoverId = uuidv4();
+    await imagesRepo.insert(testDb, {
+      id: missingCoverId,
+      project_id: projectId,
+      filename: "no-cover.png",
+      mime_type: "image/png",
+      size_bytes: 100,
+      created_at: new Date().toISOString(),
+    });
+    const coverProject: ExportProjectInfo = {
+      id: projectId,
+      title: "Missing Cover Project",
+      author_name: null,
+    };
+    const chapters: ExportChapter[] = [
+      {
+        id: "ch-1",
+        title: "Chapter",
+        content: {
+          type: "doc",
+          content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }],
+        },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderEpub(
+      coverProject,
+      chapters,
+      { includeToc: false, coverImageId: missingCoverId },
       imageSrc,
     );
     expect(buf).toBeInstanceOf(Buffer);

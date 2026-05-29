@@ -57,6 +57,36 @@ describe("canonicalContentHash", () => {
     }
   });
 
+  it("evicts the oldest digest once the dedupe set exceeds its cap (bounded memory)", () => {
+    // The warned-digest set is FIFO-capped at WARNED_FALLBACK_LIMIT (256) so a
+    // long-running server fed a wide stream of distinct corrupt contents can't
+    // grow it without bound. Once the cap overflows, the oldest digest is
+    // evicted — so re-hashing it warns AGAIN instead of downgrading to debug.
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const debugSpy = vi.spyOn(logger, "debug").mockImplementation(() => {});
+    try {
+      const oldest = "{oldest corrupt content";
+      // Warm the oldest digest, then fill the set to exactly its 256-entry cap
+      // with 255 more distinct corrupt contents (256 total, oldest never re-touched).
+      canonicalContentHash(oldest);
+      for (let i = 0; i < 255; i++) canonicalContentHash(`{corrupt ${i}`);
+
+      // One more distinct content overflows the cap, evicting the oldest entry.
+      canonicalContentHash("{overflow corrupt content");
+
+      warnSpy.mockClear();
+      debugSpy.mockClear();
+      // Because `oldest` was evicted, hashing it again is treated as novel and
+      // warns once — not the debug-level "repeat fallback" path.
+      canonicalContentHash(oldest);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(debugSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+      debugSpy.mockRestore();
+    }
+  });
+
   it("falls back to raw bytes when JSON nesting exceeds MAX_TIPTAP_DEPTH (CP2)", () => {
     // Pathologically deep (but syntactically valid) JSON must not
     // stack-overflow the process during dedup. Build a structure with
