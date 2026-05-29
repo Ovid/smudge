@@ -600,6 +600,29 @@ describe("search.service", () => {
       expect(result && typeof result === "object" && "validationError" in result).toBe(true);
       expect((result as { code: string }).code).toBe("REGEX_TIMEOUT");
     });
+
+    it("does not create a duplicate auto-snapshot when pre-replace content already matches the latest snapshot (F-15)", async () => {
+      const projectId = await createProject();
+      const chapterId = await createChapter(
+        projectId,
+        "Chapter 1",
+        JSON.stringify(makeDoc("hello world")),
+      );
+      // Seed a snapshot equal to the chapter's current content, so the
+      // pre-replace auto-snapshot would be a byte-identical duplicate.
+      const { createSnapshot, listSnapshots } = await import("../snapshots/snapshots.service");
+      await createSnapshot(chapterId, "Manual");
+
+      const { replaceInProject } = await import("../search/search.service");
+      const result = await replaceInProject(projectId, "hello", "goodbye");
+      expect((result as { replaced_count: number }).replaced_count).toBe(1);
+
+      // Dedup against the latest snapshot (matching the manual-snapshot path)
+      // skips the redundant pre-replace auto-snapshot.
+      const snaps = await listSnapshots(chapterId);
+      const autoSnap = snaps!.find((s) => s.is_auto);
+      expect(autoSnap).toBeUndefined();
+    });
   });
 
   // F-11: the slug-addressed entry points that own slug->project resolution

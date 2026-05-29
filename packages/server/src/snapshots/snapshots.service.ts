@@ -180,16 +180,25 @@ export async function restoreSnapshot(
       : `Before restore to snapshot from ${snapshot.created_at}`;
     const snapshotLabel = buildAutoSnapshotLabel(rawLabel);
 
-    // Always create auto-restore snapshot (no dedup)
-    await txStore.insertSnapshot({
-      id: uuidv4(),
-      chapter_id: chapter.id,
-      label: snapshotLabel,
-      content: currentContent,
-      word_count: chapter.word_count,
-      is_auto: true,
-      created_at: new Date().toISOString(),
-    });
+    // Auto-restore snapshot before overwriting, deduped against the latest
+    // snapshot exactly as the manual-snapshot path is (F-15). A retried
+    // restore whose pre-restore content is byte-identical to the latest
+    // snapshot would otherwise pollute history with a redundant
+    // "Before restore" entry. The restore itself still proceeds; only the
+    // redundant snapshot insert is skipped.
+    const currentHash = canonicalContentHash(currentContent);
+    const latestHash = await txStore.getLatestSnapshotContentHash(chapter.id);
+    if (latestHash !== currentHash) {
+      await txStore.insertSnapshot({
+        id: uuidv4(),
+        chapter_id: chapter.id,
+        label: snapshotLabel,
+        content: currentContent,
+        word_count: chapter.word_count,
+        is_auto: true,
+        created_at: new Date().toISOString(),
+      });
+    }
 
     // Replace content using the validated, parsed snapshot content.
     const newWordCount = countWords(newParsed);

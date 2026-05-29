@@ -271,6 +271,36 @@ describe("snapshots.service", () => {
       expect(autoSnap).toBeDefined();
     });
 
+    it("does not create a duplicate auto-snapshot when pre-restore content already matches the latest snapshot (F-15)", async () => {
+      stubVelocity();
+      const { chapterId } = await createProjectAndChapter();
+      const { createSnapshot, restoreSnapshot, listSnapshots } =
+        await import("../snapshots/snapshots.service");
+
+      // Snapshot the current content, then restore to it with no intervening
+      // edit: the pre-restore content is byte-identical to the latest
+      // snapshot, so the "Before restore" auto-snapshot would be pure noise.
+      const snap = (await createSnapshot(chapterId, "Current")) as Exclude<
+        Awaited<ReturnType<typeof createSnapshot>>,
+        null | "duplicate"
+      >;
+
+      const before = await listSnapshots(chapterId);
+      expect(before).toHaveLength(1);
+
+      const result = await restoreSnapshot(snap.id);
+      if (result === null || result === "corrupt_snapshot" || result === "cross_project_image") {
+        throw new Error("expected restoreSnapshot to succeed");
+      }
+
+      // Dedup against the latest snapshot (matching the manual-snapshot path)
+      // skips the redundant auto-snapshot — count is unchanged.
+      const after = await listSnapshots(chapterId);
+      expect(after).toHaveLength(1);
+      const autoSnap = after!.find((s) => s.is_auto && s.label?.startsWith("Before restore"));
+      expect(autoSnap).toBeUndefined();
+    });
+
     it("adjusts image reference counts when restoring", async () => {
       stubVelocity();
       const imageId = uuid();

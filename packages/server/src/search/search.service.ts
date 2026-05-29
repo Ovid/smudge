@@ -21,6 +21,7 @@ import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
 import { buildAutoSnapshotLabel } from "../snapshots/labels";
+import { canonicalContentHash } from "../snapshots/content-hash";
 import type { SearchResult, ReplaceResult } from "@smudge/shared";
 
 /**
@@ -311,16 +312,25 @@ export async function replaceInProject(
         const rawLabel = `Before find-and-replace: \u2018${truncateForLabel(search)}\u2019 \u2192 \u2018${truncateForLabel(replace)}\u2019`;
         const label = buildAutoSnapshotLabel(rawLabel);
 
-        // Auto-snapshot before replacement (using DB-committed word_count)
-        await txStore.insertSnapshot({
-          id: uuidv4(),
-          chapter_id: chapter.id,
-          label,
-          content: chapter.content,
-          word_count: chapter.word_count,
-          is_auto: true,
-          created_at: new Date().toISOString(),
-        });
+        // Auto-snapshot before replacement (using DB-committed word_count),
+        // deduped against the latest snapshot exactly as the manual-snapshot
+        // path is (F-15) so a retried replace whose pre-replace content is
+        // byte-identical to the latest snapshot does not pollute history with
+        // a redundant "Before find-and-replace" entry. The replacement itself
+        // still proceeds; only the redundant snapshot insert is skipped.
+        const preReplaceHash = canonicalContentHash(chapter.content);
+        const latestSnapshotHash = await txStore.getLatestSnapshotContentHash(chapter.id);
+        if (latestSnapshotHash !== preReplaceHash) {
+          await txStore.insertSnapshot({
+            id: uuidv4(),
+            chapter_id: chapter.id,
+            label,
+            content: chapter.content,
+            word_count: chapter.word_count,
+            is_auto: true,
+            created_at: new Date().toISOString(),
+          });
+        }
 
         // Update chapter content — guard against amplification (`$'` / `$\``
         // in regex replacements can splice the full match context repeatedly)
