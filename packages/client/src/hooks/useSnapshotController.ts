@@ -378,9 +378,11 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
   ]);
 
   const onSnapshotView = useCallback(
-    async (
-      snap: { id: string; label: string | null; created_at: string },
-    ): Promise<
+    async (snap: {
+      id: string;
+      label: string | null;
+      created_at: string;
+    }): Promise<
       | { ok: true; superseded?: "chapter" | "sameChapterNewer" }
       | { ok: false; reason?: string }
       | undefined

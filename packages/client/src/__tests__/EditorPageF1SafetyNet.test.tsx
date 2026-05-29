@@ -172,9 +172,7 @@ describe("EditorPage F-1 safety net: Export dialog wiring", () => {
 
     await userEvent.click(screen.getByText(STRINGS.export.buttonLabel));
     await waitFor(() => {
-      expect(
-        screen.getByRole("heading", { name: STRINGS.export.dialogTitle }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: STRINGS.export.dialogTitle })).toBeInTheDocument();
     });
 
     // Cancel closes it back down.
@@ -193,9 +191,7 @@ describe("EditorPage F-1 safety net: Project settings dialog wiring", () => {
     // ProjectSettingsDialog returns null while closed.
     expect(screen.queryByRole("heading", { name: STRINGS.projectSettings.heading })).toBeNull();
 
-    await userEvent.click(
-      screen.getByRole("button", { name: STRINGS.projectSettings.openLabel }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: STRINGS.projectSettings.openLabel }));
     await waitFor(() => {
       expect(
         screen.getByRole("heading", { name: STRINGS.projectSettings.heading }),
