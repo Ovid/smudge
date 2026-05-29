@@ -1,3 +1,4 @@
+import { useReducer, useRef, useCallback, useMemo, type Dispatch } from "react";
 
 /**
  * The editor's operational state. Owned by one machine (Phase 4b.5) so the
@@ -71,4 +72,36 @@ export function editorMutationReducer(
       return state;
     }
   }
+}
+
+export type UseEditorMutationMachineReturn = {
+  state: EditorMutationState;
+  dispatch: Dispatch<EditorMutationEvent>;
+  /** Synchronous probe (render-mirrored ref). `lock !== null`. */
+  isLocked: () => boolean;
+  /** Synchronous probe (render-mirrored ref). Mirrors machine.busy; the hard
+   * re-entrancy guard lives in useEditorMutation's inFlightRef. */
+  isBusy: () => boolean;
+  /** Synchronous full-state read (render-mirrored ref). */
+  getState: () => EditorMutationState;
+};
+
+export function useEditorMutationMachine(): UseEditorMutationMachineReturn {
+  const [state, dispatch] = useReducer(editorMutationReducer, INITIAL_EDITOR_MUTATION_STATE);
+
+  // Mirror state to a ref DURING render (house style — matches
+  // editorLockedMessageRef / useProjectEditor) so synchronous gates read the
+  // current value without waiting for an effect commit.
+  const stateRef = useRef(state);
+  // eslint-disable-next-line react-hooks/refs
+  stateRef.current = state;
+
+  const isLocked = useCallback(() => stateRef.current.lock !== null, []);
+  const isBusy = useCallback(() => stateRef.current.busy, []);
+  const getState = useCallback(() => stateRef.current, []);
+
+  return useMemo(
+    () => ({ state, dispatch, isLocked, isBusy, getState }),
+    [state, isLocked, isBusy, getState],
+  );
 }

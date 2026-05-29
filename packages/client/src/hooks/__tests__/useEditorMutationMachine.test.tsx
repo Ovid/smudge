@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
+import { act, renderHook } from "@testing-library/react";
 import {
   editorMutationReducer,
   INITIAL_EDITOR_MUTATION_STATE,
   type EditorMutationState,
 } from "../useEditorMutationMachine";
+import { useEditorMutationMachine } from "../useEditorMutationMachine";
 
 const LOCKED: EditorMutationState = {
   editable: false,
@@ -89,5 +91,20 @@ describe("editorMutationReducer", () => {
   it("is a pure function (does not mutate input)", () => {
     const frozen = Object.freeze({ ...INITIAL_EDITOR_MUTATION_STATE });
     expect(() => editorMutationReducer(frozen, { type: "MUTATION_STARTED" })).not.toThrow();
+  });
+});
+
+describe("useEditorMutationMachine", () => {
+  it("exposes state + synchronous probes backed by a render-mirrored ref", () => {
+    const { result } = renderHook(() => useEditorMutationMachine());
+    expect(result.current.state).toEqual(INITIAL_EDITOR_MUTATION_STATE);
+    expect(result.current.isLocked()).toBe(false);
+    expect(result.current.isBusy()).toBe(false);
+
+    act(() => result.current.dispatch({ type: "COMMITTED_UNRELOADED", message: "x" }));
+    expect(result.current.state.lock).toEqual({ message: "x" });
+    // synchronous probe reflects the committed render
+    expect(result.current.isLocked()).toBe(true);
+    expect(result.current.getState().lock).toEqual({ message: "x" });
   });
 });
