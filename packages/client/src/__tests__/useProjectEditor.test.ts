@@ -940,6 +940,31 @@ describe("useProjectEditor", () => {
     warnSpy.mockRestore();
   });
 
+  it("applies the requested order on a 2xx-BAD_JSON committed reorder, filtering unknown ids", async () => {
+    // A committed-but-unreadable reorder (200 BAD_JSON) must sync client state
+    // to the requested order so the UI matches the server. An echoed id that
+    // isn't in the project (a phantom) must be filtered out, never injected as
+    // a chapter — the data-integrity guard in the committed-branch updater.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.mocked(api.projects.reorderChapters).mockRejectedValue(
+      new ApiRequestError("bad body", 200, "BAD_JSON"),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    await act(async () => {
+      await result.current.handleReorderChapters(["ch2", "ch1", "ch-ghost"]);
+    });
+
+    // Reordered to the requested order; the phantom "ch-ghost" is dropped.
+    expect(result.current.project?.chapters.map((c) => c.id)).toEqual(["ch2", "ch1"]);
+    expect(result.current.project?.chapters.map((c) => c.sort_order)).toEqual([0, 1]);
+    // Committed-but-ambiguous copy surfaces (recoverable banner, not teardown).
+    expect(result.current.error).toBe(STRINGS.error.reorderResponseUnreadable);
+    warnSpy.mockRestore();
+  });
+
   it("returns undefined when handleUpdateProjectTitle fails", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(api.projects.update).mockRejectedValue(new Error("update boom"));

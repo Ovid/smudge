@@ -502,6 +502,46 @@ describe("SqliteProjectStore", () => {
     });
   });
 
+  describe("image delegation", () => {
+    function makeImage(projectId: string) {
+      return {
+        id: randomUUID(),
+        project_id: projectId,
+        filename: "pic.png",
+        mime_type: "image/png",
+        size_bytes: 10,
+        created_at: new Date().toISOString(),
+      };
+    }
+
+    it("removeImagesByProject deletes only the target project's images and returns the count", async () => {
+      const store = createStore();
+      const keep = makeProject();
+      const drop = makeProject();
+      await store.insertProject(keep);
+      await store.insertProject(drop);
+
+      await store.insertImage(makeImage(drop.id));
+      await store.insertImage(makeImage(drop.id));
+      const keptImage = await store.insertImage(makeImage(keep.id));
+
+      const removed = await store.removeImagesByProject(drop.id);
+      expect(removed).toBe(2);
+
+      // The other project's images are untouched.
+      expect(await store.listImagesByProject(drop.id)).toEqual([]);
+      const remaining = await store.listImagesByProject(keep.id);
+      expect(remaining.map((i) => i.id)).toEqual([keptImage.id]);
+    });
+
+    it("removeImagesByProject returns 0 when the project has no images", async () => {
+      const store = createStore();
+      const empty = makeProject();
+      await store.insertProject(empty);
+      expect(await store.removeImagesByProject(empty.id)).toBe(0);
+    });
+  });
+
   // F-4 safety net: the ProjectStore "god interface" is being split into
   // composed per-domain sub-interfaces. This pins the FULL method surface
   // grouped by the domains it will be split along, so the refactor cannot

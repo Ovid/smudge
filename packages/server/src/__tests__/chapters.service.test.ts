@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { v4 as uuid } from "uuid";
 import { setupTestDb } from "./test-helpers";
 import { setVelocityService, resetVelocityService } from "../velocity/velocity.injectable";
+import { getProjectStore } from "../stores/project-store.injectable";
 import { logger } from "../logger";
 import {
   updateChapter,
@@ -85,6 +86,25 @@ describe("chapters.service", () => {
     it("returns null for a non-existent chapter", async () => {
       const result = await updateChapter(uuid(), { title: "New Title" });
       expect(result).toBeNull();
+    });
+
+    it("falls back to status as the label when enrichment fails after a successful save", async () => {
+      const { chapterId } = await createProjectAndChapter();
+      // The save commits, but the post-save status-label lookup fails. The
+      // client must still see a successful save (status used as the label),
+      // not a false 500.
+      const store = getProjectStore();
+      const labelSpy = vi
+        .spyOn(store, "getStatusLabel")
+        .mockRejectedValue(new Error("status label lookup down"));
+      try {
+        const result = await updateChapter(chapterId, { content: DOC_JSON });
+        expect(result).toHaveProperty("chapter");
+        const chapter = (result as { chapter: { status: string; status_label: string } }).chapter;
+        expect(chapter.status_label).toBe(chapter.status);
+      } finally {
+        labelSpy.mockRestore();
+      }
     });
 
     it("returns validationError for invalid body", async () => {

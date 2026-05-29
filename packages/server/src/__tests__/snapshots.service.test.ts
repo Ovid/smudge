@@ -484,6 +484,79 @@ describe("snapshots.service", () => {
       expect(autoSnap).toBeDefined();
     });
 
+    it("refuses to restore a snapshot whose content exceeds the size cap (before parsing)", async () => {
+      stubVelocity();
+      const { chapterId } = await createProjectAndChapter();
+      const { createSnapshot, restoreSnapshot } = await import("../snapshots/snapshots.service");
+
+      const snap = (await createSnapshot(chapterId, "Normal")) as Exclude<
+        Awaited<ReturnType<typeof createSnapshot>>,
+        null | "duplicate"
+      >;
+
+      // A legacy oversize snapshot (> MAX_CHAPTER_CONTENT_BYTES = 5 MB). The
+      // cheap byte-size guard rejects it before JSON.parse / schema validation,
+      // so a restore can't produce a chapter every later save would 413 on.
+      const oversize = "x".repeat(5 * 1024 * 1024 + 1);
+      await t.db("chapter_snapshots").where({ id: snap.id }).update({ content: oversize });
+
+      const intactContent = JSON.stringify(DOC_JSON_ALT);
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ content: intactContent, word_count: 2 });
+
+      const result = await restoreSnapshot(snap.id);
+      expect(result).toBe("corrupt_snapshot");
+
+      // Chapter content is untouched by the rejected restore.
+      const chapter = await t.db("chapters").where({ id: chapterId }).first();
+      expect(chapter.content).toBe(intactContent);
+    });
+
+    it("falls back to status as the label when enrichment fails after a committed restore", async () => {
+      stubVelocity();
+      const { chapterId } = await createProjectAndChapter();
+      const { createSnapshot, restoreSnapshot } = await import("../snapshots/snapshots.service");
+      const { getProjectStore } = await import("../stores/project-store.injectable");
+      const { logger } = await import("../logger");
+
+      const snap = (await createSnapshot(chapterId, "Original")) as Exclude<
+        Awaited<ReturnType<typeof createSnapshot>>,
+        null | "duplicate"
+      >;
+      await t
+        .db("chapters")
+        .where({ id: chapterId })
+        .update({ content: JSON.stringify(DOC_JSON_ALT), word_count: 2 });
+
+      // The restore transaction commits, but the post-commit status-label
+      // lookup fails — the client must still see a successful restore with
+      // status used as the label, not a false 500.
+      const store = getProjectStore();
+      const labelSpy = vi
+        .spyOn(store, "getStatusLabel")
+        .mockRejectedValue(new Error("status label lookup down"));
+      const errSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+      try {
+        const result = await restoreSnapshot(snap.id);
+        if (result === null || result === "corrupt_snapshot" || result === "cross_project_image") {
+          throw new Error("expected restoreSnapshot to succeed");
+        }
+        expect(result.chapter.status_label).toBe(result.chapter.status);
+        // The restore is genuinely committed despite the enrichment failure.
+        const chapter = await t.db("chapters").where({ id: chapterId }).first();
+        expect(chapter.content).toBe(JSON.stringify(DOC_JSON));
+        expect(errSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ chapter_id: chapterId }),
+          expect.stringContaining("returning status as label"),
+        );
+      } finally {
+        labelSpy.mockRestore();
+        errSpy.mockRestore();
+      }
+    });
+
     it("refuses to restore a corrupt snapshot and leaves chapter untouched", async () => {
       stubVelocity();
       const { chapterId } = await createProjectAndChapter();

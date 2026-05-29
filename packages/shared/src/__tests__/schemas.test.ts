@@ -152,6 +152,27 @@ describe("CreateSnapshotSchema", () => {
     expect(emoji.success).toBe(true);
     expect(emoji.success && emoji.data.label).toBe("a\uD83D\uDE00b");
   });
+
+  it("strips unpaired surrogate code units from the label (S5)", () => {
+    // A lone high surrogate (not followed by a low surrogate) is invalid
+    // UTF-16 \u2014 stored as-is it renders as U+FFFD and breaks length clamps,
+    // so it must be removed.
+    const loneHigh = CreateSnapshotSchema.safeParse({ label: "a\uD800b" });
+    expect(loneHigh.success).toBe(true);
+    expect(loneHigh.success && loneHigh.data.label).toBe("ab");
+
+    // A lone low surrogate (not preceded by a high surrogate) is likewise
+    // stripped.
+    const loneLow = CreateSnapshotSchema.safeParse({ label: "a\uDC00b" });
+    expect(loneLow.success).toBe(true);
+    expect(loneLow.success && loneLow.data.label).toBe("ab");
+
+    // Two consecutive high surrogates: the first's successor is not a low
+    // surrogate and the second is unpaired too \u2014 both stripped.
+    const doubleHigh = CreateSnapshotSchema.safeParse({ label: "\uD800\uD800x" });
+    expect(doubleHigh.success).toBe(true);
+    expect(doubleHigh.success && doubleHigh.data.label).toBe("x");
+  });
 });
 
 describe("ChapterStatus", () => {
