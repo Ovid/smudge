@@ -15,6 +15,16 @@
 //   1. The Export button → ExportDialog `open` plumbing.
 //   2. The settings gear → ProjectSettingsDialog mount plumbing.
 //   3. The Ctrl+Shift+W → word-count live-region announcement plumbing.
+//   4. The reference-panel toggle → ReferencePanel/ImageGallery mount
+//      plumbing (the existing suite only pins the toggle-while-LOCKED
+//      no-op, never the open-and-render path or its ImageGallery props).
+//   5. The logo button → navigate-home plumbing (header seam).
+//   6. The nav-announcement live region presence + polite semantics
+//      (announcement cluster; its sibling word-count region is the only
+//      one pinned today).
+// (4)–(6) were added 2026-05-29 ahead of the F-1 render decomposition
+// (extracting header / main-content / dialog-cluster sub-components),
+// where this wiring is the most likely to be silently dropped.
 //
 // These are characterization tests: they assert the CURRENT observable
 // behavior and must stay green across the decomposition.
@@ -87,6 +97,11 @@ vi.mock("../api/client", () => ({
     settings: {
       get: vi.fn().mockResolvedValue({ timezone: "UTC" }),
       update: vi.fn().mockResolvedValue({ message: "ok" }),
+    },
+    images: {
+      // ImageGallery (mounted inside ReferencePanel) calls api.images.list
+      // on mount; the references call only fires once an image is selected.
+      list: vi.fn().mockResolvedValue([]),
     },
   },
 }));
@@ -220,5 +235,74 @@ describe("EditorPage F-1 safety net: word-count announcement wiring", () => {
     await waitFor(() => {
       expect(region.textContent).toMatch(/\d[\d,]* words/);
     });
+  });
+});
+
+describe("EditorPage F-1 safety net: reference panel wiring", () => {
+  it("opens the reference panel (mounting ImageGallery) on toggle and closes it again", async () => {
+    renderEditorPage();
+    await waitForLoaded();
+
+    // ReferencePanel is gated behind `panelOpen && project`; closed → absent.
+    expect(
+      screen.queryByRole("complementary", { name: STRINGS.referencePanel.ariaLabel }),
+    ).toBeNull();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: STRINGS.referencePanel.toggleTooltip }),
+    );
+    await waitFor(() => {
+      expect(
+        screen.getByRole("complementary", { name: STRINGS.referencePanel.ariaLabel }),
+      ).toBeInTheDocument();
+    });
+    // The ImageGallery inside it mounted and fetched this project's images —
+    // proving the projectId prop is threaded correctly, not just the panel
+    // visibility flag.
+    expect(api.images.list).toHaveBeenCalledWith("proj-1", expect.anything());
+
+    // Toggling again closes it back down.
+    await userEvent.click(
+      screen.getByRole("button", { name: STRINGS.referencePanel.toggleTooltip }),
+    );
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("complementary", { name: STRINGS.referencePanel.ariaLabel }),
+      ).toBeNull();
+    });
+  });
+});
+
+describe("EditorPage F-1 safety net: logo navigation wiring", () => {
+  it("navigates home when the logo button is clicked", async () => {
+    renderEditorPage();
+    await waitForLoaded();
+
+    // The logo renders STRINGS.app.name inside the navigate-home button.
+    const logoButton = screen.getByText(STRINGS.app.name).closest("button");
+    expect(logoButton).not.toBeNull();
+
+    await userEvent.click(logoButton!);
+    await waitFor(() => {
+      expect(screen.getByText("Home")).toBeInTheDocument();
+    });
+  });
+});
+
+describe("EditorPage F-1 safety net: navigation live region wiring", () => {
+  // Presence + semantics characterization (not behavioral): the
+  // nav-announcement region's screen-reader contract — it exists, is a
+  // polite live region, and starts empty — must survive the dialog/
+  // announcement-cluster extraction. Its behavioral population path
+  // (Alt+chapter-navigation) is covered by the keyboard-shortcut suite;
+  // the EditorPage-level gap is that the region itself had no assertion.
+  it("renders the nav-announcement region as an empty polite live region", async () => {
+    renderEditorPage();
+    await waitForLoaded();
+
+    const region = screen.getByTestId("nav-announcement");
+    expect(region).toBeInTheDocument();
+    expect(region).toHaveAttribute("aria-live", "polite");
+    expect(region.textContent).toBe("");
   });
 });

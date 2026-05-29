@@ -1,20 +1,8 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import type { Chapter, ChapterStatusRow } from "@smudge/shared";
-import { Editor, type EditorHandle } from "../components/Editor";
-import { EditorToolbar } from "../components/EditorToolbar";
+import type { EditorHandle } from "../components/Editor";
 import type { Editor as TipTapEditor } from "@tiptap/react";
-import { Sidebar } from "../components/Sidebar";
-import { TrashView } from "../components/TrashView";
-import { PreviewMode } from "../components/PreviewMode";
-import { DashboardView } from "../components/DashboardView";
-import { ConfirmDialog } from "../components/ConfirmDialog";
-import { ProjectSettingsDialog } from "../components/ProjectSettingsDialog";
-import { ShortcutHelpDialog } from "../components/ShortcutHelpDialog";
-import { ExportDialog } from "../components/ExportDialog";
-import { ActionErrorBanner } from "../components/ActionErrorBanner";
-import { ViewModeNav } from "../components/ViewModeNav";
-import { EditorFooter } from "../components/EditorFooter";
 import { STRINGS } from "../strings";
 import { useProjectEditor } from "../hooks/useProjectEditor";
 import { useEditorMutation } from "../hooks/useEditorMutation";
@@ -24,11 +12,6 @@ import { useSidebarState } from "../hooks/useSidebarState";
 import { useReferencePanelState } from "../hooks/useReferencePanelState";
 import { useSnapshotState } from "../hooks/useSnapshotState";
 import { useFindReplaceState } from "../hooks/useFindReplaceState";
-import { ReferencePanel } from "../components/ReferencePanel";
-import { SnapshotPanel } from "../components/SnapshotPanel";
-import { FindReplacePanel } from "../components/FindReplacePanel";
-import { SnapshotBanner } from "../components/SnapshotBanner";
-import { ImageGallery } from "../components/ImageGallery";
 import { useChapterTitleEditing } from "../hooks/useChapterTitleEditing";
 import { useProjectTitleEditing } from "../hooks/useProjectTitleEditing";
 import { useTrashManager } from "../hooks/useTrashManager";
@@ -42,12 +25,19 @@ import {
   isNotFound,
 } from "../errors";
 import { safeSetEditable } from "../utils/editorSafeOps";
-import { Logo } from "../components/Logo";
 // F-1 decomposition (2026-05-29): the find-and-replace and snapshot
 // orchestration clusters live in dedicated hooks. The sentinel restore
 // errors and renderSnapshotContent moved with the snapshot cluster.
-import { renderSnapshotContent, useSnapshotController } from "../hooks/useSnapshotController";
+import { useSnapshotController } from "../hooks/useSnapshotController";
 import { useFindReplaceController } from "../hooks/useFindReplaceController";
+// F-1 decomposition (2026-05-29): the ~456-line render was split into
+// three presentational sub-components — the header, the main content
+// region (sidebar / banners / view-switch / footer / panels), and the
+// dialog + live-region cluster. EditorPage retains all state, handlers,
+// and the save-pipeline / lock / busy invariants, threading them in.
+import { EditorHeader } from "../components/EditorHeader";
+import { EditorMainContent } from "../components/EditorMainContent";
+import { EditorDialogs } from "../components/EditorDialogs";
 
 export function EditorPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -937,458 +927,135 @@ export function EditorPage() {
 
   return (
     <div className="flex flex-col h-screen bg-bg-primary">
-      <header className="border-b border-border/60 px-6 h-12 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => navigate("/")}
-            className="focus:outline-none focus:ring-2 focus:ring-focus-ring rounded-md"
-          >
-            <Logo />
-          </button>
-          <span className="text-border" aria-hidden="true">
-            /
-          </span>
-          {editingProjectTitle ? (
-            <div className="flex flex-col">
-              <input
-                ref={projectTitleInputRef}
-                value={projectTitleDraft}
-                onChange={(e) => setProjectTitleDraft(e.target.value)}
-                onBlur={saveProjectTitle}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") saveProjectTitle();
-                  if (e.key === "Escape") cancelEditingProjectTitle();
-                }}
-                className="text-sm font-serif font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none"
-                aria-label={STRINGS.a11y.projectTitleInput}
-              />
-              {projectTitleError && (
-                <span role="alert" className="text-xs text-status-error mt-1">
-                  {projectTitleError}
-                </span>
-              )}
-            </div>
-          ) : (
-            <h1
-              className="text-sm font-serif font-semibold text-text-primary cursor-pointer hover:text-text-secondary"
-              onDoubleClick={startEditingProjectTitle}
-              aria-label={project.title}
-            >
-              {project.title}
-            </h1>
-          )}
-        </div>
-        {showActiveEditor && viewMode === "editor" && toolbarEditor && (
-          <EditorToolbar
-            editor={toolbarEditor}
-            snapshotCount={snapshotCount ?? undefined}
-            onToggleSnapshots={handleToggleSnapshotPanel}
-            onToggleFindReplace={handleToggleFindReplace}
-            snapshotsTriggerRef={snapshotsTriggerRef}
-            findReplaceTriggerRef={findReplaceTriggerRef}
-          />
-        )}
-        <div className="flex items-center gap-2">
-          {showActiveEditor && <ViewModeNav viewMode={viewMode} onSwitchToView={switchToView} />}
-          <button
-            onClick={() => setExportDialogOpen(true)}
-            className="text-sm text-text-muted hover:text-text-secondary rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring"
-          >
-            {STRINGS.export.buttonLabel}
-          </button>
-          <button
-            type="button"
-            onClick={handleToggleReferencePanel}
-            aria-expanded={panelOpen}
-            aria-controls="reference-panel"
-            aria-label={STRINGS.referencePanel.toggleTooltip}
-            title={STRINGS.referencePanel.toggleTooltip}
-            className="p-2 rounded hover:bg-bg-hover text-text-secondary focus:outline-none focus:ring-2 focus:ring-focus-ring"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect x="2" y="3" width="20" height="18" rx="2" />
-              <line x1="15" y1="3" x2="15" y2="21" />
-            </svg>
-          </button>
-          <button
-            onClick={() => setProjectSettingsOpen(true)}
-            aria-label={STRINGS.projectSettings.openLabel}
-            className="text-sm text-text-muted hover:text-text-secondary rounded-md p-1.5 focus:outline-none focus:ring-2 focus:ring-focus-ring"
-          >
-            &#x2699;
-          </button>
-        </div>
-      </header>
-
-      <div className="flex flex-1 overflow-hidden">
-        {sidebarOpen && (
-          <Sidebar
-            project={project}
-            activeChapterId={activeChapter?.id ?? null}
-            onSelectChapter={handleSelectChapterWithFlush}
-            onAddChapter={handleCreateChapterGuarded}
-            onDeleteChapter={requestDeleteChapter}
-            onReorderChapters={handleReorderChaptersGuarded}
-            onRenameChapter={handleRenameChapterWithError}
-            onOpenTrash={openTrashGuarded}
-            statuses={statuses}
-            onStatusChange={handleStatusChangeWithError}
-            width={sidebarWidth}
-            onResize={handleSidebarResize}
-          />
-        )}
-
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {editorLockedMessage && (
-            <div
-              role="alert"
-              className="px-6 py-2 bg-status-error/8 text-status-error text-sm flex items-center justify-between border-b border-status-error/15"
-            >
-              <span>{editorLockedMessage}</span>
-              <button
-                type="button"
-                onClick={() => window.location.reload()}
-                className="ml-4 rounded-md bg-status-error/15 px-2.5 py-1 text-xs font-medium text-status-error hover:bg-status-error/25 focus:outline-none focus:ring-2 focus:ring-focus-ring"
-              >
-                {STRINGS.editor.refreshButton}
-              </button>
-            </div>
-          )}
-          {actionError && (
-            <ActionErrorBanner error={actionError} onDismiss={() => setActionError(null)} />
-          )}
-          {actionInfo && (
-            <div
-              role="status"
-              aria-live="polite"
-              className="px-6 py-2 bg-accent/10 text-accent text-sm flex items-center justify-between border-b border-accent/20"
-            >
-              <span>{actionInfo}</span>
-              <button
-                onClick={() => setActionInfo(null)}
-                className="text-accent hover:text-text-primary text-xs ml-4 focus:outline-none focus:ring-2 focus:ring-focus-ring rounded"
-                aria-label={STRINGS.a11y.dismissInfo}
-              >
-                ✕
-              </button>
-            </div>
-          )}
-
-          {trashOpen ? (
-            <main className="flex-1 overflow-y-auto" aria-label={STRINGS.a11y.mainContent}>
-              <TrashView
-                chapters={trashedChapters}
-                onRestore={handleRestore}
-                onBack={() => setTrashOpen(false)}
-              />
-            </main>
-          ) : !showActiveEditor ? (
-            <div className="flex-1 flex flex-col items-center justify-center page-enter">
-              <p className="text-text-muted mb-6 text-base">{STRINGS.project.emptyChapters}</p>
-              <button
-                onClick={handleCreateChapterGuarded}
-                className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-focus-ring focus:ring-offset-2 focus:ring-offset-bg-primary shadow-sm"
-              >
-                {STRINGS.sidebar.addChapter}
-              </button>
-            </div>
-          ) : viewMode === "preview" ? (
-            <main className="flex-1 overflow-y-auto" aria-label={STRINGS.a11y.mainContent}>
-              <PreviewMode
-                chapters={project.chapters}
-                onNavigateToChapter={handleSelectChapterWithFlush}
-              />
-            </main>
-          ) : viewMode === "dashboard" ? (
-            <main className="flex-1 overflow-y-auto" aria-label={STRINGS.a11y.mainContent}>
-              <DashboardView
-                slug={project.slug}
-                statuses={statuses}
-                refreshKey={dashboardRefreshKey}
-                onNavigateToChapter={handleSelectChapterWithFlush}
-              />
-            </main>
-          ) : activeChapter ? (
-            <main
-              className="flex-1 overflow-y-auto flex flex-col"
-              aria-label={STRINGS.a11y.mainContent}
-            >
-              {viewingSnapshot && (
-                <SnapshotBanner
-                  label={viewingSnapshot.label}
-                  date={viewingSnapshot.created_at}
-                  onRestore={handleRestoreSnapshot}
-                  onBack={exitSnapshotView}
-                  // C1: Disable Restore while the editor-lock banner is
-                  // showing. The lock is raised on possibly_committed /
-                  // unknown restore outcomes where the server almost
-                  // certainly already committed — a second click would
-                  // re-enter restoreSnapshot and issue a second server
-                  // restore + second auto-snapshot. Keeping the banner
-                  // visible (rather than exitSnapshotView()) preserves
-                  // the "which snapshot was I looking at" context the
-                  // user needs to decide whether to refresh.
-                  canRestore={editorLockedMessage === null}
-                  // S3: Same gate on Back-to-editing. Clicking Back while
-                  // locked would drop the user into a locked editor showing
-                  // pre-restore content while the banner says "editing
-                  // would overwrite" — a confusing state with no clean
-                  // recovery path that isn't "refresh." Keep the user in
-                  // snapshot view until they refresh.
-                  canBack={editorLockedMessage === null}
-                />
-              )}
-              <div className="flex-1 overflow-y-auto px-6 py-8 page-enter">
-                {viewingSnapshot ? (
-                  <div
-                    className="mx-auto max-w-[720px] prose prose-lg font-serif text-text-primary prose-headings:text-text-primary prose-a:text-accent"
-                    dangerouslySetInnerHTML={{
-                      __html: renderSnapshotContent(viewingSnapshot.content),
-                    }}
-                  />
-                ) : (
-                  <>
-                    {editingTitle ? (
-                      <div className="mx-auto max-w-[720px] mb-6">
-                        <input
-                          ref={titleInputRef}
-                          value={titleDraft}
-                          onChange={(e) => setTitleDraft(e.target.value)}
-                          onBlur={saveTitle}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") saveTitle();
-                            if (e.key === "Escape") cancelEditingTitle();
-                          }}
-                          className="block text-3xl font-serif font-semibold text-text-primary bg-transparent border-b-2 border-accent focus:outline-none w-full tracking-tight"
-                          aria-label={STRINGS.a11y.chapterTitleInput}
-                        />
-                        {titleError && (
-                          <p role="alert" className="text-xs text-status-error mt-1">
-                            {titleError}
-                          </p>
-                        )}
-                      </div>
-                    ) : (
-                      <h2
-                        className="mx-auto max-w-[720px] mb-6 text-3xl font-serif font-semibold text-text-primary cursor-pointer hover:text-text-secondary tracking-tight"
-                        onDoubleClick={startEditingTitle}
-                        aria-label={activeChapter.title}
-                      >
-                        {activeChapter.title}
-                      </h2>
-                    )}
-                    <Editor
-                      key={`${activeChapter.id}:${chapterReloadKey}`}
-                      chapterId={activeChapter.id}
-                      content={activeChapter.content}
-                      onSave={handleSaveLockGated}
-                      onContentChange={handleContentChange}
-                      editorRef={editorRef}
-                      onEditorReady={setToolbarEditor}
-                      projectId={project.id}
-                      onImageAnnouncement={(msg) => {
-                        if (imageAnnouncementTimerRef.current) {
-                          clearTimeout(imageAnnouncementTimerRef.current);
-                        }
-                        setImageAnnouncement(msg);
-                        imageAnnouncementTimerRef.current = setTimeout(
-                          () => setImageAnnouncement(""),
-                          3000,
-                        );
-                      }}
-                      onImageUploadCommitted={() => setGalleryExternalRefreshKey((k) => k + 1)}
-                    />
-                  </>
-                )}
-              </div>
-            </main>
-          ) : null}
-
-          {showActiveEditor && (
-            <EditorFooter
-              chapterWordCount={chapterWordCount}
-              project={project}
-              saveStatus={saveStatus}
-              saveErrorMessage={saveErrorMessage}
-              cacheWarning={cacheWarning}
-            />
-          )}
-        </div>
-        {panelOpen && project && (
-          <ReferencePanel width={panelWidth} onResize={handlePanelResize}>
-            <ImageGallery
-              projectId={project.id}
-              externalRefreshKey={galleryExternalRefreshKey}
-              onInsertImage={(url, alt) => {
-                // I4: gate behind isActionBusy() like every other editor-
-                // modifying entry point. Inserting during an in-flight
-                // mutation fires onUpdate, sets dirtyRef=true on content
-                // that is about to be overwritten, and schedules an auto-
-                // save after the hook already markClean-ed.
-                if (isActionBusy()) {
-                  setActionInfo(STRINGS.editor.mutationBusy);
-                  return;
-                }
-                editorRef.current?.insertImage(url, alt);
-              }}
-              onNavigateToChapter={(chapterId) => {
-                handleSelectChapterWithFlush(chapterId);
-              }}
-            />
-          </ReferencePanel>
-        )}
-        {snapshotPanelOpen && activeChapter && (
-          <SnapshotPanel
-            ref={snapshotPanelRef}
-            chapterId={activeChapter.id}
-            isOpen={snapshotPanelOpen}
-            onClose={() => setSnapshotPanelOpen(false)}
-            onView={onSnapshotView}
-            onBeforeCreate={onSnapshotBeforeCreate}
-            onSnapshotsChange={onSnapshotsChange}
-            triggerRef={snapshotsTriggerRef}
-          />
-        )}
-        {findReplace.panelOpen && project && (
-          <FindReplacePanel
-            isOpen={findReplace.panelOpen}
-            onClose={() => findReplace.closePanel()}
-            results={findReplace.results}
-            loading={findReplace.loading}
-            error={findReplace.error}
-            query={findReplace.query}
-            onQueryChange={findReplace.setQuery}
-            replacement={findReplace.replacement}
-            onReplacementChange={findReplace.setReplacement}
-            options={findReplace.options}
-            onToggleOption={findReplace.toggleOption}
-            onReplaceOne={handleReplaceOne}
-            onReplaceAllInChapter={handleReplaceAllInChapter}
-            onReplaceAllInManuscript={handleReplaceAllInManuscript}
-            triggerRef={findReplaceTriggerRef}
-          />
-        )}
-      </div>
-
-      {deleteTarget && (
-        <ConfirmDialog
-          title={STRINGS.delete.confirmTitle(deleteTarget.title)}
-          body={STRINGS.delete.confirmBody}
-          confirmLabel={STRINGS.delete.confirmButton}
-          cancelLabel={STRINGS.delete.cancelButton}
-          onConfirm={confirmDeleteChapter}
-          onCancel={() => setDeleteTarget(null)}
-        />
-      )}
-
-      {replaceConfirmation &&
-        (() => {
-          // Empty replacement is a valid "delete all matches" operation. Use
-          // distinct delete-copy in the dialog so the user can't confuse it
-          // with a Replace that would substitute an empty string — the
-          // destructive intent must be explicit before the user commits.
-          const isDelete = replaceConfirmation.replacement.length === 0;
-          const isProjectScope = replaceConfirmation.scope.type === "project";
-          return (
-            <ConfirmDialog
-              title={
-                isDelete
-                  ? isProjectScope
-                    ? STRINGS.findReplace.replaceDeleteConfirmTitle
-                    : STRINGS.findReplace.replaceDeleteChapterConfirmTitle
-                  : isProjectScope
-                    ? STRINGS.findReplace.replaceConfirmTitle
-                    : STRINGS.findReplace.replaceChapterConfirmTitle
-              }
-              body={
-                isDelete
-                  ? isProjectScope
-                    ? STRINGS.findReplace.replaceDeleteConfirm(
-                        replaceConfirmation.totalCount,
-                        replaceConfirmation.query,
-                        replaceConfirmation.chapterCount,
-                      )
-                    : STRINGS.findReplace.replaceDeleteChapterConfirm(
-                        replaceConfirmation.perChapterCount,
-                        replaceConfirmation.query,
-                      )
-                  : isProjectScope
-                    ? STRINGS.findReplace.replaceConfirm(
-                        replaceConfirmation.totalCount,
-                        replaceConfirmation.query,
-                        replaceConfirmation.replacement,
-                        replaceConfirmation.chapterCount,
-                      )
-                    : STRINGS.findReplace.replaceChapterConfirm(
-                        replaceConfirmation.perChapterCount,
-                        replaceConfirmation.query,
-                        replaceConfirmation.replacement,
-                      )
-              }
-              confirmLabel={
-                isDelete
-                  ? STRINGS.findReplace.replaceDeleteConfirmButton
-                  : STRINGS.findReplace.replaceConfirmButton
-              }
-              cancelLabel={STRINGS.findReplace.replaceCancelButton}
-              onConfirm={() => {
-                const frozen = replaceConfirmation;
-                setReplaceConfirmation(null);
-                void executeReplace({
-                  scope: frozen.scope,
-                  query: frozen.query,
-                  replacement: frozen.replacement,
-                  options: frozen.options,
-                });
-              }}
-              onCancel={() => setReplaceConfirmation(null)}
-            />
-          );
-        })()}
-
-      <div aria-live="polite" className="sr-only" data-testid="nav-announcement">
-        {navAnnouncement}
-      </div>
-      <div aria-live="polite" className="sr-only" data-testid="word-count-announcement">
-        {wordCountAnnouncement}
-      </div>
-      <div className="sr-only" aria-live="polite" aria-atomic="true">
-        {imageAnnouncement}
-      </div>
-
-      <ProjectSettingsDialog
-        key={project.slug}
-        open={projectSettingsOpen}
-        project={project}
-        onClose={() => setProjectSettingsOpen(false)}
-        onUpdate={handleProjectSettingsUpdate}
+      <EditorHeader
+        projectTitle={project.title}
+        onNavigateHome={() => navigate("/")}
+        editingProjectTitle={editingProjectTitle}
+        projectTitleDraft={projectTitleDraft}
+        setProjectTitleDraft={setProjectTitleDraft}
+        saveProjectTitle={saveProjectTitle}
+        cancelEditingProjectTitle={cancelEditingProjectTitle}
+        startEditingProjectTitle={startEditingProjectTitle}
+        projectTitleError={projectTitleError}
+        projectTitleInputRef={projectTitleInputRef}
+        showActiveEditor={Boolean(showActiveEditor)}
+        viewMode={viewMode}
+        toolbarEditor={toolbarEditor}
+        snapshotCount={snapshotCount}
+        onToggleSnapshots={handleToggleSnapshotPanel}
+        onToggleFindReplace={handleToggleFindReplace}
+        snapshotsTriggerRef={snapshotsTriggerRef}
+        findReplaceTriggerRef={findReplaceTriggerRef}
+        onSwitchToView={switchToView}
+        onOpenExport={() => setExportDialogOpen(true)}
+        onToggleReferencePanel={handleToggleReferencePanel}
+        panelOpen={panelOpen}
+        onOpenSettings={() => setProjectSettingsOpen(true)}
       />
 
-      <ShortcutHelpDialog open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
+      <EditorMainContent
+        sidebarOpen={sidebarOpen}
+        sidebarWidth={sidebarWidth}
+        onSidebarResize={handleSidebarResize}
+        project={project}
+        activeChapter={activeChapter}
+        showActiveEditor={Boolean(showActiveEditor)}
+        viewMode={viewMode}
+        statuses={statuses}
+        onSelectChapter={handleSelectChapterWithFlush}
+        onAddChapter={handleCreateChapterGuarded}
+        onDeleteChapter={requestDeleteChapter}
+        onReorderChapters={handleReorderChaptersGuarded}
+        onRenameChapter={handleRenameChapterWithError}
+        onOpenTrash={openTrashGuarded}
+        onStatusChange={handleStatusChangeWithError}
+        editorLockedMessage={editorLockedMessage}
+        actionError={actionError}
+        onDismissActionError={() => setActionError(null)}
+        actionInfo={actionInfo}
+        onDismissActionInfo={() => setActionInfo(null)}
+        trashOpen={trashOpen}
+        trashedChapters={trashedChapters}
+        onRestore={handleRestore}
+        onCloseTrash={() => setTrashOpen(false)}
+        dashboardRefreshKey={dashboardRefreshKey}
+        viewingSnapshot={viewingSnapshot}
+        onRestoreSnapshot={handleRestoreSnapshot}
+        onExitSnapshotView={exitSnapshotView}
+        editingTitle={editingTitle}
+        titleDraft={titleDraft}
+        setTitleDraft={setTitleDraft}
+        saveTitle={saveTitle}
+        cancelEditingTitle={cancelEditingTitle}
+        startEditingTitle={startEditingTitle}
+        titleError={titleError}
+        titleInputRef={titleInputRef}
+        chapterReloadKey={chapterReloadKey}
+        editorRef={editorRef}
+        onSave={handleSaveLockGated}
+        onContentChange={handleContentChange}
+        onEditorReady={setToolbarEditor}
+        onImageAnnouncement={(msg) => {
+          if (imageAnnouncementTimerRef.current) {
+            clearTimeout(imageAnnouncementTimerRef.current);
+          }
+          setImageAnnouncement(msg);
+          imageAnnouncementTimerRef.current = setTimeout(() => setImageAnnouncement(""), 3000);
+        }}
+        onImageUploadCommitted={() => setGalleryExternalRefreshKey((k) => k + 1)}
+        chapterWordCount={chapterWordCount}
+        saveStatus={saveStatus}
+        saveErrorMessage={saveErrorMessage}
+        cacheWarning={cacheWarning}
+        panelOpen={panelOpen}
+        panelWidth={panelWidth}
+        onPanelResize={handlePanelResize}
+        galleryExternalRefreshKey={galleryExternalRefreshKey}
+        onInsertImage={(url, alt) => {
+          // I4: gate behind isActionBusy() like every other editor-
+          // modifying entry point. Inserting during an in-flight
+          // mutation fires onUpdate, sets dirtyRef=true on content
+          // that is about to be overwritten, and schedules an auto-
+          // save after the hook already markClean-ed.
+          if (isActionBusy()) {
+            setActionInfo(STRINGS.editor.mutationBusy);
+            return;
+          }
+          editorRef.current?.insertImage(url, alt);
+        }}
+        snapshotPanelOpen={snapshotPanelOpen}
+        onCloseSnapshotPanel={() => setSnapshotPanelOpen(false)}
+        snapshotPanelRef={snapshotPanelRef}
+        onSnapshotView={onSnapshotView}
+        onSnapshotBeforeCreate={onSnapshotBeforeCreate}
+        onSnapshotsChange={onSnapshotsChange}
+        snapshotsTriggerRef={snapshotsTriggerRef}
+        findReplace={findReplace}
+        onReplaceOne={handleReplaceOne}
+        onReplaceAllInChapter={handleReplaceAllInChapter}
+        onReplaceAllInManuscript={handleReplaceAllInManuscript}
+        findReplaceTriggerRef={findReplaceTriggerRef}
+      />
 
-      {project && (
-        <ExportDialog
-          open={exportDialogOpen}
-          projectSlug={project.slug}
-          projectId={project.id}
-          chapters={project.chapters.map((ch) => ({
-            id: ch.id,
-            title: ch.title,
-            sort_order: ch.sort_order,
-          }))}
-          onClose={() => setExportDialogOpen(false)}
-        />
-      )}
+      <EditorDialogs
+        deleteTarget={deleteTarget}
+        onConfirmDelete={confirmDeleteChapter}
+        onCancelDelete={() => setDeleteTarget(null)}
+        replaceConfirmation={replaceConfirmation}
+        setReplaceConfirmation={setReplaceConfirmation}
+        executeReplace={executeReplace}
+        navAnnouncement={navAnnouncement}
+        wordCountAnnouncement={wordCountAnnouncement}
+        imageAnnouncement={imageAnnouncement}
+        project={project}
+        projectSettingsOpen={projectSettingsOpen}
+        onCloseSettings={() => setProjectSettingsOpen(false)}
+        onSettingsUpdate={handleProjectSettingsUpdate}
+        shortcutHelpOpen={shortcutHelpOpen}
+        onCloseShortcutHelp={() => setShortcutHelpOpen(false)}
+        exportDialogOpen={exportDialogOpen}
+        onCloseExport={() => setExportDialogOpen(false)}
+      />
     </div>
   );
 }
