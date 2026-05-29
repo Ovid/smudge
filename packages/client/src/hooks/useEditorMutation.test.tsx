@@ -1675,6 +1675,46 @@ describe("useEditorMutation — latest-ref pattern", () => {
   });
 });
 
+describe("useEditorMutation — synchronous lock-down before first await (A7)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("blocks input synchronously: setEditable(false) runs before the first await (flushSave)", async () => {
+    // Regression guard (Decided Q3): the entry lock-down via safeSetEditable
+    // runs synchronously — before the first await (flushSave). TipTap rejects
+    // user keystrokes as soon as run() is called, with no microtask gap where
+    // a keystroke could slip through.
+    const { editorRef, projectEditor } = buildHandles();
+    const order: string[] = [];
+
+    editorRef.current!.setEditable = vi.fn((v: boolean) => {
+      order.push(`setEditable(${v})`);
+    });
+    editorRef.current!.flushSave = vi.fn(async () => {
+      order.push("flushSave");
+      return true;
+    });
+
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
+    );
+
+    await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: false,
+      data: undefined,
+    }));
+
+    // Guard against vacuous pass: both entries must be present.
+    expect(order).toContain("setEditable(false)");
+    expect(order).toContain("flushSave");
+    // The lock-down setEditable(false) precedes flushSave (the first await),
+    // proving TipTap input is blocked before any yield (Decided Q3).
+    expect(order.indexOf("setEditable(false)")).toBeLessThan(order.indexOf("flushSave"));
+  });
+});
+
 describe("useEditorMutation — machine dispatch (A4)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
