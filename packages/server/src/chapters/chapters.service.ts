@@ -39,6 +39,18 @@ export async function getChapter(id: string): Promise<ChapterWithLabel | null | 
   return enrichChapterWithLabel(store, chapter);
 }
 
+/**
+ * Update a chapter row from a validated PATCH body.
+ *
+ * Side effects beyond writing the `chapters` row (F-8 — intentional, but not
+ * evident from the signature):
+ * - Bumps the parent project's `updated_at` (within the transaction).
+ * - Diffs image reference counts for images added/removed by a content change
+ *   (within the transaction, via {@link applyImageRefDiff}).
+ * - Fires `velocityService.recordSave` after commit when content changed —
+ *   best-effort: a throw is logged and swallowed, never failing the save
+ *   (writes a `daily_snapshots` row).
+ */
 export async function updateChapter(
   id: string,
   body: unknown,
@@ -140,6 +152,17 @@ export async function updateChapter(
   return { chapter: enriched };
 }
 
+/**
+ * Soft-delete a chapter.
+ *
+ * Side effects beyond setting `deleted_at` (F-8 — intentional, but not evident
+ * from the signature):
+ * - Bumps the parent project's `updated_at` (within the transaction).
+ * - Decrements image reference counts for the chapter's referenced images
+ *   (within the transaction, via {@link applyImageRefDiff}).
+ * - Fires `velocityService.updateDailySnapshot` after commit — best-effort: a
+ *   throw is logged and swallowed, never failing the delete.
+ */
 export async function deleteChapter(id: string): Promise<boolean> {
   const store = getProjectStore();
 
@@ -173,6 +196,19 @@ export async function deleteChapter(id: string): Promise<boolean> {
   return true;
 }
 
+/**
+ * Restore a soft-deleted chapter.
+ *
+ * Side effects beyond clearing the chapter's `deleted_at` (F-8 — intentional,
+ * but not evident from the signature):
+ * - If the parent project was also soft-deleted, restores it too: clears its
+ *   `deleted_at`, regenerates a unique slug, and bumps `updated_at`. Otherwise
+ *   just bumps the parent's `updated_at` (all within the transaction).
+ * - Increments image reference counts for the restored content (within the
+ *   transaction, via {@link applyImageRefDiff}).
+ * - Fires `velocityService.updateDailySnapshot` after commit — best-effort: a
+ *   throw is logged and swallowed, never failing the restore.
+ */
 export async function restoreChapter(
   id: string,
 ): Promise<

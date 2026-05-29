@@ -211,6 +211,10 @@ Five specialist agents analyzed structure, coupling, integration/data, error-han
 - **Explanation:** `updateChapter` reads like a row update but also bumps the parent project's `updated_at`, diffs image reference counts, and fires `velocityService.recordSave` (writing a `daily_snapshots` row); `deleteChapter` and `restoreChapter` similarly fire `updateDailySnapshot`. The behaviors are intentional and the velocity calls are best-effort, but nothing in the signatures discloses them — a discoverability/naming flaw, not a correctness one.
 - **Evidence:** `packages/server/src/chapters/chapters.service.ts:86-124,143-174,258-265`.
 - **Found by:** Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** Doc-only disclosure (the chosen Option, matching the report's own framing of F-8 as "a discoverability/naming flaw, not a correctness one"). Added JSDoc to `updateChapter`, `deleteChapter`, and `restoreChapter` that names each undisclosed side effect at the signature: the parent project's `updated_at` bump (in-transaction), the image reference-count diff via `applyImageRefDiff` (in-transaction), and the best-effort post-commit velocity call (`recordSave` / `updateDailySnapshot`, whose throws are logged-and-swallowed). `restoreChapter`'s JSDoc additionally discloses the parent-project restore-and-reslug effect. No behavior change — the intentional side effects are unchanged and remain pinned by tests. **Safety net (committed first, `87a676d`):** a new `chapters.service.test.ts` case pins that `updateChapter` bumps the parent project's `updated_at` (the one side effect not previously asserted); the velocity best-effort effects and refcount diffs were already covered. Full server suite + `npm run typecheck` clean.
+- **Status date:** 2026-05-29
+- **Status commit:** 6884cdaac70389adf3714122ae0acfb0e9031b00
 
 ### [F-9] Client console logging is not production-gated or convention-consistent
 
