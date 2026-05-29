@@ -8,6 +8,7 @@ import {
 } from "@smudge/shared";
 import { asyncHandler } from "../asyncHandler";
 import { getProjectStore } from "../stores/project-store.injectable";
+import { BadRequestError, NotFoundError } from "../errors/appError";
 import * as SearchService from "./search.service";
 
 const SearchOptionsSchema = z
@@ -67,13 +68,7 @@ export function searchRouter(): Router {
     asyncHandler(async (req, res) => {
       const parsed = SearchSchema.safeParse(req.body);
       if (!parsed.success) {
-        res.status(400).json({
-          error: {
-            code: "VALIDATION_ERROR",
-            message: parsed.error.issues[0]?.message ?? "Invalid input",
-          },
-        });
-        return;
+        throw new BadRequestError(parsed.error.issues[0]?.message ?? "Invalid input");
       }
 
       const { query, options } = parsed.data;
@@ -83,24 +78,15 @@ export function searchRouter(): Router {
       const store = getProjectStore();
       const project = await store.findProjectBySlug(slug);
       if (!project) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Project not found." },
-        });
-        return;
+        throw new NotFoundError("Project not found.");
       }
 
       const result = await SearchService.searchProject(project.id, query, options);
       if (result === null) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Project not found." },
-        });
-        return;
+        throw new NotFoundError("Project not found.");
       }
       if ("validationError" in result) {
-        res.status(400).json({
-          error: { code: result.code, message: result.validationError },
-        });
-        return;
+        throw new BadRequestError(result.validationError, result.code);
       }
       res.json(result);
     }),
@@ -112,13 +98,7 @@ export function searchRouter(): Router {
     asyncHandler(async (req, res) => {
       const parsed = ReplaceSchema.safeParse(req.body);
       if (!parsed.success) {
-        res.status(400).json({
-          error: {
-            code: "VALIDATION_ERROR",
-            message: parsed.error.issues[0]?.message ?? "Invalid input",
-          },
-        });
-        return;
+        throw new BadRequestError(parsed.error.issues[0]?.message ?? "Invalid input");
       }
 
       const { search, replace, options, scope } = parsed.data;
@@ -128,10 +108,7 @@ export function searchRouter(): Router {
       const store = getProjectStore();
       const project = await store.findProjectBySlug(slug);
       if (!project) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Project not found." },
-        });
-        return;
+        throw new NotFoundError("Project not found.");
       }
 
       const result = await SearchService.replaceInProject(
@@ -143,34 +120,25 @@ export function searchRouter(): Router {
       );
 
       if (result === null) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Project not found." },
-        });
-        return;
+        throw new NotFoundError("Project not found.");
       }
 
       if (result === "scope_not_found") {
-        res.status(404).json({
-          error: {
-            code: SEARCH_ERROR_CODES.SCOPE_NOT_FOUND,
-            // The cross-project chapter_id guard lives inside
-            // SearchService.replaceInProject (search.service.ts around the
-            // "scope_not_found" return) — project slug resolution above
-            // only proves the SLUG exists, not that the chapter belongs
-            // to that project. "scope_not_found" covers both
-            // "missing/soft-deleted inside this project" and
-            // "chapter_id belongs to a different project".
-            message: "Replace scope not found: chapter is missing or has been deleted.",
-          },
-        });
-        return;
+        // The cross-project chapter_id guard lives inside
+        // SearchService.replaceInProject (search.service.ts around the
+        // "scope_not_found" return) — project slug resolution above only
+        // proves the SLUG exists, not that the chapter belongs to that
+        // project. "scope_not_found" covers both "missing/soft-deleted
+        // inside this project" and "chapter_id belongs to a different
+        // project".
+        throw new NotFoundError(
+          "Replace scope not found: chapter is missing or has been deleted.",
+          SEARCH_ERROR_CODES.SCOPE_NOT_FOUND,
+        );
       }
 
       if ("validationError" in result) {
-        res.status(400).json({
-          error: { code: result.code, message: result.validationError },
-        });
-        return;
+        throw new BadRequestError(result.validationError, result.code);
       }
 
       res.json(result);

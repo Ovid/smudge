@@ -7,6 +7,7 @@ import {
   UNTITLED_CHAPTER,
 } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
+import { BadRequestError } from "../errors/appError";
 import { enrichChaptersWithLabels, enrichChapterWithLabel } from "../chapters/chapters.types";
 import { extractImageIds } from "../images/images.references";
 import type { ProjectRow, ProjectListRow, UpdateProjectData } from "./projects.types";
@@ -35,9 +36,9 @@ export interface DashboardResponse {
 
 // --- Errors ---
 
-export class ProjectTitleExistsError extends Error {
+export class ProjectTitleExistsError extends BadRequestError {
   constructor() {
-    super("A project with that title already exists");
+    super("A project with that title already exists", "PROJECT_TITLE_EXISTS");
     this.name = "ProjectTitleExistsError";
   }
 }

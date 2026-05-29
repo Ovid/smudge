@@ -9,6 +9,7 @@ import { exportRouter } from "./export/export.routes";
 import { imagesRouter, imagesDirectRouter } from "./images/images.routes";
 import { snapshotChapterRouter, snapshotDirectRouter } from "./snapshots/snapshots.routes";
 import { searchRouter } from "./search/search.routes";
+import { AppError } from "./errors/appError";
 import { MAX_CHAPTER_CONTENT_LIMIT_STRING } from "./constants";
 
 export function createApp(): express.Express {
@@ -57,6 +58,17 @@ export function globalErrorHandler(
   res: express.Response,
   _next: express.NextFunction,
 ): void {
+  // AppErrors are intentional, already-classified domain failures. Render
+  // their envelope directly and do NOT log them at error level — these
+  // paths emitted via in-route res.json() before F-3 and logged nothing.
+  if (err instanceof AppError) {
+    res.status(err.status).json({
+      error: { code: err.code, message: err.message, ...err.extras },
+    });
+    return;
+  }
+
+  // Anything reaching here is genuinely unhandled — log it.
   logger.error({ err, status: err.status ?? err.statusCode ?? 500 }, "Unhandled request error");
   const status = err.status ?? err.statusCode ?? 500;
   const code =

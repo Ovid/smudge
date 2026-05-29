@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { asyncHandler } from "../asyncHandler";
+import { BadRequestError, NotFoundError } from "../errors/appError";
 import * as ExportService from "./export.service";
 
 export function exportRouter(): Router {
@@ -11,25 +12,16 @@ export function exportRouter(): Router {
       const result = await ExportService.exportProject(req.params.slug as string, req.body);
 
       if ("validationError" in result) {
-        res.status(400).json({
-          error: { code: "VALIDATION_ERROR", message: result.validationError },
-        });
-        return;
+        throw new BadRequestError(result.validationError);
       }
       if ("notFound" in result) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Project not found." },
-        });
-        return;
+        throw new NotFoundError("Project not found.");
       }
       if ("invalidChapterIds" in result) {
-        res.status(400).json({
-          error: {
-            code: "EXPORT_INVALID_CHAPTERS",
-            message: "One or more chapter IDs do not belong to this project.",
-          },
-        });
-        return;
+        throw new BadRequestError(
+          "One or more chapter IDs do not belong to this project.",
+          "EXPORT_INVALID_CHAPTERS",
+        );
       }
 
       const { content, contentType, filename } = result.result;

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { asyncHandler } from "../asyncHandler";
 import * as ProjectService from "./projects.service";
 import { velocityHandler } from "../velocity/velocity.routes";
+import { BadRequestError, InternalError, NotFoundError } from "../errors/appError";
 
 export function projectsRouter(): Router {
   const router = Router();
@@ -9,27 +10,13 @@ export function projectsRouter(): Router {
   router.post(
     "/",
     asyncHandler(async (req, res) => {
-      try {
-        const result = await ProjectService.createProject(req.body);
-        if ("validationError" in result) {
-          res.status(400).json({
-            error: { code: "VALIDATION_ERROR", message: result.validationError },
-          });
-          return;
-        }
-        res.status(201).json(result.project);
-      } catch (err) {
-        if (err instanceof ProjectService.ProjectTitleExistsError) {
-          res.status(400).json({
-            error: {
-              code: "PROJECT_TITLE_EXISTS",
-              message: "A project with that title already exists",
-            },
-          });
-          return;
-        }
-        throw err;
+      // ProjectTitleExistsError is an AppError; it propagates to the
+      // global handler (400 PROJECT_TITLE_EXISTS) without a local catch.
+      const result = await ProjectService.createProject(req.body);
+      if ("validationError" in result) {
+        throw new BadRequestError(result.validationError ?? "Invalid input");
       }
+      res.status(201).json(result.project);
     }),
   );
 
@@ -44,33 +31,14 @@ export function projectsRouter(): Router {
   router.patch(
     "/:slug",
     asyncHandler(async (req, res) => {
-      try {
-        const result = await ProjectService.updateProject(req.params.slug as string, req.body);
-        if (!result) {
-          res.status(404).json({
-            error: { code: "NOT_FOUND", message: "Project not found." },
-          });
-          return;
-        }
-        if ("validationError" in result) {
-          res.status(400).json({
-            error: { code: "VALIDATION_ERROR", message: result.validationError },
-          });
-          return;
-        }
-        res.json(result.project);
-      } catch (err) {
-        if (err instanceof ProjectService.ProjectTitleExistsError) {
-          res.status(400).json({
-            error: {
-              code: "PROJECT_TITLE_EXISTS",
-              message: "A project with that title already exists",
-            },
-          });
-          return;
-        }
-        throw err;
+      const result = await ProjectService.updateProject(req.params.slug as string, req.body);
+      if (!result) {
+        throw new NotFoundError("Project not found.");
       }
+      if ("validationError" in result) {
+        throw new BadRequestError(result.validationError ?? "Invalid input");
+      }
+      res.json(result.project);
     }),
   );
 
@@ -81,10 +49,7 @@ export function projectsRouter(): Router {
     asyncHandler(async (req, res) => {
       const result = await ProjectService.getProject(req.params.slug as string);
       if (!result) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Project not found." },
-        });
-        return;
+        throw new NotFoundError("Project not found.");
       }
       res.json({ ...result.project, chapters: result.chapters });
     }),
@@ -95,19 +60,13 @@ export function projectsRouter(): Router {
     asyncHandler(async (req, res) => {
       const result = await ProjectService.createChapter(req.params.slug as string);
       if (result === "project_not_found") {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Project not found." },
-        });
-        return;
+        throw new NotFoundError("Project not found.");
       }
       if (result === "read_after_create_failure") {
-        res.status(500).json({
-          error: {
-            code: "READ_AFTER_CREATE_FAILURE",
-            message: "Chapter was created but could not be retrieved. Do not retry.",
-          },
-        });
-        return;
+        throw new InternalError(
+          "Chapter was created but could not be retrieved. Do not retry.",
+          "READ_AFTER_CREATE_FAILURE",
+        );
       }
       res.status(201).json(result);
     }),
@@ -118,25 +77,16 @@ export function projectsRouter(): Router {
     asyncHandler(async (req, res) => {
       const result = await ProjectService.reorderChapters(req.params.slug as string, req.body);
       if (!result) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Project not found." },
-        });
-        return;
+        throw new NotFoundError("Project not found.");
       }
       if ("validationError" in result) {
-        res.status(400).json({
-          error: { code: "VALIDATION_ERROR", message: result.validationError },
-        });
-        return;
+        throw new BadRequestError(result.validationError ?? "Invalid input");
       }
       if ("mismatch" in result) {
-        res.status(400).json({
-          error: {
-            code: "REORDER_MISMATCH",
-            message: "Provided chapter IDs do not match existing chapters.",
-          },
-        });
-        return;
+        throw new BadRequestError(
+          "Provided chapter IDs do not match existing chapters.",
+          "REORDER_MISMATCH",
+        );
       }
       res.json({ message: "Chapter order updated." });
     }),
@@ -147,10 +97,7 @@ export function projectsRouter(): Router {
     asyncHandler(async (req, res) => {
       const result = await ProjectService.getDashboard(req.params.slug as string);
       if (!result) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Project not found." },
-        });
-        return;
+        throw new NotFoundError("Project not found.");
       }
       res.json(result);
     }),
@@ -161,10 +108,7 @@ export function projectsRouter(): Router {
     asyncHandler(async (req, res) => {
       const result = await ProjectService.getTrash(req.params.slug as string);
       if (result === null) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Project not found." },
-        });
-        return;
+        throw new NotFoundError("Project not found.");
       }
       res.json(result);
     }),
@@ -175,10 +119,7 @@ export function projectsRouter(): Router {
     asyncHandler(async (req, res) => {
       const deleted = await ProjectService.deleteProject(req.params.slug as string);
       if (!deleted) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Project not found." },
-        });
-        return;
+        throw new NotFoundError("Project not found.");
       }
       res.json({ message: "Project moved to trash." });
     }),

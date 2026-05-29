@@ -17,6 +17,7 @@ land from inside the container anyway. There is no path by which a
 `.devcontainer/`-targeted change persists across a template update.
 
 Concretely, this means:
+
 - **Do not read** files under `.devcontainer/` (Dockerfile,
   devcontainer.json, post_install.py, .zshrc, etc.).
 - **Do not edit or suggest edits** to anything under `.devcontainer/`,
@@ -124,12 +125,13 @@ Wait for `make e2e` to finish (or kill it) before running cleanup.
 
 **Save-pipeline invariants.** The following rules are load-bearing — the snapshots/find-and-replace branch required 16 rounds of review because they were applied inconsistently. Any code that triggers a server mutation affecting editor content must obey them:
 
-1. **`markClean()` before any server call that invalidates editor state.** If you call the server *and* the response will overwrite what's on screen (restore, replace, reload), mark the editor clean first so the unmount/auto-save cleanup cannot fire a stale PATCH afterwards.
-2. **`setEditable(false)` around any mutation that can fail mid-typing.** The user must not be able to type into content that is about to be overwritten or is in an error state. Restore this *after* success or failure.
+1. **`markClean()` before any server call that invalidates editor state.** If you call the server _and_ the response will overwrite what's on screen (restore, replace, reload), mark the editor clean first so the unmount/auto-save cleanup cannot fire a stale PATCH afterwards.
+2. **`setEditable(false)` around any mutation that can fail mid-typing.** The user must not be able to type into content that is about to be overwritten or is in an error state. Restore this _after_ success or failure.
 3. **Cache-clear happens after server success, never before.** The client-side draft cache is the last line of defense against data loss. Clearing it before the server confirms violates the contract that unsaved content is held until persistence succeeds.
 4. **Bump the sequence ref before the request, not after.** Any in-flight response for an older sequence is discarded on return. Bumping after creates a window where stale responses land. Use `useAbortableSequence` (`packages/client/src/hooks/useAbortableSequence.ts`): `start()` bumps and returns a token, `capture()` snapshots the current epoch for cross-axis checks, `abort()` invalidates outstanding tokens, and component unmount auto-aborts. Hand-rolled `useRef<number>` sequence counters are rejected by ESLint.
 
    For network-cancellation (as distinct from response-staleness), route through `useAbortableAsyncOperation` (`packages/client/src/hooks/useAbortableAsyncOperation.ts`): `run<T>(fn)` aborts the prior controller and returns `{ promise, signal }` per call (use the per-call `signal` for "did this operation abort" gates after the await — there is deliberately no hook-level `aborted` getter), `abort()` cancels the currently-tracked controller for explicit external-cancellation flows that aren't paired with starting a new operation (panel-close, project-id change), and component unmount auto-aborts. The two hooks are orthogonal: `useAbortableSequence` arbitrates response staleness via epoch tokens; `useAbortableAsyncOperation` cancels network requests via `AbortController`. Both can apply to one operation — `useFindReplaceState.search` pairs them to get both guarantees. Hand-rolled `useRef<AbortController>` allocations at consumer call sites are banned (enforced by `packages/client/src/__tests__/migrationStructuralCheck.test.ts`; five justified-survivor files (HomePage.tsx, useChapterCrud.ts, useChapterMetadata.ts, useSnapshotState.ts, useTrashManager.ts — the last for `restoreRecoveryAbortRef`, a second-tier recovery controller that must survive the next restore's `restoreOp` abort; `useChapterCrud.ts` and `useChapterMetadata.ts` received the recovery controllers formerly in `useProjectEditor.ts` when F-2 (2026-05-29) split it) — each containing one or more retained allocations for documented second-tier-recovery or simultaneously-live-controller patterns — remain allowlisted; Phase 4b.17's allowlist conversion replaces this file-level allowlist with inline `// eslint-disable-next-line` on each of the surviving lines).
+
 5. **Error codes stay inside the allowlist.** HTTP status codes are 200, 201, 400, 404, 409, 413, 500 (see §API Design). New conditions get an existing code plus a discriminating `error.code` string — never a new status.
 
 For mutation-via-server flows (snapshot restore, project-wide replace, and future similar operations), route through `useEditorMutation` in `packages/client/src/hooks/useEditorMutation.ts` — it enforces invariants 1–4 by construction. Hand-composing these steps is reserved for flows outside its scope (e.g. snapshot view, which does not mutate content). For any client flow whose response must be discarded when superseded by a newer request or an external epoch change (chapter switch, project switch, unmount), route through `useAbortableSequence` — it encodes the "bump before, check after" contract as tokens, auto-aborts on unmount, and is enforced by ESLint.
@@ -155,16 +157,18 @@ This is the canonical consumer pattern, parallel with `useEditorMutation` and
 `useAbortableSequence`. This invariant will be enforced by ESLint in a future
 phase; until then, it is enforced by review.
 
-**String externalization.** All UI strings in `packages/client/src/strings.ts` as constants, never raw literals in components. Enforced by `no-restricted-syntax` selectors in `eslint.config.js` (Phase 4b.4) that flag **word-bearing** literals (text containing a Unicode letter, `\p{L}`) in JSX text children and the user-facing attributes `aria-label`, `aria-description`, `aria-roledescription`, `title`, `placeholder`, `alt`. The rule is intentionally letters-only: glyphs, separators, and punctuation are language-neutral (not i18n surface), and bare-glyph accessible-name coverage is owned by aXe-core, not this rule. A decorative word-bearing glyph (e.g. the `Aa`/`ab|` find-replace toggles) is **named** — extracted to a constant and rendered as `{GLYPH}`, which the rule does not flag — keeping the visible symbol paired with its `STRINGS`-sourced `aria-label`. Test fixtures take an inline `// eslint-disable-next-line no-restricted-syntax -- test fixture (not user-facing)` (the description separator is two hyphens `--`; an em-dash silently disables nothing). ESLint reports a JSXText violation at the opening tag's line, so a disable comment must sit above the *opening tag* (or use the block `eslint-disable`/`eslint-enable` form) — a comment directly above the visible text does not suppress it. The exemption-reason string is load-bearing — `git grep "eslint-disable-next-line no-restricted-syntax" packages/client/` is the audit surface. Prepares for future i18n without architectural changes.
+**String externalization.** All UI strings in `packages/client/src/strings.ts` as constants, never raw literals in components. Enforced by `no-restricted-syntax` selectors in `eslint.config.js` (Phase 4b.4) that flag **word-bearing** literals (text containing a Unicode letter, `\p{L}`) in JSX text children and the user-facing attributes `aria-label`, `aria-description`, `aria-roledescription`, `title`, `placeholder`, `alt`. The rule is intentionally letters-only: glyphs, separators, and punctuation are language-neutral (not i18n surface), and bare-glyph accessible-name coverage is owned by aXe-core, not this rule. A decorative word-bearing glyph (e.g. the `Aa`/`ab|` find-replace toggles) is **named** — extracted to a constant and rendered as `{GLYPH}`, which the rule does not flag — keeping the visible symbol paired with its `STRINGS`-sourced `aria-label`. Test fixtures take an inline `// eslint-disable-next-line no-restricted-syntax -- test fixture (not user-facing)` (the description separator is two hyphens `--`; an em-dash silently disables nothing). ESLint reports a JSXText violation at the opening tag's line, so a disable comment must sit above the _opening tag_ (or use the block `eslint-disable`/`eslint-enable` form) — a comment directly above the visible text does not suppress it. The exemption-reason string is load-bearing — `git grep "eslint-disable-next-line no-restricted-syntax" packages/client/` is the audit surface. Prepares for future i18n without architectural changes.
 
 ## API Design
 
-REST endpoints under `/api/`. Error envelope: `{ "error": { "code": "MACHINE_READABLE", "message": "Human-readable" } }`. HTTP status codes: 200, 201, 400, 404, 409, 413, 500. The allowlist governs codes the Smudge server itself emits; client error scopes may additionally map proxy-only codes (502/503/504, etc.) for resilience under reverse-proxy deployments.
+REST endpoints under `/api/`. Error envelope: `{ "error": { "code": "MACHINE_READABLE", "message": "Human-readable" } }`. HTTP status codes: 200, 201, 204, 400, 404, 409, 413, 500. The allowlist governs codes the Smudge server itself emits; client error scopes may additionally map proxy-only codes (502/503/504, etc.) for resilience under reverse-proxy deployments. Error responses (4xx/5xx) are produced by the `AppError` taxonomy (`packages/server/src/errors/appError.ts`): routes `throw` a typed `AppError` and the global handler (`app.ts`) renders the envelope. The error-status subset is 400, 404, 409, 413, 500 — `AppError` never emits 2xx.
 
+- **204** No Content is the success contract for snapshot delete (`DELETE /api/snapshots/{id}`) — an empty body rather than a `{ message }` envelope. (Image delete differs: it returns 200 with `{ deleted: true }`.)
 - **409** is used for conflict cases where the request is well-formed but violates a constraint the client needs to resolve (e.g. attempting to delete an image still referenced by chapters — the `{ error: { code, message, chapters: [...] } }` shape carries the referencing chapter list so the UI can route the user to them).
 - **413** is emitted when a request body exceeds the size guard (e.g. a chapter PATCH whose content would break the per-row limit). Clients should present a "too large" message rather than a generic retry prompt.
 
 Key endpoints:
+
 - `PATCH /api/chapters/{id}` — auto-save target; recalculates word count server-side; rejects invalid JSON with 400 (preserves previous content)
 - `PUT /api/projects/{id}/chapters/order` — full chapter ID list required, 400 on mismatch
 - `POST /api/chapters/{id}/restore` — restoring a chapter whose project is deleted also restores the project
@@ -172,6 +176,7 @@ Key endpoints:
 ## Accessibility (WCAG 2.1 AA — Mandatory)
 
 This is a first-class design constraint, not optional:
+
 - Semantic HTML (`<nav>`, `<main>`, `<aside>`, `<button>`, `<dialog>`) — no `<div>`/`<span>` as interactive elements
 - ARIA landmarks on all major regions; `aria-live="polite"` for save status; word count announced on demand via Ctrl+Shift+W
 - Full keyboard navigation; visible focus indicators (3:1 contrast)
@@ -213,7 +218,7 @@ The only thing worse than a failing test is a reduction in test coverage.
 
 The `ovid/snapshots-find-and-replace` branch (merged 2026-04-19) bundled two features across 17,000 insertions and required 16 rounds of review. To prevent recurrence, PRs must obey two rules:
 
-**One-feature rule.** A PR delivers a single feature *or* a single refactor — never both, and never two features. A bug fix alongside the feature it affects is fine; a second unrelated bug fix is not. When in doubt, split.
+**One-feature rule.** A PR delivers a single feature _or_ a single refactor — never both, and never two features. A bug fix alongside the feature it affects is fine; a second unrelated bug fix is not. When in doubt, split.
 
 **Phase-boundary rule.** Each roadmap phase (`docs/roadmap.md`) is a PR. Splitting a phase into multiple PRs is allowed and often preferable; merging phases into one PR is not. Every PR must reference the roadmap phase(s) it implements in its description. A PR that implements more than one phase must be closed and split — update the roadmap to split the bundled phase first, then open separate PRs.
 

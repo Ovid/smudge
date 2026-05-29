@@ -1,25 +1,17 @@
-import { Router, type Request, type Response } from "express";
+import { Router, type Request } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../asyncHandler";
 import { CreateSnapshotSchema, SNAPSHOT_ERROR_CODES } from "@smudge/shared";
+import { BadRequestError, ConflictError, NotFoundError } from "../errors/appError";
 import * as SnapshotService from "./snapshots.service";
 
 const UuidSchema = z.string().uuid();
 
-function validateUuidParam(
-  req: Request,
-  res: Response,
-  label?: "chapter" | "snapshot",
-): string | null {
+/** Returns the validated UUID param, or throws a 400 BadRequestError. */
+function validateUuidParam(req: Request, label?: "chapter" | "snapshot"): string {
   const parsed = UuidSchema.safeParse(req.params.id);
   if (!parsed.success) {
-    res.status(400).json({
-      error: {
-        code: "VALIDATION_ERROR",
-        message: label ? `Invalid ${label} id.` : "Invalid id.",
-      },
-    });
-    return null;
+    throw new BadRequestError(label ? `Invalid ${label} id.` : "Invalid id.");
   }
   return parsed.data;
 }
@@ -31,26 +23,16 @@ export function snapshotChapterRouter(): Router {
   router.post(
     "/:id/snapshots",
     asyncHandler(async (req, res) => {
-      const id = validateUuidParam(req, res, "chapter");
-      if (!id) return;
+      const id = validateUuidParam(req, "chapter");
       const parsed = CreateSnapshotSchema.safeParse(req.body ?? {});
       if (!parsed.success) {
-        res.status(400).json({
-          error: {
-            code: "VALIDATION_ERROR",
-            message: parsed.error.issues[0]?.message ?? "Invalid request body.",
-          },
-        });
-        return;
+        throw new BadRequestError(parsed.error.issues[0]?.message ?? "Invalid request body.");
       }
       const label = parsed.data.label;
 
       const result = await SnapshotService.createSnapshot(id, label);
       if (result === null) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Chapter not found." },
-        });
-        return;
+        throw new NotFoundError("Chapter not found.");
       }
       if (result === "duplicate") {
         res.status(200).json({
@@ -67,14 +49,10 @@ export function snapshotChapterRouter(): Router {
   router.get(
     "/:id/snapshots",
     asyncHandler(async (req, res) => {
-      const id = validateUuidParam(req, res, "chapter");
-      if (!id) return;
+      const id = validateUuidParam(req, "chapter");
       const result = await SnapshotService.listSnapshots(id);
       if (result === null) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Chapter not found." },
-        });
-        return;
+        throw new NotFoundError("Chapter not found.");
       }
       res.json(result);
     }),
@@ -90,14 +68,10 @@ export function snapshotDirectRouter(): Router {
   router.get(
     "/:id",
     asyncHandler(async (req, res) => {
-      const id = validateUuidParam(req, res, "snapshot");
-      if (!id) return;
+      const id = validateUuidParam(req, "snapshot");
       const snapshot = await SnapshotService.getSnapshot(id);
       if (!snapshot) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Snapshot not found." },
-        });
-        return;
+        throw new NotFoundError("Snapshot not found.");
       }
       res.json(snapshot);
     }),
@@ -107,14 +81,10 @@ export function snapshotDirectRouter(): Router {
   router.delete(
     "/:id",
     asyncHandler(async (req, res) => {
-      const id = validateUuidParam(req, res, "snapshot");
-      if (!id) return;
+      const id = validateUuidParam(req, "snapshot");
       const deleted = await SnapshotService.deleteSnapshot(id);
       if (!deleted) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Snapshot not found." },
-        });
-        return;
+        throw new NotFoundError("Snapshot not found.");
       }
       res.status(204).send();
     }),
@@ -124,42 +94,28 @@ export function snapshotDirectRouter(): Router {
   router.post(
     "/:id/restore",
     asyncHandler(async (req, res) => {
-      const id = validateUuidParam(req, res, "snapshot");
-      if (!id) return;
+      const id = validateUuidParam(req, "snapshot");
       const result = await SnapshotService.restoreSnapshot(id);
       if (result === null) {
-        res.status(404).json({
-          error: {
-            code: "NOT_FOUND",
-            message: "Snapshot or chapter not found.",
-          },
-        });
-        return;
+        throw new NotFoundError("Snapshot or chapter not found.");
       }
       if (result === "corrupt_snapshot") {
         // Malformed content is a 400 validation failure (the snapshot row
         // itself is invalid, independent of any other resource state).
         // Client distinguishes via code === "CORRUPT_SNAPSHOT".
-        res.status(400).json({
-          error: {
-            code: SNAPSHOT_ERROR_CODES.CORRUPT_SNAPSHOT,
-            message: "Snapshot content is corrupt and cannot be restored.",
-          },
-        });
-        return;
+        throw new BadRequestError(
+          "Snapshot content is corrupt and cannot be restored.",
+          SNAPSHOT_ERROR_CODES.CORRUPT_SNAPSHOT,
+        );
       }
       if (result === "cross_project_image") {
         // 409 per CLAUDE.md: request is well-formed but violates a
         // constraint the client needs to resolve (move/re-upload the
         // image, or pick a different snapshot). Not a validation error.
-        res.status(409).json({
-          error: {
-            code: SNAPSHOT_ERROR_CODES.CROSS_PROJECT_IMAGE_REF,
-            message:
-              "Snapshot references an image from a different project and cannot be restored.",
-          },
-        });
-        return;
+        throw new ConflictError(
+          "Snapshot references an image from a different project and cannot be restored.",
+          SNAPSHOT_ERROR_CODES.CROSS_PROJECT_IMAGE_REF,
+        );
       }
       res.json(result.chapter);
     }),
