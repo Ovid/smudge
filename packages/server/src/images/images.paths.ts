@@ -1,7 +1,10 @@
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { getDataDir } from "../config/paths";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// getDataDir is owned by config/paths (F-5: single data-directory owner)
+// and re-exported here so existing `../images/images.paths` importers and
+// the image path helpers below keep a stable surface.
+export { getDataDir } from "../config/paths";
 
 export const ALLOWED_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
@@ -50,10 +53,6 @@ export function validateMagicBytes(buffer: Buffer, mime: string): boolean {
     default:
       return false;
   }
-}
-
-export function getDataDir(): string {
-  return process.env.DATA_DIR ?? path.join(__dirname, "../../data");
 }
 
 export function getImagePath(projectId: string, imageId: string, ext: string): string {

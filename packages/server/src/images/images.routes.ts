@@ -1,6 +1,12 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
-import { asyncHandler } from "../app";
+import { asyncHandler } from "../asyncHandler";
+import {
+  BadRequestError,
+  ConflictError,
+  NotFoundError,
+  PayloadTooLargeError,
+} from "../errors/appError";
 import * as imagesService from "./images.service";
 import { UUID_PATTERN } from "./images.paths";
 
@@ -12,12 +18,11 @@ const upload = multer({
 const UUID_RE = new RegExp(`^${UUID_PATTERN}$`, "i");
 
 function requireUuidParam(paramName: string) {
-  return (req: Request, res: Response, next: NextFunction) => {
+  // Sync middleware: a thrown error is caught by Express and routed to
+  // the global error handler, which renders the AppError envelope.
+  return (req: Request, _res: Response, next: NextFunction) => {
     if (!UUID_RE.test(req.params[paramName] as string)) {
-      res.status(400).json({
-        error: { code: "VALIDATION_ERROR", message: `Invalid ${paramName} format.` },
-      });
-      return;
+      throw new BadRequestError(`Invalid ${paramName} format.`);
     }
     next();
   };
@@ -36,10 +41,9 @@ export function imagesRouter(): Router {
     (req, res, next) => {
       upload.single("file")(req, res, (err: unknown) => {
         if (err && (err as Error & { code?: string }).code === "LIMIT_FILE_SIZE") {
-          res.status(413).json({
-            error: { code: "PAYLOAD_TOO_LARGE", message: "File too large. Maximum: 10MB." },
-          });
-          return;
+          // Async multer callback — forward via next() rather than throw
+          // (a throw here would not be caught by Express).
+          return next(new PayloadTooLargeError("File too large. Maximum: 10MB."));
         }
         if (err) return next(err);
         next();
@@ -47,10 +51,7 @@ export function imagesRouter(): Router {
     },
     asyncHandler(async (req, res) => {
       if (!req.file) {
-        res.status(400).json({
-          error: { code: "VALIDATION_ERROR", message: "No file provided." },
-        });
-        return;
+        throw new BadRequestError("No file provided.");
       }
 
       const result = await imagesService.uploadImage(req.params.projectId as string, {
@@ -61,17 +62,11 @@ export function imagesRouter(): Router {
       });
 
       if ("notFound" in result && result.notFound) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Project not found." },
-        });
-        return;
+        throw new NotFoundError("Project not found.");
       }
 
       if ("validationError" in result && result.validationError) {
-        res.status(400).json({
-          error: { code: "VALIDATION_ERROR", message: result.validationError },
-        });
-        return;
+        throw new BadRequestError(result.validationError);
       }
 
       res.status(201).json(result.image);
@@ -83,10 +78,7 @@ export function imagesRouter(): Router {
     asyncHandler(async (req, res) => {
       const images = await imagesService.listImages(req.params.projectId as string);
       if (images === null) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Project not found." },
-        });
-        return;
+        throw new NotFoundError("Project not found.");
       }
       res.json(images);
     }),
@@ -108,10 +100,7 @@ export function imagesDirectRouter(): Router {
     asyncHandler(async (req, res) => {
       const result = await imagesService.serveImage(req.params.id as string);
       if (!result) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Image not found." },
-        });
-        return;
+        throw new NotFoundError("Image not found.");
       }
 
       res.set("Content-Type", result.mimeType);
@@ -126,10 +115,7 @@ export function imagesDirectRouter(): Router {
     asyncHandler(async (req, res) => {
       const result = await imagesService.getImageReferences(req.params.id as string);
       if ("notFound" in result && result.notFound) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Image not found." },
-        });
-        return;
+        throw new NotFoundError("Image not found.");
       }
 
       res.json({ chapters: result.chapters });
@@ -142,17 +128,11 @@ export function imagesDirectRouter(): Router {
       const result = await imagesService.updateImageMetadata(req.params.id as string, req.body);
 
       if ("notFound" in result && result.notFound) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Image not found." },
-        });
-        return;
+        throw new NotFoundError("Image not found.");
       }
 
       if ("validationError" in result && result.validationError) {
-        res.status(400).json({
-          error: { code: "VALIDATION_ERROR", message: result.validationError },
-        });
-        return;
+        throw new BadRequestError(result.validationError);
       }
 
       res.json(result.image);
@@ -165,21 +145,13 @@ export function imagesDirectRouter(): Router {
       const result = await imagesService.deleteImage(req.params.id as string);
 
       if ("notFound" in result && result.notFound) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Image not found." },
-        });
-        return;
+        throw new NotFoundError("Image not found.");
       }
 
       if ("referenced" in result && result.referenced) {
-        res.status(409).json({
-          error: {
-            code: "IMAGE_IN_USE",
-            message: "Image is referenced by one or more chapters.",
-            chapters: result.referenced,
-          },
+        throw new ConflictError("Image is referenced by one or more chapters.", "IMAGE_IN_USE", {
+          chapters: result.referenced,
         });
-        return;
       }
 
       res.json({ deleted: true });

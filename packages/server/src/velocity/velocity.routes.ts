@@ -1,20 +1,15 @@
-import { asyncHandler } from "../app";
+import { asyncHandler } from "../asyncHandler";
+import { BadRequestError, NotFoundError } from "../errors/appError";
 import * as VelocityService from "./velocity.service";
 
 export const velocityHandler = asyncHandler(async (req, res) => {
   const slug = req.params.slug;
   if (!slug) {
-    res.status(400).json({
-      error: { code: "BAD_REQUEST", message: "Missing project slug." },
-    });
-    return;
+    throw new BadRequestError("Missing project slug.", "BAD_REQUEST");
   }
   const result = await VelocityService.getVelocityBySlug(slug);
   if (!result) {
-    res.status(404).json({
-      error: { code: "NOT_FOUND", message: "Project not found." },
-    });
-    return;
+    throw new NotFoundError("Project not found.");
   }
   res.json(result);
 });

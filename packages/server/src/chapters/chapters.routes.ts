@@ -1,6 +1,7 @@
 import { Router } from "express";
-import { asyncHandler } from "../app";
+import { asyncHandler } from "../asyncHandler";
 import * as ChapterService from "./chapters.service";
+import { BadRequestError, ConflictError, InternalError, NotFoundError } from "../errors/appError";
 
 export function chaptersRouter(): Router {
   const router = Router();
@@ -11,19 +12,13 @@ export function chaptersRouter(): Router {
       const id = req.params.id as string;
       const result = await ChapterService.getChapter(id);
       if (result === null) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Chapter not found." },
-        });
-        return;
+        throw new NotFoundError("Chapter not found.");
       }
       if (result === "corrupt") {
-        res.status(500).json({
-          error: {
-            code: "CORRUPT_CONTENT",
-            message: "Chapter content is corrupted and cannot be loaded.",
-          },
-        });
-        return;
+        throw new InternalError(
+          "Chapter content is corrupted and cannot be loaded.",
+          "CORRUPT_CONTENT",
+        );
       }
       res.json(result);
     }),
@@ -35,34 +30,22 @@ export function chaptersRouter(): Router {
       const id = req.params.id as string;
       const result = await ChapterService.updateChapter(id, req.body);
       if (result === null) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Chapter not found." },
-        });
-        return;
+        throw new NotFoundError("Chapter not found.");
       }
       if (result === "read_after_update_failure") {
-        res.status(500).json({
-          error: {
-            code: "UPDATE_READ_FAILURE",
-            message: "Chapter was updated but could not be re-read.",
-          },
-        });
-        return;
+        throw new InternalError(
+          "Chapter was updated but could not be re-read.",
+          "UPDATE_READ_FAILURE",
+        );
       }
       if ("validationError" in result) {
-        res.status(400).json({
-          error: { code: "VALIDATION_ERROR", message: result.validationError },
-        });
-        return;
+        throw new BadRequestError(result.validationError);
       }
       if ("corrupt" in result) {
-        res.status(500).json({
-          error: {
-            code: "CORRUPT_CONTENT",
-            message: "Chapter content is corrupted and cannot be loaded.",
-          },
-        });
-        return;
+        throw new InternalError(
+          "Chapter content is corrupted and cannot be loaded.",
+          "CORRUPT_CONTENT",
+        );
       }
       res.json(result.chapter);
     }),
@@ -74,10 +57,7 @@ export function chaptersRouter(): Router {
       const id = req.params.id as string;
       const deleted = await ChapterService.deleteChapter(id);
       if (!deleted) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Chapter not found." },
-        });
-        return;
+        throw new NotFoundError("Chapter not found.");
       }
       res.json({ message: "Chapter moved to trash." });
     }),
@@ -89,46 +69,28 @@ export function chaptersRouter(): Router {
       const id = req.params.id as string;
       const result = await ChapterService.restoreChapter(id);
       if (result === null) {
-        res.status(404).json({
-          error: { code: "NOT_FOUND", message: "Deleted chapter not found." },
-        });
-        return;
+        throw new NotFoundError("Deleted chapter not found.");
       }
       if (result === "parent_purged") {
-        res.status(404).json({
-          error: {
-            code: "PROJECT_PURGED",
-            message: "The parent project has been permanently deleted.",
-          },
-        });
-        return;
+        throw new NotFoundError(
+          "The parent project has been permanently deleted.",
+          "PROJECT_PURGED",
+        );
       }
       if (result === "chapter_purged") {
-        res.status(404).json({
-          error: {
-            code: "CHAPTER_PURGED",
-            message: "This chapter has been permanently deleted.",
-          },
-        });
-        return;
+        throw new NotFoundError("This chapter has been permanently deleted.", "CHAPTER_PURGED");
       }
       if (result === "conflict") {
-        res.status(409).json({
-          error: {
-            code: "RESTORE_CONFLICT",
-            message: "Could not restore — slug conflict. Please try again.",
-          },
-        });
-        return;
+        throw new ConflictError(
+          "Could not restore — slug conflict. Please try again.",
+          "RESTORE_CONFLICT",
+        );
       }
       if (result === "read_failure") {
-        res.status(500).json({
-          error: {
-            code: "RESTORE_READ_FAILURE",
-            message: "Chapter was restored but could not be re-read.",
-          },
-        });
-        return;
+        throw new InternalError(
+          "Chapter was restored but could not be re-read.",
+          "RESTORE_READ_FAILURE",
+        );
       }
       res.json(result);
     }),

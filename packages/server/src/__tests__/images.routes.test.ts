@@ -273,6 +273,7 @@ describe("DELETE /api/images/:id", () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("IMAGE_IN_USE");
+    expect(res.body.error.message).toBe("Image is referenced by one or more chapters.");
     expect(Array.isArray(res.body.error.chapters)).toBe(true);
     expect(res.body.error.chapters.length).toBeGreaterThan(0);
   });

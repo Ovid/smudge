@@ -25,6 +25,9 @@ describe("POST /api/projects/:slug/chapters — read_after_create_failure", () =
 
     expect(res.status).toBe(500);
     expect(res.body.error.code).toBe("READ_AFTER_CREATE_FAILURE");
+    expect(res.body.error.message).toBe(
+      "Chapter was created but could not be retrieved. Do not retry.",
+    );
   });
 });
 
@@ -391,6 +394,7 @@ describe("PUT /api/projects/:slug/chapters/order", () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("REORDER_MISMATCH");
+    expect(res.body.error.message).toBe("Provided chapter IDs do not match existing chapters.");
   });
 
   it("returns 400 if chapter_ids is missing or not an array", async () => {
