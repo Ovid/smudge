@@ -294,6 +294,17 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
           });
           return;
         }
+        // committed_but_unreloaded: placeholder until B2 migrates this consumer.
+        // The hook does not yet emit this stage; the guard is required so
+        // TypeScript can narrow to stage:"mutate" in the block below.
+        if (result.stage === "committed_but_unreloaded") {
+          await finalizeReplaceSuccess({
+            replacedCount: result.data.replaced_count,
+            reloadFailed: true,
+            targetChapterId,
+          });
+          return;
+        }
         // stage === "mutate"
         const err = result.error;
         const mapped = mapApiError(err, "findReplace.replace");
@@ -548,6 +559,17 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
             reloadFailed: true,
             // I1 (this review): replace-one always targets chapterId. If the
             // user switched chapters mid-flight, route to dismissible error.
+            targetChapterId: chapterId,
+          });
+          return;
+        }
+        // committed_but_unreloaded: placeholder until B2 migrates this consumer.
+        // The hook does not yet emit this stage; the guard is required so
+        // TypeScript can narrow to stage:"mutate" in the block below.
+        if (result.stage === "committed_but_unreloaded") {
+          await finalizeReplaceSuccess({
+            replacedCount: result.data.replaced_count,
+            reloadFailed: true,
             targetChapterId: chapterId,
           });
           return;

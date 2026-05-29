@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 import type { MutableRefObject } from "react";
 import type { EditorHandle } from "../components/Editor";
-import { useEditorMutation, type MutationDirective } from "../hooks/useEditorMutation";
+import { useEditorMutation, type MutationDirective, type MutationResult } from "../hooks/useEditorMutation";
 import type { ReloadOutcome } from "../hooks/useProjectEditor";
 import type { Chapter } from "@smudge/shared";
 import { clearAllCachedContent } from "./useContentCache";
@@ -359,6 +359,21 @@ describe("useEditorMutation — reload failure", () => {
       data: undefined,
     }));
     expect(res2.ok).toBe(true);
+  });
+});
+
+describe("useEditorMutation — committed_but_unreloaded stage (A3)", () => {
+  it("exposes committed_but_unreloaded as a distinct stage carrying data", () => {
+    // Compile-time + runtime: a result of this shape is assignable and narrows.
+    const r: MutationResult<{ n: number }> = {
+      ok: false,
+      stage: "committed_but_unreloaded",
+      data: { n: 3 },
+    };
+    expect(r.ok).toBe(false);
+    if (!r.ok && r.stage === "committed_but_unreloaded") {
+      expect(r.data.n).toBe(3);
+    }
   });
 });
 

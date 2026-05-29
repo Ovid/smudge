@@ -4,7 +4,7 @@ import type { UseProjectEditorReturn } from "./useProjectEditor";
 import { clearAllCachedContent } from "./useContentCache";
 import { clientWarn } from "../errors";
 
-export type MutationStage = "flush" | "mutate" | "reload" | "busy";
+export type MutationStage = "flush" | "mutate" | "reload" | "committed_but_unreloaded" | "busy";
 
 // Discriminated union so the type system forces reloadChapterId whenever
 // reloadActiveChapter is true. Without this, a caller that set
@@ -23,13 +23,14 @@ export type MutationDirective<T = void> = {
 
 export type MutationResult<T = void> =
   | { ok: true; data: T }
-  // reload: server-side mutation succeeded, but the follow-up GET failed.
-  // No `error` field — callers always render a hardcoded strings.ts banner
-  // ("refresh the page…") whose wording does not depend on the reload
-  // failure's text, and reloadActiveChapter only surfaces
-  // STRINGS.error.loadChapterFailed anyway. Keeping it would invite
-  // drift between the hook's passed-through message and the banner copy.
+  // reload: retained through PR A so unmigrated consumers still typecheck;
+  // removed in PR B once snapshot/find-replace controllers migrate.
   | { ok: false; stage: "reload"; data: T }
+  // committed_but_unreloaded: server-side mutation committed but the client
+  // cannot confirm what is on screen (follow-up GET failed, or race-only
+  // supersession). Same data-carrying, error-less shape as reload — callers
+  // render their own strings.ts banner via applyReloadFailedLock.
+  | { ok: false; stage: "committed_but_unreloaded"; data: T }
   | { ok: false; stage: "flush" | "mutate"; error: unknown }
   | { ok: false; stage: "busy" };
 

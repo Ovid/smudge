@@ -241,6 +241,16 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
         refreshSnapshotCount();
         return;
       }
+      // committed_but_unreloaded: placeholder until B1 migrates this consumer.
+      // The hook does not yet emit this stage; the guard is required so
+      // TypeScript can narrow to stage:"mutate" in the block below.
+      if (result.stage === "committed_but_unreloaded") {
+        applyReloadFailedLock(STRINGS.snapshots.restoreSucceededReloadFailed);
+        clearCachedContent(activeChapter.id);
+        snapshotPanelRef.current?.refreshSnapshots();
+        refreshSnapshotCount();
+        return;
+      }
       // stage === "mutate"
       if (result.error instanceof RestoreAbortedError) return;
       if (result.error instanceof RestoreFailedError) {
