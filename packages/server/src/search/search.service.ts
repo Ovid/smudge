@@ -190,6 +190,24 @@ export async function searchProject(
   return result;
 }
 
+/**
+ * Slug-addressed entry point for project-wide search. Resolves the public
+ * slug to the internal project id and delegates to {@link searchProject}.
+ * This keeps slug→project resolution inside the service (mirroring
+ * velocity.service.getVelocityBySlug) so the route no longer reaches into the
+ * store directly (F-11). Returns null when the slug does not resolve, which
+ * the route maps to 404.
+ */
+export async function searchProjectBySlug(
+  slug: string,
+  query: string,
+  options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
+): Promise<SearchResult | null | SearchValidationError> {
+  const project = await getProjectStore().findProjectBySlug(slug);
+  if (!project) return null;
+  return searchProject(project.id, query, options);
+}
+
 export async function replaceInProject(
   projectId: string,
   search: string,
@@ -380,4 +398,22 @@ export async function replaceInProject(
       : {}),
   };
   return final;
+}
+
+/**
+ * Slug-addressed entry point for project-wide replace; the replace counterpart
+ * to {@link searchProjectBySlug}. Resolves the public slug to the internal
+ * project id and delegates to {@link replaceInProject}, returning null (→ 404)
+ * when the slug does not resolve.
+ */
+export async function replaceInProjectBySlug(
+  slug: string,
+  search: string,
+  replace: string,
+  options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
+  scope?: { type: "project" } | { type: "chapter"; chapter_id: string; match_index?: number },
+): Promise<ReplaceResult | null | "scope_not_found" | SearchValidationError> {
+  const project = await getProjectStore().findProjectBySlug(slug);
+  if (!project) return null;
+  return replaceInProject(project.id, search, replace, options, scope);
 }

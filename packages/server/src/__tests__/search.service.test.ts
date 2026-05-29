@@ -601,4 +601,44 @@ describe("search.service", () => {
       expect((result as { code: string }).code).toBe("REGEX_TIMEOUT");
     });
   });
+
+  // F-11: the slug-addressed entry points that own slug->project resolution
+  // (mirroring velocity.service.getVelocityBySlug), so the route no longer
+  // reaches into the store directly.
+  describe("searchProjectBySlug()", () => {
+    it("returns null when the slug does not resolve to a project", async () => {
+      const { searchProjectBySlug } = await import("../search/search.service");
+      const result = await searchProjectBySlug("no-such-slug", "anything");
+      expect(result).toBeNull();
+    });
+
+    it("resolves the slug and returns the same result as searchProject by id", async () => {
+      const projectId = await createProject();
+      const { slug } = await t.db("projects").where({ id: projectId }).first();
+      await createChapter(projectId, "Chapter 1", JSON.stringify(makeDoc("the quick brown fox")));
+
+      const { searchProjectBySlug } = await import("../search/search.service");
+      const bySlug = assertSearchResult(await searchProjectBySlug(slug, "quick"));
+      expect(bySlug.total_count).toBe(1);
+    });
+  });
+
+  describe("replaceInProjectBySlug()", () => {
+    it("returns null when the slug does not resolve to a project", async () => {
+      const { replaceInProjectBySlug } = await import("../search/search.service");
+      const result = await replaceInProjectBySlug("no-such-slug", "a", "b");
+      expect(result).toBeNull();
+    });
+
+    it("resolves the slug and applies the replacement", async () => {
+      const projectId = await createProject();
+      const { slug } = await t.db("projects").where({ id: projectId }).first();
+      await createChapter(projectId, "Chapter 1", JSON.stringify(makeDoc("hello world")));
+
+      const { replaceInProjectBySlug } = await import("../search/search.service");
+      const result = await replaceInProjectBySlug(slug, "hello", "goodbye");
+      expect(result && typeof result === "object" && "replaced_count" in result).toBe(true);
+      expect((result as { replaced_count: number }).replaced_count).toBe(1);
+    });
+  });
 });

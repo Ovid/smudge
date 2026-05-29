@@ -7,7 +7,6 @@ import {
   SEARCH_ERROR_CODES,
 } from "@smudge/shared";
 import { asyncHandler } from "../asyncHandler";
-import { getProjectStore } from "../stores/project-store.injectable";
 import { BadRequestError, NotFoundError } from "../errors/appError";
 import * as SearchService from "./search.service";
 
@@ -73,15 +72,8 @@ export function searchRouter(): Router {
 
       const { query, options } = parsed.data;
 
-      // Resolve slug to project ID
       const slug = req.params.slug as string;
-      const store = getProjectStore();
-      const project = await store.findProjectBySlug(slug);
-      if (!project) {
-        throw new NotFoundError("Project not found.");
-      }
-
-      const result = await SearchService.searchProject(project.id, query, options);
+      const result = await SearchService.searchProjectBySlug(slug, query, options);
       if (result === null) {
         throw new NotFoundError("Project not found.");
       }
@@ -103,16 +95,9 @@ export function searchRouter(): Router {
 
       const { search, replace, options, scope } = parsed.data;
 
-      // Resolve slug to project ID
       const slug = req.params.slug as string;
-      const store = getProjectStore();
-      const project = await store.findProjectBySlug(slug);
-      if (!project) {
-        throw new NotFoundError("Project not found.");
-      }
-
-      const result = await SearchService.replaceInProject(
-        project.id,
+      const result = await SearchService.replaceInProjectBySlug(
+        slug,
         search,
         replace,
         options,
