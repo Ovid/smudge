@@ -27,6 +27,14 @@ const IMAGE_FILE_RE = new RegExp(`^(${UUID_PATTERN})\\.(?:${IMAGE_EXT_PATTERN})$
  * deletes only image-shaped files (`<uuid>.<ext>`) whose id has no DB row.
  * Best-effort: per-file failures are logged and skipped, never thrown.
  *
+ * **Single-process assumption (S2).** Smudge is documented as a single-process
+ * single-user app (CLAUDE.md). Running two server processes against the same
+ * `DATA_DIR` is unsupported and would expose a race: this reaper snapshots
+ * the known-id set with a `select id from images`, then walks the tree, so a
+ * sibling process's freshly-uploaded file (committed AFTER the snapshot but
+ * BEFORE the walk) would be deleted as an "orphan." There is no in-process
+ * upload concurrency at startup — the reaper runs before `app.listen` binds.
+ *
  * @returns the number of orphan files removed.
  */
 export async function reapOrphanImages(db: Knex, dataDir?: string): Promise<number> {
