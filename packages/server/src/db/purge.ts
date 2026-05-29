@@ -1,18 +1,16 @@
 import type { Knex } from "knex";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { TRASH_RETENTION_MS } from "@smudge/shared";
+import { getDataDir } from "../config/paths";
 import { logger } from "../logger";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export async function purgeOldTrash(
   db: Knex,
   dataDir?: string,
 ): Promise<{ chapters: number; projects: number; images: number }> {
   const cutoff = new Date(Date.now() - TRASH_RETENTION_MS).toISOString();
-  const resolvedDataDir = dataDir ?? process.env.DATA_DIR ?? path.join(__dirname, "../../data");
+  const resolvedDataDir = dataDir ?? getDataDir();
 
   const { chapters, projects, images, purgedProjectIds } = await db.transaction(async (trx) => {
     // Chapter snapshots cascade via ON DELETE CASCADE on chapter_snapshots.chapter_id.

@@ -156,6 +156,10 @@ Five specialist agents analyzed structure, coupling, integration/data, error-han
 - **Explanation:** Unlike the well-centralized numeric limits, the filesystem-config defaults are copy-pasted: `getDataDir()` and `purgeOldTrash` each independently default `process.env.DATA_DIR ?? path.join(__dirname, "../../data")`, while `knexfile.ts` derives a separate `DB_PATH` fallback to a *different* subpath. No module owns "where Smudge stores data," and the relationship between the image `DATA_DIR` and the SQLite `DB_PATH` is implicit — they can point at unrelated locations with no validation.
 - **Evidence:** `packages/server/src/images/images.paths.ts:56`, `db/purge.ts:15`, `db/knexfile.ts:11`.
 - **Found by:** Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** Introduced `packages/server/src/config/paths.ts` as the single owner of "where Smudge persists data": `getDataDir()` (the previously-triplicated `DATA_DIR ?? ../../data` default) and a new `getDbPath()` that defaults the SQLite file to `smudge.db` *inside* `getDataDir()`. `images.paths.ts` now re-exports `getDataDir` from the owner (stable import surface), `db/purge.ts` calls `getDataDir()`, and `db/knexfile.ts` calls `getDbPath()`. This removes the duplicated default and, crucially, relates `DATA_DIR` and `DB_PATH`: with `DATA_DIR` set and `DB_PATH` unset, the database now follows the data dir instead of falling back to an unrelated hard-coded path (previously they defaulted independently and could silently diverge). An explicit `DB_PATH` still wins for operators who place the DB elsewhere on purpose. Safety net committed first (`9e3041b`): `data-paths.test.ts` pins the default-DB-under-data-dir relationship and the `DB_PATH` override; a red test for the new `DATA_DIR`→DB linkage drove the change. Full server suite green (632 tests); typecheck + lint clean.
+- **Status date:** 2026-05-29
+- **Status commit:** c2f3404f57a2969291615bda8322cb8328a160f0
 
 ### [F-6] Circular dependency: `app.ts` ↔ every `*.routes.ts`
 - **Category:** Flaw 5 (Circular dependencies)

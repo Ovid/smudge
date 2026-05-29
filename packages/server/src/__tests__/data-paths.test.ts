@@ -44,4 +44,13 @@ describe("data-path defaults single-owner relationship (F-5 safety net)", () => 
     const conn = createKnexConfig().connection as { filename: string };
     expect(conn.filename).toBe("/tmp/explicit-smudge.db");
   });
+
+  // F-5 fix: DATA_DIR and DB_PATH are no longer independent defaults.
+  // With DATA_DIR set and DB_PATH unset, the SQLite file follows the
+  // data dir instead of falling back to a separate hard-coded location.
+  it("derives the SQLite default from DATA_DIR when DB_PATH is unset", () => {
+    process.env.DATA_DIR = "/custom/data";
+    const conn = createKnexConfig().connection as { filename: string };
+    expect(conn.filename).toBe(path.join("/custom/data", "smudge.db"));
+  });
 });
