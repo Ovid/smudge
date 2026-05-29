@@ -10,11 +10,32 @@
 Make the "all UI strings live in `packages/client/src/strings.ts`" rule
 (CLAUDE.md §String externalization) enforceable by lint instead of by
 reviewer vigilance. Add a `no-restricted-syntax` ESLint rule that flags
-raw string literals in JSX text children and in the six user-facing JSX
-attributes (`aria-label`, `aria-description`, `aria-roledescription`,
-`title`, `placeholder`, `alt`). Fix the seven existing violation sites
-(4 decorative `✕` glyphs + 3 test fixtures) so the rule runs clean on
-the existing tree.
+raw **word-bearing** string literals (text containing a Unicode letter,
+`\p{L}`) in JSX text children and in the six user-facing JSX attributes
+(`aria-label`, `aria-description`, `aria-roledescription`, `title`,
+`placeholder`, `alt`). Fix the existing violation sites so the rule runs
+clean on the existing tree: the **2 flagged production glyphs** (`Aa`/`ab|`
+in `FindReplacePanel`) are extracted to named constants so the JSX child
+becomes `{GLYPH}` (a member/identifier expression the rule does not flag —
+no disable comment needed), and the **4 test-fixture sites** get an audited
+`// eslint-disable-next-line` exemption.
+
+**Letters-only, by design (Q7).** The rule fires only on text containing
+an actual letter. §String externalization exists "to prepare for i18n"
+(CLAUDE.md) — and glyphs (`✕`, `⠿`, `* * *`, the gear/`&times;`/`&middot;`
+entities), separators (`/`, `·`), and punctuation glue between
+interpolations (`{label}: {count}`, a trailing `.`) are **language-neutral**:
+they carry nothing to translate. A broad `\S` selector would flag ~18
+production sites of exactly these non-i18n shapes, demanding ~18
+inline-disables that document nothing useful. The narrow `\p{L}` selector
+targets the real i18n surface — and a survey of the tree (2026-05-28) found
+**zero raw word-bearing UI strings in production**; the codebase is already
+clean for the externalization purpose. The one a11y guarantee a broad rule
+would add as a side effect — catching a bare glyph that lacks an accessible
+name — is **already enforced by aXe-core in Playwright** (CLAUDE.md §Testing
+Philosophy: axe's "button/element has an accessible name" check). Letters-only
+therefore gives up nothing material; it stops the lint rule from conflating
+i18n externalization with a11y labeling.
 
 ## Why Now
 
@@ -35,16 +56,26 @@ block that holds the Phase 4b.2 sequence-ref selector. **Severity:
 `"error"`**, matching the seq-ref rule (equivalent to `"warn"` under
 `--max-warnings 0`, but `"error"` is semantically honest).
 
-**Six selectors covering the two AST shapes:**
+**Six selectors covering the two AST shapes, each filtered to
+letter-bearing content** (`/\p{L}/u`). The Unicode-property regex with the
+`u` flag is supported by esquery in the installed ESLint toolchain
+(verified 2026-05-28 against `packages/client/**/*.tsx`):
 
-| # | Selector | Catches |
-|---|---|---|
-| 1 | `JSXText[value=/\S/]` | `<button>Save</button>` |
-| 2 | `JSXElement > JSXExpressionContainer > Literal[value=/\S/]` | `<button>{"Save"}</button>` (bypass) |
-| 3 | `JSXElement > JSXExpressionContainer > TemplateLiteral` | `` <button>{`Save`}</button> `` (bypass) |
-| 4 | `JSXAttribute[name.name=/^(aria-label\|aria-description\|aria-roledescription\|title\|placeholder\|alt)$/][value.type='Literal']` | `<button aria-label="Save">` |
-| 5 | `JSXAttribute[name.name=/^.../] > JSXExpressionContainer > Literal` | `<button aria-label={"Save"}>` |
-| 6 | `JSXAttribute[name.name=/^.../] > JSXExpressionContainer > TemplateLiteral` | `` <button aria-label={`Save ${x}`}> `` |
+| # | Selector | Catches | Skips (letters-only) |
+|---|---|---|---|
+| 1 | `JSXText[value=/\p{L}/u]` | `<button>Save</button>` | `<button>✕</button>`, `{a}: {b}` glue |
+| 2 | `JSXElement > JSXExpressionContainer > Literal[value=/\p{L}/u]` | `<button>{"Save"}</button>` (bypass) | `<button>{"✕"}</button>` |
+| 3 | `JSXElement > JSXExpressionContainer > TemplateLiteral > TemplateElement[value.cooked=/\p{L}/u]` | `` <button>{`Save`}</button> `` (bypass) | `` {`${a}: ${b}`} `` (no static letters) |
+| 4 | `JSXAttribute[name.name=/^(aria-label\|aria-description\|aria-roledescription\|title\|placeholder\|alt)$/][value.value=/\p{L}/u]` | `<button aria-label="Save">` | `aria-label="·"` |
+| 5 | `JSXAttribute[name.name=/^.../] > JSXExpressionContainer > Literal[value=/\p{L}/u]` | `<button aria-label={"Save"}>` | `aria-label={"✕"}` |
+| 6 | `JSXAttribute[name.name=/^.../] > JSXExpressionContainer > TemplateLiteral > TemplateElement[value.cooked=/\p{L}/u]` | `` <button aria-label={`Save ${x}`}> `` | `` title={`${a}: ${b}`} `` |
+
+Note selectors 3 and 6 descend to the `TemplateElement` (the static
+quasi) and apply the letter filter to its `value.cooked`, so a template
+that only interpolates `STRINGS`/dynamic values between punctuation
+(`` `${s.label}: ${count}` ``) does not fire while one with a static word
+(`` `Save ${x}` ``) does. The exact selector strings are finalized in the
+plan and pinned by the §S2 contract test.
 
 **Why six selectors instead of one consolidated `:matches()` form:**
 esquery's `:matches`/`:has` combinators are supported but brittle —
@@ -57,9 +88,16 @@ shared tail):
 
 > Raw UI string in JSX. UI strings must live in
 > `packages/client/src/strings.ts` (CLAUDE.md §String externalization).
-> For decorative glyphs paired with an aria-label, add
-> `// eslint-disable-next-line no-restricted-syntax — decorative glyph;
-> aria-label provides accessible name`.
+> Name decorative glyphs (`const X = "…"` → `{X}`); for a test fixture, add
+> `// eslint-disable-next-line no-restricted-syntax -- test fixture (not
+> user-facing)`.
+
+**Separator is load-bearing: use `--`, not `—`.** ESLint's disable-directive
+description separator is two hyphens (`--`). An em-dash (`—`) is *not*
+recognized — ESLint then parses the whole tail as part of the rule list, the
+rule name no longer matches, and the directive **silently suppresses
+nothing** (verified 2026-05-28: the em-dash form still fires). Every disable
+comment in this phase uses `-- <reason>`.
 
 **Comment block above the selectors** in `eslint.config.js` explains:
 the boundary (user-perceivable text only, not Tailwind/role/event keys),
@@ -113,71 +151,117 @@ cases, abbreviated above).
 
 **Negative cases (rule does NOT fire, pinning design intent):**
 
+Note: every negative case below uses a `{label}` expression child rather
+than a stray text child — a bare `x` text child is itself a letter and
+would (correctly) trip selector 1, which would make the case a false
+"negative." This is a deliberate authoring fix over an earlier draft of
+this table.
+
 | # | Code | Why allowed |
 |---|---|---|
 | 10 | `<button>{STRINGS.foo.save}</button>` | MemberExpression child |
 | 11 | `<button>{label}</button>` | Identifier (prop) child |
-| 12 | `<button>{"\n  "}{label}</button>` | `[value=/\S/]` filter on whitespace-only JSXText |
-| 13 | `<button className="px-2">x</button>` | `className` not in user-facing attr regex |
-| 14 | `<button role="alert">x</button>` | `role` not in regex |
+| 12 | `<button>{"\n  "}{label}</button>` | whitespace-only JSXText fails `/\p{L}/u` |
+| 13 | `<button className="px-2">{label}</button>` | `className` not in user-facing attr regex |
+| 14 | `<button role="alert">{label}</button>` | `role` not in regex |
 | 15 | `<input type="text" />` | `type` not in regex |
-| 16 | `<button aria-labelledby="some-id">x</button>` | refers to an element ID, not visible text |
+| 16 | `<button aria-labelledby="some-id">{label}</button>` | refers to an element ID, not visible text |
 | 17 | `if (e.key === "Escape") {}` | not JSX |
-| 18 | `<button aria-label={STRINGS.dismiss}>x</button>` | MemberExpression in user-facing attr |
+| 18 | `<button aria-label={STRINGS.dismiss}>{label}</button>` | MemberExpression in user-facing attr |
+| 19 | `<button>✕</button>` | glyph-only JSXText fails `/\p{L}/u` (letters-only) |
+| 20 | `<span aria-hidden="true">·</span>` | separator glyph, no letter (letters-only) |
+| 21 | `<span>{count}: {label}</span>` | `: ` punctuation glue, no letter (letters-only) |
+| 22 | `` <span title={`${a}: ${b}`} /> `` | template with no static letter (letters-only) |
 
 **Mirroring `eslintSequenceRule.test.ts`'s "by design" comment block:**
 cases #14, #15, #16 each get a paragraph above the test explaining the
 design choice. The #16 comment carries the same kind of "consciously
 update this test first if you want to tighten the selector" language
-that the seq-ref rule's mirrored-form test carries.
+that the seq-ref rule's mirrored-form test carries. Cases #19–#22 are the
+**letters-only boundary pins**: they document that glyphs, separators, and
+punctuation are intentionally out of scope (language-neutral, not i18n
+surface; bare-glyph a11y is covered by aXe-core). Tightening the rule to
+`\S` later means consciously deleting these four pins first.
 
-### S3. Production fixes (7 sites)
+### S3. Existing-violation fixes (2 production + 4 test sites)
 
-**Decorative `✕` glyph (4 sites in production code):**
+The full enumeration below was produced by running the §S1 letters-only
+selectors through the programmatic ESLint API against
+`packages/client/src/**/*.tsx` on 2026-05-28 (not by grepping for a single
+glyph — the method that undercounted in an earlier draft). It is the
+authoritative list; the §S2 negative cases pin why everything else is
+*not* flagged.
 
-| File | Approx. line |
-|---|---|
-| `packages/client/src/components/ActionErrorBanner.tsx` | 20 |
-| `packages/client/src/components/ProjectSettingsDialog.tsx` | 326 |
-| `packages/client/src/components/Sidebar.tsx` | 301 |
-| `packages/client/src/pages/EditorPage.tsx` | 1878 |
+**Disable-comment mechanics (verified 2026-05-28).** ESLint reports a
+JSXText violation at the node's *start* position — which is the line of
+the preceding `>` (or property `:`), **not** the line the visible text sits
+on. Consequently the naïve "`// eslint-disable-next-line` on the line above
+the glyph" **does not suppress the violation** (tested: still fires). What
+*does* work, confirmed against the installed toolchain:
 
-Each gets the canonical comment immediately above:
+- `eslint-disable-next-line` placed on the line immediately **above the
+  element's opening tag** (or, for an object-property value or a
+  `return (` parent, a trailing `//` on the line above the violation's
+  reported line) — works when the element/opening-tag fits the violation
+  on one reported line.
+- Block `{/* eslint-disable no-restricted-syntax */} … {/* eslint-enable */}`
+  — works universally but is verbose.
+- **Naming the literal** so the JSX child is `{GLYPH}` (a member/identifier
+  expression) — the rule simply does not fire; no comment at all.
+
+**Production (Q8 — name the glyphs, 0 disables):** the `Aa` and `ab|`
+typography-toggle labels in `FindReplacePanel.tsx` are extracted to
+file-local constants and rendered as `{MATCH_CASE_GLYPH}` / `{WHOLE_WORD_GLYPH}`.
+`{Identifier}` matches no selector, so no disable comment is needed and the
+fragile JSXText-disable mechanism is sidestepped entirely. For consistency
+the third sibling `.*` (regex toggle, not flagged because it has no letter)
+is named too (`REGEX_GLYPH`). Each button keeps its existing
+`STRINGS`-sourced `aria-label` (`{S.matchCase}`, `{S.wholeWord}`,
+`{S.regex}`) — the accessible name is unchanged.
 
 ```tsx
-{/* eslint-disable-next-line no-restricted-syntax — decorative glyph; aria-label provides accessible name */}
-✕
+const MATCH_CASE_GLYPH = "Aa";
+const WHOLE_WORD_GLYPH = "ab|";
+const REGEX_GLYPH = ".*";
+// …
+<button aria-label={S.matchCase} /* … */>{MATCH_CASE_GLYPH}</button>
 ```
 
-**During the fix, verify each `✕` site has a sibling accessible name
-sourced from `STRINGS`** on the enclosing button or element. If any
-site is missing one, the inline-disable is wrong — the right fix is to
-add the missing accessible name, not to silence the rule. This converts
-a possible WCAG bug into the moment the rule catches it.
+This refines Q5 (which assumed an inline-disable): naming achieves Q5's goal
+("no new `strings.ts` namespace") *and* avoids the broken disable mechanism,
+so it is strictly better. **During the fix, verify each button keeps its
+`STRINGS`-sourced `aria-label`** — both already have one (verified
+2026-05-28); naming the visible glyph must not drop the accessible name.
 
-**Test fixtures (3 sites in test code):**
+**Test fixtures (4 sites, 3 files — `eslint-disable-next-line`):** test
+fixtures are not user-facing and are never translated, so they take the
+audited inline exemption. Each placement below is verified to actually
+suppress:
 
-| File | Approx. line | Shape |
+| File | Approx. line | Disable placement (verified) |
 |---|---|---|
-| `packages/client/src/__tests__/EditorPageFeatures.test.tsx` | 139 | `<Route path="/" element={<div>Home</div>} />` |
-| `packages/client/src/__tests__/EditorPageFeatures.test.tsx` | 2099 | Same shape, second occurrence |
-| `packages/client/src/__tests__/ReferencePanel.test.tsx` | 12 | `<div data-testid="panel-content">Gallery content</div>` |
+| `packages/client/src/__tests__/ChapterTitle.test.tsx` | 44 | trailing `// eslint-disable-next-line …` on the `return (` line above (suppresses **both** the `aria-label` and `Mock editor` violations — both report on line 44) |
+| `packages/client/src/__tests__/EditorPageFeatures.test.tsx` | 139 | JSX-sibling `{/* eslint-disable-next-line … */}` above the single-line `<Route … />` (inside the `<Routes>` children) |
+| `packages/client/src/__tests__/EditorPageFeatures.test.tsx` | 2099 | same shape, second occurrence |
+| `packages/client/src/__tests__/ReferencePanel.test.tsx` | 12 | plain `// eslint-disable-next-line …` on the line above the `children:` object property |
 
-Each gets:
+`ChapterTitle.test.tsx:44` was missed by the original design survey; one
+disable covers both its violations.
 
-```tsx
-{/* eslint-disable-next-line no-restricted-syntax — test fixture (not user-facing) */}
-<div>Home</div>
-```
+**Comment shape is load-bearing.** The exemption-reason string
+`test fixture (not user-facing)` is the searchable mark of an audited
+exemption. `git grep "eslint-disable-next-line no-restricted-syntax"
+packages/client/` surfaces the exempt set for audit: after the fixes,
+exactly **4 hits** (all test fixtures; production uses named glyphs, no
+disables). There are currently **no** other `no-restricted-syntax` disables
+in the tree (the seq-ref rule fires clean today), so 4 is the whole set.
 
-**Comment shape is load-bearing.** The two reason strings —
-`decorative glyph; aria-label provides accessible name` and
-`test fixture (not user-facing)` — become the searchable mark of an
-audited exemption. Future authors copy them verbatim rather than
-inventing variants. `git grep "eslint-disable-next-line
-no-restricted-syntax"` then surfaces the entire exempt set for audit
-(after the fixes, exactly 7 hits in `packages/client/src/` plus the
-2 existing seq-ref disables elsewhere in the tree).
+(The second reason string from earlier drafts —
+`decorative glyph; aria-label provides accessible name` — is no longer used
+in the tree under Q8, since production glyphs are named rather than
+disabled. It remains documented in CLAUDE.md §S4 as the recommended pattern
+*if* a future glyph genuinely cannot be named, alongside the naming-first
+guidance.)
 
 ### S4. CLAUDE.md edits
 
@@ -194,16 +278,26 @@ Replacement:
 
 > All UI strings in `packages/client/src/strings.ts` as constants, never
 > raw literals in components. Enforced by `no-restricted-syntax`
-> selectors in `eslint.config.js` (Phase 4b.4) covering JSX text
+> selectors in `eslint.config.js` (Phase 4b.4) that flag **word-bearing**
+> literals (text containing a Unicode letter, `\p{L}`) in JSX text
 > children and the user-facing attributes `aria-label`,
 > `aria-description`, `aria-roledescription`, `title`, `placeholder`,
-> `alt`. Decorative glyphs paired with an accessible name use inline
-> `// eslint-disable-next-line no-restricted-syntax — decorative glyph;
-> aria-label provides accessible name`; test fixtures use
-> `— test fixture (not user-facing)`. Both exemption-reason strings are
-> load-bearing — `git grep "eslint-disable-next-line
-> no-restricted-syntax"` is the audit surface. Prepares for future i18n
-> without architectural changes.
+> `alt`. The rule is intentionally letters-only: glyphs, separators, and
+> punctuation are language-neutral (not i18n surface), and bare-glyph
+> accessible-name coverage is owned by aXe-core, not this rule. A
+> decorative word-bearing glyph (e.g. the `Aa`/`ab|` find-replace toggles)
+> is **named** — extracted to a constant and rendered as `{GLYPH}`, which
+> the rule does not flag — keeping the visible symbol paired with its
+> `STRINGS`-sourced `aria-label`. Test fixtures take an inline
+> `// eslint-disable-next-line no-restricted-syntax -- test fixture (not
+> user-facing)` (the description separator is two hyphens `--`; an em-dash
+> silently disables nothing). Note: ESLint reports a JSXText violation at the opening
+> tag's line, so a disable comment must sit above the *opening tag* (or use
+> the block `eslint-disable`/`eslint-enable` form) — a comment directly
+> above the visible text does not suppress it. The exemption-reason string
+> is load-bearing — `git grep "eslint-disable-next-line
+> no-restricted-syntax" packages/client/` is the audit surface. Prepares
+> for future i18n without architectural changes.
 
 **Edit 2: §Save-Pipeline Invariants Rule 4** — currently contains the
 stale Phase 4b.4 reference to the AbortController inline-disable
@@ -318,18 +412,23 @@ Matches Approach A from brainstorm (and CLAUDE.md §Testing Philosophy
    `eslintSequenceRule.test.ts` to use it. Verify
    `npm test -w packages/client` is green. *No production change yet.*
 
-2. **Red.** Add `eslintRawStringsRule.test.ts` with the 9 positive +
-   9 negative cases from §S2. All positive cases fail (rule not yet
-   added); all negative cases pass (no rule firing).
+2. **Red.** Add `eslintRawStringsRule.test.ts` with the 11 positive +
+   13 negative cases from §S2 (one positive per attribute name, incl.
+   `aria-description`/`aria-roledescription`; negatives #19–#22 pin the
+   letters-only boundary). All positive cases fail (rule not yet added); all negative
+   cases pass (no rule firing).
 
-3. **Green.** Add the six `no-restricted-syntax` selectors to
-   `eslint.config.js`. Each selector's error message is targeted to
-   the shape it catches. All test cases pass.
+3. **Green.** Add the six letters-only `no-restricted-syntax` selectors
+   (§S1, each filtered to `/\p{L}/u`) to `eslint.config.js`. Each
+   selector's error message is targeted to the shape it catches. All test
+   cases pass.
 
-4. **Refactor — production fixes.** Add the 7 inline-disable
-   annotations (§S3): 4 production `✕` sites + 3 test fixtures.
-   During the production-side fixes, verify each `✕` has a sibling
-   accessible name from `STRINGS`. Run `make lint-check` — must exit 0.
+4. **Refactor — existing-violation fixes (§S3, Q8).** Production: extract
+   the `Aa`/`ab|`/`.*` find-replace glyphs to file-local constants in
+   `FindReplacePanel.tsx`, rendered as `{MATCH_CASE_GLYPH}` etc. (0 disable
+   comments); verify each button keeps its `STRINGS`-sourced `aria-label`.
+   Tests: add the 4 `// eslint-disable-next-line` exemptions at the verified
+   placements. Run `make lint-check` — must exit 0.
 
 5. **CLAUDE.md edits (§S4).** Both edits land together in a single
    commit.
@@ -352,19 +451,20 @@ Verification commands per criterion:
 
 | Criterion | Verified by |
 |---|---|
-| `make lint` fails on new raw UI string | `eslintRawStringsRule.test.ts` positive cases + a manual reproduction (add a raw string to a real component, run `make lint-check`) |
-| Current client code passes lint cleanly | `make lint-check` exits 0 after the 7 inline-disable fixes |
-| No behavior change visible to the user | `make test` + `make e2e` both green; visual diff at the 4 `✕` sites is only a comment added (text content unchanged) |
+| `make lint` fails on new raw UI string | `eslintRawStringsRule.test.ts` positive cases + a manual reproduction (add a raw word-bearing string to a real component, run `make lint-check`) |
+| Current client code passes lint cleanly | `make lint-check` exits 0 after the production glyph-naming + 4 test-fixture disables |
+| No behavior change visible to the user | `make test` + `make e2e` both green; the `FindReplacePanel` glyphs render identically (`{MATCH_CASE_GLYPH}` evaluates to the same `"Aa"`/`"ab\|"`/`".*"` text) |
 
 Additional verification (beyond roadmap DoD):
 
-- All 18 cases in `eslintRawStringsRule.test.ts` pass (9 positive, 9
-  negative). The negative cases are the durable contract for the
-  rule's boundary.
+- All 24 cases in `eslintRawStringsRule.test.ts` pass (11 positive — one
+  per attribute name — and 13 negative). The negative cases — especially
+  #19–#22 — are the durable contract for the rule's letters-only boundary.
 - `eslintSequenceRule.test.ts` continues to pass after harness extraction.
 - `git grep "eslint-disable-next-line no-restricted-syntax"
-  packages/client/src/` returns exactly 7 hits. The PR description
-  pins this count so future drift is obvious.
+  packages/client/` returns exactly 4 hits (all test fixtures; production
+  uses named glyphs, no disables). The PR description pins this count so
+  future drift is obvious.
 - Coverage thresholds (95/85/90/95) hold. The new test file adds lines
   without changing production code paths, so coverage should rise
   slightly, not fall.
@@ -433,3 +533,12 @@ and alignment.
 | Q5 | `✕` glyph: inline-disable at each of the 4 sites with canonical comment shape | No new `strings.ts` namespace required. Comment shape `— decorative glyph; aria-label provides accessible name` becomes load-bearing. |
 | Approach | TDD (Approach A): harness extract → red → green → production fix → CLAUDE.md → roadmap | Matches CLAUDE.md §Testing Philosophy and the seq-ref rule precedent. The fixture test becomes the durable contract. |
 | §5 numbering | Spun-out phase = 4b.17 (sequential 4b.X slot) | Existing 4b.X cleanups follow sequential numbering; 4b.4a would imply a different relationship. |
+
+### Pushback resolutions (2026-05-29)
+
+| # | Decision | Rationale |
+|---|---|---|
+| Q6 | Re-survey: enumerate violations by running the actual selectors via the ESLint API, not by grepping for `✕` | The original `✕`-grep survey undercounted production sites ~3.5× (found 4 of ~18) and missed a 4th test fixture (`ChapterTitle.test.tsx:44`). The design is the contract; it must match the tree before the plan is written. |
+| Q7 | Letters-only selector (`/\p{L}/u`) instead of broad `\S` | §String externalization exists for i18n; glyphs/separators/punctuation are language-neutral and carry nothing to translate. Letters-only targets the real i18n surface (prod has zero raw word-bearing strings), cuts prod fixes from ~18 to 2, and the bare-glyph-a11y catch a broad rule would add is already owned by aXe-core. Supersedes/refines Q2's broad boundary. |
+| Q7-followup | Fixed 4 broken negative test cases in §S2 (stray `x` text child) | A bare `x` child is a letter and would trip selector 1, making those "negative" cases false negatives. Replaced with `{label}` expression children; added letters-only boundary pins #19–#22. |
+| Q8 | Production glyphs **named** (local consts → `{GLYPH}`), not inline-disabled; test fixtures use `eslint-disable-next-line` | Empirical test (2026-05-28) showed ESLint reports JSXText at the opening-tag line, so the design's "comment above the glyph" does **not** suppress it, and the multi-attribute FindReplace buttons can't use the simple `disable-next-line` form. Naming the glyph sidesteps the rule entirely (no comment), is cleaner, and refines Q5 (still no `strings.ts` namespace). Test fixtures keep the verified-working inline disable. Audit-grep count: 4 (test only), not 6. |
