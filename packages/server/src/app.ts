@@ -10,6 +10,7 @@ import { imagesRouter, imagesDirectRouter } from "./images/images.routes";
 import { snapshotChapterRouter, snapshotDirectRouter } from "./snapshots/snapshots.routes";
 import { searchRouter } from "./search/search.routes";
 import { AppError } from "./errors/appError";
+import { requestContext } from "./requestContext";
 import { MAX_CHAPTER_CONTENT_LIMIT_STRING } from "./constants";
 
 export function createApp(): express.Express {
@@ -30,6 +31,9 @@ export function createApp(): express.Express {
       },
     }),
   );
+  // F-10: assign a correlation id before any body parsing, so even a
+  // malformed-JSON 400 is traceable in the logs.
+  app.use(requestContext);
   app.use(express.json({ limit: MAX_CHAPTER_CONTENT_LIMIT_STRING }));
 
   app.use("/api/projects", projectsRouter());
@@ -54,7 +58,7 @@ export function createApp(): express.Express {
 
 export function globalErrorHandler(
   err: Error & { status?: number; statusCode?: number },
-  _req: express.Request,
+  req: express.Request,
   res: express.Response,
   _next: express.NextFunction,
 ): void {
@@ -68,8 +72,21 @@ export function globalErrorHandler(
     return;
   }
 
-  // Anything reaching here is genuinely unhandled — log it.
-  logger.error({ err, status: err.status ?? err.statusCode ?? 500 }, "Unhandled request error");
+  // Anything reaching here is genuinely unhandled — log it with the request
+  // correlation fields (F-10) so the 500 can be traced back to its request.
+  // Logged via the top-level logger (not req.log) so the single "Unhandled
+  // request error" call site is stable; req.id is set by requestContext but
+  // guarded here in case an error escapes before that middleware ran.
+  logger.error(
+    {
+      err,
+      status: err.status ?? err.statusCode ?? 500,
+      req_id: req.id,
+      method: req.method,
+      path: req.path,
+    },
+    "Unhandled request error",
+  );
   const status = err.status ?? err.statusCode ?? 500;
   const code =
     status >= 500
