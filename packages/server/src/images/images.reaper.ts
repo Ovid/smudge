@@ -67,10 +67,7 @@ export async function reapOrphanImages(db: Knex, dataDir?: string): Promise<numb
       // and this call is benign (ENOENT) — race with a manual cleanup or a
       // sibling process. Other codes are operator-actionable.
       if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") {
-        logger.warn(
-          { err, projectDir },
-          "Failed to read project image directory; skipping",
-        );
+        logger.warn({ err, projectDir }, "Failed to read project image directory; skipping");
       }
       continue;
     }

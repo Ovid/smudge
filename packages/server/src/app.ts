@@ -83,10 +83,7 @@ export function globalErrorHandler(
   if (req.log) {
     req.log.error({ err, status }, "Unhandled request error");
   } else {
-    logger.error(
-      { err, status, method: req.method, path: req.path },
-      "Unhandled request error",
-    );
+    logger.error({ err, status, method: req.method, path: req.path }, "Unhandled request error");
   }
   const code =
     status >= 500

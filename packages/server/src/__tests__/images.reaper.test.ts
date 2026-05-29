@@ -102,11 +102,7 @@ describe("reapOrphanImages (F-14)", () => {
     expect(reaped).toBe(0);
     const remaining = await readdir(dir);
     expect(remaining).toEqual(
-      expect.arrayContaining([
-        `${sidecarUuid}.bak`,
-        `${sidecarUuid}.tmp`,
-        `${sidecarUuid}.orig`,
-      ]),
+      expect.arrayContaining([`${sidecarUuid}.bak`, `${sidecarUuid}.tmp`, `${sidecarUuid}.orig`]),
     );
   });
 
@@ -159,9 +155,9 @@ describe("reapOrphanImages (F-14)", () => {
   });
 
   it("warns and continues when an inner per-project readdir fails with a non-ENOENT error (S4)", async () => {
-    // Two project dirs; the first fails to read, the second succeeds with one orphan.
+    // Two project dirs; the first fails to read, the second (the projectId
+    // owned by an existing DB row) succeeds with one orphan.
     const projectA = uuidv4();
-    const projectB = projectId; // owned by an existing DB project row
     await mkdir(path.join(dataDir, "images", projectA), { recursive: true });
     const orphanId = uuidv4();
     await writeImage(orphanId);

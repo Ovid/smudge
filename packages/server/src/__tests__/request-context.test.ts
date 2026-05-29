@@ -31,9 +31,7 @@ describe("requestContext middleware (F-10 request correlation)", () => {
 
   it("logs at debug level when an inbound X-Request-Id is rejected (S1: observability)", async () => {
     const debugSpy = vi.spyOn(logger, "debug").mockImplementation(() => logger);
-    await request(createApp())
-      .get("/api/health")
-      .set("X-Request-Id", "has spaces and <bad> chars");
+    await request(createApp()).get("/api/health").set("X-Request-Id", "has spaces and <bad> chars");
     expect(debugSpy).toHaveBeenCalledWith(
       expect.objectContaining({ raw: "has spaces and <bad> chars" }),
       "discarded inbound x-request-id",
@@ -44,20 +42,14 @@ describe("requestContext middleware (F-10 request correlation)", () => {
   it("does NOT log a rejection when no inbound X-Request-Id is provided (S1)", async () => {
     const debugSpy = vi.spyOn(logger, "debug").mockImplementation(() => logger);
     await request(createApp()).get("/api/health");
-    expect(debugSpy).not.toHaveBeenCalledWith(
-      expect.anything(),
-      "discarded inbound x-request-id",
-    );
+    expect(debugSpy).not.toHaveBeenCalledWith(expect.anything(), "discarded inbound x-request-id");
     debugSpy.mockRestore();
   });
 
   it("does NOT log a rejection when the inbound X-Request-Id is accepted (S1)", async () => {
     const debugSpy = vi.spyOn(logger, "debug").mockImplementation(() => logger);
     await request(createApp()).get("/api/health").set("X-Request-Id", "trace-abc_123.4");
-    expect(debugSpy).not.toHaveBeenCalledWith(
-      expect.anything(),
-      "discarded inbound x-request-id",
-    );
+    expect(debugSpy).not.toHaveBeenCalledWith(expect.anything(), "discarded inbound x-request-id");
     debugSpy.mockRestore();
   });
 
@@ -73,9 +65,7 @@ describe("requestContext middleware (F-10 request correlation)", () => {
       warn: vi.fn(),
       info: vi.fn(),
     } as unknown as ReturnType<typeof logger.child>;
-    const childSpy = vi
-      .spyOn(logger, "child")
-      .mockImplementation(() => fakeChild);
+    const childSpy = vi.spyOn(logger, "child").mockImplementation(() => fakeChild);
 
     const app = express();
     app.use(requestContext);
