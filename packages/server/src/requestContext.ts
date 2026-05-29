@@ -37,7 +37,15 @@ const REQUEST_ID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
  */
 export function requestContext(req: Request, res: Response, next: NextFunction): void {
   const incoming = req.header("x-request-id");
-  const id = incoming && REQUEST_ID_PATTERN.test(incoming) ? incoming : randomUUID();
+  const accepted = !!incoming && REQUEST_ID_PATTERN.test(incoming);
+  // S1: a non-empty inbound id that fails the pattern is rejected silently
+  // by default — misconfigured upstreams (overlong trace ids, control chars,
+  // wrong charset) lose correlation invisibly. Emit a debug-level diagnostic
+  // so `LOG_LEVEL=debug` surfaces the discard with the raw value.
+  if (incoming && !accepted) {
+    logger.debug({ raw: incoming }, "discarded inbound x-request-id");
+  }
+  const id = accepted ? incoming : randomUUID();
   req.id = id;
   req.log = logger.child({ req_id: id, method: req.method, path: req.path });
   res.setHeader("X-Request-Id", id);
