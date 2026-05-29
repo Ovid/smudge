@@ -140,5 +140,27 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // F-9: client source must not call console.* directly — raw error objects
+    // would reach the production browser console. Route through clientWarn /
+    // clientError (DEV-gated, errors/clientLog.ts) or devWarn (abort-aware).
+    files: ["packages/client/src/**/*.{ts,tsx}"],
+    rules: {
+      "no-console": "error",
+    },
+  },
+  {
+    // The DEV-gated logger modules are the only allowed console call sites,
+    // and test files use console (spies, fixtures) freely.
+    files: [
+      "packages/client/src/errors/clientLog.ts",
+      "packages/client/src/errors/devWarn.ts",
+      "packages/client/src/**/__tests__/**/*.{ts,tsx}",
+      "packages/client/src/**/*.test.{ts,tsx}",
+    ],
+    rules: {
+      "no-console": "off",
+    },
+  },
   prettierConfig,
 );

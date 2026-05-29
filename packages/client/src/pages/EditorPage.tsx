@@ -23,6 +23,7 @@ import {
   applyMappedError,
   isAborted,
   isNotFound,
+  clientWarn,
 } from "../errors";
 import { safeSetEditable } from "../utils/editorSafeOps";
 // F-1 decomposition (2026-05-29): the find-and-replace and snapshot
@@ -463,7 +464,7 @@ export function EditorPage() {
           return;
         } catch (err) {
           if (s.aborted) return;
-          console.warn("Failed to load chapter statuses:", err);
+          clientWarn("Failed to load chapter statuses:", err);
           if (attempts >= 2) {
             applyMappedError(mapApiError(err, "chapterStatus.fetch"), {
               onMessage: setActionError,
@@ -619,7 +620,7 @@ export function EditorPage() {
         // transient-specific `flushBeforeNavigateFailedNetwork` copy
         // instead of the generic viewSwitchSaveFailed string.
         safeSetEditable(editorRef, true);
-        console.warn("switchToView: flushSave threw", err);
+        clientWarn("switchToView: flushSave threw", err);
         applyMappedError(mapApiError(err, "chapter.flushBeforeNavigate"), {
           onMessage: setActionError,
         });
@@ -730,7 +731,7 @@ export function EditorPage() {
         if (!switched) return;
         await handleSelectChapter(chapterId);
       } catch (err) {
-        console.warn("handleSelectChapterWithFlush failed", err);
+        clientWarn("handleSelectChapterWithFlush failed", err);
         // S2 (agentic-review 2026-05-26): this outer catch is defensive
         // — switchToView converts its own throws to false+banner, and
         // handleSelectChapter catches all its own errors. The only path
@@ -853,7 +854,7 @@ export function EditorPage() {
       try {
         await editorRef.current?.flushSave();
       } catch (err) {
-        console.warn("Ctrl+S: flushSave threw", err);
+        clientWarn("Ctrl+S: flushSave threw", err);
         // I1 (review 2026-04-26, follow-up): the only reachable case here
         // is a synchronous TipTap throw (e.g. editor.getJSON() during a
         // mid-remount), which is NOT an ApiRequestError. Editor.flushSave's

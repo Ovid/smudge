@@ -1,5 +1,6 @@
 import { ApiRequestError } from "../api/client";
 import { SCOPES, type ApiErrorScope } from "./scopes";
+import { clientError } from "./clientLog";
 
 export type MappedError<S extends ApiErrorScope> = {
   message: string | null;
@@ -208,7 +209,7 @@ function safeExtrasFrom(
     return scope.extrasFrom(err);
   } catch (extrasErr) {
     if (import.meta.env?.DEV) {
-      console.error("scope.extrasFrom threw; returning undefined:", extrasErr);
+      clientError("scope.extrasFrom threw; returning undefined:", extrasErr);
     }
     return undefined;
   }

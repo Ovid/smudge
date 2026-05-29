@@ -2,6 +2,7 @@ import { useRef, useCallback, useMemo, type MutableRefObject } from "react";
 import type { EditorHandle } from "../components/Editor";
 import type { UseProjectEditorReturn } from "./useProjectEditor";
 import { clearAllCachedContent } from "./useContentCache";
+import { clientWarn } from "../errors";
 
 export type MutationStage = "flush" | "mutate" | "reload" | "busy";
 
@@ -250,11 +251,11 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             // server change, contradicting the lock banner. Wrap in
             // its own try/catch so a cancelPendingSaves throw cannot
             // mask the original setEditable/markClean error.
-            console.warn("useEditorMutation: failed to lock mid-remount editor", err);
+            clientWarn("useEditorMutation: failed to lock mid-remount editor", err);
             try {
               projectEditorRef.current.cancelPendingSaves();
             } catch (cancelErr) {
-              console.warn(
+              clientWarn(
                 "useEditorMutation: cancelPendingSaves threw during re-lock-fail catch",
                 cancelErr,
               );
@@ -338,11 +339,11 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
               // Inlined here because we've already passed the cache-
               // clear step — duplicating is simpler than threading
               // the state back through the main catch.
-              console.warn("useEditorMutation: failed to lock late-mounted editor (S5)", err);
+              clientWarn("useEditorMutation: failed to lock late-mounted editor (S5)", err);
               try {
                 projectEditorRef.current.cancelPendingSaves();
               } catch (cancelErr) {
-                console.warn(
+                clientWarn(
                   "useEditorMutation: cancelPendingSaves threw during S5 late-lock catch",
                   cancelErr,
                 );
@@ -384,7 +385,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
               directive.reloadChapterId,
             );
           } catch (err) {
-            console.warn("useEditorMutation: reloadActiveChapter threw", err);
+            clientWarn("useEditorMutation: reloadActiveChapter threw", err);
             reloadFailed = true;
             return {
               ok: false,
@@ -453,7 +454,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
                   currentId,
                 );
               } catch (err) {
-                console.warn("useEditorMutation: second reloadActiveChapter threw", err);
+                clientWarn("useEditorMutation: second reloadActiveChapter threw", err);
                 reloadSuperseded = false;
                 reloadFailed = true;
                 return {
@@ -529,7 +530,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
           // Conservative default otherwise: treat as locked so an unknown
           // predicate state can't accidentally unlock an editor over a
           // server-committed change.
-          console.warn("useEditorMutation: isLocked predicate threw", err);
+          clientWarn("useEditorMutation: isLocked predicate threw", err);
           lockedByCaller = !reloadSucceeded && !reloadSuperseded;
         }
         if (!reloadFailed && !lockedByCaller) {
@@ -551,7 +552,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             // devtools inspection (I4) — previously the catch was silent
             // and a TipTap mid-remount throw here would leave the editor
             // stuck read-only with no indication anything had happened.
-            console.warn("useEditorMutation: failed to re-enable editor", err);
+            clientWarn("useEditorMutation: failed to re-enable editor", err);
           }
         }
       }

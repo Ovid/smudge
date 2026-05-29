@@ -3,7 +3,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { Chapter } from "@smudge/shared";
 import { SNAPSHOT_ERROR_CODES } from "@smudge/shared";
 import { generateHTML } from "@tiptap/html";
-import { mapApiError } from "../errors";
+import { mapApiError, clientWarn } from "../errors";
 import { ApiRequestError } from "../errors";
 import { clearCachedContent } from "./useContentCache";
 import { safeSetEditable, quiesceEditorForServerOp } from "../utils/editorSafeOps";
@@ -513,7 +513,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
         // throws from setEditable are already absorbed by
         // safeSetEditable above).
         safeSetEditable(editorRef, true);
-        console.warn("SnapshotPanel onView aborted:", err);
+        clientWarn("SnapshotPanel onView aborted:", err);
         return { ok: false, reason: "save_failed" };
       }
     },
@@ -574,7 +574,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
       }
       return { ok: false, reason: "flush_failed" } as const;
     } catch (err) {
-      console.warn("SnapshotPanel onBeforeCreate aborted:", err);
+      clientWarn("SnapshotPanel onBeforeCreate aborted:", err);
       return { ok: false, reason: "flush_failed" } as const;
     }
   }, [editorLockedMessageRef, isActionBusy, setActionInfo, editorRef, cancelPendingSaves]);
