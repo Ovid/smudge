@@ -13,6 +13,7 @@ skimmed at a glance for patterns.
 
 | Date       | Phase                          | Model              | Pushback (C/I/M) | Alignment (C/I/M) | Entry |
 |------------|--------------------------------|--------------------|------------------|-------------------|-------|
+| 2026-05-29 | Phase 4b.5: Editor State Machine | claude-opus-4-8 | 0/2/2 | 0/2/3 | [link](2026-05-29-phase-4b-5-editor-state-machine.md) |
 | 2026-05-29 | Phase 4b.4: Raw-Strings ESLint Rule | claude-opus-4-8 | 3/1/1 | 0/0/1 | [link](2026-05-29-phase-4b-4-raw-strings-eslint-rule.md) |
 | 2026-05-27 | Phase 4b.3d: Mapper Internals & CLAUDE.md Updates | claude-opus-4-7 | 0/3/5 | 0/0/0 | [link](2026-05-27-phase-4b-3d-mapper-internals-claude-md-updates.md) |
 | 2026-05-26 | Phase 4b.3c: Consumer Recovery Completeness | claude-opus-4-7 | 1/3/3 | 0/1/2 | [link](2026-05-26-phase-4b-3c-consumer-recovery-completeness.md) |
