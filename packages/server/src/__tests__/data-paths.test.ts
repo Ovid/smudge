@@ -1,0 +1,47 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import path from "node:path";
+import { createKnexConfig } from "../db/knexfile";
+import { getDataDir } from "../images/images.paths";
+
+// Safety net for architecture flaw F-5 (configuration sprawl: the
+// data-directory default is duplicated across getDataDir(),
+// purgeOldTrash(), and knexfile, and the DATA_DIR↔DB_PATH relationship
+// is implicit/unvalidated).
+//
+// F-5 centralizes "where Smudge stores data" into a single owner and
+// derives the SQLite default path from the data dir. This test pins the
+// load-bearing invariant the refactor must preserve: with neither
+// DATA_DIR nor DB_PATH set, the default SQLite file lives directly
+// inside the default data directory (i.e. they are NOT independent
+// defaults that happen to coincide — they share one base). After F-5
+// this holds by construction; before F-5 it holds by the two literals
+// happening to agree, which is exactly the fragility F-5 removes.
+describe("data-path defaults single-owner relationship (F-5 safety net)", () => {
+  let savedDataDir: string | undefined;
+  let savedDbPath: string | undefined;
+
+  beforeEach(() => {
+    savedDataDir = process.env.DATA_DIR;
+    savedDbPath = process.env.DB_PATH;
+    delete process.env.DATA_DIR;
+    delete process.env.DB_PATH;
+  });
+
+  afterEach(() => {
+    if (savedDataDir === undefined) delete process.env.DATA_DIR;
+    else process.env.DATA_DIR = savedDataDir;
+    if (savedDbPath === undefined) delete process.env.DB_PATH;
+    else process.env.DB_PATH = savedDbPath;
+  });
+
+  it("defaults the SQLite file directly inside the default data dir", () => {
+    const conn = createKnexConfig().connection as { filename: string };
+    expect(conn.filename).toBe(path.join(getDataDir(), "smudge.db"));
+  });
+
+  it("honors an explicit DB_PATH override over the data-dir default", () => {
+    process.env.DB_PATH = "/tmp/explicit-smudge.db";
+    const conn = createKnexConfig().connection as { filename: string };
+    expect(conn.filename).toBe("/tmp/explicit-smudge.db");
+  });
+});

@@ -398,6 +398,7 @@ describe("POST /api/chapters/:id/restore", () => {
 
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe("PROJECT_PURGED");
+    expect(res.body.error.message).toBe("The parent project has been permanently deleted.");
   });
 
   it("succeeds when restoring a chapter with corrupt JSON content", async () => {

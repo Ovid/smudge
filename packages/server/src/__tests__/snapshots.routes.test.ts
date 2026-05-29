@@ -247,6 +247,7 @@ describe("snapshot routes", () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe("CORRUPT_SNAPSHOT");
+      expect(res.body.error.message).toBe("Snapshot content is corrupt and cannot be restored.");
 
       // Chapter must remain unchanged.
       const chapter = await t.db("chapters").where({ id: chapterId }).first();
@@ -302,6 +303,9 @@ describe("snapshot routes", () => {
 
       expect(res.status).toBe(409);
       expect(res.body.error.code).toBe("CROSS_PROJECT_IMAGE_REF");
+      expect(res.body.error.message).toBe(
+        "Snapshot references an image from a different project and cannot be restored.",
+      );
     });
 
     it("returns 400 for non-UUID snapshot id on GET", async () => {
