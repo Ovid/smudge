@@ -311,6 +311,10 @@ Five specialist agents analyzed structure, coupling, integration/data, error-han
 - **Explanation:** CLAUDE.md and CONTRIBUTING describe Express serving the static frontend on port 3456, but `createApp()` mounts only `/api/*` routes + a health check — no `express.static`, no SPA catch-all, and no `Dockerfile` exists in the repo. Consistent with "MVP in progress," so not a live vuln, but flagged because (a) it contradicts steering docs and (b) when static serving is added it will be a new path-traversal/unsafe-serving surface that currently has no guardrails or tests.
 - **Evidence:** `packages/server/src/app.ts:23-61`; no `Dockerfile` at repo root.
 - **Found by:** Security & Code Quality
+- **Status:** Fixed
+- **Status reason:** Doc-only. Reworded CLAUDE.md's Tech Stack > Deployment bullet from a present-fact claim ("Express serves API + static frontend on port 3456 … via Docker volume") to a **target — not yet implemented** statement: documents that `createApp()` today mounts `/api/*` (+ `/api/health`) only with no `express.static`/SPA catch-all and no `Dockerfile`, and carries forward this finding's security forward-look (when static serving lands it must ship with path-traversal/unsafe-serving guardrails + tests). No code change — implementing static serving is a separate feature (out of scope for a fix session, and would need the guardrails this note now mandates). **Correction:** the explanation says "CLAUDE.md and CONTRIBUTING describe Express serving the static frontend," but CONTRIBUTING's line ("Express serves the API; Vite proxies the client in dev") is accurate and was left unchanged; only the CLAUDE.md bullet was drift. The Build & Run > "# Build & Deploy" `docker compose up` line sits under a header already labeled "(Target)", so it was already qualified and needs no edit.
+- **Status date:** 2026-05-29
+- **Status commit:** 7bbdc045ccb4a5ec678a6a856d453a9decf23519
 
 ### [F-20] Circular dependency: `export.renderers.ts` ↔ `image-resolver.ts`
 
