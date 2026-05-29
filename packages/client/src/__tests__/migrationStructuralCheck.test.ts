@@ -196,15 +196,22 @@ describe("client source-tree migration structural check", () => {
     }
   });
 
-  // Phase 4b.3b post-sweep state: three files retain hand-rolled
+  // Phase 4b.3b post-sweep state: a handful of files retain hand-rolled
   // useRef<AbortController> for documented second-tier-recovery
-  // (HomePage.createRecoveryAbortRef; useProjectEditor's three
+  // (HomePage.createRecoveryAbortRef; the chapter-CRUD / chapter-metadata
   // recovery refs) or simultaneously-live-controller patterns
-  // (useSnapshotState.restoreFollowupAbortRef). Each retained ref
-  // carries an inline justification comment at its allocation. Phase
-  // 4b.4 replaces this file-level allowlist with inline
-  // `// eslint-disable-next-line` on each of the surviving lines and
-  // removes this `PHASE_4B_3B_ALLOWLIST` set entirely.
+  // (useSnapshotState.restoreFollowupAbortRef; useTrashManager's
+  // restoreRecoveryAbortRef). Each retained ref carries an inline
+  // justification comment at its allocation. Phase 4b.4 replaces this
+  // file-level allowlist with inline `// eslint-disable-next-line` on each
+  // of the surviving lines and removes this `PHASE_4B_3B_ALLOWLIST` set
+  // entirely.
+  //
+  // F-2 (2026-05-29): useProjectEditor.ts was split into useChapterCrud +
+  // useChapterMetadata. Its three recovery refs migrated with the handlers
+  // that own them — createRecoveryAbortRef → useChapterCrud,
+  // statusRecoveryAbortRef + titleRecoveryAbortRef → useChapterMetadata — so
+  // the allowlist entry moved off useProjectEditor onto the two sub-hooks.
   //
   // Files in the allowlist are pinned by absolute-path equivalence
   // (resolved against clientSrcRoot) so the assertion stays robust
@@ -212,9 +219,14 @@ describe("client source-tree migration structural check", () => {
   // updating this list will fail the ban — that's the intended
   // forcing function.
   const PHASE_4B_3B_ALLOWLIST = new Set([
-    resolve(clientSrcRoot, "hooks/useProjectEditor.ts"),
+    // F-2 (2026-05-29): createRecoveryAbortRef (migrated from useProjectEditor)
+    resolve(clientSrcRoot, "hooks/useChapterCrud.ts"),
+    // F-2 (2026-05-29): statusRecoveryAbortRef + titleRecoveryAbortRef (migrated from useProjectEditor)
+    resolve(clientSrcRoot, "hooks/useChapterMetadata.ts"),
     resolve(clientSrcRoot, "hooks/useSnapshotState.ts"),
     resolve(clientSrcRoot, "hooks/useTrashManager.ts"), // 4b.3c.3 I4: restoreRecoveryAbortRef
+    // useProjectEditor.ts removed by F-2 (2026-05-29): its three recovery refs
+    // migrated to useChapterCrud + useChapterMetadata when the god hook was split.
     // EditorPage.tsx removed by Phase 4b.3b row S-1 (settingsRefreshAbortRef migrated)
     // ProjectSettingsDialog.tsx removed by Phase 4b.3b row S-10 (fieldAbortRef + timezoneAbortRef migrated)
     // SnapshotPanel.tsx removed by Phase 4b.3b row S-12 (fetchAbortRef + mutateAbortRef migrated)
@@ -250,8 +262,8 @@ describe("client source-tree migration structural check", () => {
     //
     // S3 (review 2026-05-25): the file's text must contain a LIVE
     // useRef<AbortController> — not just a commented mention of one.
-    // useProjectEditor.ts in particular carries historical comments at
-    // lines 97/168 that reference the prior hand-rolled pattern; a
+    // The chapter-CRUD / chapter-metadata sub-hooks in particular carry
+    // historical comments that reference the prior hand-rolled pattern; a
     // future refactor migrating all live refs while leaving those
     // comments in place would silently keep the file allowlisted.
     for (const file of PHASE_4B_3B_ALLOWLIST) {
