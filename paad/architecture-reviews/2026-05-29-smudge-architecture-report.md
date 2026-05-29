@@ -167,6 +167,10 @@ Five specialist agents analyzed structure, coupling, integration/data, error-han
 - **Explanation:** `asyncHandler` — a generic Express helper with zero dependency on app composition — is exported from the composition root `app.ts` and imported back by all nine route modules, while `app.ts` imports all nine routers. This is a genuine runtime cycle that resolves only because routers are invoked lazily inside `createApp()`.
 - **Evidence:** `packages/server/src/app.ts:15` (`export function asyncHandler`); `chapters/chapters.routes.ts:2` (`import { asyncHandler } from "../app"`), same across all routers.
 - **Found by:** Coupling & Dependencies
+- **Status:** Fixed
+- **Status reason:** Extracted `asyncHandler` from the composition root into its own leaf module `packages/server/src/asyncHandler.ts`. All nine routers now `import { asyncHandler } from "../asyncHandler"`, and `app.ts` no longer defines or references it (its `Request/Response/NextFunction` type import, used only by `asyncHandler`, was also removed). The dependency graph `app.ts → *.routes.ts → asyncHandler.ts` is now acyclic — the helper imports only Express types. Safety net committed first (`9e3041b`): `asyncHandler.test.ts`, the first direct unit test of the helper (resolved handler does not call `next`; rejected handler forwards the error to `next` exactly once), with its import retargeted to the new module as part of this fix. Full server suite green (632 tests); typecheck (which would surface any residual cycle or unused import) + lint clean.
+- **Status date:** 2026-05-29
+- **Status commit:** 54c6bf1df8d10cc3063bfec6d5c0dfad66e74768
 
 ### [F-7] Temporal coupling: snapshot handlers hand-compose the save-pipeline ordering
 - **Category:** Flaw 27 (Temporal coupling)
