@@ -2,6 +2,7 @@ import { generateHTML } from "@tiptap/html";
 import TurndownService from "turndown";
 import { serverEditorExtensions } from "./editorExtensions";
 import { resolveImagesInHtml } from "./image-resolver";
+import { escapeHtml } from "./html-escape";
 import { logger } from "../logger";
 
 // ---------------------------------------------------------------------------
@@ -37,15 +38,6 @@ export function chapterContentToHtml(content: Record<string, unknown> | null): s
     logger.warn({ err }, "Failed to render chapter content to HTML during export");
     return "";
   }
-}
-
-export function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function stripHtmlTags(html: string): string {

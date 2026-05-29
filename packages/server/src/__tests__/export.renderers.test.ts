@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import JSZip from "jszip";
-import { renderHtml, renderMarkdown, renderPlainText, escapeHtml } from "../export/export.renderers";
+import { renderHtml, renderMarkdown, renderPlainText } from "../export/export.renderers";
+import { escapeHtml } from "../export/html-escape";
 import { renderDocx } from "../export/docx.renderer";
 import { renderEpub } from "../export/epub.renderer";
 import { logger } from "../logger";
