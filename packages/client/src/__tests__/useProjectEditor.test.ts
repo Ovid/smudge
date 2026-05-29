@@ -4294,3 +4294,86 @@ describe("useProjectEditor", () => {
 // (Migration structural check moved to migrationStructuralCheck.test.ts —
 // S2, 2026-04-22 review. Four near-identical per-file greps collapsed into
 // one tree-wide assertion.)
+
+describe("useProjectEditor public return contract", () => {
+  // Safety net for the F-2 decomposition (2026-05-29): useProjectEditor is
+  // being split along chapter-CRUD and title/status seams into sub-hooks,
+  // with useProjectEditor itself becoming a thin composing facade that
+  // re-exports the identical public object. EditorPage and sibling hooks
+  // consume these keys, so the facade must keep the surface byte-for-byte.
+  // TypeScript already fails the build on a dropped key (consumers
+  // destructure them), but this pins the runtime contract independently:
+  // an extracted handler that the facade forgets to spread back in — or an
+  // accidental new key leaking from a sub-hook — turns this RED before any
+  // behavioral test has to. Keep this list in lockstep with the return
+  // block of useProjectEditor.
+  const EXPECTED_KEYS = [
+    "project",
+    "error",
+    "projectTitleError",
+    "setProjectTitleError",
+    "setProject",
+    "activeChapter",
+    "chapterReloadKey",
+    "saveStatus",
+    "saveErrorMessage",
+    "cacheWarning",
+    "chapterWordCount",
+    "handleSave",
+    "handleContentChange",
+    "handleCreateChapter",
+    "handleSelectChapter",
+    "reloadActiveChapter",
+    "handleDeleteChapter",
+    "handleReorderChapters",
+    "handleUpdateProjectTitle",
+    "handleRenameChapter",
+    "handleStatusChange",
+    "seedConfirmedStatus",
+    "replaceConfirmedStatusesFromProject",
+    "getActiveChapter",
+    "cancelPendingSaves",
+  ] as const;
+
+  const EXPECTED_FUNCTION_KEYS = [
+    "setProjectTitleError",
+    "setProject",
+    "handleSave",
+    "handleContentChange",
+    "handleCreateChapter",
+    "handleSelectChapter",
+    "reloadActiveChapter",
+    "handleDeleteChapter",
+    "handleReorderChapters",
+    "handleUpdateProjectTitle",
+    "handleRenameChapter",
+    "handleStatusChange",
+    "seedConfirmedStatus",
+    "replaceConfirmedStatusesFromProject",
+    "getActiveChapter",
+    "cancelPendingSaves",
+  ] as const;
+
+  it("exposes exactly the documented public keys — no more, no less", async () => {
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy(), {
+      timeout: 3000,
+    });
+
+    expect(Object.keys(result.current).sort()).toEqual([...EXPECTED_KEYS].sort());
+  });
+
+  it("exposes every handler/setter as a callable function", async () => {
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.project).toBeTruthy(), {
+      timeout: 3000,
+    });
+
+    for (const key of EXPECTED_FUNCTION_KEYS) {
+      expect(
+        typeof (result.current as Record<string, unknown>)[key],
+        `expected useProjectEditor().${key} to be a function`,
+      ).toBe("function");
+    }
+  });
+});
