@@ -40,7 +40,8 @@ vi.mock("../components/Editor", () => ({
     editorRef?: React.MutableRefObject<{ flushSave: () => void } | null>;
   }) => {
     capturedOnSave = onSave;
-    return ( // eslint-disable-next-line no-restricted-syntax -- test fixture (not user-facing)
+    return (
+      // eslint-disable-next-line no-restricted-syntax -- test fixture (not user-facing)
       <div role="textbox" aria-multiline="true" aria-label="Chapter content">
         Mock editor
       </div>

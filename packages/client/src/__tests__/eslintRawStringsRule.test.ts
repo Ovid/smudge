@@ -38,8 +38,14 @@ describe("no-restricted-syntax raw-UI-string rule (letters-only)", () => {
       ["alt attribute", `<img alt="Logo" />`],
       ["placeholder attribute", `<input placeholder="Search" />`],
       ["title attribute", `<span title="Tooltip">{label}</span>`],
-      ["aria-description attribute", `<button aria-description="Removes the chapter">{label}</button>`],
-      ["aria-roledescription attribute", `<div aria-roledescription="slide carousel">{label}</div>`],
+      [
+        "aria-description attribute",
+        `<button aria-description="Removes the chapter">{label}</button>`,
+      ],
+      [
+        "aria-roledescription attribute",
+        `<div aria-roledescription="slide carousel">{label}</div>`,
+      ],
     ];
     for (const [name, jsx] of positives) {
       it(`fires on ${name}`, async () => {
