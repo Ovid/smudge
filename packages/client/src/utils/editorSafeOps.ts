@@ -44,3 +44,68 @@ export function safeSetEditable(
     return false;
   }
 }
+
+export interface QuiesceEditorOptions {
+  /**
+   * Disable the editor (via {@link safeSetEditable}) BEFORE flushing, and
+   * re-enable it if the flush fails. Use when the editor stays mounted and
+   * must not accept keystrokes during the round trip (onView). Omit when the
+   * caller captures current content and does not overwrite the editor
+   * (onBeforeCreate — snapshot create reads the live content).
+   */
+  disableEditor?: boolean;
+  /**
+   * Call `editorRef.current.markClean()` after a successful flush + cancel,
+   * clearing the dirty flag and debounce timer so a keystroke landing between
+   * flush and the server op cannot schedule a racing PATCH (onBeforeCreate).
+   */
+  markCleanAfter?: boolean;
+}
+
+/**
+ * Quiet the editor before a non-content-mutating server interaction (snapshot
+ * view, snapshot create) by applying the load-bearing save-pipeline ordering
+ * ONCE (F-7):
+ *
+ *   [disable] -> flushSave -> (flush failed? [re-enable] and bail) ->
+ *   cancelPendingSaves -> [markClean]
+ *
+ * This is the same ordering `useEditorMutation` enforces by construction for
+ * content-MUTATING flows; CLAUDE.md sanctions these view/create handlers as
+ * outside that hook's scope (they do not overwrite editor content), so the
+ * ordering lives here as a shared helper rather than being hand-composed at
+ * each call site (where a future edit could silently desync it).
+ *
+ * `flushSave` returning `undefined` (null editor ref) is treated as flushed
+ * (`?? true`), matching the prior hand-composed behavior. All `setEditable`
+ * calls route through `safeSetEditable`, so a TipTap mid-remount throw is
+ * absorbed and logged rather than rejecting the caller's promise.
+ *
+ * @returns `true` if the flush succeeded and the editor is quiesced (the
+ * caller may proceed with the server op); `false` if the flush failed (the
+ * caller must bail — the editor has been re-enabled when `disableEditor`).
+ */
+export async function quiesceEditorForServerOp(
+  editorRef: MutableRefObject<EditorHandle | null>,
+  cancelPendingSaves: () => void,
+  opts: QuiesceEditorOptions = {},
+): Promise<boolean> {
+  if (opts.disableEditor) {
+    safeSetEditable(editorRef, false);
+  }
+
+  const flushed = (await editorRef.current?.flushSave()) ?? true;
+  if (!flushed) {
+    // Re-enable so the user can retry — the op was refused.
+    if (opts.disableEditor) {
+      safeSetEditable(editorRef, true);
+    }
+    return false;
+  }
+
+  cancelPendingSaves();
+  if (opts.markCleanAfter) {
+    editorRef.current?.markClean();
+  }
+  return true;
+}

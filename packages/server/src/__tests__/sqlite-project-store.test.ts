@@ -501,4 +501,85 @@ describe("SqliteProjectStore", () => {
       });
     });
   });
+
+  // F-4 safety net: the ProjectStore "god interface" is being split into
+  // composed per-domain sub-interfaces. This pins the FULL method surface
+  // grouped by the domains it will be split along, so the refactor cannot
+  // silently drop a method when methods migrate from one big interface into
+  // several smaller ones. (Type-level conformance is enforced by tsc; this
+  // is the runtime backstop against an accidental omission in the impl.)
+  describe("exposes the full method surface across all domains (F-4 split guard)", () => {
+    const METHODS_BY_DOMAIN: Record<string, string[]> = {
+      projects: [
+        "insertProject",
+        "findProjectById",
+        "findProjectByIdIncludingDeleted",
+        "findProjectBySlug",
+        "findProjectBySlugIncludingDeleted",
+        "findProjectByTitle",
+        "listProjects",
+        "updateProject",
+        "updateProjectIncludingDeleted",
+        "updateProjectTimestamp",
+        "softDeleteProject",
+        "resolveUniqueSlug",
+      ],
+      chapters: [
+        "insertChapter",
+        "findChapterById",
+        "findDeletedChapterById",
+        "findChapterByIdRaw",
+        "listChaptersByProject",
+        "listChapterMetadataByProject",
+        "listDeletedChaptersByProject",
+        "listChapterIdsByProject",
+        "sumChapterWordCountByProject",
+        "getMaxChapterSortOrder",
+        "updateChapter",
+        "updateChapterSortOrders",
+        "softDeleteChapter",
+        "softDeleteChaptersByProject",
+        "restoreChapter",
+      ],
+      chapterStatuses: [
+        "listStatuses",
+        "findStatusByStatus",
+        "getStatusLabel",
+        "getStatusLabelMap",
+      ],
+      settings: ["listSettings", "findSettingByKey", "upsertSetting"],
+      velocity: ["upsertDailySnapshot", "getBaselineSnapshot", "getLastPriorDaySnapshot"],
+      images: [
+        "insertImage",
+        "findImageById",
+        "findImagesByIds",
+        "listImagesByProject",
+        "updateImage",
+        "removeImage",
+        "removeImagesByProject",
+        "incrementImageReferenceCount",
+        "setImageReferenceCount",
+        "listChapterContentByProject",
+        "listAllChapterContentByProject",
+      ],
+      snapshots: [
+        "insertSnapshot",
+        "findSnapshotById",
+        "listSnapshotsByChapter",
+        "deleteSnapshot",
+        "getLatestSnapshotContentHash",
+        "getLatestSnapshotContentHashAnyKind",
+      ],
+      transactions: ["transaction"],
+    };
+
+    for (const [domain, methods] of Object.entries(METHODS_BY_DOMAIN)) {
+      it(`implements every ${domain} method`, () => {
+        const store = createStore() as unknown as Record<string, unknown>;
+        for (const method of methods) {
+          expect(typeof store[method], `missing method: ${method}`).toBe("function");
+        }
+      });
+    }
+  });
 });

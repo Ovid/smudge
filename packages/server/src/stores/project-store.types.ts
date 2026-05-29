@@ -21,8 +21,19 @@ import type {
   CreateSnapshotData,
 } from "../snapshots/snapshots.types";
 
-export interface ProjectStore {
-  // --- Projects ---
+// F-4: the store contract is composed from one cohesive sub-interface per
+// domain rather than a single 54-method "god interface". Each slice owns the
+// data operations for one domain, so a new operation edits only that slice
+// (plus the impl + repository) instead of growing one monolithic type, and a
+// reader can see a domain's full data surface in isolation. `ProjectStore`
+// (the composite) is the public type every consumer imports and the type the
+// sole implementation (`SqliteProjectStore`) satisfies; it is unchanged from
+// a caller's perspective — it now simply `extends` the slices below.
+//
+// Note the deliberate near-homonym: `ProjectStore` is the whole composite;
+// `ProjectsStore` (below) is just the projects-domain slice.
+
+export interface ProjectsStore {
   insertProject(data: CreateProjectRow): Promise<ProjectRow>;
   findProjectById(id: string): Promise<ProjectRow | null>;
   findProjectByIdIncludingDeleted(id: string): Promise<ProjectRow | null>;
@@ -35,8 +46,9 @@ export interface ProjectStore {
   updateProjectTimestamp(id: string, now: string): Promise<void>;
   softDeleteProject(id: string, now: string): Promise<void>;
   resolveUniqueSlug(baseSlug: string, excludeProjectId?: string): Promise<string>;
+}
 
-  // --- Chapters ---
+export interface ChaptersStore {
   insertChapter(data: CreateChapterRow): Promise<void>;
   findChapterById(id: string): Promise<ChapterRow | null>;
   findDeletedChapterById(id: string): Promise<ChapterRawRow | null>;
@@ -52,19 +64,22 @@ export interface ProjectStore {
   softDeleteChapter(id: string, now: string): Promise<void>;
   softDeleteChaptersByProject(projectId: string, now: string): Promise<void>;
   restoreChapter(id: string, sortOrder: number, now: string): Promise<number>;
+}
 
-  // --- Chapter statuses ---
+export interface ChapterStatusesStore {
   listStatuses(): Promise<ChapterStatusRow[]>;
   findStatusByStatus(status: string): Promise<ChapterStatusRow | undefined>;
   getStatusLabel(status: string): Promise<string>;
   getStatusLabelMap(): Promise<Record<string, string>>;
+}
 
-  // --- Settings ---
+export interface SettingsStore {
   listSettings(): Promise<SettingRow[]>;
   findSettingByKey(key: string): Promise<SettingRow | undefined>;
   upsertSetting(key: string, value: string): Promise<void>;
+}
 
-  // --- Velocity ---
+export interface VelocityStore {
   upsertDailySnapshot(projectId: string, date: string, totalWordCount: number): Promise<void>;
   getBaselineSnapshot(
     projectId: string,
@@ -74,8 +89,9 @@ export interface ProjectStore {
     projectId: string,
     today: string,
   ): Promise<{ date: string; total_word_count: number } | undefined>;
+}
 
-  // --- Images ---
+export interface ImagesStore {
   insertImage(data: CreateImageRow): Promise<ImageRow>;
   findImageById(id: string): Promise<ImageRow | null>;
   /**
@@ -98,8 +114,9 @@ export interface ProjectStore {
   ): Promise<
     Array<{ id: string; title: string; content: string | null; deleted_at: string | null }>
   >;
+}
 
-  // --- Snapshots ---
+export interface SnapshotsStore {
   insertSnapshot(data: CreateSnapshotData): Promise<SnapshotRow>;
   findSnapshotById(id: string): Promise<SnapshotRow | null>;
   listSnapshotsByChapter(chapterId: string): Promise<SnapshotListItem[]>;
@@ -109,15 +126,32 @@ export interface ProjectStore {
   // insert path (restore / find-and-replace) so a pre-operation snapshot is
   // deduped against a prior auto-snapshot too, not just the latest manual one.
   getLatestSnapshotContentHashAnyKind(chapterId: string): Promise<string | null>;
+}
 
-  // --- Transactions ---
-
+/**
+ * The full store contract: the composition of every domain slice plus the
+ * cross-domain transaction seam. Consumers import this type; the sole
+ * implementation (`SqliteProjectStore`) satisfies it. Splitting it into the
+ * per-domain interfaces above (F-4) keeps each domain's surface cohesive
+ * without changing what `ProjectStore` exposes.
+ */
+export interface ProjectStore
+  extends
+    ProjectsStore,
+    ChaptersStore,
+    ChapterStatusesStore,
+    SettingsStore,
+    VelocityStore,
+    ImagesStore,
+    SnapshotsStore {
   /**
    * Run a function within a database transaction.
    *
    * The callback receives a transaction-scoped store that shares the
    * underlying transaction. All store operations within the callback
-   * are atomic.
+   * are atomic. The callback receives the full composite store because a
+   * single transaction routinely spans domains (e.g. soft-delete a chapter
+   * and decrement image reference counts together).
    */
   transaction<T>(fn: (txStore: ProjectStore) => Promise<T>): Promise<T>;
 }

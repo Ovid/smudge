@@ -93,6 +93,42 @@ describe("chapters.service", () => {
       expect(result).toBeDefined();
       expect(result).toHaveProperty("validationError");
     });
+
+    // F-8 safety net: updateChapter reads like a row update but also bumps the
+    // PARENT PROJECT's updated_at (a hidden side effect the signature does not
+    // disclose). Pin it so any disclosure/refactor of F-8 cannot silently drop
+    // the timestamp propagation.
+    it("bumps the parent project's updated_at (hidden side effect)", async () => {
+      const projectId = uuid();
+      const chapterId = uuid();
+      const OLD = "2020-01-01T00:00:00.000Z";
+      await t.db("projects").insert({
+        id: projectId,
+        title: `Stale Project ${projectId.slice(0, 8)}`,
+        slug: `stale-${projectId.slice(0, 8)}`,
+        mode: "fiction",
+        created_at: OLD,
+        updated_at: OLD,
+      });
+      await t.db("chapters").insert({
+        id: chapterId,
+        project_id: projectId,
+        title: "Chapter",
+        content: JSON.stringify(DOC_JSON),
+        sort_order: 0,
+        word_count: 1,
+        status: "outline",
+        created_at: OLD,
+        updated_at: OLD,
+      });
+
+      const result = await updateChapter(chapterId, { title: "Renamed" });
+      expect(result).toHaveProperty("chapter");
+
+      const project = await t.db("projects").where({ id: projectId }).first();
+      expect(project.updated_at).not.toBe(OLD);
+      expect(project.updated_at > OLD).toBe(true);
+    });
   });
 
   describe("deleteChapter()", () => {
