@@ -6,7 +6,7 @@ import {
   MAX_REPLACE_LENGTH,
   SEARCH_ERROR_CODES,
 } from "@smudge/shared";
-import { asyncHandler } from "../app";
+import { asyncHandler } from "../asyncHandler";
 import { getProjectStore } from "../stores/project-store.injectable";
 import * as SearchService from "./search.service";
 

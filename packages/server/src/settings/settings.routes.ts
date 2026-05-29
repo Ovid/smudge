@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { UpdateSettingsSchema } from "@smudge/shared";
-import { asyncHandler } from "../app";
+import { asyncHandler } from "../asyncHandler";
 import * as SettingsService from "./settings.service";
 
 export function settingsRouter(): Router {

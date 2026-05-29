@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { asyncHandler } from "../app";
+import { asyncHandler } from "../asyncHandler";
 import * as ExportService from "./export.service";
 
 export function exportRouter(): Router {

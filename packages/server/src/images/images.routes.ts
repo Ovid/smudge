@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
-import { asyncHandler } from "../app";
+import { asyncHandler } from "../asyncHandler";
 import * as imagesService from "./images.service";
 import { UUID_PATTERN } from "./images.paths";
 

@@ -1,4 +1,4 @@
-import { asyncHandler } from "../app";
+import { asyncHandler } from "../asyncHandler";
 import * as VelocityService from "./velocity.service";
 
 export const velocityHandler = asyncHandler(async (req, res) => {

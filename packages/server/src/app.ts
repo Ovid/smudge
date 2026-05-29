@@ -1,5 +1,4 @@
 import express from "express";
-import type { Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import { logger } from "./logger";
 import { projectsRouter } from "./projects/projects.routes";
@@ -11,14 +10,6 @@ import { imagesRouter, imagesDirectRouter } from "./images/images.routes";
 import { snapshotChapterRouter, snapshotDirectRouter } from "./snapshots/snapshots.routes";
 import { searchRouter } from "./search/search.routes";
 import { MAX_CHAPTER_CONTENT_LIMIT_STRING } from "./constants";
-
-export function asyncHandler(
-  fn: (req: Request, res: Response, next: NextFunction) => Promise<void>,
-) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    Promise.resolve(fn(req, res, next)).catch(next);
-  };
-}
 
 export function createApp(): express.Express {
   const app = express();

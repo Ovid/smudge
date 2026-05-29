@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type { Request, Response, NextFunction } from "express";
-import { asyncHandler } from "../app";
+import { asyncHandler } from "../asyncHandler";
 
 // Safety net for architecture flaw F-6 (circular dependency:
 // app.ts ↔ every *.routes.ts via the exported `asyncHandler`).
@@ -13,8 +13,8 @@ import { asyncHandler } from "../app";
 // without invoking `next`, and rejected handlers forward the error to
 // `next` exactly once.
 //
-// NOTE: the import path (`../app`) is updated to the new module in the
-// F-6 fix commit; the assertions below do not change.
+// The helper now lives in its own module (`../asyncHandler`); the
+// assertions are unchanged from when it was exported by `../app`.
 
 function mockReqRes() {
   const req = {} as Request;

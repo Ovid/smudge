@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { asyncHandler } from "../app";
+import { asyncHandler } from "../asyncHandler";
 import * as ChapterStatusService from "./chapter-statuses.service";
 
 export function chapterStatusesRouter(): Router {

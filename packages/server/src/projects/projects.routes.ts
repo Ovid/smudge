@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { asyncHandler } from "../app";
+import { asyncHandler } from "../asyncHandler";
 import * as ProjectService from "./projects.service";
 import { velocityHandler } from "../velocity/velocity.routes";
 

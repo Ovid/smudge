@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
-import { asyncHandler } from "../app";
+import { asyncHandler } from "../asyncHandler";
 import { CreateSnapshotSchema, SNAPSHOT_ERROR_CODES } from "@smudge/shared";
 import * as SnapshotService from "./snapshots.service";
 
