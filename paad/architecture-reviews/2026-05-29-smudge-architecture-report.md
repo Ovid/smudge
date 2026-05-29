@@ -311,6 +311,10 @@ Five specialist agents analyzed structure, coupling, integration/data, error-han
 - **Explanation:** `export.renderers.ts` imports `resolveImagesInHtml` from `image-resolver.ts`, while `image-resolver.ts` imports `escapeHtml` (a pure string utility that does not conceptually belong to the renderer module) back — a true bidirectional runtime cycle.
 - **Evidence:** `packages/server/src/export/export.renderers.ts:4`, `export/image-resolver.ts:5`.
 - **Found by:** Coupling & Dependencies
+- **Status:** Fixed
+- **Status reason:** Extracted `escapeHtml` — the pure HTML-entity string utility that did not conceptually belong to the renderer module — into a new leaf module `packages/server/src/export/html-escape.ts`. All three consumers (`export.renderers.ts`, `epub.renderer.ts`, `image-resolver.ts`) now import `escapeHtml` from the leaf; `image-resolver` no longer imports anything from `export.renderers`, so the back-edge is gone and the graph `export.renderers → image-resolver → html-escape` is acyclic (the leaf imports nothing). Behavior is byte-preserved: the F-20 safety-net direct unit test (committed `b144b4c`, retargeted here to the new module) pins all five entity replacements and the ampersand-first ordering, and the transitive consumers (renderHtml titles/headings/TOC, resolveImagesInHtml figcaptions) stay green. All 97 export tests pass; `npm run typecheck` and ESLint clean.
+- **Status date:** 2026-05-29
+- **Status commit:** 60da59e588f297c2036472e3cc769c1e3e01d33c
 
 ### [F-21] Dead code: unused `getImage` service export
 
