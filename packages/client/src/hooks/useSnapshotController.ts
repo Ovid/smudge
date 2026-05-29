@@ -68,7 +68,7 @@ export interface SnapshotControllerDeps {
   findReplace: ReturnType<typeof useFindReplaceState>;
   getActiveChapter: () => Chapter | null;
   editorRef: MutableRefObject<EditorHandle | null>;
-  editorLockedMessageRef: MutableRefObject<string | null>;
+  isEditorLocked: () => boolean;
   isActionBusy: () => boolean;
   actionBusyRef: MutableRefObject<boolean>;
   applyReloadFailedLock: (bannerMessage: string) => void;
@@ -90,7 +90,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
     findReplace,
     getActiveChapter,
     editorRef,
-    editorLockedMessageRef,
+    isEditorLocked,
     isActionBusy,
     actionBusyRef,
     applyReloadFailedLock,
@@ -107,8 +107,8 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
   const handleRestoreSnapshot = useCallback(async () => {
     if (!viewingSnapshot || !activeChapter) return;
 
-    // C1 defense-in-depth: the SnapshotBanner button is gated on
-    // editorLockedMessage === null, but refuse here too so any
+    // C1 defense-in-depth: the SnapshotBanner button is gated on the
+    // editor-lock state (canRestore), but refuse here too so any
     // programmatic caller (or future non-button entry point) cannot
     // double-restore against an already-committed snapshot while the
     // lock banner is showing. The button gate is the UX affordance;
@@ -121,7 +121,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
     // sibling replace paths surface the same copy for the same state, and
     // diverging here would leave a future non-button caller silently
     // dropping clicks.
-    if (editorLockedMessageRef.current !== null) {
+    if (isEditorLocked()) {
       setActionInfo(STRINGS.editor.mutationBusy);
       return;
     }
@@ -384,7 +384,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
     getActiveChapter,
     applyReloadFailedLock,
     actionBusyRef,
-    editorLockedMessageRef,
+    isEditorLocked,
   ]);
 
   const onSnapshotView = useCallback(
@@ -404,7 +404,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
       // says "refresh the page" — contradictory guidance. Return a
       // discriminated reason so the panel suppresses its own error
       // copy (the lock banner is the message).
-      if (editorLockedMessageRef.current !== null) {
+      if (isEditorLocked()) {
         return { ok: false, reason: "locked" };
       }
       // Refuse snapshot view while a useEditorMutation.run() is
@@ -528,7 +528,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
       }
     },
     [
-      editorLockedMessageRef,
+      isEditorLocked,
       isActionBusy,
       setActionInfo,
       editorRef,
@@ -544,7 +544,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
     // and try again") — contradicting the lock banner's "refresh
     // the page." Return a discriminated locked outcome so the panel
     // suppresses createError entirely.
-    if (editorLockedMessageRef.current !== null) {
+    if (isEditorLocked()) {
       return { ok: false, reason: "locked" } as const;
     }
     // Same I2 guard as onView — refuse snapshot creation while
@@ -587,7 +587,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
       clientWarn("SnapshotPanel onBeforeCreate aborted:", err);
       return { ok: false, reason: "flush_failed" } as const;
     }
-  }, [editorLockedMessageRef, isActionBusy, setActionInfo, editorRef, cancelPendingSaves]);
+  }, [isEditorLocked, isActionBusy, setActionInfo, editorRef, cancelPendingSaves]);
 
   return {
     handleRestoreSnapshot,

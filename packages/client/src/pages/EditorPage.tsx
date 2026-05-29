@@ -6,6 +6,7 @@ import type { Editor as TipTapEditor } from "@tiptap/react";
 import { STRINGS } from "../strings";
 import { useProjectEditor } from "../hooks/useProjectEditor";
 import { useEditorMutation } from "../hooks/useEditorMutation";
+import { useEditorMutationMachine } from "../hooks/useEditorMutationMachine";
 import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 import { sleep } from "../utils/abortable";
 import { useSidebarState } from "../hooks/useSidebarState";
@@ -138,30 +139,21 @@ export function EditorPage() {
   // without conflating success with failure.
   const [actionInfo, setActionInfo] = useState<string | null>(null);
 
-  // Read-only lock surfaced when a mutation succeeded server-side but the
-  // follow-up reload failed (I1). The Editor is intentionally left
-  // setEditable(false) in that case to prevent the user from typing over
-  // stale content; this banner is the only persistent user-visible signal
-  // of that state, so it must NOT be dismissible. It clears automatically
-  // when the Editor is replaced (chapter switch or reload-key bump).
-  const [editorLockedMessage, setEditorLockedMessage] = useState<string | null>(null);
+  // Phase 4b.5: the editor's operational state (lock banner, TipTap editable
+  // intent, mutation-busy) lives in ONE machine so the invariant pair can no
+  // longer drift by hand. The read-only lock is surfaced when a mutation
+  // succeeded server-side but the follow-up reload failed (I1); the Editor is
+  // intentionally left setEditable(false) in that case to prevent the user
+  // from typing over stale content. The lock banner is the only persistent
+  // user-visible signal of that state, so it must NOT be dismissible — it
+  // clears automatically when the Editor is replaced (chapter switch or
+  // reload-key bump) via the EDITOR_REMOUNTED dispatch below.
+  const editorMachine = useEditorMutationMachine();
 
   // Editor handle is declared here (above useEditorMutation + the migrated
   // mutation callbacks) so the hook can capture the ref and the callbacks
   // below can read editorRef.current safely.
   const editorRef = useRef<EditorHandle | null>(null);
-
-  // Latest-ref for the lock predicate: the hook captures the callback once
-  // but must see the current editorLockedMessage state when finally runs.
-  // Without this, a run() callback closure would be stale and the gate
-  // below would never fire after the banner was set (I1).
-  const editorLockedMessageRef = useRef(editorLockedMessage);
-  // F-1 decomposition (2026-05-29): extracting the find-replace and snapshot
-  // orchestration brought EditorPage back under the React Compiler's analysis
-  // bailout threshold, so react-hooks/refs now sees this sync-on-render write.
-  // The inline disable mirrors useProjectEditor.ts / useTrashManager.ts.
-  // eslint-disable-next-line react-hooks/refs
-  editorLockedMessageRef.current = editorLockedMessage;
 
   // Defense-in-depth save gate (C1): wraps handleSave so that, if the lock
   // banner is showing, no auto-save PATCH leaves the client — regardless of
@@ -175,10 +167,10 @@ export function EditorPage() {
   // refreshing the page restores the server-committed state cleanly.
   const handleSaveLockGated = useCallback(
     async (content: Record<string, unknown>, chapterId?: string): Promise<boolean> => {
-      if (editorLockedMessageRef.current !== null) return false;
+      if (editorMachine.isLocked()) return false;
       return handleSave(content, chapterId);
     },
-    [handleSave],
+    [handleSave, editorMachine],
   );
 
   // Single useEditorMutation instance shared by handleRestoreSnapshot,
@@ -191,13 +183,12 @@ export function EditorPage() {
       reloadActiveChapter,
       getActiveChapter,
     },
-    // When a prior run left the editor in the reload-failed lock state,
-    // the persistent "refresh the page" banner is on screen and the editor
-    // is read-only. A subsequent successful run's finally must NOT
-    // re-enable the editor (I1) — the user, trusting the banner, would be
-    // refreshing; any keystroke between now and that refresh would PATCH
-    // pre-mutation content back over the server's committed change.
-    isLocked: () => editorLockedMessageRef.current !== null,
+    // The hook emits MUTATION_STARTED at entry and one terminal event on
+    // settle; on the committed-but-unreloaded path it dispatches nothing and
+    // the consumer raises COMMITTED_UNRELOADED with its own banner copy. The
+    // machine's MUTATION_SETTLED_OK transition preserves the old "do not
+    // re-enable under a persistent lock" guard (I1) by construction.
+    dispatch: editorMachine.dispatch,
   });
 
   // I5: Caller-level busy ref spanning the ENTIRE handleReplaceOne /
@@ -215,7 +206,7 @@ export function EditorPage() {
   // I2: shared lock-banner predicate for entry points outside useEditorMutation
   // (title edits, panel open/close). Reads through the latest-ref so callbacks
   // captured once see the current banner state.
-  const isEditorLocked = useCallback(() => editorLockedMessageRef.current !== null, []);
+  const isEditorLocked = useCallback(() => editorMachine.isLocked(), [editorMachine]);
 
   // Panel exclusivity: when snapshot panel opens, close reference panel and vice versa.
   //
@@ -294,32 +285,29 @@ export function EditorPage() {
 
   // I6 (review 2026-04-24): invariant-pair helper. CLAUDE.md save-
   // pipeline invariant #2 requires setEditable(false) around any
-  // mutation that can fail mid-typing; the persistent lock banner
-  // (editorLockedMessage) is the only user-visible signal of that
-  // read-only state. The two MUST be set together — a caller that
-  // flips one without the other leaves the UI and the editor-state
-  // disagreeing. Three call sites pair them today (restore stage:
-  // "reload", restore stage:"mutate" possiblyCommitted, and
-  // finalizeReplaceSuccess non-stale reloadFailed). Extracting the
-  // pair into a named helper makes the coupling explicit so a future
-  // refactor can't silently drop one half. Callers keep their
-  // surrounding refreshes / cache-clear / stale-chapter branching
-  // inline because those diverge between the restore and replace
+  // mutation that can fail mid-typing; the persistent lock banner is the
+  // only user-visible signal of that read-only state. Three call sites
+  // pair them today (restore stage:"reload", restore stage:"mutate"
+  // possiblyCommitted, and finalizeReplaceSuccess non-stale reloadFailed).
+  // Callers keep their surrounding refreshes / cache-clear / stale-chapter
+  // branching inline because those diverge between the restore and replace
   // flows in non-mechanical ways.
-  const applyReloadFailedLock = useCallback((bannerMessage: string) => {
-    setEditorLockedMessage(bannerMessage);
-    // safeSetEditable swallows TipTap mid-remount throws so a caller's
-    // follow-up bookkeeping (cache-clear, panel refresh) still runs.
-    safeSetEditable(editorRef, false);
-  }, []);
+  const applyReloadFailedLock = useCallback(
+    (bannerMessage: string) => {
+      // COMMITTED_UNRELOADED sets the banner AND editable:false in one machine
+      // transition — the invariant pair can no longer drift. The reconcile
+      // effect pushes editable:false into TipTap; the lock-down setEditable(false)
+      // already ran synchronously inside useEditorMutation for the mutation path,
+      // and for the terminal-save-error path (useProjectEditor.onRequestEditorLock)
+      // the effect applies it.
+      editorMachine.dispatch({ type: "COMMITTED_UNRELOADED", message: bannerMessage });
+    },
+    [editorMachine],
+  );
   // I2 (review 2026-04-24): keep the ref used by useProjectEditor's
   // onRequestEditorLock pointed at the current helper identity. The
-  // helper is memoized with [] so identity is stable, but the ref
-  // indirection lets us reference it here without circular declaration.
-  // F-1 decomposition (2026-05-29): see the editorLockedMessageRef note above
-  // — the smaller post-extraction body is now under the React Compiler's
-  // analysis threshold, so react-hooks/refs sees this sync-on-render write.
-  // eslint-disable-next-line react-hooks/refs
+  // helper's identity is stable across renders (deps are stable), and the
+  // ref indirection lets us reference it here without circular declaration.
   applyReloadFailedLockRef.current = applyReloadFailedLock;
 
   // F-1 decomposition (2026-05-29): the snapshot-restore / onView /
@@ -339,7 +327,7 @@ export function EditorPage() {
     findReplace,
     getActiveChapter,
     editorRef,
-    editorLockedMessageRef,
+    isEditorLocked,
     isActionBusy,
     actionBusyRef,
     applyReloadFailedLock,
@@ -367,7 +355,7 @@ export function EditorPage() {
     getActiveChapter,
     isActionBusy,
     actionBusyRef,
-    editorLockedMessageRef,
+    isEditorLocked,
     applyReloadFailedLock,
     setActionError,
     setActionInfo,
@@ -439,13 +427,27 @@ export function EditorPage() {
     };
   }, []);
 
-  // Clear the editor-locked banner whenever the active Editor instance
-  // changes — chapter switch creates a new Editor with default editable=true,
-  // and a chapterReloadKey bump remounts with fresh server content. In both
-  // cases the read-only state from the failed reload no longer applies.
+  // Remount (chapter switch or chapterReloadKey bump) clears the lock and
+  // re-asserts editable — replaces the old lock-message-clearing effect.
+  // Chapter switch creates a new Editor with default editable=true, and a
+  // chapterReloadKey bump remounts with fresh server content; in both cases
+  // the read-only state from the failed reload no longer applies.
   useEffect(() => {
-    setEditorLockedMessage(null);
-  }, [activeChapter?.id, chapterReloadKey]);
+    editorMachine.dispatch({ type: "EDITOR_REMOUNTED" });
+    // Key ONLY on the remount triggers + the stable useReducer dispatch.
+    // Depending on the whole `editorMachine` (a useMemo that changes identity
+    // on every state transition) would re-fire EDITOR_REMOUNTED on each
+    // mutation event and spuriously clear the lock. dispatch is referentially
+    // stable, so listing `editorMachine.dispatch` is correct and complete.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChapter?.id, chapterReloadKey, editorMachine.dispatch]);
+
+  // Reconcile editable intent → TipTap (re-enable / re-assert direction only;
+  // the lock-down false is synchronous-imperative in useEditorMutation). Reuses
+  // safeSetEditable so a mid-remount throw is absorbed + logged once.
+  useEffect(() => {
+    safeSetEditable(editorRef, editorMachine.state.editable);
+  }, [editorMachine.state.editable, activeChapter?.id, chapterReloadKey]);
 
   // Fetch chapter statuses with retry. statusesOp lives in the component
   // body (not inside the effect) so its identity is stable across renders;
@@ -502,14 +504,14 @@ export function EditorPage() {
       // Sibling sidebar guards all check this; without it, a status PATCH
       // fires against a chapter the user was told to refresh after a
       // possibly-committed restore/replace.
-      if (editorLockedMessageRef.current !== null) {
+      if (editorMachine.isLocked()) {
         setActionInfo(STRINGS.editor.lockedRefusal);
         return;
       }
       setActionError(null);
       handleStatusChange(chapterId, status, setActionError);
     },
-    [handleStatusChange, setActionError, isActionBusy],
+    [handleStatusChange, setActionError, isActionBusy, editorMachine],
   );
 
   const handleRenameChapterWithError = useCallback(
@@ -525,14 +527,14 @@ export function EditorPage() {
       // isEditorLocked, but the sidebar entry point did not — a sidebar
       // rename while the lock banner is up would PATCH a chapter the user
       // was told to refresh.
-      if (editorLockedMessageRef.current !== null) {
+      if (editorMachine.isLocked()) {
         setActionInfo(STRINGS.editor.lockedRefusal);
         return;
       }
       setActionError(null);
       handleRenameChapter(chapterId, title, setActionError);
     },
-    [handleRenameChapter, setActionError, isActionBusy],
+    [handleRenameChapter, setActionError, isActionBusy, editorMachine],
   );
 
   // I4: handleReorderChapters rebuilds the chapter list from pre-mutation
@@ -550,14 +552,14 @@ export function EditorPage() {
       // A reorder doesn't by itself dismiss the banner, but the persistent
       // "refresh the page" banner means the editor state is ambiguous;
       // mutating the project structure underneath makes the ambiguity worse.
-      if (editorLockedMessageRef.current !== null) {
+      if (editorMachine.isLocked()) {
         setActionInfo(STRINGS.editor.lockedRefusal);
         return;
       }
       setActionError(null);
       handleReorderChapters(orderedIds, setActionError);
     },
-    [handleReorderChapters, isActionBusy, setActionError],
+    [handleReorderChapters, isActionBusy, setActionError, editorMachine],
   );
 
   const switchToView = useCallback(
@@ -579,7 +581,7 @@ export function EditorPage() {
       // alone restores writability and the next keystroke schedules an
       // auto-save that overwrites the server-committed mutation. The
       // banner is already on screen; no second banner needed.
-      if (editorLockedMessageRef.current !== null) {
+      if (editorMachine.isLocked()) {
         return false;
       }
       // flushSave returns false when the save pipeline gave up (4xx or
@@ -643,12 +645,12 @@ export function EditorPage() {
       // when the lock is set (defensive — switchToView refuses above when
       // locked, but a future refactor that loosens the gate must still
       // honor the lock here).
-      if (editorLockedMessageRef.current === null) {
+      if (!editorMachine.isLocked()) {
         safeSetEditable(editorRef, true);
       }
       return true;
     },
-    [setTrashOpen, setActionError, isActionBusy],
+    [setTrashOpen, setActionError, isActionBusy, editorMachine],
   );
 
   // mutation.isBusy() guards for entry points that either (a) bump the save
@@ -668,16 +670,16 @@ export function EditorPage() {
     }
     // I4 (review 2026-04-21): refuse while the lock banner is up. Create
     // switches the active chapter, which fires the [activeChapter?.id]
-    // effect and clears editorLockedMessage — silently dismissing a
-    // banner that was intentionally persistent. The title-edit hooks and
+    // remount effect and dispatches EDITOR_REMOUNTED — silently dismissing
+    // a banner that was intentionally persistent. The title-edit hooks and
     // snapshot view already consult isEditorLocked; mirror that here.
-    if (editorLockedMessageRef.current !== null) {
+    if (editorMachine.isLocked()) {
       setActionInfo(STRINGS.editor.lockedRefusal);
       return;
     }
     setActionError(null);
     handleCreateChapter(setActionError);
-  }, [isActionBusy, handleCreateChapter, setActionError]);
+  }, [isActionBusy, handleCreateChapter, setActionError, editorMachine]);
 
   const requestDeleteChapter = useCallback(
     (chapter: Chapter) => {
@@ -687,18 +689,19 @@ export function EditorPage() {
       }
       // I4 (review 2026-04-21): refuse while the lock banner is up.
       // handleDeleteChapter switches the active chapter on success, which
-      // fires the [activeChapter?.id] useEffect and silently clears
-      // editorLockedMessage. The banner that was telling the user "refresh
-      // the page because your state is ambiguous" disappears, and the new
-      // chapter's editor is enabled — whatever ambiguity triggered the
-      // lock is now invisible. Same rationale as title-edit / snapshot view.
-      if (editorLockedMessageRef.current !== null) {
+      // fires the [activeChapter?.id] remount effect and dispatches
+      // EDITOR_REMOUNTED, silently clearing the lock. The banner that was
+      // telling the user "refresh the page because your state is ambiguous"
+      // disappears, and the new chapter's editor is enabled — whatever
+      // ambiguity triggered the lock is now invisible. Same rationale as
+      // title-edit / snapshot view.
+      if (editorMachine.isLocked()) {
         setActionInfo(STRINGS.editor.lockedRefusal);
         return;
       }
       setDeleteTarget(chapter);
     },
-    [isActionBusy, setDeleteTarget],
+    [isActionBusy, setDeleteTarget, editorMachine],
   );
 
   const openTrashGuarded = useCallback(() => {
@@ -707,14 +710,14 @@ export function EditorPage() {
       return;
     }
     // I4: refuse while the lock banner is up. Trash view unmounts the
-    // editor, implicitly clearing the editorLockedMessage reminder —
-    // consistent with the other guarded entry points.
-    if (editorLockedMessageRef.current !== null) {
+    // editor, implicitly clearing the lock reminder — consistent with
+    // the other guarded entry points.
+    if (editorMachine.isLocked()) {
       setActionInfo(STRINGS.editor.lockedRefusal);
       return;
     }
     openTrash();
-  }, [isActionBusy, openTrash]);
+  }, [isActionBusy, openTrash, editorMachine]);
 
   const handleSelectChapterWithFlush = useCallback(
     async (chapterId: string) => {
@@ -850,7 +853,7 @@ export function EditorPage() {
     // same recoverable feedback as the other paths.
     flushSave: async () => {
       if (isActionBusy()) return;
-      if (editorLockedMessageRef.current !== null) return;
+      if (editorMachine.isLocked()) return;
       try {
         await editorRef.current?.flushSave();
       } catch (err) {
@@ -970,7 +973,7 @@ export function EditorPage() {
         onRenameChapter={handleRenameChapterWithError}
         onOpenTrash={openTrashGuarded}
         onStatusChange={handleStatusChangeWithError}
-        editorLockedMessage={editorLockedMessage}
+        editorLockedMessage={editorMachine.state.lock?.message ?? null}
         actionError={actionError}
         onDismissActionError={() => setActionError(null)}
         actionInfo={actionInfo}

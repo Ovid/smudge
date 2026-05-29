@@ -30,7 +30,7 @@ export interface FindReplaceControllerDeps {
   getActiveChapter: () => Chapter | null;
   isActionBusy: () => boolean;
   actionBusyRef: MutableRefObject<boolean>;
-  editorLockedMessageRef: MutableRefObject<string | null>;
+  isEditorLocked: () => boolean;
   applyReloadFailedLock: (bannerMessage: string) => void;
   setActionError: Dispatch<SetStateAction<string | null>>;
   setActionInfo: Dispatch<SetStateAction<string | null>>;
@@ -57,7 +57,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
     getActiveChapter,
     isActionBusy,
     actionBusyRef,
-    editorLockedMessageRef,
+    isEditorLocked,
     applyReloadFailedLock,
     setActionError,
     setActionInfo,
@@ -191,7 +191,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       // user could open Ctrl+H and issue another replace, firing a fresh
       // PATCH + auto-snapshot while the UI claims nothing will touch server
       // state. Mirror handleRestoreSnapshot's guard exactly.
-      if (editorLockedMessageRef.current !== null) {
+      if (isEditorLocked()) {
         setActionInfo(STRINGS.editor.mutationBusy);
         return;
       }
@@ -383,7 +383,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       isActionBusy,
       replaceOp,
       actionBusyRef,
-      editorLockedMessageRef,
+      isEditorLocked,
     ],
   );
 
@@ -460,7 +460,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       // C1: Same lock-banner guard as executeReplace/handleRestoreSnapshot.
       // Per-match Replace must not issue a server write while the lock
       // banner claims nothing will touch server state until refresh.
-      if (editorLockedMessageRef.current !== null) {
+      if (isEditorLocked()) {
         setActionInfo(STRINGS.editor.mutationBusy);
         return;
       }
@@ -629,7 +629,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       isActionBusy,
       replaceOp,
       actionBusyRef,
-      editorLockedMessageRef,
+      isEditorLocked,
     ],
   );
 
