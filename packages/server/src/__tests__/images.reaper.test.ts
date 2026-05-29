@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { v4 as uuidv4 } from "uuid";
-import { mkdtemp, mkdir, writeFile, rm, readdir } from "node:fs/promises";
+import fsPromises, { mkdtemp, mkdir, writeFile, rm, readdir } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import knex, { type Knex } from "knex";
 import { createTestKnexConfig } from "../db/knexfile";
 import * as imagesRepo from "../images/images.repository";
 import { reapOrphanImages } from "../images/images.reaper";
+import { logger } from "../logger";
 
 vi.mock("../logger", () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
@@ -88,5 +89,69 @@ describe("reapOrphanImages (F-14)", () => {
   it("returns 0 when the images directory does not exist (fresh install)", async () => {
     const reaped = await reapOrphanImages(db, dataDir);
     expect(reaped).toBe(0);
+  });
+
+  it("does NOT warn when imagesRoot is missing (ENOENT — fresh install) (S4)", async () => {
+    vi.mocked(logger.warn).mockClear();
+    await reapOrphanImages(db, dataDir);
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("warns when imagesRoot readdir fails with a non-ENOENT error (e.g. EACCES) (S4)", async () => {
+    vi.mocked(logger.warn).mockClear();
+    const readdirSpy = vi.spyOn(fsPromises, "readdir").mockImplementation(async () => {
+      const err = new Error("permission denied") as NodeJS.ErrnoException;
+      err.code = "EACCES";
+      throw err;
+    });
+    try {
+      const reaped = await reapOrphanImages(db, dataDir);
+      expect(reaped).toBe(0);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ err: expect.objectContaining({ code: "EACCES" }) }),
+        expect.stringContaining("Failed to read images directory"),
+      );
+    } finally {
+      readdirSpy.mockRestore();
+    }
+  });
+
+  it("warns and continues when an inner per-project readdir fails with a non-ENOENT error (S4)", async () => {
+    // Two project dirs; the first fails to read, the second succeeds with one orphan.
+    const projectA = uuidv4();
+    const projectB = projectId; // owned by an existing DB project row
+    await mkdir(path.join(dataDir, "images", projectA), { recursive: true });
+    const orphanId = uuidv4();
+    await writeImage(orphanId);
+
+    vi.mocked(logger.warn).mockClear();
+    const originalReaddir = fsPromises.readdir;
+    const readdirSpy = vi
+      .spyOn(fsPromises, "readdir")
+      .mockImplementation(async (dir: Parameters<typeof fsPromises.readdir>[0], opts?: unknown) => {
+        if (typeof dir === "string" && dir.endsWith(projectA)) {
+          const err = new Error("io error") as NodeJS.ErrnoException;
+          err.code = "EIO";
+          throw err;
+        }
+        return originalReaddir(
+          dir as string,
+          opts as Parameters<typeof originalReaddir>[1],
+        ) as ReturnType<typeof originalReaddir>;
+      });
+    try {
+      const reaped = await reapOrphanImages(db, dataDir);
+      // The orphan in project B is still reaped despite project A failing.
+      expect(reaped).toBe(1);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          err: expect.objectContaining({ code: "EIO" }),
+          projectDir: projectA,
+        }),
+        expect.stringContaining("Failed to read project image directory"),
+      );
+    } finally {
+      readdirSpy.mockRestore();
+    }
   });
 });

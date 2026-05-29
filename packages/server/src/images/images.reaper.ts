@@ -33,8 +33,13 @@ export async function reapOrphanImages(db: Knex, dataDir?: string): Promise<numb
   let projectDirs: string[];
   try {
     projectDirs = await fs.readdir(imagesRoot);
-  } catch {
-    // No images directory yet (fresh install) — nothing to reap.
+  } catch (err) {
+    // S4: only swallow ENOENT (legitimate fresh install — images directory
+    // has not been created yet). Any other code (EACCES, EIO, ENOTDIR, …)
+    // is an operator-actionable signal — surface it as a warn rather than
+    // confusing the operator later with a "upload fails for no reason" 500.
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return 0;
+    logger.warn({ err, imagesRoot }, "Failed to read images directory; skipping reaper");
     return 0;
   }
 
@@ -47,7 +52,16 @@ export async function reapOrphanImages(db: Knex, dataDir?: string): Promise<numb
     let entries: import("node:fs").Dirent[];
     try {
       entries = await fs.readdir(dirPath, { withFileTypes: true });
-    } catch {
+    } catch (err) {
+      // S4: a per-project directory disappearing between the outer readdir
+      // and this call is benign (ENOENT) — race with a manual cleanup or a
+      // sibling process. Other codes are operator-actionable.
+      if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") {
+        logger.warn(
+          { err, projectDir },
+          "Failed to read project image directory; skipping",
+        );
+      }
       continue;
     }
     for (const entry of entries) {
