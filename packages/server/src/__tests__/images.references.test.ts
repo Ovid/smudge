@@ -419,8 +419,9 @@ describe("deleteImage corrects drifted reference_count", () => {
 
     // deleteImage should live-check, correct the count, and allow deletion
     const res = await request(t.app).delete(`/api/images/${imageId}`);
-    expect(res.status).toBe(200);
-    expect(res.body.deleted).toBe(true);
+    // F-16: all DELETE endpoints return 204 No Content (uniform success contract).
+    expect(res.status).toBe(204);
+    expect(res.text).toBe("");
   });
 });
 

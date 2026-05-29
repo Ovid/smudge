@@ -262,8 +262,9 @@ describe("DELETE /api/chapters/:id", () => {
 
     const res = await request(t.app).delete(`/api/chapters/${chapterId}`);
 
-    expect(res.status).toBe(200);
-    expect(res.body.message).toBe("Chapter moved to trash.");
+    // F-16: all DELETE endpoints return 204 No Content (uniform success contract).
+    expect(res.status).toBe(204);
+    expect(res.text).toBe("");
   });
 
   it("returns 404 for non-existent chapter", async () => {

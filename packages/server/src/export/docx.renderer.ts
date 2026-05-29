@@ -12,7 +12,7 @@ import {
   ShadingType,
 } from "docx";
 import type { ExportProjectInfo, ExportChapter, RenderOptions } from "./export.renderers";
-import { resolveImage, buildCaptionText } from "./image-resolver";
+import { resolveImage, buildCaptionText, type ImageSource } from "./image-resolver";
 import { UUID_PATTERN } from "../images/images.paths";
 import { logger } from "../logger";
 
@@ -111,6 +111,10 @@ function inlineToRuns(
 // ---------------------------------------------------------------------------
 
 interface DocxBuildState {
+  // Injected image-lookup dependency (F-12): threaded through the build state
+  // so the leaf paragraph builders resolve images via the caller-supplied
+  // source rather than the global store singleton.
+  imageSource: ImageSource;
   nextListId: number;
   numberingConfigs: Array<{
     reference: string;
@@ -123,8 +127,8 @@ interface DocxBuildState {
   }>;
 }
 
-function newBuildState(): DocxBuildState {
-  return { nextListId: 0, numberingConfigs: [] };
+function newBuildState(imageSource: ImageSource): DocxBuildState {
+  return { imageSource, nextListId: 0, numberingConfigs: [] };
 }
 
 const MAX_LIST_DEPTH = 9; // Word supports levels 0-8
@@ -323,7 +327,7 @@ async function blockToParagraphs(
           return [];
         }
 
-        const resolved = await resolveImage(idMatch[1]);
+        const resolved = await resolveImage(idMatch[1], state.imageSource);
         if (!resolved) {
           logger.warn({ imageId: idMatch[1] }, "Could not resolve image for docx export");
           return [];
@@ -424,8 +428,9 @@ export async function renderDocx(
   project: ExportProjectInfo,
   chapters: ExportChapter[],
   options: RenderOptions,
+  imageSource: ImageSource,
 ): Promise<Buffer> {
-  const state = newBuildState();
+  const state = newBuildState(imageSource);
   const children: (Paragraph | TableOfContents)[] = [];
 
   // 1. Title page

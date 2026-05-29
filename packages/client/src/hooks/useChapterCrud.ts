@@ -5,7 +5,14 @@ import { api } from "../api/client";
 import { getCachedContent, clearCachedContent } from "./useContentCache";
 import { useAbortableSequence } from "./useAbortableSequence";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
-import { mapApiError, applyMappedError, devWarn, isAborted, isNotFound } from "../errors";
+import {
+  mapApiError,
+  applyMappedError,
+  devWarn,
+  isAborted,
+  isNotFound,
+  clientWarn,
+} from "../errors";
 import type { ChapterCrudDeps, ReloadOutcome } from "./useProjectEditor.types";
 
 // Chapter-CRUD seam of useProjectEditor (F-2 decomposition, 2026-05-29):
@@ -232,7 +239,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
           // No navigation hook wired: fall through so the dismissible
           // banner stands as a recoverable UX.
         }
-        console.warn("Failed to create chapter:", err);
+        clientWarn("Failed to create chapter:", err);
         // I4: route through the onError callback (same pattern as
         // handleRenameChapter / handleStatusChange / handleDeleteChapter)
         // so a recoverable failure surfaces as a dismissible banner
@@ -432,7 +439,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         // an intentional control-flow signal here — silence them
         // before the warn so test output stays clean.
         if (isAborted(err)) return;
-        console.warn("Failed to load chapter:", err);
+        clientWarn("Failed to load chapter:", err);
         if (token.isStale()) return;
         applyMappedError(mapApiError(err, "chapter.load"), { onMessage: setError });
       }
@@ -512,7 +519,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         // abort as a non-fatal skip rather than a lock-worthy failure
         // (mirrors the token.isStale() arm immediately below).
         if (isAborted(err)) return "superseded";
-        console.warn("Failed to reload chapter:", err);
+        clientWarn("Failed to reload chapter:", err);
         // Token stale during the GET → user navigated away. A newer
         // select owns state now; "superseded" is correct and must not
         // route to the lock banner (I5).
@@ -637,7 +644,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
                 // dev console both learn something went wrong (I3); before
                 // I3 the catch was silent and the user saw "Add chapter"
                 // as if the project had no chapters left.
-                console.warn("Failed to load chapter after delete:", err);
+                clientWarn("Failed to load chapter after delete:", err);
                 if (token.isStale()) return true;
                 // I2 (review 2026-05-27 round 2, sweep): drift guard
                 // covers the inner secondary-GET catch too — without
@@ -661,7 +668,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
           // one; stay silent so we don't fire a banner on a torn-down
           // caller (happens in practice in tests too).
           if (s.aborted) return false;
-          console.warn("Failed to delete chapter:", err);
+          clientWarn("Failed to delete chapter:", err);
           // I2 (review 2026-05-27 round 2, sweep): drift guard before
           // surfacing the failure. The catch already runs after the
           // optimistic-no-op setProject (line 1130, walks new project's
@@ -739,7 +746,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         // driving its own PATCH. Reverting here would stomp the live
         // call; stay silent and let the newer reorder land.
         if (signal.aborted) return;
-        console.warn("Failed to reorder chapters:", err);
+        clientWarn("Failed to reorder chapters:", err);
         if (projectRef.current?.id !== projectId) return;
         if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
           return;

@@ -14,6 +14,7 @@ import {
   isApiError,
   isAborted,
   isClientError,
+  clientWarn,
 } from "../errors";
 import { useChapterCrud } from "./useChapterCrud";
 import { useChapterMetadata } from "./useChapterMetadata";
@@ -294,7 +295,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
         // (Replaces the pre-migration `cancelled` gate; C-6 Phase 4b.3b.)
         if (s.aborted) return;
         const mapped = mapApiError(err, "project.load");
-        if (mapped.message !== null) console.warn("Failed to load project:", err);
+        if (mapped.message !== null) clientWarn("Failed to load project:", err);
         applyMappedError(mapped, { onMessage: setError });
       }
     });
@@ -457,7 +458,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
             //     committedCodes entry so its mapped output sets both flags; the
             //     OR is idempotent on that case.
             if (isApiError(err) && (mapped.terminal || mapped.possiblyCommitted)) {
-              console.warn("Save failed terminally:", err);
+              clientWarn("Save failed terminally:", err);
               terminal = {
                 message: mapped.message as string,
                 code: err.code,
@@ -468,7 +469,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
               break;
             }
             if (isClientError(err)) {
-              console.warn("Save failed with 4xx:", err);
+              clientWarn("Save failed with 4xx:", err);
               // I4 (2026-04-23 review): route through the unified mapper
               // so chapter.save scope is the single source of truth. Raw
               // err.message is never forwarded (CLAUDE.md invariant); the

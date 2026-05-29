@@ -57,19 +57,30 @@ interface EditorProps {
 
 const AUTO_SAVE_DEBOUNCE_MS = 1500;
 
-// Module-level map from editor instance ID to upload handler.
-// Each Editor component registers its own handler keyed by a unique ID,
-// so multiple instances don't overwrite each other.
-let nextEditorId = 0;
-const imageUploadHandlers = new Map<number, (file: File) => void>();
+// F-17: the upload handler is reached through a per-component getter passed
+// into this extension as an option at editor construction. The ProseMirror
+// plugin calls `getUploadHandler()` at paste/drop time, so the handler is
+// naturally instance-scoped — no shared `activeEditorId` / handler Map /
+// `nextEditorId` module globals, and correct if two editors are ever mounted.
+// (A getter over a ref, rather than mutating `editor.storage` or passing the
+// ref object directly, satisfies the react-hooks immutability/refs rules: the
+// ref is only ever read inside the getter at event time, never during render.)
+// S7: the handler returned by getUploadHandler is async (it awaits
+// api.images.upload); the type widening to `Promise<void> | void` makes the
+// async semantics part of the documented contract so a future refactor that
+// strips the inner try/catch doesn't silently regress to uncaught promise
+// rejections under the same TypeScript-accepted shape.
+interface ImagePasteOptions {
+  getUploadHandler: () => ((file: File) => Promise<void> | void) | null;
+}
 
-// The extension is module-level (ProseMirror plugins are created once).
-// At event time it looks up the handler for the most recently focused editor.
-let activeEditorId = -1;
-
-const imagePasteExtension = Extension.create({
+const imagePasteExtension = Extension.create<ImagePasteOptions>({
   name: "imagePaste",
+  addOptions() {
+    return { getUploadHandler: () => null };
+  },
   addProseMirrorPlugins() {
+    const { getUploadHandler } = this.options;
     return [
       new Plugin({
         key: new PluginKey("imagePaste"),
@@ -82,8 +93,7 @@ const imagePasteExtension = Extension.create({
             event.preventDefault();
             const file = images[0]?.getAsFile();
             if (file) {
-              const handler = imageUploadHandlers.get(activeEditorId);
-              handler?.(file);
+              getUploadHandler()?.(file);
             }
             return true;
           },
@@ -94,9 +104,8 @@ const imagePasteExtension = Extension.create({
             );
             if (images.length === 0) return false;
             event.preventDefault();
-            const handler = imageUploadHandlers.get(activeEditorId);
             const first = images[0];
-            if (first) handler?.(first);
+            if (first) getUploadHandler()?.(first);
             return true;
           },
         },
@@ -121,7 +130,17 @@ export function Editor({
   const onImageUploadCommittedRef = useRef(onImageUploadCommitted);
   const projectIdRef = useRef(projectId);
   const onImageAnnouncementRef = useRef(onImageAnnouncement);
-  const editorIdRef = useRef(nextEditorId++);
+  // F-17: instance-scoped image upload handler, read by this editor's
+  // paste/drop plugin (configured below). Set in an effect once the editor and
+  // its callbacks are live; a ref so the plugin always sees the latest handler.
+  // S7: typed as `Promise<void> | void` because the installed handler is
+  // async (it awaits api.images.upload); aligning the ref type with the
+  // imagePaste extension's `ImagePasteOptions.getUploadHandler` keeps the
+  // async semantics part of the documented contract.
+  const uploadHandlerRef = useRef<((file: File) => Promise<void> | void) | null>(null);
+  // Stable getter handed to the imagePaste extension; the plugin calls it at
+  // event time, so the ref is never read during render.
+  const getUploadHandler = useCallback(() => uploadHandlerRef.current, []);
   // Captured at mount. The Editor is keyed on chapter id so the prop never
   // changes during the instance's lifetime; this ref is the canonical target
   // for every save fired by this Editor, including fire-and-forget unmount
@@ -234,7 +253,8 @@ export function Editor({
       Placeholder.configure({
         placeholder: STRINGS.editor.placeholder,
       }),
-      imagePasteExtension,
+      // eslint-disable-next-line react-hooks/refs -- getUploadHandler is invoked only by the ProseMirror paste/drop plugin at event time, never during render; handing it to the extension at construction is the canonical bridge into the imperative editor (replaces the F-17 module-global registry).
+      imagePasteExtension.configure({ getUploadHandler }),
     ],
     content: content ?? { type: "doc", content: [{ type: "paragraph" }] },
     onUpdate: ({ editor: ed }) => {
@@ -265,9 +285,6 @@ export function Editor({
         .catch(() => {
           dirtyRef.current = true;
         });
-    },
-    onFocus: () => {
-      activeEditorId = editorIdRef.current;
     },
     editorProps: {
       attributes: {
@@ -307,11 +324,12 @@ export function Editor({
     };
   }, [editor]);
 
-  // Register instance-scoped image upload handler
+  // Register instance-scoped image upload handler (F-17): set this editor's
+  // own handler ref, which its paste/drop plugin reads — no module-level
+  // handler Map / active-id global.
   useEffect(() => {
-    const id = editorIdRef.current;
-    activeEditorId = id;
-    imageUploadHandlers.set(id, async (file: File) => {
+    if (!editor) return;
+    uploadHandlerRef.current = async (file: File) => {
       // I9 (review 2026-04-25): capture the project id at upload-start.
       // The Editor component does not necessarily remount on cross-project
       // navigation, so projectIdRef.current can advance during the in-flight
@@ -373,10 +391,9 @@ export function Editor({
           onImageAnnouncementRef.current?.(message);
         }
       }
-    });
+    };
     return () => {
-      imageUploadHandlers.delete(id);
-      if (activeEditorId === id) activeEditorId = -1;
+      uploadHandlerRef.current = null;
     };
   }, [editor]);
 

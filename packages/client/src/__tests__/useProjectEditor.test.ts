@@ -585,7 +585,7 @@ describe("useProjectEditor", () => {
   });
 
   it("deletes a non-active chapter", async () => {
-    vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
+    vi.mocked(api.chapters.delete).mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
@@ -599,7 +599,7 @@ describe("useProjectEditor", () => {
   });
 
   it("deletes the active chapter and switches to the first remaining", async () => {
-    vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
+    vi.mocked(api.chapters.delete).mockResolvedValue(undefined);
     vi.mocked(api.chapters.get)
       .mockResolvedValueOnce(mockChapter1) // initial load
       .mockResolvedValueOnce(mockChapter2); // switch after delete
@@ -907,7 +907,7 @@ describe("useProjectEditor", () => {
       chapters: [mockChapter1],
     };
     vi.mocked(api.projects.get).mockResolvedValue(singleChapterProject);
-    vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
+    vi.mocked(api.chapters.delete).mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
@@ -1035,7 +1035,7 @@ describe("useProjectEditor", () => {
       // enters the secondary-GET branch (lines around 956). The DELETE
       // resolves; the post-delete GET hangs until the unmount-driven abort
       // rejects it with ABORTED.
-      vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
+      vi.mocked(api.chapters.delete).mockResolvedValue(undefined);
       let callIndex = 0;
       vi.mocked(api.chapters.get).mockImplementation((_id, signal) => {
         callIndex++;
@@ -1396,7 +1396,7 @@ describe("useProjectEditor", () => {
   });
 
   it("handleDeleteChapter threads AbortSignal into api.chapters.delete (I7)", async () => {
-    vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
+    vi.mocked(api.chapters.delete).mockResolvedValue(undefined);
     vi.mocked(api.chapters.get).mockResolvedValue(mockChapter2);
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -1423,7 +1423,7 @@ describe("useProjectEditor", () => {
     let getSignal: AbortSignal | undefined;
     vi.mocked(api.chapters.delete).mockImplementationOnce((_id, signal) => {
       deleteSignal = signal;
-      return Promise.resolve({ message: "deleted" });
+      return Promise.resolve(undefined);
     });
     // The post-delete GET stays pending until the signal aborts. Using
     // pendingUntilAbort (rather than `new Promise(() => {})`) mirrors the
@@ -2237,7 +2237,7 @@ describe("useProjectEditor", () => {
     // the failure via the onError callback so the page can show a banner,
     // and warn to the console so the dev signal isn't lost.
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
+    vi.mocked(api.chapters.delete).mockResolvedValue(undefined);
     vi.mocked(api.chapters.get)
       .mockResolvedValueOnce(mockChapter1) // initial load
       .mockRejectedValueOnce(new Error("fetch failed")); // secondary fetch after delete
@@ -2517,8 +2517,8 @@ describe("useProjectEditor", () => {
     let resolveDelete: () => void = () => {};
     vi.mocked(api.chapters.delete).mockImplementationOnce(
       () =>
-        new Promise<{ message: string }>((resolve) => {
-          resolveDelete = () => resolve({ message: "ok" });
+        new Promise<undefined>((resolve) => {
+          resolveDelete = () => resolve(undefined);
         }),
     );
 

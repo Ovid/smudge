@@ -3,7 +3,7 @@ import { api } from "../api/client";
 import { useAbortableSequence } from "./useAbortableSequence";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
 import { STRINGS } from "../strings";
-import { mapApiError, applyMappedError, devWarn, isApiError } from "../errors";
+import { mapApiError, applyMappedError, devWarn, isApiError, clientWarn } from "../errors";
 import type { ChapterMetadataDeps } from "./useProjectEditor.types";
 
 // Chapter-metadata seam of useProjectEditor (F-2 decomposition, 2026-05-29):
@@ -102,7 +102,7 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
         return updated.slug;
       } catch (err) {
         if (signal.aborted) return undefined; // superseded by a newer rename
-        console.warn("Failed to update project title:", err);
+        clientWarn("Failed to update project title:", err);
         // Don't call setError — that triggers the full-page error overlay.
         // Returning undefined keeps the title edit mode open so the user can retry.
         const { message, possiblyCommitted } = mapApiError(err, "project.updateTitle");
@@ -370,7 +370,7 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
         // silent so the newer call's state update is not contradicted
         // by a stale error banner.
         if (signal.aborted) return;
-        console.warn("Failed to rename chapter:", err);
+        clientWarn("Failed to rename chapter:", err);
         // Don't call setError — that triggers the full-page error overlay.
         // Rename failures are non-fatal; surface via the optional callback
         // so callers can display inline (same pattern as handleStatusChange).

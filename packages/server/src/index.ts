@@ -2,6 +2,7 @@ import { initDb, closeDb } from "./db/connection";
 import { initProjectStore, resetProjectStore } from "./stores/project-store.injectable";
 import { createApp } from "./app";
 import { purgeOldTrash } from "./db/purge";
+import { reapOrphanImages } from "./images/images.reaper";
 import { logger } from "./logger";
 import { DEFAULT_SERVER_PORT, parsePort } from "@smudge/shared";
 import type { Server } from "node:http";
@@ -46,6 +47,14 @@ async function main() {
       { chapters: purged.chapters, projects: purged.projects, images: purged.images },
       "Purged old trash entries",
     );
+  }
+
+  // F-14: reap image files left orphaned on disk (crash between an upload's
+  // failed INSERT or a delete's commit and its unlink). Runs after purge, at
+  // startup, when no upload is in flight.
+  const reapedImages = await reapOrphanImages(db);
+  if (reapedImages > 0) {
+    logger.info({ images: reapedImages }, "Reaped orphan image files");
   }
 
   const app = createApp();

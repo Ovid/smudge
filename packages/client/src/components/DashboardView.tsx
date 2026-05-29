@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { STRINGS } from "../strings";
 import { STATUS_COLORS } from "../statusColors";
 import { ProgressStrip } from "./ProgressStrip";
-import { mapApiError, applyMappedError } from "../errors";
+import { mapApiError, applyMappedError, clientWarn } from "../errors";
 
 type DashboardData = Awaited<ReturnType<typeof api.projects.dashboard>>;
 
@@ -56,7 +56,7 @@ export function DashboardView({
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
-        console.warn("Failed to load dashboard:", err);
+        clientWarn("Failed to load dashboard:", err);
         applyMappedError(mapApiError(err, "dashboard.load"), { onMessage: setError });
       });
     return () => {
@@ -74,7 +74,7 @@ export function DashboardView({
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
-        console.warn("Failed to load velocity:", err);
+        clientWarn("Failed to load velocity:", err);
         // I3 (review 2026-04-24): preserve prior good data on a
         // transient refresh failure so the progress strip doesn't
         // blank on a network blip (the error banner renders below

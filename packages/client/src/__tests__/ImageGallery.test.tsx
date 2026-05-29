@@ -498,7 +498,7 @@ describe("ImageGallery", () => {
 
   it("deletes unused image and returns to grid", async () => {
     const user = userEvent.setup();
-    vi.mocked(api.images.delete).mockResolvedValue({ deleted: true });
+    vi.mocked(api.images.delete).mockResolvedValue(undefined);
     await renderAndOpenDetail(makeImage({ reference_count: 0 }), user);
 
     // First click shows confirmation
@@ -515,7 +515,7 @@ describe("ImageGallery", () => {
   it("announces deletion success for screen readers", async () => {
     const user = userEvent.setup();
     const image = makeImage({ reference_count: 0, filename: "sunset.png" });
-    vi.mocked(api.images.delete).mockResolvedValue({ deleted: true });
+    vi.mocked(api.images.delete).mockResolvedValue(undefined);
     await renderAndOpenDetail(image, user);
 
     await user.click(screen.getByText(S.deleteButton));

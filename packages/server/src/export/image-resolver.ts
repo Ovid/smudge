@@ -1,8 +1,19 @@
 import fs from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { getProjectStore } from "../stores/project-store.injectable";
+import type { ImageRow } from "@smudge/shared";
 import { mimeToExt, getImagePath, IMAGE_SRC_REGEX } from "../images/images.paths";
 import { escapeHtml } from "./html-escape";
+
+/**
+ * Narrow data dependency for image resolution: the single store method these
+ * renderers need. Injected by the caller (the export service) rather than
+ * reached via the global `getProjectStore()` singleton, so the leaf renderers
+ * declare their data dependency at the boundary and are decoupled from global
+ * init order (F-12). `ProjectStore` satisfies this structurally.
+ */
+export interface ImageSource {
+  findImageById(id: string): Promise<ImageRow | null>;
+}
 
 export interface ResolvedImage {
   id: string;
@@ -15,9 +26,11 @@ export interface ResolvedImage {
   license: string;
 }
 
-export async function resolveImage(imageId: string): Promise<ResolvedImage | null> {
-  const store = getProjectStore();
-  const row = await store.findImageById(imageId);
+export async function resolveImage(
+  imageId: string,
+  source: ImageSource,
+): Promise<ResolvedImage | null> {
+  const row = await source.findImageById(imageId);
   if (!row) return null;
 
   const ext = mimeToExt(row.mime_type);
@@ -123,12 +136,15 @@ async function resolveImageSrcs(
 /**
  * Resolve images as base64 data URIs — used for HTML, Markdown, and plain text exports.
  */
-export async function resolveImagesInHtml(html: string): Promise<{
+export async function resolveImagesInHtml(
+  html: string,
+  source: ImageSource,
+): Promise<{
   html: string;
   images: Map<string, ResolvedImage>;
 }> {
   return resolveImageSrcs(html, async (id) => {
-    const resolved = await resolveImage(id);
+    const resolved = await resolveImage(id, source);
     if (!resolved) return null;
     const dataUri = `data:${resolved.mimeType};base64,${resolved.data.toString("base64")}`;
     return { src: dataUri, image: resolved };
@@ -139,10 +155,9 @@ export async function resolveImagesInHtml(html: string): Promise<{
  * Resolve images as file:// URLs — used for EPUB exports.
  * epub-gen-memory supports file:// URLs natively.
  */
-export async function resolveImagesForEpub(html: string): Promise<string> {
+export async function resolveImagesForEpub(html: string, source: ImageSource): Promise<string> {
   const { html: resolvedHtml } = await resolveImageSrcs(html, async (id) => {
-    const store = getProjectStore();
-    const row = await store.findImageById(id);
+    const row = await source.findImageById(id);
     if (!row) return null;
     const ext = mimeToExt(row.mime_type);
     if (!ext) return null;

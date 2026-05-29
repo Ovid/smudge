@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { Chapter, ProjectWithChapters } from "@smudge/shared";
 import { api } from "../api/client";
-import { mapApiError, applyMappedError, devWarn } from "../errors";
+import { mapApiError, applyMappedError, devWarn, clientWarn, clientError } from "../errors";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
 import { useAbortableSequence } from "./useAbortableSequence";
 import { refreshTrashList } from "./useTrashManager.refresh";
@@ -124,7 +124,7 @@ export function useTrashManager(
     // message is non-null on the trash.load scope; log it for
     // debuggability and surface via applyMappedError.
     if (result.mapped.message !== null) {
-      console.error("Failed to load trash:", result.mapped.message);
+      clientError("Failed to load trash:", result.mapped.message);
     }
     applyMappedError(result.mapped, { onMessage: setActionError });
   }, [project, trashOp]);
@@ -225,7 +225,7 @@ export function useTrashManager(
         const mapped = mapApiError(err, "trash.restoreChapter");
         // ABORTED returns message: null. Skip log + state update so a
         // late abort does not surface noise.
-        if (mapped.message !== null) console.error("Failed to restore chapter:", err);
+        if (mapped.message !== null) clientError("Failed to restore chapter:", err);
         // I2 (2026-04-24 review) + S8 (2026-04-24 review): on a
         // committed-but-unreadable response (2xx BAD_JSON or 500
         // RESTORE_READ_FAILURE) the server actually restored the
@@ -346,7 +346,7 @@ export function useTrashManager(
       // hanging open if a future refactor introduced a throw. Add a
       // console.warn so the programming-bug path is observable in dev;
       // the dialog still dismisses so the user isn't stuck.
-      console.warn("confirmDeleteChapter programming-bug path:", err);
+      clientWarn("confirmDeleteChapter programming-bug path:", err);
       setDeleteTarget(null);
       return;
     }

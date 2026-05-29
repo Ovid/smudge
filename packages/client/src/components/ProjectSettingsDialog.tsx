@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
-import { mapApiError } from "../errors";
+import { mapApiError, clientError } from "../errors";
 import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 
 const TIMEZONES = (() => {
@@ -192,7 +192,7 @@ export function ProjectSettingsDialog({
       onUpdate();
     } catch (err) {
       if (signal.aborted) return; // superseded by a newer save
-      console.error("Failed to save project setting:", err);
+      clientError("Failed to save project setting:", err);
       // I7 (2026-04-23): route through the unified mapper instead of
       // hardcoding STRINGS.projectSettings.saveError — VALIDATION_ERROR,
       // 404, NETWORK, 2xx BAD_JSON were all collapsed to one string
@@ -278,7 +278,7 @@ export function ProjectSettingsDialog({
       }
     } catch (err) {
       if (signal.aborted) return; // superseded by a newer request
-      console.error("Failed to save timezone:", err);
+      clientError("Failed to save timezone:", err);
       const { message, possiblyCommitted } = mapApiError(err, "settings.update");
       if (message) setTimezoneSaveError(message);
       // C2 (review 2026-04-24): on possiblyCommitted the server likely

@@ -1,3 +1,5 @@
+import { clientWarn } from "../errors";
+
 const CACHE_PREFIX = "smudge:draft:";
 
 export function getCachedContent(chapterId: string): Record<string, unknown> | null {
@@ -6,7 +8,7 @@ export function getCachedContent(chapterId: string): Record<string, unknown> | n
     if (!raw) return null;
     return JSON.parse(raw) as Record<string, unknown>;
   } catch (err) {
-    console.warn("[useContentCache] getCachedContent failed:", err);
+    clientWarn("[useContentCache] getCachedContent failed:", err);
     return null;
   }
 }
@@ -16,7 +18,7 @@ export function setCachedContent(chapterId: string, content: Record<string, unkn
     localStorage.setItem(`${CACHE_PREFIX}${chapterId}`, JSON.stringify(content));
     return true;
   } catch (err) {
-    console.warn("[useContentCache] setCachedContent failed:", err);
+    clientWarn("[useContentCache] setCachedContent failed:", err);
     return false;
   }
 }
@@ -25,7 +27,7 @@ export function clearCachedContent(chapterId: string): void {
   try {
     localStorage.removeItem(`${CACHE_PREFIX}${chapterId}`);
   } catch (err) {
-    console.warn("[useContentCache] clearCachedContent failed:", err);
+    clientWarn("[useContentCache] clearCachedContent failed:", err);
   }
 }
 
@@ -46,6 +48,6 @@ export function clearAllCachedContent(chapterIds: string[]): void {
       localStorage.removeItem(`${CACHE_PREFIX}${id}`);
     }
   } catch (err) {
-    console.warn("[useContentCache] clearAllCachedContent failed:", err);
+    clientWarn("[useContentCache] clearAllCachedContent failed:", err);
   }
 }

@@ -1,10 +1,10 @@
-import { mkdir, writeFile, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { v4 as uuidv4 } from "uuid";
 import { UpdateImageSchema } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { extractImageIds, scanImageReferences } from "./images.references";
 import { ALLOWED_MIMES, mimeToExt, getImagePath, validateMagicBytes } from "./images.paths";
+import { writeImageFile, readImageFile, deleteImageFile } from "./images.fs";
 import type { ImageRow, UpdateImageData } from "./images.types";
 import { logger } from "../logger";
 
@@ -77,8 +77,7 @@ export async function uploadImage(projectId: string, file: FileInput): Promise<U
   }
   const filePath = getImagePath(projectId, id, ext);
 
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, file.buffer);
+  await writeImageFile(filePath, file.buffer);
 
   let row: ImageRow;
   try {
@@ -92,7 +91,7 @@ export async function uploadImage(projectId: string, file: FileInput): Promise<U
     });
   } catch (err) {
     // Clean up the orphaned file — the DB insert failed so nothing references it
-    await unlink(filePath).catch(() => {});
+    await deleteImageFile(filePath).catch(() => {});
     throw err;
   }
 
@@ -116,7 +115,7 @@ export async function serveImage(id: string): Promise<{ data: Buffer; mimeType: 
 
   const filePath = getImagePath(image.project_id, image.id, ext);
   try {
-    const data = await readFile(filePath);
+    const data = await readImageFile(filePath);
     return { data, mimeType: image.mime_type };
   } catch (err) {
     logger.error({ err, imageId: id }, "Failed to read image file from disk");
@@ -201,7 +200,7 @@ export async function deleteImage(id: string): Promise<DeleteResult> {
   if (ext) {
     const filePath = getImagePath(image.project_id, image.id, ext);
     try {
-      await unlink(filePath);
+      await deleteImageFile(filePath);
     } catch (err) {
       logger.warn({ err, imageId: id }, "Failed to delete image file from disk");
     }

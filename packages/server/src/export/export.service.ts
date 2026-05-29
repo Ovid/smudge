@@ -64,25 +64,30 @@ export async function exportProject(
 
   const options = { includeToc: include_toc };
 
+  // The service owns the store dependency and injects it into the leaf
+  // renderers as a narrow ImageSource (F-12) — the renderers no longer reach
+  // the global getProjectStore() singleton themselves.
   let content: string | Buffer;
   switch (format) {
     case "html":
-      content = await renderHtml(projectInfo, exportChapters, options);
+      content = await renderHtml(projectInfo, exportChapters, options, store);
       break;
     case "markdown":
-      content = await renderMarkdown(projectInfo, exportChapters, options);
+      content = await renderMarkdown(projectInfo, exportChapters, options, store);
       break;
     case "plaintext":
-      content = await renderPlainText(projectInfo, exportChapters, options);
+      content = await renderPlainText(projectInfo, exportChapters, options, store);
       break;
     case "docx":
-      content = await renderDocx(projectInfo, exportChapters, options);
+      content = await renderDocx(projectInfo, exportChapters, options, store);
       break;
     case "epub":
-      content = await renderEpub(projectInfo, exportChapters, {
-        ...options,
-        coverImageId: parsed.data.epub_cover_image_id,
-      });
+      content = await renderEpub(
+        projectInfo,
+        exportChapters,
+        { ...options, coverImageId: parsed.data.epub_cover_image_id },
+        store,
+      );
       break;
     default: {
       const _exhaustive: never = format;

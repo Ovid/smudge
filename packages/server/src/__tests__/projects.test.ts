@@ -535,14 +535,15 @@ describe("PATCH /api/projects/:slug — author_name", () => {
 });
 
 describe("DELETE /api/projects/:slug", () => {
-  it("soft-deletes a project and returns 200", async () => {
+  it("soft-deletes a project and returns 204", async () => {
     const createRes = await request(t.app)
       .post("/api/projects")
       .send({ title: "Doomed", mode: "fiction" });
 
     const res = await request(t.app).delete(`/api/projects/${createRes.body.slug}`);
-    expect(res.status).toBe(200);
-    expect(res.body.message).toBe("Project moved to trash.");
+    // F-16: all DELETE endpoints return 204 No Content (uniform success contract).
+    expect(res.status).toBe(204);
+    expect(res.text).toBe("");
   });
 
   it("sets deleted_at on the project", async () => {

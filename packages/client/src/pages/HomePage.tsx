@@ -6,7 +6,7 @@ import { NewProjectDialog } from "../components/NewProjectDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { STRINGS } from "../strings";
 import { Logo } from "../components/Logo";
-import { mapApiError, applyMappedError } from "../errors";
+import { mapApiError, applyMappedError, clientWarn } from "../errors";
 import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 
 export function HomePage() {
@@ -58,7 +58,7 @@ export function HomePage() {
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
-        console.warn("Failed to load projects:", err);
+        clientWarn("Failed to load projects:", err);
         applyMappedError(mapApiError(err, "projectList.load"), { onMessage: setError });
       });
 
@@ -86,7 +86,7 @@ export function HomePage() {
       // (and before the possiblyCommitted recovery + setError below)
       // to keep test output clean per CLAUDE.md §Testing Philosophy.
       if (signal.aborted) return;
-      console.warn("Failed to create project:", err);
+      clientWarn("Failed to create project:", err);
       applyMappedError(mapApiError(err, "project.create"), {
         onCommitted: () => {
           // I5 (review 2026-04-25): project.create is non-idempotent — the
@@ -143,7 +143,7 @@ export function HomePage() {
       // setter is a no-op post-unmount, but the contract should be
       // "abort exits silently").
       if (signal.aborted) return;
-      console.warn("Failed to delete project:", err);
+      clientWarn("Failed to delete project:", err);
       applyMappedError(mapApiError(err, "project.delete"), {
         onCommitted: () => {
           // I1 (review 2026-04-24): on possiblyCommitted (2xx BAD_JSON) the

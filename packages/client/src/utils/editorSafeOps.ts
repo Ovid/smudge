@@ -1,5 +1,6 @@
 import type { MutableRefObject } from "react";
 import type { EditorHandle } from "../components/Editor";
+import { clientWarn } from "../errors";
 
 // TipTap can throw synchronously during the brief mid-remount window when
 // its editor instance has been destroyed but the ref still holds the old
@@ -40,7 +41,7 @@ export function safeSetEditable(
     current.setEditable(editable);
     return true;
   } catch (err) {
-    console.warn("safeSetEditable: setEditable threw", err);
+    clientWarn("safeSetEditable: setEditable threw", err);
     return false;
   }
 }
