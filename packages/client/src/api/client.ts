@@ -275,8 +275,9 @@ export const api = {
         signal ? { signal } : undefined,
       ),
 
+    // F-16: DELETE returns 204 No Content; apiFetch resolves to undefined.
     delete: (slug: string, signal?: AbortSignal) =>
-      apiFetch<{ message: string }>(`/projects/${enc(slug)}`, {
+      apiFetch<undefined>(`/projects/${enc(slug)}`, {
         method: "DELETE",
         ...(signal ? { signal } : {}),
       }),
@@ -398,8 +399,9 @@ export const api = {
         ...(signal ? { signal } : {}),
       }),
 
+    // F-16: DELETE returns 204 No Content; apiFetch resolves to undefined.
     delete: (id: string, signal?: AbortSignal) =>
-      apiFetch<{ message: string }>(`/chapters/${enc(id)}`, {
+      apiFetch<undefined>(`/chapters/${enc(id)}`, {
         method: "DELETE",
         ...(signal ? { signal } : {}),
       }),
@@ -498,8 +500,9 @@ export const api = {
       });
     },
 
-    delete(id: string, signal?: AbortSignal): Promise<{ deleted: boolean }> {
-      return apiFetch(`/images/${enc(id)}`, {
+    // F-16: DELETE returns 204 No Content; apiFetch resolves to undefined.
+    delete(id: string, signal?: AbortSignal): Promise<undefined> {
+      return apiFetch<undefined>(`/images/${enc(id)}`, {
         method: "DELETE",
         ...(signal ? { signal } : {}),
       });

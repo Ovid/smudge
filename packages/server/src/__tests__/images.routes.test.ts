@@ -237,14 +237,15 @@ describe("PATCH /api/images/:id", () => {
 });
 
 describe("DELETE /api/images/:id", () => {
-  it("deletes an unreferenced image and returns 200", async () => {
+  it("deletes an unreferenced image and returns 204", async () => {
     const projectId = await createTestProject();
     const imageId = await uploadTestImage(projectId);
 
     const res = await request(t.app).delete(`/api/images/${imageId}`);
 
-    expect(res.status).toBe(200);
-    expect(res.body.deleted).toBe(true);
+    // F-16: all DELETE endpoints return 204 No Content (uniform success contract).
+    expect(res.status).toBe(204);
+    expect(res.text).toBe("");
   });
 
   it("returns 409 when image is referenced by a chapter", async () => {

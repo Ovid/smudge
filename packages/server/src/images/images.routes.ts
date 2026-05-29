@@ -154,7 +154,9 @@ export function imagesDirectRouter(): Router {
         });
       }
 
-      res.json({ deleted: true });
+      // F-16: uniform DELETE success contract — 204 No Content, no body.
+      // The client owns the success toast string (strings.ts), not the server.
+      res.status(204).send();
     }),
   );
 

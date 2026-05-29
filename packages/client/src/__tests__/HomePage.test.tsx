@@ -226,7 +226,7 @@ describe("HomePage", () => {
         updated_at: "",
       },
     ]);
-    vi.mocked(api.projects.delete).mockResolvedValue({ message: "ok" });
+    vi.mocked(api.projects.delete).mockResolvedValue(undefined);
     renderHomePage();
 
     await waitFor(() => {

@@ -234,7 +234,7 @@ describe("EditorPage delete confirmation", () => {
     vi.clearAllMocks();
     vi.mocked(api.projects.get).mockResolvedValue(mockProject);
     vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
-    vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
+    vi.mocked(api.chapters.delete).mockResolvedValue(undefined);
   });
 
   it("shows delete confirmation when clicking delete on a chapter", async () => {
@@ -364,7 +364,7 @@ describe("EditorPage trash view", () => {
 
   it("shows newly deleted chapter in trash when trash view is open", async () => {
     vi.mocked(api.projects.trash).mockResolvedValue([]);
-    vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
+    vi.mocked(api.chapters.delete).mockResolvedValue(undefined);
 
     renderEditorPage();
 
@@ -619,7 +619,7 @@ describe("EditorPage confirmDeleteChapter trash refresh failure", () => {
     vi.clearAllMocks();
     vi.mocked(api.projects.get).mockResolvedValue(mockProject);
     vi.mocked(api.chapters.get).mockResolvedValue(mockChapter);
-    vi.mocked(api.chapters.delete).mockResolvedValue({ message: "ok" });
+    vi.mocked(api.chapters.delete).mockResolvedValue(undefined);
   });
 
   it("silently handles trash refresh failure after delete", async () => {

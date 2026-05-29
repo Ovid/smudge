@@ -121,7 +121,9 @@ export function projectsRouter(): Router {
       if (!deleted) {
         throw new NotFoundError("Project not found.");
       }
-      res.json({ message: "Project moved to trash." });
+      // F-16: uniform DELETE success contract — 204 No Content, no body.
+      // The client owns the success toast string (strings.ts), not the server.
+      res.status(204).send();
     }),
   );
 

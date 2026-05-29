@@ -13,6 +13,16 @@ function jsonResponse(data: unknown, status = 200) {
   };
 }
 
+// F-16: DELETE endpoints return 204 No Content (no body). apiFetch short-circuits
+// before reading the body, so json() must never be called on this path.
+function noContentResponse() {
+  return {
+    ok: true,
+    status: 204,
+    json: () => Promise.reject(new Error("204 has no body")),
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -145,10 +155,11 @@ describe("api.projects", () => {
     });
   });
 
-  it("delete(slug) sends DELETE /api/projects/:slug", async () => {
-    mockFetch.mockResolvedValue(jsonResponse({ message: "deleted" }));
+  it("delete(slug) sends DELETE /api/projects/:slug and resolves undefined (204)", async () => {
+    mockFetch.mockResolvedValue(noContentResponse());
 
-    await api.projects.delete("p1");
+    const result = await api.projects.delete("p1");
+    expect(result).toBeUndefined();
     expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1", {
       headers: { "Content-Type": "application/json" },
       method: "DELETE",
@@ -156,7 +167,7 @@ describe("api.projects", () => {
   });
 
   it("delete(slug, signal) threads signal to fetch (API-2)", async () => {
-    mockFetch.mockResolvedValue(jsonResponse({ message: "ok" }));
+    mockFetch.mockResolvedValue(noContentResponse());
     const controller = new AbortController();
     await api.projects.delete("p1", controller.signal);
     expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1", {
@@ -212,10 +223,11 @@ describe("api.chapters", () => {
     });
   });
 
-  it("delete(id) sends DELETE /api/chapters/:id", async () => {
-    mockFetch.mockResolvedValue(jsonResponse({ message: "Chapter moved to trash." }));
+  it("delete(id) sends DELETE /api/chapters/:id and resolves undefined (204)", async () => {
+    mockFetch.mockResolvedValue(noContentResponse());
 
-    await api.chapters.delete("ch1");
+    const result = await api.chapters.delete("ch1");
+    expect(result).toBeUndefined();
     expect(mockFetch).toHaveBeenCalledWith("/api/chapters/ch1", {
       headers: { "Content-Type": "application/json" },
       method: "DELETE",
@@ -223,7 +235,7 @@ describe("api.chapters", () => {
   });
 
   it("delete(id, signal) threads signal to fetch (I7)", async () => {
-    mockFetch.mockResolvedValue(jsonResponse({ message: "ok" }));
+    mockFetch.mockResolvedValue(noContentResponse());
     const controller = new AbortController();
     await api.chapters.delete("ch1", controller.signal);
     expect(mockFetch).toHaveBeenCalledWith("/api/chapters/ch1", {
@@ -540,15 +552,11 @@ describe("api.images", () => {
     });
   });
 
-  it("delete(id) sends DELETE /api/images/:id and returns success", async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({ deleted: true }),
-    });
+  it("delete(id) sends DELETE /api/images/:id and resolves undefined (204)", async () => {
+    mockFetch.mockResolvedValue(noContentResponse());
 
     const result = await api.images.delete("img-1");
-    expect(result).toEqual({ deleted: true });
+    expect(result).toBeUndefined();
     expect(mockFetch).toHaveBeenCalledWith("/api/images/img-1", {
       headers: { "Content-Type": "application/json" },
       method: "DELETE",
