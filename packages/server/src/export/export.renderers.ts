@@ -1,7 +1,7 @@
 import { generateHTML } from "@tiptap/html";
 import TurndownService from "turndown";
 import { serverEditorExtensions } from "./editorExtensions";
-import { resolveImagesInHtml } from "./image-resolver";
+import { resolveImagesInHtml, type ImageSource } from "./image-resolver";
 import { escapeHtml } from "./html-escape";
 import { logger } from "../logger";
 
@@ -101,6 +101,7 @@ export async function renderHtml(
   project: ExportProjectInfo,
   chapters: ExportChapter[],
   options: RenderOptions,
+  imageSource: ImageSource,
 ): Promise<string> {
   const titleEsc = escapeHtml(project.title);
 
@@ -141,7 +142,7 @@ ${authorHtml}${tocHtml}${chapterSections}
 </html>`;
 
   // Resolve images — replace /api/images/ URLs with embedded base64 data URIs
-  const resolved = await resolveImagesInHtml(html);
+  const resolved = await resolveImagesInHtml(html, imageSource);
   html = resolved.html;
 
   return html;
@@ -155,6 +156,7 @@ export async function renderMarkdown(
   project: ExportProjectInfo,
   chapters: ExportChapter[],
   options: RenderOptions,
+  imageSource: ImageSource,
 ): Promise<string> {
   const turndown = new TurndownService({
     headingStyle: "atx",
@@ -194,7 +196,7 @@ export async function renderMarkdown(
     let html = chapterContentToHtml(ch.content);
     if (html) {
       // Resolve images in HTML before converting to markdown
-      const resolved = await resolveImagesInHtml(html);
+      const resolved = await resolveImagesInHtml(html, imageSource);
       html = resolved.html;
 
       // For images with figcaption, add caption as italic text after the image in markdown
@@ -216,6 +218,7 @@ export async function renderPlainText(
   project: ExportProjectInfo,
   chapters: ExportChapter[],
   options: RenderOptions,
+  imageSource: ImageSource,
 ): Promise<string> {
   const parts: string[] = [];
 
@@ -240,7 +243,7 @@ export async function renderPlainText(
     if (html) {
       // Resolve images to get metadata (alt text, filename) for text markers.
       // The resolved map provides filename fallback when alt text is empty.
-      const { html: resolvedHtml, images } = await resolveImagesInHtml(html);
+      const { html: resolvedHtml, images } = await resolveImagesInHtml(html, imageSource);
       html = resolvedHtml;
 
       // Strip <figcaption> and <figure> tags before converting images to text markers.

@@ -7,10 +7,14 @@ import knex, { type Knex } from "knex";
 import JSZip from "jszip";
 import { createTestKnexConfig } from "../db/knexfile";
 import { setDb, closeDb } from "../db/connection";
-import { setProjectStore, resetProjectStore } from "../stores/project-store.injectable";
+import {
+  setProjectStore,
+  resetProjectStore,
+  getProjectStore,
+} from "../stores/project-store.injectable";
 import { SqliteProjectStore } from "../stores";
 import * as imagesRepo from "../images/images.repository";
-import { resolveImage, resolveImagesInHtml } from "../export/image-resolver";
+import { resolveImage, resolveImagesInHtml, type ImageSource } from "../export/image-resolver";
 import { renderHtml, renderMarkdown, renderPlainText } from "../export/export.renderers";
 import { renderDocx } from "../export/docx.renderer";
 import { renderEpub } from "../export/epub.renderer";
@@ -19,6 +23,10 @@ import type { ExportProjectInfo, ExportChapter } from "../export/export.renderer
 vi.mock("../logger", () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
 }));
+
+// Image source injected into the renderers (F-12). Delegates to the live store
+// set up in beforeAll — looked up lazily so it resolves after setProjectStore.
+const imageSrc: ImageSource = { findImageById: (id) => getProjectStore().findImageById(id) };
 
 // Small valid 1x1 PNG
 const TEST_PNG = Buffer.from(
@@ -117,7 +125,7 @@ afterAll(async () => {
 
 describe("resolveImage", () => {
   it("resolves an image by ID from DB and disk", async () => {
-    const result = await resolveImage(imageId);
+    const result = await resolveImage(imageId, imageSrc);
     expect(result).not.toBeNull();
     expect(result!.id).toBe(imageId);
     expect(result!.mimeType).toBe("image/png");
@@ -126,7 +134,7 @@ describe("resolveImage", () => {
   });
 
   it("returns null for non-existent image ID", async () => {
-    const result = await resolveImage(uuidv4());
+    const result = await resolveImage(uuidv4(), imageSrc);
     expect(result).toBeNull();
   });
 
@@ -140,7 +148,7 @@ describe("resolveImage", () => {
       size_bytes: 100,
       created_at: new Date().toISOString(),
     });
-    const result = await resolveImage(missingId);
+    const result = await resolveImage(missingId, imageSrc);
     expect(result).toBeNull();
   });
 });
@@ -148,7 +156,7 @@ describe("resolveImage", () => {
 describe("resolveImagesInHtml", () => {
   it("replaces image src URLs with base64 data URIs", async () => {
     const html = `<p>Before</p><img src="/api/images/${imageId}" alt="Test"><p>After</p>`;
-    const result = await resolveImagesInHtml(html);
+    const result = await resolveImagesInHtml(html, imageSrc);
 
     expect(result.html).not.toContain(`/api/images/${imageId}`);
     expect(result.html).toContain("data:image/png;base64,");
@@ -158,7 +166,7 @@ describe("resolveImagesInHtml", () => {
 
   it("adds figure/figcaption for images with captions", async () => {
     const html = `<img src="/api/images/${imageIdWithCaption}" alt="Captioned alt">`;
-    const result = await resolveImagesInHtml(html);
+    const result = await resolveImagesInHtml(html, imageSrc);
 
     expect(result.html).toContain("<figure>");
     expect(result.html).toContain("<figcaption>A lovely caption</figcaption>");
@@ -167,14 +175,14 @@ describe("resolveImagesInHtml", () => {
 
   it("leaves HTML unchanged when no image URLs are present", async () => {
     const html = "<p>No images here</p>";
-    const result = await resolveImagesInHtml(html);
+    const result = await resolveImagesInHtml(html, imageSrc);
     expect(result.html).toBe(html);
     expect(result.images.size).toBe(0);
   });
 
   it("handles multiple different images", async () => {
     const html = `<img src="/api/images/${imageId}" alt="A"><img src="/api/images/${imageIdWithCaption}" alt="B">`;
-    const result = await resolveImagesInHtml(html);
+    const result = await resolveImagesInHtml(html, imageSrc);
     expect(result.images.size).toBe(2);
     expect(result.html).not.toContain("/api/images/");
   });
@@ -194,7 +202,7 @@ describe("renderHtml with images", () => {
         sort_order: 0,
       },
     ];
-    const html = await renderHtml(projectInfo, chapters, { includeToc: false });
+    const html = await renderHtml(projectInfo, chapters, { includeToc: false }, imageSrc);
     expect(html).toContain("data:image/png;base64,");
     expect(html).not.toContain(`/api/images/${imageId}`);
     expect(html).toContain("Before image");
@@ -210,7 +218,7 @@ describe("renderHtml with images", () => {
         sort_order: 0,
       },
     ];
-    const html = await renderHtml(projectInfo, chapters, { includeToc: false });
+    const html = await renderHtml(projectInfo, chapters, { includeToc: false }, imageSrc);
     expect(html).toContain("<figcaption>A lovely caption</figcaption>");
   });
 });
@@ -225,7 +233,7 @@ describe("renderMarkdown with images", () => {
         sort_order: 0,
       },
     ];
-    const md = await renderMarkdown(projectInfo, chapters, { includeToc: false });
+    const md = await renderMarkdown(projectInfo, chapters, { includeToc: false }, imageSrc);
     expect(md).toContain("data:image/png;base64,");
     expect(md).not.toContain(`/api/images/${imageId}`);
   });
@@ -239,7 +247,7 @@ describe("renderMarkdown with images", () => {
         sort_order: 0,
       },
     ];
-    const md = await renderMarkdown(projectInfo, chapters, { includeToc: false });
+    const md = await renderMarkdown(projectInfo, chapters, { includeToc: false }, imageSrc);
     expect(md).toContain("A lovely caption");
   });
 });
@@ -254,7 +262,7 @@ describe("renderPlainText with images", () => {
         sort_order: 0,
       },
     ];
-    const text = await renderPlainText(projectInfo, chapters, { includeToc: false });
+    const text = await renderPlainText(projectInfo, chapters, { includeToc: false }, imageSrc);
     expect(text).toContain("[Image: Test alt]");
     expect(text).toContain("Before image");
     expect(text).toContain("After image");
@@ -271,7 +279,7 @@ describe("renderDocx with images", () => {
         sort_order: 0,
       },
     ];
-    const buf = await renderDocx(projectInfo, chapters, { includeToc: false });
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false }, imageSrc);
     expect(buf).toBeInstanceOf(Buffer);
     // DOCX is a zip file — starts with "PK"
     expect(buf[0]).toBe(0x50);
@@ -294,7 +302,7 @@ describe("renderEpub with images", () => {
         sort_order: 0,
       },
     ];
-    const buf = await renderEpub(projectInfo, chapters, { includeToc: false });
+    const buf = await renderEpub(projectInfo, chapters, { includeToc: false }, imageSrc);
     expect(buf).toBeInstanceOf(Buffer);
     // EPUB is a zip file
     expect(buf[0]).toBe(0x50);
@@ -310,7 +318,7 @@ describe("renderEpub with images", () => {
         sort_order: 0,
       },
     ];
-    const buf = await renderEpub(projectInfo, chapters, { includeToc: false });
+    const buf = await renderEpub(projectInfo, chapters, { includeToc: false }, imageSrc);
     const zip = await JSZip.loadAsync(buf);
 
     // Find the chapter XHTML file and check it contains the figcaption
@@ -342,10 +350,12 @@ describe("renderEpub with images", () => {
         sort_order: 0,
       },
     ];
-    const buf = await renderEpub(projectInfo, chapters, {
-      includeToc: false,
-      coverImageId: imageId,
-    });
+    const buf = await renderEpub(
+      projectInfo,
+      chapters,
+      { includeToc: false, coverImageId: imageId },
+      imageSrc,
+    );
     expect(buf).toBeInstanceOf(Buffer);
     expect(buf[0]).toBe(0x50);
     expect(buf[1]).toBe(0x4b);
