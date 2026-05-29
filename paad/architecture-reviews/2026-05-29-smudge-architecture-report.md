@@ -235,6 +235,10 @@ Five specialist agents analyzed structure, coupling, integration/data, error-han
 - **Explanation:** Every other route obeys Routes→Service→Store, but `search.routes.ts` calls `getProjectStore().findProjectBySlug(slug)` directly because `SearchService.searchProject/replaceInProject` accept only a `projectId`. The route now owns a piece of data-access logic the service should encapsulate.
 - **Evidence:** `packages/server/src/search/search.routes.ts:83,128`; `search.service.ts:135`.
 - **Found by:** Coupling & Dependencies
+- **Status:** Fixed
+- **Status reason:** Added slug-addressed entry points `searchProjectBySlug(slug, ...)` / `replaceInProjectBySlug(slug, ...)` to `SearchService` that own the slug→project resolution and delegate to the existing `searchProject(projectId, ...)` / `replaceInProject(projectId, ...)` — mirroring the established `velocity.service.getVelocityBySlug` / `export.service` convention (search was the lone deviation that forced the route to resolve the slug itself). `search.routes` now calls the BySlug wrappers and no longer imports `getProjectStore`, so Routes→Service→Store holds with no route-owned data access. **Approach (chosen Option, per developer):** BySlug wrappers rather than changing the `searchProject`/`replaceInProject` signatures — keeps the ~30 heavily-tested projectId-based service unit tests untouched; only the 2 mock-based route tests retarget their spies to the wrappers. New unit tests cover the wrappers (slug→null when unresolved, slug→delegates/replaces). All 49 search tests pass; `npm run typecheck` and ESLint clean.
+- **Status date:** 2026-05-29
+- **Status commit:** c9045815712bc09196a258183d91b9c67501fa23
 
 ### [F-12] Leaf renderers pull the global store singleton directly
 
