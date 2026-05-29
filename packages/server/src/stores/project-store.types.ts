@@ -136,7 +136,8 @@ export interface SnapshotsStore {
  * without changing what `ProjectStore` exposes.
  */
 export interface ProjectStore
-  extends ProjectsStore,
+  extends
+    ProjectsStore,
     ChaptersStore,
     ChapterStatusesStore,
     SettingsStore,

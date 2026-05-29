@@ -541,7 +541,12 @@ describe("SqliteProjectStore", () => {
         "softDeleteChaptersByProject",
         "restoreChapter",
       ],
-      chapterStatuses: ["listStatuses", "findStatusByStatus", "getStatusLabel", "getStatusLabelMap"],
+      chapterStatuses: [
+        "listStatuses",
+        "findStatusByStatus",
+        "getStatusLabel",
+        "getStatusLabelMap",
+      ],
       settings: ["listSettings", "findSettingByKey", "upsertSetting"],
       velocity: ["upsertDailySnapshot", "getBaselineSnapshot", "getLastPriorDaySnapshot"],
       images: [
