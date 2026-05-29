@@ -55,3 +55,28 @@ export async function getLatestContentHash(db: Knex, chapterId: string): Promise
   if (!row) return null;
   return canonicalContentHash(row.content);
 }
+
+export async function getLatestContentHashAnyKind(
+  db: Knex,
+  chapterId: string,
+): Promise<string | null> {
+  // Dedup against the latest snapshot of ANY kind (manual OR auto). This is
+  // the lookup the auto-snapshot insert path (restore / find-and-replace)
+  // needs: it must skip a pre-operation snapshot whose content is byte-
+  // identical to the most recent history entry — including a prior *auto*
+  // snapshot left by an earlier restore/replace, which the manual-only
+  // `getLatestContentHash` deliberately cannot see. The manual path keeps
+  // the `is_auto: false` filter so an auto-snapshot never blocks a user's
+  // explicit manual marker. Same `created_at DESC, id DESC` tie-break as the
+  // manual lookup so dedup stays deterministic under same-millisecond bursts.
+  const row = await db(TABLE)
+    .where({ chapter_id: chapterId })
+    .orderBy([
+      { column: "created_at", order: "desc" },
+      { column: "id", order: "desc" },
+    ])
+    .select("content")
+    .first();
+  if (!row) return null;
+  return canonicalContentHash(row.content);
+}

@@ -235,6 +235,10 @@ Five specialist agents analyzed structure, coupling, integration/data, error-han
 - **Explanation:** Every other route obeys Routes→Service→Store, but `search.routes.ts` calls `getProjectStore().findProjectBySlug(slug)` directly because `SearchService.searchProject/replaceInProject` accept only a `projectId`. The route now owns a piece of data-access logic the service should encapsulate.
 - **Evidence:** `packages/server/src/search/search.routes.ts:83,128`; `search.service.ts:135`.
 - **Found by:** Coupling & Dependencies
+- **Status:** Fixed
+- **Status reason:** Added slug-addressed entry points `searchProjectBySlug(slug, ...)` / `replaceInProjectBySlug(slug, ...)` to `SearchService` that own the slug→project resolution and delegate to the existing `searchProject(projectId, ...)` / `replaceInProject(projectId, ...)` — mirroring the established `velocity.service.getVelocityBySlug` / `export.service` convention (search was the lone deviation that forced the route to resolve the slug itself). `search.routes` now calls the BySlug wrappers and no longer imports `getProjectStore`, so Routes→Service→Store holds with no route-owned data access. **Approach (chosen Option, per developer):** BySlug wrappers rather than changing the `searchProject`/`replaceInProject` signatures — keeps the ~30 heavily-tested projectId-based service unit tests untouched; only the 2 mock-based route tests retarget their spies to the wrappers. New unit tests cover the wrappers (slug→null when unresolved, slug→delegates/replaces). All 49 search tests pass; `npm run typecheck` and ESLint clean.
+- **Status date:** 2026-05-29
+- **Status commit:** c9045815712bc09196a258183d91b9c67501fa23
 
 ### [F-12] Leaf renderers pull the global store singleton directly
 
@@ -267,6 +271,11 @@ Five specialist agents analyzed structure, coupling, integration/data, error-han
 - **Explanation:** `restoreSnapshot` and `replaceInProject` both insert an `is_auto` snapshot with no content-hash dedup (the manual-snapshot path _is_ deduped). A retried restore/replace request that reaches the server creates another "Before restore…" / "Before find-and-replace…" snapshot even when content is identical — this pollutes snapshot history rather than corrupting data, since the operation is transactional.
 - **Evidence:** `packages/server/src/snapshots/snapshots.service.ts:184`, `search/search.service.ts:297`.
 - **Found by:** Integration & Data
+- **Status:** Fixed
+- **Status reason:** Applied the manual-snapshot content-hash dedup to both `is_auto` insert sites (answering the report's open question Q4 — "should the retry path dedup them as the manual path does?" → yes). Before inserting the pre-restore / pre-replace auto-snapshot, compute `canonicalContentHash(contentToSnapshot)` and compare to `txStore.getLatestSnapshotContentHash(chapterId)` inside the existing transaction; when equal, skip the insert. This is the same guard `createSnapshot` uses for manual snapshots (`snapshots.service.ts:36-39`), now shared by restore (`snapshots.service.ts`) and project-wide replace (per affected chapter in `search.service.ts`). The restore/replace mutation itself always proceeds — only the redundant snapshot insert is skipped — so a retried request whose pre-operation content is byte-identical to the latest snapshot no longer pollutes history. **Scope note:** dedup is against the *latest* snapshot, matching the manual path's contract; it removes the identical-content noise the flaw describes, not every conceivable retry shape. The `createSnapshot(isAuto=true)` path (a separate code path with its own intentional `no dedup for auto` test) is untouched. Red tests drove both sites (committed in this fix); existing auto-snapshot-creation tests (content differs → snapshot still created) confirm no regression. All 96 snapshot+search tests pass; `npm run typecheck` and ESLint clean.
+- **Correction (review I1, commit `fa776ca`):** The original fix above was mis-described. It reused `getLatestSnapshotContentHash`, which delegates to `snapshotsRepo.getLatestContentHash` — a query that filters `is_auto: false`, i.e. it only ever inspects the latest **manual** snapshot. On the auto-snapshot insert path that filter neuters the dedup: a pre-operation auto-snapshot was never deduped against a *prior auto-snapshot* left by an earlier restore/replace, so the comments' and this entry's "deduped exactly as the manual-snapshot path … a retried request no longer pollutes history" claim overstated the behavior (the guard only fired when pre-operation content matched a pre-existing *manual* snapshot). Resolved by adding `getLatestContentHashAnyKind` (same query, no `is_auto` filter, same `created_at DESC, id DESC` tie-break) and routing both auto-snapshot sites through it via `getLatestSnapshotContentHashAnyKind`; `createSnapshot`'s manual path keeps the manual-only filter so an auto-snapshot can never block a user's explicit manual marker. The auto path now dedups against the latest snapshot of **any** kind, removing the identical-content history noise the flaw describes — including a re-restore/re-replace whose pre-operation content already matches the most recent snapshot. **Scope honesty:** this dedups against the *latest* snapshot, not all history, so it does not catch every conceivable retry shape (e.g. a committed-then-retried restore whose transaction atomicity leaves the retry's pre-content differing from the prior auto-snapshot); it removes the identical-content noise, no more. Red tests added at both service sites (`snapshots.service.test.ts`, `search.service.test.ts`) and the repository (`snapshots.repository.test.ts`), each failing under the manual-only lookup and passing under the any-kind one.
+- **Status date:** 2026-05-29
+- **Status commit:** 7400471d130d234eab03bb1563b762b8473c92d5 (superseded by `fa776ca`)
 
 ### [F-16] Inconsistent response shapes across sibling endpoints
 
@@ -303,6 +312,10 @@ Five specialist agents analyzed structure, coupling, integration/data, error-han
 - **Explanation:** CLAUDE.md and CONTRIBUTING describe Express serving the static frontend on port 3456, but `createApp()` mounts only `/api/*` routes + a health check — no `express.static`, no SPA catch-all, and no `Dockerfile` exists in the repo. Consistent with "MVP in progress," so not a live vuln, but flagged because (a) it contradicts steering docs and (b) when static serving is added it will be a new path-traversal/unsafe-serving surface that currently has no guardrails or tests.
 - **Evidence:** `packages/server/src/app.ts:23-61`; no `Dockerfile` at repo root.
 - **Found by:** Security & Code Quality
+- **Status:** Fixed
+- **Status reason:** Doc-only. Reworded CLAUDE.md's Tech Stack > Deployment bullet from a present-fact claim ("Express serves API + static frontend on port 3456 … via Docker volume") to a **target — not yet implemented** statement: documents that `createApp()` today mounts `/api/*` (+ `/api/health`) only with no `express.static`/SPA catch-all and no `Dockerfile`, and carries forward this finding's security forward-look (when static serving lands it must ship with path-traversal/unsafe-serving guardrails + tests). No code change — implementing static serving is a separate feature (out of scope for a fix session, and would need the guardrails this note now mandates). **Correction:** the explanation says "CLAUDE.md and CONTRIBUTING describe Express serving the static frontend," but CONTRIBUTING's line ("Express serves the API; Vite proxies the client in dev") is accurate and was left unchanged; only the CLAUDE.md bullet was drift. The Build & Run > "# Build & Deploy" `docker compose up` line sits under a header already labeled "(Target)", so it was already qualified and needs no edit.
+- **Status date:** 2026-05-29
+- **Status commit:** 7bbdc045ccb4a5ec678a6a856d453a9decf23519
 
 ### [F-20] Circular dependency: `export.renderers.ts` ↔ `image-resolver.ts`
 
@@ -311,6 +324,10 @@ Five specialist agents analyzed structure, coupling, integration/data, error-han
 - **Explanation:** `export.renderers.ts` imports `resolveImagesInHtml` from `image-resolver.ts`, while `image-resolver.ts` imports `escapeHtml` (a pure string utility that does not conceptually belong to the renderer module) back — a true bidirectional runtime cycle.
 - **Evidence:** `packages/server/src/export/export.renderers.ts:4`, `export/image-resolver.ts:5`.
 - **Found by:** Coupling & Dependencies
+- **Status:** Fixed
+- **Status reason:** Extracted `escapeHtml` — the pure HTML-entity string utility that did not conceptually belong to the renderer module — into a new leaf module `packages/server/src/export/html-escape.ts`. All three consumers (`export.renderers.ts`, `epub.renderer.ts`, `image-resolver.ts`) now import `escapeHtml` from the leaf; `image-resolver` no longer imports anything from `export.renderers`, so the back-edge is gone and the graph `export.renderers → image-resolver → html-escape` is acyclic (the leaf imports nothing). Behavior is byte-preserved: the F-20 safety-net direct unit test (committed `b144b4c`, retargeted here to the new module) pins all five entity replacements and the ampersand-first ordering, and the transitive consumers (renderHtml titles/headings/TOC, resolveImagesInHtml figcaptions) stay green. All 97 export tests pass; `npm run typecheck` and ESLint clean.
+- **Status date:** 2026-05-29
+- **Status commit:** 60da59e588f297c2036472e3cc769c1e3e01d33c
 
 ### [F-21] Dead code: unused `getImage` service export
 
@@ -319,6 +336,10 @@ Five specialist agents analyzed structure, coupling, integration/data, error-han
 - **Explanation:** `imagesService.getImage(id)` is referenced only by its own test — no route or module imports it. The serve path uses `serveImage`; resolvers use the store's `findImageById` directly. The function and the tests exercising it are dead surface (remove it, or a caller is missing).
 - **Evidence:** `packages/server/src/images/images.service.ts:109-112`.
 - **Found by:** Security & Code Quality
+- **Status:** Fixed
+- **Status reason:** Deleted the unused `imagesService.getImage(id)` export — a one-line passthrough to `store.findImageById(id)` with no production caller (the serve path uses `serveImage`, resolvers use `findImageById` directly). Removed the dedicated `describe("getImage()")` test block, and switched the three incidental state-verification reads in the delete/reference tests (`images.service.test.ts:289,385,461`) from `imagesService.getImage(imageId)` to direct `t.db("images").where({ id }).first()` reads — the test-layer DB-access pattern already used across the suite. No new dead surface; the rest of the images.service suite (serve, delete, references) is unchanged and continues to prove those paths work without `getImage`. Server suite green; `npm run typecheck` clean.
+- **Status date:** 2026-05-29
+- **Status commit:** 0df7b427cc2f9cb05c5da7a253cfd9e0a82b2fbb
 
 ## Coverage Checklist
 

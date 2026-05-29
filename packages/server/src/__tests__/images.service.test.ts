@@ -155,28 +155,6 @@ describe("images.service", () => {
     });
   });
 
-  describe("getImage()", () => {
-    it("returns image by id", async () => {
-      const projectId = await createTestProject();
-      const uploadResult = await imagesService.uploadImage(projectId, {
-        buffer: TEST_PNG,
-        originalname: "test.png",
-        mimetype: "image/png",
-        size: TEST_PNG.length,
-      });
-      const imageId = (uploadResult as { image: { id: string } }).image.id;
-
-      const image = await imagesService.getImage(imageId);
-      expect(image).not.toBeNull();
-      expect(image!.id).toBe(imageId);
-    });
-
-    it("returns null for non-existent image", async () => {
-      const image = await imagesService.getImage("00000000-0000-0000-0000-000000000000");
-      expect(image).toBeNull();
-    });
-  });
-
   describe("serveImage()", () => {
     it("returns buffer and mime type for existing image", async () => {
       const projectId = await createTestProject();
@@ -286,8 +264,8 @@ describe("images.service", () => {
       expect(result).toEqual({ deleted: true });
 
       // Verify image is gone from DB
-      const image = await imagesService.getImage(imageId);
-      expect(image).toBeNull();
+      const image = await t.db("images").where({ id: imageId }).first();
+      expect(image).toBeUndefined();
 
       // Verify file is gone from disk
       const serveResult = await imagesService.serveImage(imageId);
@@ -382,8 +360,8 @@ describe("images.service", () => {
       expect(referenced[0]!.id).toBe(chapterId);
 
       // Verify image still exists
-      const image = await imagesService.getImage(imageId);
-      expect(image).not.toBeNull();
+      const image = await t.db("images").where({ id: imageId }).first();
+      expect(image).toBeDefined();
     });
 
     it("includes trashed flag for soft-deleted chapters in referenced response", async () => {
@@ -458,8 +436,8 @@ describe("images.service", () => {
       expect(result).toHaveProperty("referenced");
 
       // ref_count should be corrected to 0 (only active chapters count)
-      const image = await imagesService.getImage(imageId);
-      expect(image).not.toBeNull();
+      const image = await t.db("images").where({ id: imageId }).first();
+      expect(image).toBeDefined();
       expect(image!.reference_count).toBe(0);
     });
   });

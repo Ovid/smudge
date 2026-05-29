@@ -106,11 +106,6 @@ export async function listImages(projectId: string): Promise<ImageRow[] | null> 
   return store.listImagesByProject(projectId);
 }
 
-export async function getImage(id: string): Promise<ImageRow | null> {
-  const store = getProjectStore();
-  return store.findImageById(id);
-}
-
 export async function serveImage(id: string): Promise<{ data: Buffer; mimeType: string } | null> {
   const store = getProjectStore();
   const image = await store.findImageById(id);

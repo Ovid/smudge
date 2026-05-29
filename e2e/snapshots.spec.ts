@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
+import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
 
 interface TestProject {
   id: string;
@@ -72,10 +73,7 @@ test.describe("Snapshot E2e Tests", () => {
   });
 
   test("create a snapshot with a label", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
-
+    await gotoProjectEditor(page, project.slug);
     // Type content and wait for save
     await typeAndWaitForSave(page, "Snapshot label test content");
 
@@ -99,10 +97,7 @@ test.describe("Snapshot E2e Tests", () => {
   });
 
   test("create a snapshot without a label", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
-
+    await gotoProjectEditor(page, project.slug);
     await typeAndWaitForSave(page, "Snapshot no-label test content");
 
     await openSnapshotPanel(page);
@@ -119,9 +114,8 @@ test.describe("Snapshot E2e Tests", () => {
   });
 
   test("view a snapshot shows banner and old content", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
+    await gotoProjectEditor(page, project.slug);
     const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
 
     // Type initial content and save
     await typeAndWaitForSave(page, "Original snapshot content");
@@ -154,10 +148,7 @@ test.describe("Snapshot E2e Tests", () => {
   });
 
   test("back to editing dismisses the snapshot view", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
-
+    await gotoProjectEditor(page, project.slug);
     await typeAndWaitForSave(page, "Content before snapshot view");
 
     await openSnapshotPanel(page);
@@ -182,9 +173,8 @@ test.describe("Snapshot E2e Tests", () => {
   });
 
   test("restore a snapshot reverts content and creates auto-snapshot", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
+    await gotoProjectEditor(page, project.slug);
     const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
 
     // Type original content
     await typeAndWaitForSave(page, "Restorable content");
@@ -231,10 +221,7 @@ test.describe("Snapshot E2e Tests", () => {
   });
 
   test("delete a snapshot removes it from the list", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
-
+    await gotoProjectEditor(page, project.slug);
     await typeAndWaitForSave(page, "Content for deletion test");
 
     await openSnapshotPanel(page);
@@ -260,10 +247,7 @@ test.describe("Snapshot E2e Tests", () => {
   });
 
   test("duplicate snapshot is skipped with message", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
-
+    await gotoProjectEditor(page, project.slug);
     await typeAndWaitForSave(page, "Duplicate snapshot test");
 
     await openSnapshotPanel(page);

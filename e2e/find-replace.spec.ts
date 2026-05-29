@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
 
 interface TestProject {
   id: string;
@@ -124,22 +125,19 @@ test.describe("Find-and-Replace E2e Tests", () => {
   });
 
   test("Ctrl+H opens the find-and-replace panel", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    await expect(page.getByRole("textbox")).toBeVisible();
+    await gotoProjectEditor(page, project.slug);
 
     await openFindReplaceViaKeyboard(page);
   });
 
   test("toolbar magnifying glass opens the find-and-replace panel", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    await expect(page.getByRole("textbox")).toBeVisible();
+    await gotoProjectEditor(page, project.slug);
 
     await openFindReplaceViaToolbar(page);
   });
 
   test("Escape closes the find-and-replace panel", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    await expect(page.getByRole("textbox")).toBeVisible();
+    await gotoProjectEditor(page, project.slug);
 
     await openFindReplaceViaKeyboard(page);
     await page.keyboard.press("Escape");
@@ -148,8 +146,7 @@ test.describe("Find-and-Replace E2e Tests", () => {
   });
 
   test("search finds matches in a single chapter", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    await expect(page.getByRole("textbox")).toBeVisible();
+    await gotoProjectEditor(page, project.slug);
 
     await typeAndWaitForSave(page, "The cat sat on the mat. The cat was happy.");
 
@@ -166,8 +163,7 @@ test.describe("Find-and-Replace E2e Tests", () => {
     // Second chapter created via API
     await createChapterWithContent(request, project.slug, "Chapter Two", "zebra zebra");
 
-    await page.goto(`/projects/${project.slug}`);
-    await expect(page.getByRole("textbox")).toBeVisible();
+    await gotoProjectEditor(page, project.slug);
 
     // Set content on the first (active) chapter via editor
     await typeAndWaitForSave(page, "one zebra here");
@@ -182,8 +178,7 @@ test.describe("Find-and-Replace E2e Tests", () => {
   });
 
   test("match case toggle restricts results to exact case", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    await expect(page.getByRole("textbox")).toBeVisible();
+    await gotoProjectEditor(page, project.slug);
 
     await typeAndWaitForSave(page, "Hello hello HELLO");
 
@@ -201,8 +196,7 @@ test.describe("Find-and-Replace E2e Tests", () => {
   });
 
   test("whole word toggle restricts to word-boundary matches", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    await expect(page.getByRole("textbox")).toBeVisible();
+    await gotoProjectEditor(page, project.slug);
 
     await typeAndWaitForSave(page, "cat category cats");
 
@@ -220,8 +214,7 @@ test.describe("Find-and-Replace E2e Tests", () => {
   });
 
   test("regex toggle enables pattern matching", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    await expect(page.getByRole("textbox")).toBeVisible();
+    await gotoProjectEditor(page, project.slug);
 
     await typeAndWaitForSave(page, "I like color and colour equally.");
 
@@ -239,8 +232,7 @@ test.describe("Find-and-Replace E2e Tests", () => {
   });
 
   test("shows 'No matches found' when search term is absent", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    await expect(page.getByRole("textbox")).toBeVisible();
+    await gotoProjectEditor(page, project.slug);
 
     await typeAndWaitForSave(page, "Some ordinary content here.");
 
@@ -252,8 +244,7 @@ test.describe("Find-and-Replace E2e Tests", () => {
   });
 
   test("Replace All in Manuscript replaces every match and refreshes results", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    await expect(page.getByRole("textbox")).toBeVisible();
+    await gotoProjectEditor(page, project.slug);
 
     await typeAndWaitForSave(page, "foo bar foo baz foo");
 
@@ -284,8 +275,7 @@ test.describe("Find-and-Replace E2e Tests", () => {
     // Create a second chapter with content "dog dog" — must remain untouched.
     await createChapterWithContent(request, project.slug, "Chapter Two", "dog dog");
 
-    await page.goto(`/projects/${project.slug}`);
-    await expect(page.getByRole("textbox")).toBeVisible();
+    await gotoProjectEditor(page, project.slug);
 
     // First chapter content: two "dog" occurrences.
     await typeAndWaitForSave(page, "dog and dog");

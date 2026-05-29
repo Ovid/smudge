@@ -1,5 +1,6 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import { interceptWithSuccessBadJson } from "./helpers/interceptWithSuccessBadJson";
+import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
 
 interface TestProject {
   id: string;
@@ -91,11 +92,10 @@ test.describe("Trash restore recovery (4b.3c.3 I4)", () => {
   test("200 BAD_JSON drops the trash row, fires recovery GET, and surfaces committed banner", async ({
     page,
   }) => {
-    await page.goto(`/projects/${project.slug}`);
-
-    // Wait for the editor to mount so the page is past its loading
-    // state (one chapter remains active after the beforeEach trashing).
-    await expect(page.getByRole("textbox")).toBeVisible({ timeout: 10_000 });
+    // gotoProjectEditor waits for the editor to mount so the page is past
+    // its loading state (one chapter remains active after the beforeEach
+    // trashing).
+    await gotoProjectEditor(page, project.slug);
 
     // Open the trash view.
     await page.getByRole("button", { name: /^Trash$/ }).click();

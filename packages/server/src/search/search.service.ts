@@ -21,6 +21,7 @@ import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
 import { buildAutoSnapshotLabel } from "../snapshots/labels";
+import { canonicalContentHash } from "../snapshots/content-hash";
 import type { SearchResult, ReplaceResult } from "@smudge/shared";
 
 /**
@@ -190,6 +191,24 @@ export async function searchProject(
   return result;
 }
 
+/**
+ * Slug-addressed entry point for project-wide search. Resolves the public
+ * slug to the internal project id and delegates to {@link searchProject}.
+ * This keeps slug→project resolution inside the service (mirroring
+ * velocity.service.getVelocityBySlug) so the route no longer reaches into the
+ * store directly (F-11). Returns null when the slug does not resolve, which
+ * the route maps to 404.
+ */
+export async function searchProjectBySlug(
+  slug: string,
+  query: string,
+  options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
+): Promise<SearchResult | null | SearchValidationError> {
+  const project = await getProjectStore().findProjectBySlug(slug);
+  if (!project) return null;
+  return searchProject(project.id, query, options);
+}
+
 export async function replaceInProject(
   projectId: string,
   search: string,
@@ -293,16 +312,28 @@ export async function replaceInProject(
         const rawLabel = `Before find-and-replace: \u2018${truncateForLabel(search)}\u2019 \u2192 \u2018${truncateForLabel(replace)}\u2019`;
         const label = buildAutoSnapshotLabel(rawLabel);
 
-        // Auto-snapshot before replacement (using DB-committed word_count)
-        await txStore.insertSnapshot({
-          id: uuidv4(),
-          chapter_id: chapter.id,
-          label,
-          content: chapter.content,
-          word_count: chapter.word_count,
-          is_auto: true,
-          created_at: new Date().toISOString(),
-        });
+        // Auto-snapshot before replacement (using DB-committed word_count),
+        // deduped against the latest snapshot of ANY kind — manual OR auto
+        // (F-15). Unlike the manual-snapshot path (which dedups against the
+        // latest *manual* snapshot), this insert is itself an auto-snapshot,
+        // so it must also be skipped when the pre-replace content is byte-
+        // identical to a prior auto-snapshot left by an earlier
+        // restore/replace. This removes the identical-content history noise
+        // the flaw describes. The replacement itself still proceeds; only the
+        // redundant snapshot insert is skipped.
+        const preReplaceHash = canonicalContentHash(chapter.content);
+        const latestSnapshotHash = await txStore.getLatestSnapshotContentHashAnyKind(chapter.id);
+        if (latestSnapshotHash !== preReplaceHash) {
+          await txStore.insertSnapshot({
+            id: uuidv4(),
+            chapter_id: chapter.id,
+            label,
+            content: chapter.content,
+            word_count: chapter.word_count,
+            is_auto: true,
+            created_at: new Date().toISOString(),
+          });
+        }
 
         // Update chapter content — guard against amplification (`$'` / `$\``
         // in regex replacements can splice the full match context repeatedly)
@@ -380,4 +411,22 @@ export async function replaceInProject(
       : {}),
   };
   return final;
+}
+
+/**
+ * Slug-addressed entry point for project-wide replace; the replace counterpart
+ * to {@link searchProjectBySlug}. Resolves the public slug to the internal
+ * project id and delegates to {@link replaceInProject}, returning null (→ 404)
+ * when the slug does not resolve.
+ */
+export async function replaceInProjectBySlug(
+  slug: string,
+  search: string,
+  replace: string,
+  options?: { case_sensitive?: boolean; whole_word?: boolean; regex?: boolean },
+  scope?: { type: "project" } | { type: "chapter"; chapter_id: string; match_index?: number },
+): Promise<ReplaceResult | null | "scope_not_found" | SearchValidationError> {
+  const project = await getProjectStore().findProjectBySlug(slug);
+  if (!project) return null;
+  return replaceInProject(project.id, search, replace, options, scope);
 }

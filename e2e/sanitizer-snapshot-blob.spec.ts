@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
+import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
 
 interface TestProject {
   id: string;
@@ -134,8 +135,7 @@ test.describe("Sanitizer e2e (I14)", () => {
     // click View on the snapshot. EditorPage's renderSnapshotContent
     // pipes generateHTML output through sanitizeEditorHtml before
     // rendering via dangerouslySetInnerHTML.
-    await page.goto(`/projects/${project.slug}`);
-    await expect(page.getByRole("textbox")).toBeVisible();
+    await gotoProjectEditor(page, project.slug);
 
     // Open snapshot panel (toolbar button labelled "Snapshots ...").
     await page.getByRole("button", { name: /^Snapshots/ }).click();

@@ -66,11 +66,11 @@ describe("search routes", () => {
       expect(res.body.error.code).toBe("NOT_FOUND");
     });
 
-    it("returns 404 when searchProject returns null (project vanished between slug lookup and service)", async () => {
+    it("returns 404 when searchProjectBySlug returns null (slug does not resolve)", async () => {
       const { projectSlug } = await createProjectWithChapters();
 
       const SearchService = await import("../search/search.service");
-      const spy = vi.spyOn(SearchService, "searchProject").mockResolvedValueOnce(null);
+      const spy = vi.spyOn(SearchService, "searchProjectBySlug").mockResolvedValueOnce(null);
 
       const res = await request(t.app)
         .post(`/api/projects/${projectSlug}/search`)
@@ -103,14 +103,14 @@ describe("search routes", () => {
       expect(res.body.error.code).toBe("INVALID_REGEX");
     });
 
-    it("re-throws non-regex errors from searchProject", async () => {
+    it("re-throws non-regex errors from searchProjectBySlug", async () => {
       const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
       const { projectSlug } = await createProjectWithChapters();
 
       // Spy on SearchService to throw a generic error
       const SearchService = await import("../search/search.service");
       const spy = vi
-        .spyOn(SearchService, "searchProject")
+        .spyOn(SearchService, "searchProjectBySlug")
         .mockRejectedValueOnce(new Error("unexpected DB error"));
 
       const res = await request(t.app)
@@ -195,11 +195,11 @@ describe("search routes", () => {
       expect(res.body.error.message).toMatch(/scope/i);
     });
 
-    it("returns 404 when replaceInProject returns null (project vanished between slug lookup and service)", async () => {
+    it("returns 404 when replaceInProjectBySlug returns null (slug does not resolve)", async () => {
       const { projectSlug } = await createProjectWithChapters();
 
       const SearchService = await import("../search/search.service");
-      const spy = vi.spyOn(SearchService, "replaceInProject").mockResolvedValueOnce(null);
+      const spy = vi.spyOn(SearchService, "replaceInProjectBySlug").mockResolvedValueOnce(null);
 
       const res = await request(t.app)
         .post(`/api/projects/${projectSlug}/replace`)

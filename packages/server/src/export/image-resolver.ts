@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { mimeToExt, getImagePath, IMAGE_SRC_REGEX } from "../images/images.paths";
-import { escapeHtml } from "./export.renderers";
+import { escapeHtml } from "./html-escape";
 
 export interface ResolvedImage {
   id: string;

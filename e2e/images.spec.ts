@@ -1,5 +1,6 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { gotoProjectEditor, expectEditorReady } from "./helpers/gotoProjectEditor";
 
 interface TestProject {
   id: string;
@@ -118,10 +119,7 @@ test.describe("Image Gallery & Reference Panel E2e Tests", () => {
   });
 
   test("panel toggle opens and closes via button click", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    const editor = page.getByRole("textbox", { name: "Chapter content" });
-    await expect(editor).toBeVisible();
-
+    await gotoProjectEditor(page, project.slug);
     const toggleButton = page.getByTitle("Toggle reference panel (Ctrl+.)");
     await expect(toggleButton).toBeVisible();
     await expect(toggleButton).toHaveAttribute("aria-expanded", "false");
@@ -139,10 +137,7 @@ test.describe("Image Gallery & Reference Panel E2e Tests", () => {
   });
 
   test("panel toggle opens and closes via Ctrl+.", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    const editor = page.getByRole("textbox", { name: "Chapter content" });
-    await expect(editor).toBeVisible();
-
+    await gotoProjectEditor(page, project.slug);
     const toggleButton = page.getByTitle("Toggle reference panel (Ctrl+.)");
     await expect(toggleButton).toHaveAttribute("aria-expanded", "false");
 
@@ -156,10 +151,7 @@ test.describe("Image Gallery & Reference Panel E2e Tests", () => {
   });
 
   test("upload image via gallery file chooser", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    const editor = page.getByRole("textbox", { name: "Chapter content" });
-    await expect(editor).toBeVisible();
-
+    await gotoProjectEditor(page, project.slug);
     // Open panel
     const toggleButton = page.getByTitle("Toggle reference panel (Ctrl+.)");
     await toggleButton.click();
@@ -190,11 +182,9 @@ test.describe("Image Gallery & Reference Panel E2e Tests", () => {
   test("insert image from gallery into editor", async ({ page, request }) => {
     await uploadTestImage(request, project.id, "gallery-insert.png");
 
-    await page.goto(`/projects/${project.slug}`);
-    const editor = page.getByRole("textbox", { name: "Chapter content" });
-    await expect(editor).toBeVisible();
-
+    await gotoProjectEditor(page, project.slug);
     // Click the editor to establish cursor position
+    const editor = page.getByRole("textbox", { name: "Chapter content" });
     await editor.click();
 
     // Open panel
@@ -216,10 +206,7 @@ test.describe("Image Gallery & Reference Panel E2e Tests", () => {
   test("edit and save image metadata", async ({ page, request }) => {
     await uploadTestImage(request, project.id, "metadata-test.png");
 
-    await page.goto(`/projects/${project.slug}`);
-    const editor = page.getByRole("textbox", { name: "Chapter content" });
-    await expect(editor).toBeVisible();
-
+    await gotoProjectEditor(page, project.slug);
     // Open panel and click image
     await page.getByTitle("Toggle reference panel (Ctrl+.)").click();
     const panel = page.getByRole("complementary", { name: "Reference panel" });
@@ -237,7 +224,7 @@ test.describe("Image Gallery & Reference Panel E2e Tests", () => {
 
     // Reload the page to verify persistence from the server
     await page.reload();
-    await expect(page.getByRole("textbox", { name: "Chapter content" })).toBeVisible();
+    await expectEditorReady(page);
 
     // Reopen panel (it remembers open state from localStorage)
     const toggleButton = page.getByTitle("Toggle reference panel (Ctrl+.)");
@@ -269,10 +256,7 @@ test.describe("Image Gallery & Reference Panel E2e Tests", () => {
     });
     expect(patchRes.ok()).toBeTruthy();
 
-    await page.goto(`/projects/${project.slug}`);
-    const editor = page.getByRole("textbox", { name: "Chapter content" });
-    await expect(editor).toBeVisible();
-
+    await gotoProjectEditor(page, project.slug);
     // Open panel and click image
     await page.getByTitle("Toggle reference panel (Ctrl+.)").click();
     const panel = page.getByRole("complementary", { name: "Reference panel" });
@@ -288,10 +272,7 @@ test.describe("Image Gallery & Reference Panel E2e Tests", () => {
   test("delete is allowed when image is not referenced", async ({ page, request }) => {
     await uploadTestImage(request, project.id, "unreferenced.png");
 
-    await page.goto(`/projects/${project.slug}`);
-    const editor = page.getByRole("textbox", { name: "Chapter content" });
-    await expect(editor).toBeVisible();
-
+    await gotoProjectEditor(page, project.slug);
     // Open panel and click image
     await page.getByTitle("Toggle reference panel (Ctrl+.)").click();
     const panel = page.getByRole("complementary", { name: "Reference panel" });
@@ -311,10 +292,7 @@ test.describe("Image Gallery & Reference Panel E2e Tests", () => {
   });
 
   test("panel width persists in localStorage", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    const editor = page.getByRole("textbox", { name: "Chapter content" });
-    await expect(editor).toBeVisible();
-
+    await gotoProjectEditor(page, project.slug);
     // Open panel
     await page.getByTitle("Toggle reference panel (Ctrl+.)").click();
     const panel = page.getByRole("complementary", { name: "Reference panel" });
@@ -342,10 +320,7 @@ test.describe("Image Gallery & Reference Panel E2e Tests", () => {
     await uploadTestImage(request, project.id, "a11y-test-1.png");
     await uploadTestImage(request, project.id, "a11y-test-2.png");
 
-    await page.goto(`/projects/${project.slug}`);
-    const editor = page.getByRole("textbox", { name: "Chapter content" });
-    await expect(editor).toBeVisible();
-
+    await gotoProjectEditor(page, project.slug);
     // Open panel
     await page.getByTitle("Toggle reference panel (Ctrl+.)").click();
     const panel = page.getByRole("complementary", { name: "Reference panel" });
@@ -363,10 +338,7 @@ test.describe("Image Gallery & Reference Panel E2e Tests", () => {
   test("image detail view is accessible", async ({ page, request }) => {
     await uploadTestImage(request, project.id, "a11y-detail.png");
 
-    await page.goto(`/projects/${project.slug}`);
-    const editor = page.getByRole("textbox", { name: "Chapter content" });
-    await expect(editor).toBeVisible();
-
+    await gotoProjectEditor(page, project.slug);
     // Open panel and click into detail view
     await page.getByTitle("Toggle reference panel (Ctrl+.)").click();
     const panel = page.getByRole("complementary", { name: "Reference panel" });

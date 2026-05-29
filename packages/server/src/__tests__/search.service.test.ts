@@ -600,5 +600,98 @@ describe("search.service", () => {
       expect(result && typeof result === "object" && "validationError" in result).toBe(true);
       expect((result as { code: string }).code).toBe("REGEX_TIMEOUT");
     });
+
+    it("does not create a duplicate auto-snapshot when pre-replace content already matches the latest snapshot (F-15)", async () => {
+      const projectId = await createProject();
+      const chapterId = await createChapter(
+        projectId,
+        "Chapter 1",
+        JSON.stringify(makeDoc("hello world")),
+      );
+      // Seed a snapshot equal to the chapter's current content, so the
+      // pre-replace auto-snapshot would be a byte-identical duplicate.
+      const { createSnapshot, listSnapshots } = await import("../snapshots/snapshots.service");
+      await createSnapshot(chapterId, "Manual");
+
+      const { replaceInProject } = await import("../search/search.service");
+      const result = await replaceInProject(projectId, "hello", "goodbye");
+      expect((result as { replaced_count: number }).replaced_count).toBe(1);
+
+      // Dedup against the latest snapshot (matching the manual-snapshot path)
+      // skips the redundant pre-replace auto-snapshot.
+      const snaps = await listSnapshots(chapterId);
+      const autoSnap = snaps!.find((s) => s.is_auto);
+      expect(autoSnap).toBeUndefined();
+    });
+
+    it("does not create a duplicate auto-snapshot when pre-replace content matches the latest AUTO snapshot (F-15)", async () => {
+      const projectId = await createProject();
+      const chapterId = await createChapter(
+        projectId,
+        "Chapter 1",
+        JSON.stringify(makeDoc("hello world")),
+      );
+      // Seed an AUTO snapshot equal to current content — the kind a prior
+      // restore/replace leaves — with NO manual snapshot present. The dedup
+      // must inspect the latest snapshot of *any* kind; otherwise the
+      // pre-replace auto-snapshot is a byte-identical duplicate of this seed.
+      const { createSnapshot, listSnapshots } = await import("../snapshots/snapshots.service");
+      const seed = (await createSnapshot(chapterId, "Before earlier op", true)) as Exclude<
+        Awaited<ReturnType<typeof createSnapshot>>,
+        null | "duplicate"
+      >;
+      expect(seed.is_auto).toBe(true);
+
+      const { replaceInProject } = await import("../search/search.service");
+      const result = await replaceInProject(projectId, "hello", "goodbye");
+      expect((result as { replaced_count: number }).replaced_count).toBe(1);
+
+      // Dedup against the latest snapshot of ANY kind skips the redundant
+      // pre-replace auto-snapshot — only the seed remains.
+      const snaps = await listSnapshots(chapterId);
+      expect(snaps).toHaveLength(1);
+      const beforeReplace = snaps!.find((s) => s.label?.startsWith("Before find-and-replace"));
+      expect(beforeReplace).toBeUndefined();
+    });
+  });
+
+  // F-11: the slug-addressed entry points that own slug->project resolution
+  // (mirroring velocity.service.getVelocityBySlug), so the route no longer
+  // reaches into the store directly.
+  describe("searchProjectBySlug()", () => {
+    it("returns null when the slug does not resolve to a project", async () => {
+      const { searchProjectBySlug } = await import("../search/search.service");
+      const result = await searchProjectBySlug("no-such-slug", "anything");
+      expect(result).toBeNull();
+    });
+
+    it("resolves the slug and returns the same result as searchProject by id", async () => {
+      const projectId = await createProject();
+      const { slug } = await t.db("projects").where({ id: projectId }).first();
+      await createChapter(projectId, "Chapter 1", JSON.stringify(makeDoc("the quick brown fox")));
+
+      const { searchProjectBySlug } = await import("../search/search.service");
+      const bySlug = assertSearchResult(await searchProjectBySlug(slug, "quick"));
+      expect(bySlug.total_count).toBe(1);
+    });
+  });
+
+  describe("replaceInProjectBySlug()", () => {
+    it("returns null when the slug does not resolve to a project", async () => {
+      const { replaceInProjectBySlug } = await import("../search/search.service");
+      const result = await replaceInProjectBySlug("no-such-slug", "a", "b");
+      expect(result).toBeNull();
+    });
+
+    it("resolves the slug and applies the replacement", async () => {
+      const projectId = await createProject();
+      const { slug } = await t.db("projects").where({ id: projectId }).first();
+      await createChapter(projectId, "Chapter 1", JSON.stringify(makeDoc("hello world")));
+
+      const { replaceInProjectBySlug } = await import("../search/search.service");
+      const result = await replaceInProjectBySlug(slug, "hello", "goodbye");
+      expect(result && typeof result === "object" && "replaced_count" in result).toBe(true);
+      expect((result as { replaced_count: number }).replaced_count).toBe(1);
+    });
   });
 });

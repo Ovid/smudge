@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { EPub } from "epub-gen-memory";
-import { chapterContentToHtml, escapeHtml } from "./export.renderers";
+import { chapterContentToHtml } from "./export.renderers";
+import { escapeHtml } from "./html-escape";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { mimeToExt, getImagePath } from "../images/images.paths";
 import { resolveImagesForEpub } from "./image-resolver";

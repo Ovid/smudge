@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import JSZip from "jszip";
 import { renderHtml, renderMarkdown, renderPlainText } from "../export/export.renderers";
+import { escapeHtml } from "../export/html-escape";
 import { renderDocx } from "../export/docx.renderer";
 import { renderEpub } from "../export/epub.renderer";
 import { logger } from "../logger";
@@ -1091,5 +1092,30 @@ describe("renderEpub", () => {
     const text = await epubText(buf);
     // TOC page still exists but with no title and no chapter links
     expect(text).not.toContain("Table of Contents");
+  });
+});
+
+// Direct unit coverage for the HTML-entity escaper. It is consumed by both
+// export.renderers (titles/headings/TOC) and image-resolver (figcaptions), so
+// it is the shared seam the export.renderers <-> image-resolver cycle threads
+// through. Pinned directly so relocating the function to break that cycle
+// cannot silently alter its output (entities or replacement order).
+describe("escapeHtml", () => {
+  it("escapes all five HTML metacharacters", () => {
+    expect(escapeHtml(`&<>"'`)).toBe("&amp;&lt;&gt;&quot;&#39;");
+  });
+
+  it("escapes ampersands first so entity output is not double-escaped", () => {
+    // If `&` were not replaced first, `<` -> `&lt;` would then have its `&`
+    // re-escaped to `&amp;lt;`. Pin the ordering against that regression.
+    expect(escapeHtml("a < b & c")).toBe("a &lt; b &amp; c");
+  });
+
+  it("leaves text without metacharacters unchanged", () => {
+    expect(escapeHtml("plain text 123")).toBe("plain text 123");
+  });
+
+  it("returns an empty string for empty input", () => {
+    expect(escapeHtml("")).toBe("");
   });
 });

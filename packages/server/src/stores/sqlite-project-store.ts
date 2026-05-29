@@ -278,6 +278,10 @@ export class SqliteProjectStore implements ProjectStore {
     return snapshotsRepo.getLatestContentHash(this.db, chapterId);
   }
 
+  getLatestSnapshotContentHashAnyKind(chapterId: string): Promise<string | null> {
+    return snapshotsRepo.getLatestContentHashAnyKind(this.db, chapterId);
+  }
+
   // --- Transactions ---
 
   async transaction<T>(fn: (txStore: ProjectStore) => Promise<T>): Promise<T> {

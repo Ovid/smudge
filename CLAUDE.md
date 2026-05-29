@@ -46,7 +46,7 @@ Smudge is a web-based writing application for long-form fiction and non-fiction,
 - **Backend:** Node.js 22 LTS (Jod; see CONTRIBUTING.md for the DEP0040 workaround), Express 4.x, better-sqlite3 (synchronous), Knex.js (migrations/queries), Zod (validation)
 - **Frontend:** React 18+, Vite, TipTap v2 (rich text editor, stores content as JSON not HTML), Tailwind CSS, @dnd-kit/sortable v10
 - **Testing:** Vitest (unit + integration with Supertest), Playwright (e2e + aXe-core a11y)
-- **Deployment:** Single Docker container, Express serves API + static frontend on port 3456, SQLite persisted via Docker volume
+- **Deployment (target — not yet implemented):** Single Docker container, Express serving the API + static frontend on port 3456, SQLite persisted via Docker volume. Today `createApp()` mounts `/api/*` (+ `/api/health`) only — no `express.static`/SPA catch-all and no `Dockerfile` yet. When static serving lands it introduces a new path-traversal/unsafe-serving surface that must ship with guardrails + tests (see architecture report F-19).
 
 ## Target Project Structure
 

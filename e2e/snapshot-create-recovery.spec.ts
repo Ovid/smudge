@@ -1,5 +1,6 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import { interceptWithSuccessBadJson } from "./helpers/interceptWithSuccessBadJson";
+import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
 
 interface TestProject {
   id: string;
@@ -60,12 +61,11 @@ test.describe("Snapshot create recovery (4b.3c.2 I3)", () => {
   test("200 BAD_JSON closes form, refetches list, and surfaces committed banner", async ({
     page,
   }) => {
-    await page.goto(`/projects/${project.slug}`);
+    await gotoProjectEditor(page, project.slug);
 
     // Type chapter content and wait for the auto-save so the snapshot
     // has non-empty contents.
     const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
     await editor.click();
     await editor.pressSequentially("Snapshot recovery content", { delay: 20 });
     const statusRegion = page.locator("[role='status'][aria-live='polite']");

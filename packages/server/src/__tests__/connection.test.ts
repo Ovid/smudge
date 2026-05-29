@@ -48,6 +48,18 @@ describe("db/connection", () => {
     expect(result[0].foreign_keys).toBe(1);
   });
 
+  it("initDb pins busy_timeout to 5000ms so a writer waits on a held lock (OOSS1)", async () => {
+    // A writer meeting a held write lock waits up to busy_timeout before
+    // SQLite returns SQLITE_BUSY (surfaced as HTTP 500). better-sqlite3
+    // defaults this to 5000ms, but initDb pins it explicitly so the
+    // guarantee survives a driver-default change. Assert the exact value
+    // so the test fails if the explicit PRAGMA is removed and the driver
+    // default later diverges.
+    const db = await initDb(createTestKnexConfig());
+    const result = await db.raw("PRAGMA busy_timeout");
+    expect(result[0].timeout).toBe(5000);
+  });
+
   it("closeDb destroys the connection without error", async () => {
     await initDb(createTestKnexConfig());
     await expect(closeDb()).resolves.toBeUndefined();

@@ -212,6 +212,67 @@ describe("snapshots repository", () => {
     });
   });
 
+  describe("getLatestContentHashAnyKind()", () => {
+    it("returns null when no snapshots exist for chapter", async () => {
+      const projectId = await createProject();
+      const chapterId = await createChapter(projectId);
+
+      const hash = await SnapshotsRepo.getLatestContentHashAnyKind(t.db, chapterId);
+      expect(hash).toBeNull();
+    });
+
+    it("returns the latest AUTO snapshot hash where the manual-only lookup returns null", async () => {
+      const projectId = await createProject();
+      const chapterId = await createChapter(projectId);
+      const content = '{"type":"doc","content":[{"type":"paragraph"}]}';
+
+      // Only auto snapshots exist — the manual-only lookup is blind to them,
+      // but the any-kind lookup must dedup against the latest one.
+      await SnapshotsRepo.insert(t.db, {
+        id: uuid(),
+        chapter_id: chapterId,
+        label: null,
+        content,
+        word_count: 10,
+        is_auto: true,
+        created_at: "2026-04-02T00:00:00.000Z",
+      });
+
+      expect(await SnapshotsRepo.getLatestContentHash(t.db, chapterId)).toBeNull();
+      const hash = await SnapshotsRepo.getLatestContentHashAnyKind(t.db, chapterId);
+      expect(hash).toBe(canonicalContentHash(content));
+    });
+
+    it("returns the newest snapshot regardless of kind", async () => {
+      const projectId = await createProject();
+      const chapterId = await createChapter(projectId);
+      const newest = '{"type":"doc","content":[{"type":"paragraph"}]}';
+
+      await SnapshotsRepo.insert(t.db, {
+        id: uuid(),
+        chapter_id: chapterId,
+        label: null,
+        content: "older manual content",
+        word_count: 5,
+        is_auto: false,
+        created_at: "2026-04-01T00:00:00.000Z",
+      });
+
+      await SnapshotsRepo.insert(t.db, {
+        id: uuid(),
+        chapter_id: chapterId,
+        label: null,
+        content: newest,
+        word_count: 10,
+        is_auto: true,
+        created_at: "2026-04-02T00:00:00.000Z",
+      });
+
+      const hash = await SnapshotsRepo.getLatestContentHashAnyKind(t.db, chapterId);
+      expect(hash).toBe(canonicalContentHash(newest));
+    });
+  });
+
   describe("FK cascade on chapter delete", () => {
     it("deletes snapshots automatically when parent chapter is hard-deleted", async () => {
       const projectId = await createProject();

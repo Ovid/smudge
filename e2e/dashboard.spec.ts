@@ -1,5 +1,6 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { gotoProjectEditor, expectEditorReady } from "./helpers/gotoProjectEditor";
 
 interface TestProject {
   id: string;
@@ -97,19 +98,18 @@ test.describe("Dashboard and Status E2e Tests", () => {
     const editorTab = page.getByRole("button", { name: "Editor" });
     await expect(editorTab).toHaveAttribute("aria-current", "page");
 
-    // The editor textbox should be visible
-    await expect(page.getByRole("textbox")).toBeVisible();
+    // The editor textbox should be visible (it may compile lazily on the
+    // first switch back to the editor view).
+    await expectEditorReady(page);
   });
 
   test("Ctrl+Shift+ArrowDown navigates to next chapter", async ({ page, request }) => {
     // Add a second chapter
     await addChapter(request, project.slug);
 
-    await page.goto(`/projects/${project.slug}`);
+    await gotoProjectEditor(page, project.slug);
 
-    // Wait for the editor to be ready
     const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
 
     // The first chapter should be active (aria-current="true" on the sidebar item)
     const sidebarItems = page.locator("li[aria-current='true']");
