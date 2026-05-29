@@ -123,7 +123,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       const stale = targetChapterId !== undefined && currentId !== targetChapterId;
       if (reloadFailed && !stale) {
         // I6: applyReloadFailedLock sets banner + safeSetEditable as an
-        // invariant pair. In the stage:"reload" path the hook kept the
+        // invariant pair. In the stage:"committed_but_unreloaded" path the hook kept the
         // editor setEditable(false) (reloadFailed branch skips the
         // finally's re-enable). In the stage:"mutate" 2xx BAD_JSON path
         // the hook's finally already re-enabled it. The helper call

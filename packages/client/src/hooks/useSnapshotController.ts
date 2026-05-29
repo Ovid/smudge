@@ -258,7 +258,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
           if (possiblyCommitted) {
             // 2xx BAD_JSON on restore: server likely committed the restore
             // (and its auto-snapshot) but the response body was unreadable.
-            // Treat the same as stage:"reload" — persistent lock banner, no
+            // Treat the same as stage:"committed_but_unreloaded" — persistent lock banner, no
             // retry prompt, since retrying could double-restore (C2). This
             // branch also absorbs the former "unknown" case: the hook now
             // synthesizes a 200 BAD_JSON ApiRequestError for non-

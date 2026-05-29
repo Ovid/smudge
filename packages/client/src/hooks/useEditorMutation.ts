@@ -238,7 +238,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             // the fresh editor is left writable — user keystrokes during
             // the reload-GET window would PATCH pre-mutation content back
             // over the just-committed server change. Promote to
-            // stage:"reload": the server committed (mutate succeeded), so
+            // stage:"committed_but_unreloaded": the server committed (mutate succeeded), so
             // the caller surfaces the persistent "refresh the page" lock
             // and EditorPage's handleSaveLockGated (C1) refuses any PATCH
             // while the banner is up.
@@ -275,7 +275,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             }
             // I1 (review 2026-04-21): honor the directive when it did not
             // ask for a reload. The re-lock bail previously returned
-            // stage:"reload" unconditionally — callers interpret that as
+            // stage:"committed_but_unreloaded" unconditionally — callers interpret that as
             // "server committed, follow-up GET failed" and unconditionally
             // raise a persistent lock banner + cache-wipe + editor lock
             // on the NEW editor (which may be an unrelated chapter, e.g.
@@ -299,7 +299,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
               // handleSelectChapter's GET loaded, which could have raced the
               // server-side commit. The very next keystroke PATCHes stale
               // content over the server-committed mutation. Escalate to
-              // stage:"reload" so callers raise the persistent lock banner
+              // stage:"committed_but_unreloaded" so callers raise the persistent lock banner
               // instead. Readers at a chapter OUTSIDE clearCacheFor are
               // unaffected and the ok:true branch still applies.
               const currentId = projectEditorRef.current.getActiveChapter()?.id;
@@ -344,7 +344,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             } catch (err) {
               // Match the main re-lock-fail catch's discipline: server
               // already committed, so on failure promote to stage:
-              // "reload" (or ok:true when directive said no reload),
+              // "committed_but_unreloaded" (or ok:true when directive said no reload),
               // exactly as the post-mutate re-lock catch does above.
               // Inlined here because we've already passed the cache-
               // clear step — duplicating is simpler than threading
@@ -386,7 +386,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
           // an unhandled rejection — bypassing the MutationResult
           // contract (callers `await mutation.run(...)` without
           // try/catch). Treat a throw the same as the "failed" outcome:
-          // set reloadFailed and return stage:"reload" so the caller
+          // set reloadFailed and return stage:"committed_but_unreloaded" so the caller
           // raises the persistent lock banner.
           let outcome: Awaited<ReturnType<typeof projectEditorRef.current.reloadActiveChapter>>;
           try {
@@ -439,7 +439,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             // change. Re-run the reload without an expectedChapterId so it
             // targets whatever is currently active — a fresh GET pulls the
             // post-mutation content. On failure, fall through to the
-            // stage:"reload" branch so callers raise the persistent lock
+            // stage:"committed_but_unreloaded" branch so callers raise the persistent lock
             // banner.
             const currentId = projectEditorRef.current.getActiveChapter()?.id;
             if (currentId && directive.clearCacheFor.includes(currentId)) {

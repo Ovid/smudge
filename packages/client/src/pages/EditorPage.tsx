@@ -287,7 +287,7 @@ export function EditorPage() {
   // pipeline invariant #2 requires setEditable(false) around any
   // mutation that can fail mid-typing; the persistent lock banner is the
   // only user-visible signal of that read-only state. Three call sites
-  // pair them today (restore stage:"reload", restore stage:"mutate"
+  // pair them today (restore stage:"committed_but_unreloaded", restore stage:"mutate"
   // possiblyCommitted, and finalizeReplaceSuccess non-stale reloadFailed).
   // Callers keep their surrounding refreshes / cache-clear / stale-chapter
   // branching inline because those diverge between the restore and replace
