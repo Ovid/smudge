@@ -152,8 +152,8 @@ sites route through `applyMappedError(mapped, { onMessage, onTransient?,
 onCommitted?, onExtras? })` from `packages/client/src/errors/applyMappedError.ts`
 — its `STOP` sentinel lets a callback short-circuit the rest of the chain.
 This is the canonical consumer pattern, parallel with `useEditorMutation` and
-`useAbortableSequence`. This invariant will be enforced by ESLint in Phase
-4b.4; until then, it is enforced by review.
+`useAbortableSequence`. This invariant will be enforced by ESLint in a future
+phase; until then, it is enforced by review.
 
 **String externalization.** All UI strings in `packages/client/src/strings.ts` as constants, never raw literals in components. Enforced by `no-restricted-syntax` selectors in `eslint.config.js` (Phase 4b.4) that flag **word-bearing** literals (text containing a Unicode letter, `\p{L}`) in JSX text children and the user-facing attributes `aria-label`, `aria-description`, `aria-roledescription`, `title`, `placeholder`, `alt`. The rule is intentionally letters-only: glyphs, separators, and punctuation are language-neutral (not i18n surface), and bare-glyph accessible-name coverage is owned by aXe-core, not this rule. A decorative word-bearing glyph (e.g. the `Aa`/`ab|` find-replace toggles) is **named** — extracted to a constant and rendered as `{GLYPH}`, which the rule does not flag — keeping the visible symbol paired with its `STRINGS`-sourced `aria-label`. Test fixtures take an inline `// eslint-disable-next-line no-restricted-syntax -- test fixture (not user-facing)` (the description separator is two hyphens `--`; an em-dash silently disables nothing). ESLint reports a JSXText violation at the opening tag's line, so a disable comment must sit above the *opening tag* (or use the block `eslint-disable`/`eslint-enable` form) — a comment directly above the visible text does not suppress it. The exemption-reason string is load-bearing — `git grep "eslint-disable-next-line no-restricted-syntax" packages/client/` is the audit surface. Prepares for future i18n without architectural changes.
 
