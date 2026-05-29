@@ -130,7 +130,7 @@ Five specialist agents analyzed structure, coupling, integration/data, error-han
 - **Status:** Fixed
 - **Status reason:** Decomposed along the two separable seams the explanation names. Extracted the chapter-CRUD handlers (`handleCreateChapter`/`handleSelectChapter`/`reloadActiveChapter`/`handleDeleteChapter`/`handleReorderChapters`) into a new `useChapterCrud` hook and the title/status handlers (`handleUpdateProjectTitle`/`handleStatusChange`/`handleRenameChapter`) into a new `useChapterMetadata` hook, each owning the ops + recovery refs used only by its handlers. `useProjectEditor` retains the load-bearing save pipeline + project/chapter state + the shared sync-on-render refs + the confirmed-status cache + `loadProject`, and now composes the two sub-hooks behind an unchanged public return object (pinned by a new return-shape contract test). The file dropped from 1722 to ~660 lines; `EditorPage.tsx` and all other consumers are untouched. All 1420 client tests + the full 2231-test suite stay green; the `useRef<AbortController>` structural allowlist was updated to track the migrated recovery refs. F-1 (`EditorPage.tsx`) and F-7 (temporal coupling, lives in `EditorPage.tsx`) were deliberately deferred to a future session.
 - **Status date:** 2026-05-29
-- **Status commit:** (this fix commit on branch `ovid/architecture`)
+- **Status commit:** 247e7b6e96a3ec81caf15cbc0394fbe4db820b34
 
 ### [F-3] No server-side error taxonomy
 - **Category:** Flaw 34 (Inconsistent error/logging conventions) / Flaw 20 (Weak error handling strategy)
