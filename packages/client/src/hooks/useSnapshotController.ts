@@ -6,7 +6,7 @@ import { generateHTML } from "@tiptap/html";
 import { mapApiError } from "../errors";
 import { ApiRequestError } from "../errors";
 import { clearCachedContent } from "./useContentCache";
-import { safeSetEditable } from "../utils/editorSafeOps";
+import { safeSetEditable, quiesceEditorForServerOp } from "../utils/editorSafeOps";
 import { sanitizeEditorHtml } from "../sanitizer";
 import { editorExtensions } from "../editorExtensions";
 import { STRINGS } from "../strings";
@@ -430,21 +430,19 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
       // outside let a sync throw reject the onView promise,
       // bypassing the {ok,reason} contract SnapshotPanel expects.
       try {
-        // Route through safeSetEditable so a TipTap mid-remount
-        // throw does not escape the try and reject the onView
-        // promise with an untyped error — SnapshotPanel expects
-        // the {ok,reason} | undefined contract. Using the helper
-        // instead of an inline setEditable also routes logging
-        // through the shared warn, matching the discipline the
-        // other mutation entry points follow.
-        safeSetEditable(editorRef, false);
-        const flushed = (await editorRef.current?.flushSave()) ?? true;
+        // F-7: the load-bearing disable -> flush -> (fail: re-enable, bail)
+        // -> cancel ordering is encoded once in quiesceEditorForServerOp.
+        // disableEditor:true keeps the editor read-only across the round trip
+        // (invariant #2) and re-enables it only if the flush fails so the user
+        // can retry. The helper routes setEditable through safeSetEditable, so
+        // a TipTap mid-remount throw is absorbed rather than rejecting the
+        // onView promise (SnapshotPanel expects {ok,reason} | undefined).
+        const flushed = await quiesceEditorForServerOp(editorRef, cancelPendingSaves, {
+          disableEditor: true,
+        });
         if (!flushed) {
-          // Re-enable so the user can retry — view was refused.
-          safeSetEditable(editorRef, true);
           return { ok: false, reason: "save_failed" };
         }
-        cancelPendingSaves();
         const result = await viewSnapshot(snap);
         // Re-enable on actual failure (user must be able to
         // retry) and on "chapter" supersession (the Editor is
@@ -560,19 +558,18 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
     // flush_failed outcome so the panel surfaces its own
     // createFailed message.
     try {
-      const flushed = (await editorRef.current?.flushSave()) ?? true;
+      // F-7: same quiesce ordering as onView, encoded once. markCleanAfter:true
+      // runs editorRef.markClean() after the flush + cancel — cancelPendingSaves
+      // clears useProjectEditor-level retry/backoff state but NOT the Editor's
+      // internal debounceTimerRef, so a keystroke landing between flush and the
+      // snapshot POST would otherwise re-dirty the editor and schedule a racing
+      // PATCH; markClean zeroes the dirty flag + debounce timer, closing that
+      // window. disableEditor is omitted: snapshot create captures the live
+      // content and does not overwrite the editor, so it stays editable.
+      const flushed = await quiesceEditorForServerOp(editorRef, cancelPendingSaves, {
+        markCleanAfter: true,
+      });
       if (flushed) {
-        cancelPendingSaves();
-        // I3: cancelPendingSaves clears useProjectEditor-level
-        // retry/backoff state but does NOT touch the Editor
-        // component's internal debounceTimerRef. A keystroke that
-        // lands between flushSave resolving and the snapshot
-        // POST completing re-dirties the editor and schedules a
-        // new debounced PATCH that races the snapshot create.
-        // markClean clears the debounce timer and zeroes the
-        // dirty flag, closing that race window — the next
-        // keystroke re-arms it cleanly.
-        editorRef.current?.markClean();
         return { ok: true } as const;
       }
       return { ok: false, reason: "flush_failed" } as const;
