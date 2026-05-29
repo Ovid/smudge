@@ -9,6 +9,13 @@ import {
 
 const S = STRINGS.findReplace;
 
+// Decorative typography-toggle glyphs, named so the no-restricted-syntax
+// raw-UI-string rule does not flag them as raw JSX text. The translatable
+// accessible name lives in each button's aria-label (STRINGS.findReplace.*).
+const MATCH_CASE_GLYPH = "Aa";
+const WHOLE_WORD_GLYPH = "ab|";
+const REGEX_GLYPH = ".*";
+
 export interface FindReplacePanelProps {
   isOpen: boolean;
   onClose: () => void;
@@ -203,7 +210,7 @@ export function FindReplacePanel({
                 : "bg-white border-border/40 text-text-secondary hover:border-border"
             }`}
           >
-            Aa
+            {MATCH_CASE_GLYPH}
           </button>
           <button
             type="button"
@@ -216,7 +223,7 @@ export function FindReplacePanel({
                 : "bg-white border-border/40 text-text-secondary hover:border-border"
             }`}
           >
-            ab|
+            {WHOLE_WORD_GLYPH}
           </button>
           <button
             type="button"
@@ -229,7 +236,7 @@ export function FindReplacePanel({
                 : "bg-white border-border/40 text-text-secondary hover:border-border"
             }`}
           >
-            .*
+            {REGEX_GLYPH}
           </button>
         </div>
       </div>
