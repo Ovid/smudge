@@ -319,6 +319,10 @@ Five specialist agents analyzed structure, coupling, integration/data, error-han
 - **Explanation:** `imagesService.getImage(id)` is referenced only by its own test — no route or module imports it. The serve path uses `serveImage`; resolvers use the store's `findImageById` directly. The function and the tests exercising it are dead surface (remove it, or a caller is missing).
 - **Evidence:** `packages/server/src/images/images.service.ts:109-112`.
 - **Found by:** Security & Code Quality
+- **Status:** Fixed
+- **Status reason:** Deleted the unused `imagesService.getImage(id)` export — a one-line passthrough to `store.findImageById(id)` with no production caller (the serve path uses `serveImage`, resolvers use `findImageById` directly). Removed the dedicated `describe("getImage()")` test block, and switched the three incidental state-verification reads in the delete/reference tests (`images.service.test.ts:289,385,461`) from `imagesService.getImage(imageId)` to direct `t.db("images").where({ id }).first()` reads — the test-layer DB-access pattern already used across the suite. No new dead surface; the rest of the images.service suite (serve, delete, references) is unchanged and continues to prove those paths work without `getImage`. Server suite green; `npm run typecheck` clean.
+- **Status date:** 2026-05-29
+- **Status commit:** 0df7b427cc2f9cb05c5da7a253cfd9e0a82b2fbb
 
 ## Coverage Checklist
 
