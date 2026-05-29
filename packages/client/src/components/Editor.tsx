@@ -65,8 +65,13 @@ const AUTO_SAVE_DEBOUNCE_MS = 1500;
 // (A getter over a ref, rather than mutating `editor.storage` or passing the
 // ref object directly, satisfies the react-hooks immutability/refs rules: the
 // ref is only ever read inside the getter at event time, never during render.)
+// S7: the handler returned by getUploadHandler is async (it awaits
+// api.images.upload); the type widening to `Promise<void> | void` makes the
+// async semantics part of the documented contract so a future refactor that
+// strips the inner try/catch doesn't silently regress to uncaught promise
+// rejections under the same TypeScript-accepted shape.
 interface ImagePasteOptions {
-  getUploadHandler: () => ((file: File) => void) | null;
+  getUploadHandler: () => ((file: File) => Promise<void> | void) | null;
 }
 
 const imagePasteExtension = Extension.create<ImagePasteOptions>({
@@ -128,7 +133,11 @@ export function Editor({
   // F-17: instance-scoped image upload handler, read by this editor's
   // paste/drop plugin (configured below). Set in an effect once the editor and
   // its callbacks are live; a ref so the plugin always sees the latest handler.
-  const uploadHandlerRef = useRef<((file: File) => void) | null>(null);
+  // S7: typed as `Promise<void> | void` because the installed handler is
+  // async (it awaits api.images.upload); aligning the ref type with the
+  // imagePaste extension's `ImagePasteOptions.getUploadHandler` keeps the
+  // async semantics part of the documented contract.
+  const uploadHandlerRef = useRef<((file: File) => Promise<void> | void) | null>(null);
   // Stable getter handed to the imagePaste extension; the plugin calls it at
   // event time, so the ref is never read during render.
   const getUploadHandler = useCallback(() => uploadHandlerRef.current, []);
