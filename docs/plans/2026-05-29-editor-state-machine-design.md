@@ -66,13 +66,18 @@ success: it sets `reloadSuperseded`, re-enables the editor, and returns `ok:true
 *because* a lock banner would otherwise pin to an unrelated chapter the mutation
 never touched (findings I1/I3/I5, 2026-04-20/21 reviews).
 
-The new stage covers:
+The `committed_but_unreloaded` **outcome** (the `COMMITTED_UNRELOADED` machine
+event + persistent banner) covers:
 
-- 2xx `BAD_JSON` on replace/restore response bodies (the write may have landed).
-- A genuine reload-GET failure (was `stage:"reload"`).
+- 2xx `BAD_JSON` on replace/restore response bodies (the write may have landed)
+  — routed by the *consumer's* `possiblyCommitted` branch, not by a hook stage
+  (see Component 3).
+- A genuine reload-GET failure (was `stage:"reload"`) — emitted by the hook as
+  `stage:"committed_but_unreloaded"`.
 - Supersession **only when** the now-active chapter is in the mutation's
   `clearCacheFor` set **and** the follow-up second-reload fails — i.e. the
-  genuine stale-content race that today's I3 second-reload already handles.
+  genuine stale-content race that today's I3 second-reload already handles —
+  also emitted by the hook as `stage:"committed_but_unreloaded"`.
 
 Plain supersession (now-active chapter *not* in `clearCacheFor`, or the
 second-reload succeeds) stays benign success. Net user-visible outcome is
@@ -146,10 +151,10 @@ isolation):
 | `MUTATION_STARTED`             | `busy:true, editable:false` (lock unchanged)            | `useEditorMutation.run()` entry                                     |
 | `MUTATION_SETTLED_OK`          | `busy:false, editable:(lock === null)` (lock unchanged) | happy path — re-enables only when not locked                        |
 | `MUTATION_SETTLED_SUPERSEDED`  | `busy:false, editable:true, lock:null`                  | benign supersession — clears a stale (prior-chapter) lock, mirroring today's `reloadSuperseded` bypass |
-| `COMMITTED_UNRELOADED {msg}`   | `busy:false, editable:false, lock:{message}`            | the new stage (BAD_JSON, reload-GET failure, race-only supersession)|
+| `COMMITTED_UNRELOADED {msg}`   | `busy:false, editable:false, lock:{message}`            | **consumer**, via `applyReloadFailedLock`, on the hook's `committed_but_unreloaded` (reload-GET failure / race-only supersession) **or** a 2xx `BAD_JSON` `possiblyCommitted` branch. The hook dispatches *no* terminal event on the committed path, so `editable` stays `false` (from `MUTATION_STARTED`) until this lands the banner — no flip. |
 | `RELOADED`                     | `busy:false, editable:true, lock:null`                  | successful `reloadActiveChapter` — fresh server content on screen   |
 | `EDITOR_REMOUNTED`             | `editable:true, lock:null` (busy untouched)             | chapter switch or post-reload remount                               |
-| `UNLOCK`                       | `lock:null`                                             | existing external dismiss paths                                     |
+| `UNLOCK`                       | `lock:null`                                             | **reserved** — no current dispatcher (the lock banner is non-dismissible; only `EDITOR_REMOUNTED` clears it in production). Kept for a future dismissible-lock path and exercised by the reducer unit test. |
 
 The hook mirrors state to a ref in render (`stateRef.current = state`) and
 exposes `{ state, dispatch, isLocked(), isBusy(), getState() }`. The 10
@@ -223,8 +228,15 @@ removed only in PR (B) once consumers no longer reference it (see PR scope).
   computation* — transient `run()`-local `let`s, not the persistent hand-synced
   state this phase eliminates (see DoD) — but its outcomes now `dispatch` machine
   events instead of poking `editorRef` or returning bare flags;
-- reclassifies the 2xx `BAD_JSON` thrown inside `mutate()` from `stage:"mutate"`
-  to `stage:"committed_but_unreloaded"` (the write may have landed);
+- emits `committed_but_unreloaded` only for cases the hook itself can detect:
+  the former `stage:"reload"` (reload-GET failure) and race-only supersession.
+  **2xx `BAD_JSON` is *not* reclassified inside the hook** — its detection is
+  owned by `mapApiError(...).possiblyCommitted` (CLAUDE.md §Unified API error
+  mapping), which runs in the *consumer*. So a 2xx `BAD_JSON` throw keeps the
+  hook's `stage:"mutate"`, and the consumer's existing `possiblyCommitted`
+  branch routes it to the **same** `COMMITTED_UNRELOADED` machine event via
+  `applyReloadFailedLock`. The machine event — not the hook's `MutationResult`
+  stage — is the convergence point for "server committed, display unconfirmed";
 - maps the race-only supersession branch (now-active chapter ∈ `clearCacheFor`
   and second-reload fails) to `committed_but_unreloaded`, and plain (benign)
   supersession to `MUTATION_SETTLED_SUPERSEDED`;
@@ -377,15 +389,34 @@ floors; zero warnings in test output).
 
 ## CLAUDE.md impact
 
-To be confirmed during the `/roadmap` CLAUDE.md-review step. Candidate updates:
+Confirmed during the `/roadmap` CLAUDE.md-review step (2026-05-29). **One**
+update lands as an explicit task in the implementation plan: add the following
+paragraph to **§Key Architecture Decisions**, immediately after the existing
+`useEditorMutation` paragraph.
 
-- **§Key Architecture Decisions / Save-Pipeline Invariants:** reference
-  `useEditorMutationMachine` as the owner of `{ editable, locked, busy }`, so
-  future content-mutating flows route through it rather than re-deriving lock
-  bookkeeping; note the `committed_but_unreloaded` stage as the canonical
-  "server committed, display unconfirmed" outcome.
-- Note that `editorLockedMessage` / `inFlightRef` references in the existing
-  invariant text are superseded by the machine.
+> **Editor operational state lives in one machine.** The editor's
+> `{ editable, locked, busy }` operational state is owned by
+> `useEditorMutationMachine` (`packages/client/src/hooks/useEditorMutationMachine.ts`)
+> — a pure `useReducer` driven by explicit events (`MUTATION_STARTED`,
+> `MUTATION_SETTLED_OK` / `_SUPERSEDED`, `RELOADED`, `COMMITTED_UNRELOADED`,
+> `EDITOR_REMOUNTED`, `UNLOCK`) rather than independent `setState`/`setEditable`
+> calls kept in sync by hand. Do not reintroduce free-standing
+> `editorLockedMessage` / `reloadFailed` / `reloadSucceeded` refs or state; route
+> lock/unlock and re-enable intent through the machine. Two transitions stay
+> synchronous-imperative for timing safety: the lock-down `setEditable(false)`
+> (blocks input before the first `await`) and the `inFlightRef` re-entrancy latch.
+> `MutationResult` carries `committed_but_unreloaded` as the canonical "server
+> committed, display unconfirmed" outcome (2xx `BAD_JSON` on replace/restore,
+> reload-GET failure, race-only supersession); it always routes to the persistent
+> lock banner. Invariant 2's `setEditable(false)` is now expressed as machine
+> intent.
+
+Sections checked and deliberately **not** changed: §API Design (no new server
+code/envelope — `committed_but_unreloaded` is a client `MutationResult` stage),
+§Data Model, §Testing Philosophy, §Target Project Structure (the new hook lives
+in the existing `client/hooks/`), §Accessibility, §Visual Design, and §Pull
+Request Scope (the additive-then-subtractive split rule is captured in the
+decision log, too narrow to codify at the root).
 
 ## Dependencies
 
