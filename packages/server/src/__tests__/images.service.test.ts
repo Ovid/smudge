@@ -155,7 +155,6 @@ describe("images.service", () => {
     });
   });
 
-
   describe("serveImage()", () => {
     it("returns buffer and mime type for existing image", async () => {
       const projectId = await createTestProject();
