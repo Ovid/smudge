@@ -9,6 +9,7 @@ describe("ReferencePanel", () => {
   const defaultProps = {
     width: 320,
     onResize: vi.fn(),
+    // eslint-disable-next-line no-restricted-syntax -- test fixture (not user-facing)
     children: <div data-testid="panel-content">Gallery content</div>,
   };
 
