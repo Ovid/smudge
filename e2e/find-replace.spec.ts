@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
 
 interface TestProject {
   id: string;
@@ -63,26 +64,6 @@ async function createChapterWithContent(
   });
   expect(patchRes.ok()).toBeTruthy();
   return chapter;
-}
-
-/**
- * Navigate to a project's editor and wait for it to be ready.
- *
- * The editor (TipTap/ProseMirror) mounts client-side only after the SPA
- * fetches the project, and under the Vite dev server that backs `make e2e`
- * the first navigation pulling in the heavy editor module graph — or any
- * navigation that triggers a Vite dependency re-optimization + full page
- * reload mid-suite — can take well over Playwright's default 5s expect
- * timeout to compile and mount. That margin is the source of the intermittent
- * "textbox not found" flake. Wait for the editor with a generous timeout
- * (well within the 30s per-test timeout) so a slow cold/recompiled mount no
- * longer fails this shared precondition. Centralized here so every test gets
- * the robust wait rather than re-deriving the default-timeout version.
- */
-const EDITOR_READY_TIMEOUT = 15_000;
-async function gotoProjectEditor(page: Page, slug: string) {
-  await page.goto(`/projects/${slug}`);
-  await expect(page.getByRole("textbox")).toBeVisible({ timeout: EDITOR_READY_TIMEOUT });
 }
 
 /** Type content into the editor and wait for it to be saved. */

@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
+import { gotoProjectEditor, expectEditorReady } from "./helpers/gotoProjectEditor";
 
 interface TestProject {
   id: string;
@@ -59,11 +60,9 @@ test.describe("Editor save pipeline E2e Tests", () => {
   });
 
   test("typing in editor auto-saves and persists after reload", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
+    await gotoProjectEditor(page, project.slug);
 
-    // Wait for the editor to be ready
     const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
 
     // Type some content
     const testText = `E2e save test ${Date.now()}`;
@@ -79,16 +78,15 @@ test.describe("Editor save pipeline E2e Tests", () => {
     await page.reload();
 
     // Wait for the editor to load with persisted content
+    await expectEditorReady(page);
     const editorAfterReload = page.getByRole("textbox");
-    await expect(editorAfterReload).toBeVisible();
     await expect(editorAfterReload).toContainText(testText, { timeout: 5000 });
   });
 
   test("PATCH 404 surfaces chapter-gone copy", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
+    await gotoProjectEditor(page, project.slug);
 
     const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
 
     // Intercept PATCH /api/chapters/<id> with a 404 envelope. The server
     // contract emits { error: { code, message } }; the chapter.save scope
@@ -147,10 +145,9 @@ test.describe("Editor save pipeline E2e Tests", () => {
   });
 
   test("shows error on save failure and recovers when network returns", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
+    await gotoProjectEditor(page, project.slug);
 
     const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
 
     // Intercept PATCH requests to chapters to simulate network failure.
     // S3 (review 2026-04-26): scope to `**/api/chapters/*` (single
@@ -187,8 +184,8 @@ test.describe("Editor save pipeline E2e Tests", () => {
 
     // Verify full content (pre-failure + recovery) persisted by reloading
     await page.reload();
+    await expectEditorReady(page);
     const editorAfterReload = page.getByRole("textbox");
-    await expect(editorAfterReload).toBeVisible();
     await expect(editorAfterReload).toContainText(testText + " recovered", { timeout: 5000 });
   });
 
@@ -196,10 +193,9 @@ test.describe("Editor save pipeline E2e Tests", () => {
     // Add a second chapter
     await request.post(`/api/projects/${project.slug}/chapters`);
 
-    await page.goto(`/projects/${project.slug}`);
+    await gotoProjectEditor(page, project.slug);
 
     const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
 
     // Type in first chapter
     const firstChapterText = `First chapter ${Date.now()}`;
@@ -228,10 +224,9 @@ test.describe("Editor save pipeline E2e Tests", () => {
     // Add a second chapter
     await request.post(`/api/projects/${project.slug}/chapters`);
 
-    await page.goto(`/projects/${project.slug}`);
+    await gotoProjectEditor(page, project.slug);
 
     const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
 
     // Type in first chapter — do NOT wait for auto-save debounce to complete
     const unsavedText = `Unsaved switch ${Date.now()}`;

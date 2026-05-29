@@ -1,5 +1,6 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import { interceptWithSuccessBadJson } from "./helpers/interceptWithSuccessBadJson";
+import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
 
 interface TestProject {
   id: string;
@@ -63,10 +64,8 @@ test.describe("Chapter create recovery (4b.3c.1)", () => {
   test("200 BAD_JSON surfaces committed banner and new chapter via recovery GET", async ({
     page,
   }) => {
-    await page.goto(`/projects/${project.slug}`);
-
-    // Wait for the editor to mount; project creation seeds one chapter.
-    await expect(page.getByRole("textbox")).toBeVisible();
+    // Navigate and wait for the editor to mount; project creation seeds one chapter.
+    await gotoProjectEditor(page, project.slug);
 
     // Sidebar uses `<aside aria-label="Chapters"><ul role="list">…</ul></aside>`
     // (see Sidebar.tsx). Scope the listitem count to that aside to avoid

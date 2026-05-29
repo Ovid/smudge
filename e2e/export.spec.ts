@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
+import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
 import AxeBuilder from "@axe-core/playwright";
 
 interface TestProject {
@@ -80,11 +81,7 @@ test.describe("Export E2e Tests", () => {
   });
 
   test("exports manuscript as HTML via dialog", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-
-    // Wait for the editor to be ready
-    const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
+    await gotoProjectEditor(page, project.slug);
 
     // Open the export dialog
     const exportButton = page.getByRole("button", { name: "Export", exact: true });
@@ -112,11 +109,7 @@ test.describe("Export E2e Tests", () => {
     await setChapterContent(request, secondChapter.id, TIPTAP_CONTENT);
 
     // Reload to pick up the new chapter
-    await page.goto(`/projects/${project.slug}`);
-
-    // Wait for the editor to be ready
-    const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
+    await gotoProjectEditor(page, project.slug);
 
     // Open the export dialog
     const exportButton = page.getByRole("button", { name: "Export", exact: true });
@@ -143,10 +136,7 @@ test.describe("Export E2e Tests", () => {
   });
 
   test("exports manuscript as Word (.docx) via dialog", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
-
+    await gotoProjectEditor(page, project.slug);
     const exportButton = page.getByRole("button", { name: "Export", exact: true });
     await exportButton.click();
     await expect(page.getByText("Export Manuscript")).toBeVisible();
@@ -163,10 +153,7 @@ test.describe("Export E2e Tests", () => {
   });
 
   test("exports manuscript as EPUB via dialog", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
-
+    await gotoProjectEditor(page, project.slug);
     const exportButton = page.getByRole("button", { name: "Export", exact: true });
     await exportButton.click();
     await expect(page.getByText("Export Manuscript")).toBeVisible();
@@ -183,10 +170,7 @@ test.describe("Export E2e Tests", () => {
   });
 
   test("export dialog shows all five format options", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-    const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
-
+    await gotoProjectEditor(page, project.slug);
     const exportButton = page.getByRole("button", { name: "Export", exact: true });
     await exportButton.click();
     await expect(page.getByText("Export Manuscript")).toBeVisible();
@@ -199,11 +183,7 @@ test.describe("Export E2e Tests", () => {
   });
 
   test("export dialog is accessible", async ({ page }) => {
-    await page.goto(`/projects/${project.slug}`);
-
-    // Wait for the editor to be ready
-    const editor = page.getByRole("textbox");
-    await expect(editor).toBeVisible();
+    await gotoProjectEditor(page, project.slug);
 
     // Open the export dialog
     const exportButton = page.getByRole("button", { name: "Export", exact: true });
