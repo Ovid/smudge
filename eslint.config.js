@@ -87,6 +87,22 @@ export default tseslint.config(
         // silently disables nothing). ESLint reports a JSXText violation at the
         // opening-tag line, so a disable comment must sit above the opening
         // tag, not above the visible text.
+        //
+        // NOT caught (known gaps, by the same "add a selector when it shows up,
+        // don't speculate" discipline as the seq-ref rule above and the design's
+        // BinaryExpression note): word-bearing literals reached through an
+        // intervening expression — ternary/logical operands such as
+        // `{cond ? "Yes" : "No"}` or `aria-label={cond && "Save"}` — and
+        // literal/template *containers* nested directly under a JSX fragment
+        // (`<>{"Save"}</>`). A bare fragment text child (`<>Save</>`) IS caught
+        // because the JSXText selector has no parent constraint. These shapes
+        // were flagged (agentic-review 2026-05-29 findings S1/S2) but had ZERO
+        // live violations in the tree, and the obvious broadening (a descendant
+        // combinator) false-positives on `{obj["key"]}`, `{t("Save")}`, and
+        // state comparisons like `{x === "loading" ? a : b}`. Add a targeted
+        // ConditionalExpression/LogicalExpression/JSXFragment sibling selector
+        // (verified against the tree for false positives) if/when a real
+        // violation appears.
         {
           selector: "JSXText[value=/\\p{L}/u]",
           message:
@@ -124,5 +140,5 @@ export default tseslint.config(
       ],
     },
   },
-  prettierConfig
+  prettierConfig,
 );
