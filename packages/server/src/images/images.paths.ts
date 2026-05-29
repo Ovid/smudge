@@ -26,6 +26,17 @@ export function mimeToExt(mime: string): string | null {
 }
 
 /**
+ * Alternation of every extension the image producer writes
+ * (e.g. `jpg|png|gif|webp`). Derived directly from `MIME_TO_EXT` so
+ * the reaper and any other "what's a producer-written image file?"
+ * consumer stays in lockstep with the producer — adding a new accepted
+ * MIME type can never silently leave the reaper unable to recognise
+ * the new extension, and the reaper can never widen to extensions the
+ * producer doesn't write (e.g. `<uuid>.bak`).
+ */
+export const IMAGE_EXT_PATTERN = Object.values(MIME_TO_EXT).join("|");
+
+/**
  * Validate that the buffer's magic bytes match the claimed MIME type.
  * Returns true if the magic bytes are consistent, false if they are not.
  */

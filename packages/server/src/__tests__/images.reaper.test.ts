@@ -86,6 +86,48 @@ describe("reapOrphanImages (F-14)", () => {
     expect(remaining).toEqual(expect.arrayContaining(["notes.txt", "README.md"]));
   });
 
+  it("never deletes <uuid>.<non-image-ext> files (S6: restrict to MIME_TO_EXT values)", async () => {
+    // The producer writes EXACTLY jpg/png/gif/webp; an externally-placed
+    // <uuid>.bak / <uuid>.tmp / <uuid>.orig must NEVER be touched even
+    // though they happen to share the uuid prefix of a real image file.
+    const dir = path.join(dataDir, "images", projectId);
+    await mkdir(dir, { recursive: true });
+    const sidecarUuid = uuidv4();
+    await writeFile(path.join(dir, `${sidecarUuid}.bak`), "operator backup");
+    await writeFile(path.join(dir, `${sidecarUuid}.tmp`), "tmp");
+    await writeFile(path.join(dir, `${sidecarUuid}.orig`), "orig");
+
+    const reaped = await reapOrphanImages(db, dataDir);
+
+    expect(reaped).toBe(0);
+    const remaining = await readdir(dir);
+    expect(remaining).toEqual(
+      expect.arrayContaining([
+        `${sidecarUuid}.bak`,
+        `${sidecarUuid}.tmp`,
+        `${sidecarUuid}.orig`,
+      ]),
+    );
+  });
+
+  it("reaps orphan files for every producer extension (jpg/png/gif/webp) (S6)", async () => {
+    const dir = path.join(dataDir, "images", projectId);
+    await mkdir(dir, { recursive: true });
+    const ids = [uuidv4(), uuidv4(), uuidv4(), uuidv4()];
+    const exts = ["jpg", "png", "gif", "webp"] as const;
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      const ext = exts[i];
+      if (id && ext) await writeFile(path.join(dir, `${id}.${ext}`), "fake");
+    }
+
+    const reaped = await reapOrphanImages(db, dataDir);
+
+    expect(reaped).toBe(4);
+    const remaining = await readdir(dir);
+    expect(remaining).toEqual([]);
+  });
+
   it("returns 0 when the images directory does not exist (fresh install)", async () => {
     const reaped = await reapOrphanImages(db, dataDir);
     expect(reaped).toBe(0);

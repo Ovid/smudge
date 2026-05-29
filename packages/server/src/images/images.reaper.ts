@@ -1,14 +1,16 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Knex } from "knex";
-import { getDataDir, UUID_PATTERN } from "./images.paths";
+import { getDataDir, UUID_PATTERN, IMAGE_EXT_PATTERN } from "./images.paths";
 import { deleteImageFile } from "./images.fs";
 import { logger } from "../logger";
 
-// Only ever consider files that look like an image blob this app writes
-// (`<uuid>.<ext>`). Anything else on disk is left untouched — the reaper must
-// never delete a file it didn't recognise as one of its own.
-const IMAGE_FILE_RE = new RegExp(`^(${UUID_PATTERN})\\.[a-z0-9]+$`, "i");
+// S6: only ever consider files whose extension is one this app's producer
+// actually writes (`jpg|png|gif|webp`, derived from MIME_TO_EXT). A loose
+// `[a-z0-9]+` would also match operator backups (`<uuid>.bak`/`.tmp`/`.orig`)
+// that happen to share a uuid prefix — the reaper must never delete a file
+// it didn't write.
+const IMAGE_FILE_RE = new RegExp(`^(${UUID_PATTERN})\\.(?:${IMAGE_EXT_PATTERN})$`, "i");
 
 /**
  * Startup reaper for orphaned image files (F-14).
