@@ -46,8 +46,8 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.3c.1 | Consumer Recovery: Foundation             | Land `applyMappedError` (with `STOP` sentinel) + `MappedError<S>` phantom + `ScopeExtras<S>` + `devWarn`; [S3]/[S7] `terminalCodes` relocation; [S8] `extrasFrom` tweak; [S16] new `chapter.flushBeforeNavigate` scope; ~16 simple-ladder migrations (no functional change at consumer sites). Split from 4b.3c per 2026-05-26 pushback (CLAUDE.md §Pull Request Scope one-feature rule).                                                                                                                                                                              | Done        |
 | 4b.3c.2 | Consumer Recovery: Helper-Consuming Fixes | Behavioural fixes that newly route through the helper's `onCommitted` / `STOP` / `devWarn` callbacks ([I3], [I5], [S4], [S10], [S20]). Depends on 4b.3c.1's foundation.                                                                                                                                                                                                                                                                                                                                                                                              | Done        |
 | 4b.3c.3 | Consumer Recovery: Independent Fixes      | Behavioural fixes independent of the helper: [I4] (+ `useTrashManager.ts` allowlist update), [S5], [S11], [S17], [S18], [S19]. Can land in parallel with 4b.3c.1.                                                                                                                                                                                                                                                                                                                                                                                                    | Done        |
-| 4b.3d   | Mapper Internals & CLAUDE.md Updates      | Cluster E remainder: [S6] `safeExtrasFrom` dev-log try/catch; [S13] `refreshTrashList` extract from `useTrashManager`; [S14] `SnapshotPanel` mount-effect dedupe; CLAUDE.md updates (`§Unified API error mapping`, `§Save-Pipeline Invariants` Rule 4 four-file allowlist, `§Pull Request Scope` bundling/split exceptions). `ScopeExtras<S>` and [S9] `ImageGallery` cast both shipped in 4b.3c.1.                                                                                                                                                                    | In Progress |
-| 4b.4    | Raw-Strings ESLint Rule                   | Enforce strings.ts externalization via lint; fix existing violations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Planned |
+| 4b.3d   | Mapper Internals & CLAUDE.md Updates      | Cluster E remainder: [S6] `safeExtrasFrom` dev-log try/catch; [S13] `refreshTrashList` extract from `useTrashManager`; [S14] `SnapshotPanel` mount-effect dedupe; CLAUDE.md updates (`§Unified API error mapping`, `§Save-Pipeline Invariants` Rule 4 four-file allowlist, `§Pull Request Scope` bundling/split exceptions). `ScopeExtras<S>` and [S9] `ImageGallery` cast both shipped in 4b.3c.1.                                                                                                                                                                    | Done |
+| 4b.4    | Raw-Strings ESLint Rule                   | Enforce strings.ts externalization via lint; fix existing violations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | In Progress |
 | 4b.5    | Editor State Machine                      | Unify `editable`/`locked`/`busy` editor state into one machine; add `committed_but_unreloaded` mutation stage for ambiguous server responses                                                                                                                                                                                                                                                                                                                                                                                                                          | Planned |
 | 4b.6    | E2E Test Isolation                        | Wire `playwright.config.ts` to set `SMUDGE_PORT` / `SMUDGE_CLIENT_PORT` / `DB_PATH` to test-only values so e2e cannot piggy-back on the dev server or share its database                                                                                                                                                                                                                                                                                                                                                                                              | Planned |
 | 4b.7    | Test Warning-Pin Audit                    | Audit the 52 console-spy installs across 9 client test files that suppress `console.warn`/`console.error` without asserting on the call; pin each spy to the contract its production path commits to (or remove if defensive)                                                                                                                                                                                                                                                                                                                                         | Planned |
@@ -60,6 +60,7 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.14   | Operational Backup Stopgap                | `make backup` / `make restore` Makefile targets producing a zip archive of `<data-dir>/smudge.db` + `<data-dir>/images/` (data dir defaults to `packages/server/data/`, honors `DB_PATH`). Interim escape hatch for SQLite corruption until Phase 8b ships. Uses SQLite `VACUUM INTO` for live-safe snapshots; restore moves existing data aside, never deletes.                                                                                                                                                                                                       | Planned |
 | 4b.15   | Inline Title-Editing Hook                 | Extract a generic `useInlineTitleEditing(currentId, save, gates, options?)`; reduce `useChapterTitleEditing` and `useProjectTitleEditing` to thin wrappers that pass slug-drift check + post-save navigate as options.                                                                                                                                                                                                                                                                                                                                                | Planned |
 | 4b.16   | Dialog Lifecycle Hook                     | Extract `useDialogLifecycle(dialogRef, { open, onClose, initialFocusRef, blockEscapePropagation, role })` and migrate the 5 dialogs (Confirm, Export, NewProject, ProjectSettings, ShortcutHelp) one at a time; preserve `stopImmediatePropagation` and happy-dom guards as opt-ins.                                                                                                                                                                                                                                                                                  | Planned |
+| 4b.17   | AbortController ESLint Rule               | Add ESLint rule banning hand-rolled `useRef<AbortController>` allocations; convert `migrationStructuralCheck.test.ts`'s `PHASE_4B_3B_ALLOWLIST` + companion assertion to inline `// eslint-disable-next-line` annotations on each of the 4 surviving allocation sites. Split from Phase 4b.4 on 2026-05-28 per §Pull Request Scope one-feature rule. | Planned |
 | 4c      | Notes, Tags & Outtakes                    | Inline notes, paragraph tags, scratchpad for cut text                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Planned |
 | 5a      | Fiction: Characters                       | Character sheets with structured fields and freeform notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Planned |
 | 5b      | Fiction: Scene Cards                      | Scene cards / outline mode with drag-and-drop                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Planned |
@@ -1181,6 +1182,7 @@ The CLAUDE.md update is the artifact that keeps the next contributor (or the nex
 ---
 
 ## Phase 4b.4: Raw-Strings ESLint Rule
+<!-- plan: 2026-05-28-raw-strings-eslint-rule-design.md -->
 
 ### Goal
 
@@ -1716,6 +1718,66 @@ The two dedup reports under `paad/duplicate-code-reports/` flagged four Suggesti
 - **Report 1 S1** — _(partially addressed)_: `ProjectSettingsDialog`/`ExportDialog` hand-rolled `AbortController` is intentionally distinct from `useAbortableSequence` (different problems) and is now explicitly deferred under Phase 4b.3a.1's "Out of Scope" (originally numbered 4b.14) along with the other ~8 production AbortController sites.
 
 If a hardening pass (S2), a CLAUDE.md doc-pass (S3), or a fourth image-upload entry point (Report 2 S1) appears, surface the corresponding suggestion as a candidate phase.
+
+---
+
+## Phase 4b.17: AbortController ESLint Rule
+
+### Goal
+
+Replace the file-level `PHASE_4B_3B_ALLOWLIST` in
+`packages/client/src/__tests__/migrationStructuralCheck.test.ts` with an
+ESLint rule banning hand-rolled `useRef<AbortController>` allocations.
+Surviving justified allocations carry inline
+`// eslint-disable-next-line` annotations with their existing
+justification comment, collocating the audit trail with the code it
+justifies.
+
+### Why Now
+
+The file-level allowlist requires lockstep updates across the
+allowlist `Set` and each file's own comments whenever a site is
+migrated or added. An ESLint rule with inline disables makes the
+disable comment itself the documented exception.
+
+### Scope
+
+- Add a `no-restricted-syntax` selector banning
+  `useRef<AbortController>` allocations using an AST shape that covers
+  the realistic drift forms already pinned by
+  `USE_REF_ABORT_CONTROLLER_PATTERN`'s regex test cases.
+- Migrate the 4 surviving sites (`useProjectEditor.ts`,
+  `useSnapshotState.ts`, `useTrashManager.ts`, `HomePage.tsx`) to use
+  inline `// eslint-disable-next-line` + their existing justification
+  comment.
+- Delete `PHASE_4B_3B_ALLOWLIST` and the companion "allowlist actually
+  contains" assertion from `migrationStructuralCheck.test.ts`. The
+  broader migration checks (binding extraction, import patterns)
+  remain.
+- Update CLAUDE.md §Save-Pipeline Invariants Rule 4 to reflect the new
+  enforcement mechanism.
+
+### Out of Scope
+
+- Migrating any of the 4 surviving allocations to
+  `useAbortableAsyncOperation` — those are documented second-tier
+  recovery patterns; migration is a separate per-site decision.
+
+### Definition of Done
+
+- ESLint rule fires on any new `useRef<AbortController>` allocation.
+- The 4 surviving sites pass lint with inline disables.
+- `migrationStructuralCheck.test.ts` no longer references
+  `PHASE_4B_3B_ALLOWLIST`.
+- CLAUDE.md §Save-Pipeline Invariants Rule 4 updated.
+
+### Dependencies
+
+- Phase 4b.4 (extracted
+  `packages/client/src/__tests__/eslintRuleHarness.ts` that this phase
+  reuses for its programmatic-ESLint contract test). The
+  `no-restricted-syntax` precedent itself dates from Phase 4b.2's
+  sequence-ref rule.
 
 ---
 

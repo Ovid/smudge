@@ -136,6 +136,7 @@ function renderEditorPage() {
     <MemoryRouter initialEntries={["/projects/test-project"]}>
       <Routes>
         <Route path="/projects/:slug" element={<EditorPage />} />
+        {/* eslint-disable-next-line no-restricted-syntax -- test fixture (not user-facing) */}
         <Route path="/" element={<div>Home</div>} />
       </Routes>
     </MemoryRouter>,
@@ -2096,6 +2097,7 @@ describe("EditorPage find-and-replace confirmation", () => {
       <MemoryRouter initialEntries={["/projects/test-project"]}>
         <Routes>
           <Route path="/projects/:slug" element={<EditorPage />} />
+          {/* eslint-disable-next-line no-restricted-syntax -- test fixture (not user-facing) */}
           <Route path="/" element={<div>Home</div>} />
         </Routes>
       </MemoryRouter>,

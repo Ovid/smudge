@@ -70,8 +70,75 @@ export default tseslint.config(
           message:
             "Sequence-ref staleness check detected. Use useAbortableSequence (packages/client/src/hooks/useAbortableSequence.ts): start() bumps and returns a token, capture() reads current epoch, abort() invalidates outstanding tokens, and unmount auto-aborts.",
         },
+        // ── Raw UI-string rule (Phase 4b.4) ────────────────────────────────
+        // Flags WORD-BEARING string literals (text containing a Unicode
+        // letter, \p{L}) in JSX text children and the six user-facing
+        // attributes. Letters-only BY DESIGN: glyphs, separators, and
+        // punctuation are language-neutral (not i18n surface), and bare-glyph
+        // accessible-name coverage is owned by aXe-core (Playwright), not this
+        // rule. Six selectors (one per AST shape) rather than one :matches()
+        // form, so each gets a targeted message and the contract test
+        // (packages/client/src/__tests__/eslintRawStringsRule.test.ts) can pin
+        // them one shape at a time. EXEMPTIONS: name a decorative glyph as a
+        // const → {GLYPH} (the rule does not fire on member/identifier
+        // expressions); test fixtures use
+        // `// eslint-disable-next-line no-restricted-syntax -- test fixture
+        // (not user-facing)` — the separator is TWO hyphens `--` (an em-dash
+        // silently disables nothing). ESLint reports a JSXText violation at the
+        // opening-tag line, so a disable comment must sit above the opening
+        // tag, not above the visible text.
+        //
+        // NOT caught (known gaps, by the same "add a selector when it shows up,
+        // don't speculate" discipline as the seq-ref rule above and the design's
+        // BinaryExpression note): word-bearing literals reached through an
+        // intervening expression — ternary/logical operands such as
+        // `{cond ? "Yes" : "No"}` or `aria-label={cond && "Save"}` — and
+        // literal/template *containers* nested directly under a JSX fragment
+        // (`<>{"Save"}</>`). A bare fragment text child (`<>Save</>`) IS caught
+        // because the JSXText selector has no parent constraint. These shapes
+        // were flagged (agentic-review 2026-05-29 findings S1/S2) but had ZERO
+        // live violations in the tree, and the obvious broadening (a descendant
+        // combinator) false-positives on `{obj["key"]}`, `{t("Save")}`, and
+        // state comparisons like `{x === "loading" ? a : b}`. Add a targeted
+        // ConditionalExpression/LogicalExpression/JSXFragment sibling selector
+        // (verified against the tree for false positives) if/when a real
+        // violation appears.
+        {
+          selector: "JSXText[value=/\\p{L}/u]",
+          message:
+            "Raw UI string in JSX text. UI strings must live in packages/client/src/strings.ts (CLAUDE.md §String externalization). Name a decorative glyph as a const → {GLYPH}; a test fixture uses `// eslint-disable-next-line no-restricted-syntax -- test fixture (not user-facing)`.",
+        },
+        {
+          selector: "JSXElement > JSXExpressionContainer > Literal[value=/\\p{L}/u]",
+          message:
+            "Raw UI string literal in a JSX child. Use packages/client/src/strings.ts (CLAUDE.md §String externalization).",
+        },
+        {
+          selector:
+            "JSXElement > JSXExpressionContainer > TemplateLiteral > TemplateElement[value.cooked=/\\p{L}/u]",
+          message:
+            "Raw UI string in a JSX-child template literal. Use packages/client/src/strings.ts (CLAUDE.md §String externalization).",
+        },
+        {
+          selector:
+            "JSXAttribute[name.name=/^(aria-label|aria-description|aria-roledescription|title|placeholder|alt)$/][value.value=/\\p{L}/u]",
+          message:
+            "Raw UI string in a user-facing JSX attribute. Use packages/client/src/strings.ts (CLAUDE.md §String externalization).",
+        },
+        {
+          selector:
+            "JSXAttribute[name.name=/^(aria-label|aria-description|aria-roledescription|title|placeholder|alt)$/] > JSXExpressionContainer > Literal[value=/\\p{L}/u]",
+          message:
+            "Raw UI string literal in a user-facing JSX attribute. Use packages/client/src/strings.ts (CLAUDE.md §String externalization).",
+        },
+        {
+          selector:
+            "JSXAttribute[name.name=/^(aria-label|aria-description|aria-roledescription|title|placeholder|alt)$/] > JSXExpressionContainer > TemplateLiteral > TemplateElement[value.cooked=/\\p{L}/u]",
+          message:
+            "Raw UI string in a user-facing JSX attribute template literal. Use packages/client/src/strings.ts (CLAUDE.md §String externalization).",
+        },
       ],
     },
   },
-  prettierConfig
+  prettierConfig,
 );
