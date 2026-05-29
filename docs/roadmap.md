@@ -1245,7 +1245,7 @@ Pattern analysis across the six `ovid/architecture` code reviews (2026-04-19 to 
 
 ### Definition of Done
 
-- A single source of truth for the editor's `{ editable, locked, busy }` state — no free-standing `editorLockedMessage` / `inFlightRef` / `reloadFailed` / `reloadSucceeded` tracking.
+- A single source of truth for the editor's `{ editable, locked, busy }` state — no free-standing **persistent refs or React state** for `editorLockedMessage` / `reloadFailed` / `reloadSucceeded` kept in sync by hand (transient `run()`-local `let`s that compute which event to dispatch are permitted; the target is hand-synced persistent state, not local control flow). `inFlightRef` is retained solely as the synchronous re-entrancy latch at `run()` entry and no longer drives any UI read (see design doc Decided Q3).
 - `MutationResult` includes `"committed_but_unreloaded"`; every caller handles it exhaustively.
 - Regression tests cover the three Critical findings from the 2026-04-20 review: stale-`expectedChapterId` skip, 2xx `BAD_JSON` on replace, 2xx `BAD_JSON` on restore — each asserting the editor stays read-only and the lock banner stays visible.
 - No behavior change visible to the user in the happy path.

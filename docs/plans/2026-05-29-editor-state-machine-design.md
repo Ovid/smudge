@@ -89,14 +89,37 @@ list (which names `inFlightRef` but omits `actionBusyRef`) and keeps the
 machine's meaning crisp: it is the *mutation* state, and snapshot view is
 deliberately outside `useEditorMutation`'s scope.
 
-### 3. Architecture — **`useReducer` machine + render-mirrored ref + single `editable` sync-effect**
+### 3. Architecture — **`useReducer` machine + render-mirrored ref + hybrid `editable` sync (synchronous lock-down, effect-driven re-enable)**
 
 A pure reducer (idiomatic, unit-testable), state mirrored to a ref *in render*
 (the existing house style, so synchronous gates survive), and a single effect
-reconciling `editable` intent into TipTap. The pure effect-based approach was
-chosen over a synchronous entry fast-path; the one-commit-tick window this
-introduces is addressed by an explicit regression test (see Testing), not a
-second mechanism.
+reconciling `editable` intent into TipTap **for the re-enable direction**.
+
+The lock-DOWN transition stays synchronous and imperative, because it is the only
+transition with a hard timing requirement. Two of today's guarantees execute
+synchronously *before the first `await`* (`useEditorMutation.ts` lines 132/159)
+and must not become effect-driven:
+
+- **Input-blocking.** `editor.setEditable(false)` at `run()` entry blocks TipTap
+  input before any `await` yields, so no keystroke is processed during
+  flush/mutate/reload. If this moved to an effect, a keystroke landing between the
+  `MUTATION_STARTED` dispatch and the effect's commit could dirty the editor
+  *after* the run's `markClean()`, re-arming auto-save and PATCHing stale content
+  over the server-committed change — the exact data-loss race this phase exists to
+  close.
+- **Re-entrancy latch.** `inFlightRef.current = true` at entry latches out a
+  re-entrant `run()` synchronously. A render-mirrored `busy` would read stale
+  `false` until the next commit, letting two mutations run concurrently.
+
+Therefore the lock-down path (mutation entry, the post-mutate re-lock, the S5
+late-mount re-lock) keeps a **synchronous `setEditable(false)` (via
+`safeSetEditable`) and a synchronous re-entrancy latch** (`inFlightRef`). The
+machine + sync-effect own only the `editable:true` reconciliation and the remount
+re-assert, which have no timing-safety requirement (being one tick late merely
+leaves the editor briefly read-only — harmless). This preserves today's guarantees
+byte-for-byte while still unifying lock/unlock intent, the banner lifecycle, and
+the re-enable path through the machine. The regression test (see Testing) verifies
+this mechanism; it does not substitute for it.
 
 ## Design
 
@@ -108,8 +131,9 @@ State (flat record):
 
 ```ts
 type EditorMutationState = {
-  editable: boolean; // intent; the sync-effect pushes this into TipTap
-  busy: boolean; // replaces inFlightRef (mutation-busy only)
+  editable: boolean; // intent; the sync-effect pushes this into TipTap (re-enable)
+  busy: boolean; // mutation-busy, drives UI gates; synchronous re-entrancy is
+                 // guarded by a retained inFlightRef latch (Decided Q3)
   lock: { message: string } | null; // replaces editorLockedMessage; null = unlocked
 };
 ```
@@ -128,10 +152,13 @@ isolation):
 | `UNLOCK`                       | `lock:null`                                             | existing external dismiss paths                                     |
 
 The hook mirrors state to a ref in render (`stateRef.current = state`) and
-exposes `{ state, dispatch, isLocked(), isBusy(), getState() }`. The ~12
+exposes `{ state, dispatch, isLocked(), isBusy(), getState() }`. The 10
 synchronous `editorLockedMessageRef.current !== null` gates become
-`isLocked()` (backed by `stateRef`), and `mutation.isBusy()` becomes the
-machine's `isBusy()` — both synchronous, no behavior change.
+`isLocked()` (backed by `stateRef`), and external `mutation.isBusy()` reads
+become the machine's `isBusy()` — no behavior change. The re-entrancy guard at
+`run()` entry is the deliberate exception: it reads a synchronous latch (the
+retained `inFlightRef`), not the render-mirrored `busy`, so a same-tick
+re-entrant call is still latched out (Decided Q3).
 
 **Key property — the lock lifecycle is derived from one event, not a
 side-effect.** A remount (chapter switch *or* successful reload) dispatches
@@ -141,35 +168,41 @@ persists precisely *because no remount happens* (reload failed / BAD_JSON /
 failed second-reload), so the lock survives until the user refreshes the page —
 identical to today's outcome.
 
-### Component 2 — the `editable` sync-effect
+### Component 2 — the `editable` sync-effect (re-enable / reconcile direction)
 
-A single effect in `EditorPage` reconciles intent → TipTap:
+A single effect in `EditorPage` reconciles `editable` intent → TipTap, reusing
+the existing `safeSetEditable` helper (one wrapper, not a parallel `try/catch`):
 
 ```ts
 useEffect(() => {
-  try {
-    editorRef.current?.setEditable(state.editable);
-  } catch (e) {
-    clientWarn("editable sync failed (mid-remount)", e);
-  }
+  safeSetEditable(editorRef, state.editable);
 }, [state.editable, activeChapter?.id, chapterReloadKey]);
 ```
 
+`safeSetEditable` already swallows the mid-remount synchronous throw and emits a
+`clientWarn` (it backs today's `applyReloadFailedLock`); the effect reuses it so
+both the imperative lock-down path and this reconcile path share one wrapper.
+
 This **replaces**:
 
-- every `editor.setEditable(true/false)` inside `useEditorMutation` (entry,
-  finally, the post-mutate re-lock, the S5 late-mount re-lock); and
+- the `editor.setEditable(true)` re-enable call inside `useEditorMutation` (the
+  `finally` unlock); and
 - the line-448 re-assert effect in `EditorPage`.
+
+It does **not** replace the lock-DOWN `setEditable(false)` calls (entry,
+post-mutate re-lock, S5 late-mount re-lock) — those stay synchronous and
+imperative per Decided Q3, also via `safeSetEditable`. The effect is the
+reconciler/re-assert; the synchronous calls guarantee input is blocked before any
+`await` yields.
 
 `activeChapter?.id` / `chapterReloadKey` remain in the dependency array so a
 remounted TipTap instance (which defaults to `editable=true`) is re-asserted to
-match intent. The several mid-remount synchronous-throw races handled inline in
-`useEditorMutation` today collapse into this one `try/catch`, because the effect
-always runs against the *current* `editorRef.current` after commit.
+match intent.
 
 ### Component 3 — `committed_but_unreloaded` stage and `useEditorMutation`
 
-`MutationResult` gains the stage:
+`MutationResult`, in its **end state** (after the consumer migration lands — see
+PR scope for the additive-then-subtractive sequencing):
 
 ```ts
 export type MutationResult<T = void> =
@@ -181,23 +214,30 @@ export type MutationResult<T = void> =
 
 The previous `{ ok:false; stage:"reload"; data }` is **subsumed** by
 `committed_but_unreloaded` (same semantic family: server committed, display
-unconfirmed). `useEditorMutation`:
+unconfirmed). To keep each PR independently compilable, `committed_but_unreloaded`
+is added *alongside* a retained `stage:"reload"` in PR (A), and `stage:"reload"` is
+removed only in PR (B) once consumers no longer reference it (see PR scope).
+`useEditorMutation`:
 
 - keeps `reloadFailed` / `reloadSucceeded` / `reloadSuperseded` as *internal
-  computation*, but its outcomes now `dispatch` machine events instead of poking
-  `editorRef` or returning bare flags;
+  computation* — transient `run()`-local `let`s, not the persistent hand-synced
+  state this phase eliminates (see DoD) — but its outcomes now `dispatch` machine
+  events instead of poking `editorRef` or returning bare flags;
 - reclassifies the 2xx `BAD_JSON` thrown inside `mutate()` from `stage:"mutate"`
   to `stage:"committed_but_unreloaded"` (the write may have landed);
 - maps the race-only supersession branch (now-active chapter ∈ `clearCacheFor`
   and second-reload fails) to `committed_but_unreloaded`, and plain (benign)
   supersession to `MUTATION_SETTLED_SUPERSEDED`;
-- replaces `inFlightRef` reads/writes with `MUTATION_STARTED` and the terminal
-  dispatches (`MUTATION_SETTLED_OK` / `MUTATION_SETTLED_SUPERSEDED` / `RELOADED`
-  / `COMMITTED_UNRELOADED`); the busy-latch ordering concern (clear busy before
-  unlocking) is preserved by the reducer applying both fields in one transition,
-  and the happy-path `MUTATION_SETTLED_OK` re-enables `editable` **only when
-  `lock === null`**, preserving today's `!reloadFailed && !lockedByCaller`
-  guard so a successful run cannot re-enable typing under a persistent banner.
+- replaces the *external/UI* reads of `inFlightRef` with the machine's `busy`
+  (driven by `MUTATION_STARTED` and the terminal dispatches `MUTATION_SETTLED_OK`
+  / `MUTATION_SETTLED_SUPERSEDED` / `RELOADED` / `COMMITTED_UNRELOADED`), but
+  **retains `inFlightRef` as the synchronous re-entrancy latch** read at `run()`
+  entry (Decided Q3) — a render-mirrored `busy` cannot latch out a same-tick
+  re-entrant call. The busy-latch ordering concern (clear busy before unlocking)
+  is preserved by the reducer applying both fields in one transition, and the
+  happy-path `MUTATION_SETTLED_OK` re-enables `editable` **only when `lock ===
+  null`**, preserving today's `!reloadFailed && !lockedByCaller` guard so a
+  successful run cannot re-enable typing under a persistent banner.
 
 ### Component 4 — consumer migration
 
@@ -223,12 +263,16 @@ moves into the machine's `EDITOR_REMOUNTED` event.
 - **New:** `packages/client/src/hooks/useEditorMutationMachine.ts` + unit test.
 - **`EditorPage.tsx`:** delete `editorLockedMessage` `useState`, the
   `editorLockedMessageRef` mirror, and the line-448 clear-effect; wire the
-  machine + the single `editable` sync-effect; `isEditorLocked` / `isActionBusy`
-  read the machine. `actionBusyRef` stays.
-- **`useEditorMutation.ts`:** delete `inFlightRef`; run-local flags become local
-  computation that drives `dispatch`; add `committed_but_unreloaded` to
-  `MutationResult` and remove `stage:"reload"`; the `finally` unlock logic becomes
-  a single dispatch.
+  machine + the `editable` reconcile sync-effect (re-enable direction, via
+  `safeSetEditable`); `isEditorLocked` / `isActionBusy` read the machine.
+  `actionBusyRef` stays.
+- **`useEditorMutation.ts`:** keep `inFlightRef` **only** as the synchronous
+  re-entrancy latch (Decided Q3); keep the synchronous lock-down
+  `setEditable(false)` calls (entry, post-mutate re-lock, S5 late-mount) via
+  `safeSetEditable`; run-local flags become local computation that drives
+  `dispatch`; the `finally`'s re-enable becomes a dispatch (the effect reconciles).
+  `MutationResult`: add `committed_but_unreloaded` in PR (A) alongside the retained
+  `stage:"reload"`; remove `stage:"reload"` in PR (B).
 - **`useSnapshotController.ts` / `useFindReplaceController.ts`:** drop
   `editorLockedMessageRef` param; exhaustive stage handling; dispatch instead of
   ref-poke.
@@ -240,13 +284,22 @@ moves into the machine's `EDITOR_REMOUNTED` event.
 This is a single refactor and may ship as one PR (CLAUDE.md §Pull Request Scope
 permits a single refactor as one PR). It is large and sits on the most-reviewed
 code in the repo (the snapshots/find-and-replace area took 16 review rounds).
-The implementation plan **may** split it along the phase boundary into:
+The implementation plan **may** split it along the phase boundary, provided each
+PR compiles and tests green on its own. Because the consumers reference
+`MutationResult.stage`, the split must be **additive-then-subtractive** rather than
+a clean cut:
 
-- **(A)** machine hook + `useEditorMutation` migration + the `editable`
-  sync-effect; and
-- **(B)** consumer migration (`useSnapshotController`, `useFindReplaceController`).
+- **(A)** machine hook + `useEditorMutation` migration + the `editable` reconcile
+  sync-effect. `committed_but_unreloaded` is **added alongside** a retained
+  `stage:"reload"`, and `useEditorMutation` begins emitting the new stage.
+  Consumers still compile because `stage:"reload"` is unchanged.
+- **(B)** consumer migration (`useSnapshotController`, `useFindReplaceController`)
+  onto `committed_but_unreloaded` with the exhaustive `: never` default; **then**
+  `stage:"reload"` is removed from the union.
 
-Splitting a phase into multiple PRs is explicitly allowed; the choice is made at
+A naive cut — removing `stage:"reload"` in (A) while (B) still references it —
+does not typecheck, so it is not a legal split. Splitting a phase into multiple
+PRs is explicitly allowed; the choice (and, if split, this ordering) is made at
 plan time.
 
 ## Error handling
@@ -274,10 +327,12 @@ floors; zero warnings in test output).
    - 2xx `BAD_JSON` on a project-wide replace response,
    - 2xx `BAD_JSON` on a snapshot restore response.
 2. **Pure reducer unit tests** — every event and transition (cheap, exhaustive).
-3. **One-commit-tick window test** (the Approach-1 reservation): simulate a
-   keystroke landing between the `MUTATION_STARTED` dispatch and the sync-effect's
-   commit; assert no stale PATCH escapes (`cancelPendingSaves` + `markClean` close
-   the window).
+3. **One-commit-tick window test** (guards the Decided-Q3 hybrid): simulate a
+   keystroke arriving during a mutation and assert no stale PATCH escapes — the
+   synchronous lock-down `setEditable(false)` blocked input before any `await`
+   yielded (TipTap rejects the keystroke). Separately, assert a synchronous
+   re-entrant `run()` returns `stage:"busy"` via the retained `inFlightRef` latch.
+   The test verifies the mechanism; it does not substitute for it.
 4. **Hybrid supersession tests:**
    - now-active chapter ∈ `clearCacheFor` + failed second-reload →
      `committed_but_unreloaded` (lock raised on the *current*, affected chapter);
@@ -303,14 +358,21 @@ floors; zero warnings in test output).
 
 ## Definition of Done
 
-- A single source of truth for the editor's `{ editable, locked, busy }` state —
-  no free-standing `editorLockedMessage` / `editorLockedMessageRef` / `inFlightRef`
-  / `reloadFailed` / `reloadSucceeded` tracking, and no separate banner-clear
-  effect.
+- A single source of truth for the editor's `{ editable, locked, busy }` state.
+  No free-standing **persistent refs or React state** for `editorLockedMessage` /
+  `editorLockedMessageRef` / `reloadFailed` / `reloadSucceeded` kept in sync by
+  hand, and no separate banner-clear effect. Transient `run()`-local `let`
+  variables that compute which machine event to dispatch are explicitly permitted
+  — the elimination target is hand-synced persistent state, not local control
+  flow. `inFlightRef` is retained for one purpose only: the synchronous
+  re-entrancy latch at `run()` entry (Decided Q3); it no longer drives any UI read.
 - `MutationResult` includes `committed_but_unreloaded`; every consumer handles it
-  exhaustively (`: never` default).
+  exhaustively (`: never` default); `stage:"reload"` is removed (after the consumer
+  migration — see PR scope).
 - The three Critical regression tests pass and assert read-only + banner-visible.
-- No happy-path behavior change visible to the user.
+- No happy-path behavior change visible to the user. The lock-down
+  `setEditable(false)` and the re-entrancy latch stay synchronous (Decided Q3), so
+  this claim holds on the timing axis, not only the functional axis.
 - `actionBusyRef` remains a separate busy source (mutation-busy-only decision).
 
 ## CLAUDE.md impact
