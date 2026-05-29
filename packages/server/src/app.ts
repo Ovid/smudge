@@ -74,20 +74,20 @@ export function globalErrorHandler(
 
   // Anything reaching here is genuinely unhandled — log it with the request
   // correlation fields (F-10) so the 500 can be traced back to its request.
-  // Logged via the top-level logger (not req.log) so the single "Unhandled
-  // request error" call site is stable; req.id is set by requestContext but
-  // guarded here in case an error escapes before that middleware ran.
-  logger.error(
-    {
-      err,
-      status: err.status ?? err.statusCode ?? 500,
-      req_id: req.id,
-      method: req.method,
-      path: req.path,
-    },
-    "Unhandled request error",
-  );
+  // S3: prefer req.log (a pino child bound by requestContext to {req_id,
+  // method, path}) so the correlation fields are not re-bound on every error
+  // call. Fall back to the top-level logger with explicit fields for the
+  // pre-middleware error case (e.g. an error thrown from helmet, mounted
+  // BEFORE requestContext) where req.log was never assigned.
   const status = err.status ?? err.statusCode ?? 500;
+  if (req.log) {
+    req.log.error({ err, status }, "Unhandled request error");
+  } else {
+    logger.error(
+      { err, status, method: req.method, path: req.path },
+      "Unhandled request error",
+    );
+  }
   const code =
     status >= 500
       ? "INTERNAL_ERROR"

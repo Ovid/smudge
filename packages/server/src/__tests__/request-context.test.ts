@@ -61,8 +61,21 @@ describe("requestContext middleware (F-10 request correlation)", () => {
     debugSpy.mockRestore();
   });
 
-  it("correlates the unhandled-error log with req_id, method, and path", async () => {
-    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => logger);
+  it("correlates the unhandled-error log via req.log (bound req_id/method/path) (S3)", async () => {
+    // S3: globalErrorHandler now logs through req.log (a pino child bound to
+    // {req_id, method, path}) rather than re-binding those fields on every
+    // error call. Capture the child created by requestContext via a
+    // logger.child spy and assert the bindings + error call separately.
+    const childError = vi.fn();
+    const fakeChild = {
+      error: childError,
+      debug: vi.fn(),
+      warn: vi.fn(),
+      info: vi.fn(),
+    } as unknown as ReturnType<typeof logger.child>;
+    const childSpy = vi
+      .spyOn(logger, "child")
+      .mockImplementation(() => fakeChild);
 
     const app = express();
     app.use(requestContext);
@@ -72,12 +85,42 @@ describe("requestContext middleware (F-10 request correlation)", () => {
     const res = await request(app).get("/api/boom").set("X-Request-Id", "corr-1");
 
     expect(res.status).toBe(500);
+    expect(childSpy).toHaveBeenCalledWith({
+      req_id: "corr-1",
+      method: "GET",
+      path: "/api/boom",
+    });
+    expect(childError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        err: expect.objectContaining({ message: "kaboom" }),
+        status: 500,
+      }),
+      "Unhandled request error",
+    );
+    childSpy.mockRestore();
+  });
+
+  it("falls back to the top-level logger when req.log was never set (pre-middleware error) (S3)", async () => {
+    // Errors thrown from middleware that ran BEFORE requestContext (e.g.
+    // helmet) reach globalErrorHandler without req.log set. The fallback
+    // logs via the top-level logger with explicit method/path so the
+    // error is still traceable.
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => logger);
+
+    const app = express();
+    // Note: requestContext is NOT mounted, simulating the pre-middleware path.
+    app.get("/api/boom", (_req, _res, next) => next(new Error("kaboom")));
+    app.use(globalErrorHandler);
+
+    const res = await request(app).get("/api/boom");
+
+    expect(res.status).toBe(500);
     expect(logSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         status: 500,
-        req_id: "corr-1",
         method: "GET",
         path: "/api/boom",
+        err: expect.objectContaining({ message: "kaboom" }),
       }),
       "Unhandled request error",
     );
