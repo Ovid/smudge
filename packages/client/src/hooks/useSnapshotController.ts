@@ -214,19 +214,20 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
         setActionError(STRINGS.snapshots.restoreFailedSaveFirst);
         return;
       }
-      if (result.stage === "reload") {
-        // Server-side restore succeeded; only the follow-up GET failed. The
-        // editor stays setEditable(false) (see useEditorMutation reloadFailed
-        // path) — surface a persistent, non-dismissible lock banner so the
+      // committed_but_unreloaded: the restore committed server-side but the
+      // follow-up GET could not confirm what is on screen. Raise the persistent
+      // lock banner, clear the now-stale cache, and refresh the snapshot list.
+      if (result.stage === "committed_but_unreloaded") {
+        // Surface a persistent, non-dismissible lock banner so the
         // user-visible signal of the read-only state cannot be hidden (I1).
         // applyReloadFailedLock (I6) sets the banner AND safeSetEditable
         // in one call so the two can't drift apart in a future refactor.
         applyReloadFailedLock(STRINGS.snapshots.restoreSucceededReloadFailed);
         // Defense-in-depth cache-clear mirroring the possibly_committed
-        // branch below. The hook's stage:"reload" path normally handles
-        // cache-clear (including the C1 fix for the mid-remount re-lock
-        // bail), but without a redundant clear here the restore branch
-        // has no backstop if a future hook refactor introduces a gap
+        // branch below. The hook's committed_but_unreloaded path normally
+        // handles cache-clear (including the C1 fix for the mid-remount
+        // re-lock bail), but without a redundant clear here the restore
+        // branch has no backstop if a future hook refactor introduces a gap
         // between "server commit" and "cache wipe". The replace flow
         // converges through finalizeReplaceSuccess which has its own
         // convergence logic; restore has no equivalent, so mirror the
@@ -241,131 +242,127 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
         refreshSnapshotCount();
         return;
       }
-      // committed_but_unreloaded: placeholder until B1 migrates this consumer.
-      // The hook does not yet emit this stage; the guard is required so
-      // TypeScript can narrow to stage:"mutate" in the block below.
-      if (result.stage === "committed_but_unreloaded") {
-        applyReloadFailedLock(STRINGS.snapshots.restoreSucceededReloadFailed);
-        clearCachedContent(activeChapter.id);
-        snapshotPanelRef.current?.refreshSnapshots();
-        refreshSnapshotCount();
-        return;
-      }
-      // stage === "mutate"
-      if (result.error instanceof RestoreAbortedError) return;
-      if (result.error instanceof RestoreFailedError) {
-        const { message, possiblyCommitted, transient } = mapApiError(
-          result.error.apiError,
-          "snapshot.restore",
-        );
-        // I7 + I3 (review 2026-04-24): ABORTED and silent no-ops surface
-        // as message:null. Mirrors RestoreAbortedError's silent return.
-        // restoreSnapshot now wires a restoreAbortRef, so an unmount or
-        // newer restore mid-flight DOES trigger ABORTED — this branch is
-        // the live guard, not a future-proofing placeholder.
-        if (message === null) return;
-        if (possiblyCommitted) {
-          // 2xx BAD_JSON on restore: server likely committed the restore
-          // (and its auto-snapshot) but the response body was unreadable.
-          // Treat the same as stage:"reload" — persistent lock banner, no
-          // retry prompt, since retrying could double-restore (C2). This
-          // branch also absorbs the former "unknown" case: the hook now
-          // synthesizes a 200 BAD_JSON ApiRequestError for non-
-          // ApiRequestError post-success throws, so they land here and
-          // get the same pessimistic lock treatment.
-          //
-          // I2 (review 2026-04-21): the lock banner and safeSetEditable
-          // are global / editor-ref-scoped, so they pin to the currently-
-          // active editor. If the user switched chapters between restore
-          // dispatch and the possibly_committed response landing, this
-          // branch would lock the chapter they are now looking at — which
-          // the restore never touched. Check the live active chapter
-          // against the original restore target; on mismatch, clear the
-          // target's cache (still correct) but surface a dismissible
-          // action error instead of pinning a banner and disabling a
-          // chapter the user didn't restore.
-          clearCachedContent(activeChapter.id);
-          const currentId = getActiveChapter()?.id;
-          if (currentId !== undefined && currentId !== activeChapter.id) {
-            // I6 (review 2026-04-25): the user is no longer on the
-            // chapter the restore targeted. The mapped message is
-            // chapter-agnostic ("the restore was committed; refresh"),
-            // which the user can mistakenly attribute to the chapter
-            // they're now looking at and refresh against the wrong
-            // context. Override with a chapter-attributed string so
-            // the banner identifies which chapter's state is unverified.
-            setActionError(
-              STRINGS.snapshots.restoreResponseUnreadableOnOtherChapter(activeChapter.title),
-            );
-            // I4 (review 2026-04-21): leave snapshot view — the banner
-            // that prompted this restore is still pointing at a chapter
-            // the user has navigated away from. Without this, Restore
-            // and "Back to editing" remain live on a banner that refers
-            // to a chapter the user is no longer looking at, inviting
-            // repeat restores against the wrong chapter. Mirrors the
-            // permanent-error branches (corrupt_snapshot, not_found,
-            // cross_project_image).
-            exitSnapshotView();
+      if (result.stage === "mutate") {
+        if (result.error instanceof RestoreAbortedError) return;
+        if (result.error instanceof RestoreFailedError) {
+          const { message, possiblyCommitted, transient } = mapApiError(
+            result.error.apiError,
+            "snapshot.restore",
+          );
+          // I7 + I3 (review 2026-04-24): ABORTED and silent no-ops surface
+          // as message:null. Mirrors RestoreAbortedError's silent return.
+          // restoreSnapshot now wires a restoreAbortRef, so an unmount or
+          // newer restore mid-flight DOES trigger ABORTED — this branch is
+          // the live guard, not a future-proofing placeholder.
+          if (message === null) return;
+          if (possiblyCommitted) {
+            // 2xx BAD_JSON on restore: server likely committed the restore
+            // (and its auto-snapshot) but the response body was unreadable.
+            // Treat the same as stage:"reload" — persistent lock banner, no
+            // retry prompt, since retrying could double-restore (C2). This
+            // branch also absorbs the former "unknown" case: the hook now
+            // synthesizes a 200 BAD_JSON ApiRequestError for non-
+            // ApiRequestError post-success throws, so they land here and
+            // get the same pessimistic lock treatment.
+            //
+            // I2 (review 2026-04-21): the lock banner and safeSetEditable
+            // are global / editor-ref-scoped, so they pin to the currently-
+            // active editor. If the user switched chapters between restore
+            // dispatch and the possibly_committed response landing, this
+            // branch would lock the chapter they are now looking at — which
+            // the restore never touched. Check the live active chapter
+            // against the original restore target; on mismatch, clear the
+            // target's cache (still correct) but surface a dismissible
+            // action error instead of pinning a banner and disabling a
+            // chapter the user didn't restore.
+            clearCachedContent(activeChapter.id);
+            const currentId = getActiveChapter()?.id;
+            if (currentId !== undefined && currentId !== activeChapter.id) {
+              // I6 (review 2026-04-25): the user is no longer on the
+              // chapter the restore targeted. The mapped message is
+              // chapter-agnostic ("the restore was committed; refresh"),
+              // which the user can mistakenly attribute to the chapter
+              // they're now looking at and refresh against the wrong
+              // context. Override with a chapter-attributed string so
+              // the banner identifies which chapter's state is unverified.
+              setActionError(
+                STRINGS.snapshots.restoreResponseUnreadableOnOtherChapter(activeChapter.title),
+              );
+              // I4 (review 2026-04-21): leave snapshot view — the banner
+              // that prompted this restore is still pointing at a chapter
+              // the user has navigated away from. Without this, Restore
+              // and "Back to editing" remain live on a banner that refers
+              // to a chapter the user is no longer looking at, inviting
+              // repeat restores against the wrong chapter. Mirrors the
+              // permanent-error branches (corrupt_snapshot, not_found,
+              // cross_project_image).
+              exitSnapshotView();
+              snapshotPanelRef.current?.refreshSnapshots();
+              refreshSnapshotCount();
+              return;
+            }
+            // Lock-banner state doesn't enforce read-only by itself; the
+            // hook's finally already re-enabled the editor after the
+            // mutate-stage throw. applyReloadFailedLock (I6) sets the
+            // banner + safeSetEditable as an invariant pair so auto-save
+            // cannot overwrite a possibly-committed restore. Wrapped via
+            // safeSetEditable (I2): TipTap can throw synchronously during
+            // the mid-remount window, and an unwrapped throw here would
+            // skip the snapshot panel refresh and leave the lock banner
+            // without its companion editor-state change.
+            applyReloadFailedLock(message);
             snapshotPanelRef.current?.refreshSnapshots();
+            // The server almost certainly just committed a restore + its
+            // auto-snapshot. Drive the toolbar badge directly (I1) — the
+            // panel-handle refresh above is a no-op when the panel is
+            // closed, which is the typical state for a SnapshotBanner-
+            // initiated restore. Without this, the badge silently displays
+            // a stale pre-restore count after an opaque-but-likely-
+            // committed 2xx BAD_JSON.
             refreshSnapshotCount();
             return;
           }
-          // Lock-banner state doesn't enforce read-only by itself; the
-          // hook's finally already re-enabled the editor after the
-          // mutate-stage throw. applyReloadFailedLock (I6) sets the
-          // banner + safeSetEditable as an invariant pair so auto-save
-          // cannot overwrite a possibly-committed restore. Wrapped via
-          // safeSetEditable (I2): TipTap can throw synchronously during
-          // the mid-remount window, and an unwrapped throw here would
-          // skip the snapshot panel refresh and leave the lock banner
-          // without its companion editor-state change.
-          applyReloadFailedLock(message);
+          if (transient) {
+            // NETWORK branch: offline/DNS/CSP failure (or a pre-send client
+            // throw the hook normalized into a NETWORK ApiRequestError). The
+            // SnapshotBanner stays on screen so the user can retry once the
+            // connection recovers — mirrors the sibling mutation (replace)
+            // which also surfaces connection-specific guidance instead of
+            // the generic "try again" bucket (I1).
+            setActionError(message);
+          } else {
+            // Permanent non-committed failures: corrupt_snapshot,
+            // cross_project_image, 404, and any fallback-class
+            // ApiRequestError. The snapshot cannot recover from the same
+            // state, so dismiss the SnapshotBanner — otherwise the user
+            // loops clicking Restore on a permanently-broken row (I2, I6).
+            setActionError(message);
+            exitSnapshotView();
+          }
+          // I6: Refresh the snapshot list on every error branch. The
+          // 404/not-found branch is the sharpest case — without a refresh,
+          // the stale snapshot row remains clickable and the user loops
+          // through the same 404. Mirrors the sibling handleReplaceOne 404
+          // path which refreshes its result set for the same reason. The
+          // possiblyCommitted branch above returns before reaching this
+          // line and runs its own refresh.
           snapshotPanelRef.current?.refreshSnapshots();
-          // The server almost certainly just committed a restore + its
-          // auto-snapshot. Drive the toolbar badge directly (I1) — the
-          // panel-handle refresh above is a no-op when the panel is
-          // closed, which is the typical state for a SnapshotBanner-
-          // initiated restore. Without this, the badge silently displays
-          // a stale pre-restore count after an opaque-but-likely-
-          // committed 2xx BAD_JSON.
+          // Drive the toolbar snapshot count the same way finalizeReplaceSuccess
+          // does (I1). For branches where the server clearly did NOT commit
+          // (corrupt, cross_project_image, 404, network), this is at most a
+          // redundant fetch — no new snapshot exists, so the count is
+          // unchanged. Cheaper than branching for the narrow
+          // "know-nothing-happened" cases.
           refreshSnapshotCount();
           return;
         }
-        if (transient) {
-          // NETWORK branch: offline/DNS/CSP failure (or a pre-send client
-          // throw the hook normalized into a NETWORK ApiRequestError). The
-          // SnapshotBanner stays on screen so the user can retry once the
-          // connection recovers — mirrors the sibling mutation (replace)
-          // which also surfaces connection-specific guidance instead of
-          // the generic "try again" bucket (I1).
-          setActionError(message);
-        } else {
-          // Permanent non-committed failures: corrupt_snapshot,
-          // cross_project_image, 404, and any fallback-class
-          // ApiRequestError. The snapshot cannot recover from the same
-          // state, so dismiss the SnapshotBanner — otherwise the user
-          // loops clicking Restore on a permanently-broken row (I2, I6).
-          setActionError(message);
-          exitSnapshotView();
-        }
-        // I6: Refresh the snapshot list on every error branch. The
-        // 404/not-found branch is the sharpest case — without a refresh,
-        // the stale snapshot row remains clickable and the user loops
-        // through the same 404. Mirrors the sibling handleReplaceOne 404
-        // path which refreshes its result set for the same reason. The
-        // possiblyCommitted branch above returns before reaching this
-        // line and runs its own refresh.
-        snapshotPanelRef.current?.refreshSnapshots();
-        // Drive the toolbar snapshot count the same way finalizeReplaceSuccess
-        // does (I1). For branches where the server clearly did NOT commit
-        // (corrupt, cross_project_image, 404, network), this is at most a
-        // redundant fetch — no new snapshot exists, so the count is
-        // unchanged. Cheaper than branching for the narrow
-        // "know-nothing-happened" cases.
-        refreshSnapshotCount();
+        setActionError(STRINGS.snapshots.restoreFailed);
         return;
       }
-      setActionError(STRINGS.snapshots.restoreFailed);
+      // Exhaustive: every MutationResult failure stage is handled above. A new
+      // stage forces a compile error here until it is handled.
+      const _exhaustive: never = result;
+      void _exhaustive;
     } finally {
       actionBusyRef.current = false;
     }
@@ -527,14 +524,7 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
         return { ok: false, reason: "save_failed" };
       }
     },
-    [
-      isEditorLocked,
-      isActionBusy,
-      setActionInfo,
-      editorRef,
-      cancelPendingSaves,
-      viewSnapshot,
-    ],
+    [isEditorLocked, isActionBusy, setActionInfo, editorRef, cancelPendingSaves, viewSnapshot],
   );
 
   const onSnapshotBeforeCreate = useCallback(async () => {

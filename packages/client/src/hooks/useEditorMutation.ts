@@ -6,7 +6,7 @@ import { clearAllCachedContent } from "./useContentCache";
 import { safeSetEditable } from "../utils/editorSafeOps";
 import { clientWarn } from "../errors";
 
-export type MutationStage = "flush" | "mutate" | "reload" | "committed_but_unreloaded" | "busy";
+export type MutationStage = "flush" | "mutate" | "committed_but_unreloaded" | "busy";
 
 // Discriminated union so the type system forces reloadChapterId whenever
 // reloadActiveChapter is true. Without this, a caller that set
@@ -25,15 +25,21 @@ export type MutationDirective<T = void> = {
 
 export type MutationResult<T = void> =
   | { ok: true; data: T }
-  // reload: retained through PR A so unmigrated consumers still typecheck;
-  // removed in PR B once snapshot/find-replace controllers migrate.
-  | { ok: false; stage: "reload"; data: T }
   // committed_but_unreloaded: server-side mutation committed but the client
   // cannot confirm what is on screen (follow-up GET failed, or race-only
-  // supersession). Same data-carrying, error-less shape as reload — callers
-  // render their own strings.ts banner via applyReloadFailedLock.
+  // supersession). Subsumes the former stage:"reload". No `error` field —
+  // callers always render a hardcoded strings.ts banner via
+  // applyReloadFailedLock whose wording does not depend on any failure text,
+  // so keeping an error here would only invite drift between the hook's
+  // passed-through message and the banner copy.
   | { ok: false; stage: "committed_but_unreloaded"; data: T }
-  | { ok: false; stage: "flush" | "mutate"; error: unknown }
+  // flush and mutate are split into separate members (rather than a single
+  // stage:"flush" | "mutate" member) so that each consumer's stage-discriminated
+  // if-chain narrows the residual to `never` for the exhaustive `_exhaustive`
+  // guard. A combined-discriminant member does not subtract cleanly across
+  // sequential `=== "flush"` / `=== "mutate"` returns.
+  | { ok: false; stage: "flush"; error: unknown }
+  | { ok: false; stage: "mutate"; error: unknown }
   | { ok: false; stage: "busy" };
 
 export type UseEditorMutationArgs = {
