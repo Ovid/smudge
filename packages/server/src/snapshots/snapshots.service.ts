@@ -180,14 +180,18 @@ export async function restoreSnapshot(
       : `Before restore to snapshot from ${snapshot.created_at}`;
     const snapshotLabel = buildAutoSnapshotLabel(rawLabel);
 
-    // Auto-restore snapshot before overwriting, deduped against the latest
-    // snapshot exactly as the manual-snapshot path is (F-15). A retried
-    // restore whose pre-restore content is byte-identical to the latest
-    // snapshot would otherwise pollute history with a redundant
-    // "Before restore" entry. The restore itself still proceeds; only the
-    // redundant snapshot insert is skipped.
+    // Auto-snapshot the pre-restore content, deduped against the latest
+    // snapshot of ANY kind — manual OR auto (F-15). Unlike the manual-
+    // snapshot path (which dedups against the latest *manual* snapshot so an
+    // auto-snapshot can't block an explicit marker), this insert is itself an
+    // auto-snapshot, so it must also be skipped when the pre-restore content
+    // is byte-identical to a prior auto-snapshot left by an earlier
+    // restore/replace. This removes the identical-content history noise the
+    // flaw describes — including a re-restore whose pre-restore content
+    // already matches the most recent snapshot. The restore itself always
+    // proceeds; only the redundant snapshot insert is skipped.
     const currentHash = canonicalContentHash(currentContent);
-    const latestHash = await txStore.getLatestSnapshotContentHash(chapter.id);
+    const latestHash = await txStore.getLatestSnapshotContentHashAnyKind(chapter.id);
     if (latestHash !== currentHash) {
       await txStore.insertSnapshot({
         id: uuidv4(),

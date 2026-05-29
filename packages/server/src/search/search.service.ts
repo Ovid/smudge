@@ -313,13 +313,16 @@ export async function replaceInProject(
         const label = buildAutoSnapshotLabel(rawLabel);
 
         // Auto-snapshot before replacement (using DB-committed word_count),
-        // deduped against the latest snapshot exactly as the manual-snapshot
-        // path is (F-15) so a retried replace whose pre-replace content is
-        // byte-identical to the latest snapshot does not pollute history with
-        // a redundant "Before find-and-replace" entry. The replacement itself
-        // still proceeds; only the redundant snapshot insert is skipped.
+        // deduped against the latest snapshot of ANY kind — manual OR auto
+        // (F-15). Unlike the manual-snapshot path (which dedups against the
+        // latest *manual* snapshot), this insert is itself an auto-snapshot,
+        // so it must also be skipped when the pre-replace content is byte-
+        // identical to a prior auto-snapshot left by an earlier
+        // restore/replace. This removes the identical-content history noise
+        // the flaw describes. The replacement itself still proceeds; only the
+        // redundant snapshot insert is skipped.
         const preReplaceHash = canonicalContentHash(chapter.content);
-        const latestSnapshotHash = await txStore.getLatestSnapshotContentHash(chapter.id);
+        const latestSnapshotHash = await txStore.getLatestSnapshotContentHashAnyKind(chapter.id);
         if (latestSnapshotHash !== preReplaceHash) {
           await txStore.insertSnapshot({
             id: uuidv4(),

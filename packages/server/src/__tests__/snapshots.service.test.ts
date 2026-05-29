@@ -301,6 +301,40 @@ describe("snapshots.service", () => {
       expect(autoSnap).toBeUndefined();
     });
 
+    it("does not create a duplicate auto-snapshot when pre-restore content matches the latest AUTO snapshot (F-15)", async () => {
+      stubVelocity();
+      const { chapterId } = await createProjectAndChapter();
+      const { createSnapshot, restoreSnapshot, listSnapshots } =
+        await import("../snapshots/snapshots.service");
+
+      // Seed an AUTO snapshot of the current content — the kind a prior
+      // restore/replace leaves behind — with NO manual snapshot present.
+      // The dedup must inspect the latest snapshot of *any* kind, not just
+      // the latest manual one; otherwise re-restoring to byte-identical
+      // content pollutes history with a redundant "Before restore" entry.
+      const seed = (await createSnapshot(chapterId, "Before earlier op", true)) as Exclude<
+        Awaited<ReturnType<typeof createSnapshot>>,
+        null | "duplicate"
+      >;
+      expect(seed.is_auto).toBe(true);
+
+      const before = await listSnapshots(chapterId);
+      expect(before).toHaveLength(1);
+
+      // Restore to that auto snapshot; pre-restore content is byte-identical
+      // to the latest (auto) snapshot, so the pre-restore auto-snapshot is
+      // pure noise and must be skipped.
+      const result = await restoreSnapshot(seed.id);
+      if (result === null || result === "corrupt_snapshot" || result === "cross_project_image") {
+        throw new Error("expected restoreSnapshot to succeed");
+      }
+
+      const after = await listSnapshots(chapterId);
+      expect(after).toHaveLength(1);
+      const beforeRestore = after!.find((s) => s.label?.startsWith("Before restore"));
+      expect(beforeRestore).toBeUndefined();
+    });
+
     it("adjusts image reference counts when restoring", async () => {
       stubVelocity();
       const imageId = uuid();

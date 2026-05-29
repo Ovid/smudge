@@ -105,6 +105,10 @@ export interface ProjectStore {
   listSnapshotsByChapter(chapterId: string): Promise<SnapshotListItem[]>;
   deleteSnapshot(id: string): Promise<number>;
   getLatestSnapshotContentHash(chapterId: string): Promise<string | null>;
+  // Latest snapshot of ANY kind (manual or auto) — used by the auto-snapshot
+  // insert path (restore / find-and-replace) so a pre-operation snapshot is
+  // deduped against a prior auto-snapshot too, not just the latest manual one.
+  getLatestSnapshotContentHashAnyKind(chapterId: string): Promise<string | null>;
 
   // --- Transactions ---
 
