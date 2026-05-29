@@ -17,9 +17,16 @@ function mod(jsx: string): string {
   `;
 }
 
+// Match a raw-UI-string violation specifically, not merely any
+// no-restricted-syntax violation: the sequence-ref selector shares the same
+// ruleId, so filtering on ruleId alone would let a positive case pass on the
+// wrong selector. Every raw-string message opens with "Raw UI string"; the
+// seq-ref message does not.
 async function rawStringMessages(code: string) {
   const results = await lintCode(code, FIXTURE_PATH_TSX);
-  return results[0]!.messages.filter((m) => m.ruleId === "no-restricted-syntax");
+  return results[0]!.messages.filter(
+    (m) => m.ruleId === "no-restricted-syntax" && /Raw UI string/.test(m.message),
+  );
 }
 
 beforeAll(async () => {
@@ -79,6 +86,22 @@ describe("no-restricted-syntax raw-UI-string rule (letters-only)", () => {
     // #22: not JSX at all — a string comparison in a key handler.
     it("does not fire on a non-JSX string comparison", async () => {
       const code = `export function f(e: any) { if (e.key === "Escape") {} }`;
+      const msgs = await rawStringMessages(code);
+      expect(msgs).toHaveLength(0);
+    });
+  });
+
+  // rawStringMessages must count a positive case as a raw-string violation only
+  // when the raw-UI-string rule fired — not merely any no-restricted-syntax
+  // rule. The sequence-ref selector shares ruleId "no-restricted-syntax"; a
+  // ruleId-only filter would let a positive case pass on the wrong selector and
+  // mask a raw-string-selector regression. This pins the helper's precision.
+  describe("helper precision", () => {
+    it("excludes a non-raw-string no-restricted-syntax violation (seq-ref)", async () => {
+      const code = `export function f(seq: number, ref: { current: number }) {
+        if (seq !== ref.current) return seq;
+        return 0;
+      }`;
       const msgs = await rawStringMessages(code);
       expect(msgs).toHaveLength(0);
     });
