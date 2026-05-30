@@ -1,4 +1,6 @@
 import "@testing-library/jest-dom/vitest";
+import { afterEach } from "vitest";
+import { assertConsoleExpectationsSettled } from "./expectConsole";
 
 // Suppress Node 22+ --localstorage-file warning from jsdom worker threads
 const originalProcessEmitWarning = process.emitWarning;
@@ -31,4 +33,14 @@ Object.defineProperty(window, "matchMedia", {
     removeEventListener: () => {},
     dispatchEvent: () => false,
   }),
+});
+
+// Runtime backstop for CLAUDE.md §Testing Philosophy: any expectConsole()
+// installed but never asserted fails the test. ctx.task.result?.state tells us
+// whether the test already failed, so the guard stays silent on real failures
+// (non-masking, design §7.1) and only fires on green-but-unasserted handles.
+afterEach((ctx) => {
+  assertConsoleExpectationsSettled({
+    testFailed: ctx.task.result?.state === "fail",
+  });
 });

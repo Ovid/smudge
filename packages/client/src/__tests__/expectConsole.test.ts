@@ -1,8 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   expectConsole,
   assertConsoleExpectationsSettled,
-  type ConsoleMethod,
 } from "./expectConsole";
 
 // NOTE: this file deliberately drives the registry by hand (calling
@@ -177,5 +176,39 @@ describe("assertConsoleExpectationsSettled — guard semantics", () => {
     h.silent();
     assertConsoleExpectationsSettled();
     expect(console.warn).toBe(original); // restored
+  });
+});
+
+describe("global afterEach wiring", () => {
+  // A nested describe with its OWN afterEach that mirrors setup.ts, proving the
+  // wired guard fails a green-but-unasserted test and stays silent on failure.
+  // (We cannot assert the project-level afterEach fails *this* test without
+  // failing it for real, so we exercise an equivalent local registration.)
+  describe("guard behavior under a real afterEach", () => {
+    let captured: Error | null = null;
+    afterEach((ctx) => {
+      try {
+        assertConsoleExpectationsSettled({
+          testFailed: ctx.task.result?.state === "fail",
+        });
+      } catch (e) {
+        captured = e as Error; // capture instead of throw so we can assert it
+      }
+    });
+
+    it("captures an unresolved-handle error from the afterEach", () => {
+      expectConsole("warn"); // deliberately not resolved
+      // assertion happens in the NEXT test, after this afterEach runs
+    });
+
+    it("the prior test's afterEach raised the unresolved-handle error", () => {
+      expect(captured).toBeInstanceOf(Error);
+      expect(captured?.message).toMatch(/installed but never asserted/);
+      captured = null;
+    });
+  });
+
+  it("a normally-resolved handle leaves the project afterEach a no-op", () => {
+    expectConsole("warn").silent(); // resolved → global guard must not fail us
   });
 });
