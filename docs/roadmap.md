@@ -1311,19 +1311,26 @@ Audit and fix all `vi.spyOn(console, …).mockImplementation(() => {})` installs
 - **Production warn fires defensively (e.g. unrelated library noise)** → either remove the spy entirely (let the warn through if it's harmless) or assert `expect(spy).not.toHaveBeenCalled()` to pin absence.
 - **Multi-warn paths** → assert with `toHaveBeenCalledTimes(N)` plus `toHaveBeenNthCalledWith` where the order matters.
 
-The 140 installs across 16 files (post-I1 fix) are distributed; the per-file table below reflects the original "52 across 9" estimate and undercounts:
+The 140 installs across 16 files (post-I1 fix) are distributed:
 
-| Count | File                                                           |
-| ----- | -------------------------------------------------------------- |
-| 27    | `packages/client/src/__tests__/useProjectEditor.test.ts`       |
-| 6     | `packages/client/src/__tests__/DashboardView.test.tsx`         |
-| 4     | `packages/client/src/__tests__/EditorPageFeatures.test.tsx`    |
-| 4     | `packages/client/src/__tests__/HomePage.test.tsx`              |
-| 3     | `packages/client/src/__tests__/ProjectSettingsDialog.test.tsx` |
-| 3     | `packages/client/src/hooks/useEditorMutation.test.tsx`         |
-| 2     | `packages/client/src/__tests__/ExportDialog.test.tsx`          |
-| 2     | `packages/client/src/hooks/useAbortableSequence.test.ts`       |
-| 1     | `packages/client/src/__tests__/useSnapshotState.test.ts`       |
+| Count | File                                                              |
+| ----- | ----------------------------------------------------------------- |
+| 69    | `packages/client/src/__tests__/useProjectEditor.test.ts`          |
+| 15    | `packages/client/src/__tests__/EditorPageFeatures.test.tsx`       |
+| 12    | `packages/client/src/hooks/useEditorMutation.test.tsx`            |
+| 10    | `packages/client/src/__tests__/HomePage.test.tsx`                 |
+| 9     | `packages/client/src/__tests__/DashboardView.test.tsx`            |
+| 4     | `packages/client/src/__tests__/ProjectSettingsDialog.test.tsx`    |
+| 4     | `packages/client/src/errors/clientLog.test.ts`                    |
+| 3     | `packages/client/src/__tests__/useSnapshotState.test.ts`          |
+| 3     | `packages/client/src/errors/devWarn.test.ts`                      |
+| 2     | `packages/client/src/__tests__/useTrashManager.test.ts`           |
+| 2     | `packages/client/src/__tests__/ExportDialog.test.tsx`             |
+| 2     | `packages/client/src/hooks/useAbortableSequence.test.ts`          |
+| 2     | `packages/client/src/hooks/useAbortableAsyncOperation.test.ts`    |
+| 1     | `packages/client/src/__tests__/useContentCache.test.ts`           |
+| 1     | `packages/client/src/__tests__/editorSafeOps.test.ts`             |
+| 1     | `packages/client/src/errors/apiErrorMapper.test.ts`               |
 
 Consider whether a small ESLint rule (or test-side helper that wraps spy + assertion) could prevent regressions. If so, fold it into the phase; if not, document the manual review checkpoint in CONTRIBUTING.md.
 
