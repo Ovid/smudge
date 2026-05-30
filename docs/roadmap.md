@@ -1301,7 +1301,7 @@ Make the CLAUDE.md §Testing Philosophy "Zero warnings in test output" rule enfo
 
 ### Why Now
 
-CLAUDE.md §Testing Philosophy says: _"When a test deliberately triggers an error path that logs a warning, spy on the output, suppress it, and assert the expected message — e.g. `const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {}); ... expect(warnSpy).toHaveBeenCalledWith(...); warnSpy.mockRestore();`."_ The 4b.3a Cluster A code review (`paad/code-reviews/ovid-cluster-a-error-mapping-2026-04-27-14-13-42-91476d8.md`, finding I1) surfaced two tests violating this rule; a follow-up audit found 52 more across 9 files. Each unasserted spy is a contract that isn't pinned: a future change that drops or alters the production warn would silently pass. This phase closes that gap before Phase 4b.4's raw-strings lint rule lands, so the test suite is clean of latent contract gaps when lint-driven cleanup begins.
+CLAUDE.md §Testing Philosophy says: _"When a test deliberately triggers an error path that logs a warning, spy on the output, suppress it, and assert the expected message — e.g. `const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {}); ... expect(warnSpy).toHaveBeenCalledWith(...); warnSpy.mockRestore();`."_ The 4b.3a Cluster A code review (`paad/code-reviews/ovid-cluster-a-error-mapping-2026-04-27-14-13-42-91476d8.md`, finding I1) surfaced two tests violating this rule; a follow-up audit found ~140 installs across 16 files (the original "52 across 9" estimate was stale). Each unasserted spy is a contract that isn't pinned: a future change that drops or alters the production warn would silently pass. This phase closes that gap before Phase 4b.4's raw-strings lint rule lands, so the test suite is clean of latent contract gaps when lint-driven cleanup begins.
 
 ### Scope
 
@@ -1311,7 +1311,7 @@ Audit and fix all `vi.spyOn(console, …).mockImplementation(() => {})` installs
 - **Production warn fires defensively (e.g. unrelated library noise)** → either remove the spy entirely (let the warn through if it's harmless) or assert `expect(spy).not.toHaveBeenCalled()` to pin absence.
 - **Multi-warn paths** → assert with `toHaveBeenCalledTimes(N)` plus `toHaveBeenNthCalledWith` where the order matters.
 
-The 52 occurrences (post-I1 fix) are distributed:
+The 140 installs across 16 files (post-I1 fix) are distributed; the per-file table below reflects the original "52 across 9" estimate and undercounts:
 
 | Count | File                                                           |
 | ----- | -------------------------------------------------------------- |
