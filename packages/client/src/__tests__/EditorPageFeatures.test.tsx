@@ -1275,8 +1275,63 @@ describe("EditorPage find-and-replace confirmation", () => {
     // swallowed by the read-only editor.
     expect(screen.getByRole("button", { name: STRINGS.editor.refreshButton })).toBeInTheDocument();
 
+    // Critical #1 (2026-04-20), integration proof of the committed_but_unreloaded
+    // → machine lock → reconciled read-only chain. The hook returns
+    // stage:"committed_but_unreloaded"; the controller calls applyReloadFailedLock,
+    // which dispatches COMMITTED_UNRELOADED (lock !== null AND editable:false);
+    // EditorPage's reconcile effect pushes editable:false into TipTap. Assert
+    // the live editor is read-only and is never re-enabled while the lock
+    // stands — the race-only second-reload-fails branch funnels into this exact
+    // same committed_but_unreloaded path (the supersession window itself is
+    // exercised at the hook level in useEditorMutation.test.tsx, which cannot be
+    // reproduced through the real reloadActiveChapter at integration scope).
+    const editorEl = screen.getByRole("textbox", { name: STRINGS.a11y.editorContent });
+    expect(editorEl).toHaveAttribute("contenteditable", "false");
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText(STRINGS.findReplace.replaceSucceededReloadFailed)).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: STRINGS.a11y.editorContent })).toHaveAttribute(
+      "contenteditable",
+      "false",
+    );
+
     expect(warnSpy).toHaveBeenCalledWith("Failed to reload chapter:", expect.any(Error));
     warnSpy.mockRestore();
+  });
+
+  it("benign supersession (active chapter not affected) raises NO lock and keeps the editor editable (Critical #1 contrast)", async () => {
+    // The contrasting BENIGN case to Critical #1: a project-wide replace whose
+    // affected_chapter_ids does NOT include the active chapter. The controller
+    // builds a directive with reloadActiveChapter:false, the hook returns
+    // ok:true, the machine dispatches MUTATION_SETTLED_OK (editable:(lock===null)
+    // → editable:true, lock stays null), and the reconcile effect re-enables
+    // the editor. No spurious persistent lock banner may appear — a regression
+    // that locked here would trap the user read-only after an unrelated replace.
+    vi.mocked(api.search.replace).mockResolvedValueOnce({
+      replaced_count: 4,
+      affected_chapter_ids: ["ch-2"], // NOT the active chapter (ch-1)
+    });
+
+    await openPanelAndClickReplaceAll();
+    await screen.findByRole("alertdialog", { name: "Replace across manuscript?" });
+    await userEvent.click(screen.getByRole("button", { name: "Replace All" }));
+
+    // Positive success banner with the real count.
+    await waitFor(() => {
+      expect(screen.getByText("Replaced 4 occurrences.")).toBeInTheDocument();
+    });
+    // No persistent lock banner and no Refresh-page recovery button.
+    expect(screen.queryByText(STRINGS.findReplace.replaceSucceededReloadFailed)).toBeNull();
+    expect(screen.queryByText(STRINGS.findReplace.replaceResponseUnreadable)).toBeNull();
+    expect(screen.queryByRole("button", { name: STRINGS.editor.refreshButton })).toBeNull();
+    // Editor is editable (lock === null reconciled to editable:true).
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: STRINGS.a11y.editorContent })).toHaveAttribute(
+        "contenteditable",
+        "true",
+      );
+    });
   });
 
   it("shows busy banner when sidebar Add Chapter is clicked mid-mutation (I2)", async () => {
@@ -1572,6 +1627,25 @@ describe("EditorPage find-and-replace confirmation", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: STRINGS.editor.refreshButton })).toBeInTheDocument();
     expect(screen.queryByText(/Replaced .* occurrence/)).toBeNull();
+
+    // Critical #2 (2026-04-20): the lock banner AND the read-only editor are
+    // an inseparable pair. The COMMITTED_UNRELOADED machine transition sets
+    // lock !== null AND editable:false, and EditorPage's reconcile effect
+    // pushes editable:false into TipTap (contenteditable="false"). Assert the
+    // editor is read-only — without this, a regression that re-enabled the
+    // editor while leaving the banner up would let the next keystroke PATCH
+    // stale content over the server-committed replace.
+    const editorEl = screen.getByRole("textbox", { name: STRINGS.a11y.editorContent });
+    expect(editorEl).toHaveAttribute("contenteditable", "false");
+    // And it must NEVER be re-enabled while the lock persists.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText(STRINGS.findReplace.replaceResponseUnreadable)).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: STRINGS.a11y.editorContent })).toHaveAttribute(
+      "contenteditable",
+      "false",
+    );
   });
 
   it("refuses Preview view switch while editor is locked after BAD_JSON (C2)", async () => {
@@ -2418,6 +2492,43 @@ describe("EditorPage snapshot panel", () => {
       await screen.findByText(STRINGS.snapshots.restoreResponseUnreadable),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: STRINGS.editor.refreshButton })).toBeInTheDocument();
+
+    // Critical #3 (2026-04-20): the lock banner AND the read-only editor are
+    // an inseparable pair. applyReloadFailedLock dispatches COMMITTED_UNRELOADED,
+    // which sets the machine to lock !== null AND editable:false. A same-chapter
+    // restore lock keeps the SnapshotBanner up (it does NOT exit snapshot view),
+    // so the live TipTap editor is deliberately NOT mounted — the read-only
+    // intent is enforced by trapping the user in the read-only snapshot view
+    // until they refresh, with BOTH escape hatches disabled. Asserting the
+    // editor "stays read-only" therefore means: the editable TipTap editor is
+    // not on screen at all, AND the two controls that would remount it editable
+    // ("Restore" and "Back to editing") are disabled. A regression that flipped
+    // the machine back to editable:true would re-enable "Back to editing"
+    // (canBack = editorLockedMessage === null) and let the next keystroke PATCH
+    // stale content over the server-committed restore.
+    expect(screen.queryByRole("textbox", { name: STRINGS.a11y.editorContent })).toBeNull();
+    const lockedButtons = screen
+      .getAllByRole("button")
+      .filter((b) => b.getAttribute("aria-disabled") === "true");
+    const restoreLocked = lockedButtons.find((b) => b.textContent?.trim() === "Restore");
+    const backLocked = lockedButtons.find(
+      (b) => b.textContent?.trim() === STRINGS.snapshots.backToEditing,
+    );
+    expect(restoreLocked).toBeDefined();
+    expect(backLocked).toBeDefined();
+
+    // Never re-enabled: after a tick the banner is still up and the controls
+    // that would remount an editable editor remain disabled.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText(STRINGS.snapshots.restoreResponseUnreadable)).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: STRINGS.a11y.editorContent })).toBeNull();
+    expect(
+      screen
+        .getByRole("button", { name: STRINGS.snapshots.backToEditing })
+        .getAttribute("aria-disabled"),
+    ).toBe("true");
   });
 
   it("surfaces generic restoreFailed copy and exits snapshot view on a generic 500 restore error", async () => {

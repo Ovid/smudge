@@ -22,7 +22,7 @@ import { clientWarn } from "../errors";
 // lock-convergence callers MUST check the boolean return and escalate on
 // false. In practice they don't — and don't need to — because the real
 // data-loss defense is EditorPage's handleSaveLockGated (see
-// EditorPage.tsx around `editorLockedMessageRef.current !== null`): once
+// EditorPage.tsx around `editorMachine.isLocked()`): once
 // the lock banner is up, every auto-save PATCH is short-circuited to a
 // no-op regardless of the editor's setEditable state. That gate is what
 // prevents the "editor left writable after a mid-remount throw → first

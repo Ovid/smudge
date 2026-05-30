@@ -136,6 +136,23 @@ Wait for `make e2e` to finish (or kill it) before running cleanup.
 
 For mutation-via-server flows (snapshot restore, project-wide replace, and future similar operations), route through `useEditorMutation` in `packages/client/src/hooks/useEditorMutation.ts` — it enforces invariants 1–4 by construction. Hand-composing these steps is reserved for flows outside its scope (e.g. snapshot view, which does not mutate content). For any client flow whose response must be discarded when superseded by a newer request or an external epoch change (chapter switch, project switch, unmount), route through `useAbortableSequence` — it encodes the "bump before, check after" contract as tokens, auto-aborts on unmount, and is enforced by ESLint.
 
+**Editor operational state lives in one machine.** The editor's
+`{ editable, locked, busy }` operational state is owned by
+`useEditorMutationMachine` (`packages/client/src/hooks/useEditorMutationMachine.ts`)
+— a pure `useReducer` driven by explicit events (`MUTATION_STARTED`,
+`MUTATION_SETTLED_OK` / `_SUPERSEDED`, `RELOADED`, `COMMITTED_UNRELOADED`,
+`EDITOR_REMOUNTED`, `UNLOCK`) rather than independent `setState`/`setEditable`
+calls kept in sync by hand. Do not reintroduce free-standing
+`editorLockedMessage` / `reloadFailed` / `reloadSucceeded` refs or state; route
+lock/unlock and re-enable intent through the machine. Two transitions stay
+synchronous-imperative for timing safety: the lock-down `setEditable(false)`
+(blocks input before the first `await`) and the `inFlightRef` re-entrancy latch.
+`MutationResult` carries `committed_but_unreloaded` as the canonical "server
+committed, display unconfirmed" outcome (2xx `BAD_JSON` on replace/restore,
+reload-GET failure, race-only supersession); it always routes to the persistent
+lock banner. Invariant 2's `setEditable(false)` is now expressed as machine
+intent.
+
 **Unified API error mapping.** All client code that surfaces a user-visible
 message from an API error must route through `mapApiError(err, scope)` in
 `packages/client/src/errors/`. The mapper returns `MappedError<S> = { message,

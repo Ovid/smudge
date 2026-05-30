@@ -30,8 +30,14 @@ export interface FindReplaceControllerDeps {
   getActiveChapter: () => Chapter | null;
   isActionBusy: () => boolean;
   actionBusyRef: MutableRefObject<boolean>;
-  editorLockedMessageRef: MutableRefObject<string | null>;
+  isEditorLocked: () => boolean;
   applyReloadFailedLock: (bannerMessage: string) => void;
+  // OOSI1 (agentic-review 2026-05-30): re-assert editor editability when a
+  // committed_but_unreloaded replace settles on a now-unrelated chapter
+  // (active chapter drifted from the replace target). Dispatches
+  // MUTATION_SETTLED_SUPERSEDED so the displayed editor is re-enabled instead
+  // of being stranded read-only with only a dismissible action error.
+  reassertEditorEditable: () => void;
   setActionError: Dispatch<SetStateAction<string | null>>;
   setActionInfo: Dispatch<SetStateAction<string | null>>;
   snapshotPanelRef: ReturnType<typeof useSnapshotState>["snapshotPanelRef"];
@@ -57,8 +63,9 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
     getActiveChapter,
     isActionBusy,
     actionBusyRef,
-    editorLockedMessageRef,
+    isEditorLocked,
     applyReloadFailedLock,
+    reassertEditorEditable,
     setActionError,
     setActionInfo,
     snapshotPanelRef,
@@ -123,7 +130,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       const stale = targetChapterId !== undefined && currentId !== targetChapterId;
       if (reloadFailed && !stale) {
         // I6: applyReloadFailedLock sets banner + safeSetEditable as an
-        // invariant pair. In the stage:"reload" path the hook kept the
+        // invariant pair. In the stage:"committed_but_unreloaded" path the hook kept the
         // editor setEditable(false) (reloadFailed branch skips the
         // finally's re-enable). In the stage:"mutate" 2xx BAD_JSON path
         // the hook's finally already re-enabled it. The helper call
@@ -138,6 +145,21 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
         // different chapter that the replace did not touch. Surface the
         // same copy as a dismissible action error so the signal reaches the
         // user without disabling an unrelated chapter's editor.
+        //
+        // OOSI1 (agentic-review 2026-05-30): re-assert editor editability
+        // BEFORE the dismissible error. The committed_but_unreloaded path
+        // left the machine at editable:false (the hook's reloadFailed branch
+        // dispatches no terminal event), so without this the now-unrelated
+        // editor is stranded read-only while the only signal is a dismissible
+        // action error — recoverable only by another chapter switch or
+        // refresh. reassertEditorEditable dispatches MUTATION_SETTLED_SUPERSEDED
+        // ({editable:true, busy:false, lock:null}), the same terminal state the
+        // hook itself dispatches when IT detects supersession, and the same
+        // editable:true that EDITOR_REMOUNTED will (eventually) apply on the
+        // chapter switch — this just closes the timing gap deterministically.
+        // The drifted chapter was loaded by handleSelectChapter's GET after the
+        // server commit, so its on-screen content is fresh and safe to edit.
+        reassertEditorEditable();
         setActionError(lockMessage ?? STRINGS.findReplace.replaceSucceededReloadFailed);
       }
       // findReplace.search catches network/5xx/4xx internally and resolves
@@ -164,6 +186,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       setActionError,
       setActionInfo,
       applyReloadFailedLock,
+      reassertEditorEditable,
     ],
   );
 
@@ -191,7 +214,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       // user could open Ctrl+H and issue another replace, firing a fresh
       // PATCH + auto-snapshot while the UI claims nothing will touch server
       // state. Mirror handleRestoreSnapshot's guard exactly.
-      if (editorLockedMessageRef.current !== null) {
+      if (isEditorLocked()) {
         setActionInfo(STRINGS.editor.mutationBusy);
         return;
       }
@@ -283,10 +306,11 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
           setActionError(STRINGS.findReplace.replaceFailedSaveFirst);
           return;
         }
-        if (result.stage === "reload") {
-          // Server-side replace succeeded; only the follow-up GET failed.
-          // result.data carries the ReplaceResponse so we can show the real
-          // replaced_count alongside the persistent lock banner (I1).
+        // committed_but_unreloaded: server-side replace succeeded but the
+        // follow-up GET could not confirm what is on screen. result.data
+        // carries the ReplaceResponse so we can show the real replaced_count
+        // alongside the persistent lock banner (I1).
+        if (result.stage === "committed_but_unreloaded") {
           await finalizeReplaceSuccess({
             replacedCount: result.data.replaced_count,
             reloadFailed: true,
@@ -294,68 +318,74 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
           });
           return;
         }
-        // stage === "mutate"
-        const err = result.error;
-        const mapped = mapApiError(err, "findReplace.replace");
-        // 2xx BAD_JSON: the server almost certainly committed the replace
-        // (and the auto-snapshot) and only the response body was unreadable.
-        // Route to the persistent lock UX so the editor stays
-        // setEditable(false) until refresh; a retry would double-commit.
-        // I5 (2026-04-23): the scope-level mapper already applies the
-        // 2xx BAD_JSON predicate — consult possiblyCommitted instead of
-        // re-implementing the check inline so future broadening of the
-        // predicate propagates to every call site automatically.
-        if (mapped.possiblyCommitted) {
-          // Clear caches for chapters the server may have replaced (C1). The
-          // mutate callback threw, so the hook's directive-based cache-clear
-          // never ran. The response body was unreadable, so
-          // affected_chapter_ids is unavailable.
-          //
-          // I4: For project-scope we previously fell back to clearing
-          // EVERY project chapter's cache — but the server-side replace
-          // may have only touched one or a few chapters, and wiping drafts
-          // in an unrelated chapter the user had unsaved work in was a
-          // real data-loss path. The hook-flush guarantees the ACTIVE
-          // chapter's cache is consistent with the server's post-mutate
-          // state (invariants 1–3), so clear that one and rely on the
-          // lock banner + refresh flow to reconcile the rest. Every
-          // other chapter's cache is preserved; the next navigation
-          // reloads server state against the cached draft exactly as the
-          // non-BAD_JSON flow does.
-          //
-          // Edge case — project scope with no active chapter: if the
-          // user has no chapter open (e.g. Trash/Dashboard view at click
-          // time), the "clear the active chapter" fallback is a no-op
-          // and localStorage drafts for every chapter are left intact.
-          // After the user follows the lock banner's refresh prompt and
-          // opens a chapter the replace may have touched, the cached
-          // draft would re-hydrate and the next auto-save would revert
-          // the server-committed replace. Since affected_chapter_ids is
-          // unreadable (that's why we're here), clear every project
-          // chapter's cache as the least-bad choice: any draft present
-          // in this narrow window pre-dates the current session's
-          // editing (no chapter was open to be typed into), so the
-          // data-loss risk that motivated the selective-clear above does
-          // not apply here.
-          const activeChapterId = getActiveChapter()?.id;
-          if (frozen.scope.type === "chapter") {
-            clearCachedContent(frozen.scope.chapter_id);
-          } else if (activeChapterId) {
-            clearCachedContent(activeChapterId);
-          } else if (project) {
-            clearAllCachedContent(project.chapters.map((c) => c.id));
+        if (result.stage === "mutate") {
+          const err = result.error;
+          const mapped = mapApiError(err, "findReplace.replace");
+          // 2xx BAD_JSON: the server almost certainly committed the replace
+          // (and the auto-snapshot) and only the response body was unreadable.
+          // Route to the persistent lock UX so the editor stays
+          // setEditable(false) until refresh; a retry would double-commit.
+          // I5 (2026-04-23): the scope-level mapper already applies the
+          // 2xx BAD_JSON predicate — consult possiblyCommitted instead of
+          // re-implementing the check inline so future broadening of the
+          // predicate propagates to every call site automatically.
+          if (mapped.possiblyCommitted) {
+            // Clear caches for chapters the server may have replaced (C1). The
+            // mutate callback threw, so the hook's directive-based cache-clear
+            // never ran. The response body was unreadable, so
+            // affected_chapter_ids is unavailable.
+            //
+            // I4: For project-scope we previously fell back to clearing
+            // EVERY project chapter's cache — but the server-side replace
+            // may have only touched one or a few chapters, and wiping drafts
+            // in an unrelated chapter the user had unsaved work in was a
+            // real data-loss path. The hook-flush guarantees the ACTIVE
+            // chapter's cache is consistent with the server's post-mutate
+            // state (invariants 1–3), so clear that one and rely on the
+            // lock banner + refresh flow to reconcile the rest. Every
+            // other chapter's cache is preserved; the next navigation
+            // reloads server state against the cached draft exactly as the
+            // non-BAD_JSON flow does.
+            //
+            // Edge case — project scope with no active chapter: if the
+            // user has no chapter open (e.g. Trash/Dashboard view at click
+            // time), the "clear the active chapter" fallback is a no-op
+            // and localStorage drafts for every chapter are left intact.
+            // After the user follows the lock banner's refresh prompt and
+            // opens a chapter the replace may have touched, the cached
+            // draft would re-hydrate and the next auto-save would revert
+            // the server-committed replace. Since affected_chapter_ids is
+            // unreadable (that's why we're here), clear every project
+            // chapter's cache as the least-bad choice: any draft present
+            // in this narrow window pre-dates the current session's
+            // editing (no chapter was open to be typed into), so the
+            // data-loss risk that motivated the selective-clear above does
+            // not apply here.
+            const activeChapterId = getActiveChapter()?.id;
+            if (frozen.scope.type === "chapter") {
+              clearCachedContent(frozen.scope.chapter_id);
+            } else if (activeChapterId) {
+              clearCachedContent(activeChapterId);
+            } else if (project) {
+              clearAllCachedContent(project.chapters.map((c) => c.id));
+            }
+            // possiblyCommitted implies scope.committed is defined, so
+            // mapped.message is a non-null string (replaceResponseUnreadable).
+            await finalizeReplaceSuccess({
+              replacedCount: null,
+              reloadFailed: true,
+              lockMessage: mapped.message as string,
+              targetChapterId,
+            });
+            return;
           }
-          // possiblyCommitted implies scope.committed is defined, so
-          // mapped.message is a non-null string (replaceResponseUnreadable).
-          await finalizeReplaceSuccess({
-            replacedCount: null,
-            reloadFailed: true,
-            lockMessage: mapped.message as string,
-            targetChapterId,
-          });
+          if (mapped.message) setActionError(mapped.message);
           return;
         }
-        if (mapped.message) setActionError(mapped.message);
+        // Exhaustive: every MutationResult failure stage is handled above. A
+        // new stage forces a compile error here until it is handled.
+        const _exhaustive: never = result;
+        void _exhaustive;
       } finally {
         actionBusyRef.current = false;
       }
@@ -372,7 +402,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       isActionBusy,
       replaceOp,
       actionBusyRef,
-      editorLockedMessageRef,
+      isEditorLocked,
     ],
   );
 
@@ -449,7 +479,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       // C1: Same lock-banner guard as executeReplace/handleRestoreSnapshot.
       // Per-match Replace must not issue a server write while the lock
       // banner claims nothing will touch server state until refresh.
-      if (editorLockedMessageRef.current !== null) {
+      if (isEditorLocked()) {
         setActionInfo(STRINGS.editor.mutationBusy);
         return;
       }
@@ -539,10 +569,10 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
           setActionError(STRINGS.findReplace.replaceFailedSaveFirst);
           return;
         }
-        if (result.stage === "reload") {
-          // Server-side replace succeeded; only the follow-up GET failed.
-          // Persistent lock banner (I1) — the editor stays read-only until
-          // the page is refreshed.
+        // committed_but_unreloaded: server-side replace succeeded but the
+        // follow-up GET could not confirm what is on screen. Persistent lock
+        // banner (I1) — the editor stays read-only until the page is refreshed.
+        if (result.stage === "committed_but_unreloaded") {
           await finalizeReplaceSuccess({
             replacedCount: result.data.replaced_count,
             reloadFailed: true,
@@ -552,45 +582,51 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
           });
           return;
         }
-        // stage === "mutate"
-        const err = result.error;
-        const mapped = mapApiError(err, "findReplace.replace");
-        // 2xx BAD_JSON: same C1 branch as executeReplace. The server likely
-        // committed the replace-one (and its auto-snapshot) but the response
-        // body was unreadable. Lock the editor until refresh so auto-save
-        // cannot overwrite a possibly-committed server-side change.
-        // I5 (2026-04-23): consult mapped.possiblyCommitted rather than
-        // re-implementing the predicate inline — the scope mapper already
-        // applies it at apiErrorMapper.ts:31.
-        if (mapped.possiblyCommitted) {
-          // Replace-one is single-chapter — clear that chapter's cached draft
-          // (C1). The mutate callback threw before returning a directive, so
-          // the hook's clearAllCachedContent never ran.
-          clearCachedContent(chapterId);
-          // possiblyCommitted implies scope.committed is defined, so
-          // mapped.message is a non-null string (replaceResponseUnreadable).
-          await finalizeReplaceSuccess({
-            replacedCount: null,
-            reloadFailed: true,
-            lockMessage: mapped.message as string,
-            targetChapterId: chapterId,
-          });
+        if (result.stage === "mutate") {
+          const err = result.error;
+          const mapped = mapApiError(err, "findReplace.replace");
+          // 2xx BAD_JSON: same C1 branch as executeReplace. The server likely
+          // committed the replace-one (and its auto-snapshot) but the response
+          // body was unreadable. Lock the editor until refresh so auto-save
+          // cannot overwrite a possibly-committed server-side change.
+          // I5 (2026-04-23): consult mapped.possiblyCommitted rather than
+          // re-implementing the predicate inline — the scope mapper already
+          // applies it at apiErrorMapper.ts:31.
+          if (mapped.possiblyCommitted) {
+            // Replace-one is single-chapter — clear that chapter's cached draft
+            // (C1). The mutate callback threw before returning a directive, so
+            // the hook's clearAllCachedContent never ran.
+            clearCachedContent(chapterId);
+            // possiblyCommitted implies scope.committed is defined, so
+            // mapped.message is a non-null string (replaceResponseUnreadable).
+            await finalizeReplaceSuccess({
+              replacedCount: null,
+              reloadFailed: true,
+              lockMessage: mapped.message as string,
+              targetChapterId: chapterId,
+            });
+            return;
+          }
+          // On any 404 (chapter soft-deleted OR project gone), refresh the
+          // result set BEFORE showing the banner — otherwise the user clicks
+          // the same row and loops the same error (I3). Previously gated on
+          // SCOPE_NOT_FOUND only, which let bare NOT_FOUND 404s fall through
+          // with stale rows still clickable. The search refetch clears its
+          // result set on 400/404 (useFindReplaceState.ts:191), and the
+          // clearError() call below suppresses the panel-local duplicate so
+          // the action banner set by mapApiError is the single source of
+          // truth for this click.
+          if (isNotFound(err)) {
+            await findReplace.search(slug);
+            findReplace.clearError();
+          }
+          if (mapped.message) setActionError(mapped.message);
           return;
         }
-        // On any 404 (chapter soft-deleted OR project gone), refresh the
-        // result set BEFORE showing the banner — otherwise the user clicks
-        // the same row and loops the same error (I3). Previously gated on
-        // SCOPE_NOT_FOUND only, which let bare NOT_FOUND 404s fall through
-        // with stale rows still clickable. The search refetch clears its
-        // result set on 400/404 (useFindReplaceState.ts:191), and the
-        // clearError() call below suppresses the panel-local duplicate so
-        // the action banner set by mapApiError is the single source of
-        // truth for this click.
-        if (isNotFound(err)) {
-          await findReplace.search(slug);
-          findReplace.clearError();
-        }
-        if (mapped.message) setActionError(mapped.message);
+        // Exhaustive: every MutationResult failure stage is handled above. A
+        // new stage forces a compile error here until it is handled.
+        const _exhaustive: never = result;
+        void _exhaustive;
       } finally {
         actionBusyRef.current = false;
       }
@@ -607,7 +643,7 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       isActionBusy,
       replaceOp,
       actionBusyRef,
-      editorLockedMessageRef,
+      isEditorLocked,
     ],
   );
 

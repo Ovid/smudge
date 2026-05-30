@@ -1,10 +1,12 @@
-import { useRef, useCallback, useMemo, type MutableRefObject } from "react";
+import { useRef, useCallback, useMemo, type Dispatch, type MutableRefObject } from "react";
 import type { EditorHandle } from "../components/Editor";
 import type { UseProjectEditorReturn } from "./useProjectEditor";
+import type { EditorMutationEvent } from "./useEditorMutationMachine";
 import { clearAllCachedContent } from "./useContentCache";
+import { safeSetEditable } from "../utils/editorSafeOps";
 import { clientWarn } from "../errors";
 
-export type MutationStage = "flush" | "mutate" | "reload" | "busy";
+export type MutationStage = "flush" | "mutate" | "committed_but_unreloaded" | "busy";
 
 // Discriminated union so the type system forces reloadChapterId whenever
 // reloadActiveChapter is true. Without this, a caller that set
@@ -23,14 +25,21 @@ export type MutationDirective<T = void> = {
 
 export type MutationResult<T = void> =
   | { ok: true; data: T }
-  // reload: server-side mutation succeeded, but the follow-up GET failed.
-  // No `error` field — callers always render a hardcoded strings.ts banner
-  // ("refresh the page…") whose wording does not depend on the reload
-  // failure's text, and reloadActiveChapter only surfaces
-  // STRINGS.error.loadChapterFailed anyway. Keeping it would invite
-  // drift between the hook's passed-through message and the banner copy.
-  | { ok: false; stage: "reload"; data: T }
-  | { ok: false; stage: "flush" | "mutate"; error: unknown }
+  // committed_but_unreloaded: server-side mutation committed but the client
+  // cannot confirm what is on screen (follow-up GET failed, or race-only
+  // supersession). Subsumes the former stage:"reload". No `error` field —
+  // callers always render a hardcoded strings.ts banner via
+  // applyReloadFailedLock whose wording does not depend on any failure text,
+  // so keeping an error here would only invite drift between the hook's
+  // passed-through message and the banner copy.
+  | { ok: false; stage: "committed_but_unreloaded"; data: T }
+  // flush and mutate are split into separate members (rather than a single
+  // stage:"flush" | "mutate" member) so that each consumer's stage-discriminated
+  // if-chain narrows the residual to `never` for the exhaustive `_exhaustive`
+  // guard. A combined-discriminant member does not subtract cleanly across
+  // sequential `=== "flush"` / `=== "mutate"` returns.
+  | { ok: false; stage: "flush"; error: unknown }
+  | { ok: false; stage: "mutate"; error: unknown }
   | { ok: false; stage: "busy" };
 
 export type UseEditorMutationArgs = {
@@ -39,15 +48,12 @@ export type UseEditorMutationArgs = {
     UseProjectEditorReturn,
     "cancelPendingSaves" | "reloadActiveChapter" | "getActiveChapter"
   >;
-  // Optional predicate the hook consults before re-enabling the editor in
-  // its finally block. When a prior run ended in stage:"reload" the caller
-  // (EditorPage) shows a persistent "refresh the page" banner — the editor
-  // is deliberately left setEditable(false) so typing can't overwrite the
-  // server-committed mutation. Without this gate, the NEXT successful
-  // run() would unconditionally setEditable(true) while the banner still
-  // claims the editor is locked, inviting data loss (I1). Return true from
-  // isLocked() to keep the editor read-only even after a successful run.
-  isLocked?: () => boolean;
+  /** Editor-state machine dispatch (EditorPage owns the machine). The hook
+   * emits MUTATION_STARTED at entry and one terminal event on settle
+   * (MUTATION_SETTLED_OK / _SUPERSEDED / RELOADED). On the committed path it
+   * dispatches NO terminal event — the consumer raises COMMITTED_UNRELOADED
+   * with its own strings.ts copy via applyReloadFailedLock. */
+  dispatch: Dispatch<EditorMutationEvent>;
 };
 
 export type UseEditorMutationReturn = {
@@ -69,8 +75,10 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
   const projectEditorRef = useRef(args.projectEditor);
   projectEditorRef.current = args.projectEditor;
 
-  const isLockedRef = useRef(args.isLocked);
-  isLockedRef.current = args.isLocked;
+  // dispatch (from EditorPage's useReducer) and editorRef are both stable
+  // identities; destructured here so the run() useCallback dep array is plain
+  // identifiers (the react-hooks rule otherwise asks for the whole `args`).
+  const { editorRef, dispatch } = args;
 
   const inFlightRef = useRef(false);
 
@@ -91,9 +99,10 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
       // lock state and the current run just successfully re-fetched the
       // server copy via reloadActiveChapter, the lock's premise ("we never
       // showed you the post-mutation server state") no longer holds — the
-      // fresh state is now on screen, so the finally should re-enable the
-      // editor regardless of isLocked (I2). The caller's useEffect on
-      // chapterReloadKey clears the banner in the same render.
+      // fresh state is now on screen, so the finally dispatches RELOADED,
+      // whose reducer transition clears the lock and re-enables (I2). The
+      // caller's useEffect on chapterReloadKey clears the banner in the
+      // same render.
       let reloadSucceeded = false;
       // I1 (review 2026-04-20): when reloadActiveChapter returns
       // "superseded", the user switched chapters (or the chapter
@@ -116,7 +125,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
       // ref and lock that new editor too (I3) — otherwise invariants 1–2
       // silently break for the reload window and a user keystroke could
       // race the reload's auto-save.
-      const editor = args.editorRef.current;
+      const editor = editorRef.current;
       // Null-editor is a deliberate graceful-no-op contract, covered by the
       // "null editor ref" test below: invariants 1–2 (markClean,
       // setEditable(false)) are vacuously satisfied when there is no editor
@@ -130,6 +139,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
       // rest of the session.
       try {
         inFlightRef.current = true;
+        dispatch({ type: "MUTATION_STARTED" });
         // S2 (review 2026-04-21): cancelPendingSaves BEFORE the first
         // setEditable. Any pre-existing save in backoff from prior
         // keystrokes must be aborted before we commit to the mutation
@@ -147,16 +157,18 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         } catch (error) {
           return { ok: false, stage: "flush", error };
         }
-        // Wrap the synchronous setEditable(false) in its own try/catch so a
-        // TipTap mid-remount throw surfaces as a typed stage:"flush" failure
-        // rather than rejecting the returned Promise (S4). All call sites
-        // `await mutation.run(...)` without a try/catch and rely on the
-        // discriminated MutationResult contract — letting the throw escape
-        // would produce an unhandled rejection and bypass every caller's
-        // stage-specific copy. Attribute to "flush" because a locked editor
-        // prevents us from flushing pending changes before the mutation.
+        // Synchronous lock-down before the first await. Routed through
+        // safeSetEditable, which absorbs a TipTap mid-remount throw internally
+        // (logs + returns false) — so the surrounding try/catch is now
+        // belt-and-suspenders: on a swallowed throw the run PROCEEDS rather
+        // than bailing to stage:"flush" (the catch is effectively unreachable
+        // today, retained only in case a future safeSetEditable rethrows, to
+        // preserve the no-unhandled-rejection MutationResult contract). The
+        // data-loss backstop when the lock-down silently fails is EditorPage's
+        // handleSaveLockGated, which no-ops any auto-save PATCH while the lock
+        // banner is up (see editorSafeOps.ts rationale).
         try {
-          editor?.setEditable(false);
+          safeSetEditable(editorRef, false);
         } catch (error) {
           return { ok: false, stage: "flush", error };
         }
@@ -208,10 +220,10 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         // server commit on the next auto-save. Swallow throws in the same
         // spirit as the entry-side setEditable: a TipTap mid-remount throw
         // here should not discard a server-successful mutate.
-        const editorAfterMutate = args.editorRef.current;
+        const editorAfterMutate = editorRef.current;
         if (editorAfterMutate !== null && editorAfterMutate !== editor) {
           try {
-            editorAfterMutate.setEditable(false);
+            safeSetEditable(editorRef, false);
             // I6: Mid-mutate remount was locked but not markClean-ed. A
             // keystroke landing in the mount→lock window sets dirtyRef=true
             // on the fresh editor; when it later unmounts, Editor's cleanup
@@ -228,7 +240,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             // the fresh editor is left writable — user keystrokes during
             // the reload-GET window would PATCH pre-mutation content back
             // over the just-committed server change. Promote to
-            // stage:"reload": the server committed (mutate succeeded), so
+            // stage:"committed_but_unreloaded": the server committed (mutate succeeded), so
             // the caller surfaces the persistent "refresh the page" lock
             // and EditorPage's handleSaveLockGated (C1) refuses any PATCH
             // while the banner is up.
@@ -265,7 +277,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             }
             // I1 (review 2026-04-21): honor the directive when it did not
             // ask for a reload. The re-lock bail previously returned
-            // stage:"reload" unconditionally — callers interpret that as
+            // stage:"committed_but_unreloaded" unconditionally — callers interpret that as
             // "server committed, follow-up GET failed" and unconditionally
             // raise a persistent lock banner + cache-wipe + editor lock
             // on the NEW editor (which may be an unrelated chapter, e.g.
@@ -289,7 +301,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
               // handleSelectChapter's GET loaded, which could have raced the
               // server-side commit. The very next keystroke PATCHes stale
               // content over the server-committed mutation. Escalate to
-              // stage:"reload" so callers raise the persistent lock banner
+              // stage:"committed_but_unreloaded" so callers raise the persistent lock banner
               // instead. Readers at a chapter OUTSIDE clearCacheFor are
               // unaffected and the ok:true branch still applies.
               const currentId = projectEditorRef.current.getActiveChapter()?.id;
@@ -297,7 +309,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
                 reloadFailed = true;
                 return {
                   ok: false,
-                  stage: "reload",
+                  stage: "committed_but_unreloaded",
                   data: directive.data,
                 };
               }
@@ -306,7 +318,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             reloadFailed = true;
             return {
               ok: false,
-              stage: "reload",
+              stage: "committed_but_unreloaded",
               data: directive.data,
             };
           }
@@ -325,16 +337,16 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         // Only fires when editorAfterMutate was null (otherwise the
         // above block has already done the lock).
         if (editorAfterMutate === null) {
-          const lateMounted = args.editorRef.current;
+          const lateMounted = editorRef.current;
           if (lateMounted !== null) {
             try {
-              lateMounted.setEditable(false);
+              safeSetEditable(editorRef, false);
               lateMounted.markClean();
               projectEditorRef.current.cancelPendingSaves();
             } catch (err) {
               // Match the main re-lock-fail catch's discipline: server
               // already committed, so on failure promote to stage:
-              // "reload" (or ok:true when directive said no reload),
+              // "committed_but_unreloaded" (or ok:true when directive said no reload),
               // exactly as the post-mutate re-lock catch does above.
               // Inlined here because we've already passed the cache-
               // clear step — duplicating is simpler than threading
@@ -354,7 +366,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
               reloadFailed = true;
               return {
                 ok: false,
-                stage: "reload",
+                stage: "committed_but_unreloaded",
                 data: directive.data,
               };
             }
@@ -376,7 +388,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
           // an unhandled rejection — bypassing the MutationResult
           // contract (callers `await mutation.run(...)` without
           // try/catch). Treat a throw the same as the "failed" outcome:
-          // set reloadFailed and return stage:"reload" so the caller
+          // set reloadFailed and return stage:"committed_but_unreloaded" so the caller
           // raises the persistent lock banner.
           let outcome: Awaited<ReturnType<typeof projectEditorRef.current.reloadActiveChapter>>;
           try {
@@ -389,7 +401,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             reloadFailed = true;
             return {
               ok: false,
-              stage: "reload",
+              stage: "committed_but_unreloaded",
               data: directive.data,
             };
           }
@@ -397,7 +409,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             reloadFailed = true;
             return {
               ok: false,
-              stage: "reload",
+              stage: "committed_but_unreloaded",
               data: directive.data,
             };
           }
@@ -429,7 +441,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
             // change. Re-run the reload without an expectedChapterId so it
             // targets whatever is currently active — a fresh GET pulls the
             // post-mutation content. On failure, fall through to the
-            // stage:"reload" branch so callers raise the persistent lock
+            // stage:"committed_but_unreloaded" branch so callers raise the persistent lock
             // banner.
             const currentId = projectEditorRef.current.getActiveChapter()?.id;
             if (currentId && directive.clearCacheFor.includes(currentId)) {
@@ -459,7 +471,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
                 reloadFailed = true;
                 return {
                   ok: false,
-                  stage: "reload",
+                  stage: "committed_but_unreloaded",
                   data: directive.data,
                 };
               }
@@ -468,7 +480,7 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
                 reloadFailed = true;
                 return {
                   ok: false,
-                  stage: "reload",
+                  stage: "committed_but_unreloaded",
                   data: directive.data,
                 };
               }
@@ -488,76 +500,28 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         }
         return { ok: true, data: directive.data };
       } finally {
-        // inFlightRef.current = false FIRST, then setEditable(true). If the
-        // TipTap instance is mid-remount, setEditable(true) can throw
-        // synchronously on the exit side just like it can on entry (see C1).
-        // If this throw hit the un-run `inFlightRef.current = false`, the
-        // busy latch would stay set for the session and every subsequent
-        // mutation would short-circuit as stage:"busy". Order matters.
+        // Release the synchronous re-entrancy latch FIRST (order matters: a
+        // throw must not leave the latch set for the session).
         inFlightRef.current = false;
-        // If a prior run left the editor in the reload-failed lock state,
-        // EditorPage's "refresh the page" banner is still showing. Don't
-        // re-enable editing here (I1) — the finally would otherwise silently
-        // override the lock while the banner claims the editor is read-only,
-        // so the next keystroke would PATCH pre-mutation content back over
-        // the server-committed change.
-        // A successful reload supersedes a stale lock: the banner is about
-        // to clear via the caller's chapterReloadKey useEffect, and the
-        // editor's displayed content now matches the server (no stale
-        // pre-mutation content the user could type over). Without this,
-        // the editor would stay setEditable(false) after the banner cleared,
-        // leaving the user in an unrecoverable "looks editable but can't
-        // type" state until chapter switch (I2).
-        // I3 (review 2026-04-20): wrap the predicate call. Today's
-        // closure (() => editorLockedMessageRef.current !== null) can't
-        // throw, but the public type is () => boolean — a future caller
-        // reading flaky state could throw and bypass the discriminated
-        // MutationResult contract. Callers `await mutation.run(...)`
-        // without try/catch, so an escaping throw would surface as an
-        // unhandled rejection. Conservative default on throw: treat as
-        // locked, so unknown predicate state can't accidentally unlock
-        // an editor over a server-committed change.
-        let lockedByCaller: boolean;
-        try {
-          lockedByCaller =
-            isLockedRef.current?.() === true && !reloadSucceeded && !reloadSuperseded;
-        } catch (err) {
-          // I4 (review 2026-04-21): honor reloadSucceeded / reloadSuperseded
-          // even when the predicate throws. An unconditional lockedByCaller=true
-          // would leave the editor setEditable(false) AFTER chapterReloadKey
-          // had already cleared the lock banner — reproducing the "looks
-          // editable but can't type" dead state the flags exist to prevent.
-          // Conservative default otherwise: treat as locked so an unknown
-          // predicate state can't accidentally unlock an editor over a
-          // server-committed change.
-          clientWarn("useEditorMutation: isLocked predicate threw", err);
-          lockedByCaller = !reloadSucceeded && !reloadSuperseded;
-        }
-        if (!reloadFailed && !lockedByCaller) {
-          // Re-read editorRef.current (I3): if the entry-time editor was
-          // destroyed mid-run (chapter switch during mutate) its setEditable
-          // throws, and the new editor mounts with editable=true by default
-          // — no unlock needed. If the editor is the same instance as at
-          // entry, this is a no-op change. Either way, target the current
-          // editor rather than the captured reference.
-          const editorForUnlock = args.editorRef.current;
-          try {
-            editorForUnlock?.setEditable(true);
-          } catch (err) {
-            // Swallowing here keeps run()'s happy-path return value intact
-            // for the caller. The editor being non-editable after a
-            // successful mutation is a degraded but recoverable state —
-            // the next remount resets editable=true. Emit a warn so the
-            // silent failure leaves at least one signal behind for
-            // devtools inspection (I4) — previously the catch was silent
-            // and a TipTap mid-remount throw here would leave the editor
-            // stuck read-only with no indication anything had happened.
-            clientWarn("useEditorMutation: failed to re-enable editor", err);
-          }
+        // Terminal machine event. The committed path (reloadFailed) dispatches
+        // NOTHING here: editable stays false (from MUTATION_STARTED) and the
+        // consumer raises COMMITTED_UNRELOADED with its own banner copy. The
+        // re-enable is now machine intent reconciled by EditorPage's effect —
+        // no imperative setEditable(true) here (Decided Q3).
+        if (reloadFailed) {
+          // no-op: consumer owns COMMITTED_UNRELOADED
+        } else if (reloadSucceeded) {
+          dispatch({ type: "RELOADED" });
+        } else if (reloadSuperseded) {
+          dispatch({ type: "MUTATION_SETTLED_SUPERSEDED" });
+        } else {
+          // happy ok:true, or flush/mutate failure: re-enable unless locked
+          // (the reducer applies editable:(lock===null)).
+          dispatch({ type: "MUTATION_SETTLED_OK" });
         }
       }
     },
-    [args.editorRef],
+    [editorRef, dispatch],
   );
 
   const isBusy = useCallback(() => inFlightRef.current, []);

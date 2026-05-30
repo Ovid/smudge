@@ -410,7 +410,7 @@ export function Editor({
           // false, and clearAllCachedContent wipes the localStorage
           // draft. The two callers that should NOT flush against a
           // locked editor (Ctrl+S handler, future call sites) are
-          // expected to gate externally via editorLockedMessageRef
+          // expected to gate externally via editorMachine.isLocked()
           // before invoking. The Editor's own isEditable flag is
           // overloaded — it serves both as the persistent failure-lock
           // signal AND as useEditorMutation's in-flight mutation lock,
