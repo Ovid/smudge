@@ -540,7 +540,7 @@ describe("DashboardView", () => {
       expect(screen.getByRole("progressbar")).toBeInTheDocument();
     });
 
-    warn.called();
+    warn.calledWith(expect.stringContaining("Failed to load velocity:"), expect.any(Error));
     error.silent();
   });
 
@@ -571,7 +571,7 @@ describe("DashboardView", () => {
     // aborting the controller, so the warn path is reached before
     // applyMappedError short-circuits on message: null.
     expect(screen.queryByText(/unable to load/i)).not.toBeInTheDocument();
-    warn.called();
+    warn.calledWith(expect.stringContaining("Failed to load velocity:"), expect.any(Error));
   });
 
   it("falls back to status_summary keys when statuses prop is empty", async () => {
