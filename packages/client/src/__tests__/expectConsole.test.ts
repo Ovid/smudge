@@ -145,3 +145,37 @@ describe("expectConsole — predicate matchers", () => {
     assertConsoleExpectationsSettled();
   });
 });
+
+describe("assertConsoleExpectationsSettled — guard semantics", () => {
+  it("throws when a handle is installed but never asserted (passing test)", () => {
+    expectConsole("warn"); // never resolved
+    expect(() => assertConsoleExpectationsSettled()).toThrow(
+      /installed but never asserted/,
+    );
+    // settle already spliced+restored, so the global afterEach sees an empty
+    // registry and does not double-fire.
+  });
+
+  it("does NOT throw on an unresolved handle when the test already failed (non-masking)", () => {
+    expectConsole("warn"); // never resolved
+    expect(() =>
+      assertConsoleExpectationsSettled({ testFailed: true }),
+    ).not.toThrow();
+  });
+
+  it("throwing the same method twice in one test fails immediately", () => {
+    const h = expectConsole("warn");
+    expect(() => expectConsole("warn")).toThrow(/called twice/);
+    h.silent(); // resolve the first handle so this test stays clean
+    assertConsoleExpectationsSettled();
+  });
+
+  it("restores the original console method after settle", () => {
+    const original = console.warn;
+    const h = expectConsole("warn");
+    expect(console.warn).not.toBe(original); // replaced by suppressing spy
+    h.silent();
+    assertConsoleExpectationsSettled();
+    expect(console.warn).toBe(original); // restored
+  });
+});
