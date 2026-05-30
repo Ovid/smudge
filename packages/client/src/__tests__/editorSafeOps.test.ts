@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { expectConsole } from "./expectConsole";
 import type { MutableRefObject } from "react";
 import { safeSetEditable, quiesceEditorForServerOp } from "../utils/editorSafeOps";
 import type { EditorHandle } from "../components/Editor";
@@ -43,7 +44,7 @@ describe("safeSetEditable", () => {
     // TipTap can throw synchronously during the mid-remount window; the
     // helper must absorb the throw, log it, and report the failed apply
     // via its informational boolean return value.
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const setEditable = vi.fn().mockImplementation(() => {
       throw new Error("TipTap instance destroyed");
     });
@@ -53,8 +54,7 @@ describe("safeSetEditable", () => {
       returned = safeSetEditable(makeRef(handle), true);
     }).not.toThrow();
     expect(returned).toBe(false);
-    expect(warn).toHaveBeenCalledWith("safeSetEditable: setEditable threw", expect.any(Error));
-    warn.mockRestore();
+    warn.calledWith("safeSetEditable: setEditable threw", expect.any(Error));
   });
 });
 
