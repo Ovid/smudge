@@ -130,7 +130,7 @@ Wait for `make e2e` to finish (or kill it) before running cleanup.
 3. **Cache-clear happens after server success, never before.** The client-side draft cache is the last line of defense against data loss. Clearing it before the server confirms violates the contract that unsaved content is held until persistence succeeds.
 4. **Bump the sequence ref before the request, not after.** Any in-flight response for an older sequence is discarded on return. Bumping after creates a window where stale responses land. Use `useAbortableSequence` (`packages/client/src/hooks/useAbortableSequence.ts`): `start()` bumps and returns a token, `capture()` snapshots the current epoch for cross-axis checks, `abort()` invalidates outstanding tokens, and component unmount auto-aborts. Hand-rolled `useRef<number>` sequence counters are rejected by ESLint.
 
-   For network-cancellation (as distinct from response-staleness), route through `useAbortableAsyncOperation` (`packages/client/src/hooks/useAbortableAsyncOperation.ts`): `run<T>(fn)` aborts the prior controller and returns `{ promise, signal }` per call (use the per-call `signal` for "did this operation abort" gates after the await — there is deliberately no hook-level `aborted` getter), `abort()` cancels the currently-tracked controller for explicit external-cancellation flows that aren't paired with starting a new operation (panel-close, project-id change), and component unmount auto-aborts. The two hooks are orthogonal: `useAbortableSequence` arbitrates response staleness via epoch tokens; `useAbortableAsyncOperation` cancels network requests via `AbortController`. Both can apply to one operation — `useFindReplaceState.search` pairs them to get both guarantees. Hand-rolled `useRef<AbortController>` allocations at consumer call sites are banned (enforced by `packages/client/src/__tests__/migrationStructuralCheck.test.ts`; five justified-survivor files (HomePage.tsx, useChapterCrud.ts, useChapterMetadata.ts, useSnapshotState.ts, useTrashManager.ts — the last for `restoreRecoveryAbortRef`, a second-tier recovery controller that must survive the next restore's `restoreOp` abort; `useChapterCrud.ts` and `useChapterMetadata.ts` received the recovery controllers formerly in `useProjectEditor.ts` when F-2 (2026-05-29) split it) — each containing one or more retained allocations for documented second-tier-recovery or simultaneously-live-controller patterns — remain allowlisted; Phase 4b.17's allowlist conversion replaces this file-level allowlist with inline `// eslint-disable-next-line` on each of the surviving lines).
+   For network-cancellation (as distinct from response-staleness), route through `useAbortableAsyncOperation` (`packages/client/src/hooks/useAbortableAsyncOperation.ts`): `run<T>(fn)` aborts the prior controller and returns `{ promise, signal }` per call (use the per-call `signal` for "did this operation abort" gates after the await — there is deliberately no hook-level `aborted` getter), `abort()` cancels the currently-tracked controller for explicit external-cancellation flows that aren't paired with starting a new operation (panel-close, project-id change), and component unmount auto-aborts. The two hooks are orthogonal: `useAbortableSequence` arbitrates response staleness via epoch tokens; `useAbortableAsyncOperation` cancels network requests via `AbortController`. Both can apply to one operation — `useFindReplaceState.search` pairs them to get both guarantees. Hand-rolled `useRef<AbortController>` allocations at consumer call sites are banned, enforced by `migrationStructuralCheck.test.ts` — which also owns the short allowlist of justified second-tier-recovery survivors (consult the test; don't duplicate its census here).
 
 5. **Error codes stay inside the allowlist.** HTTP status codes are 200, 201, 400, 404, 409, 413, 500 (see §API Design). New conditions get an existing code plus a discriminating `error.code` string — never a new status.
 
@@ -149,9 +149,11 @@ synchronous-imperative for timing safety: the lock-down `setEditable(false)`
 (blocks input before the first `await`) and the `inFlightRef` re-entrancy latch.
 `MutationResult` carries `committed_but_unreloaded` as the canonical "server
 committed, display unconfirmed" outcome (2xx `BAD_JSON` on replace/restore,
-reload-GET failure, race-only supersession); it always routes to the persistent
-lock banner. Invariant 2's `setEditable(false)` is now expressed as machine
-intent.
+reload-GET failure, race-only supersession); it routes to the persistent lock
+banner — except the find-replace stale-chapter-drift sub-case
+(`useFindReplaceController`), which re-enables the now-unrelated editor with a
+dismissible notice. Invariant 2's `setEditable(false)` is now expressed as
+machine intent.
 
 **Unified API error mapping.** All client code that surfaces a user-visible
 message from an API error must route through `mapApiError(err, scope)` in
@@ -241,7 +243,7 @@ The `ovid/snapshots-find-and-replace` branch (merged 2026-04-19) bundled two fea
 
 Line count is not a hard limit — a 3,000-line migration can be fine, a 500-line cross-cutting refactor may not be. The shape of the change matters more than the size.
 
-**Exceptions to the one-feature rule require an explicit decision recorded in the phase's decision log; the rule defaults to enforcement.** The 2026-05-25 Phase 4b.3b decision log entry is the first such recorded exception (bundling Cluster B threading with the allowlist sweep). Earlier and subsequent exceptions follow the same machinery: the 2026-04-19 Phase 4b.3 PR bundled sanitizer + CONTRIBUTING.md + Node-engines pin with the unified-error-mapper migration (per Cluster F [I15] in `docs/plans/2026-04-25-4b3a-review-followups-design.md`); the 2026-05-26 Phase 4b.3c three-way split (4b.3c.1/.2/.3) is recorded in `docs/roadmap-decisions/2026-05-26-phase-4b-3c-consumer-recovery-completeness.md`; and the 2026-05-27 Phase 4b.3d bundling of two small refactors plus the docs that codify the consumer pattern is recorded in `docs/roadmap-decisions/2026-05-27-phase-4b-3d-mapper-internals-claude-md-updates.md`.
+**Exceptions to the one-feature rule require an explicit decision recorded in the phase's decision log; the rule defaults to enforcement.** Recorded precedents live in `docs/roadmap-decisions/` (the earliest, Phase 4b.3, is in `docs/plans/2026-04-25-4b3a-review-followups-design.md`) — consult them for precedent rather than re-deriving the policy.
 
 ## Dependency Licenses
 
