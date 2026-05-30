@@ -157,14 +157,16 @@ export function useEditorMutation(args: UseEditorMutationArgs): UseEditorMutatio
         } catch (error) {
           return { ok: false, stage: "flush", error };
         }
-        // Wrap the synchronous setEditable(false) in its own try/catch so a
-        // TipTap mid-remount throw surfaces as a typed stage:"flush" failure
-        // rather than rejecting the returned Promise (S4). All call sites
-        // `await mutation.run(...)` without a try/catch and rely on the
-        // discriminated MutationResult contract — letting the throw escape
-        // would produce an unhandled rejection and bypass every caller's
-        // stage-specific copy. Attribute to "flush" because a locked editor
-        // prevents us from flushing pending changes before the mutation.
+        // Synchronous lock-down before the first await. Routed through
+        // safeSetEditable, which absorbs a TipTap mid-remount throw internally
+        // (logs + returns false) — so the surrounding try/catch is now
+        // belt-and-suspenders: on a swallowed throw the run PROCEEDS rather
+        // than bailing to stage:"flush" (the catch is effectively unreachable
+        // today, retained only in case a future safeSetEditable rethrows, to
+        // preserve the no-unhandled-rejection MutationResult contract). The
+        // data-loss backstop when the lock-down silently fails is EditorPage's
+        // handleSaveLockGated, which no-ops any auto-save PATCH while the lock
+        // banner is up (see editorSafeOps.ts rationale).
         try {
           safeSetEditable(editorRef, false);
         } catch (error) {

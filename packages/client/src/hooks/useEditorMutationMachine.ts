@@ -9,8 +9,16 @@ import { useReducer, useRef, useCallback, useMemo, type Dispatch } from "react";
 export type EditorMutationState = {
   /** Intent; a sync-effect in EditorPage pushes this into TipTap (re-enable). */
   editable: boolean;
-  /** Mutation-busy (canonical/testable). The synchronous re-entrancy latch is
-   * a retained `inFlightRef` in useEditorMutation, kept in lockstep with this. */
+  /** Mutation-busy — the testable mirror of the in-flight state, but NOT yet
+   * consumed in production. Per Decided Q3 the synchronous busy read path is
+   * `inFlightRef` in useEditorMutation (what `mutation.isBusy()` returns and
+   * every production gate reads). `busy` is set true at MUTATION_STARTED and
+   * cleared by every terminal event, BUT the committed path dispatches no
+   * terminal event (so the consumer's COMMITTED_UNRELOADED clears it) and the
+   * stale-supersession sub-case clears it via neither — there `busy` can stay
+   * true until the next mutation. Do NOT gate on `machine.busy`; read
+   * `mutation.isBusy()` until a future phase wires consumers to the machine
+   * and closes that gap. */
   busy: boolean;
   /** Persistent read-only lock banner; null = unlocked. */
   lock: { message: string } | null;
