@@ -1258,6 +1258,7 @@ Pattern analysis across the six `ovid/architecture` code reviews (2026-04-19 to 
 ---
 
 ## Phase 4b.6: E2E Test Isolation
+<!-- plan: n/a — shipped via ovid/devcontainer-and-e2e-isolation without a /roadmap brainstorm; no design doc. Marked Done in the Phase Structure table. Marker present so /roadmap skips this section. -->
 
 ### Goal
 
