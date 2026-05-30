@@ -300,6 +300,23 @@ export function EditorPage() {
       // already ran synchronously inside useEditorMutation for the mutation path,
       // and for the terminal-save-error path (useProjectEditor.onRequestEditorLock)
       // the effect applies it.
+      //
+      // S3 (agentic-review 2026-05-30): the terminal-save-error path is
+      // INTENTIONALLY effect-driven, not synchronous. On `main`
+      // applyReloadFailedLock ran safeSetEditable(false) imperatively; now this
+      // helper only dispatches COMMITTED_UNRELOADED, so the onRequestEditorLock
+      // caller (which does NOT pass through useEditorMutation.run(), so no prior
+      // synchronous lock-down ran) leaves TipTap writable for one render tick
+      // until the reconcile effect commits editable:false. This is ratified by
+      // Decided Q3 (synchronous lock-down is scoped to the mutation paths only)
+      // and is safe because that one-tick window is doubly backstopped: the
+      // 1.5s auto-save debounce makes a stray PATCH in a single tick effectively
+      // unreachable, and handleSaveLockGated no-ops any save the instant
+      // isLocked() flips (the machine mirrors lock to its ref during render, so
+      // isLocked() is true in the very commit this dispatch is processed). Do
+      // not "fix" this by re-adding a synchronous setEditable(false) here — the
+      // mutation paths own that, and adding it here would re-couple what Q3
+      // deliberately split.
       editorMachine.dispatch({ type: "COMMITTED_UNRELOADED", message: bannerMessage });
     },
     [editorMachine],
