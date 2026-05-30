@@ -137,6 +137,16 @@ export default tseslint.config(
           message:
             "Raw UI string in a user-facing JSX attribute template literal. Use packages/client/src/strings.ts (CLAUDE.md §String externalization).",
         },
+        {
+          // Phase 4b.7: ban raw console spies. Every console spy must route through
+          // expectConsole() (packages/client/src/__tests__/expectConsole.ts), which
+          // makes "installed ⇒ asserted" a structural invariant (CLAUDE.md §Testing
+          // Philosophy). The helper file itself carries the sole inline exemption.
+          selector:
+            "CallExpression[callee.object.name='vi'][callee.property.name='spyOn'][arguments.0.name='console']",
+          message:
+            "Spy on console via expectConsole() from src/__tests__/expectConsole.ts (CLAUDE.md §Testing Philosophy). Raw console spies must be asserted; the helper enforces it.",
+        },
       ],
     },
   },

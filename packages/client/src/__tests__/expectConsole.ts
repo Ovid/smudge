@@ -41,8 +41,9 @@ export function expectConsole(method: ConsoleMethod): ConsoleExpectation {
         `Spy on each console method at most once per test.`,
     );
   }
-  // eslint-disable-next-line no-restricted-syntax -- helper implementation: the
-  // one sanctioned raw console spy; everything else routes through here.
+  // helper implementation: the one sanctioned raw console spy; everything else
+  // routes through here.
+  // eslint-disable-next-line no-restricted-syntax -- sole sanctioned raw console spy
   const spy = vi.spyOn(console, method).mockImplementation(() => {});
   const handle: Handle = { method, spy, resolved: false };
   registry.push(handle);
