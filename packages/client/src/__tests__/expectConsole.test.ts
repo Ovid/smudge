@@ -110,3 +110,38 @@ describe("expectConsole — fixed matchers", () => {
     assertConsoleExpectationsSettled();
   });
 });
+
+describe("expectConsole — predicate matchers", () => {
+  it("notCalledMatching passes when no call's first arg contains the substring", () => {
+    const h = expectConsole("warn");
+    console.warn("unrelated message", new Error("x"));
+    h.notCalledMatching(
+      (a) =>
+        typeof a[0] === "string" &&
+        a[0].includes("Failed to load chapter after delete"),
+    );
+    assertConsoleExpectationsSettled();
+  });
+
+  it("notCalledMatching FAILS when a matching call exists (the false-green that notCalledWith would have missed)", () => {
+    const h = expectConsole("warn");
+    // Two-arg call — a one-arg notCalledWith(stringContaining) would pass
+    // trivially here; notCalledMatching must catch it.
+    console.warn("Failed to load chapter after delete", new Error("x"));
+    expect(() =>
+      h.notCalledMatching(
+        (a) =>
+          typeof a[0] === "string" &&
+          a[0].includes("Failed to load chapter after delete"),
+      ),
+    ).toThrow();
+    assertConsoleExpectationsSettled();
+  });
+
+  it("calledMatching passes when at least one call satisfies the predicate", () => {
+    const h = expectConsole("error");
+    console.error("prefix: detail", 42);
+    h.calledMatching((a) => typeof a[0] === "string" && a[0].startsWith("prefix:"));
+    assertConsoleExpectationsSettled();
+  });
+});
