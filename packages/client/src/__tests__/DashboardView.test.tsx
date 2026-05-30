@@ -5,6 +5,7 @@ import { DashboardView } from "../components/DashboardView";
 import { api } from "../api/client";
 import type { ChapterStatusRow } from "@smudge/shared";
 import { pendingUntilAbort } from "./helpers/abortableMocks";
+import { expectConsole } from "./expectConsole";
 
 vi.mock("../api/client", () => ({
   // Needed by errors/apiErrorMapper — `err instanceof ApiRequestError`
@@ -325,8 +326,8 @@ describe("DashboardView", () => {
   });
 
   it("shows error state when API call fails with Error", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = expectConsole("error");
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.dashboard).mockRejectedValue(new Error("Network failure"));
 
     render(
@@ -341,17 +342,13 @@ describe("DashboardView", () => {
     await waitFor(() => {
       expect(screen.getByText("Failed to load dashboard")).toBeInTheDocument();
     });
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to load dashboard:"),
-      expect.any(Error),
-    );
-    errorSpy.mockRestore();
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to load dashboard:"), expect.any(Error));
+    error.silent();
   });
 
   it("shows fallback error message when API rejects with non-Error", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = expectConsole("error");
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.dashboard).mockRejectedValue("some string error");
 
     render(
@@ -366,12 +363,8 @@ describe("DashboardView", () => {
     await waitFor(() => {
       expect(screen.getByText("Failed to load dashboard")).toBeInTheDocument();
     });
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to load dashboard:"),
-      expect.anything(),
-    );
-    errorSpy.mockRestore();
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to load dashboard:"), expect.anything());
+    error.silent();
   });
 
   it("sorts by word count", async () => {
@@ -464,8 +457,8 @@ describe("DashboardView", () => {
   });
 
   it("shows velocity error state when velocity fetch fails", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = expectConsole("error");
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
     vi.mocked(api.projects.velocity).mockRejectedValue(new Error("Network failure"));
 
@@ -484,12 +477,8 @@ describe("DashboardView", () => {
 
     // Error state shows a distinct error message (not the empty-state copy)
     expect(screen.getByText(/unable to load/i)).toBeInTheDocument();
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to load velocity:"),
-      expect.any(Error),
-    );
-    errorSpy.mockRestore();
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to load velocity:"), expect.any(Error));
+    error.silent();
   });
 
   it("preserves prior velocity data when a refresh fetch fails (I3 2026-04-24)", async () => {
@@ -498,8 +487,8 @@ describe("DashboardView", () => {
     // user reading the progress bar sees it vanish after a silent
     // refreshKey bump. useFindReplaceState keeps prior results on
     // transient errors; this should match.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warn = expectConsole("warn");
+    const error = expectConsole("error");
     vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
     // First call succeeds; second fails.
     vi.mocked(api.projects.velocity)
@@ -551,12 +540,12 @@ describe("DashboardView", () => {
       expect(screen.getByRole("progressbar")).toBeInTheDocument();
     });
 
-    warnSpy.mockRestore();
-    errorSpy.mockRestore();
+    warn.called();
+    error.silent();
   });
 
   it("stays silent when velocity fetch is aborted (no error banner)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.dashboard).mockResolvedValue(dashboardData);
     const { ApiRequestError } = await import("../api/client");
     vi.mocked(api.projects.velocity).mockRejectedValue(
@@ -576,9 +565,13 @@ describe("DashboardView", () => {
       expect(screen.getByText("Chapter One")).toBeInTheDocument();
     });
 
-    // No error banner — ABORTED from mapApiError returns message: null
+    // No error banner — ABORTED from mapApiError returns message: null.
+    // clientWarn still fires because the abort guard checks the physical
+    // controller signal (not the error code); the mock rejects without
+    // aborting the controller, so the warn path is reached before
+    // applyMappedError short-circuits on message: null.
     expect(screen.queryByText(/unable to load/i)).not.toBeInTheDocument();
-    warnSpy.mockRestore();
+    warn.called();
   });
 
   it("falls back to status_summary keys when statuses prop is empty", async () => {
