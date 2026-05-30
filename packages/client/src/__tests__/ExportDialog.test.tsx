@@ -3,6 +3,7 @@ import { render, screen, cleanup, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ExportDialog } from "../components/ExportDialog";
 import { api, ApiRequestError } from "../api/client";
+import { expectConsole } from "./expectConsole";
 
 vi.mock("../api/client", () => ({
   api: {
@@ -377,8 +378,8 @@ describe("ExportDialog", () => {
 
   it("does not show cover image selector when images.list fails", async () => {
     const user = userEvent.setup();
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warn = expectConsole("warn");
+    const error = expectConsole("error");
     vi.mocked(api.images.list).mockRejectedValue(new Error("Network error"));
 
     render(<ExportDialog {...defaultProps} />);
@@ -391,8 +392,8 @@ describe("ExportDialog", () => {
     await act(async () => {});
     expect(screen.queryByText("Cover image")).not.toBeInTheDocument();
 
-    warnSpy.mockRestore();
-    errorSpy.mockRestore();
+    warn.silent();
+    error.silent();
   });
 
   // C4 (review 2026-04-24): a real 4xx/5xx on the cover-image fetch
