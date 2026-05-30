@@ -765,10 +765,7 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.project).toBeNull();
-    warn.calledWith(
-      expect.stringContaining("Failed to load project:"),
-      expect.any(Error),
-    );
+    warn.calledWith(expect.stringContaining("Failed to load project:"), expect.any(Error));
   });
 
   it("does not console.warn when loadProject rejects after unmount", async () => {
@@ -848,10 +845,7 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.error).toBe(STRINGS.error.createChapterFailed);
-    warn.calledWith(
-      expect.stringContaining("Failed to create chapter:"),
-      expect.any(Error),
-    );
+    warn.calledWith(expect.stringContaining("Failed to create chapter:"), expect.any(Error));
   });
 
   it("sets error when handleSelectChapter fails", async () => {
@@ -868,10 +862,7 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.error).toBe(STRINGS.error.loadChapterFailed);
-    warn.calledWith(
-      expect.stringContaining("Failed to load chapter:"),
-      expect.any(Error),
-    );
+    warn.calledWith(expect.stringContaining("Failed to load chapter:"), expect.any(Error));
   });
 
   it("calls onError callback when handleDeleteChapter fails (does not set full-page error)", async () => {
@@ -888,10 +879,7 @@ describe("useProjectEditor", () => {
 
     expect(onError).toHaveBeenCalledWith(STRINGS.error.deleteChapterFailed);
     expect(result.current.error).toBeNull();
-    warn.calledWith(
-      expect.stringContaining("Failed to delete chapter:"),
-      expect.any(Error),
-    );
+    warn.calledWith(expect.stringContaining("Failed to delete chapter:"), expect.any(Error));
   });
 
   it("sets activeChapter to null when deleting the last chapter", async () => {
@@ -926,10 +914,7 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.error).toBe(STRINGS.error.reorderFailed);
-    warn.calledWith(
-      expect.stringContaining("Failed to reorder chapters:"),
-      expect.any(Error),
-    );
+    warn.calledWith(expect.stringContaining("Failed to reorder chapters:"), expect.any(Error));
   });
 
   it("applies the requested order on a 2xx-BAD_JSON committed reorder, filtering unknown ids", async () => {
@@ -977,10 +962,7 @@ describe("useProjectEditor", () => {
     expect(result.current.error).toBeNull();
     // Should set inline project title error
     expect(result.current.projectTitleError).toBe(STRINGS.error.updateTitleFailed);
-    warn.calledWith(
-      expect.stringContaining("Failed to update project title:"),
-      expect.any(Error),
-    );
+    warn.calledWith(expect.stringContaining("Failed to update project title:"), expect.any(Error));
   });
 
   // I2 (review 2026-05-25): with Phase 4b.3b threading signals into
@@ -1089,10 +1071,7 @@ describe("useProjectEditor", () => {
 
     expect(onError).toHaveBeenCalledWith(STRINGS.error.renameChapterFailed);
     expect(result.current.error).toBeNull();
-    warn.calledWith(
-      expect.stringContaining("Failed to rename chapter:"),
-      expect.any(Error),
-    );
+    warn.calledWith(expect.stringContaining("Failed to rename chapter:"), expect.any(Error));
   });
 
   it("handleStatusChange updates chapter status optimistically", async () => {
@@ -1217,10 +1196,7 @@ describe("useProjectEditor", () => {
       await result.current.handleStatusChange("ch1", "revised");
     });
 
-    warn.calledWith(
-      "handleStatusChange recovery GET failed:",
-      expect.any(Error),
-    );
+    warn.calledWith("handleStatusChange recovery GET failed:", expect.any(Error));
   });
 
   it("when the handleStatusChange recovery GET is aborted, no console.warn fires (stable across S10 4b.3c.2 fix)", async () => {
@@ -1255,10 +1231,7 @@ describe("useProjectEditor", () => {
       await statusPromise!.catch(() => undefined);
     });
 
-    warn.notCalledWith(
-      "handleStatusChange recovery GET failed:",
-      expect.anything(),
-    );
+    warn.notCalledWith("handleStatusChange recovery GET failed:", expect.anything());
   });
 
   it("handleCreateChapter recovery GET failure warns via devWarn (S10 4b.3c.2)", async () => {
@@ -1285,10 +1258,7 @@ describe("useProjectEditor", () => {
       await result.current.handleCreateChapter();
     });
 
-    warn.calledWith(
-      "handleCreateChapter recovery GET failed:",
-      expect.any(Error),
-    );
+    warn.calledWith("handleCreateChapter recovery GET failed:", expect.any(Error));
   });
 
   it("when the handleCreateChapter recovery GET is aborted, no console.warn fires (stable across S10 4b.3c.2 fix)", async () => {
@@ -1318,10 +1288,7 @@ describe("useProjectEditor", () => {
       await createPromise!.catch(() => undefined);
     });
 
-    warn.notCalledWith(
-      "handleCreateChapter recovery GET failed:",
-      expect.anything(),
-    );
+    warn.notCalledWith("handleCreateChapter recovery GET failed:", expect.anything());
   });
 
   it("handleReorderChapters does not corrupt project B when reorder PATCH for project A resolves mid-switch (S20 4b.3c.2)", async () => {
@@ -1642,10 +1609,7 @@ describe("useProjectEditor", () => {
       await result.current.handleSave({ type: "doc", content: [] });
     });
     expect(result.current.saveStatus).toBe("error");
-    warn.calledWith(
-      expect.stringContaining("Save failed with 4xx:"),
-      expect.any(ApiRequestError),
-    );
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
 
     // Typing new content should NOT overwrite the error status
     act(() => {
@@ -1774,10 +1738,7 @@ describe("useProjectEditor", () => {
     expect(result.current.saveStatus).toBe("error");
     // Should only be called once — no retries on client errors
     expect(api.chapters.update).toHaveBeenCalledTimes(1);
-    warn.calledWith(
-      expect.stringContaining("Save failed with 4xx:"),
-      expect.any(ApiRequestError),
-    );
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
   });
 
   it("handleSave logs 4xx errors with console.warn", async () => {
@@ -1791,10 +1752,7 @@ describe("useProjectEditor", () => {
       await result.current.handleSave({ type: "doc", content: [] });
     });
 
-    warn.calledWith(
-      expect.stringContaining("Save failed"),
-      expect.any(ApiRequestError),
-    );
+    warn.calledWith(expect.stringContaining("Save failed"), expect.any(ApiRequestError));
   });
 
   it("handleSave maps 4xx VALIDATION_ERROR to externalized strings copy (I3)", async () => {
@@ -1816,10 +1774,7 @@ describe("useProjectEditor", () => {
     expect(result.current.saveStatus).toBe("error");
     expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedInvalid);
     expect(result.current.saveErrorMessage).not.toContain("Invalid status: xyz");
-    warn.calledWith(
-      expect.stringContaining("Save failed with 4xx:"),
-      expect.any(ApiRequestError),
-    );
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
   });
 
   it("handleSave maps 413 PAYLOAD_TOO_LARGE to externalized strings copy (I3)", async () => {
@@ -1837,10 +1792,7 @@ describe("useProjectEditor", () => {
 
     expect(result.current.saveStatus).toBe("error");
     expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedTooLarge);
-    warn.calledWith(
-      expect.stringContaining("Save failed with 4xx:"),
-      expect.any(ApiRequestError),
-    );
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
   });
 
   it("handleSave breaks immediately on 2xx BAD_JSON and shows committed copy (I5)", async () => {
@@ -2096,10 +2048,7 @@ describe("useProjectEditor", () => {
     expect(result.current.saveErrorMessage).toBeNull();
     // The stale save's 4xx still logs the diagnostic warn before the
     // token-staleness gate suppresses the user-facing error state.
-    warn.calledWith(
-      expect.stringContaining("Save failed with 4xx:"),
-      expect.any(ApiRequestError),
-    );
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
   });
 
   it("handleSave preserves cached draft on 413 so the user can trim and retry (C1)", async () => {
@@ -2125,10 +2074,7 @@ describe("useProjectEditor", () => {
 
     expect(result.current.saveStatus).toBe("error");
     expect(vi.mocked(clearCachedContent)).not.toHaveBeenCalled();
-    warn.calledWith(
-      expect.stringContaining("Save failed with 4xx:"),
-      expect.any(ApiRequestError),
-    );
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
   });
 
   it("handleSave clears cached draft on VALIDATION_ERROR so retries don't loop forever", async () => {
@@ -2152,10 +2098,7 @@ describe("useProjectEditor", () => {
 
     expect(result.current.saveStatus).toBe("error");
     expect(vi.mocked(clearCachedContent)).toHaveBeenCalledWith("ch1");
-    warn.calledWith(
-      expect.stringContaining("Save failed with 4xx:"),
-      expect.any(ApiRequestError),
-    );
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
   });
 
   it("handleSave preserves cached draft on generic 4xx without a known code", async () => {
@@ -2178,10 +2121,7 @@ describe("useProjectEditor", () => {
 
     expect(result.current.saveStatus).toBe("error");
     expect(vi.mocked(clearCachedContent)).not.toHaveBeenCalled();
-    warn.calledWith(
-      expect.stringContaining("Save failed with 4xx:"),
-      expect.any(ApiRequestError),
-    );
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
   });
 
   it("handleSave clears saveErrorMessage on next save attempt", async () => {
@@ -2200,10 +2140,7 @@ describe("useProjectEditor", () => {
     // STRINGS.editor.saveFailed copy rather than surfacing the raw
     // server message (I3).
     expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailed);
-    warn.calledWith(
-      expect.stringContaining("Save failed with 4xx:"),
-      expect.any(ApiRequestError),
-    );
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
 
     await act(async () => {
       await result.current.handleSave({ type: "doc", content: [] });
@@ -2225,10 +2162,7 @@ describe("useProjectEditor", () => {
     });
     expect(result.current.saveStatus).toBe("error");
     expect(result.current.saveErrorMessage).not.toBeNull();
-    warn.calledWith(
-      expect.stringContaining("Save failed with 4xx:"),
-      expect.any(ApiRequestError),
-    );
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
 
     // Create a new chapter — save state should reset
     const newChapter = {
@@ -2443,10 +2377,7 @@ describe("useProjectEditor", () => {
     // Must NOT have set the full-page error — the replace already succeeded
     // on the server, callers must stay in the editor to retry.
     expect(result.current.error).toBeNull();
-    warn.calledWith(
-      expect.stringContaining("Failed to reload chapter:"),
-      expect.any(Error),
-    );
+    warn.calledWith(expect.stringContaining("Failed to reload chapter:"), expect.any(Error));
   });
 
   it("reloadActiveChapter no-ops when expectedChapterId differs from current active (I2)", async () => {
@@ -2590,10 +2521,7 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.error).toBe(STRINGS.error.loadChapterFailed);
-    warn.calledWith(
-      expect.stringContaining("Failed to reload chapter:"),
-      expect.any(Error),
-    );
+    warn.calledWith(expect.stringContaining("Failed to reload chapter:"), expect.any(Error));
   });
 
   it("handleCreateChapter targets the new project's slug immediately after a URL-driven slug change (I1)", async () => {
@@ -4185,10 +4113,7 @@ describe("useProjectEditor", () => {
 
     expect(onError).toHaveBeenCalledWith(STRINGS.error.reorderFailed);
     expect(result.current.error).toBeNull();
-    warn.calledWith(
-      expect.stringContaining("Failed to reorder chapters:"),
-      expect.any(Error),
-    );
+    warn.calledWith(expect.stringContaining("Failed to reorder chapters:"), expect.any(Error));
   });
 
   it("handleUpdateProjectTitle aborts in-flight PATCH when a newer rename fires (I1 2026-04-24)", async () => {

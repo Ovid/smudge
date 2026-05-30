@@ -971,9 +971,7 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
     const warn = expectConsole("warn");
     const events: EditorMutationEvent[] = [];
     const dispatch = (e: EditorMutationEvent) => events.push(e);
-    const { result } = renderHook(() =>
-      useEditorMutation({ editorRef, projectEditor, dispatch }),
-    );
+    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor, dispatch }));
 
     const res = await result.current.run(async () => {
       editorRef.current = throwingEditor;
@@ -1358,10 +1356,7 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
     }));
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.stage).toBe("committed_but_unreloaded");
-    warn.calledWith(
-      "useEditorMutation: second reloadActiveChapter threw",
-      expect.any(Error),
-    );
+    warn.calledWith("useEditorMutation: second reloadActiveChapter threw", expect.any(Error));
   });
 
   it("locks an editor that mounts between cache-clear and reload (S5)", async () => {
@@ -1446,10 +1441,7 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
         expect(res.data).toEqual({ payload: "committed" });
       }
     }
-    warn.calledWith(
-      "useEditorMutation: reloadActiveChapter threw",
-      expect.any(Error),
-    );
+    warn.calledWith("useEditorMutation: reloadActiveChapter threw", expect.any(Error));
   });
 
   it("re-cancels pending saves on the freshly-mounted editor so a keystroke save can't commit (S1)", async () => {

@@ -925,10 +925,7 @@ describe("EditorPage handleStatusChangeWithError", () => {
     // Pin the devWarn so a future refactor that drops the warn (or
     // changes its context string) breaks the test instead of silently
     // returning to the noisy state.
-    warn.calledWith(
-      "handleStatusChange recovery GET failed:",
-      expect.any(Error),
-    );
+    warn.calledWith("handleStatusChange recovery GET failed:", expect.any(Error));
     // No console.error is emitted on this path (recovery uses devWarn).
     error.silent();
   });

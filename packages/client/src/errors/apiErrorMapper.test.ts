@@ -296,10 +296,7 @@ describe("mapApiError — extras", () => {
     const result = resolveError(err, throwingScope);
     expect(result.message).toBe("messsage");
     expect(result.extras).toBeUndefined();
-    errorSpy.calledWith(
-      "scope.extrasFrom threw; returning undefined:",
-      expect.any(Error),
-    );
+    errorSpy.calledWith("scope.extrasFrom threw; returning undefined:", expect.any(Error));
   });
 });
 

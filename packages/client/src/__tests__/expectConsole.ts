@@ -110,9 +110,7 @@ export function expectConsole(method: ConsoleMethod): ConsoleExpectation {
  * (design §7.1, Finding 3). Safe to call with no args (treats testFailed as
  * false); the global afterEach passes the real signal.
  */
-export function assertConsoleExpectationsSettled(opts?: {
-  testFailed?: boolean;
-}): void {
+export function assertConsoleExpectationsSettled(opts?: { testFailed?: boolean }): void {
   // INVARIANT (load-bearing): splice(0) MUST be the first statement. Clearing
   // the registry before the restore loop, the testFailed check, and any throw
   // guarantees every exit path leaves the registry empty — so a handle can

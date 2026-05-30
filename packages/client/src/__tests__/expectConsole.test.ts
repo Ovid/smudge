@@ -1,8 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import {
-  expectConsole,
-  assertConsoleExpectationsSettled,
-} from "./expectConsole";
+import { expectConsole, assertConsoleExpectationsSettled } from "./expectConsole";
 
 // NOTE: this file deliberately drives the registry by hand (calling
 // assertConsoleExpectationsSettled directly) to prove the guard in isolation.
@@ -98,9 +95,7 @@ describe("expectConsole — fixed matchers", () => {
   });
 
   it("suppresses real console output (asserted via process.stderr, not a console spy)", () => {
-    const stderrSpy = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation(() => true);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const h = expectConsole("warn");
     console.warn("should be swallowed");
     expect(stderrSpy).not.toHaveBeenCalled();
@@ -115,9 +110,7 @@ describe("expectConsole — predicate matchers", () => {
     const h = expectConsole("warn");
     console.warn("unrelated message", new Error("x"));
     h.notCalledMatching(
-      (a) =>
-        typeof a[0] === "string" &&
-        a[0].includes("Failed to load chapter after delete"),
+      (a) => typeof a[0] === "string" && a[0].includes("Failed to load chapter after delete"),
     );
     assertConsoleExpectationsSettled();
   });
@@ -129,9 +122,7 @@ describe("expectConsole — predicate matchers", () => {
     console.warn("Failed to load chapter after delete", new Error("x"));
     expect(() =>
       h.notCalledMatching(
-        (a) =>
-          typeof a[0] === "string" &&
-          a[0].includes("Failed to load chapter after delete"),
+        (a) => typeof a[0] === "string" && a[0].includes("Failed to load chapter after delete"),
       ),
     ).toThrow();
     assertConsoleExpectationsSettled();
@@ -148,18 +139,14 @@ describe("expectConsole — predicate matchers", () => {
 describe("assertConsoleExpectationsSettled — guard semantics", () => {
   it("throws when a handle is installed but never asserted (passing test)", () => {
     expectConsole("warn"); // never resolved
-    expect(() => assertConsoleExpectationsSettled()).toThrow(
-      /installed but never asserted/,
-    );
+    expect(() => assertConsoleExpectationsSettled()).toThrow(/installed but never asserted/);
     // settle already spliced+restored, so the global afterEach sees an empty
     // registry and does not double-fire.
   });
 
   it("does NOT throw on an unresolved handle when the test already failed (non-masking)", () => {
     expectConsole("warn"); // never resolved
-    expect(() =>
-      assertConsoleExpectationsSettled({ testFailed: true }),
-    ).not.toThrow();
+    expect(() => assertConsoleExpectationsSettled({ testFailed: true })).not.toThrow();
   });
 
   it("throwing the same method twice in one test fails immediately", () => {
