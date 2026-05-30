@@ -15,6 +15,7 @@ import {
 import type { ReloadOutcome } from "../hooks/useProjectEditor";
 import type { Chapter } from "@smudge/shared";
 import { clearAllCachedContent } from "./useContentCache";
+import { expectConsole } from "../__tests__/expectConsole";
 
 const STUB_CHAPTER: Chapter = {
   id: "stub",
@@ -683,42 +684,38 @@ describe("useEditorMutation — synchronous setEditable throw (C1)", () => {
     // "editor left writable after a swallowed throw" case is EditorPage's
     // handleSaveLockGated (the save gate short-circuits PATCH while the lock
     // banner is up), not a stage:"flush" bail. The throw is logged once.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const { editorRef, projectEditor } = buildHandles();
-      const editor = editorRef.current!;
-      let throwOnce = true;
-      const err = new Error("editor destroyed");
-      editor.setEditable = vi.fn((_editable: boolean) => {
-        if (throwOnce) {
-          throwOnce = false;
-          throw err;
-        }
-      });
+    const warn = expectConsole("warn");
+    const { editorRef, projectEditor } = buildHandles();
+    const editor = editorRef.current!;
+    let throwOnce = true;
+    const err = new Error("editor destroyed");
+    editor.setEditable = vi.fn((_editable: boolean) => {
+      if (throwOnce) {
+        throwOnce = false;
+        throw err;
+      }
+    });
 
-      const { result } = renderHook(() =>
-        useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
-      );
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
+    );
 
-      const first = await result.current.run(async () => ({
-        clearCacheFor: [],
-        reloadActiveChapter: false,
-        data: undefined,
-      }));
-      // Throw absorbed; the run completes successfully.
-      expect(first).toEqual({ ok: true, data: undefined });
-      expect(warnSpy).toHaveBeenCalledWith("safeSetEditable: setEditable threw", err);
+    const first = await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: false,
+      data: undefined,
+    }));
+    // Throw absorbed; the run completes successfully.
+    expect(first).toEqual({ ok: true, data: undefined });
+    warn.calledWith("safeSetEditable: setEditable threw", err);
 
-      // The latch must have cleared so a follow-up run proceeds normally.
-      const second = await result.current.run(async () => ({
-        clearCacheFor: [],
-        reloadActiveChapter: false,
-        data: undefined,
-      }));
-      expect(second).toEqual({ ok: true, data: undefined });
-    } finally {
-      warnSpy.mockRestore();
-    }
+    // The latch must have cleared so a follow-up run proceeds normally.
+    const second = await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: false,
+      data: undefined,
+    }));
+    expect(second).toEqual({ ok: true, data: undefined });
   });
 
   it("releases inFlightRef in the finally and never re-enables imperatively (A4)", async () => {
@@ -971,34 +968,30 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
       }),
     };
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const events: EditorMutationEvent[] = [];
-      const dispatch = (e: EditorMutationEvent) => events.push(e);
-      const { result } = renderHook(() =>
-        useEditorMutation({ editorRef, projectEditor, dispatch }),
-      );
+    const warn = expectConsole("warn");
+    const events: EditorMutationEvent[] = [];
+    const dispatch = (e: EditorMutationEvent) => events.push(e);
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch }),
+    );
 
-      const res = await result.current.run(async () => {
-        editorRef.current = throwingEditor;
-        return {
-          clearCacheFor: ["ch-1"],
-          reloadActiveChapter: true,
-          reloadChapterId: "ch-1",
-          data: { payload: "committed" } as const,
-        };
-      });
+    const res = await result.current.run(async () => {
+      editorRef.current = throwingEditor;
+      return {
+        clearCacheFor: ["ch-1"],
+        reloadActiveChapter: true,
+        reloadChapterId: "ch-1",
+        data: { payload: "committed" } as const,
+      };
+    });
 
-      expect(res).toEqual({ ok: true, data: { payload: "committed" } });
-      // safeSetEditable logged the swallowed throw.
-      expect(warnSpy).toHaveBeenCalledWith("safeSetEditable: setEditable threw", expect.any(Error));
-      // Cache clear runs (server committed) AND the reload runs (fresh content).
-      expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["ch-1"]);
-      expect(reloadSpy).toHaveBeenCalled();
-      expect(events.map((e) => e.type)).toEqual(["MUTATION_STARTED", "RELOADED"]);
-    } finally {
-      warnSpy.mockRestore();
-    }
+    expect(res).toEqual({ ok: true, data: { payload: "committed" } });
+    // safeSetEditable logged the swallowed throw.
+    warn.calledWith("safeSetEditable: setEditable threw", expect.any(Error));
+    // Cache clear runs (server committed) AND the reload runs (fresh content).
+    expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["ch-1"]);
+    expect(reloadSpy).toHaveBeenCalled();
+    expect(events.map((e) => e.type)).toEqual(["MUTATION_STARTED", "RELOADED"]);
   });
 
   it("returns ok:true on re-lock throw when directive.reloadActiveChapter is false (I1, review 2026-04-21)", async () => {
@@ -1030,35 +1023,31 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
       }),
     };
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const { result } = renderHook(() =>
-        useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
-      );
+    const warn = expectConsole("warn");
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
+    );
 
-      const res = await result.current.run(async () => {
-        editorRef.current = throwingEditor;
-        return {
-          clearCacheFor: ["ch-1"],
-          reloadActiveChapter: false,
-          data: { replaced_count: 0 } as const,
-        };
-      });
+    const res = await result.current.run(async () => {
+      editorRef.current = throwingEditor;
+      return {
+        clearCacheFor: ["ch-1"],
+        reloadActiveChapter: false,
+        data: { replaced_count: 0 } as const,
+      };
+    });
 
-      expect(res.ok).toBe(true);
-      if (res.ok) {
-        expect(res.data).toEqual({ replaced_count: 0 });
-      }
-      // Cache clear still runs — server committed even if 0-replace.
-      expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["ch-1"]);
-      // Reload was not requested by the directive — must not be called.
-      expect(reloadSpy).not.toHaveBeenCalled();
-      // The throw was absorbed and logged by safeSetEditable (the inline
-      // re-lock catch no longer fires for a setEditable throw).
-      expect(warnSpy).toHaveBeenCalledWith("safeSetEditable: setEditable threw", expect.any(Error));
-    } finally {
-      warnSpy.mockRestore();
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.data).toEqual({ replaced_count: 0 });
     }
+    // Cache clear still runs — server committed even if 0-replace.
+    expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["ch-1"]);
+    // Reload was not requested by the directive — must not be called.
+    expect(reloadSpy).not.toHaveBeenCalled();
+    // The throw was absorbed and logged by safeSetEditable (the inline
+    // re-lock catch no longer fires for a setEditable throw).
+    warn.calledWith("safeSetEditable: setEditable threw", expect.any(Error));
   });
 
   it("escalates a re-lock catch to committed_but_unreloaded when active chapter is in clearCacheFor (I5, review 2026-04-21)", async () => {
@@ -1089,32 +1078,30 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
       setEditable: vi.fn(),
     };
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const { result } = renderHook(() =>
-        useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
-      );
+    const warn = expectConsole("warn");
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
+    );
 
-      const res = await result.current.run(async () => {
-        editorRef.current = throwingEditor;
-        return {
-          clearCacheFor: ["ch-1"],
-          reloadActiveChapter: false,
-          data: { replaced_count: 1 } as const,
-        };
-      });
+    const res = await result.current.run(async () => {
+      editorRef.current = throwingEditor;
+      return {
+        clearCacheFor: ["ch-1"],
+        reloadActiveChapter: false,
+        data: { replaced_count: 1 } as const,
+      };
+    });
 
-      expect(res.ok).toBe(false);
-      if (!res.ok && res.stage === "committed_but_unreloaded") {
-        expect(res.data).toEqual({ replaced_count: 1 });
-      } else {
-        throw new Error(`expected stage:'committed_but_unreloaded', got ${JSON.stringify(res)}`);
-      }
-      // Cache clear still runs — same invariant as the ok:true branch.
-      expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["ch-1"]);
-    } finally {
-      warnSpy.mockRestore();
+    expect(res.ok).toBe(false);
+    if (!res.ok && res.stage === "committed_but_unreloaded") {
+      expect(res.data).toEqual({ replaced_count: 1 });
+    } else {
+      throw new Error(`expected stage:'committed_but_unreloaded', got ${JSON.stringify(res)}`);
     }
+    // Cache clear still runs — same invariant as the ok:true branch.
+    expect(vi.mocked(clearAllCachedContent)).toHaveBeenCalledWith(["ch-1"]);
+    // The markClean throw was caught by the re-lock-fail path, which logs.
+    warn.calledWith("useEditorMutation: failed to lock mid-remount editor", expect.any(Error));
   });
 
   it("cancelPendingSaves runs at entry even when entry setEditable(false) throws (S2)", async () => {
@@ -1141,28 +1128,24 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
     };
     const editorRef: MutableRefObject<EditorHandle | null> = { current: throwingEditor };
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const { result } = renderHook(() =>
-        useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
-      );
+    const warn = expectConsole("warn");
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
+    );
 
-      const res = await result.current.run(async () => ({
-        clearCacheFor: [],
-        reloadActiveChapter: false,
-        data: undefined,
-      }));
+    const res = await result.current.run(async () => ({
+      clearCacheFor: [],
+      reloadActiveChapter: false,
+      data: undefined,
+    }));
 
-      // The swallowed throw no longer aborts the run.
-      expect(res).toEqual({ ok: true, data: undefined });
-      // cancelPendingSaves must have run despite the entry setEditable throw —
-      // otherwise a save in backoff still commits post-throw.
-      expect(cancelSpy).toHaveBeenCalled();
-      // safeSetEditable absorbed and logged the throw.
-      expect(warnSpy).toHaveBeenCalledWith("safeSetEditable: setEditable threw", expect.any(Error));
-    } finally {
-      warnSpy.mockRestore();
-    }
+    // The swallowed throw no longer aborts the run.
+    expect(res).toEqual({ ok: true, data: undefined });
+    // cancelPendingSaves must have run despite the entry setEditable throw —
+    // otherwise a save in backoff still commits post-throw.
+    expect(cancelSpy).toHaveBeenCalled();
+    // safeSetEditable absorbed and logged the throw.
+    warn.calledWith("safeSetEditable: setEditable threw", expect.any(Error));
   });
 
   it("S5 late-lock catch logs when the nested cancelPendingSaves throws", async () => {
@@ -1195,25 +1178,21 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
       editorRef.current = throwingLate;
     });
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const { result } = renderHook(() =>
-        useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
-      );
-      const res = await result.current.run(async () => ({
-        clearCacheFor: ["c1"],
-        reloadActiveChapter: false,
-        data: { replaced_count: 0 } as const,
-      }));
-      // Directive said no reload — S5 late-lock failure returns ok:true.
-      expect(res.ok).toBe(true);
-      expect(warnSpy).toHaveBeenCalledWith(
-        "useEditorMutation: cancelPendingSaves threw during S5 late-lock catch",
-        expect.any(Error),
-      );
-    } finally {
-      warnSpy.mockRestore();
-    }
+    const warn = expectConsole("warn");
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
+    );
+    const res = await result.current.run(async () => ({
+      clearCacheFor: ["c1"],
+      reloadActiveChapter: false,
+      data: { replaced_count: 0 } as const,
+    }));
+    // Directive said no reload — S5 late-lock failure returns ok:true.
+    expect(res.ok).toBe(true);
+    warn.calledWith(
+      "useEditorMutation: cancelPendingSaves threw during S5 late-lock catch",
+      expect.any(Error),
+    );
   });
 
   it("main re-lock-fail catch logs when the nested cancelPendingSaves throws", async () => {
@@ -1244,26 +1223,22 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
     };
     const editorRef: MutableRefObject<EditorHandle | null> = { current: null };
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const { result } = renderHook(() =>
-        useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
-      );
-      await result.current.run(async () => {
-        editorRef.current = newEditor;
-        return {
-          clearCacheFor: ["c1"],
-          reloadActiveChapter: false,
-          data: { replaced_count: 0 } as const,
-        };
-      });
-      expect(warnSpy).toHaveBeenCalledWith(
-        "useEditorMutation: cancelPendingSaves threw during re-lock-fail catch",
-        expect.any(Error),
-      );
-    } finally {
-      warnSpy.mockRestore();
-    }
+    const warn = expectConsole("warn");
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
+    );
+    await result.current.run(async () => {
+      editorRef.current = newEditor;
+      return {
+        clearCacheFor: ["c1"],
+        reloadActiveChapter: false,
+        data: { replaced_count: 0 } as const,
+      };
+    });
+    warn.calledWith(
+      "useEditorMutation: cancelPendingSaves threw during re-lock-fail catch",
+      expect.any(Error),
+    );
   });
 
   it("S5 late-lock catch with reload directive promotes to committed_but_unreloaded", async () => {
@@ -1295,33 +1270,29 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
     const reloadSpy = vi.fn(async () => "reloaded" as const);
     projectEditor.reloadActiveChapter = reloadSpy;
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const { result } = renderHook(() =>
-        useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
-      );
-      const res = await result.current.run(async () => ({
-        clearCacheFor: ["c1"],
-        reloadActiveChapter: true,
-        reloadChapterId: "c1",
-        data: { payload: "x" } as const,
-      }));
-      expect(res.ok).toBe(false);
-      if (!res.ok && res.stage === "committed_but_unreloaded") {
-        expect(res.data).toEqual({ payload: "x" });
-      } else {
-        throw new Error(`expected committed_but_unreloaded, got ${JSON.stringify(res)}`);
-      }
-      // The reload was skipped — we can't safely load fresh server state
-      // into an editor we couldn't re-lock.
-      expect(reloadSpy).not.toHaveBeenCalled();
-      expect(warnSpy).toHaveBeenCalledWith(
-        "useEditorMutation: failed to lock late-mounted editor (S5)",
-        expect.any(Error),
-      );
-    } finally {
-      warnSpy.mockRestore();
+    const warn = expectConsole("warn");
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
+    );
+    const res = await result.current.run(async () => ({
+      clearCacheFor: ["c1"],
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
+      data: { payload: "x" } as const,
+    }));
+    expect(res.ok).toBe(false);
+    if (!res.ok && res.stage === "committed_but_unreloaded") {
+      expect(res.data).toEqual({ payload: "x" });
+    } else {
+      throw new Error(`expected committed_but_unreloaded, got ${JSON.stringify(res)}`);
     }
+    // The reload was skipped — we can't safely load fresh server state
+    // into an editor we couldn't re-lock.
+    expect(reloadSpy).not.toHaveBeenCalled();
+    warn.calledWith(
+      "useEditorMutation: failed to lock late-mounted editor (S5)",
+      expect.any(Error),
+    );
   });
 
   it("S5 late-lock throw with reloadActiveChapter:false returns ok:true", async () => {
@@ -1344,21 +1315,19 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
       editorRef.current = throwingLate;
     });
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const { result } = renderHook(() =>
-        useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
-      );
-      const res = await result.current.run(async () => ({
-        clearCacheFor: ["c1"],
-        reloadActiveChapter: false,
-        data: { replaced_count: 0 } as const,
-      }));
-      expect(res.ok).toBe(true);
-      if (res.ok) expect(res.data).toEqual({ replaced_count: 0 });
-    } finally {
-      warnSpy.mockRestore();
-    }
+    const warn = expectConsole("warn");
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
+    );
+    const res = await result.current.run(async () => ({
+      clearCacheFor: ["c1"],
+      reloadActiveChapter: false,
+      data: { replaced_count: 0 } as const,
+    }));
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.data).toEqual({ replaced_count: 0 });
+    // The late-mount setEditable throw is absorbed and logged by safeSetEditable.
+    warn.calledWith("safeSetEditable: setEditable threw", expect.any(Error));
   });
 
   it("second reloadActiveChapter throw surfaces as stage:committed_but_unreloaded (S4)", async () => {
@@ -1377,26 +1346,22 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
       throw new Error("second reload boom");
     });
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const { result } = renderHook(() =>
-        useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
-      );
-      const res = await result.current.run(async () => ({
-        clearCacheFor: ["c1", "c2"],
-        reloadActiveChapter: true,
-        reloadChapterId: "c1",
-        data: { payload: "x" } as const,
-      }));
-      expect(res.ok).toBe(false);
-      if (!res.ok) expect(res.stage).toBe("committed_but_unreloaded");
-      expect(warnSpy).toHaveBeenCalledWith(
-        "useEditorMutation: second reloadActiveChapter threw",
-        expect.any(Error),
-      );
-    } finally {
-      warnSpy.mockRestore();
-    }
+    const warn = expectConsole("warn");
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
+    );
+    const res = await result.current.run(async () => ({
+      clearCacheFor: ["c1", "c2"],
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
+      data: { payload: "x" } as const,
+    }));
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.stage).toBe("committed_but_unreloaded");
+    warn.calledWith(
+      "useEditorMutation: second reloadActiveChapter threw",
+      expect.any(Error),
+    );
   });
 
   it("locks an editor that mounts between cache-clear and reload (S5)", async () => {
@@ -1462,33 +1427,29 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
     });
     projectEditor.reloadActiveChapter = reloadSpy as typeof projectEditor.reloadActiveChapter;
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const { result } = renderHook(() =>
-        useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
-      );
+    const warn = expectConsole("warn");
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
+    );
 
-      const res = await result.current.run(async () => ({
-        clearCacheFor: ["c1"],
-        reloadActiveChapter: true,
-        reloadChapterId: "c1",
-        data: { payload: "committed" } as const,
-      }));
+    const res = await result.current.run(async () => ({
+      clearCacheFor: ["c1"],
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
+      data: { payload: "committed" } as const,
+    }));
 
-      expect(res.ok).toBe(false);
-      if (!res.ok) {
-        expect(res.stage).toBe("committed_but_unreloaded");
-        if (res.stage === "committed_but_unreloaded") {
-          expect(res.data).toEqual({ payload: "committed" });
-        }
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.stage).toBe("committed_but_unreloaded");
+      if (res.stage === "committed_but_unreloaded") {
+        expect(res.data).toEqual({ payload: "committed" });
       }
-      expect(warnSpy).toHaveBeenCalledWith(
-        "useEditorMutation: reloadActiveChapter threw",
-        expect.any(Error),
-      );
-    } finally {
-      warnSpy.mockRestore();
     }
+    warn.calledWith(
+      "useEditorMutation: reloadActiveChapter threw",
+      expect.any(Error),
+    );
   });
 
   it("re-cancels pending saves on the freshly-mounted editor so a keystroke save can't commit (S1)", async () => {
@@ -1516,29 +1477,27 @@ describe("useEditorMutation — mid-mutate editor remount (I3)", () => {
       }),
     };
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const { result } = renderHook(() =>
-        useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
-      );
+    const warn = expectConsole("warn");
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }),
+    );
 
-      await result.current.run(async () => {
-        editorRef.current = throwingEditor;
-        return {
-          clearCacheFor: ["ch-1"],
-          reloadActiveChapter: true,
-          reloadChapterId: "ch-1",
-          data: undefined,
-        };
-      });
+    await result.current.run(async () => {
+      editorRef.current = throwingEditor;
+      return {
+        clearCacheFor: ["ch-1"],
+        reloadActiveChapter: true,
+        reloadChapterId: "ch-1",
+        data: undefined,
+      };
+    });
 
-      const cancelCalls = cancelSpy.mock.calls.length;
-      // At least: the pre-mutate cancelPendingSaves (entry/S2) plus the
-      // post-mutate re-lock cancel on the freshly-mounted editor.
-      expect(cancelCalls).toBeGreaterThanOrEqual(2);
-    } finally {
-      warnSpy.mockRestore();
-    }
+    const cancelCalls = cancelSpy.mock.calls.length;
+    // At least: the pre-mutate cancelPendingSaves (entry/S2) plus the
+    // post-mutate re-lock cancel on the freshly-mounted editor.
+    expect(cancelCalls).toBeGreaterThanOrEqual(2);
+    // The freshly-mounted editor's setEditable throw is absorbed and logged.
+    warn.calledWith("safeSetEditable: setEditable threw", expect.any(Error));
   });
 });
 
