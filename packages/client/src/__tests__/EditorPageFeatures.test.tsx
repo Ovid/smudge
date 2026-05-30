@@ -1291,9 +1291,10 @@ describe("EditorPage find-and-replace confirmation", () => {
       await Promise.resolve();
     });
     expect(screen.getByText(STRINGS.findReplace.replaceSucceededReloadFailed)).toBeInTheDocument();
-    expect(
-      screen.getByRole("textbox", { name: STRINGS.a11y.editorContent }),
-    ).toHaveAttribute("contenteditable", "false");
+    expect(screen.getByRole("textbox", { name: STRINGS.a11y.editorContent })).toHaveAttribute(
+      "contenteditable",
+      "false",
+    );
 
     expect(warnSpy).toHaveBeenCalledWith("Failed to reload chapter:", expect.any(Error));
     warnSpy.mockRestore();
@@ -1326,9 +1327,10 @@ describe("EditorPage find-and-replace confirmation", () => {
     expect(screen.queryByRole("button", { name: STRINGS.editor.refreshButton })).toBeNull();
     // Editor is editable (lock === null reconciled to editable:true).
     await waitFor(() => {
-      expect(
-        screen.getByRole("textbox", { name: STRINGS.a11y.editorContent }),
-      ).toHaveAttribute("contenteditable", "true");
+      expect(screen.getByRole("textbox", { name: STRINGS.a11y.editorContent })).toHaveAttribute(
+        "contenteditable",
+        "true",
+      );
     });
   });
 
@@ -1640,9 +1642,10 @@ describe("EditorPage find-and-replace confirmation", () => {
       await Promise.resolve();
     });
     expect(screen.getByText(STRINGS.findReplace.replaceResponseUnreadable)).toBeInTheDocument();
-    expect(
-      screen.getByRole("textbox", { name: STRINGS.a11y.editorContent }),
-    ).toHaveAttribute("contenteditable", "false");
+    expect(screen.getByRole("textbox", { name: STRINGS.a11y.editorContent })).toHaveAttribute(
+      "contenteditable",
+      "false",
+    );
   });
 
   it("refuses Preview view switch while editor is locked after BAD_JSON (C2)", async () => {
