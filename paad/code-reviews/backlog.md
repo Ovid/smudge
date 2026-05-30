@@ -283,4 +283,3 @@
 - **First seen:** 2026-05-27 on branch `consumer-recovery-independent-fixes` at `a4bb07e`
 - **Last seen:** 2026-05-27 on branch `consumer-recovery-independent-fixes` at `a4bb07e`
 - **Severity:** Suggestion
-

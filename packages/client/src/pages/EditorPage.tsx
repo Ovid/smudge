@@ -327,6 +327,21 @@ export function EditorPage() {
   // ref indirection lets us reference it here without circular declaration.
   applyReloadFailedLockRef.current = applyReloadFailedLock;
 
+  // OOSI1 (agentic-review 2026-05-30): re-assert editor editability after a
+  // committed_but_unreloaded replace that settled on a now-unrelated chapter.
+  // Dispatches MUTATION_SETTLED_SUPERSEDED ({editable:true, busy:false,
+  // lock:null}) — the same terminal state the mutation hook emits when IT
+  // detects supersession — so finalizeReplaceSuccess's stale branch can
+  // re-enable the displayed editor instead of leaving it read-only with only a
+  // dismissible action error. Deps mirror applyReloadFailedLock (the sibling
+  // helper threaded into the same controller): depending on the whole
+  // editorMachine churns this callback's identity per render, which is harmless
+  // for a useCallback (unlike the EDITOR_REMOUNTED effect below, which must key
+  // on the stable dispatch to avoid spuriously re-firing on every transition).
+  const reassertEditorEditable = useCallback(() => {
+    editorMachine.dispatch({ type: "MUTATION_SETTLED_SUPERSEDED" });
+  }, [editorMachine]);
+
   // F-1 decomposition (2026-05-29): the snapshot-restore / onView /
   // onBeforeCreate orchestration. The single mutation instance,
   // actionBusyRef, editor-lock refs, and action banners stay owned here
@@ -374,6 +389,7 @@ export function EditorPage() {
     actionBusyRef,
     isEditorLocked,
     applyReloadFailedLock,
+    reassertEditorEditable,
     setActionError,
     setActionInfo,
     snapshotPanelRef,
