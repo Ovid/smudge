@@ -495,7 +495,10 @@ describe("useEditorMutation — reload superseded (I5)", () => {
       .mockResolvedValueOnce("failed");
     projectEditor.getActiveChapter = vi.fn(() => chapterWithId("c2"));
 
-    const { result } = renderHook(() => useEditorMutation({ editorRef, projectEditor, dispatch: () => {} }));
+    const events: EditorMutationEvent[] = [];
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch: (e) => events.push(e) }),
+    );
     const res = await result.current.run<{ n: number }>(async () => ({
       clearCacheFor: ["c1", "c2"],
       reloadActiveChapter: true,
@@ -504,6 +507,42 @@ describe("useEditorMutation — reload superseded (I5)", () => {
     }));
 
     expect(res).toEqual({ ok: false, stage: "committed_but_unreloaded", data: { n: 5 } });
+    // B5 (race-only supersession): active chapter IS in clearCacheFor so a
+    // second reload fires. When that second reload also fails the hook must
+    // dispatch NO terminal re-enable — MUTATION_STARTED only. The consumer
+    // raises the lock banner (COMMITTED_UNRELOADED) with its own copy.
+    expect(events.map((e) => e.type)).toEqual(["MUTATION_STARTED"]);
+  });
+
+  it("plain supersession (active ∉ clearCacheFor) → ok:true and terminal MUTATION_SETTLED_SUPERSEDED (B5)", async () => {
+    // When the first reload returns "superseded" and the now-active chapter is
+    // NOT in clearCacheFor, no second reload is needed. The mutation committed
+    // server-side but the new editor is on an unrelated chapter — not a
+    // dangerous state. The hook returns ok:true and dispatches the terminal
+    // MUTATION_SETTLED_SUPERSEDED event so the reducer re-enables the editor
+    // and clears any prior lock scoped to the old chapter.
+    const { editorRef, projectEditor } = buildHandles();
+    projectEditor.reloadActiveChapter = vi.fn(async () => "superseded" as const);
+    projectEditor.getActiveChapter = vi.fn(() => chapterWithId("other"));
+
+    const events: EditorMutationEvent[] = [];
+    const { result } = renderHook(() =>
+      useEditorMutation({ editorRef, projectEditor, dispatch: (e) => events.push(e) }),
+    );
+    const res = await result.current.run<{ n: number }>(async () => ({
+      clearCacheFor: ["c2"],
+      reloadActiveChapter: true,
+      reloadChapterId: "c1",
+      data: { n: 1 },
+    }));
+
+    expect(res).toEqual({ ok: true, data: { n: 1 } });
+    // B5: plain supersession ends with MUTATION_SETTLED_SUPERSEDED — editor
+    // re-enabled, no lock banner.
+    expect(events.at(-1)?.type).toBe("MUTATION_SETTLED_SUPERSEDED");
+    expect(events.map((e) => e.type)).toEqual(["MUTATION_STARTED", "MUTATION_SETTLED_SUPERSEDED"]);
+    // Only one reload call — no gratuitous second GET for the unrelated chapter.
+    expect(projectEditor.reloadActiveChapter).toHaveBeenCalledTimes(1);
   });
 
   it("does NOT re-reload when the now-active chapter was not in clearCacheFor (I3)", async () => {
