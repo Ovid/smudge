@@ -4,11 +4,11 @@
  * Handles text that spans multiple text nodes with different marks (formatting).
  */
 
-// Depth cap for walkers — pulled from the zero-dependency tiptap-depth
+// Depth cap for walkers — pulled from the zero-dependency tiptap-safety
 // module directly (NOT via the shared barrel) so a future edit to the
 // cap propagates automatically instead of silently drifting from the
 // schema-side value.
-import { MAX_TIPTAP_DEPTH as MAX_WALK_DEPTH } from "./tiptap-depth";
+import { MAX_TIPTAP_DEPTH as MAX_WALK_DEPTH, CANONICAL_UNSAFE_KEYS } from "./tiptap-safety";
 
 type Mark = { type: string; attrs?: Record<string, unknown> };
 
@@ -488,13 +488,11 @@ function extractContext(flat: string, offset: number, length: number): string {
 /**
  * Recursively serialize a value with sorted object keys so two objects
  * with the same content but different key insertion order compare equal.
- * Used for marks comparison below. Mirrors the UNSAFE_KEYS filter and
- * depth cap from content-hash.ts so prototype-pollution keys in
+ * Used for marks comparison below. Uses the shared CANONICAL_UNSAFE_KEYS
+ * filter and the MAX_TIPTAP_DEPTH cap so prototype-pollution keys in
  * user-supplied mark attrs can't surprise this path, and a pathologically
  * nested attrs structure cannot stack-overflow the walker.
  */
-const CANONICAL_UNSAFE_KEYS = new Set(["__proto__", "prototype", "constructor"]);
-
 function canonicalJSON(value: unknown, depth: number = 0): string {
   if (depth > MAX_WALK_DEPTH) return "null";
   if (value === null || typeof value !== "object") return JSON.stringify(value);
