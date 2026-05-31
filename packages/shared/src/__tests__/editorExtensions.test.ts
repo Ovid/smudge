@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { generateHTML } from "@tiptap/html";
-import { serverEditorExtensions } from "../export/editorExtensions";
+import { editorExtensions } from "../editorExtensions";
 
+// A reference TipTap document exercising every node type the shared
+// extension config is expected to render: bold mark, heading (level 3),
+// bullet list, and blockquote.
 const referenceTipTapDoc = {
   type: "doc",
   content: [
@@ -43,23 +46,12 @@ const referenceTipTapDoc = {
   ],
 };
 
-describe("server editor extensions", () => {
-  it("produces valid HTML from a reference TipTap document", () => {
-    const html = generateHTML(referenceTipTapDoc, serverEditorExtensions);
+describe("shared editor extensions", () => {
+  it("renders a reference TipTap document to valid HTML", () => {
+    const html = generateHTML(referenceTipTapDoc, editorExtensions);
     expect(html).toContain("<strong>world</strong>");
     expect(html).toContain("<h3>A heading</h3>");
     expect(html).toContain("<li>");
     expect(html).toContain("<blockquote>");
-  });
-
-  it("produces identical output to client editor extensions", async () => {
-    // Dynamic path prevents TypeScript from statically resolving the
-    // cross-package import (rootDir constraint), while Vitest resolves
-    // it at runtime.
-    const clientPath = ["../../../client/src", "editorExtensions"].join("/");
-    const { editorExtensions: clientExtensions } = await import(clientPath);
-    const serverHtml = generateHTML(referenceTipTapDoc, serverEditorExtensions);
-    const clientHtml = generateHTML(referenceTipTapDoc, clientExtensions);
-    expect(serverHtml).toBe(clientHtml);
   });
 });

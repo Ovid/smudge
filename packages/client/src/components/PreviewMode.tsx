@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { generateHTML } from "@tiptap/html";
 import { sanitizeEditorHtml } from "../sanitizer";
 import type { Chapter } from "@smudge/shared";
-import { editorExtensions } from "../editorExtensions";
+import { editorExtensions } from "@smudge/shared/editor-extensions";
 import { STRINGS } from "../strings";
 
 interface PreviewModeProps {

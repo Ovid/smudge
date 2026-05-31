@@ -8,7 +8,7 @@ import { ApiRequestError } from "../errors";
 import { clearCachedContent } from "./useContentCache";
 import { safeSetEditable, quiesceEditorForServerOp } from "../utils/editorSafeOps";
 import { sanitizeEditorHtml } from "../sanitizer";
-import { editorExtensions } from "../editorExtensions";
+import { editorExtensions } from "@smudge/shared/editor-extensions";
 import { STRINGS } from "../strings";
 import type { EditorHandle } from "../components/Editor";
 import type { useEditorMutation } from "./useEditorMutation";

@@ -3,7 +3,7 @@ import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import Placeholder from "@tiptap/extension-placeholder";
 import { useEffect, useRef, useCallback } from "react";
-import { editorExtensions } from "../editorExtensions";
+import { editorExtensions } from "@smudge/shared/editor-extensions";
 import { STRINGS } from "../strings";
 import { api } from "../api/client";
 import { mapApiError } from "../errors";
