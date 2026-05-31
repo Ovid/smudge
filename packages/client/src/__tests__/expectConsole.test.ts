@@ -171,9 +171,13 @@ describe("assertConsoleExpectationsSettled — guard semantics", () => {
     expectConsole("error").silent();
     const warnSpy = console.warn as unknown as MockInstance;
     const realWarnRestore = warnSpy.mockRestore.bind(warnSpy);
-    // Make the first handle's restore throw. Without per-handle isolation the
-    // loop aborts here, leaking the error suppressor into the next test.
+    // Make the first handle's restore throw exactly once. Without per-handle
+    // isolation the loop aborts here, leaking the error suppressor into the
+    // next test. The thrower un-sabotages itself before throwing so Vitest's
+    // own post-test mock teardown can't re-trigger it (which would surface as
+    // an unhandled "restore boom").
     warnSpy.mockRestore = () => {
+      warnSpy.mockRestore = realWarnRestore;
       throw new Error("restore boom");
     };
     try {
@@ -182,7 +186,7 @@ describe("assertConsoleExpectationsSettled — guard semantics", () => {
       // ...and the later handle must still have been restored.
       expect(vi.isMockFunction(console.error)).toBe(false);
     } finally {
-      // Undo the warn suppressor ourselves (its restore was sabotaged above).
+      // The guard threw before restoring warn, so restore it ourselves.
       realWarnRestore();
     }
   });
