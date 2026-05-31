@@ -1,5 +1,7 @@
 import { describe, it, expect, expectTypeOf } from "vitest";
-import type { ApiError } from "../types";
+import type { ApiError, Chapter } from "../types";
+import { ChapterStatus } from "../schemas";
+import type { ChapterStatusValue } from "../schemas";
 
 describe("ApiError envelope", () => {
   // The contract is a TYPE contract: the envelope's `error` object must
@@ -51,5 +53,32 @@ describe("ApiError envelope", () => {
     // enforcement signal.
     void _missingMessage;
     void _missingCode;
+  });
+});
+
+describe("ChapterStatusValue", () => {
+  // ChapterStatusValue is the canonical chapter-status type, inferred from
+  // the Zod enum. This pins it to exactly the five known literals so a
+  // refactor that widens it (e.g. back to `string`) fails at typecheck time.
+  it("resolves to exactly the five status literals (type-level)", () => {
+    expectTypeOf<ChapterStatusValue>().toEqualTypeOf<
+      "outline" | "rough_draft" | "revised" | "edited" | "final"
+    >();
+  });
+
+  it("rejects an off-enum literal assigned to Chapter['status'] (type-level)", () => {
+    // Before the field is tightened, Chapter["status"] is `string`, so
+    // "published" IS assignable and the @ts-expect-error below is unused —
+    // tsc reports TS2578. After tightening to ChapterStatusValue the
+    // assignment errors, satisfying the directive. This is the RED→GREEN pin.
+    // @ts-expect-error — "published" is not a ChapterStatusValue
+    const bad: Chapter["status"] = "published";
+    void bad;
+  });
+
+  // Runtime pin so the schema and the inferred type cannot silently drift,
+  // and so this file registers a value-level test alongside the type checks.
+  it("the schema enumerates exactly those five values (runtime)", () => {
+    expect(ChapterStatus.options).toEqual(["outline", "rough_draft", "revised", "edited", "final"]);
   });
 });

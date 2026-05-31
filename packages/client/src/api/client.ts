@@ -4,6 +4,7 @@ import type {
   ProjectWithChapters,
   Chapter,
   ChapterStatusRow,
+  ChapterStatusValue,
   CreateProjectInput,
   ApiError,
   VelocityResponse,
@@ -297,13 +298,17 @@ export const api = {
         chapters: Array<{
           id: string;
           title: string;
-          status: string;
+          status: ChapterStatusValue;
           status_label: string;
           word_count: number;
           updated_at: string;
           sort_order: number;
         }>;
-        status_summary: Record<string, number>;
+        // The server declares status_summary as Record<string, number>; the
+        // client narrows it to the enum here. The asymmetry is deliberate
+        // (JSON boundary) — the shared ChapterStatus enum is the contract both
+        // sides track. Partial because a status with zero chapters is absent.
+        status_summary: Partial<Record<ChapterStatusValue, number>>;
         totals: {
           word_count: number;
           chapter_count: number;
@@ -385,7 +390,7 @@ export const api = {
       data: {
         title?: string;
         content?: Record<string, unknown>;
-        status?: string;
+        status?: ChapterStatusValue;
       },
       signal?: AbortSignal,
     ) =>

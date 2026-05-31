@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import type { Chapter, ChapterStatusRow } from "@smudge/shared";
+import type { Chapter, ChapterStatusRow, ChapterStatusValue } from "@smudge/shared";
 import type { EditorHandle } from "../components/Editor";
 import type { Editor as TipTapEditor } from "@tiptap/react";
 import { STRINGS } from "../strings";
@@ -525,7 +525,7 @@ export function EditorPage() {
   }, [setActionError, statusesOp]);
 
   const handleStatusChangeWithError = useCallback(
-    (chapterId: string, status: string) => {
+    (chapterId: string, status: ChapterStatusValue) => {
       // I4: status PATCHes the same chapter row an in-flight replace may
       // be writing. Allowing it to slip past the busy guard races two
       // writes against the same row. Mirror handleCreateChapterGuarded.

@@ -310,7 +310,7 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     // server never accepted it. The hook accepts an optional
     // seedConfirmedStatus callback so EditorPage can wire it through
     // to useProjectEditor's seeder.
-    const restored = makeChapter({ id: "ch-restored", status: "drafting" });
+    const restored = makeChapter({ id: "ch-restored", status: "rough_draft" });
     const project = makeProject();
     const setProject = vi.fn();
     const navigate = vi.fn();
@@ -337,7 +337,7 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
       await result.current.handleRestore("ch-restored");
     });
 
-    expect(seedConfirmedStatus).toHaveBeenCalledWith("ch-restored", "drafting");
+    expect(seedConfirmedStatus).toHaveBeenCalledWith("ch-restored", "rough_draft");
   });
 
   it("on PROJECT_PURGED (non-committed failure), keeps the chapter in trash and shows error", async () => {

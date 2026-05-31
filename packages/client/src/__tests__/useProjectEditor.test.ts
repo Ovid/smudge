@@ -1075,7 +1075,10 @@ describe("useProjectEditor", () => {
   });
 
   it("handleStatusChange updates chapter status optimistically", async () => {
-    vi.mocked(api.chapters.update).mockResolvedValue({ ...mockChapter1, status: "revised" });
+    vi.mocked(api.chapters.update).mockResolvedValue({
+      ...mockChapter1,
+      status: "revised" as const,
+    });
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
@@ -1092,7 +1095,7 @@ describe("useProjectEditor", () => {
     // When the status change fails, it reloads the project from server
     const reloadedProject = {
       ...mockProject,
-      chapters: [{ ...mockChapter1, status: "outline" }, mockChapter2],
+      chapters: [{ ...mockChapter1, status: "outline" as const }, mockChapter2],
     };
     vi.mocked(api.projects.get)
       .mockResolvedValueOnce(mockProject) // initial load
@@ -1452,7 +1455,10 @@ describe("useProjectEditor", () => {
     // Rapid status clicks used to issue overlapping PATCHes with no
     // ordering guarantee at the server. The signal lets the newer
     // click sever the older one's fetch.
-    vi.mocked(api.chapters.update).mockResolvedValue({ ...mockChapter1, status: "revised" });
+    vi.mocked(api.chapters.update).mockResolvedValue({
+      ...mockChapter1,
+      status: "revised" as const,
+    });
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
@@ -1476,7 +1482,7 @@ describe("useProjectEditor", () => {
     const warn = expectConsole("warn");
     // X = "outline" (from mockChapter1); A success; B fail.
     vi.mocked(api.chapters.update)
-      .mockResolvedValueOnce({ ...mockChapter1, status: "drafting" }) // A succeeds
+      .mockResolvedValueOnce({ ...mockChapter1, status: "edited" as const }) // A succeeds
       .mockRejectedValueOnce(new Error("B boom")); // B fails
     // Fallback GET after B's failure also fails, forcing the local revert.
     vi.mocked(api.projects.get).mockReset();
@@ -1487,22 +1493,22 @@ describe("useProjectEditor", () => {
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
 
-    // A: X → drafting (succeeds)
+    // A: X → edited (succeeds)
     await act(async () => {
-      await result.current.handleStatusChange("ch1", "drafting");
+      await result.current.handleStatusChange("ch1", "edited");
     });
-    expect(result.current.project?.chapters.find((c) => c.id === "ch1")?.status).toBe("drafting");
+    expect(result.current.project?.chapters.find((c) => c.id === "ch1")?.status).toBe("edited");
 
-    // B: drafting → revised (fails; fallback reload also fails)
+    // B: edited → revised (fails; fallback reload also fails)
     await act(async () => {
       await result.current.handleStatusChange("ch1", "revised");
     });
 
-    // Local revert restores the LAST CONFIRMED status ("drafting" from
+    // Local revert restores the LAST CONFIRMED status ("edited" from
     // A's success), NOT the optimistic value that was on screen when B
     // entered. Before the fix this would have restored "outline" or
     // failed differently depending on the closure read.
-    expect(result.current.project?.chapters.find((c) => c.id === "ch1")?.status).toBe("drafting");
+    expect(result.current.project?.chapters.find((c) => c.id === "ch1")?.status).toBe("edited");
     warn.calledWith("handleStatusChange recovery GET failed:", expect.any(Error));
   });
 
@@ -1528,7 +1534,10 @@ describe("useProjectEditor", () => {
   });
 
   it("handleStatusChange updates activeChapter status when it's the active chapter", async () => {
-    vi.mocked(api.chapters.update).mockResolvedValue({ ...mockChapter1, status: "edited" });
+    vi.mocked(api.chapters.update).mockResolvedValue({
+      ...mockChapter1,
+      status: "edited" as const,
+    });
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
@@ -2236,7 +2245,7 @@ describe("useProjectEditor", () => {
     // When Call A fails, the revert path reloads the project — return "outline" (the original)
     const reloadedProject = {
       ...mockProject,
-      chapters: [{ ...mockChapter1, status: "outline" }, mockChapter2],
+      chapters: [{ ...mockChapter1, status: "outline" as const }, mockChapter2],
     };
     vi.mocked(api.projects.get)
       .mockResolvedValueOnce(mockProject) // initial load
@@ -2316,7 +2325,7 @@ describe("useProjectEditor", () => {
     await act(async () => {
       resolveReload({
         ...mockProject,
-        chapters: [{ ...mockChapter1, status: "outline" }, mockChapter2],
+        chapters: [{ ...mockChapter1, status: "outline" as const }, mockChapter2],
       });
       await new Promise((r) => setTimeout(r, 0));
     });
@@ -3662,12 +3671,12 @@ describe("useProjectEditor", () => {
     expect(result.current.project?.chapters.find((c) => c.id === "ch3")).toBeDefined();
 
     await act(async () => {
-      await result.current.handleStatusChange("ch3", "drafting");
+      await result.current.handleStatusChange("ch3", "edited");
     });
 
-    // After the double-failure, the optimistic "drafting" must be
+    // After the double-failure, the optimistic "edited" must be
     // reverted to the seeded baseline ("outline") rather than left
-    // on screen — the server never accepted "drafting".
+    // on screen — the server never accepted "edited".
     const ch3 = result.current.project?.chapters.find((c) => c.id === "ch3");
     expect(ch3?.status).toBe("outline");
     // The status PATCH + recovery-GET double failure logs the recovery
@@ -3761,7 +3770,7 @@ describe("useProjectEditor", () => {
     expect(result.current.project?.chapters.find((c) => c.id === "ch3")).toBeDefined();
 
     await act(async () => {
-      await result.current.handleStatusChange("ch3", "drafting");
+      await result.current.handleStatusChange("ch3", "edited");
     });
 
     // The recovery-path-seeded baseline ("revised") restores after
@@ -3835,7 +3844,7 @@ describe("useProjectEditor", () => {
     // recovery GET. With per-handler refs, the create's signal must
     // remain un-aborted.
     await act(async () => {
-      await result.current.handleStatusChange("ch1", "drafting");
+      await result.current.handleStatusChange("ch1", "edited");
     });
 
     // Status recovery dispatched.

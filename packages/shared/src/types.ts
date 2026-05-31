@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { CreateProjectSchema, ProjectMode } from "./schemas";
+import type { CreateProjectSchema, ProjectMode, ChapterStatusValue } from "./schemas";
 import type { SearchMatch } from "./tiptap-text";
 
 export type ProjectMode = z.infer<typeof ProjectMode>;
@@ -24,7 +24,7 @@ export interface Chapter {
   content: Record<string, unknown> | null;
   sort_order: number;
   word_count: number;
-  status: string;
+  status: ChapterStatusValue;
   status_label?: string;
   created_at: string;
   updated_at: string;
@@ -47,7 +47,7 @@ export interface ProjectWithChapters extends Project {
 }
 
 export interface ChapterStatusRow {
-  status: string;
+  status: ChapterStatusValue;
   sort_order: number;
   label: string;
 }

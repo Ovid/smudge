@@ -9,6 +9,34 @@ Announce: **"Checking roadmap for next unplanned phase…"**
 
 Read @CLAUDE.md.
 
+## Offering Options (applies throughout this skill)
+
+Whenever you present the user with a choice — a scope decision, an
+architectural fork, two ways to resolve a pushback finding, anything
+with more than one path — you **must** format it so a reader without
+the detailed technical context can evaluate it from a business
+perspective. Every such offer includes, for **each** option:
+
+- **Pros** — what this option buys (concretely: which files stay
+  untouched, what safety/clarity is gained, smaller PR, etc.).
+- **Cons** — what it costs (blast radius, test churn, scope risk,
+  maintenance burden, deferred work).
+
+…and then, separately:
+
+- **A recommendation** — name the option you recommend, listed first.
+- **Why** — the reasoning behind the recommendation, in plain terms,
+  tied to the project's stated priorities (e.g. PR-scope discipline,
+  the roadmap's framing, the user's goals). Be skeptical even of your
+  own recommendation: name what would change it.
+
+Do **not** present bare option labels with one-line descriptions and
+no pros/cons. This requirement has been skipped repeatedly; treat it as
+load-bearing. It applies to the `AskUserQuestion` tool (put pros/cons
+and the recommendation in the option `description`s and the question
+text), to inline prose options, and to any discussion during the
+pushback (step 6) and alignment (step 9) reviews.
+
 ## 1. Read the Roadmap
 
 Read `docs/roadmap.md` in full. Each phase heading (## Phase N: …) may have a `<!-- plan: filename.md -->` comment on the line immediately after the `---` separator that follows that phase's section. This comment marks the phase as already brainstormed.

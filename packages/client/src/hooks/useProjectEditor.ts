@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import type { ProjectWithChapters, Chapter } from "@smudge/shared";
+import type { ProjectWithChapters, Chapter, ChapterStatusValue } from "@smudge/shared";
 import { countWords } from "@smudge/shared";
 import { api } from "../api/client";
 import { getCachedContent, setCachedContent, clearCachedContent } from "./useContentCache";
@@ -159,7 +159,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // persisted. Tracking confirmed commits separately lets the revert
   // target the actual server-side value. Parallels
   // confirmedTimezoneRef / confirmedFieldsRef in ProjectSettingsDialog.
-  const confirmedStatusRef = useRef<Record<string, string | undefined>>({});
+  const confirmedStatusRef = useRef<Record<string, ChapterStatusValue | undefined>>({});
   // S1 (review 2026-05-27): one helper for the bulk reseed shape. The
   // three pre-existing call sites (loadProject success, handleCreateChapter
   // committed-recovery, and the public replaceConfirmedStatusesFromProject
@@ -177,7 +177,7 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
   // replaceConfirmedStatusesFromProject above IS memoized; the
   // asymmetry was visible after the I4 (4b.3c.3) change. Ref is
   // stable, so empty deps is correct.
-  const seedConfirmedStatus = useCallback((id: string, status: string) => {
+  const seedConfirmedStatus = useCallback((id: string, status: ChapterStatusValue) => {
     confirmedStatusRef.current[id] = status;
   }, []);
   // F-2 decomposition (2026-05-29): the per-handler recovery AbortControllers

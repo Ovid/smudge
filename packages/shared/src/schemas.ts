@@ -8,6 +8,7 @@ export { MAX_TIPTAP_DEPTH, validateTipTapDepth };
 export const ProjectMode = z.enum(["fiction", "nonfiction"]);
 
 export const ChapterStatus = z.enum(["outline", "rough_draft", "revised", "edited", "final"]);
+export type ChapterStatusValue = z.infer<typeof ChapterStatus>;
 
 export const CreateProjectSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(500, "Title is too long"),

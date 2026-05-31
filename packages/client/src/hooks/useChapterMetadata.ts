@@ -5,6 +5,7 @@ import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
 import { STRINGS } from "../strings";
 import { mapApiError, applyMappedError, devWarn, isApiError, clientWarn } from "../errors";
 import type { ChapterMetadataDeps } from "./useProjectEditor.types";
+import type { ChapterStatusValue } from "@smudge/shared";
 
 // Chapter-metadata seam of useProjectEditor (F-2 decomposition, 2026-05-29):
 // project-title editing, chapter status changes, and chapter rename. These
@@ -160,7 +161,7 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
   );
 
   const handleStatusChange = useCallback(
-    async (chapterId: string, status: string, onError?: (message: string) => void) => {
+    async (chapterId: string, status: ChapterStatusValue, onError?: (message: string) => void) => {
       const token = statusChangeSeq.start();
       // I2 (review 2026-05-27 round 2, sweep): capture project id at
       // entry. The catch's applyMappedError tail falls back to setError

@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import type { Chapter, ProjectWithChapters } from "@smudge/shared";
+import type { Chapter, ChapterStatusValue, ProjectWithChapters } from "@smudge/shared";
 import { api } from "../api/client";
 import { mapApiError, applyMappedError, devWarn, clientWarn, clientError } from "../errors";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
@@ -12,7 +12,7 @@ export interface UseTrashManagerOptions {
   // cache that handleStatusChange's local-revert fallback reads. Without
   // it, a later status PATCH on the restored row double-failing would
   // skip the local revert and leave the optimistic status on screen.
-  seedConfirmedStatus?: (id: string, status: string) => void;
+  seedConfirmedStatus?: (id: string, status: ChapterStatusValue) => void;
   // I4 (4b.3c.3): bulk reseed of the confirmed-status cache from a fresh
   // ProjectWithChapters snapshot. Used by handleRestore's committed-
   // recovery branch after a 200 BAD_JSON / RESTORE_READ_FAILURE, where

@@ -119,6 +119,14 @@ Wait for `make e2e` to finish (or kill it) before running cleanup.
 
 **Chapter titles are DB metadata**, not part of TipTap content. Prevents word count inflation and accidental deletion.
 
+**Chapter status is a closed type.** `ChapterStatusValue`
+(`z.infer<typeof ChapterStatus>`, `packages/shared/src/schemas.ts`) is the
+canonical type for a chapter's status across shared and client code — derive
+from it; never re-declare status as `string`. The server's internal DB-row
+types (`ChapterRow` et al.) intentionally keep `status: string` at the SQLite
+persistence boundary, casting to `ChapterStatusValue` only where they cross into
+a shared type (e.g. `toChapterStatus`).
+
 **Soft delete everywhere.** Projects and chapters use a `deleted_at` timestamp. All queries must filter `deleted_at IS NULL`. Trash view allows 30-day recovery; background purge on server startup.
 
 **Auto-save with retry.** 1.5s debounce, 3 retries with exponential backoff (2s/4s/8s), persistent "Unable to save" warning on total failure, `beforeunload` guard, client-side cache holds unsaved content until server confirms. On chapter switch, immediate save bypasses debounce.

@@ -58,7 +58,7 @@ const dashboardData = {
     {
       id: "ch-1",
       title: "Chapter One",
-      status: "outline",
+      status: "outline" as const,
       status_label: "Outline",
       word_count: 500,
       updated_at: "2026-03-28T10:00:00Z",
@@ -67,7 +67,7 @@ const dashboardData = {
     {
       id: "ch-2",
       title: "Chapter Two",
-      status: "rough_draft",
+      status: "rough_draft" as const,
       status_label: "Rough Draft",
       word_count: 1200,
       updated_at: "2026-03-29T10:00:00Z",
@@ -604,7 +604,7 @@ describe("DashboardView", () => {
         {
           id: "ch-1",
           title: "Chapter One",
-          status: "revised",
+          status: "revised" as const,
           status_label: "Revised",
           word_count: 500,
           updated_at: "2026-03-28T10:00:00Z",
@@ -613,7 +613,7 @@ describe("DashboardView", () => {
         {
           id: "ch-2",
           title: "Chapter Two",
-          status: "outline",
+          status: "outline" as const,
           status_label: "Outline",
           word_count: 1200,
           updated_at: "2026-03-29T10:00:00Z",

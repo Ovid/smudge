@@ -1,5 +1,5 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type { Chapter, ProjectWithChapters } from "@smudge/shared";
+import type { Chapter, ChapterStatusValue, ProjectWithChapters } from "@smudge/shared";
 
 // Shared types for useProjectEditor and the chapter-CRUD / chapter-metadata
 // sub-hooks it composes (F-2 decomposition, 2026-05-29). Kept in a leaf
@@ -39,7 +39,7 @@ export interface ChapterCrudDeps {
   activeChapterRef: MutableRefObject<Chapter | null>;
   projectRef: MutableRefObject<ProjectWithChapters | null>;
   projectSlugRef: MutableRefObject<string | undefined>;
-  confirmedStatusRef: MutableRefObject<Record<string, string | undefined>>;
+  confirmedStatusRef: MutableRefObject<Record<string, ChapterStatusValue | undefined>>;
   onProjectNotFoundRef: MutableRefObject<(() => void) | undefined>;
   // Cancels any in-flight save (sequence + controller + backoff sleep) — owned
   // by the parent save pipeline; every chapter-state transition routes save
@@ -62,6 +62,6 @@ export interface ChapterMetadataDeps {
   activeChapterRef: MutableRefObject<Chapter | null>;
   projectRef: MutableRefObject<ProjectWithChapters | null>;
   projectSlugRef: MutableRefObject<string | undefined>;
-  confirmedStatusRef: MutableRefObject<Record<string, string | undefined>>;
+  confirmedStatusRef: MutableRefObject<Record<string, ChapterStatusValue | undefined>>;
   onRequestEditorLockRef: MutableRefObject<((message: string) => void) | undefined>;
 }
