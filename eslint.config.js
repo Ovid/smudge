@@ -142,8 +142,24 @@ export default tseslint.config(
           // expectConsole() (packages/client/src/__tests__/expectConsole.ts), which
           // makes "installed ⇒ asserted" a structural invariant (CLAUDE.md §Testing
           // Philosophy). The helper file itself carries the sole inline exemption.
+          // Two selectors cover the bare-identifier (`console`) and member-access
+          // (`globalThis.console` / `window.console`) first-arg forms. Known gap:
+          // an aliased or destructured `spyOn` slips both selectors — that is the
+          // runtime backstop's job, not the lint's. A bypass-form raw spy never
+          // registers with the helper, so it is never resolved; the runtime guard
+          // (assertConsoleExpectationsSettled) simply leaves the real console
+          // method in place and the suppression does not take effect. The ban is
+          // "direct-form lint + runtime backstop," not a structural-impossibility
+          // proof.
           selector:
             "CallExpression[callee.object.name='vi'][callee.property.name='spyOn'][arguments.0.name='console']",
+          message:
+            "Spy on console via expectConsole() from src/__tests__/expectConsole.ts (CLAUDE.md §Testing Philosophy). Raw console spies must be asserted; the helper enforces it.",
+        },
+        {
+          // Member-access first arg: vi.spyOn(globalThis.console, …) / window.console.
+          selector:
+            "CallExpression[callee.object.name='vi'][callee.property.name='spyOn'][arguments.0.property.name='console']",
           message:
             "Spy on console via expectConsole() from src/__tests__/expectConsole.ts (CLAUDE.md §Testing Philosophy). Raw console spies must be asserted; the helper enforces it.",
         },
