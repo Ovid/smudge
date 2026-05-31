@@ -242,11 +242,11 @@ Robustness details:
   throws (or fails an assertion) before resolving its handle would
   otherwise double-report: the real failure _and_ a spurious
   unresolved-handle error — noise precisely during red-phase TDD and when
-  bisecting a regression. So `assertConsoleExpectationsSettled()` first
-  checks whether the current test already failed (via
-  `expect.getState()` — `currentTestName` plus the failed-assertion
-  signal) and, if so, restores spies + clears the registry **without**
-  throwing. It throws only for a **green-but-unasserted** handle, which is
+  bisecting a regression. So `assertConsoleExpectationsSettled()` takes a
+  `testFailed` flag: the global `afterEach` reads `ctx.task.result?.state`
+  (`=== "fail"`) — Vitest sets it before user `afterEach` hooks run — and
+  passes it in. When it is set the guard restores spies + clears the
+  registry **without** throwing. It throws only for a **green-but-unasserted** handle, which is
   the case it exists to catch. The original failure is therefore never
   masked, because the guard does not compete with it. (A test in §8 proves
   both halves: green-but-unasserted → throws; failed-then-unresolved →
