@@ -107,8 +107,11 @@ export function expectConsole(method: ConsoleMethod): ConsoleExpectation {
  * Restore all spies and clear the registry. Throw if any handle was installed
  * but never asserted — UNLESS the test already failed (opts.testFailed), in
  * which case stay silent so the guard never competes with the real failure
- * (design §7.1, Finding 3). Safe to call with no args (treats testFailed as
- * false); the global afterEach passes the real signal.
+ * (design §7.1, Finding 3). A bare call (no args) assumes a passing test and
+ * so treats testFailed as false — the fail-loud direction: it can surface an
+ * unasserted-handle error but can never mask one. The global afterEach always
+ * passes the real per-test signal; only direct callers (e.g. this helper's own
+ * tests) invoke it bare.
  */
 export function assertConsoleExpectationsSettled(opts?: { testFailed?: boolean }): void {
   // INVARIANT (load-bearing): splice(0) MUST be the first statement. Clearing
@@ -118,7 +121,16 @@ export function assertConsoleExpectationsSettled(opts?: { testFailed?: boolean }
   // expectConsole() registration (design §7.1). Do not move it below a throwable
   // statement: that would resurrect the leak this ordering rules out.
   const handles = registry.splice(0);
-  for (const h of handles) h.spy.mockRestore();
+  // Isolate each restore: a single throwing mockRestore() must not abort the
+  // loop, or every later handle's suppressing spy would leak into the next
+  // test — the exact failure class this infrastructure exists to prevent.
+  for (const h of handles) {
+    try {
+      h.spy.mockRestore();
+    } catch {
+      // Keep restoring the rest; a broken restore is not worth a leaked spy.
+    }
+  }
   if (opts?.testFailed) return;
   const unresolved = handles.filter((h) => !h.resolved);
   if (unresolved.length > 0) {

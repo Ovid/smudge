@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, type MockInstance } from "vitest";
 import { expectConsole, assertConsoleExpectationsSettled } from "./expectConsole";
 
 // NOTE: this file deliberately drives the registry by hand (calling
@@ -163,6 +163,28 @@ describe("assertConsoleExpectationsSettled — guard semantics", () => {
     h.silent();
     assertConsoleExpectationsSettled();
     expect(console.warn).toBe(original); // restored
+  });
+
+  it("isolates a failing spy restore so the remaining spies still restore", () => {
+    // Both handles resolved, so the only thing under test is the restore loop.
+    expectConsole("warn").silent();
+    expectConsole("error").silent();
+    const warnSpy = console.warn as unknown as MockInstance;
+    const realWarnRestore = warnSpy.mockRestore.bind(warnSpy);
+    // Make the first handle's restore throw. Without per-handle isolation the
+    // loop aborts here, leaking the error suppressor into the next test.
+    warnSpy.mockRestore = () => {
+      throw new Error("restore boom");
+    };
+    try {
+      // The thrown restore must not escape the guard...
+      expect(() => assertConsoleExpectationsSettled()).not.toThrow();
+      // ...and the later handle must still have been restored.
+      expect(vi.isMockFunction(console.error)).toBe(false);
+    } finally {
+      // Undo the warn suppressor ourselves (its restore was sabotaged above).
+      realWarnRestore();
+    }
   });
 });
 
