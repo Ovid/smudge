@@ -91,10 +91,33 @@ remain `string`.)
   status: string)` signatures → `status: ChapterStatusValue`; `selectStatus(status: string)`
   → `ChapterStatusValue`.
 - `hooks/useChapterMetadata.ts`: `handleStatusChange(chapterId, status, onError?)`
-  status param → `ChapterStatusValue` (flows through `useProjectEditor` /
-  `useChapterCrud` re-exports unchanged).
+  status param → `ChapterStatusValue`. **Also** the optimistic-revert path:
+  `previousStatus` is read from `confirmedStatusRef` and spread back as
+  `{ ...c, status: previousStatus }`; once `Chapter.status` is a union, that
+  override is only type-clean if the ref stores the union (see next bullet).
+- `hooks/useProjectEditor.ts` + `hooks/useProjectEditor.types.ts`: the
+  status-confirmation ref and its seeder, **surfaced by pushback finding [1]**.
+  `confirmedStatusRef: MutableRefObject<Record<string, string | undefined>>`
+  (declared once in `useProjectEditor.ts` and twice in the `.types.ts` prop
+  interfaces) → `Record<string, ChapterStatusValue | undefined>`; and
+  `seedConfirmedStatus(id, status: string)` param → `ChapterStatusValue`. Without
+  this, the revert spread above is a TS2322. These files were missing from the
+  original change list.
+- `components/DashboardView.tsx`: **surfaced by pushback finding [2]**. The
+  fetch-failed fallback builds `const effectiveStatuses: ChapterStatusRow[]` from
+  `Object.entries(status_summary).map(([status]) => ({ status, … }))`.
+  `Object.entries` keys are always `string`, so this needs an explicit cast
+  (`status: status as ChapterStatusValue`) at that derive-from-keys boundary —
+  the value genuinely came from a server-validated summary. Audit the file's
+  defensive branches while here (finding [3]): `statusSortOrder[a.status] ?? null`
+  and `STATUS_COLORS[s.status] ?? "#999"` become statically dead once the keys
+  are a closed union (same situation as the Sidebar `|| "outline"` note); **leave
+  them untouched** as harmless defensive runtime code. `Object.values(status_summary)
+  .reduce(…)` and `status_summary[s.status] ?? 0` stay live and type-clean because
+  `Partial<Record<…>>` indexing yields `number | undefined`.
 - `pages/EditorPage.tsx`: `handleStatusChangeWithError(chapterId, status)` →
-  `ChapterStatusValue`.
+  `ChapterStatusValue` (flows through `useProjectEditor` / `useChapterCrud`
+  re-exports unchanged otherwise).
 - `api/client.ts`:
   - `chapters.update` payload `status?: string` → `status?: ChapterStatusValue`
     (a **write** — this is what pushes the safety end-to-end through the handler
@@ -103,6 +126,13 @@ remain `string`.)
     `ChapterStatusValue`; `status_summary: Record<string, number>` →
     `Partial<Record<ChapterStatusValue, number>>` (honestly models a sparse
     summary; existing code already uses `?? 0`).
+  - **Intentional client/server asymmetry (finding [6]):** the server's
+    `DashboardResponse.status_summary` stays `Record<string, number>` while this
+    client inline type narrows it. The shared `ChapterStatus` enum is the single
+    source of truth, but this endpoint re-declares its shape inline, so add a
+    short code comment at the client inline type noting the asymmetry is
+    deliberate (JSON boundary) and that the enum is the contract both sides
+    track.
 
 ### 3. Server (DB-boundary only)
 
@@ -142,6 +172,13 @@ Add to that file (or a sibling):
    and the inferred type cannot silently drift and the test file registers a
    runtime test.
 
+**RED gate command (finding [5]):** the RED state for test #2 manifests **only**
+under `tsc -b` — i.e. `npm run typecheck` (or `make typecheck` / the typecheck
+phase of `make all`) — **not** under `npm test`, because Vitest/Vite transpiles
+tests and never runs `tsc` (the existing `types.test.ts` documents this). The
+implementation plan must specify `npm run typecheck` as the command that
+demonstrates RED; running only `npm test` would show misleading green.
+
 **Regression net:** all existing behavioral suites (chapters, Sidebar,
 DashboardView, useProjectEditor) must stay green — they prove zero runtime
 change. `make all` (lint-check, format-check, typecheck, coverage, e2e) green at
@@ -149,11 +186,29 @@ PR close.
 
 ## Expected Test Churn
 
-Test fixtures using bare `status: "outline"` literals are fine — a string
-literal is assignable to the union under a union contextual type. The only edits
-expected are any test-local helper that explicitly declares a `status: string`
-parameter and feeds a genuinely-`string` value into a tightened slot; these are
-surfaced by `tsc` and fixed as found. No bulk rewrite anticipated.
+The earlier blanket claim that "fixtures are fine" was wrong (pushback finding
+[4]) and is corrected here:
+
+- **Bare valid literals are fine.** `status: "outline"` etc. in a `Chapter`-typed
+  fixture remain assignable to the union under a union contextual type.
+- **Off-enum literals break — and that is the point.** A required step is to
+  `grep` the test suites for status literals and reconcile any that are not one
+  of the five enum values. At least one exists today:
+  `packages/client/src/__tests__/useTrashManager.test.ts:313` calls
+  `makeChapter({ id: "ch-restored", status: "drafting" })`. `"drafting"` was never
+  a valid status — a typo the loose `string` type has been silently hiding. The
+  tightening turns it into a TS2322; fix the fixture to a valid status
+  (`"rough_draft"`, preserving the test's intent of a non-default status). This is
+  a latent-bug fix the phase legitimately surfaces, not churn to be avoided.
+- **`status: string`-typed helpers.** Any test-local helper that explicitly
+  declares a `status: string` parameter and feeds a genuinely-`string` value into
+  a tightened slot is surfaced by `tsc` and fixed as found.
+
+Net: more than the original "no bulk rewrite" estimate (the revert-ref retyping
+in finding [1] and the DashboardView cast in finding [2] are production edits,
+not test edits), but still bounded, mechanical, and fully enumerated above. The
+authoritative fallout list is whatever `npm run typecheck` reports — the plan
+should treat a clean `tsc -b` as the completeness check for the sweep.
 
 ## Notable Micro-Decision
 
