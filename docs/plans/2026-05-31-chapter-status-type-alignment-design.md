@@ -207,15 +207,22 @@ The earlier blanket claim that "fixtures are fine" was wrong (pushback finding
 
 - **Bare valid literals are fine.** `status: "outline"` etc. in a `Chapter`-typed
   fixture remain assignable to the union under a union contextual type.
-- **Off-enum literals break — and that is the point.** A required step is to
-  `grep` the test suites for status literals and reconcile any that are not one
-  of the five enum values. At least one exists today:
-  `packages/client/src/__tests__/useTrashManager.test.ts:313` calls
-  `makeChapter({ id: "ch-restored", status: "drafting" })`. `"drafting"` was never
-  a valid status — a typo the loose `string` type has been silently hiding. The
-  tightening turns it into a TS2322; fix the fixture to a valid status
-  (`"rough_draft"`, preserving the test's intent of a non-default status). This is
-  a latent-bug fix the phase legitimately surfaces, not churn to be avoided.
+- **Off-enum literals break — and that is the point.** Several invalid status
+  literals exist in the test suites today, hidden by the loose `string` type, and
+  the tightening turns each into a TS2322. Known cases: `useTrashManager.test.ts`
+  (a `"drafting"` fixture **and** a matching `toHaveBeenCalledWith(..., "drafting")`
+  assertion — both must change together) and `useProjectEditor.test.ts` (multiple
+  `"drafting"` stand-in statuses across the I21 revert regression tests, in
+  typechecked `handleStatusChange(..., "drafting")` calls and a `mockResolvedValueOnce`).
+  Each is fixed to a valid status that preserves the test's intent. These are
+  latent-bug fixes the phase legitimately surfaces, not churn to be avoided.
+- **Do not "fix" intentional invalid inputs.** Negative/validation tests
+  deliberately feed bad status values to assert rejection
+  (`schemas.test.ts` `safeParse({ status: "published" })`,
+  `chapters.test.ts` `.send({ status: "invalid_status" })`). These are untyped
+  request/parse inputs, do not break typecheck, and must be left intact. Likewise
+  server-row literals and unrelated `status` discriminants (snapshot
+  `"created"/"duplicate"`, health `"ok"`) are out of scope.
 - **`status: string`-typed helpers.** Any test-local helper that explicitly
   declares a `status: string` parameter and feeds a genuinely-`string` value into
   a tightened slot is surfaced by `tsc` and fixed as found.
