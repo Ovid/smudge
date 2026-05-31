@@ -17,7 +17,7 @@ import { expect, type Page } from "@playwright/test";
  * test gets the robust wait rather than re-deriving the default-timeout
  * version (or a one-off shorter override) per spec.
  */
-export const EDITOR_READY_TIMEOUT = 15_000;
+const EDITOR_READY_TIMEOUT = 15_000;
 
 /**
  * Wait for the editor to be mounted and visible, with the generous

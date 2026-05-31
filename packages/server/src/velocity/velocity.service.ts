@@ -19,7 +19,7 @@ export function formatDateFromParts(parts: Intl.DateTimeFormatPart[], tz: string
   return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 }
 
-export async function getTodayDate(): Promise<string> {
+async function getTodayDate(): Promise<string> {
   const store = getProjectStore();
   const row = await store.findSettingByKey("timezone");
   const tz = safeTimezone(row?.value || "UTC");

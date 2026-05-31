@@ -13,14 +13,14 @@ import {
 
 // --- Transaction control-flow errors ---
 
-export class ParentPurgedError extends Error {
+class ParentPurgedError extends Error {
   constructor() {
     super("The parent project has been permanently deleted");
     this.name = "ParentPurgedError";
   }
 }
 
-export class ChapterPurgedError extends Error {
+class ChapterPurgedError extends Error {
   constructor() {
     super("This chapter has been permanently deleted");
     this.name = "ChapterPurgedError";
