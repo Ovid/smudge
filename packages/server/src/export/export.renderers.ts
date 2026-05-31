@@ -1,6 +1,6 @@
 import { generateHTML } from "@tiptap/html";
 import TurndownService from "turndown";
-import { serverEditorExtensions } from "./editorExtensions";
+import { editorExtensions } from "@smudge/shared/editor-extensions";
 import { resolveImagesInHtml, type ImageSource } from "./image-resolver";
 import { escapeHtml } from "./html-escape";
 import { logger } from "../logger";
@@ -33,7 +33,7 @@ export interface RenderOptions {
 export function chapterContentToHtml(content: Record<string, unknown> | null): string {
   if (!content) return "";
   try {
-    return generateHTML(content, serverEditorExtensions);
+    return generateHTML(content, editorExtensions);
   } catch (err) {
     logger.warn({ err }, "Failed to render chapter content to HTML during export");
     return "";
