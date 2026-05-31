@@ -49,8 +49,9 @@ array) rather than test-enforced. No behavior change, no user-visible change.
     subpath pattern, which exists precisely to keep environment-/dependency-heavy
     code out of the main barrel.
   - Add to `dependencies`: `@tiptap/starter-kit`, `@tiptap/extension-heading`,
-    `@tiptap/extension-image` (all `^2.27.2`).
-  - Add to `devDependencies`: `@tiptap/html` (for the smoke test).
+    `@tiptap/extension-image`, and `@tiptap/core` (all `^2.27.2`).
+  - Add to `devDependencies`: `@tiptap/html` and `@tiptap/pm` (both `^2.27.2`,
+    for the smoke test).
 - The array is **not** re-exported from `index.ts`. This keeps
   TipTap/ProseMirror out of the main `@smudge/shared` barrel, so server modules
   that import only `countWords()` or a Zod schema do not transitively reference
@@ -59,10 +60,24 @@ array) rather than test-enforced. No behavior change, no user-visible change.
 **Rationale (export surface):** A subpath export keeps the heavy editor-stack
 dependency graph (StarterKit → ProseMirror) out of the shared barrel that pure
 utilities live in. The repo already established this pattern with
-`./node-fs-helpers`. The architectural signal is honest: "importing this pulls
-in the editor stack." Bundlers tree-shake, so the runtime cost of putting it in
-the barrel would usually be nil — but the boundary-clarity cost is real, and a
-subpath entry is cheap.
+`./node-fs-helpers` (consumed by `playwright.config.ts` under tsx/Node).
+The architectural signal is honest: "importing this pulls in the editor stack."
+Bundlers tree-shake, so the runtime cost of putting it in the barrel would
+usually be nil — but the boundary-clarity cost is real, and a subpath entry is
+cheap.
+
+**Rationale (dependency closure):** `shared` declares the full closure of what
+its editor-extension code imports, not just the directly-`import`ed packages.
+`@tiptap/extension-heading` and `@tiptap/extension-image` peer-depend on
+`@tiptap/core`, and the smoke test's `@tiptap/html` peer-depends on
+`@tiptap/core` and `@tiptap/pm` — so `core` is a direct dependency and `pm` a
+devDependency, even though no source line `import`s them by name. This is a
+deliberate divergence from `packages/client/package.json`, which omits
+`@tiptap/core` and relies on workspace hoisting to resolve it. `shared` is now
+the single authoritative home for the editor config; the package that owns the
+source of truth should declare a self-contained dependency set rather than lean
+on the accident of npm's (non-deterministic) hoisting layout. The client's
+looser declaration is pre-existing and out of scope for this phase.
 
 ### 2. Delete local files, repoint consumers
 
@@ -114,13 +129,21 @@ entire point of the phase.
 
 ## Risks and Verification
 
-- **Subpath resolution under Vite + tsc + Vitest.** The existing
-  `./node-fs-helpers` subpath proves the `exports`-map pattern resolves in this
-  repo, but it may be exercised only server-side today. The new
-  `./editor-extensions` subpath is consumed by the **client** (Vite) as well, so
-  implementation must confirm Vite resolves the workspace-package subpath. This
-  is verified by `make all`: the client production build (Vite), server
-  typecheck, and all three Vitest suites must pass.
+- **Subpath resolution in the Vite production build.** The existing
+  `./node-fs-helpers` subpath proves the `exports`-map pattern resolves under
+  **tsx/Node** (it is consumed by `playwright.config.ts`) and under
+  `moduleResolution: "bundler"` (tsc). It has **never** been resolved in the
+  **Vite client build**, which is exactly where the three new client consumers
+  (`Editor.tsx`, `PreviewMode.tsx`, `useSnapshotController.ts`) live. Vite's dev
+  server (esbuild) and its production build (Rollup) resolve workspace-package
+  `exports` subpaths through different code paths, so a subpath that resolves in
+  typecheck + dev-server + Vitest can still fail `vite build`.
+
+  Critically, `make all` (`lint-check format-check typecheck cover e2e`) does
+  **not** run the production build — `cover` is Vitest and `e2e` runs against
+  the Vite **dev** server. Therefore `make build` (`vite build`) is a **required
+  verification gate** for this phase, separate from `make all` (see Definition
+  of Done). Running only `make all` would leave this risk untested.
 - **`serverEditorExtensions` rename.** The only server consumer
   (`export.renderers.ts`) switches from `serverEditorExtensions` to
   `editorExtensions`. The typechecker catches any missed reference.
@@ -162,4 +185,7 @@ features.
   two local `editorExtensions.ts` files are deleted.
 - The server parity test is retired; a smoke test lives in `shared`.
 - `make all` green at PR close.
+- **`make build` (Vite production build) green at PR close** — required gate, as
+  `make all` does not exercise the Vite production build where the new subpath's
+  one residual resolution risk lives.
 - No behavior change visible to the user.
