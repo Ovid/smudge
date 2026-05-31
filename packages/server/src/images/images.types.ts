@@ -16,7 +16,3 @@ export interface UpdateImageData {
   source?: string;
   license?: string;
 }
-
-export interface ImageWithUsage extends ImageRow {
-  used_in_chapters: Array<{ id: string; title: string }>;
-}
