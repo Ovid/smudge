@@ -17,13 +17,7 @@
  */
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  copyFileSync,
-  renameSync,
-  rmSync,
-} from "node:fs";
+import { existsSync, mkdirSync, copyFileSync, renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { computeCacheKey, validateNodeMajor, orchestrate } from "./native-cache.mjs";
@@ -40,13 +34,21 @@ if (!nodeCheck.ok) {
     process.exit(2);
   }
   if (nodeCheck.reason === "unsupported-range") {
-    console.error(`→ engines.node = ${pkg.engines?.node} is not a single-major form ensure-native supports.`);
+    console.error(
+      `→ engines.node = ${pkg.engines?.node} is not a single-major form ensure-native supports.`,
+    );
     console.error('   Supported: "22", "22.x", "22.5.0", "^22.5", "~22.5".');
-    console.error('   Multi-major ranges ("22 || 24") would silently pin to the first major; update scripts/native-cache.mjs to iterate allowed majors if broadening is intentional.');
+    console.error(
+      '   Multi-major ranges ("22 || 24") would silently pin to the first major; update scripts/native-cache.mjs to iterate allowed majors if broadening is intentional.',
+    );
     process.exit(2);
   }
-  console.error(`→ Active Node v${process.versions.node} major (${nodeCheck.actual}) does not match engines.node (${pkg.engines?.node}).`);
-  console.error(`   Run: fnm use ${nodeCheck.expected}  (or nvm use ${nodeCheck.expected})  before \`make test/cover/e2e/dev\`.`);
+  console.error(
+    `→ Active Node v${process.versions.node} major (${nodeCheck.actual}) does not match engines.node (${pkg.engines?.node}).`,
+  );
+  console.error(
+    `   Run: fnm use ${nodeCheck.expected}  (or nvm use ${nodeCheck.expected})  before \`make test/cover/e2e/dev\`.`,
+  );
   process.exit(1);
 }
 
@@ -77,11 +79,9 @@ const cacheBinaryPath = (k) => join(cacheRoot, k, "better_sqlite3.node");
 /** Load better-sqlite3 in an isolated child `node` so a crash can't take us down. */
 function probe() {
   try {
-    execFileSync(
-      process.execPath,
-      ["-e", "new (require('better-sqlite3'))(':memory:').close()"],
-      { stdio: "ignore" },
-    );
+    execFileSync(process.execPath, ["-e", "new (require('better-sqlite3'))(':memory:').close()"], {
+      stdio: "ignore",
+    });
     return true;
   } catch {
     return false;
@@ -103,7 +103,9 @@ function atomicCopy(src, dest) {
 
 /** I5: rebuild from source — no remote .node binary is fetched. */
 function rebuild() {
-  console.error(`→ better-sqlite3 binary won't load and no cached binary matched; rebuilding from source for Node ${process.versions.node} on ${process.platform}/${process.arch}...`);
+  console.error(
+    `→ better-sqlite3 binary won't load and no cached binary matched; rebuilding from source for Node ${process.versions.node} on ${process.platform}/${process.arch}...`,
+  );
   console.error("  (one-time cost per platform; no remote .node binary fetched)");
   try {
     execFileSync("npm", ["rebuild", "better-sqlite3", "--build-from-source"], {
@@ -114,9 +116,13 @@ function rebuild() {
   } catch {
     console.error("");
     console.error("npm rebuild --build-from-source failed. Possible causes:");
-    console.error("  - Missing C++ toolchain — install 'build-essential' (Linux) or Xcode CLT (macOS)");
+    console.error(
+      "  - Missing C++ toolchain — install 'build-essential' (Linux) or Xcode CLT (macOS)",
+    );
     console.error("  - Missing python3 — required by node-gyp");
-    console.error(`  - Active Node version (${process.versions.node}) differs from engines.node — verify with 'node --version'`);
+    console.error(
+      `  - Active Node version (${process.versions.node}) differs from engines.node — verify with 'node --version'`,
+    );
     console.error("  - Try 'rm -rf node_modules && npm install' to start clean");
     console.error("");
     console.error("  See the npm/node-gyp stderr above for the actual error.");
@@ -142,10 +148,16 @@ if (outcome === "rebuild-failed") {
 if (outcome === "rebuilt-but-unloadable") {
   console.error("");
   console.error("→ npm rebuild succeeded but the resulting binary still won't dlopen.");
-  console.error("  Active Node major matches engines.node (verified above), so the cause is likely:");
-  console.error("    - Stale node-gyp cache (try: rm -rf ~/.cache/node-gyp && rm -rf node_modules/better-sqlite3 && npm install better-sqlite3)");
+  console.error(
+    "  Active Node major matches engines.node (verified above), so the cause is likely:",
+  );
+  console.error(
+    "    - Stale node-gyp cache (try: rm -rf ~/.cache/node-gyp && rm -rf node_modules/better-sqlite3 && npm install better-sqlite3)",
+  );
   console.error("    - Multiple .node copies left in node_modules from an interrupted install");
-  console.error("    - Missing system shared libraries the build linked against (check ldd / otool -L on the .node)");
+  console.error(
+    "    - Missing system shared libraries the build linked against (check ldd / otool -L on the .node)",
+  );
   console.error("    - Incomplete extraction — partial files in node_modules/better-sqlite3");
   process.exit(1);
 }

@@ -2,7 +2,15 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "rootDir": "."
+    "rootDir": ".",
+    "allowJs": true,
+    "checkJs": true
   },
-  "include": ["playwright.config.ts", "e2e/**/*.ts", "vitest.config.ts"]
+  "include": [
+    "playwright.config.ts",
+    "e2e/**/*.ts",
+    "vitest.config.ts",
+    "scripts/*.mjs",
+    "scripts/vitest.config.ts"
+  ]
 }

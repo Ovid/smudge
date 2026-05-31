@@ -10,12 +10,12 @@ Last audited: 2026-04-15
 
 ## Summary
 
-| License | Count | Commercial use | Ships in production |
-|---------|-------|----------------|---------------------|
-| MIT | ~52 | Yes, unrestricted | Most dependencies |
-| Apache-2.0 | 3 | Yes, unrestricted | Yes (DOMPurify in client; others dev-only) |
-| SIL OFL 1.1 | 2 | Yes, bundling permitted | Yes (fonts) |
-| MPL-2.0 | 1 | Yes, with file-level copyleft | No (dev only) |
+| License     | Count | Commercial use                | Ships in production                        |
+| ----------- | ----- | ----------------------------- | ------------------------------------------ |
+| MIT         | ~52   | Yes, unrestricted             | Most dependencies                          |
+| Apache-2.0  | 3     | Yes, unrestricted             | Yes (DOMPurify in client; others dev-only) |
+| SIL OFL 1.1 | 2     | Yes, bundling permitted       | Yes (fonts)                                |
+| MPL-2.0     | 1     | Yes, with file-level copyleft | No (dev only)                              |
 
 **All dependencies are safe for commercial use.** No GPL, AGPL, SSPL,
 or other strong-copyleft licenses are present.
@@ -27,51 +27,51 @@ or other strong-copyleft licenses are present.
 ### packages/shared
 
 | Package | License | Notes |
-|---------|---------|-------|
-| zod | MIT | |
+| ------- | ------- | ----- |
+| zod     | MIT     |       |
 
 ### packages/server
 
-| Package | License | Notes |
-|---------|---------|-------|
-| better-sqlite3 | MIT | |
-| express | MIT | |
-| helmet | MIT | |
-| knex | MIT | |
-| multer | MIT | Multipart form-data handling for image uploads |
-| @tiptap/core | MIT | TipTap editor core (server-side HTML generation) |
-| @tiptap/extension-heading | MIT | Heading extension for generateHTML() |
-| @tiptap/extension-image | MIT | Image node support for generateHTML() |
-| @tiptap/html | MIT | Server-side HTML generation from TipTap JSON |
-| @tiptap/pm | MIT | ProseMirror peer dependency for TipTap |
-| @tiptap/starter-kit | MIT | Standard extension bundle for generateHTML() |
-| pino | MIT | Structured logging |
-| docx | MIT | Programmatic Word (.docx) generation |
-| epub-gen-memory | MIT | EPUB generation from HTML content |
-| turndown | MIT | HTML-to-Markdown conversion for export |
-| uuid | MIT | |
+| Package                   | License | Notes                                            |
+| ------------------------- | ------- | ------------------------------------------------ |
+| better-sqlite3            | MIT     |                                                  |
+| express                   | MIT     |                                                  |
+| helmet                    | MIT     |                                                  |
+| knex                      | MIT     |                                                  |
+| multer                    | MIT     | Multipart form-data handling for image uploads   |
+| @tiptap/core              | MIT     | TipTap editor core (server-side HTML generation) |
+| @tiptap/extension-heading | MIT     | Heading extension for generateHTML()             |
+| @tiptap/extension-image   | MIT     | Image node support for generateHTML()            |
+| @tiptap/html              | MIT     | Server-side HTML generation from TipTap JSON     |
+| @tiptap/pm                | MIT     | ProseMirror peer dependency for TipTap           |
+| @tiptap/starter-kit       | MIT     | Standard extension bundle for generateHTML()     |
+| pino                      | MIT     | Structured logging                               |
+| docx                      | MIT     | Programmatic Word (.docx) generation             |
+| epub-gen-memory           | MIT     | EPUB generation from HTML content                |
+| turndown                  | MIT     | HTML-to-Markdown conversion for export           |
+| uuid                      | MIT     |                                                  |
 
 ### packages/client
 
-| Package | License | Notes |
-|---------|---------|-------|
-| @dnd-kit/core | MIT | |
-| @dnd-kit/modifiers | MIT | |
-| @dnd-kit/sortable | MIT | |
-| @dnd-kit/utilities | MIT | |
-| @fontsource/cormorant-garamond | OFL-1.1 | See [Fonts](#fonts) |
-| @fontsource-variable/dm-sans | OFL-1.1 | See [Fonts](#fonts) |
-| @tiptap/extension-heading | MIT | |
-| @tiptap/extension-image | MIT | Image node support for editor and export |
-| @tiptap/extension-placeholder | MIT | |
-| @tiptap/html | MIT | |
-| @tiptap/pm | MIT | |
-| @tiptap/react | MIT | |
-| @tiptap/starter-kit | MIT | |
-| dompurify | MPL-2.0 OR Apache-2.0 | We elect **Apache-2.0**. See [DOMPurify](#dompurify) |
-| react | MIT | |
-| react-dom | MIT | |
-| react-router-dom | MIT | |
+| Package                        | License               | Notes                                                |
+| ------------------------------ | --------------------- | ---------------------------------------------------- |
+| @dnd-kit/core                  | MIT                   |                                                      |
+| @dnd-kit/modifiers             | MIT                   |                                                      |
+| @dnd-kit/sortable              | MIT                   |                                                      |
+| @dnd-kit/utilities             | MIT                   |                                                      |
+| @fontsource/cormorant-garamond | OFL-1.1               | See [Fonts](#fonts)                                  |
+| @fontsource-variable/dm-sans   | OFL-1.1               | See [Fonts](#fonts)                                  |
+| @tiptap/extension-heading      | MIT                   |                                                      |
+| @tiptap/extension-image        | MIT                   | Image node support for editor and export             |
+| @tiptap/extension-placeholder  | MIT                   |                                                      |
+| @tiptap/html                   | MIT                   |                                                      |
+| @tiptap/pm                     | MIT                   |                                                      |
+| @tiptap/react                  | MIT                   |                                                      |
+| @tiptap/starter-kit            | MIT                   |                                                      |
+| dompurify                      | MPL-2.0 OR Apache-2.0 | We elect **Apache-2.0**. See [DOMPurify](#dompurify) |
+| react                          | MIT                   |                                                      |
+| react-dom                      | MIT                   |                                                      |
+| react-router-dom               | MIT                   |                                                      |
 
 ---
 
@@ -79,16 +79,17 @@ or other strong-copyleft licenses are present.
 
 All dev dependencies are MIT or Apache-2.0, with one exception:
 
-| Package | License | Notes |
-|---------|---------|-------|
-| @axe-core/playwright | MPL-2.0 | Dev-only (a11y testing). See [axe-core](#axe-core) |
-| @playwright/test | Apache-2.0 | |
-| typescript | Apache-2.0 | |
-| jszip | MIT OR GPL-3.0-or-later | Dev + transitive production (via docx, epub-gen-memory). We elect **MIT**. See [JSZip](#jszip) |
-| eslint, prettier, vitest, vite, tailwindcss, jsdom, etc. | MIT | |
-| pino-pretty | MIT | Dev-only (structured log formatting) |
-| @types/multer | MIT | TypeScript types for multer (dev-only) |
-| @testing-library/\*, @types/\*, @vitejs/\* | MIT | |
+| Package                                                  | License                 | Notes                                                                                                                                            |
+| -------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| @axe-core/playwright                                     | MPL-2.0                 | Dev-only (a11y testing). See [axe-core](#axe-core)                                                                                               |
+| @playwright/test                                         | Apache-2.0              |                                                                                                                                                  |
+| typescript                                               | Apache-2.0              |                                                                                                                                                  |
+| jszip                                                    | MIT OR GPL-3.0-or-later | Dev + transitive production (via docx, epub-gen-memory). We elect **MIT**. See [JSZip](#jszip)                                                   |
+| globals                                                  | MIT                     | Node/browser globals lists for ESLint flat config; promoted from transitive to direct devDependency because eslint.config.js imports it directly |
+| eslint, prettier, vitest, vite, tailwindcss, jsdom, etc. | MIT                     |                                                                                                                                                  |
+| pino-pretty                                              | MIT                     | Dev-only (structured log formatting)                                                                                                             |
+| @types/multer                                            | MIT                     | TypeScript types for multer (dev-only)                                                                                                           |
+| @testing-library/\*, @types/\*, @vitejs/\*               | MIT                     |                                                                                                                                                  |
 
 ---
 
@@ -107,6 +108,7 @@ Both bundled typefaces use the **SIL Open Font License 1.1**:
   buttons, labels, dialogs, status indicators).
 
 The OFL explicitly permits:
+
 - Bundling and embedding with software (condition 2)
 - Commercial use, provided fonts are not sold standalone
 - No copyleft on the application itself

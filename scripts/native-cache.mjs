@@ -36,9 +36,7 @@
  */
 export function validateNodeMajor(enginesNode, actualNodeVersion) {
   if (!enginesNode) return { ok: false, reason: "missing" };
-  const m = String(enginesNode).match(
-    /^[\^~]?(\d+)(?:\.(?:\d+|x))?(?:\.(?:\d+|x))?$/,
-  );
+  const m = String(enginesNode).match(/^[\^~]?(\d+)(?:\.(?:\d+|x))?(?:\.(?:\d+|x))?$/);
   const expected = m?.[1];
   if (!expected) return { ok: false, reason: "unsupported-range" };
   const actual = actualNodeVersion.split(".")[0] ?? actualNodeVersion;
@@ -83,16 +81,8 @@ export function computeCacheKey({ version, platform, arch, abiVersion }) {
  * @returns {OrchestrateOutcome}
  */
 export function orchestrate(deps) {
-  const {
-    key,
-    probe,
-    cacheHas,
-    restoreFromCache,
-    saveToCache,
-    deleteCacheEntry,
-    rebuild,
-    log,
-  } = deps;
+  const { key, probe, cacheHas, restoreFromCache, saveToCache, deleteCacheEntry, rebuild, log } =
+    deps;
 
   // Happy path: binary already loads. Warm the cache (for the other platform's
   // future benefit) if we haven't stored this exact binary yet.

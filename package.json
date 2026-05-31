@@ -15,10 +15,10 @@
     "test": "npm test -w packages/shared && npm test -w packages/server && npm test -w packages/client",
     "test:watch": "vitest --config vitest.config.ts",
     "typecheck": "tsc -b packages/shared packages/server packages/client && tsc --noEmit -p tsconfig.tooling.json",
-    "lint": "eslint --fix --max-warnings 0 packages/ e2e/ playwright.config.ts vitest.config.ts",
-    "lint:check": "eslint --max-warnings 0 packages/ e2e/ playwright.config.ts vitest.config.ts",
-    "format": "prettier --write \"packages/**/*.{ts,tsx,json,css}\" \"e2e/**/*.ts\" playwright.config.ts vitest.config.ts \"tsconfig*.json\"",
-    "format:check": "prettier --check \"packages/**/*.{ts,tsx,json,css}\" \"e2e/**/*.ts\" playwright.config.ts vitest.config.ts \"tsconfig*.json\""
+    "lint": "eslint --fix --max-warnings 0 packages/ e2e/ scripts/ playwright.config.ts vitest.config.ts",
+    "lint:check": "eslint --max-warnings 0 packages/ e2e/ scripts/ playwright.config.ts vitest.config.ts",
+    "format": "prettier --write \"packages/**/*.{ts,tsx,json,css}\" \"e2e/**/*.ts\" \"scripts/**/*.{mjs,ts}\" playwright.config.ts vitest.config.ts \"tsconfig*.json\"",
+    "format:check": "prettier --check \"packages/**/*.{ts,tsx,json,css}\" \"e2e/**/*.ts\" \"scripts/**/*.{mjs,ts}\" playwright.config.ts vitest.config.ts \"tsconfig*.json\""
   },
   "overrides": {
     "@types/express": "4.17.25",
@@ -35,6 +35,7 @@
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "14.0.0",
     "prettier": "^3.8.1",
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.57.2"
