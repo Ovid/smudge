@@ -1,6 +1,7 @@
 /**
- * Zero-dependency module holding the TipTap depth cap and its structural
- * validator. Broken out of schemas.ts so client-side modules that only
+ * Zero-dependency module holding TipTap structural-safety limits: the
+ * depth cap, its structural validator, and the prototype-pollution
+ * unsafe-key set. Broken out of schemas.ts so client-side modules that only
  * need the constant (e.g. countWords in wordcount.ts) don't have to pull
  * in Zod and the full schema graph through the import barrel. Tree-
  * shakers SHOULD eliminate unused schema code, but sibling imports
@@ -34,3 +35,21 @@ export function validateTipTapDepth(node: unknown, depth: number = 0): boolean {
   }
   return true;
 }
+
+/**
+ * Keys that would mutate an object's prototype chain when assigned via
+ * bracket access. TipTapDocSchema uses .passthrough(), so content read from
+ * the DB can legitimately carry any key — the canonicalization paths strip
+ * these so a crafted `{"__proto__": {...}}` attrs value cannot poison the
+ * result. Hashing/comparison proceeds with the key absent.
+ *
+ * Shared by tiptap-text.ts (canonicalJSON / marks comparison) and
+ * content-hash.ts (canonicalize / snapshot hashing) so the two defenses
+ * cannot drift apart. Typed ReadonlySet so neither consumer can mutate the
+ * single shared instance out from under the other.
+ */
+export const CANONICAL_UNSAFE_KEYS: ReadonlySet<string> = new Set([
+  "__proto__",
+  "prototype",
+  "constructor",
+]);
