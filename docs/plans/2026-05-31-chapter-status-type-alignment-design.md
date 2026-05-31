@@ -147,6 +147,22 @@ remain `string`.)
   `Record<string, number>` (server-internal; the wire is JSON, so client/server
   type asymmetry across the boundary is acceptable and already the norm).
 
+### 4. CLAUDE.md note (deliverable, not afterthought)
+
+Add a short invariant to `CLAUDE.md` §Key Architecture Decisions so a future
+change cannot silently re-widen the status type (the regression this phase
+exists to prevent), scoped to stay accurate about the server boundary:
+
+> **Chapter status is a closed type.** `ChapterStatusValue`
+> (`z.infer<typeof ChapterStatus>`, `packages/shared/src/schemas.ts`) is the
+> canonical type for a chapter's status across shared and client code — derive
+> from it; never re-declare status as `string`. The server's internal DB-row
+> types (`ChapterRow` et al.) intentionally keep `status: string` at the SQLite
+> persistence boundary, casting to `ChapterStatusValue` only where they cross
+> into a shared type (e.g. `toChapterStatus`).
+
+This is a task in the implementation plan, landing in the same PR as the code.
+
 ## Testing — RED → GREEN for a type-only change
 
 Precedent: `packages/shared/src/__tests__/types.test.ts` already uses
@@ -226,7 +242,9 @@ objects, in which case note and resolve minimally.
   (exhaustive color map).
 - One server DB-boundary cast in `toChapterStatus()`.
 - Type-assertion test landed (RED→GREEN demonstrated).
-- `tsc` green; any caller using an off-enum literal fixed.
+- `tsc` green (`npm run typecheck` is the authoritative completeness check for
+  the sweep); any caller using an off-enum literal fixed.
+- `CLAUDE.md` §Key Architecture Decisions carries the closed-status-type note.
 - `make all` green.
 - No behavior change visible to the user.
 
