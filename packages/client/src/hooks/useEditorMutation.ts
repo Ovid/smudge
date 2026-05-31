@@ -6,8 +6,6 @@ import { clearAllCachedContent } from "./useContentCache";
 import { safeSetEditable } from "../utils/editorSafeOps";
 import { clientWarn } from "../errors";
 
-export type MutationStage = "flush" | "mutate" | "committed_but_unreloaded" | "busy";
-
 // Discriminated union so the type system forces reloadChapterId whenever
 // reloadActiveChapter is true. Without this, a caller that set
 // reloadActiveChapter: true without reloadChapterId would arm the
