@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { ProjectSettingsDialog } from "../components/ProjectSettingsDialog";
 import { api, ApiRequestError } from "../api/client";
 import { pendingUntilAbort } from "./helpers/abortableMocks";
+import { expectConsole } from "./expectConsole";
 
 vi.mock("../api/client", async () => {
   const actual = await vi.importActual<typeof import("../api/client")>("../api/client");
@@ -191,7 +192,7 @@ describe("ProjectSettingsDialog", () => {
   });
 
   it("fires onUpdate on possiblyCommitted (2xx BAD_JSON) branch (I8)", async () => {
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const err = expectConsole("error");
     vi.mocked(api.projects.update).mockRejectedValue(
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
     );
@@ -217,11 +218,11 @@ describe("ProjectSettingsDialog", () => {
     await waitFor(() => {
       expect(onUpdate).toHaveBeenCalled();
     });
-    errSpy.mockRestore();
+    err.calledWith("Failed to save project setting:", expect.any(Error));
   });
 
   it("logs error when save fails", async () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const err = expectConsole("error");
     vi.mocked(api.projects.update).mockRejectedValue(new Error("save failed"));
     const user = userEvent.setup();
     render(
@@ -239,9 +240,8 @@ describe("ProjectSettingsDialog", () => {
     fireEvent.blur(input, { relatedTarget: screen.getByLabelText(/deadline/i) });
 
     await waitFor(() => {
-      expect(spy).toHaveBeenCalledWith("Failed to save project setting:", expect.any(Error));
+      err.calledWith("Failed to save project setting:", expect.any(Error));
     });
-    spy.mockRestore();
   });
 
   it("returns null when open is false", () => {
@@ -321,7 +321,7 @@ describe("ProjectSettingsDialog", () => {
   // to confirmed, surface the committed copy, and fire onUpdate so the
   // parent refreshes.
   it("on possiblyCommitted (2xx BAD_JSON), keeps optimistic timezone and fires onUpdate (C2)", async () => {
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const err = expectConsole("error");
     vi.mocked(api.settings.get).mockResolvedValue({ timezone: "UTC" });
     vi.mocked(api.settings.update).mockRejectedValue(
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
@@ -349,13 +349,13 @@ describe("ProjectSettingsDialog", () => {
     await waitFor(() => {
       expect(onUpdate).toHaveBeenCalled();
     });
-    errSpy.mockRestore();
+    err.calledWith("Failed to save timezone:", expect.any(Error));
   });
 
   it("reverts timezone on save failure", async () => {
     vi.mocked(api.settings.get).mockResolvedValue({ timezone: "UTC" });
     vi.mocked(api.settings.update).mockRejectedValue(new Error("save failed"));
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const err = expectConsole("error");
     const user = userEvent.setup();
     render(
       <ProjectSettingsDialog
@@ -376,7 +376,7 @@ describe("ProjectSettingsDialog", () => {
       expect(screen.getByLabelText(/timezone/i)).toHaveValue("UTC");
     });
     expect(screen.getByRole("alert")).toBeInTheDocument();
-    spy.mockRestore();
+    err.calledWith("Failed to save timezone:", expect.any(Error));
   });
 
   // I4 (2026-04-24 review): the dialog unmounts mid-save (parent

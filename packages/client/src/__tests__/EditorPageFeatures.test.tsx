@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
 import { pendingUntilAbort } from "./helpers/abortableMocks";
+import { expectConsole } from "./expectConsole";
 
 vi.mock("../hooks/useContentCache", () => ({
   getCachedContent: vi.fn().mockReturnValue(null),
@@ -151,7 +152,7 @@ describe("EditorPage error handling", () => {
   });
 
   it("shows error message when project is not found", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.get).mockRejectedValue(new Error("Project not found."));
 
     renderEditorPage();
@@ -161,8 +162,7 @@ describe("EditorPage error handling", () => {
     });
 
     expect(screen.getByRole("link", { name: "Back to Projects" })).toBeInTheDocument();
-    expect(warnSpy).toHaveBeenCalledWith("Failed to load project:", expect.any(Error));
-    warnSpy.mockRestore();
+    warn.calledWith("Failed to load project:", expect.any(Error));
   });
 });
 
@@ -506,7 +506,7 @@ describe("EditorPage openTrash failure", () => {
   });
 
   it("logs error when openTrash fails", async () => {
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const error = expectConsole("error");
     vi.mocked(api.projects.trash).mockRejectedValue(new Error("trash load failed"));
 
     renderEditorPage();
@@ -518,10 +518,8 @@ describe("EditorPage openTrash failure", () => {
     await userEvent.click(screen.getByText("Trash"));
 
     await waitFor(() => {
-      expect(consoleSpy).toHaveBeenCalledWith("Failed to load trash:", expect.any(String));
+      error.calledWith("Failed to load trash:", expect.any(String));
     });
-
-    consoleSpy.mockRestore();
   });
 });
 
@@ -574,7 +572,7 @@ describe("EditorPage restore with slug change", () => {
   });
 
   it("logs error when handleRestore fails", async () => {
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const error = expectConsole("error");
     const trashedChapter = {
       id: "ch-trashed",
       project_id: "proj-1",
@@ -605,10 +603,8 @@ describe("EditorPage restore with slug change", () => {
     await userEvent.click(screen.getByText("Restore"));
 
     await waitFor(() => {
-      expect(consoleSpy).toHaveBeenCalledWith("Failed to restore chapter:", expect.any(Error));
+      error.calledWith("Failed to restore chapter:", expect.any(Error));
     });
-
-    consoleSpy.mockRestore();
   });
 });
 
@@ -704,7 +700,7 @@ describe("EditorPage title editing guards", () => {
   });
 
   it("keeps edit mode open when handleUpdateProjectTitle returns undefined", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.update).mockRejectedValue(new Error("update failed"));
 
     renderEditorPage();
@@ -728,8 +724,7 @@ describe("EditorPage title editing guards", () => {
     await waitFor(() => {
       expect(api.projects.update).toHaveBeenCalled();
     });
-    expect(warnSpy).toHaveBeenCalledWith("Failed to update project title:", expect.any(Error));
-    warnSpy.mockRestore();
+    warn.calledWith("Failed to update project title:", expect.any(Error));
   });
 
   it("navigates when project title update returns a different slug", async () => {
@@ -860,7 +855,7 @@ describe("EditorPage error view on project load failure", () => {
   });
 
   it("renders error view with back link when project load fails", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.get).mockRejectedValue(new Error("Server error"));
 
     renderEditorPage();
@@ -871,8 +866,7 @@ describe("EditorPage error view on project load failure", () => {
 
     const backLink = screen.getByRole("link", { name: "Back to Projects" });
     expect(backLink).toBeInTheDocument();
-    expect(warnSpy).toHaveBeenCalledWith("Failed to load project:", expect.any(Error));
-    warnSpy.mockRestore();
+    warn.calledWith("Failed to load project:", expect.any(Error));
   });
 });
 
@@ -891,13 +885,13 @@ describe("EditorPage handleStatusChangeWithError", () => {
   });
 
   it("catches error from handleStatusChange and shows actionError banner", async () => {
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const error = expectConsole("error");
     // CLAUDE.md §Testing Philosophy: spy + suppress + assert the warn
     // the recovery GET failure path emits via devWarn. Without this
     // spy the rejected reload mock at line ~907 emits
     // "handleStatusChange recovery GET failed: Error: reload failed"
     // to stderr, violating the zero-warnings rule.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     // The status change API call will fail
     vi.mocked(api.chapters.update).mockRejectedValue(new Error("status boom"));
 
@@ -931,17 +925,13 @@ describe("EditorPage handleStatusChangeWithError", () => {
     // Pin the devWarn so a future refactor that drops the warn (or
     // changes its context string) breaks the test instead of silently
     // returning to the noisy state.
-    expect(warnSpy).toHaveBeenCalledWith(
-      "handleStatusChange recovery GET failed:",
-      expect.any(Error),
-    );
-
-    warnSpy.mockRestore();
-    consoleSpy.mockRestore();
+    warn.calledWith("handleStatusChange recovery GET failed:", expect.any(Error));
+    // No console.error is emitted on this path (recovery uses devWarn).
+    error.silent();
   });
 
   it("shows an error banner when chapter statuses fail to load after all retries", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapterStatuses.list).mockRejectedValue(new Error("statuses unavailable"));
 
     vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -969,12 +959,13 @@ describe("EditorPage handleStatusChangeWithError", () => {
       });
     } finally {
       vi.useRealTimers();
-      warnSpy.mockRestore();
     }
+    // Each exhausted attempt logs via clientWarn.
+    warn.calledWith("Failed to load chapter statuses:", expect.any(Error));
   });
 
   it("C-9: chapterStatuses retry threads an AbortSignal and aborts on unmount", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapterStatuses.list).mockRejectedValue(new Error("first attempt fails"));
 
     vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -988,7 +979,7 @@ describe("EditorPage handleStatusChangeWithError", () => {
         expect(screen.getByText(mockProject.title)).toBeInTheDocument();
       });
       await waitFor(() => {
-        expect(warnSpy).toHaveBeenCalledWith("Failed to load chapter statuses:", expect.any(Error));
+        warn.calledWith("Failed to load chapter statuses:", expect.any(Error));
       });
 
       // First attempt must have been invoked with an AbortSignal (the signal
@@ -1012,16 +1003,16 @@ describe("EditorPage handleStatusChangeWithError", () => {
 
       // Advance past the backoff. With abortable sleep, the next attempt
       // MUST NOT fire (and no further warn must be emitted).
-      const warnCallsBefore = warnSpy.mock.calls.length;
       await act(async () => {
         await vi.advanceTimersByTimeAsync(5000);
       });
 
       expect(vi.mocked(api.chapterStatuses.list).mock.calls.length).toBe(callsAfterFirst);
-      expect(warnSpy.mock.calls.length).toBe(warnCallsBefore);
+      // Only the single first-attempt failure warned — the aborted retry
+      // emits no further warn after unmount.
+      warn.calledTimes(1);
     } finally {
       vi.useRealTimers();
-      warnSpy.mockRestore();
     }
   });
 });
@@ -1045,7 +1036,7 @@ describe("EditorPage view mode toggles", () => {
   });
 
   it("switches to editor view when clicking Editor tab button", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     renderEditorPage();
 
     await waitFor(() => {
@@ -1064,12 +1055,11 @@ describe("EditorPage view mode toggles", () => {
       expect(screen.queryByRole("navigation", { name: "Table of Contents" })).toBeNull();
       expect(screen.getByRole("heading", { level: 2, name: "Chapter One" })).toBeInTheDocument();
     });
-    expect(warnSpy).toHaveBeenCalledWith("Failed to load chapter statuses:", expect.any(Error));
-    warnSpy.mockRestore();
+    warn.calledWith("Failed to load chapter statuses:", expect.any(Error));
   });
 
   it("switches to dashboard view when clicking Dashboard tab button", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     renderEditorPage();
 
     await waitFor(() => {
@@ -1083,12 +1073,11 @@ describe("EditorPage view mode toggles", () => {
     await waitFor(() => {
       expect(screen.getByRole("region", { name: /writing progress/i })).toBeInTheDocument();
     });
-    expect(warnSpy).toHaveBeenCalledWith("Failed to load chapter statuses:", expect.any(Error));
-    warnSpy.mockRestore();
+    warn.calledWith("Failed to load chapter statuses:", expect.any(Error));
   });
 
   it("renders dashboard view with DashboardView component", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     renderEditorPage();
 
     await waitFor(() => {
@@ -1105,8 +1094,7 @@ describe("EditorPage view mode toggles", () => {
     // The Dashboard tab should show as current
     const dashboardButton = screen.getByText("Dashboard");
     expect(dashboardButton).toHaveAttribute("aria-current", "page");
-    expect(warnSpy).toHaveBeenCalledWith("Failed to load chapter statuses:", expect.any(Error));
-    warnSpy.mockRestore();
+    warn.calledWith("Failed to load chapter statuses:", expect.any(Error));
   });
 });
 
@@ -1250,7 +1238,7 @@ describe("EditorPage find-and-replace confirmation", () => {
     // useProjectEditor.reloadActiveChapter logs a console.warn on the
     // intentional failure path. Spy + suppress so the test deliberately
     // exercises the error branch without leaking noise into stderr.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
 
     vi.mocked(api.search.replace).mockResolvedValueOnce({
       replaced_count: 2,
@@ -1296,8 +1284,7 @@ describe("EditorPage find-and-replace confirmation", () => {
       "false",
     );
 
-    expect(warnSpy).toHaveBeenCalledWith("Failed to reload chapter:", expect.any(Error));
-    warnSpy.mockRestore();
+    warn.calledWith("Failed to reload chapter:", expect.any(Error));
   });
 
   it("benign supersession (active chapter not affected) raises NO lock and keeps the editor editable (Critical #1 contrast)", async () => {
@@ -2546,8 +2533,8 @@ describe("EditorPage snapshot panel", () => {
     // Without this test a future refactor of the fallback branch (copy swap
     // or accidentally re-introducing a transient-style banner retention)
     // could silently regress either half of the migration.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warn = expectConsole("warn");
+    const error = expectConsole("error");
     vi.mocked(api.snapshots.list).mockResolvedValue([
       {
         id: "snap-1",
@@ -2609,8 +2596,10 @@ describe("EditorPage snapshot panel", () => {
       ).toBeNull();
     });
 
-    warnSpy.mockRestore();
-    errorSpy.mockRestore();
+    // The generic restore-failure fallback routes through mapApiError +
+    // setActionError; it logs neither warn nor error.
+    warn.silent();
+    error.silent();
   });
 
   it("clears active chapter's cache on 2xx BAD_JSON from restore (C1)", async () => {

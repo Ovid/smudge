@@ -1,4 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
+import { expectConsole } from "../__tests__/expectConsole";
 import { renderHook, act } from "@testing-library/react";
 import { useAbortableSequence } from "./useAbortableSequence";
 
@@ -157,8 +158,8 @@ describe("useAbortableSequence", () => {
   // zero-warnings rule would catch at suite level but not attribute to
   // this primitive specifically.
   it("emits no console output during any operation", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = expectConsole("warn");
+    const errorSpy = expectConsole("error");
     const { result, unmount } = renderHook(() => useAbortableSequence());
     const t1 = result.current.start();
     const t2 = result.current.capture();
@@ -166,9 +167,7 @@ describe("useAbortableSequence", () => {
     t1.isStale();
     t2.isStale();
     unmount();
-    expect(warnSpy).not.toHaveBeenCalled();
-    expect(errorSpy).not.toHaveBeenCalled();
-    warnSpy.mockRestore();
-    errorSpy.mockRestore();
+    warnSpy.silent();
+    errorSpy.silent();
   });
 });

@@ -7,6 +7,7 @@ import { STRINGS } from "../strings";
 import { SNAPSHOT_ERROR_CODES } from "@smudge/shared";
 import type { Chapter, SnapshotListItem, SnapshotRow } from "@smudge/shared";
 import { pendingUntilAbort } from "./helpers/abortableMocks";
+import { expectConsole } from "./expectConsole";
 
 vi.mock("../hooks/useContentCache", () => ({
   getCachedContent: vi.fn().mockReturnValue(null),
@@ -865,7 +866,7 @@ describe("useSnapshotState", () => {
     // route through devWarn so a dev seeing the failure can investigate.
     // Post-fix: the catch goes through devWarn, gated on the
     // followupController signal so unmount-driven aborts stay silent.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     let listCallCount = 0;
     vi.mocked(api.snapshots.list).mockImplementation(() => {
       listCallCount++;
@@ -886,9 +887,8 @@ describe("useSnapshotState", () => {
 
     // Wait for the follow-up list rejection to surface through devWarn.
     await waitFor(() => {
-      expect(warnSpy).toHaveBeenCalledWith("snapshot follow-up list failed:", expect.any(Error));
+      warn.calledWith("snapshot follow-up list failed:", expect.any(Error));
     });
-    warnSpy.mockRestore();
   });
 
   it("S2 (review 2026-05-27 round 2): restoreFollowupAbortRef is nulled on follow-up failure too (finally placement)", async () => {
@@ -901,7 +901,7 @@ describe("useSnapshotState", () => {
     // would flip the prior (settled) signal's aborted flag — benign
     // (abort on a settled controller is a no-op for the consumer) but
     // inconsistent with the sibling pattern.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const listSignals: AbortSignal[] = [];
     let listCallCount = 0;
     vi.mocked(api.snapshots.list).mockImplementation((_chapterId, signal) => {
@@ -929,7 +929,7 @@ describe("useSnapshotState", () => {
     const firstFollowupSignal = listSignals[baseline];
     // Settle the rejection's microtask + the .finally block.
     await waitFor(() => {
-      expect(warnSpy).toHaveBeenCalledWith("snapshot follow-up list failed:", expect.any(Error));
+      warn.calledWith("snapshot follow-up list failed:", expect.any(Error));
     });
 
     // Second restore — its preamble runs `restoreFollowupAbortRef.current?.abort()`.
@@ -942,11 +942,10 @@ describe("useSnapshotState", () => {
     });
 
     expect(firstFollowupSignal?.aborted).toBe(false);
-    warnSpy.mockRestore();
   });
 
   it("leaves count null when list fetch fails so badge stays hidden", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.snapshots.list).mockRejectedValue(new Error("network error"));
 
     const { result } = renderHook(() => useSnapshotState("ch-1"));
@@ -956,7 +955,9 @@ describe("useSnapshotState", () => {
     // Use a small delay to let the rejected promise microtask settle.
     await new Promise((r) => setTimeout(r, 20));
     expect(result.current.snapshotCount).toBeNull();
-    warnSpy.mockRestore();
+    // The mount-time list fetch failure routes through devWarn (DEV-gated,
+    // non-aborted signal), so the suppressed warn here genuinely fires.
+    warn.calledWith("snapshot list (chapter-switch) failed:", expect.any(Error));
   });
 });
 

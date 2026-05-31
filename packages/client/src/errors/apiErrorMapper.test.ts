@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, expectTypeOf } from "vitest";
+import { describe, it, expect, expectTypeOf } from "vitest";
+import { expectConsole } from "../__tests__/expectConsole";
 import type { MappedError, ScopeEntry } from "./apiErrorMapper";
 import {
   _resolveErrorInternal as resolveError,
@@ -283,7 +284,7 @@ describe("mapApiError — extras", () => {
   // is suppressed and asserted on so the zero-warnings invariant from
   // CLAUDE.md holds.
   it("swallows extrasFrom throws and returns extras:undefined (I15)", () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const errorSpy = expectConsole("error");
     const throwingScope = {
       fallback: "fallback",
       byCode: { CODE_X: "messsage" },
@@ -295,11 +296,7 @@ describe("mapApiError — extras", () => {
     const result = resolveError(err, throwingScope);
     expect(result.message).toBe("messsage");
     expect(result.extras).toBeUndefined();
-    expect(errorSpy).toHaveBeenCalledWith(
-      "scope.extrasFrom threw; returning undefined:",
-      expect.any(Error),
-    );
-    errorSpy.mockRestore();
+    errorSpy.calledWith("scope.extrasFrom threw; returning undefined:", expect.any(Error));
   });
 });
 

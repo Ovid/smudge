@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import type { Chapter, ProjectWithChapters } from "@smudge/shared";
 import { ApiRequestError } from "../api/client";
@@ -7,6 +7,7 @@ import { STRINGS } from "../strings";
 import { api } from "../api/client";
 import { useTrashManager } from "../hooks/useTrashManager";
 import { pendingUntilAbort } from "./helpers/abortableMocks";
+import { expectConsole } from "./expectConsole";
 
 vi.mock("../api/client", async () => {
   const actual = await vi.importActual<typeof import("../api/client")>("../api/client");
@@ -51,24 +52,16 @@ function makeProject(chapters: Chapter[] = []): ProjectWithChapters {
   } as unknown as ProjectWithChapters;
 }
 
-let warnSpy: ReturnType<typeof vi.spyOn>;
-let errorSpy: ReturnType<typeof vi.spyOn>;
-
 beforeEach(() => {
   vi.clearAllMocks();
-  // Hook logs console.error on failure paths; suppress to honor
-  // "zero warnings in test output" from CLAUDE.md.
-  warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-  errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-});
-
-afterEach(() => {
-  warnSpy.mockRestore();
-  errorSpy.mockRestore();
 });
 
 describe("useTrashManager.handleRestore — I2 committed UX", () => {
   it("on RESTORE_READ_FAILURE, removes the chapter from the trashed list and shows the committed message", async () => {
+    // RESTORE_READ_FAILURE maps to a non-null committed message, so the
+    // catch logs via clientError("Failed to restore chapter:", err). The
+    // recovery GET succeeds, so devWarn does not fire.
+    const error = expectConsole("error");
     const deleted = makeChapter({ id: "ch-committed" });
     const project = makeProject();
     const setProject = vi.fn();
@@ -104,9 +97,13 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
       expect(result.current.trashedChapters.find((c) => c.id === "ch-committed")).toBeUndefined();
     });
     expect(result.current.actionError).toBe(STRINGS.error.restoreChapterCommitted);
+    error.calledWith("Failed to restore chapter:", expect.any(ApiRequestError));
   });
 
   it("on 2xx BAD_JSON (possiblyCommitted), removes the chapter from trash and shows the committed message", async () => {
+    // 2xx BAD_JSON maps to a non-null committed message → clientError fires.
+    // Recovery GET succeeds → no devWarn.
+    const error = expectConsole("error");
     const deleted = makeChapter({ id: "ch-badjson" });
     const project = makeProject();
     const setProject = vi.fn();
@@ -137,9 +134,15 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
       expect(result.current.trashedChapters.find((c) => c.id === "ch-badjson")).toBeUndefined();
     });
     expect(result.current.actionError).toBe(STRINGS.error.restoreChapterCommitted);
+    error.calledWith("Failed to restore chapter:", expect.any(ApiRequestError));
   });
 
   it("swallows a failed committed-branch recovery GET without breaking the committed UX", async () => {
+    // Two log sites fire here: clientError for the RESTORE_READ_FAILURE
+    // restore, and devWarn (console.warn) when the best-effort recovery
+    // GET itself rejects.
+    const error = expectConsole("error");
+    const warn = expectConsole("warn");
     const deleted = makeChapter({ id: "ch-recovery-fail" });
     const project = makeProject();
     const setProject = vi.fn();
@@ -182,6 +185,8 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     );
     expect(result.current.actionError).toBe(STRINGS.error.restoreChapterCommitted);
     expect(setProject).not.toHaveBeenCalled();
+    error.calledWith("Failed to restore chapter:", expect.any(ApiRequestError));
+    warn.calledWith("handleRestore recovery GET failed:", expect.any(ApiRequestError));
   });
 
   // I5 (review 2026-04-24): api.projects.trash now accepts a signal
@@ -213,6 +218,7 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
   });
 
   it("on ABORTED error, does not log to console.error (I5)", async () => {
+    const error = expectConsole("error");
     const project = makeProject();
     vi.mocked(api.projects.trash).mockRejectedValue(new ApiRequestError("aborted", 0, "ABORTED"));
 
@@ -227,7 +233,7 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     // Mapper returns message=null for ABORTED, so no actionError.
     expect(result.current.actionError).toBeNull();
     // Zero-warnings invariant: a superseded/unmount abort must not log.
-    expect(errorSpy).not.toHaveBeenCalledWith("Failed to load trash:", expect.anything());
+    error.notCalledWith("Failed to load trash:", expect.anything());
   });
 
   it("aborts in-flight restore on unmount (User callout 2026-04-25)", async () => {
@@ -271,6 +277,7 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     // trash-list mutation. Otherwise an unmount/supersession abort
     // logs noise (CLAUDE.md zero-warnings invariant) and risks state
     // updates on a torn-down hook.
+    const error = expectConsole("error");
     const deleted = makeChapter({ id: "ch-aborted" });
     vi.mocked(api.chapters.restore).mockRejectedValue(
       new ApiRequestError("[dev] aborted", 0, "ABORTED"),
@@ -291,7 +298,7 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     expect(result.current.actionError).toBeNull();
     expect(setProject).not.toHaveBeenCalled();
     // Aborted superseded restore must not pollute the console.
-    expect(errorSpy).not.toHaveBeenCalledWith("Failed to restore chapter:", expect.anything());
+    error.notCalledWith("Failed to restore chapter:", expect.anything());
   });
 
   it("seeds confirmed-status cache for the restored chapter (C2 2026-04-25)", async () => {
@@ -337,6 +344,8 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
     // Regression guard: non-committed errors keep the chapter visible in
     // the trash list so the user can try a different action — only the
     // committed branch optimistically removes.
+    // PROJECT_PURGED maps to a non-null message → clientError fires.
+    const error = expectConsole("error");
     const deleted = makeChapter({ id: "ch-purged" });
     const project = makeProject();
     const setProject = vi.fn();
@@ -369,6 +378,7 @@ describe("useTrashManager.handleRestore — I2 committed UX", () => {
 
     expect(result.current.trashedChapters.find((c) => c.id === "ch-purged")).toBeDefined();
     expect(result.current.actionError).toBe(STRINGS.error.restoreChapterProjectPurged);
+    error.calledWith("Failed to restore chapter:", expect.any(ApiRequestError));
   });
 
   it("openTrash aborts the prior in-flight signal when called again rapidly", async () => {
@@ -614,6 +624,9 @@ describe("handleRestore possiblyCommitted (4b.3c.3 I4)", () => {
     // trashedChapters (existing I2/S8 behaviour), AND now (4b.3c.3 I4)
     // fires api.projects.get so the sidebar reflects server-truth state
     // and the confirmed-status cache is reseeded.
+    // 200 BAD_JSON committed restore → clientError fires; recovery GET
+    // succeeds → no devWarn.
+    const error = expectConsole("error");
     const deleted = makeChapter({ id: "ch-pin-i4" });
     const project = makeProject();
     const refreshed: ProjectWithChapters = {
@@ -680,6 +693,7 @@ describe("handleRestore possiblyCommitted (4b.3c.3 I4)", () => {
     // refreshed snapshot must NOT clobber the new project's state.
     const otherProject: ProjectWithChapters = { ...project, id: "other-project" };
     expect(updater(otherProject)).toBe(otherProject);
+    error.calledWith("Failed to restore chapter:", expect.any(ApiRequestError));
   });
 
   it("T1 (review 2026-05-27): restoreRecoveryAbortRef is nulled on success — subsequent restore's preamble does not re-abort the prior controller", async () => {
@@ -692,6 +706,9 @@ describe("handleRestore possiblyCommitted (4b.3c.3 I4)", () => {
     // unaborted. Without the T1 fix the prior ref still points at the
     // completed controller, and the second call's preamble .abort()
     // would flip the prior signal to aborted.
+    // Both committed restores (200 BAD_JSON) log via clientError; their
+    // recovery GETs succeed, so no devWarn.
+    const error = expectConsole("error");
     const deletedA = makeChapter({ id: "ch-a" });
     const deletedB = makeChapter({ id: "ch-b" });
     const project = makeProject();
@@ -749,6 +766,7 @@ describe("handleRestore possiblyCommitted (4b.3c.3 I4)", () => {
 
     expect(firstSignal?.aborted).toBe(false);
     expect(recoverySignals[1]?.aborted).toBe(false);
+    error.calledWith("Failed to restore chapter:", expect.any(ApiRequestError));
   });
 
   it("I1 (review 2026-05-27): replaceConfirmedStatusesFromProject is NOT called after A→B nav during the recovery GET", async () => {
@@ -761,6 +779,10 @@ describe("handleRestore possiblyCommitted (4b.3c.3 I4)", () => {
     // the reseed by current-project identity. The reseed is only
     // invoked when the user is still on the project whose recovery
     // GET just resolved.
+    // 200 BAD_JSON committed restore → clientError fires. The deferred
+    // recovery GET resolves but its .then bails on the identity guard, so
+    // devWarn never fires.
+    const error = expectConsole("error");
     const deletedA = makeChapter({ id: "ch-a", project_id: "p1" });
     const projectA = makeProject();
     const projectB: ProjectWithChapters = {
@@ -824,6 +846,7 @@ describe("handleRestore possiblyCommitted (4b.3c.3 I4)", () => {
     // Identity-guard pin: the reseed must NOT have run, because the
     // user is on project B and A's snapshot would corrupt B's cache.
     expect(replaceConfirmedStatusesFromProject).not.toHaveBeenCalled();
+    error.calledWith("Failed to restore chapter:", expect.any(ApiRequestError));
   });
 
   it("I2 (review 2026-05-27): Restore-A's recovery GET does NOT clobber Restore-B's successful state", async () => {
@@ -840,6 +863,10 @@ describe("handleRestore possiblyCommitted (4b.3c.3 I4)", () => {
     // the sidebar. Post-fix: useAbortableSequence's token captured
     // at Restore-A start goes stale when Restore-B's start() bumps
     // the epoch; GET-A's .then bails before touching state.
+    // Restore-A (200 BAD_JSON) logs clientError; Restore-B succeeds (no
+    // log). GET-A resolves with a stale snapshot but its .then bails on
+    // the sequence guard, so devWarn never fires.
+    const error = expectConsole("error");
     const deletedA = makeChapter({ id: "ch-a" });
     const deletedB = makeChapter({ id: "ch-b" });
     const restoredB = makeChapter({
@@ -912,6 +939,7 @@ describe("handleRestore possiblyCommitted (4b.3c.3 I4)", () => {
     // the stale snapshot.
     expect(setProject.mock.calls.length).toBe(setProjectCallsBefore);
     expect(replaceConfirmedStatusesFromProject).not.toHaveBeenCalledWith(staleSnapshotA);
+    error.calledWith("Failed to restore chapter:", expect.any(ApiRequestError));
   });
 });
 
@@ -929,6 +957,8 @@ describe("handleRestore cross-project nav guard (review 2026-05-27 round 2)", ()
     // Post-fix: capture project id at handleRestore entry; the catch
     // bails before applyMappedError when projectRef has drifted away
     // from the captured id.
+    // The drift guard returns before clientError, so nothing is logged.
+    const error = expectConsole("error");
     const projectA = makeProject();
     const projectB: ProjectWithChapters = {
       ...projectA,
@@ -983,6 +1013,7 @@ describe("handleRestore cross-project nav guard (review 2026-05-27 round 2)", ()
     // Identity guard: the catch must have bailed before applyMappedError,
     // so B's UI does not flash a banner about an event that happened on A.
     expect(result.current.actionError).toBeNull();
+    error.silent();
   });
 
   it("I1 (review 2026-05-27 round 3): handleRestore success branch does NOT mutate state when project drifted A→B mid-POST", async () => {
@@ -1234,6 +1265,7 @@ describe("useTrashManager.confirmDeleteChapter — I5 programming-bug warn (4b.3
     // open if a programming bug introduces a throw. Pre-I5 the catch was
     // silent; this test pins the new console.warn so the programming-bug
     // path is observable in dev.
+    const warn = expectConsole("warn");
     const target = makeChapter({ id: "ch-target" });
     const project = makeProject();
     const handleDeleteChapter = vi.fn().mockRejectedValue(new Error("synthetic programming bug"));
@@ -1255,9 +1287,6 @@ describe("useTrashManager.confirmDeleteChapter — I5 programming-bug warn (4b.3
     // Dialog dismissed so the user isn't stuck behind a dead confirm.
     expect(result.current.deleteTarget).toBeNull();
     // The programming-bug path warns with a named context string.
-    expect(warnSpy).toHaveBeenCalledWith(
-      "confirmDeleteChapter programming-bug path:",
-      expect.any(Error),
-    );
+    warn.calledWith("confirmDeleteChapter programming-bug path:", expect.any(Error));
   });
 });

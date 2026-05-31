@@ -7,6 +7,7 @@ import { useProjectEditor } from "../hooks/useProjectEditor";
 import { STRINGS } from "../strings";
 import { flushSaveRetries } from "./helpers/saveRetries";
 import { pendingUntilAbort } from "./helpers/abortableMocks";
+import { expectConsole } from "./expectConsole";
 
 vi.mock("../api/client", () => ({
   ApiRequestError: class ApiRequestError extends Error {
@@ -216,7 +217,7 @@ describe("useProjectEditor", () => {
     // test is silent today. A future warn addition on the NETWORK path
     // would otherwise slip past the zero-warnings invariant from
     // CLAUDE.md.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update).mockRejectedValue(
       new ApiRequestError("[dev] Failed to fetch", 0, "NETWORK"),
     );
@@ -235,10 +236,9 @@ describe("useProjectEditor", () => {
       expect(result.current.saveStatus).toBe("error");
       expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedNetwork);
       expect(api.chapters.update).toHaveBeenCalledTimes(4); // 1 initial + 3 retries
-      expect(warnSpy).not.toHaveBeenCalled();
+      warn.silent();
     } finally {
       vi.useRealTimers();
-      warnSpy.mockRestore();
     }
   });
 
@@ -252,7 +252,7 @@ describe("useProjectEditor", () => {
     // Try again in a moment."). Terminal codes (BAD_JSON,
     // UPDATE_READ_FAILURE, CORRUPT_CONTENT) keep their own copy via
     // byCode and are unaffected.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update).mockRejectedValue(
       new ApiRequestError("internal error", 500, "INTERNAL_ERROR"),
     );
@@ -271,10 +271,9 @@ describe("useProjectEditor", () => {
       expect(result.current.saveStatus).toBe("error");
       expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedServer);
       expect(api.chapters.update).toHaveBeenCalledTimes(4); // 1 initial + 3 retries
-      expect(warnSpy).not.toHaveBeenCalled();
+      warn.silent();
     } finally {
       vi.useRealTimers();
-      warnSpy.mockRestore();
     }
   });
 
@@ -292,7 +291,7 @@ describe("useProjectEditor", () => {
     // calls cancelInFlightSave → saveSeq.abort() → token becomes stale,
     // and unblocks the backoff sleep). Advance timers past the longest
     // backoff. Assert no error state on ch2 and no further PATCH.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update).mockRejectedValue(
       new ApiRequestError("[dev] Failed to fetch", 0, "NETWORK"),
     );
@@ -335,10 +334,9 @@ describe("useProjectEditor", () => {
       // No further PATCHes after the abort: the retry loop short-
       // circuited via the stale-token check on its next iteration.
       expect(api.chapters.update).toHaveBeenCalledTimes(1);
-      expect(warnSpy).not.toHaveBeenCalled();
+      warn.silent();
     } finally {
       vi.useRealTimers();
-      warnSpy.mockRestore();
     }
   });
 
@@ -757,7 +755,7 @@ describe("useProjectEditor", () => {
   });
 
   it("sets error state when project fetch returns 404", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.get).mockRejectedValue(new Error("Project not found."));
 
     const { result } = renderHook(() => useProjectEditor("nonexistent-id"));
@@ -767,18 +765,14 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.project).toBeNull();
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to load project:"),
-      expect.any(Error),
-    );
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to load project:"), expect.any(Error));
   });
 
   it("does not console.warn when loadProject rejects after unmount", async () => {
     // Copilot review 2026-04-24 (wider occurrence of the HomePage
     // race): previously console.warn fired BEFORE the cancelled guard,
     // producing test-output noise on navigation/unmount races.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     let rejectFn: (err: Error) => void = () => {};
     vi.mocked(api.projects.get).mockReturnValue(
       new Promise((_, reject) => {
@@ -791,8 +785,7 @@ describe("useProjectEditor", () => {
     rejectFn(new Error("Network error"));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(warnSpy).not.toHaveBeenCalled();
-    warnSpy.mockRestore();
+    warn.silent();
   });
 
   it("C-6: unmount mid-api.projects.get does NOT call setProject (preserves cancelled-flag guarantee)", async () => {
@@ -841,7 +834,7 @@ describe("useProjectEditor", () => {
   });
 
   it("sets error when handleCreateChapter fails", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.create).mockRejectedValue(new Error("create boom"));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -852,15 +845,11 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.error).toBe(STRINGS.error.createChapterFailed);
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to create chapter:"),
-      expect.any(Error),
-    );
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to create chapter:"), expect.any(Error));
   });
 
   it("sets error when handleSelectChapter fails", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.get)
       .mockResolvedValueOnce(mockChapter1) // initial load
       .mockRejectedValueOnce(new Error("select boom")); // select fails
@@ -873,15 +862,11 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.error).toBe(STRINGS.error.loadChapterFailed);
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to load chapter:"),
-      expect.any(Error),
-    );
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to load chapter:"), expect.any(Error));
   });
 
   it("calls onError callback when handleDeleteChapter fails (does not set full-page error)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.delete).mockRejectedValue(new Error("delete boom"));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -894,11 +879,7 @@ describe("useProjectEditor", () => {
 
     expect(onError).toHaveBeenCalledWith(STRINGS.error.deleteChapterFailed);
     expect(result.current.error).toBeNull();
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to delete chapter:"),
-      expect.any(Error),
-    );
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to delete chapter:"), expect.any(Error));
   });
 
   it("sets activeChapter to null when deleting the last chapter", async () => {
@@ -922,7 +903,7 @@ describe("useProjectEditor", () => {
   });
 
   it("sets error when handleReorderChapters fails", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.reorderChapters).mockRejectedValue(new Error("reorder boom"));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -933,11 +914,7 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.error).toBe(STRINGS.error.reorderFailed);
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to reorder chapters:"),
-      expect.any(Error),
-    );
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to reorder chapters:"), expect.any(Error));
   });
 
   it("applies the requested order on a 2xx-BAD_JSON committed reorder, filtering unknown ids", async () => {
@@ -945,7 +922,7 @@ describe("useProjectEditor", () => {
     // to the requested order so the UI matches the server. An echoed id that
     // isn't in the project (a phantom) must be filtered out, never injected as
     // a chapter — the data-integrity guard in the committed-branch updater.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.reorderChapters).mockRejectedValue(
       new ApiRequestError("bad body", 200, "BAD_JSON"),
     );
@@ -962,11 +939,14 @@ describe("useProjectEditor", () => {
     expect(result.current.project?.chapters.map((c) => c.sort_order)).toEqual([0, 1]);
     // Committed-but-ambiguous copy surfaces (recoverable banner, not teardown).
     expect(result.current.error).toBe(STRINGS.error.reorderResponseUnreadable);
-    warnSpy.mockRestore();
+    warn.calledWith(
+      expect.stringContaining("Failed to reorder chapters:"),
+      expect.any(ApiRequestError),
+    );
   });
 
   it("returns undefined when handleUpdateProjectTitle fails", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.update).mockRejectedValue(new Error("update boom"));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -982,11 +962,7 @@ describe("useProjectEditor", () => {
     expect(result.current.error).toBeNull();
     // Should set inline project title error
     expect(result.current.projectTitleError).toBe(STRINGS.error.updateTitleFailed);
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to update project title:"),
-      expect.any(Error),
-    );
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to update project title:"), expect.any(Error));
   });
 
   // I2 (review 2026-05-25): with Phase 4b.3b threading signals into
@@ -997,7 +973,7 @@ describe("useProjectEditor", () => {
   // These tests pin the silent-on-abort contract.
   describe("I2: console.warn gated on abort", () => {
     it("handleCreateChapter does not warn when superseded by unmount", async () => {
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const warn = expectConsole("warn");
       vi.mocked(api.chapters.create).mockImplementation((_slug, signal) =>
         pendingUntilAbort(signal),
       );
@@ -1009,12 +985,11 @@ describe("useProjectEditor", () => {
       unmount();
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(warnSpy).not.toHaveBeenCalled();
-      warnSpy.mockRestore();
+      warn.silent();
     });
 
     it("handleSelectChapter does not warn when superseded by unmount", async () => {
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const warn = expectConsole("warn");
       // Initial load resolves; subsequent select hangs until abort.
       let callIndex = 0;
       vi.mocked(api.chapters.get).mockImplementation((id, signal) => {
@@ -1030,12 +1005,11 @@ describe("useProjectEditor", () => {
       unmount();
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(warnSpy).not.toHaveBeenCalled();
-      warnSpy.mockRestore();
+      warn.silent();
     });
 
     it("reloadActiveChapter does not warn when superseded by unmount", async () => {
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const warn = expectConsole("warn");
       let callIndex = 0;
       vi.mocked(api.chapters.get).mockImplementation((_id, signal) => {
         callIndex++;
@@ -1050,12 +1024,11 @@ describe("useProjectEditor", () => {
       unmount();
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(warnSpy).not.toHaveBeenCalled();
-      warnSpy.mockRestore();
+      warn.silent();
     });
 
     it("handleDeleteChapter inner secondary-GET does not warn on abort", async () => {
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const warn = expectConsole("warn");
       // Active chapter (ch1) is the deletion target so the deletion path
       // enters the secondary-GET branch (lines around 956). The DELETE
       // resolves; the post-delete GET hangs until the unmount-driven abort
@@ -1078,17 +1051,14 @@ describe("useProjectEditor", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       // Pre-fix, the secondary-GET catch warned BEFORE checking s.aborted.
-      const failedAfterDelete = warnSpy.mock.calls.filter(
-        (call) =>
-          typeof call[0] === "string" && call[0].includes("Failed to load chapter after delete"),
+      warn.notCalledMatching(
+        (a) => typeof a[0] === "string" && a[0].includes("Failed to load chapter after delete"),
       );
-      expect(failedAfterDelete).toEqual([]);
-      warnSpy.mockRestore();
     });
   });
 
   it("calls onError callback when handleRenameChapter fails (does not set full-page error)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update).mockRejectedValue(new Error("rename boom"));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -1101,11 +1071,7 @@ describe("useProjectEditor", () => {
 
     expect(onError).toHaveBeenCalledWith(STRINGS.error.renameChapterFailed);
     expect(result.current.error).toBeNull();
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to rename chapter:"),
-      expect.any(Error),
-    );
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to rename chapter:"), expect.any(Error));
   });
 
   it("handleStatusChange updates chapter status optimistically", async () => {
@@ -1216,7 +1182,7 @@ describe("useProjectEditor", () => {
     // The recovery catch around api.projects.get now routes through
     // devWarn so a failed recovery is observable in dev. The bare
     // `} catch {}` shape pre-S10 silently swallowed the failure.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update).mockRejectedValue(new Error("status boom"));
     vi.mocked(api.projects.get).mockReset();
     vi.mocked(api.projects.get)
@@ -1230,11 +1196,7 @@ describe("useProjectEditor", () => {
       await result.current.handleStatusChange("ch1", "revised");
     });
 
-    expect(warnSpy).toHaveBeenCalledWith(
-      "handleStatusChange recovery GET failed:",
-      expect.any(Error),
-    );
-    warnSpy.mockRestore();
+    warn.calledWith("handleStatusChange recovery GET failed:", expect.any(Error));
   });
 
   it("when the handleStatusChange recovery GET is aborted, no console.warn fires (stable across S10 4b.3c.2 fix)", async () => {
@@ -1243,7 +1205,7 @@ describe("useProjectEditor", () => {
     // and rapid-supersede races don't pollute test output. Driven via
     // unmount, which fires the cleanup at useProjectEditor.ts:273-280
     // (statusRecoveryAbortRef.current?.abort()).
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update).mockRejectedValue(new Error("status boom"));
     vi.mocked(api.projects.get).mockReset();
     vi.mocked(api.projects.get)
@@ -1269,11 +1231,7 @@ describe("useProjectEditor", () => {
       await statusPromise!.catch(() => undefined);
     });
 
-    expect(warnSpy).not.toHaveBeenCalledWith(
-      "handleStatusChange recovery GET failed:",
-      expect.anything(),
-    );
-    warnSpy.mockRestore();
+    warn.notCalledWith("handleStatusChange recovery GET failed:", expect.anything());
   });
 
   it("handleCreateChapter recovery GET failure warns via devWarn (S10 4b.3c.2)", async () => {
@@ -1281,7 +1239,7 @@ describe("useProjectEditor", () => {
     // possiblyCommitted recovery branch (api.projects.get under
     // createRecoveryAbortRef). The pre-fix bare catch silently
     // swallowed the failure.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     // 200 BAD_JSON → mapper sets possiblyCommitted=true (chapter.create scope
     // declares committed: copy), routing handleCreateChapter into the recovery
     // branch which then awaits api.projects.get under createRecoveryAbortRef.
@@ -1300,18 +1258,14 @@ describe("useProjectEditor", () => {
       await result.current.handleCreateChapter();
     });
 
-    expect(warnSpy).toHaveBeenCalledWith(
-      "handleCreateChapter recovery GET failed:",
-      expect.any(Error),
-    );
-    warnSpy.mockRestore();
+    warn.calledWith("handleCreateChapter recovery GET failed:", expect.any(Error));
   });
 
   it("when the handleCreateChapter recovery GET is aborted, no console.warn fires (stable across S10 4b.3c.2 fix)", async () => {
     // Abort-silence invariant mirror — unmount cleanup at
     // useProjectEditor.ts:273-280 fires createRecoveryAbortRef.abort()
     // mid-flight; devWarn (post-fix) must still bail on signal.aborted.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.create).mockRejectedValue(
       new ApiRequestError("body parse error", 200, "BAD_JSON"),
     );
@@ -1334,11 +1288,7 @@ describe("useProjectEditor", () => {
       await createPromise!.catch(() => undefined);
     });
 
-    expect(warnSpy).not.toHaveBeenCalledWith(
-      "handleCreateChapter recovery GET failed:",
-      expect.anything(),
-    );
-    warnSpy.mockRestore();
+    warn.notCalledWith("handleCreateChapter recovery GET failed:", expect.anything());
   });
 
   it("handleReorderChapters does not corrupt project B when reorder PATCH for project A resolves mid-switch (S20 4b.3c.2)", async () => {
@@ -1443,7 +1393,7 @@ describe("useProjectEditor", () => {
     // contract in useAbortableAsyncOperation.test.ts pins the
     // "same signal across awaits" property; this consumer test pins
     // that useProjectEditor actually uses it that way.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     let deleteSignal: AbortSignal | undefined;
     let getSignal: AbortSignal | undefined;
     vi.mocked(api.chapters.delete).mockImplementationOnce((_id, signal) => {
@@ -1495,7 +1445,7 @@ describe("useProjectEditor", () => {
     await act(async () => {
       await deletePromise;
     });
-    warnSpy.mockRestore();
+    warn.silent();
   });
 
   it("handleStatusChange threads AbortSignal into api.chapters.update (I11)", async () => {
@@ -1523,7 +1473,7 @@ describe("useProjectEditor", () => {
   // reads from confirmedStatusRef, which only advances after a
   // server-confirmed PATCH.
   it("handleStatusChange reverts to the last confirmed status, not the last optimistic (I21)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     // X = "outline" (from mockChapter1); A success; B fail.
     vi.mocked(api.chapters.update)
       .mockResolvedValueOnce({ ...mockChapter1, status: "drafting" }) // A succeeds
@@ -1553,7 +1503,7 @@ describe("useProjectEditor", () => {
     // entered. Before the fix this would have restored "outline" or
     // failed differently depending on the closure read.
     expect(result.current.project?.chapters.find((c) => c.id === "ch1")?.status).toBe("drafting");
-    warnSpy.mockRestore();
+    warn.calledWith("handleStatusChange recovery GET failed:", expect.any(Error));
   });
 
   it("handleStatusChange does not revert on ABORTED (I11 follow-on)", async () => {
@@ -1648,7 +1598,7 @@ describe("useProjectEditor", () => {
   });
 
   it("handleContentChange preserves error save status instead of overwriting", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("Bad Request", 400));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -1659,10 +1609,7 @@ describe("useProjectEditor", () => {
       await result.current.handleSave({ type: "doc", content: [] });
     });
     expect(result.current.saveStatus).toBe("error");
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Save failed with 4xx:"),
-      expect.any(ApiRequestError),
-    );
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
 
     // Typing new content should NOT overwrite the error status
     act(() => {
@@ -1673,7 +1620,6 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.saveStatus).toBe("error");
-    warnSpy.mockRestore();
   });
 
   it("handleSelectChapter unblocks a backoff sleep without waiting for the timer (S3)", async () => {
@@ -1684,7 +1630,7 @@ describe("useProjectEditor", () => {
     // stops the network call) but wasteful and kept a timer pinned to a
     // stale chapter id. Assert the handleSave promise resolves promptly
     // after handleSelectChapter, without advancing timers.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update).mockRejectedValue(new Error("network error"));
     const mockChapter2 = {
       id: "ch2",
@@ -1737,9 +1683,9 @@ describe("useProjectEditor", () => {
           new Promise((_, reject) => realSetTimeout(() => reject(new Error("timed out")), 50)),
         ]),
       ).resolves.toBe(false);
+      warn.silent();
     } finally {
       vi.useRealTimers();
-      warnSpy.mockRestore();
     }
   });
 
@@ -1776,7 +1722,7 @@ describe("useProjectEditor", () => {
   });
 
   it("handleSave breaks immediately on 4xx ApiRequestError without retrying", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("Bad Request", 400));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -1792,15 +1738,11 @@ describe("useProjectEditor", () => {
     expect(result.current.saveStatus).toBe("error");
     // Should only be called once — no retries on client errors
     expect(api.chapters.update).toHaveBeenCalledTimes(1);
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Save failed with 4xx:"),
-      expect.any(ApiRequestError),
-    );
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
   });
 
   it("handleSave logs 4xx errors with console.warn", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("Bad Request", 400));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -1810,16 +1752,11 @@ describe("useProjectEditor", () => {
       await result.current.handleSave({ type: "doc", content: [] });
     });
 
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Save failed"),
-      expect.any(ApiRequestError),
-    );
-
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Save failed"), expect.any(ApiRequestError));
   });
 
   it("handleSave maps 4xx VALIDATION_ERROR to externalized strings copy (I3)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     // Raw server-authored English must NOT reach the UI — the mapper in
     // useProjectEditor routes err.code to strings.ts the same way
     // errors/scopes.ts does. Regression guard for I3.
@@ -1837,15 +1774,11 @@ describe("useProjectEditor", () => {
     expect(result.current.saveStatus).toBe("error");
     expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedInvalid);
     expect(result.current.saveErrorMessage).not.toContain("Invalid status: xyz");
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Save failed with 4xx:"),
-      expect.any(ApiRequestError),
-    );
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
   });
 
   it("handleSave maps 413 PAYLOAD_TOO_LARGE to externalized strings copy (I3)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update).mockRejectedValue(
       new ApiRequestError("Request body too large.", 413, "PAYLOAD_TOO_LARGE"),
     );
@@ -1859,15 +1792,11 @@ describe("useProjectEditor", () => {
 
     expect(result.current.saveStatus).toBe("error");
     expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedTooLarge);
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Save failed with 4xx:"),
-      expect.any(ApiRequestError),
-    );
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
   });
 
   it("handleSave breaks immediately on 2xx BAD_JSON and shows committed copy (I5)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update).mockRejectedValue(
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
     );
@@ -1885,7 +1814,10 @@ describe("useProjectEditor", () => {
     expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveCommittedUnreadable);
     // No retry — server may have committed; retrying risks stomp
     expect(api.chapters.update).toHaveBeenCalledTimes(1);
-    warnSpy.mockRestore();
+    warn.calledWith(
+      expect.stringContaining("Save failed terminally:"),
+      expect.any(ApiRequestError),
+    );
   });
 
   // I2 (review 2026-04-24): CLAUDE.md save-pipeline invariant #2 requires
@@ -1900,7 +1832,7 @@ describe("useProjectEditor", () => {
     ["UPDATE_READ_FAILURE", 500, STRINGS.editor.saveCommittedUnreadable],
     ["CORRUPT_CONTENT", 500, STRINGS.editor.saveFailedCorrupt],
   ])("handleSave fires onRequestEditorLock on terminal %s (I2)", async (code, status, msg) => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("terminal", status, code));
     const onRequestEditorLock = vi.fn();
 
@@ -1912,7 +1844,10 @@ describe("useProjectEditor", () => {
     });
 
     expect(onRequestEditorLock).toHaveBeenCalledWith(msg);
-    warnSpy.mockRestore();
+    warn.calledWith(
+      expect.stringContaining("Save failed terminally:"),
+      expect.any(ApiRequestError),
+    );
   });
 
   // I2 (review 2026-04-26): the chapter.save 404 NOT_FOUND mapping (added
@@ -1924,7 +1859,7 @@ describe("useProjectEditor", () => {
   // invariant #2 pairs setEditable(false) with editorLockedMessage; this
   // test pins that pairing for NOT_FOUND.
   it("handleSave fires onRequestEditorLock on 404 NOT_FOUND (I2)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update).mockRejectedValue(
       new ApiRequestError("chapter gone", 404, "NOT_FOUND"),
     );
@@ -1947,11 +1882,10 @@ describe("useProjectEditor", () => {
     // of the `isClientError` branch (which logged "Save failed with
     // 4xx:"). Same lock + banner outcome — only the diagnostic warn
     // path changed.
-    expect(warnSpy).toHaveBeenCalledWith(
+    warn.calledWith(
       expect.stringContaining("Save failed terminally:"),
       expect.any(ApiRequestError),
     );
-    warnSpy.mockRestore();
   });
 
   // S3 (review 2026-04-26): a 404 that arrives WITHOUT a parseable JSON
@@ -1967,7 +1901,7 @@ describe("useProjectEditor", () => {
   // strips. S1 (2026-05-26): the status === 404 hand-coding is gone
   // — chapter.save.terminalStatuses owns the 404 lock now.
   it("handleSave fires onRequestEditorLock on bare 404 (no envelope code) (S3)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update).mockRejectedValue(
       // No third argument: simulates a 404 from a reverse proxy that
       // didn't return the { error: { code, message } } envelope.
@@ -1987,15 +1921,14 @@ describe("useProjectEditor", () => {
     expect(api.chapters.update).toHaveBeenCalledTimes(1);
     // S1 (agentic-review 2026-05-26): see neighbour test above —
     // bare 404 also routes through the terminal branch.
-    expect(warnSpy).toHaveBeenCalledWith(
+    warn.calledWith(
       expect.stringContaining("Save failed terminally:"),
       expect.any(ApiRequestError),
     );
-    warnSpy.mockRestore();
   });
 
   it("handleSave breaks immediately on 500 UPDATE_READ_FAILURE (I5)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update).mockRejectedValue(
       new ApiRequestError(
         "Chapter was updated but could not be re-read.",
@@ -2017,11 +1950,14 @@ describe("useProjectEditor", () => {
     // Same committed UX as 2xx BAD_JSON — server updated the row, just failed re-read
     expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveCommittedUnreadable);
     expect(api.chapters.update).toHaveBeenCalledTimes(1);
-    warnSpy.mockRestore();
+    warn.calledWith(
+      expect.stringContaining("Save failed terminally:"),
+      expect.any(ApiRequestError),
+    );
   });
 
   it("handleSave breaks immediately on 500 CORRUPT_CONTENT (I5)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update).mockRejectedValue(
       new ApiRequestError(
         "Chapter content is corrupted and cannot be loaded.",
@@ -2042,7 +1978,10 @@ describe("useProjectEditor", () => {
     expect(result.current.saveStatus).toBe("error");
     expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailedCorrupt);
     expect(api.chapters.update).toHaveBeenCalledTimes(1);
-    warnSpy.mockRestore();
+    warn.calledWith(
+      expect.stringContaining("Save failed terminally:"),
+      expect.any(ApiRequestError),
+    );
   });
 
   it("handleSave 4xx error state does not bleed across an A→B→A chapter switch (S5)", async () => {
@@ -2053,7 +1992,7 @@ describe("useProjectEditor", () => {
     // error then bled into A's newly-active session. S5 adds the
     // `!token.isStale()` gate (paralleling the cache-clear guard two lines
     // above) so the old save's failure cannot surface in A's fresh state.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
 
     // Initial load: first chapters.get call returns mockChapter1 for
@@ -2107,7 +2046,9 @@ describe("useProjectEditor", () => {
     // Contract: the stale save's 4xx must not surface on the fresh A session.
     expect(result.current.saveStatus).not.toBe("error");
     expect(result.current.saveErrorMessage).toBeNull();
-    warnSpy.mockRestore();
+    // The stale save's 4xx still logs the diagnostic warn before the
+    // token-staleness gate suppresses the user-facing error state.
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
   });
 
   it("handleSave preserves cached draft on 413 so the user can trim and retry (C1)", async () => {
@@ -2117,7 +2058,7 @@ describe("useProjectEditor", () => {
     // content was destroyed, leaving nothing to recover from after the
     // user trims the chapter and retries. Invariant #3: cache-clear only
     // after server success.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const { clearCachedContent } = await import("../hooks/useContentCache");
     vi.mocked(api.chapters.update).mockRejectedValue(
       new ApiRequestError("Request body too large.", 413, "PAYLOAD_TOO_LARGE"),
@@ -2133,11 +2074,11 @@ describe("useProjectEditor", () => {
 
     expect(result.current.saveStatus).toBe("error");
     expect(vi.mocked(clearCachedContent)).not.toHaveBeenCalled();
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
   });
 
   it("handleSave clears cached draft on VALIDATION_ERROR so retries don't loop forever", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const { clearCachedContent } = await import("../hooks/useContentCache");
     // Server rejected the payload as malformed — it truly cannot store
     // this content, so the client-side draft would feed a retry loop.
@@ -2157,7 +2098,7 @@ describe("useProjectEditor", () => {
 
     expect(result.current.saveStatus).toBe("error");
     expect(vi.mocked(clearCachedContent)).toHaveBeenCalledWith("ch1");
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
   });
 
   it("handleSave preserves cached draft on generic 4xx without a known code", async () => {
@@ -2166,7 +2107,7 @@ describe("useProjectEditor", () => {
     // intent is ambiguous, so preserving the draft is the safer default.
     // Only VALIDATION_ERROR is an explicit "this content can never be
     // stored" signal that warrants wiping.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const { clearCachedContent } = await import("../hooks/useContentCache");
     vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("Bad Request", 400));
 
@@ -2180,11 +2121,11 @@ describe("useProjectEditor", () => {
 
     expect(result.current.saveStatus).toBe("error");
     expect(vi.mocked(clearCachedContent)).not.toHaveBeenCalled();
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
   });
 
   it("handleSave clears saveErrorMessage on next save attempt", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update)
       .mockRejectedValueOnce(new ApiRequestError("Bad Request", 400))
       .mockResolvedValueOnce({ ...mockChapter1, word_count: 3 });
@@ -2199,21 +2140,17 @@ describe("useProjectEditor", () => {
     // STRINGS.editor.saveFailed copy rather than surfacing the raw
     // server message (I3).
     expect(result.current.saveErrorMessage).toBe(STRINGS.editor.saveFailed);
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Save failed with 4xx:"),
-      expect.any(ApiRequestError),
-    );
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
 
     await act(async () => {
       await result.current.handleSave({ type: "doc", content: [] });
     });
     expect(result.current.saveStatus).toBe("saved");
     expect(result.current.saveErrorMessage).toBeNull();
-    warnSpy.mockRestore();
   });
 
   it("handleCreateChapter resets saveStatus and saveErrorMessage from a previous failure", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update).mockRejectedValue(new ApiRequestError("Bad Request", 400));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -2225,10 +2162,7 @@ describe("useProjectEditor", () => {
     });
     expect(result.current.saveStatus).toBe("error");
     expect(result.current.saveErrorMessage).not.toBeNull();
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Save failed with 4xx:"),
-      expect.any(ApiRequestError),
-    );
+    warn.calledWith(expect.stringContaining("Save failed with 4xx:"), expect.any(ApiRequestError));
 
     // Create a new chapter — save state should reset
     const newChapter = {
@@ -2251,7 +2185,6 @@ describe("useProjectEditor", () => {
 
     expect(result.current.saveStatus).toBe("idle");
     expect(result.current.saveErrorMessage).toBeNull();
-    warnSpy.mockRestore();
   });
 
   it("handleDeleteChapter surfaces secondary chapter fetch failure via onError (I3)", async () => {
@@ -2261,7 +2194,7 @@ describe("useProjectEditor", () => {
     // chapters, even though `remaining` still held other chapters. Surface
     // the failure via the onError callback so the page can show a banner,
     // and warn to the console so the dev signal isn't lost.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.delete).mockResolvedValue(undefined);
     vi.mocked(api.chapters.get)
       .mockResolvedValueOnce(mockChapter1) // initial load
@@ -2282,11 +2215,10 @@ describe("useProjectEditor", () => {
     expect(result.current.activeChapter).toBeNull();
     expect(result.current.chapterWordCount).toBe(0);
     expect(onError).toHaveBeenCalledWith(STRINGS.error.loadChapterFailed);
-    expect(warnSpy).toHaveBeenCalledWith(
+    warn.calledWith(
       expect.stringContaining("Failed to load chapter after delete:"),
       expect.any(Error),
     );
-    warnSpy.mockRestore();
   });
 
   it("handleStatusChange discards stale revert when superseded by a newer call", async () => {
@@ -2420,7 +2352,7 @@ describe("useProjectEditor", () => {
   });
 
   it("reloadActiveChapter routes errors to onError callback without setting full-page error (I1)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     // Defensive reset: Vitest's clearAllMocks() in beforeEach does not
     // drain mockResolvedValueOnce/mockRejectedValueOnce queues, so a
     // prior test's leftover queued rejection can poison this load.
@@ -2445,7 +2377,7 @@ describe("useProjectEditor", () => {
     // Must NOT have set the full-page error — the replace already succeeded
     // on the server, callers must stay in the editor to retry.
     expect(result.current.error).toBeNull();
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to reload chapter:"), expect.any(Error));
   });
 
   it("reloadActiveChapter no-ops when expectedChapterId differs from current active (I2)", async () => {
@@ -2510,7 +2442,7 @@ describe("useProjectEditor", () => {
     // Suppress React's noisy setState-on-unmounted warning so the
     // regression condition (did setActiveChapter actually get called?)
     // can be asserted directly rather than inferred from console output.
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const error = expectConsole("error");
     unmount();
     await act(async () => {
       resolveReload(mockChapter1);
@@ -2520,11 +2452,9 @@ describe("useProjectEditor", () => {
     // React would have logged the act/unmounted warning only if the
     // hook tried to setState post-unmount. The guard is the actual
     // contract being tested; the spy is just insurance.
-    const setStateWarnings = errorSpy.mock.calls.filter((call) =>
+    error.notCalledMatching((call) =>
       String(call[0] ?? "").includes("state update on an unmounted"),
     );
-    expect(setStateWarnings).toHaveLength(0);
-    errorSpy.mockRestore();
   });
 
   it("handleDeleteChapter unmounting during delete await does not fire post-unmount setState (S3/S4)", async () => {
@@ -2578,7 +2508,7 @@ describe("useProjectEditor", () => {
   });
 
   it("reloadActiveChapter without onError falls back to setError (legacy callers)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.get).mockReset().mockResolvedValue(mockChapter1);
     vi.mocked(api.projects.get).mockReset().mockResolvedValue(mockProject);
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -2591,7 +2521,7 @@ describe("useProjectEditor", () => {
     });
 
     expect(result.current.error).toBe(STRINGS.error.loadChapterFailed);
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to reload chapter:"), expect.any(Error));
   });
 
   it("handleCreateChapter targets the new project's slug immediately after a URL-driven slug change (I1)", async () => {
@@ -2872,7 +2802,7 @@ describe("useProjectEditor", () => {
     // earlier guard. This test stays as a regression guard so a future
     // refactor that splits the catch's guard into per-branch checks
     // can't silently regress the invariant.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const otherProject = {
       ...mockProject,
       id: "p2",
@@ -2916,7 +2846,12 @@ describe("useProjectEditor", () => {
     // Project B's chapter must still be present — the stale reorder's
     // possiblyCommitted branch must not have filter-dropped it.
     expect(result.current.project?.chapters.map((c) => c.id)).toEqual(["b1"]);
-    warnSpy.mockRestore();
+    // The stale reorder logs the diagnostic warn before the project-drift
+    // guard returns.
+    warn.calledWith(
+      expect.stringContaining("Failed to reorder chapters:"),
+      expect.any(ApiRequestError),
+    );
   });
 
   it("S11 (4b.3c.3): a 404 on chapter-create fires onProjectNotFound and does NOT surface the gone-banner", async () => {
@@ -2926,7 +2861,7 @@ describe("useProjectEditor", () => {
     // banner, and silences the "Failed to create chapter:" warn — a
     // gone-project 404 is the explicit happy-recovery, not a programming
     // bug that needs dev visibility.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.create).mockRejectedValue(
       new ApiRequestError("project deleted", 404, "NOT_FOUND"),
     );
@@ -2947,8 +2882,7 @@ describe("useProjectEditor", () => {
     // would silently pass if the warn shape changed but warn still
     // fired. CLAUDE.md zero-warnings rule wants `not.toHaveBeenCalled()`
     // on the local spy so any unexpected warn surfaces.
-    expect(warnSpy).not.toHaveBeenCalled();
-    warnSpy.mockRestore();
+    warn.silent();
   });
 
   it("S1 (review 2026-05-27 round 3): createRecoveryAbortRef is nulled even when the recovery GET rejects — subsequent committed paths don't re-abort the prior signal", async () => {
@@ -2961,7 +2895,7 @@ describe("useProjectEditor", () => {
     // patterns T1 (useTrashManager) and S19 (useSnapshotState) which
     // restructure the try as try/catch/finally and put the
     // identity-checked null in finally.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
 
     vi.mocked(api.chapters.create).mockRejectedValue(
       new ApiRequestError("bad json", 200, "BAD_JSON"),
@@ -3007,7 +2941,9 @@ describe("useProjectEditor", () => {
 
     expect(firstSignal?.aborted).toBe(false);
     expect(recoverySignals).toHaveLength(2);
-    warnSpy.mockRestore();
+    // The first recovery GET rejected with an unaborted signal, so devWarn
+    // surfaces it; the second recovery GET succeeds silently.
+    warn.calledWith("handleCreateChapter recovery GET failed:", expect.any(ApiRequestError));
   });
 
   it("S17 (4b.3c.3): createRecoveryAbortRef is nulled on successful recovery merge — subsequent committed paths don't re-abort the prior signal", async () => {
@@ -3019,7 +2955,7 @@ describe("useProjectEditor", () => {
     // S17 fix the prior ref still points to the completed controller,
     // and the second call's preamble .abort() would flip the prior
     // signal to aborted.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const ch3 = {
       id: "ch3",
       project_id: "p1",
@@ -3078,7 +3014,10 @@ describe("useProjectEditor", () => {
     // The second recovery's own signal is also unaborted (its own
     // operation succeeded).
     expect(recoverySignals[1]?.aborted).toBe(false);
-    warnSpy.mockRestore();
+    // The 200 BAD_JSON create rejection logs the diagnostic warn each
+    // time (both recovery GETs succeed, so the recovery devWarn stays
+    // silent).
+    warn.calledWith("Failed to create chapter:", expect.any(ApiRequestError));
   });
 
   it("I3 (review 2026-05-27 round 3): handleCreateChapter recovery-GET catch fall-through does NOT fire onError after A→B nav", async () => {
@@ -3094,7 +3033,7 @@ describe("useProjectEditor", () => {
     // surfaces the full-page error overlay, tearing down B's editor
     // session. Post-fix: add a drift recheck right before the
     // onError/setError dispatch.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const otherProject = {
       ...mockProject,
       id: "p2",
@@ -3161,7 +3100,9 @@ describe("useProjectEditor", () => {
     expect(result.current.error).toBeNull();
     // Suppress unused-warning lint
     void resolveRecovery;
-    warnSpy.mockRestore();
+    // The create rejection still logs its diagnostic warn (fired while the
+    // user was on A, before the drift guard suppresses the onError leak).
+    warn.calledWith("Failed to create chapter:", expect.any(ApiRequestError));
   });
 
   it("I3 (review 2026-05-27): a 404 on a stale cross-project POST does NOT fire onProjectNotFound after A→B nav", async () => {
@@ -3173,7 +3114,7 @@ describe("useProjectEditor", () => {
     // even though they were actively viewing B. Post-fix: the drift
     // guards run first, so a stale-A 404 after the user is on B is
     // silently dropped — the user keeps editing B.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const otherProject = {
       ...mockProject,
       id: "p2",
@@ -3221,7 +3162,8 @@ describe("useProjectEditor", () => {
     // The user is on B — onProjectNotFound must NOT fire; the stale-A
     // 404 is irrelevant to B and is silently dropped.
     expect(onProjectNotFound).not.toHaveBeenCalled();
-    warnSpy.mockRestore();
+    // The drift guard returns before the clientWarn, so no warn fires.
+    warn.silent();
   });
 
   it("cross-project nav guard (sweep): handleDeleteChapter does NOT fire onError on the wrong project after A→B nav", async () => {
@@ -3234,7 +3176,7 @@ describe("useProjectEditor", () => {
     // Post-fix: capture projectId at entry; the catch bails before
     // applyMappedError when projectRef has drifted away from the
     // captured id.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const otherProject = {
       ...mockProject,
       id: "p2",
@@ -3282,7 +3224,9 @@ describe("useProjectEditor", () => {
 
     // Drift guard: onError must NOT fire on B for an event that happened on A.
     expect(onError).not.toHaveBeenCalled();
-    warnSpy.mockRestore();
+    // The delete rejection logs the diagnostic warn before the drift guard
+    // suppresses the onError leak.
+    warn.calledWith("Failed to delete chapter:", expect.any(ApiRequestError));
   });
 
   it("cross-project nav guard (sweep): handleStatusChange does NOT setError or fire onError on the wrong project after A→B nav", async () => {
@@ -3290,7 +3234,7 @@ describe("useProjectEditor", () => {
     // with an `if (onError) onError else setError` fallback — both
     // surfaces leak on cross-project nav. setError is the worst case
     // (full-page error overlay).
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const otherProject = {
       ...mockProject,
       id: "p2",
@@ -3339,7 +3283,9 @@ describe("useProjectEditor", () => {
     expect(onError).not.toHaveBeenCalled();
     // setError fallback also must not have fired.
     expect(result.current.error).toBeNull();
-    warnSpy.mockRestore();
+    // The status-change catch logs no warn on its primary path, and the
+    // drift guard returns before the recovery-GET devWarn.
+    warn.silent();
   });
 
   it("I2 (review 2026-05-27 round 3): handleStatusChange possiblyCommitted branch does NOT fire onError on the wrong project after A→B nav", async () => {
@@ -3358,7 +3304,7 @@ describe("useProjectEditor", () => {
     // the `mapped.message === null` ABORTED short-circuit so it gates
     // BOTH the possiblyCommitted branch and the trailing
     // applyMappedError.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const otherProject = {
       ...mockProject,
       id: "p2",
@@ -3408,11 +3354,12 @@ describe("useProjectEditor", () => {
 
     expect(onError).not.toHaveBeenCalled();
     expect(result.current.error).toBeNull();
-    warnSpy.mockRestore();
+    // The possiblyCommitted branch returns without logging a warn.
+    warn.silent();
   });
 
   it("cross-project nav guard (sweep): handleRenameChapter does NOT fire onError on the wrong project after A→B nav", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const otherProject = {
       ...mockProject,
       id: "p2",
@@ -3456,14 +3403,16 @@ describe("useProjectEditor", () => {
     });
 
     expect(onError).not.toHaveBeenCalled();
-    warnSpy.mockRestore();
+    // The rename rejection logs the diagnostic warn before the drift guard
+    // suppresses the onError leak.
+    warn.calledWith("Failed to rename chapter:", expect.any(ApiRequestError));
   });
 
   it("S11 (4b.3c.3): a 404 falls back to the createChapterProjectGone banner when onProjectNotFound is omitted", async () => {
     // Defensive fallback for hook consumers that can't navigate (tests,
     // storybook, or a future caller that wants the dismissible banner).
     // The scope's byStatus[404] string stays in scopes.ts for this path.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.create).mockRejectedValue(
       new ApiRequestError("project deleted", 404, "NOT_FOUND"),
     );
@@ -3477,11 +3426,11 @@ describe("useProjectEditor", () => {
     });
 
     expect(onError).toHaveBeenCalledWith(STRINGS.error.createChapterProjectGone);
-    warnSpy.mockRestore();
+    warn.calledWith("Failed to create chapter:", expect.any(ApiRequestError));
   });
 
   it("handleCreateChapter routes failures through onError callback (I4)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.create).mockRejectedValue(new Error("create boom"));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -3496,7 +3445,7 @@ describe("useProjectEditor", () => {
     // the editor session survives a recoverable POST failure.
     expect(onError).toHaveBeenCalledWith(STRINGS.error.createChapterFailed);
     expect(result.current.error).toBeNull();
-    warnSpy.mockRestore();
+    warn.calledWith("Failed to create chapter:", expect.any(Error));
   });
 
   it("handleCreateChapter refreshes project on 2xx BAD_JSON to avoid duplicate POST (C1)", async () => {
@@ -3505,7 +3454,7 @@ describe("useProjectEditor", () => {
     // and the user's retry click POSTs again → duplicate chapter.
     // Expected: fetch project fresh so the new chapter appears in state,
     // and surface the committed-specific copy via onError.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const newChapter = {
       id: "ch3",
       project_id: "p1",
@@ -3551,7 +3500,9 @@ describe("useProjectEditor", () => {
     // active one.
     expect(result.current.activeChapter?.id).toBe("ch3");
     expect(result.current.error).toBeNull();
-    warnSpy.mockRestore();
+    // The 200 BAD_JSON create rejection logs the diagnostic warn before
+    // routing into the committed-recovery refresh.
+    warn.calledWith("Failed to create chapter:", expect.any(ApiRequestError));
   });
 
   // I4 (review 2026-04-24): on 2xx BAD_JSON of the title PATCH, the
@@ -3563,7 +3514,7 @@ describe("useProjectEditor", () => {
   // fire onRequestEditorLock so EditorPage applies the lock banner,
   // disabling auto-save until the user refreshes.
   it("handleUpdateProjectTitle requests editor lock when recovery GET 404s (I4)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.update).mockRejectedValue(
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
     );
@@ -3581,7 +3532,7 @@ describe("useProjectEditor", () => {
     });
 
     expect(onRequestEditorLock).toHaveBeenCalledWith(STRINGS.error.updateTitleProjectSlugLost);
-    warnSpy.mockRestore();
+    warn.calledWith("Failed to update project title:", expect.any(ApiRequestError));
   });
 
   it("handleUpdateProjectTitle surfaces committed copy + refreshes on 2xx BAD_JSON (I3)", async () => {
@@ -3592,7 +3543,7 @@ describe("useProjectEditor", () => {
     // failures until the user refreshes. Expected: surface the committed
     // copy and attempt a project refresh so the case where the slug did
     // not change (e.g. cosmetic rename) recovers in place.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.update).mockRejectedValue(
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
     );
@@ -3618,14 +3569,14 @@ describe("useProjectEditor", () => {
     expect(result.current.project?.title).toBe("Renamed");
     // Returns undefined so useProjectTitleEditing keeps edit mode open.
     expect(returned).toBeUndefined();
-    warnSpy.mockRestore();
+    warn.calledWith("Failed to update project title:", expect.any(ApiRequestError));
   });
 
   it("handleCreateChapter refreshes project on READ_AFTER_CREATE_FAILURE (C1)", async () => {
     // Server inserted the chapter but could not re-read it — emits a
     // 500 with READ_AFTER_CREATE_FAILURE. The server message literally
     // says "Do not retry." Same recovery path as the BAD_JSON case.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const newChapter = {
       id: "ch3",
       project_id: "p1",
@@ -3666,7 +3617,7 @@ describe("useProjectEditor", () => {
     // I7: recovery path sets the newly-created chapter active to match
     // the happy path's setActiveChapter(newChapter).
     expect(result.current.activeChapter?.id).toBe("ch3");
-    warnSpy.mockRestore();
+    warn.calledWith("Failed to create chapter:", expect.any(ApiRequestError));
   });
 
   it("seeds confirmedStatusRef for newly-created chapters so a later revert can find a baseline (C2 2026-04-25)", async () => {
@@ -3677,7 +3628,7 @@ describe("useProjectEditor", () => {
     //   if (!reverted && previousStatus !== undefined) { ... }
     // silently skipped, leaving the optimistic status on screen even
     // though the server never accepted it.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const newChapter = {
       id: "ch3",
       project_id: "p1",
@@ -3719,7 +3670,9 @@ describe("useProjectEditor", () => {
     // on screen — the server never accepted "drafting".
     const ch3 = result.current.project?.chapters.find((c) => c.id === "ch3");
     expect(ch3?.status).toBe("outline");
-    warnSpy.mockRestore();
+    // The status PATCH + recovery-GET double failure logs the recovery
+    // devWarn (create itself succeeded).
+    warn.calledWith("handleStatusChange recovery GET failed:", expect.any(Error));
   });
 
   it("resets confirmedStatusRef when loadProject fires (I7 2026-04-25)", async () => {
@@ -3733,7 +3686,7 @@ describe("useProjectEditor", () => {
     // (3) switch to a slug whose load fails, (4) trigger a revert path
     // and verify the local-revert fallback skips (cache empty →
     // previousStatus undefined → optimistic value remains).
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.get).mockReset();
     vi.mocked(api.projects.get)
       .mockResolvedValueOnce(mockProject) // initial load: p1 with ch1=outline
@@ -3765,7 +3718,8 @@ describe("useProjectEditor", () => {
 
     const ch1 = result.current.project?.chapters.find((c) => c.id === "ch1");
     expect(ch1?.status).toBe("revised");
-    warnSpy.mockRestore();
+    // The failed other-project load logs the load-project warn.
+    warn.calledWith("Failed to load project:", expect.any(Error));
   });
 
   it("seeds confirmedStatusRef for chapters created via the BAD_JSON recovery path (C2 2026-04-25)", async () => {
@@ -3774,7 +3728,7 @@ describe("useProjectEditor", () => {
     // setActiveChapter(newest) path). Before the fix, the recovery
     // branch only setProject(refreshed) — confirmedStatusRef was
     // never seeded, so a later status revert would read undefined.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const newChapter = {
       id: "ch3",
       project_id: "p1",
@@ -3814,7 +3768,8 @@ describe("useProjectEditor", () => {
     // the double-failure revert.
     const ch3 = result.current.project?.chapters.find((c) => c.id === "ch3");
     expect(ch3?.status).toBe("revised");
-    warnSpy.mockRestore();
+    // The 200 BAD_JSON create rejection logs the create warn.
+    warn.calledWith("Failed to create chapter:", expect.any(ApiRequestError));
   });
 
   it("create-recovery is not aborted by a sibling status-revert recovery (C1 2026-04-25)", async () => {
@@ -3827,7 +3782,7 @@ describe("useProjectEditor", () => {
     // in `try { ... } catch {}`, so the abort was silently swallowed,
     // the new chapter never landed in the sidebar, and the user saw
     // the committed banner with no actionable state change.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
 
     const newChapter = {
       ...mockChapter2,
@@ -3897,7 +3852,8 @@ describe("useProjectEditor", () => {
     // The create's recovery setProject must have run — chapter ch3 lands.
     expect(result.current.project?.chapters.find((c) => c.id === "ch3")).toBeDefined();
     expect(result.current.activeChapter?.id).toBe("ch3");
-    warnSpy.mockRestore();
+    // The 200 BAD_JSON create rejection logs the create warn.
+    warn.calledWith("Failed to create chapter:", expect.any(ApiRequestError));
   });
 
   it("I1 (review 2026-05-27 round 2): rapid Add Chapter — a stale recovery GET-A does NOT clobber Create-B's successful merge", async () => {
@@ -3917,7 +3873,7 @@ describe("useProjectEditor", () => {
     // Post-fix: useAbortableSequence's createToken captured at
     // handleCreateChapter-A entry goes stale when Create-B's start()
     // bumps the epoch; GET-A's .then bails before touching state.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const chB = {
       id: "ch-b",
       project_id: "p1",
@@ -4003,7 +3959,8 @@ describe("useProjectEditor", () => {
     // And the active chapter stays on ch-b (Create-B's setActiveChapter),
     // not silently pulled back to one of A's snapshot's chapters.
     expect(result.current.activeChapter?.id).toBe("ch-b");
-    warnSpy.mockRestore();
+    // Create-A's 200 BAD_JSON rejection logs the create warn.
+    warn.calledWith("Failed to create chapter:", expect.any(ApiRequestError));
   });
 
   it("S1 (review 2026-05-27 round 2): handleCreateChapter recovery GET uses the current slug, not the captured one (survives mid-flight rename)", async () => {
@@ -4016,7 +3973,7 @@ describe("useProjectEditor", () => {
     // and the user saw the committed banner with no sidebar refresh.
     // Post-fix: read projectSlugRef.current at the GET call site so
     // the freshest slug is used. Mirrors S2 in useTrashManager.ts.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const renamedProject = {
       ...mockProject,
       slug: "renamed-project",
@@ -4075,7 +4032,8 @@ describe("useProjectEditor", () => {
     });
 
     expect(recoveryGetSlug).toBe("renamed-project");
-    warnSpy.mockRestore();
+    // The 200 BAD_JSON create rejection logs the create warn.
+    warn.calledWith("Failed to create chapter:", expect.any(ApiRequestError));
   });
 
   it("handleStatusChange preserves optimistic status on 2xx BAD_JSON + surfaces committed copy (I6)", async () => {
@@ -4086,7 +4044,7 @@ describe("useProjectEditor", () => {
     // the optimistic update and surface the committed copy so the user
     // knows the response was ambiguous. Skipping the revert also avoids
     // the unnecessary project GET.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.chapters.update).mockRejectedValue(
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
     );
@@ -4108,7 +4066,8 @@ describe("useProjectEditor", () => {
     expect(result.current.activeChapter?.status).toBe("revised");
     // Committed copy surfaced, not the generic fallback.
     expect(onError).toHaveBeenCalledWith(STRINGS.error.statusChangeResponseUnreadable);
-    warnSpy.mockRestore();
+    // The status possiblyCommitted branch returns without logging a warn.
+    warn.silent();
   });
 
   it("handleReorderChapters applies order on 2xx BAD_JSON + surfaces committed copy (I6)", async () => {
@@ -4118,7 +4077,7 @@ describe("useProjectEditor", () => {
     // server had the new order. Apply the requested order to state on
     // possiblyCommitted so the UI matches the committed server state,
     // and surface the committed copy so the user knows to refresh.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.reorderChapters).mockRejectedValue(
       new ApiRequestError("Malformed response body", 200, "BAD_JSON"),
     );
@@ -4134,11 +4093,14 @@ describe("useProjectEditor", () => {
     // Reorder applied to state despite the unreadable body.
     expect(result.current.project?.chapters.map((c) => c.id)).toEqual(["ch2", "ch1"]);
     expect(onError).toHaveBeenCalledWith(STRINGS.error.reorderResponseUnreadable);
-    warnSpy.mockRestore();
+    warn.calledWith(
+      expect.stringContaining("Failed to reorder chapters:"),
+      expect.any(ApiRequestError),
+    );
   });
 
   it("handleReorderChapters routes failures through onError callback (I4)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.reorderChapters).mockRejectedValue(new Error("reorder boom"));
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -4151,7 +4113,7 @@ describe("useProjectEditor", () => {
 
     expect(onError).toHaveBeenCalledWith(STRINGS.error.reorderFailed);
     expect(result.current.error).toBeNull();
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to reorder chapters:"), expect.any(Error));
   });
 
   it("handleUpdateProjectTitle aborts in-flight PATCH when a newer rename fires (I1 2026-04-24)", async () => {

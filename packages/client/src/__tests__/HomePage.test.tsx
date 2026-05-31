@@ -5,6 +5,7 @@ import { HomePage } from "../pages/HomePage";
 import { MemoryRouter } from "react-router-dom";
 import { api, ApiRequestError } from "../api/client";
 import { pendingUntilAbort } from "./helpers/abortableMocks";
+import { expectConsole } from "./expectConsole";
 
 vi.mock("../api/client", () => ({
   ApiRequestError: class ApiRequestError extends Error {
@@ -242,7 +243,7 @@ describe("HomePage", () => {
   });
 
   it("shows error banner when loadProjects fails", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.list).mockRejectedValue(new Error("Network error"));
     renderHomePage();
 
@@ -250,15 +251,11 @@ describe("HomePage", () => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
       expect(screen.getByText("Failed to load projects")).toBeInTheDocument();
     });
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to load projects:"),
-      expect.any(Error),
-    );
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to load projects:"), expect.any(Error));
   });
 
   it("shows fallback error when loadProjects fails with non-Error", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.list).mockRejectedValue("something weird");
     renderHomePage();
 
@@ -266,15 +263,11 @@ describe("HomePage", () => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
       expect(screen.getByText("Failed to load projects")).toBeInTheDocument();
     });
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to load projects:"),
-      expect.anything(),
-    );
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to load projects:"), expect.anything());
   });
 
   it("shows error banner when handleCreate fails", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.list).mockResolvedValue([]);
     vi.mocked(api.projects.create).mockRejectedValue(new Error("Create failed"));
     renderHomePage();
@@ -295,11 +288,7 @@ describe("HomePage", () => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
       expect(screen.getByText("Failed to create project")).toBeInTheDocument();
     });
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to create project:"),
-      expect.any(Error),
-    );
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to create project:"), expect.any(Error));
   });
 
   it("on 2xx BAD_JSON create, refreshes list and closes dialog to prevent duplicate (I5 2026-04-25)", async () => {
@@ -314,7 +303,7 @@ describe("HomePage", () => {
     // re-fire) before showing the committed banner. The slug isn't
     // available in the unreadable response, so navigation can't be
     // performed automatically — refresh-and-close is the safe default.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.list)
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
@@ -352,7 +341,7 @@ describe("HomePage", () => {
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     // Committed banner instructs the user to refresh.
     expect(screen.getByRole("alert")).toHaveTextContent(/may have completed/i);
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to create project:"), expect.any(Error));
   });
 
   it("aborts the create-recovery list refetch on unmount (I13 2026-04-25)", async () => {
@@ -363,7 +352,7 @@ describe("HomePage", () => {
     // component — the same shape the loadProjects-effect abort pattern
     // was introduced to silence. Verify the recovery list receives a
     // signal that is aborted on unmount.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     const listSignals: (AbortSignal | undefined)[] = [];
     vi.mocked(api.projects.list).mockImplementation((signal?: AbortSignal) => {
       listSignals.push(signal);
@@ -404,7 +393,7 @@ describe("HomePage", () => {
     // Unmount cleanup must abort the recovery signal so the .then
     // handler bails before calling setProjects on a torn-down tree.
     expect(listSignals[1]?.aborted).toBe(true);
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to create project:"), expect.any(Error));
   });
 
   // I1 (review 2026-04-24): handleDelete ignored possiblyCommitted. On
@@ -414,7 +403,7 @@ describe("HomePage", () => {
   // Mirror siblings: on possiblyCommitted, optimistically drop the row
   // from state and surface the committed copy via setError.
   it("on 2xx BAD_JSON delete, drops row and surfaces committed copy (I1)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.list).mockResolvedValue([
       {
         id: "p1",
@@ -443,11 +432,11 @@ describe("HomePage", () => {
     });
     // Committed copy in the alert banner tells the user to refresh.
     expect(screen.getByRole("alert")).toHaveTextContent(/may have completed/i);
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to delete project:"), expect.any(Error));
   });
 
   it("shows error banner when handleDelete fails", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.list).mockResolvedValue([
       {
         id: "p1",
@@ -472,11 +461,7 @@ describe("HomePage", () => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
       expect(screen.getByText("Failed to delete project")).toBeInTheDocument();
     });
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to delete project:"),
-      expect.any(Error),
-    );
-    warnSpy.mockRestore();
+    warn.calledWith(expect.stringContaining("Failed to delete project:"), expect.any(Error));
   });
 
   it("cancels delete and keeps project in list", async () => {
@@ -514,7 +499,7 @@ describe("HomePage", () => {
   // incorrect on ABORTED (a superseded operation should not clear the
   // dialog target).
   it("handleCreate does not warn when superseded by unmount (I3)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.list).mockResolvedValue([]);
     vi.mocked(api.projects.create).mockImplementation((_input, signal) =>
       pendingUntilAbort(signal),
@@ -535,17 +520,14 @@ describe("HomePage", () => {
     unmount();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    // Only the loadProjects-effect path may have emitted warns (none
-    // here since it resolved). The create path must be silent on abort.
-    const createFailedWarns = warnSpy.mock.calls.filter(
+    // The create path must be silent on abort — no "Failed to create project" warn.
+    warn.notCalledMatching(
       (call) => typeof call[0] === "string" && call[0].includes("Failed to create project"),
     );
-    expect(createFailedWarns).toEqual([]);
-    warnSpy.mockRestore();
   });
 
   it("handleDelete does not warn when superseded by unmount (I3)", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     vi.mocked(api.projects.list).mockResolvedValue([
       {
         id: "p1",
@@ -569,11 +551,10 @@ describe("HomePage", () => {
     unmount();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    const deleteFailedWarns = warnSpy.mock.calls.filter(
+    // The delete path must be silent on abort — no "Failed to delete project" warn.
+    warn.notCalledMatching(
       (call) => typeof call[0] === "string" && call[0].includes("Failed to delete project"),
     );
-    expect(deleteFailedWarns).toEqual([]);
-    warnSpy.mockRestore();
   });
 
   it("does not console.warn when loadProjects rejects after unmount", async () => {
@@ -581,7 +562,7 @@ describe("HomePage", () => {
     // with warn ABOVE the check produced console noise on navigation/
     // unmount races. Verify the abort path keeps test output clean
     // (zero-warnings-in-test-output rule).
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = expectConsole("warn");
     let rejectFn: (err: Error) => void = () => {};
     vi.mocked(api.projects.list).mockReturnValue(
       new Promise<never>((_, reject) => {
@@ -596,7 +577,6 @@ describe("HomePage", () => {
     rejectFn(new Error("Network error"));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(warnSpy).not.toHaveBeenCalled();
-    warnSpy.mockRestore();
+    warn.silent();
   });
 });

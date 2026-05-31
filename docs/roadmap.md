@@ -50,7 +50,7 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.4    | Raw-Strings ESLint Rule                   | Enforce strings.ts externalization via lint; fix existing violations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Done |
 | 4b.5    | Editor State Machine                      | Unify `editable`/`locked`/`busy` editor state into one machine; add `committed_but_unreloaded` mutation stage for ambiguous server responses                                                                                                                                                                                                                                                                                                                                                                                                                          | Done |
 | 4b.6    | E2E Test Isolation                        | Wire `playwright.config.ts` to set `SMUDGE_PORT` / `SMUDGE_CLIENT_PORT` / `DB_PATH` to test-only values so e2e cannot piggy-back on the dev server or share its database                                                                                                                                                                                                                                                                                                                                                                                              | Done |
-| 4b.7    | Test Warning-Pin Audit                    | Audit the 52 console-spy installs across 9 client test files that suppress `console.warn`/`console.error` without asserting on the call; pin each spy to the contract its production path commits to (or remove if defensive)                                                                                                                                                                                                                                                                                                                                         | Planned |
+| 4b.7    | Test Warning-Pin Audit                    | Audit the console-spy installs across the client test suite (~140 across 16 files as of 2026-05-30 — the original "52 across 9" estimate was stale) that suppress `console.warn`/`console.error` without asserting; migrate all to an `expectConsole()` helper (install ⇒ assert), enforced by a global afterEach guard + a total ESLint ban on raw `vi.spyOn(console,…)`                                                                                                                                                                                              | In Progress |
 | 4b.8    | TipTap Extension Consolidation            | Move client+server TipTap extension config to `packages/shared/`; both packages re-export. Eliminates the parity test enforced by review.                                                                                                                                                                                                                                                                                                                                                                                                                             | Planned |
 | 4b.9    | Chapter Status Type Alignment             | Replace `Chapter.status: string` with `ChapterStatusValue = z.infer<typeof ChapterStatus>` so the TS type matches the Zod 5-value enum.                                                                                                                                                                                                                                                                                                                                                                                                                               | Planned |
 | 4b.10   | Shared TipTap Unsafe-Keys Set             | Extract `CANONICAL_UNSAFE_KEYS` into `packages/shared/` so `tiptap-text.ts` and `snapshots/content-hash.ts` share one declaration of `__proto__`/`prototype`/`constructor` strip.                                                                                                                                                                                                                                                                                                                                                                                     | Planned |
@@ -1258,6 +1258,7 @@ Pattern analysis across the six `ovid/architecture` code reviews (2026-04-19 to 
 ---
 
 ## Phase 4b.6: E2E Test Isolation
+<!-- plan: n/a — shipped via ovid/devcontainer-and-e2e-isolation without a /roadmap brainstorm; no design doc. Marked Done in the Phase Structure table. Marker present so /roadmap skips this section. -->
 
 ### Goal
 
@@ -1292,6 +1293,7 @@ Once the `ovid/shared-port-validation` branch lands, `packages/server/src/index.
 ---
 
 ## Phase 4b.7: Test Warning-Pin Audit
+<!-- plan: 2026-05-30-test-warning-pin-audit-design.md -->
 
 ### Goal
 
@@ -1299,7 +1301,7 @@ Make the CLAUDE.md §Testing Philosophy "Zero warnings in test output" rule enfo
 
 ### Why Now
 
-CLAUDE.md §Testing Philosophy says: _"When a test deliberately triggers an error path that logs a warning, spy on the output, suppress it, and assert the expected message — e.g. `const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {}); ... expect(warnSpy).toHaveBeenCalledWith(...); warnSpy.mockRestore();`."_ The 4b.3a Cluster A code review (`paad/code-reviews/ovid-cluster-a-error-mapping-2026-04-27-14-13-42-91476d8.md`, finding I1) surfaced two tests violating this rule; a follow-up audit found 52 more across 9 files. Each unasserted spy is a contract that isn't pinned: a future change that drops or alters the production warn would silently pass. This phase closes that gap before Phase 4b.4's raw-strings lint rule lands, so the test suite is clean of latent contract gaps when lint-driven cleanup begins.
+CLAUDE.md §Testing Philosophy says: _"When a test deliberately triggers an error path that logs a warning, spy on the output, suppress it, and assert the expected message — e.g. `const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {}); ... expect(warnSpy).toHaveBeenCalledWith(...); warnSpy.mockRestore();`."_ The 4b.3a Cluster A code review (`paad/code-reviews/ovid-cluster-a-error-mapping-2026-04-27-14-13-42-91476d8.md`, finding I1) surfaced two tests violating this rule; a follow-up audit found ~140 installs across 16 files (the original "52 across 9" estimate was stale). Each unasserted spy is a contract that isn't pinned: a future change that drops or alters the production warn would silently pass. This phase closes that gap before Phase 4b.4's raw-strings lint rule lands, so the test suite is clean of latent contract gaps when lint-driven cleanup begins.
 
 ### Scope
 
@@ -1309,19 +1311,26 @@ Audit and fix all `vi.spyOn(console, …).mockImplementation(() => {})` installs
 - **Production warn fires defensively (e.g. unrelated library noise)** → either remove the spy entirely (let the warn through if it's harmless) or assert `expect(spy).not.toHaveBeenCalled()` to pin absence.
 - **Multi-warn paths** → assert with `toHaveBeenCalledTimes(N)` plus `toHaveBeenNthCalledWith` where the order matters.
 
-The 52 occurrences (post-I1 fix) are distributed:
+The 140 installs across 16 files (post-I1 fix) are distributed:
 
-| Count | File                                                           |
-| ----- | -------------------------------------------------------------- |
-| 27    | `packages/client/src/__tests__/useProjectEditor.test.ts`       |
-| 6     | `packages/client/src/__tests__/DashboardView.test.tsx`         |
-| 4     | `packages/client/src/__tests__/EditorPageFeatures.test.tsx`    |
-| 4     | `packages/client/src/__tests__/HomePage.test.tsx`              |
-| 3     | `packages/client/src/__tests__/ProjectSettingsDialog.test.tsx` |
-| 3     | `packages/client/src/hooks/useEditorMutation.test.tsx`         |
-| 2     | `packages/client/src/__tests__/ExportDialog.test.tsx`          |
-| 2     | `packages/client/src/hooks/useAbortableSequence.test.ts`       |
-| 1     | `packages/client/src/__tests__/useSnapshotState.test.ts`       |
+| Count | File                                                              |
+| ----- | ----------------------------------------------------------------- |
+| 69    | `packages/client/src/__tests__/useProjectEditor.test.ts`          |
+| 15    | `packages/client/src/__tests__/EditorPageFeatures.test.tsx`       |
+| 12    | `packages/client/src/hooks/useEditorMutation.test.tsx`            |
+| 10    | `packages/client/src/__tests__/HomePage.test.tsx`                 |
+| 9     | `packages/client/src/__tests__/DashboardView.test.tsx`            |
+| 4     | `packages/client/src/__tests__/ProjectSettingsDialog.test.tsx`    |
+| 4     | `packages/client/src/errors/clientLog.test.ts`                    |
+| 3     | `packages/client/src/__tests__/useSnapshotState.test.ts`          |
+| 3     | `packages/client/src/errors/devWarn.test.ts`                      |
+| 2     | `packages/client/src/__tests__/useTrashManager.test.ts`           |
+| 2     | `packages/client/src/__tests__/ExportDialog.test.tsx`             |
+| 2     | `packages/client/src/hooks/useAbortableSequence.test.ts`          |
+| 2     | `packages/client/src/hooks/useAbortableAsyncOperation.test.ts`    |
+| 1     | `packages/client/src/__tests__/useContentCache.test.ts`           |
+| 1     | `packages/client/src/__tests__/editorSafeOps.test.ts`             |
+| 1     | `packages/client/src/errors/apiErrorMapper.test.ts`               |
 
 Consider whether a small ESLint rule (or test-side helper that wraps spy + assertion) could prevent regressions. If so, fold it into the phase; if not, document the manual review checkpoint in CONTRIBUTING.md.
 

@@ -229,7 +229,21 @@ The save pipeline gets the most rigorous coverage — it's the core trust promis
 
 **Coverage thresholds are enforced in `vitest.config.ts` (95% statements, 85% branches, 90% functions, 95% lines).** If coverage drops below these thresholds, the goal is always to increase coverage as much as possible by writing meaningful tests for the uncovered code — never simply adjust the thresholds downward or write minimal/trivial tests just to meet the minimum. Aim to push coverage higher, not coast at the floor.
 
-**Zero warnings in test output.** Tests must not produce noisy `console.warn`, `console.error`, or logger output in stderr. When a test deliberately triggers an error path that logs a warning, spy on the output, suppress it, and assert the expected message — e.g. `const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {}); ... expect(warnSpy).toHaveBeenCalledWith(...); warnSpy.mockRestore();`. Noisy test output masks real problems; if every test run has 30 "expected" warnings, developers stop reading them and miss the 31st that signals a real bug.
+**Zero warnings in test output.** Tests must not produce noisy `console.warn`,
+`console.error`, or logger output in stderr. In the **client** suite, spy on
+console **only** via `expectConsole()`
+(`packages/client/src/__tests__/expectConsole.ts`): it installs a suppressing
+spy and registers a pending expectation, and each matcher
+(`calledWith`/`notCalledWith`/`calledTimes`/`nthCalledWith`/`called`/`silent`/
+`calledMatching`/`notCalledMatching`) both asserts **and** marks the
+expectation resolved — e.g.
+`expectConsole("warn").calledWith("…", expect.any(Error));`. Raw
+`vi.spyOn(console, …)` is **banned by ESLint** (the helper file is the sole
+exemption), and a global `afterEach` (`assertConsoleExpectationsSettled`) fails
+any test that installs an expectation but never asserts it — so a suppressed
+warning can never silently drift. Noisy test output masks real problems; if
+every test run has 30 "expected" warnings, developers stop reading them and
+miss the 31st that signals a real bug.
 
 The only thing worse than a failing test is a reduction in test coverage.
 
