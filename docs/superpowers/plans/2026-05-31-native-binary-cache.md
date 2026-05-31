@@ -482,10 +482,20 @@ export function orchestrate(deps) {
 Run: `npx vitest run --project scripts`
 Expected: PASS (all `orchestrate` cases plus the earlier suites).
 
-- [ ] **Step 5: Confirm full coverage of the pure module**
+- [ ] **Step 5: Confirm the pure module's tests pass**
 
-Run: `npx vitest run --project scripts --coverage`
-Expected: PASS; `scripts/native-cache.mjs` reports 100% (or at minimum ≥ the 95/85/90/95 thresholds). `scripts/ensure-native.mjs` does not exist yet, so it cannot affect this run.
+Run: `npx vitest run --project scripts`
+Expected: PASS (all `computeCacheKey`, `validateNodeMajor`, and `orchestrate` cases green).
+
+> **Do NOT add `--coverage` to this command.** The root `coverage` block is a
+> single global gate with no per-project `include`, so a scripts-only
+> `--coverage` run instruments the entire repo, reports ~0.5% lines, and
+> red-gates on the 95% threshold — a false alarm, not a real failure. Coverage
+> of `native-cache.mjs` is verified in **Task 7 Step 1** via the full
+> `make cover` (it reports 100% statements/functions/lines and ~96% branch —
+> the one uncovered branch is the unreachable `?? actualNodeVersion`
+> `noUncheckedIndexedAccess` guard in `validateNodeMajor`, comfortably above the
+> 85% branch gate).
 
 - [ ] **Step 6: Commit**
 
@@ -738,6 +748,16 @@ ensure-native: ## Ensure better-sqlite3 native binding matches current platform 
 ```
 
 (The `.PHONY` line and the `all:` target above the comment block are unchanged.)
+
+> **Intentional behavior changes vs the old recipe (preserve the guards, not the
+> byte-for-byte I/O):** the script routes all diagnostics through `console.error`
+> (stderr) rather than the recipe's `echo` (stdout), and runs `npm rebuild` with
+> `stdio: "inherit"` so compile progress is visible instead of `>/dev/null`-
+> suppressed. The happy path stays silent (no output, exit 0). The probe now runs
+> in an isolated child `node` rather than in-process. Message wording is *adapted*
+> (e.g. "no cached binary matched") not copied verbatim. All AC#4 guards —
+> Node-major pin, install check, `NPM_CONFIG_IGNORE_SCRIPTS=false` rebuild,
+> post-rebuild re-probe, and the helpful failure text — are preserved in content.
 
 - [ ] **Step 3: Verify the target still works end-to-end**
 
