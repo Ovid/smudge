@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MAX_TIPTAP_DEPTH, validateTipTapDepth } from "./tiptap-depth";
+import { MAX_TIPTAP_DEPTH, validateTipTapDepth } from "./tiptap-safety";
 
 // Re-export so existing `import { MAX_TIPTAP_DEPTH, validateTipTapDepth }
 // from ".../schemas"` callers continue to work.

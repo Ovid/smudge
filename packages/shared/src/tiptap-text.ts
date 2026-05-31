@@ -4,11 +4,11 @@
  * Handles text that spans multiple text nodes with different marks (formatting).
  */
 
-// Depth cap for walkers — pulled from the zero-dependency tiptap-depth
+// Depth cap for walkers — pulled from the zero-dependency tiptap-safety
 // module directly (NOT via the shared barrel) so a future edit to the
 // cap propagates automatically instead of silently drifting from the
 // schema-side value.
-import { MAX_TIPTAP_DEPTH as MAX_WALK_DEPTH } from "./tiptap-depth";
+import { MAX_TIPTAP_DEPTH as MAX_WALK_DEPTH } from "./tiptap-safety";
 
 type Mark = { type: string; attrs?: Record<string, unknown> };
 

@@ -1,7 +1,7 @@
-// Imported from the zero-dep tiptap-depth module rather than schemas so
+// Imported from the zero-dep tiptap-safety module rather than schemas so
 // countWords callers (notably the client bundle) don't pull in Zod just
 // to compute word counts.
-import { MAX_TIPTAP_DEPTH } from "./tiptap-depth";
+import { MAX_TIPTAP_DEPTH } from "./tiptap-safety";
 
 type TipTapNode = {
   type: string;
