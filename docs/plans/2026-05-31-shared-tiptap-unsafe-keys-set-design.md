@@ -198,9 +198,18 @@ two local declarations. Behavior is unchanged, so the existing consumer tests �
 plus the new behavioral test — remain the regression net:
 
 - `packages/shared/src/tiptap-text.test.ts` — exercises `canonicalJSON` / marks
-  comparison (the `tiptap-text.ts` strip is reached only through the internal
-  `canonicalJSON`; its existing tests stay green, and the server-side behavioral
-  test above directly covers the equivalent strip on the canonicalize path).
+  comparison; its existing tests stay green. Note the asymmetry honestly: the
+  server behavioral test covers **`content-hash.ts`'s `canonicalize` strip
+  only** — it does not exercise `tiptap-text.ts`'s `canonicalJSON`, which is
+  separate code. `canonicalJSON` is internal (not exported), and its strip is
+  the same `.has()` filter applied against the **same shared
+  `CANONICAL_UNSAFE_KEYS`** set. That path is therefore covered transitively —
+  the set's contents are proven by the shared wiring test, and the strip
+  semantics by the server behavioral test — rather than by a dedicated
+  `tiptap-text` behavioral test. Adding one would require either exporting an
+  internal function or a contrived marks-comparison fixture for a filter
+  identical to the one already tested server-side; that is deliberately not
+  done (see the out-of-scope note on symmetric coverage).
 - `packages/server/src/__tests__/content-hash.test.ts` and
   `snapshots.repository.test.ts` — exercise `canonicalContentHash` (and through it
   `canonicalize` / the unsafe-key strip).
