@@ -305,7 +305,11 @@ The valid statuses are:
 
 ## 6. Pushback Review
 
-Invoke the `paad:pushback` skill against the design document just created in `docs/plans/`. If English is the new programming language, pushback is code review for the plan — catch contradictions, feasibility issues, scope problems, and ambiguity before any implementation begins.
+Run `paad:pushback` against the design document just created in `docs/plans/`. If English is the new programming language, pushback is code review for the plan — catch contradictions, feasibility issues, scope problems, and ambiguity before any implementation begins.
+
+**Run the review in an isolated subagent — do not invoke `paad:pushback` directly in this session.** The pushback skill deliberately reads conversation history as a source, but in a `/roadmap` run that history is *your own* brainstorming rationale, with every choice already justified — which anchors the review and blunts its adversarial value. Instead, dispatch a fresh-context subagent (the `Agent` tool, `subagent_type: general-purpose`) whose prompt contains **only**: the design document's path, read access to the repo, an instruction to invoke `paad:pushback` against that file, and a request to return its findings as a structured list (title, severity, category, one-paragraph summary, suggested options). The subagent sees none of this conversation, so it judges the document on its merits and against the actual codebase. Relay its findings back into this session.
+
+For a trivial or purely mechanical phase you may run pushback in-context to save the round-trip — but say so in the decision log's Summary (step 10) so the reduced independence is visible in the evidence trail.
 
 After pushback completes, discuss the findings with the user and update the design document to address any valid concerns before moving on.
 
@@ -361,9 +365,11 @@ The plan must honor the PR scope rules: a single roadmap phase is a single PR. I
 
 ## 9. Alignment Check
 
-Invoke the `paad:alignment` skill against the implementation plan just produced. Alignment catches coverage gaps, scope creep, and design-vs-plan mismatches — it verifies that every requirement in the design is traced to at least one task, every task maps back to a requirement, and every task is expressed in TDD red/green/refactor format.
+Run `paad:alignment` against the implementation plan just produced. Alignment catches coverage gaps, scope creep, and design-vs-plan mismatches — it verifies that every requirement in the design is traced to at least one task, every task maps back to a requirement, and every task is expressed in TDD red/green/refactor format.
 
-Pass the alignment skill both documents:
+**Run the review in an isolated subagent — do not invoke `paad:alignment` directly in this session**, for the same reason as step 6: the alignment skill reads conversation history, and in a `/roadmap` run that history is your own design-and-plan rationale, which anchors the check. Dispatch a fresh-context subagent (the `Agent` tool, `subagent_type: general-purpose`) whose prompt contains **only**: the paths to both documents below, read access to the repo, an instruction to invoke `paad:alignment` against them, and a request to return findings as a structured list (title, severity, category from `missing-coverage`/`out-of-scope`/`design-gap`/`tdd-format`, one-paragraph summary, suggested options). Relay its findings back into this session. The same trivial-phase carve-out applies: you may run alignment in-context, but note it in the decision log's Summary.
+
+Pass the alignment subagent both documents:
 
 - The design document from step 4 (the source of truth for requirements).
 - The implementation plan from step 8 (the breakdown being aligned).
