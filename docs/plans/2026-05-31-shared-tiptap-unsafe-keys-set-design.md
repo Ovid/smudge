@@ -113,10 +113,22 @@ merged version of both files' rationale).
 
 ### `packages/shared/src/index.ts` (barrel)
 
-Add `CANONICAL_UNSAFE_KEYS` to the public exports. `MAX_TIPTAP_DEPTH` and
-`validateTipTapDepth` currently flow out via the `./schemas` re-export; the new
-symbol is added following the established pattern (re-export site to be matched
-to whatever the existing one does — no new export *style* is introduced).
+Add a **direct** export of `CANONICAL_UNSAFE_KEYS` from `./tiptap-safety`:
+
+```ts
+export { CANONICAL_UNSAFE_KEYS } from "./tiptap-safety";
+```
+
+`MAX_TIPTAP_DEPTH` and `validateTipTapDepth` currently flow out via the
+`./schemas` re-export; the new constant is **not** routed through `./schemas`.
+`schemas.ts` has no reason to consume `CANONICAL_UNSAFE_KEYS`, and re-exporting it
+there would couple the lean, zero-dependency constant to the Zod module's
+re-export surface — partly defeating the reason the safety module is kept
+Zod-free. The constant's public path therefore sits with its real source. This
+leaves `index.ts` feeding TipTap-safety symbols from two sources (`./schemas` for
+the depth pair, `./tiptap-safety` for the key set); moving the depth pair's barrel
+export to match is deliberately **out of scope** (it would touch a working export
+path for a cosmetic win).
 
 ### `packages/shared/src/tiptap-text.ts`
 
@@ -152,36 +164,59 @@ module's coverage rides through `schemas.test.ts`, `wordcount.test.ts`, and
 
 ## Testing — red / green / refactor
 
-**RED.** Add `packages/shared/src/__tests__/tiptap-safety.test.ts` (mirroring the
-existing `constants.test.ts` convention) asserting that:
+The unsafe-key stripping behavior — the prototype-pollution defense this phase
+exists to consolidate — is currently **untested** in both consumers: a grep for
+`__proto__`/`prototype`/`poison` finds nothing in `tiptap-text.test.ts` or
+`content-hash.test.ts`. Rather than ship a tautological constant-mirror test
+(which CLAUDE.md's testing philosophy warns against), this phase closes that gap
+with a behavioral test on the code it already touches.
 
-- `CANONICAL_UNSAFE_KEYS` is exported from the `@smudge/shared` barrel, and
-- it contains exactly `__proto__`, `prototype`, `constructor` (size 3, each
-  present, no extras).
+**RED — two tests:**
 
-This fails before the constant exists / is exported.
+1. **Export wiring (minimal), shared.** Add
+   `packages/shared/src/__tests__/tiptap-safety.test.ts` (mirroring the
+   `constants.test.ts` convention) asserting `CANONICAL_UNSAFE_KEYS` is importable
+   from the `@smudge/shared` barrel and carries the three expected keys. This is a
+   deliberately small wiring/contract anchor, not the primary value — it proves
+   the new barrel export exists and fails before the constant is added.
+2. **Behavioral (primary), server.** Add a case to
+   `packages/server/src/__tests__/content-hash.test.ts` asserting that
+   `canonicalContentHash` strips unsafe keys: a TipTap doc whose marks/attrs
+   carry a crafted `__proto__` (and `constructor`) entry must hash **identically**
+   to the same doc without those entries — proving the key does not contribute to
+   the hash and cannot poison the scratch object. This exercises the real defense
+   and fails today only in the sense that it locks behavior the refactor must
+   preserve; it is written against the existing `canonicalize` path so it is green
+   on current code and stays green after the migration (guarding against a
+   regression in the strip).
 
-**GREEN.** Create the constant in the renamed module and add the barrel export.
+**GREEN.** Create the constant in the renamed module and add the direct barrel
+export so test (1) passes.
 
 **REFACTOR.** Migrate both consumers to import the shared constant and delete the
-two local declarations. Behavior is unchanged, so the existing consumer tests
-remain the regression net:
+two local declarations. Behavior is unchanged, so the existing consumer tests —
+plus the new behavioral test — remain the regression net:
 
-- `packages/shared/src/tiptap-text.test.ts` — exercises `canonicalJSON` /
-  marks comparison.
-- `packages/server/src/__tests__/snapshots.repository.test.ts` — exercises
-  `canonicalContentHash` (and through it `canonicalize` / the unsafe-key strip).
+- `packages/shared/src/tiptap-text.test.ts` — exercises `canonicalJSON` / marks
+  comparison (the `tiptap-text.ts` strip is reached only through the internal
+  `canonicalJSON`; its existing tests stay green, and the server-side behavioral
+  test above directly covers the equivalent strip on the canonicalize path).
+- `packages/server/src/__tests__/content-hash.test.ts` and
+  `snapshots.repository.test.ts` — exercise `canonicalContentHash` (and through it
+  `canonicalize` / the unsafe-key strip).
 
 The structural guarantee that the two defenses cannot drift is provided by the
-fact that both now import the **same symbol** — a compile-time invariant
-stronger than any runtime cross-check.
+fact that both now import the **same symbol** — a compile-time invariant stronger
+than any runtime cross-check.
 
 ## Definition of Done
 
 - One declaration of the unsafe-key set, in `packages/shared/src/tiptap-safety.ts`.
 - Both `tiptap-text.ts` and `content-hash.ts` import it; no local copies remain.
-- `CANONICAL_UNSAFE_KEYS` exported from the `@smudge/shared` barrel and covered by
-  a unit test.
+- `CANONICAL_UNSAFE_KEYS` exported **directly** from the `@smudge/shared` barrel
+  (via `./tiptap-safety`, not `./schemas`), with a minimal export-wiring test.
+- A behavioral test in `content-hash.test.ts` proving `canonicalContentHash`
+  strips unsafe keys (closes the previously-untested prototype-pollution defense).
 - The three relative importers point at `./tiptap-safety`.
 - Existing tests in `tiptap-text.test.ts` and `content-hash.test.ts` (via
   `snapshots.repository.test.ts`) still green.
