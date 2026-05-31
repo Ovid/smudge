@@ -32,6 +32,6 @@ export default defineConfig({
         lines: 95,
       },
     },
-    projects: ["packages/shared", "packages/server", "packages/client"],
+    projects: ["packages/shared", "packages/server", "packages/client", "scripts"],
   },
 });
