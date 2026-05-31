@@ -46,11 +46,24 @@ a fast file copy.
 The current recipe deliberately uses `npm rebuild --build-from-source` rather
 than `prebuild-install` so that compilation (inputs covered by
 `package-lock.json` integrity + the local toolchain) replaces network trust —
-see the Makefile's I5 note. **This design adds no network-trust surface:** the
-cache only ever holds binaries *we compiled locally on this machine*. Restoring
-a cached binary has the same provenance as recompiling it, just faster. The
-S10 (pin Node major before the probe) and S6 (re-probe after a rebuild)
-guards are retained.
+see the Makefile's I5 note. **This design adds no new *network*-trust surface:**
+the cache only ever holds binaries *we compiled locally on this machine*;
+nothing is fetched. Restoring a cached binary has the same provenance as
+recompiling it, just faster. The S10 (pin Node major before the probe) and S6
+(re-probe after a rebuild) guards are retained.
+
+It does add a small **local** tampering surface that the status quo lacks: a
+long-lived, writable binary at a stable path (`.native-cache/<key>/`) that is
+later copied into `node_modules` and `dlopen`'d with developer privileges, and
+that survives an `npm rebuild` (which only overwrites `build/Release/`). The
+mitigation is that `.native-cache/` lives in the **same trust domain as
+`node_modules` itself** — already writable and already `dlopen`'d — so the
+marginal surface is small, and it is repo-local / `rm -rf`-able. Note that the
+self-heal re-probe (delete + rebuild on *load failure*) is **not** a security
+control: it confirms a cached binary is *loadable*, not that it is the binary we
+compiled. A threat model that includes a local attacker able to write the repo
+tree already includes write access to `node_modules`; this design does not widen
+that boundary, only its lifetime.
 
 ## Cache key & layout
 
@@ -59,8 +72,16 @@ guards are retained.
   - `version` from `better-sqlite3/package.json`; `platform`/`arch` from
     `process.platform`/`process.arch`; `modules` from `process.versions.modules`
     (the Node ABI / `NODE_MODULE_VERSION`).
-  - Version-keying means a `better-sqlite3` upgrade auto-invalidates — a stale
-    binary for an old version is never served.
+  - Version-keying means a `better-sqlite3` **version** upgrade auto-invalidates
+    — a stale binary for an old version is never served.
+  - **Caveat (version-keyed, not content-keyed):** the binary is a function of
+    *source*, not just the version string. A workflow that patches
+    better-sqlite3's source *without* bumping its version (e.g. `patch-package`,
+    an `npm overrides` patch, or a local edit to the C++) would collide with the
+    existing key and serve a stale binary, silently masking the patch. The repo
+    has no such patches today; if one is ever introduced, clear the cache
+    (`rm -rf .native-cache/`) or extend the key with a hash of `binding.gyp` +
+    `src/`. Recorded as a known limitation, not built now (YAGNI).
 - **Layout:** `.native-cache/<key>/better_sqlite3.node`
   - Only the single `.node` file is cached — it is what the `bindings` loader
     actually `dlopen`s. The `sqlite3.a`, `obj/`, `obj.target/`, `.deps/`, and
@@ -108,9 +129,24 @@ guards are retained.
 temp file in the destination directory and `rename`s into place, so an
 interrupted copy cannot leave a torn binary.
 
-**Concurrency:** two simultaneous `make` invocations racing on the copy is
-accepted low-risk for a single-developer workflow; atomic rename keeps any
-individual file consistent.
+**Concurrency — cross-platform simultaneous runs are explicitly unsupported.**
+Atomic rename keeps any *individual* file from tearing, but it does **not**
+resolve the deeper interleave this cache exists to fix: there is one
+`build/Release/better_sqlite3.node` slot shared across both platforms via the
+bind mount. If `make` runs on **both** the host (macOS) and the container
+(Linux) at the same time against that one `node_modules` — e.g. `make dev` up in
+the container while `make e2e` fires on the host — they will fight over the
+slot. Host `ensure-native` probes (fails — sees the Linux binary), restores the
+macOS binary; the next container probe then fails and rebuilds; and so on. The
+failure mode is **thrash, not corruption** (restore is gated on a `dlopen`
+failure, and each file write is atomic), but it defeats the cache's purpose. The
+supported model is therefore: **work on one platform at a time** against a shared
+`node_modules`. A per-key lock would serialize same-platform races but cannot
+make two OSes want different binaries in one slot, so it is intentionally not
+added (it would add a stale-lock failure mode for no real gain here). This
+limitation is inherent to sharing one `node_modules` across platforms — the
+clean fix (separate `node_modules` per platform) lives in `.devcontainer/`,
+which is out of scope per CLAUDE.md.
 
 ## Code structure
 
@@ -137,6 +173,20 @@ the context is not lost.
 Plain ESM `.mjs` (not TypeScript) so the Makefile runs it directly with `node`
 and no build step is required — matching how the recipe invokes `node` today.
 
+**Tooling coverage for `.mjs` (Finding 2).** `.mjs` at repo root is otherwise a
+type-check/lint blind spot, against the repo's "TypeScript everywhere" + strict
+ESLint posture. To close it without a build step:
+
+- **Type-checking:** add `scripts/**/*.mjs` to `tsconfig.tooling.json`'s
+  `include`, and enable `checkJs` (on that tooling config only) so the scripts
+  are checked. Annotate the pure functions with JSDoc `@param`/`@returns` types
+  (e.g. the `computeCacheKey` input shape and the `orchestrate` deps object) so
+  `checkJs` has types to verify. The existing `npm run typecheck`'s
+  `tsc --noEmit -p tsconfig.tooling.json` pass then covers the scripts.
+- **Lint:** add `scripts/` (and the `.mjs` extension) to the ESLint globs in the
+  `lint`/`lint:check` scripts and to a `files:` block in `eslint.config.js`, so
+  the scripts lint under `make lint`/`make all` with the same zero-warnings bar.
+
 ## Testing (RED-GREEN-REFACTOR)
 
 The pure core is fully testable with injected fakes — no real native compile is
@@ -156,11 +206,22 @@ exercised in the test suite.
   - rebuild fails → surfaces failure (no save).
 
 **Runner:** add a 4th vitest project for `scripts/` so these run under
-`make cover` and count toward coverage. Concretely, a `scripts/vitest.config.ts`
-(or a 4th entry in the root `projects` array) scoped to `scripts/**/*.test.mjs`.
-Tests live in `scripts/__tests__/`. This is the one piece of added
-configuration surface, accepted because leaving tooling untested contradicts the
-repo's testing philosophy.
+`make cover`. Concretely, a `scripts/vitest.config.ts` (or a 4th entry in the
+root `projects` array) scoped to `scripts/**/*.test.mjs`. Tests live in
+`scripts/__tests__/`. This is the one piece of added configuration surface,
+accepted because leaving tooling untested contradicts the repo's testing
+philosophy.
+
+**Coverage scope (Finding 1).** The root `vitest.config.ts` has a single
+`coverage` block enforcing 95/85/90/95 across all projects, so a new `scripts/`
+project folds straight into that global gate. `ensure-native.mjs` is, by design,
+"thin IO wiring" — `npm rebuild` spawn, fs copy/rename, child-process probe —
+the branches that are hard to cover with injected fakes. To avoid `make cover`
+going red on un-coverable IO, **add `scripts/ensure-native.mjs` (the IO shell) to
+`coverage.exclude`**, mirroring the existing `**/src/main.tsx` / `**/src/index.ts`
+exclusions. The pure module `scripts/native-cache.mjs` stays **in** coverage and
+must meet the thresholds via the unit tests above — that is where all the real
+logic lives, so the gate still bites where it matters.
 
 ## Edge cases & non-goals
 
@@ -184,8 +245,9 @@ repo's testing philosophy.
 ## Acceptance criteria
 
 1. After a warm cache exists for both platforms, switching host↔container and
-   running `make test` restores the correct binary in well under a second with
-   no `npm rebuild` invoked.
+   running `make test` restores the correct binary near-instantly relative to the
+   ~60s rebuild (a single ~2 MB file copy + rename; sub-second on a local fs,
+   and in all cases no `npm rebuild` is invoked).
 2. A first-ever run on a platform (cold cache) compiles once and populates
    `.native-cache/<key>/`.
 3. A deliberately corrupted cache entry is detected, deleted, and rebuilt.
