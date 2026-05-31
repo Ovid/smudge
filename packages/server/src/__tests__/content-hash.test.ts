@@ -87,6 +87,25 @@ describe("canonicalContentHash", () => {
     }
   });
 
+  it("strips prototype-pollution keys so they cannot poison the canonical hash", () => {
+    // Build inputs as raw JSON strings, NOT object literals: in a JS object
+    // literal `{ __proto__: ... }` sets the prototype instead of creating an
+    // own "__proto__" property, so a literal would never exercise the strip.
+    // JSON.parse, by contrast, creates an own enumerable "__proto__" property —
+    // exactly the adversarial shape canonicalize() must neutralize.
+    const withUnsafe =
+      '{"type":"doc","content":[{"type":"paragraph","attrs":' +
+      '{"__proto__":{"polluted":true},"prototype":1,"constructor":"x","color":"red"}}]}';
+    const clean = '{"type":"doc","content":[{"type":"paragraph","attrs":{"color":"red"}}]}';
+    const differentSafeValue =
+      '{"type":"doc","content":[{"type":"paragraph","attrs":{"color":"blue"}}]}';
+
+    // Unsafe keys are dropped, so the poisoned doc hashes identically to the clean one.
+    expect(canonicalContentHash(withUnsafe)).toBe(canonicalContentHash(clean));
+    // ...but attrs are not wholesale-ignored: changing a *safe* key still moves the hash.
+    expect(canonicalContentHash(withUnsafe)).not.toBe(canonicalContentHash(differentSafeValue));
+  });
+
   it("falls back to raw bytes when JSON nesting exceeds MAX_TIPTAP_DEPTH (CP2)", () => {
     // Pathologically deep (but syntactically valid) JSON must not
     // stack-overflow the process during dedup. Build a structure with
