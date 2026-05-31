@@ -110,7 +110,7 @@ describe("App", () => {
           content: { type: "doc", content: [{ type: "paragraph" }] },
           sort_order: 0,
           word_count: 0,
-          status: "outline",
+          status: "outline" as const,
           created_at: "",
           updated_at: "",
           deleted_at: null,

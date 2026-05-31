@@ -16,14 +16,19 @@ import {
 } from "@dnd-kit/sortable";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
-import type { ProjectWithChapters, Chapter, ChapterStatusRow } from "@smudge/shared";
+import type {
+  ProjectWithChapters,
+  Chapter,
+  ChapterStatusRow,
+  ChapterStatusValue,
+} from "@smudge/shared";
 import { STRINGS } from "../strings";
 import { STATUS_COLORS } from "../statusColors";
 
 interface StatusBadgeProps {
   chapter: Chapter;
   statuses: ChapterStatusRow[];
-  onStatusChange: (chapterId: string, status: string) => void;
+  onStatusChange: (chapterId: string, status: ChapterStatusValue) => void;
   onAnnounce: (message: string) => void;
 }
 
@@ -63,7 +68,7 @@ function StatusBadge({ chapter, statuses, onStatusChange, onAnnounce }: StatusBa
     }
   }, []);
 
-  function selectStatus(status: string) {
+  function selectStatus(status: ChapterStatusValue) {
     onStatusChange(chapter.id, status);
     const newStatusRow = statuses.find((s) => s.status === status);
     const newLabel = newStatusRow?.label ?? status;
@@ -188,7 +193,7 @@ interface SidebarProps {
   onRenameChapter: (chapterId: string, title: string) => void;
   onOpenTrash: () => void;
   statuses: ChapterStatusRow[];
-  onStatusChange: (chapterId: string, status: string) => void;
+  onStatusChange: (chapterId: string, status: ChapterStatusValue) => void;
   width: number;
   onResize: (width: number) => void;
 }
@@ -208,7 +213,7 @@ interface SortableChapterItemProps {
   onKeyReorder: (e: React.KeyboardEvent, index: number) => void;
   onDeleteChapter: (chapter: Chapter) => void;
   statuses: ChapterStatusRow[];
-  onStatusChange: (chapterId: string, status: string) => void;
+  onStatusChange: (chapterId: string, status: ChapterStatusValue) => void;
   onAnnounce: (message: string) => void;
 }
 

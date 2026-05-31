@@ -79,7 +79,7 @@ const mockProject = {
       },
       sort_order: 0,
       word_count: 3,
-      status: "outline",
+      status: "outline" as const,
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
       deleted_at: null,

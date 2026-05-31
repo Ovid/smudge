@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import type { ChapterStatusRow, VelocityResponse } from "@smudge/shared";
+import type { ChapterStatusRow, ChapterStatusValue, VelocityResponse } from "@smudge/shared";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
 import { STATUS_COLORS } from "../statusColors";
@@ -179,12 +179,14 @@ export function DashboardView({
 
   const totalStatusCount = Object.values(status_summary).reduce((s, n) => s + n, 0);
 
-  // Fall back to status_summary keys when the statuses prop is empty (fetch failed)
+  // Fall back to status_summary keys when the statuses prop is empty (fetch failed).
+  // Object.entries always widens keys to string; cast is safe because status_summary
+  // is Partial<Record<ChapterStatusValue, number>> — every key is a ChapterStatusValue.
   const effectiveStatuses: ChapterStatusRow[] =
     statuses.length > 0
       ? statuses
       : Object.entries(status_summary).map(([status], i) => ({
-          status,
+          status: status as ChapterStatusValue,
           sort_order: i,
           label: status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
         }));
