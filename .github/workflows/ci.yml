@@ -79,9 +79,13 @@ jobs:
       - run: npm ci --ignore-scripts
       # Persist publish-time lookups across runs. Entries are immutable
       # (name@version -> publish date), so we want the cache to ACCUMULATE, not
-      # reset whenever the lockfile changes. A stable prefix in restore-keys
-      # restores the most recent prior cache; the hash-keyed `key` saves a fresh
-      # superset at job end only when the lockfile changed.
+      # reset whenever the lockfile changes. The `key` is per-run-unique
+      # (github.run_id), so it NEVER restore-hits — every run therefore saves a
+      # fresh superset at job end, persisting the dates it fetched. A
+      # hash-keyed `key` would skip the save on the common stable-lockfile run
+      # (exact-key restore hit => no save), so dates fetched that run would be
+      # re-fetched next time. The stable `restore-keys` prefix restores the most
+      # recent prior cache, so each run fetches only what is new. (S3)
       #
       # TRUST BOUNDARY: the gate trusts cached publish dates AS-IS (no integrity
       # check), so a forged entry could make a young package read as old. This
@@ -97,7 +101,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .dep-cooldown-cache.json
-          key: dep-cooldown-${{ hashFiles('package-lock.json') }}
+          key: dep-cooldown-${{ github.run_id }}
           restore-keys: |
             dep-cooldown-
       - run: make dep-cooldown
