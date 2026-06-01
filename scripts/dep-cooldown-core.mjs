@@ -348,6 +348,25 @@ export function publishDateFromTime(time, version) {
 }
 
 /**
+ * Choose a version's publish date for the run: prefer the freshly-fetched
+ * registry value, falling back to a known-good cached date when the fresh
+ * `time` doc transiently omits this exact version key. A partial-group refetch
+ * (forced when ANY group member is uncached) re-derives the date for EVERY
+ * member from the new doc; without this fallback, a doc momentarily missing an
+ * already-cached version would discard the good cached date and turn the version
+ * into a spurious "absent" (blocking) violation. `id in cache` is safe on the
+ * null-prototype map sanitizeCache returns. (S2)
+ * @param {Record<string, unknown>} times
+ * @param {string} version
+ * @param {string} id
+ * @param {Record<string, string>} cache
+ * @returns {string | null}
+ */
+export function resolvePublishDate(times, version, id, cache) {
+  return publishDateFromTime(times, version) ?? (id in cache ? cache[id] : null);
+}
+
+/**
  * Coerce a parsed publish-time cache file into a safe id→ISO-date map. The cache
  * is read from disk and is fully untrusted in shape: a truncated or hand-edited
  * file can parse as valid JSON that is NOT a plain object (`null`, a number,

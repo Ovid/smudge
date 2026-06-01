@@ -27,7 +27,7 @@ import {
   classify,
   buildReport,
   fetchPublishTimes,
-  publishDateFromTime,
+  resolvePublishDate,
   isValidRegistryName,
   parseCooldownDays,
 } from "./dep-cooldown-core.mjs";
@@ -175,7 +175,10 @@ async function main() {
       return;
     }
     for (const g of group) {
-      const iso = publishDateFromTime(times, g.version);
+      // Prefer the fresh date, but keep a known-good cached date if this refetch
+      // (forced by another, uncached member of the group) transiently omits this
+      // version — otherwise it would become a false "absent" violation (S2).
+      const iso = resolvePublishDate(times, g.version, g.id, cache);
       publishDates.set(g.id, iso);
       if (iso) cache[g.id] = iso; // cache positive dates only (immutable)
     }

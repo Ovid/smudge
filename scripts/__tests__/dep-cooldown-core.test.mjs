@@ -13,6 +13,7 @@ import {
   isRetriableStatus,
   fetchPublishTimes,
   publishDateFromTime,
+  resolvePublishDate,
   classify,
   buildReport,
 } from "../dep-cooldown-core.mjs";
@@ -554,6 +555,32 @@ describe("publishDateFromTime", () => {
 
   it("returns null for a non-string date value", () => {
     expect(publishDateFromTime({ "1.0.0": 12345 }, "1.0.0")).toBeNull();
+  });
+});
+
+describe("resolvePublishDate", () => {
+  it("prefers the freshly-fetched registry date", () => {
+    const times = { "1.0.0": "2026-05-01T00:00:00.000Z" };
+    const cache = { "pkg@1.0.0": "2026-04-01T00:00:00.000Z" };
+    expect(resolvePublishDate(times, "1.0.0", "pkg@1.0.0", cache)).toBe(
+      "2026-05-01T00:00:00.000Z",
+    );
+  });
+
+  // S2: a partial-group refetch (some member uncached) re-derives the date for
+  // EVERY member from the freshly-fetched doc. If that doc transiently omits a
+  // version key the cache already knew, the known-good cached date must win —
+  // otherwise the version becomes a spurious "absent" (blocking) violation.
+  it("falls back to the cached date when the fresh doc omits the version", () => {
+    const times = { "2.0.0": "2026-05-01T00:00:00.000Z" }; // 1.0.0 missing
+    const cache = { "pkg@1.0.0": "2026-04-01T00:00:00.000Z" };
+    expect(resolvePublishDate(times, "1.0.0", "pkg@1.0.0", cache)).toBe(
+      "2026-04-01T00:00:00.000Z",
+    );
+  });
+
+  it("returns null when neither the fresh doc nor the cache has the version", () => {
+    expect(resolvePublishDate({}, "1.0.0", "pkg@1.0.0", {})).toBeNull();
   });
 });
 
