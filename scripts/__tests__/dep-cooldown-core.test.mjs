@@ -171,6 +171,7 @@ describe("isRetriableStatus", () => {
     for (const s of [400, 401, 403, 404]) {
       expect(isRetriableStatus(s)).toBe(false);
     }
+    expect(isRetriableStatus(499)).toBe(false);
   });
 });
 
@@ -207,13 +208,15 @@ describe("classify", () => {
   });
 
   it("passes a young version that is allowlisted", () => {
-    const { violations } = classify({
+    const result = classify({
       ...base,
       versions: [mk("react@19.0.0")],
       publishDates: new Map([["react@19.0.0", iso(1 * day)]]),
       allowlist: new Map([["react@19.0.0", { reason: "CVE" }]]),
     });
-    expect(violations).toEqual([]);
+    expect(result.violations).toEqual([]);
+    expect(result.staleWaivers).toEqual([]);
+    expect(result.orphanedWaivers).toEqual([]);
   });
 
   it("flags a version absent from registry publish times as an 'absent' violation", () => {
@@ -248,5 +251,36 @@ describe("classify", () => {
     expect(result.violations).toEqual([]);
     expect(result.orphanedWaivers).toEqual(["gone@1.0.0"]);
     expect(result.staleWaivers).toEqual([]);
+  });
+
+  it("passes a version at exactly the cooldown boundary (7.0 days old)", () => {
+    const { violations } = classify({
+      ...base,
+      versions: [mk("react@18.0.0")],
+      publishDates: new Map([["react@18.0.0", iso(7 * day)]]),
+      allowlist: new Map(),
+    });
+    expect(violations).toEqual([]);
+  });
+
+  it("treats an unparseable publish date as an absent violation", () => {
+    const { violations } = classify({
+      ...base,
+      versions: [mk("garbage@1.0.0")],
+      publishDates: new Map([["garbage@1.0.0", "not-a-date"]]),
+      allowlist: new Map(),
+    });
+    expect(violations).toEqual([{ id: "garbage@1.0.0", ageDays: null, kind: "absent" }]);
+  });
+
+  it("suppresses an absent violation when the missing-date version is allowlisted", () => {
+    const result = classify({
+      ...base,
+      versions: [mk("sketchy@9.9.9")],
+      publishDates: new Map([["sketchy@9.9.9", null]]),
+      allowlist: new Map([["sketchy@9.9.9", { reason: "accepted risk" }]]),
+    });
+    expect(result.violations).toEqual([]);
+    expect(result.orphanedWaivers).toEqual([]);
   });
 });

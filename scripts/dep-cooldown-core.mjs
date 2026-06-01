@@ -161,6 +161,9 @@ export function isRetriableStatus(status) {
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
+ * A cooldown violation. `ageDays` is the version's age in days for a "young"
+ * violation (may be fractional, e.g. 3.25) and `null` for an "absent" one
+ * (no usable publish date). Consumers formatting it should round.
  * @typedef {{ id: string, ageDays: number | null, kind: "young" | "absent" }} Violation
  */
 
@@ -191,19 +194,25 @@ export function classify({ versions, publishDates, allowlist, now, cooldownDays 
   const usedWaivers = new Set();
 
   for (const v of versions) {
+    // Mark the waiver used regardless of the date outcome (young/old/absent),
+    // so an absent-but-waived id is NOT later mis-reported as orphaned.
     const waived = allowlist.has(v.id);
     if (waived) usedWaivers.add(v.id);
 
+    // `published == null` catches both null and undefined; `Date.parse` of an
+    // unparseable string yields NaN. All three mean "no usable publish date" —
+    // we cannot age-check the version, so it is an "absent" violation unless
+    // allowlisted. Folding them into one guard also closes the trap where a
+    // garbage date string (NaN age) would otherwise fall through as "young".
     const published = publishDates.get(v.id);
-    if (published === null || published === undefined) {
-      // Registry reachable but no publish time for this version.
+    const ageMs = published == null ? NaN : now - Date.parse(published);
+    if (Number.isNaN(ageMs)) {
       if (!waived) violations.push({ id: v.id, ageDays: null, kind: "absent" });
       continue;
     }
-
-    const ageMs = now - Date.parse(published);
     if (ageMs >= cooldownMs) {
-      if (waived) staleWaivers.push(v.id); // old enough now — waiver no longer needed
+      // passes: at least cooldownDays old. A waiver here is no longer needed.
+      if (waived) staleWaivers.push(v.id);
       continue;
     }
     if (!waived) violations.push({ id: v.id, ageDays: ageMs / DAY_MS, kind: "young" });
