@@ -82,6 +82,17 @@ jobs:
       # reset whenever the lockfile changes. A stable prefix in restore-keys
       # restores the most recent prior cache; the hash-keyed `key` saves a fresh
       # superset at job end only when the lockfile changed.
+      #
+      # TRUST BOUNDARY: the gate trusts cached publish dates AS-IS (no integrity
+      # check), so a forged entry could make a young package read as old. This
+      # is acceptable because (1) GitHub scopes caches per-branch — a run on
+      # `main` (the authoritative gate) restores only main/base caches, so a
+      # feature-branch or fork cache cannot be injected onto main; and (2) the
+      # gate is an age PROXY by design — artifact integrity is enforced
+      # separately by `npm ci`'s lockfile `integrity` hashes, which a forged
+      # publish DATE does not touch. The accumulation benefit (not re-fetching
+      # ~770 metadata docs per run) is worth this documented residual risk; see
+      # docs/superpowers/specs/2026-06-01-dependency-cooldown-design.md.
       - name: Restore dependency-cooldown publish-time cache
         uses: actions/cache@v4
         with:

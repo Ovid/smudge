@@ -108,6 +108,13 @@ async function main() {
   // Publish-time cache (immutable entries; gitignored locally, actions/cache in CI).
   // A corrupt/partial cache file (e.g. a prior run killed mid-write) must not
   // crash the gate — fall back to an empty cache and re-fetch.
+  //
+  // TRUST BOUNDARY: cached dates are trusted as-is (no integrity check), so a
+  // forged entry could age a young package. This is an accepted, documented
+  // residual risk — CI cache scoping isolates main from untrusted branches, and
+  // artifact integrity is enforced separately by `npm ci`'s `integrity` hashes
+  // (a forged publish DATE does not bypass them). See the CI cache step and the
+  // design spec's threat model for the full rationale.
   /** @type {Record<string, string>} */
   let cache = {};
   if (existsSync(CACHE_PATH)) {
