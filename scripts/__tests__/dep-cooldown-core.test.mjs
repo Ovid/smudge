@@ -4,6 +4,8 @@ import {
   versionId,
   isRegistryResolved,
   isValidRegistryName,
+  isV3Lockfile,
+  sanitizeCache,
   collectRegistryVersions,
   groupVersionsByName,
   parseAllowlist,
@@ -172,6 +174,73 @@ describe("collectRegistryVersions", () => {
     expect(versions).toEqual([
       { name: "string-width", version: "4.2.3", id: "string-width@4.2.3" },
     ]);
+  });
+});
+
+describe("isV3Lockfile", () => {
+  it("accepts a real v3 lockfile with a packages object (even an empty one)", () => {
+    expect(isV3Lockfile({ packages: { "": { name: "smudge" } } })).toBe(true);
+    expect(isV3Lockfile({ packages: {} })).toBe(true);
+  });
+
+  // Fail-OPEN guard (I2): every degenerate-but-valid-JSON shape below collects
+  // zero registry versions, which the shell would otherwise report as a clean
+  // pass — the worst failure direction for a security gate. They must fail closed.
+  it("rejects degenerate shapes that would silently pass the gate (fail-open)", () => {
+    expect(isV3Lockfile({})).toBe(false); // no packages key
+    expect(isV3Lockfile({ dependencies: {} })).toBe(false); // npm v1/v2 lockfile shape
+    expect(isV3Lockfile({ packages: 5 })).toBe(false);
+    expect(isV3Lockfile({ packages: [] })).toBe(false); // array, not a map
+    expect(isV3Lockfile({ packages: null })).toBe(false);
+  });
+
+  // The `null` sub-case crashed collectRegistryVersions outright; a primitive
+  // failed open. Both are non-objects and must be rejected before the scan.
+  it("rejects non-object values (null/primitive/array/undefined)", () => {
+    expect(isV3Lockfile(null)).toBe(false);
+    expect(isV3Lockfile(5)).toBe(false);
+    expect(isV3Lockfile("packages")).toBe(false);
+    expect(isV3Lockfile(true)).toBe(false);
+    expect(isV3Lockfile([])).toBe(false);
+    expect(isV3Lockfile(undefined)).toBe(false);
+  });
+});
+
+describe("sanitizeCache", () => {
+  it("passes through a well-formed id→ISO-date map", () => {
+    const cache = sanitizeCache({ "react@18.3.1": "2024-04-25T00:00:00.000Z" });
+    expect(cache["react@18.3.1"]).toBe("2024-04-25T00:00:00.000Z");
+  });
+
+  // I1: a non-object-but-valid-JSON cache (a truncated/hand-edited file) must not
+  // crash the gate — `'id' in null` throws. Coerce to an empty map and re-fetch.
+  it("returns an empty map for non-object JSON (null/primitive/array)", () => {
+    for (const bad of [null, 5, "a string", true, []]) {
+      expect(Object.keys(sanitizeCache(bad))).toEqual([]);
+    }
+  });
+
+  // S1: only string-valued entries survive, so a tampered numeric date (e.g. 0,
+  // which Date.parse coerces to year 2000 and would age a young package through)
+  // is dropped rather than trusted.
+  it("drops entries whose value is not a string", () => {
+    const cache = sanitizeCache({
+      "good@1.0.0": "2024-01-01T00:00:00.000Z",
+      "tampered@1.0.0": 0,
+      "nested@1.0.0": { date: "x" },
+      "nullish@1.0.0": null,
+    });
+    expect(Object.keys(cache)).toEqual(["good@1.0.0"]);
+  });
+
+  it("is safe under the `in` operator and resists prototype pollution", () => {
+    const cache = sanitizeCache(
+      JSON.parse('{"__proto__": "evil", "ok@1.0.0": "2024-01-01T00:00:00.000Z"}'),
+    );
+    expect("ok@1.0.0" in cache).toBe(true);
+    expect("missing@1.0.0" in cache).toBe(false);
+    expect(Object.getPrototypeOf(cache)).toBeNull();
+    expect(/** @type {Record<string, unknown>} */ ({}).polluted).toBeUndefined();
   });
 });
 

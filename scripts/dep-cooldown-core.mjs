@@ -93,6 +93,26 @@ export function isValidRegistryName(name) {
 }
 
 /**
+ * Is `value` a recognizable npm package-lock **v3** object — one this gate can
+ * actually scan? v3 carries every dependency under a `packages` map; v1/v2 used
+ * `dependencies` and lack the per-entry `resolved`/`version` shape we read. The
+ * lockfile is read from disk and must be shape-checked BEFORE use: a degenerate
+ * but still-valid-JSON value (`{}`, a v1/v2 lockfile, `{packages: 5}`,
+ * `{packages: []}`, a bare primitive, or `null`) collects zero registry versions,
+ * which the shell would otherwise report as a clean pass — a FAIL-OPEN, the worst
+ * direction for a security gate (and `null` crashes the scan outright). The shell
+ * fails closed when this returns false. Note an empty `{packages: {}}` is still a
+ * valid v3 shape and passes here; only a missing/wrong-typed `packages` is rejected.
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+export function isV3Lockfile(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const packages = /** @type {{ packages?: unknown }} */ (value).packages;
+  return packages !== null && typeof packages === "object" && !Array.isArray(packages);
+}
+
+/**
  * @typedef {{ name: string, version: string, id: string }} RegistryVersion
  */
 
@@ -301,6 +321,34 @@ export async function fetchPublishTimes({
 export function publishDateFromTime(time, version) {
   const iso = time[version];
   return typeof iso === "string" ? iso : null;
+}
+
+/**
+ * Coerce a parsed publish-time cache file into a safe id→ISO-date map. The cache
+ * is read from disk and is fully untrusted in shape: a truncated or hand-edited
+ * file can parse as valid JSON that is NOT a plain object (`null`, a number,
+ * string, boolean, or array). Using such a value with the `in` operator throws
+ * (`'id' in null`) and would crash the gate, contradicting the documented
+ * "a corrupt cache must not crash — fall back to empty and re-fetch" contract
+ * (I1). A non-string entry value also slips past the date guard — a tampered `0`
+ * becomes `Date.parse("0")` → year 2000 → reads ~9600 days old, aging a young
+ * package through (S1). Both are closed here: anything that is not a plain object
+ * becomes an empty map, and only string-valued entries are carried over — into a
+ * null-prototype object so a forged `__proto__` key cannot pollute and `in` has
+ * no inherited keys to confuse it.
+ * @param {unknown} parsed
+ * @returns {Record<string, string>}
+ */
+export function sanitizeCache(parsed) {
+  /** @type {Record<string, string>} */
+  const clean = Object.create(null);
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return clean;
+  }
+  for (const [id, value] of Object.entries(parsed)) {
+    if (typeof value === "string") clean[id] = value;
+  }
+  return clean;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;

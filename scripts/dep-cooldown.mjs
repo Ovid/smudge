@@ -20,6 +20,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   collectRegistryVersions,
+  isV3Lockfile,
+  sanitizeCache,
   groupVersionsByName,
   parseAllowlist,
   classify,
@@ -92,6 +94,18 @@ async function main() {
     process.exitCode = 1;
     return;
   }
+  // Fail CLOSED on a lockfile that parses as JSON but is not a recognizable v3
+  // `packages` map (a corrupted/truncated commit, a bad merge, an old-npm
+  // downgrade, or a tamper): collectRegistryVersions would yield zero versions
+  // and the run would report a clean pass — a fail-open that silently disables
+  // the gate, the worst direction for a security control (I2).
+  if (!isV3Lockfile(lockfile)) {
+    console.error(
+      `✗ ${LOCKFILE_PATH}: not a recognizable npm v3 lockfile (missing or invalid "packages" map) — refusing to run the cooldown gate against an unreadable lockfile.`,
+    );
+    process.exitCode = 1;
+    return;
+  }
   const { versions, skipped } = collectRegistryVersions(lockfile);
 
   // Allowlist — a missing file means "no waivers".
@@ -115,11 +129,15 @@ async function main() {
   // artifact integrity is enforced separately by `npm ci`'s `integrity` hashes
   // (a forged publish DATE does not bypass them). See the CI cache step and the
   // design spec's threat model for the full rationale.
+  // sanitizeCache coerces a non-object-but-valid-JSON file (null/number/string/
+  // array — which would crash `g.id in cache` below) to an empty map and drops
+  // any non-string entry value (a tampered date that would otherwise age a young
+  // package through). The try/catch still handles a file that fails to parse.
   /** @type {Record<string, string>} */
-  let cache = {};
+  let cache = sanitizeCache(null);
   if (existsSync(CACHE_PATH)) {
     try {
-      cache = readJson(CACHE_PATH);
+      cache = sanitizeCache(readJson(CACHE_PATH));
     } catch {
       console.error(
         "  note: .dep-cooldown-cache.json is unreadable — ignoring cache, will re-fetch.",
