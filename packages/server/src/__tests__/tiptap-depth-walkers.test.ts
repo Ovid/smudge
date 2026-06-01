@@ -72,4 +72,15 @@ describe("TipTap depth-guard contract (MAX_TIPTAP_DEPTH walkers)", () => {
     const doc = deepDoc(OVER_CAP_DEPTH, { type: "text", text: "hello world" });
     expect(countWords(doc)).toBe(0);
   });
+
+  it("extractImageIds drops an image below the depth cap (walk bails)", () => {
+    // The only image reference sits below the cap. Cap present → walk skips
+    // the deep subtree → []. If the bail were removed, the deep image's UUID
+    // would be returned.
+    const doc = deepDoc(OVER_CAP_DEPTH, {
+      type: "image",
+      attrs: { src: `/api/images/${SAMPLE_UUID}` },
+    });
+    expect(extractImageIds(doc)).toEqual([]);
+  });
 });
