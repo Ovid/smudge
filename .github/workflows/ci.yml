@@ -63,3 +63,25 @@ jobs:
             e2e/test-results/
             playwright-report/
           retention-days: 7
+
+  dep-cooldown:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      # Persist publish-time lookups across runs. Entries are immutable
+      # (name@version -> publish date), so we want the cache to ACCUMULATE, not
+      # reset whenever the lockfile changes. A stable prefix in restore-keys
+      # restores the most recent prior cache; the hash-keyed `key` saves a fresh
+      # superset at job end only when the lockfile changed.
+      - name: Restore dependency-cooldown publish-time cache
+        uses: actions/cache@v4
+        with:
+          path: .dep-cooldown-cache.json
+          key: dep-cooldown-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            dep-cooldown-
+      - run: make dep-cooldown
