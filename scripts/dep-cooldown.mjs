@@ -44,7 +44,7 @@ function readJson(p) {
 }
 
 /** @param {unknown} err */
-function describe(err) {
+function errMsg(err) {
   return err instanceof Error ? err.message : String(err);
 }
 
@@ -58,7 +58,7 @@ function describe(err) {
  */
 async function fetchMetadata(name) {
   // Scoped names contain exactly one slash; encode it for the registry path.
-  const url = `${REGISTRY}/${name.replace("/", "%2f")}`;
+  const url = `${REGISTRY}/${name.replace("/", "%2F")}`;
   let lastErr;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
@@ -86,14 +86,23 @@ async function main() {
     const raw = existsSync(ALLOWLIST_PATH) ? readJson(ALLOWLIST_PATH) : [];
     allowlist = parseAllowlist(raw);
   } catch (err) {
-    console.error(`✗ ${ALLOWLIST_PATH}: ${describe(err)}`);
+    console.error(`✗ ${ALLOWLIST_PATH}: ${errMsg(err)}`);
     process.exitCode = 1;
     return;
   }
 
   // Publish-time cache (immutable entries; gitignored locally, actions/cache in CI).
+  // A corrupt/partial cache file (e.g. a prior run killed mid-write) must not
+  // crash the gate — fall back to an empty cache and re-fetch.
   /** @type {Record<string, string>} */
-  const cache = existsSync(CACHE_PATH) ? readJson(CACHE_PATH) : {};
+  let cache = {};
+  if (existsSync(CACHE_PATH)) {
+    try {
+      cache = readJson(CACHE_PATH);
+    } catch {
+      console.error("  note: .dep-cooldown-cache.json is unreadable — ignoring cache, will re-fetch.");
+    }
+  }
 
   /** @type {Map<string, string | null>} */
   const publishDates = new Map();
@@ -109,7 +118,7 @@ async function main() {
       doc = await fetchMetadata(name);
     } catch (err) {
       console.error(
-        `✗ infrastructure error: could not fetch registry metadata for ${name} (${describe(err)}).`,
+        `✗ infrastructure error: could not fetch registry metadata for ${name} (${errMsg(err)}).`,
       );
       console.error(
         "  This is npm being unreachable, not a policy violation — re-run when the registry is available.",
