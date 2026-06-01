@@ -43,8 +43,9 @@ Trade-off accepted: the test asserts *publicly observable* behavior, which is
 sometimes a transformed version of the walker's internal bail (e.g. `canonicalize`
 throws internally but the wrapper catches it). A refactor that preserved public
 behavior while breaking an internal cap could in principle slip through; this is an
-accepted weakness of the public-entry approach and is partly mitigated by the deep-doc
-overflow case (below).
+accepted weakness of the public-entry approach. It is mitigated by choosing each
+walker's assertion to be **discriminating** — to flip when that walker's depth bail is
+removed (see the assertions table and the "if cap removed" negative controls).
 
 ### Decision 2 — Single test file in `packages/server`
 
@@ -61,43 +62,83 @@ layering oddity), and those four are not covered by `npm test -w packages/shared
 (`make test` runs everything). This is the cost of the phase's explicit goal — ONE
 contract test with ONE walker-registration header.
 
-### Decision 3 — Boundary cases + one pathologically-deep overflow case
+### Decision 3 — Boundary (cap-activation) cases only; no pathologically-deep case
 
-At depth 65, nothing stack-overflows (65 frames is trivial). Depth 65 verifies the
-cap **activates at the documented boundary** — the bail behavior is what flips if a
-future edit removes the cap. To *also* guard against true stack overflow (the cap's
-actual purpose), the test adds one pathologically-deep fixture (~20,000 levels):
-without the cap, that overflows; with it, every walker bails at 65 and returns safely.
+At depth 65, nothing stack-overflows (65 frames is trivial). What an over-cap fixture
+actually tests is that the cap **activates at the documented boundary** — the bail
+behavior is what flips if a future edit removes a walker's `if (depth > MAX_TIPTAP_DEPTH)`
+line. That deletion *is* the regression we want to catch, and the boundary assertions
+catch it directly.
+
+A pathologically-deep "true overflow" case (an earlier draft proposed ~20,000 levels)
+was **rejected during pushback** as not cleanly realizable through the public entries:
+
+- V8's `JSON.parse`/`JSON.stringify` are themselves recursive and overflow at roughly
+  the same depth an *uncapped* walker would, so there is no window where "uncapped walker
+  overflows but the test's own JSON ops survive."
+- `canonicalContentHash` wraps `JSON.parse` + `canonicalize` in a single bare `catch`,
+  so on a very deep input `JSON.parse` overflows first → caught → raw-bytes fallback
+  with `reason:"parse"`; canonicalize's cap never runs and the function does not throw
+  either way. The capped/uncapped difference is invisible for that walker.
+
+So the deep case mostly exercises `JSON.parse`, not the walkers, and is murkiest for the
+one walker whose wrapper hides it. We drop it.
+
+To avoid implying that only the single boundary node is covered, the tree fixtures nest
+**modestly past the cap** (depth ~100), which is trivially safe for JSON ops while still
+firmly exceeding every tree walker's depth-64 limit.
 
 ## Fixtures (defined in the test file)
 
-1. **`deepDoc(depth, payload?)`** — a linear TipTap tree nested `depth` content-levels:
-   `{type:"doc", content:[{type:"...", content:[ … ]}]}`. The optional `payload` is
-   placed at the deepest level — a `text` node, an `image` node with
-   `attrs.src = "/api/images/<uuid>"`, or a matchable paragraph — so the over-depth
+1. **`deepDoc(depth, payload?, containerType?)`** — a linear TipTap tree nested `depth`
+   content-levels, with an optional `payload` placed at the deepest level (a `text`
+   node, or an `image` node with `attrs.src = "/api/images/<uuid>"`) so the over-depth
    bail visibly drops it.
-2. **`paragraphWithDeepMarkAttrs(depth)`** — a paragraph containing one text node
-   `"aa"` whose mark `attrs` nest `depth` deep. `canonicalJSON`'s depth axis is
-   mark-attribute nesting (it only ever receives a `Mark[]`), **not** the document
-   tree, so a doc-only fixture can never reach it. Driven via
-   `replaceInDoc(…, "a", "b")` → `cleanupTextNodes` → `marksEqual` → `canonicalJSON`.
+   - **Container-type constraint (pushback Issue 3):** `collectLeafBlocks` returns
+     `[node]` the moment it hits a node in `LEAF_BLOCKS = {paragraph, heading,
+     codeBlock}` — *before* recursing. So for the `searchInDoc`/`collectLeafBlocks`
+     case the nesting levels must use **container** (non-leaf) node types (e.g.
+     `blockquote`, `listItem`/`bulletList`), with the single matchable `paragraph`
+     placed only at the deepest level — otherwise the walker returns a shallow leaf and
+     never reaches the cap. Exact container types are verified against the TipTap schema
+     in the RED phase. (For the other tree walkers the intermediate node type is
+     immaterial, but using a container type uniformly keeps one builder.)
+2. **`paragraphWithTwoMarksDifferingBelowCap(depth)`** (pushback Issue 1) — a paragraph
+   containing **two adjacent** text nodes `"a"`, `"a"`, each carrying a mark whose
+   `attrs` are **identical for levels 1–64 but differ at level `depth` (65+)**.
+   `canonicalJSON`'s depth axis is mark-attribute nesting (it only ever receives a
+   `Mark[]`), **not** the document tree, so a doc-only fixture can never reach it.
+   Driven via `replaceInDoc(…, "a", "b")` → `cleanupTextNodes` → `marksEqual` →
+   `canonicalJSON`. A *single uniform* mark would merge whether or not the cap exists
+   (non-discriminating); two marks that diverge only below the cap give a signal that
+   flips when the cap is removed (see assertions).
 
-Exact boundary depths will be re-verified per walker during the RED phase, because the
-walkers count differently: the tree walkers increment once per content-nesting level,
-while `canonicalize` increments on every object **and** array level (so it reaches its
-cap with fewer visual levels). Each fixture's depth is chosen so the target walker's
-own counter exceeds 64 at the intended node.
+Exact boundary depths are re-verified per walker during the RED phase, because the
+walkers count differently (pushback Issue 4): the tree walkers increment once per
+content-nesting level; `canonicalize` increments on **both** object and array levels
+(~2× per visual level, capping at ~32 visual levels); `canonicalJSON` counts
+mark-attribute nesting. A shared visual depth of ~100 sits **past** every tree walker's
+boundary (activating all their caps); each walker's discriminating signal is asserted
+through its own entry point.
 
-## Walker-by-walker assertions
+## Walker-by-walker assertions (boundary / cap-activation)
 
-| Walker | Public entry | Boundary assertion (depth 65) | Deep assertion (~20k) |
-|--------|--------------|-------------------------------|-----------------------|
-| `validateTipTapDepth` | `validateTipTapDepth(doc)` | `=== false` | `=== false`, no `RangeError` |
-| `extractText` | `countWords(doc)` (text at leaf) | `=== 0` (deep text dropped) | returns a number, no throw |
-| `walk` | `extractImageIds(doc)` (image at leaf) | `=== []` (deep image dropped) | returns array, no throw |
-| `canonicalize` | `canonicalContentHash(JSON.stringify(doc))` | returns 64-char hex **and** emits the `reason:"depth"` fallback warn | returns hash, no throw |
-| `collectLeafBlocks` | `searchInDoc(doc, "x")` (matchable leaf at depth 65) | `=== []` (deep leaf block dropped) | returns array, no throw |
-| `canonicalJSON` | `replaceInDoc(paragraphWithDeepMarkAttrs, "a", "b")` | completes, `count === 2`, no `RangeError` (weakest observable — accepted) | completes, no throw |
+Each assertion is chosen to **flip if that walker's depth bail is removed** (the
+regression). The "if cap removed" column documents the negative control.
+
+| Walker | Public entry | Assertion (cap present) | If cap removed |
+|--------|--------------|-------------------------|----------------|
+| `validateTipTapDepth` | `validateTipTapDepth(deepDoc)` | `=== false` | `=== true` |
+| `extractText` | `countWords(deepDoc(text-at-leaf))` | `=== 0` (deep text dropped) | `>= 1` |
+| `walk` | `extractImageIds(deepDoc(image-at-leaf))` | `=== []` (deep image dropped) | `[<uuid>]` |
+| `canonicalize` | `canonicalContentHash(deepJsonString)` | returns 64-char hex **and** emits the `reason:"depth"` fallback warn (hash equals raw-bytes digest) | no warn; canonical hash |
+| `collectLeafBlocks` | `searchInDoc(deepDoc(container-nested, matchable paragraph at leaf), "x")` | `=== []` (deep leaf block dropped) | `[<match>]` |
+| `canonicalJSON` | `replaceInDoc(paragraphWithTwoMarksDifferingBelowCap, "a", "b")` | the two replacement nodes **merge** → output paragraph has **one** text node `"bb"` | marks differ below cap → no merge → **two** text nodes |
+
+For the `canonicalize` deep JSON string: build it by **string concatenation** (not
+`JSON.stringify` of a deep object) so the test setup cannot itself overflow, and keep
+the depth comfortably below `JSON.parse`'s limit (so `JSON.parse` succeeds and
+`canonicalize` — not the parser — is what bails).
 
 ## Handling the `canonicalContentHash` warning
 
@@ -130,9 +171,11 @@ A header comment in the test states, in substance:
 ## Definition of Done
 
 - A test at `packages/server/src/__tests__/tiptap-depth-walkers.test.ts` that fails if
-  any of the six walkers leaks a `RangeError` on the pathologically-deep doc, or fails
-  to bail at the depth-65 boundary.
-- Boundary assertions per the table above; one deep (~20k) no-throw case per walker.
+  any of the six walkers fails to bail at the over-cap boundary — i.e. the test flips to
+  red if any walker's `if (depth > MAX_TIPTAP_DEPTH)` line is removed or broken.
+- One discriminating cap-activation assertion per walker, per the table above (each with
+  a documented negative control — the "if cap removed" behavior).
+- No pathologically-deep fixture (rejected in pushback — see Decision 3).
 - Test-file header documents the "new walker → add here" rule.
 - `make all` green at PR close.
 - No production-code change (no new exports, no walker edits).
