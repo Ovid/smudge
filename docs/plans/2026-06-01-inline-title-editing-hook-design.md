@@ -250,11 +250,15 @@ export function useProjectTitleEditing(
     (_id, title) => handleUpdateProjectTitle(title),
     { isActionBusy, isEditorLocked },
     {
-      // project is non-null here: the shared hook's empty-id guard
-      // (currentId = project?.id) returns before driftCheck runs when
-      // project is null, so the assertion cannot throw. Using `!` instead
-      // of `!!project &&` avoids an unreachable defensive branch.
-      driftCheck: () => project!.slug !== slug,
+      // project is non-null whenever this runs: the shared hook's empty-id
+      // guard (currentId = project?.id) returns before driftCheck when project
+      // is null, so project?.slug here is always the loaded project's slug.
+      // (Implementation note: this design originally specified `project!.slug`,
+      // but `@typescript-eslint/no-non-null-assertion` — active in non-test
+      // source via tseslint's strict config — rejects the `!`; the committed
+      // code uses optional chaining instead. See "non-null assertion" note
+      // below.)
+      driftCheck: () => project?.slug !== slug,
       onAfterSave: (newSlug) => {
         if (newSlug !== slug) navigate(`/projects/${newSlug}`, { replace: true });
       },
@@ -277,9 +281,18 @@ Note: `driftCheck` runs only when `project` is non-null. The shared hook's
 empty-id guard (step 3 of `save()`, with `currentId = project?.id`) returns
 before `driftCheck` is reached when `project` is null. This mirrors the
 existing project hook, which reaches `project.slug !== slug` only after its
-own `!project` guard. The `project!` assertion is therefore safe and avoids
-an unreachable `!!project &&` defensive branch that would otherwise show as
-uncovered.
+own `!project` guard.
+
+**Non-null assertion (reversed in implementation).** This design originally
+specified `driftCheck: () => project!.slug !== slug`, reasoning that the
+`project!` assertion is provably safe (the guard above) and avoids an
+unreachable `!!project &&` defensive branch. That choice was reverted during
+implementation (commit `deef20a`): `@typescript-eslint/no-non-null-assertion`
+is enabled for non-test source through `tseslint.configs.strict`, so `!` is a
+lint error there (it is only switched off for `*.test.*` / `__tests__` files).
+The committed code uses `project?.slug !== slug` instead, which is
+behaviorally identical — when `project` is null the empty-id guard has already
+returned, so the optional-chaining short-circuit is never taken at runtime.
 
 ## Testing
 
