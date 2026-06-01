@@ -6,6 +6,28 @@ When you have finished reading this file, announce "CLAUDE.md loaded"
 
 Always address me as "Ovid" in your responses. This lets me know that you have read this file, even if I don't see the previous announcement.
 
+## Asking Me Questions (Mandatory)
+
+When you ask me to make a decision or choose between options, you **must**
+give me what I need to actually decide. You routinely know more about the
+codebase and the trade-offs than I do, so a bare list of options forces me to
+do research you've already done. Every such question **must** include:
+
+1. **The pros and cons of each option** — the real trade-offs, not just a
+   neutral description of what each option does.
+2. **An explicit recommendation** — say which option you would pick. Mark it
+   clearly (e.g. put it first and label it "Recommended").
+3. **Why you recommend it** — the reasoning, tied to the trade-offs above.
+4. **Honest skepticism, including of your own recommendation** — name the
+   strongest argument *against* the option you're recommending, and any
+   assumptions your recommendation depends on. Do not perform agreement; if
+   the choice is genuinely close, say so.
+
+A question that lists options without pros/cons, without a recommendation, or
+without the reasoning behind it is incomplete — do not send it. This applies
+to `AskUserQuestion`, prose questions, and any other way you ask me to choose.
+Asking one decision at a time (not batched) still applies.
+
 ## Ignore `.devcontainer/`
 
 `.devcontainer/` is **third-party content** managed out-of-band
