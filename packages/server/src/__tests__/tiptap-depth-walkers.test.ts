@@ -55,6 +55,13 @@ function deepDoc(depth: number, leaf: Record<string, unknown>): Record<string, u
 }
 
 describe("TipTap depth-guard contract (MAX_TIPTAP_DEPTH walkers)", () => {
+  beforeEach(() => {
+    // canonicalContentHash warns once per unique content digest; reset the
+    // per-process dedupe so this test's depth-warn is not suppressed by a
+    // prior run.
+    __resetWarnedFallbackDigestsForTests();
+  });
+
   it("MAX_TIPTAP_DEPTH is the expected shared constant", () => {
     expect(MAX_TIPTAP_DEPTH).toBe(64);
   });
@@ -94,5 +101,24 @@ describe("TipTap depth-guard contract (MAX_TIPTAP_DEPTH walkers)", () => {
       content: [{ type: "text", text: "x" }],
     });
     expect(searchInDoc(doc, "x")).toEqual([]);
+  });
+
+  it("canonicalContentHash falls back with a depth warning for over-cap JSON (canonicalize bails)", () => {
+    // Cap present → canonicalize throws CanonicalizeDepthError internally,
+    // caught by canonicalContentHash → raw-bytes hash + a reason:"depth" warn.
+    // If the bail were removed, canonicalize would succeed (100 levels is well
+    // within engine limits) → a canonical hash and NO warn.
+    const json = JSON.stringify(deepDoc(OVER_CAP_DEPTH, { type: "text", text: "x" }));
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    try {
+      const hash = canonicalContentHash(json);
+      expect(hash).toHaveLength(64);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: "depth" }),
+        expect.any(String),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
