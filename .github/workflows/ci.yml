@@ -71,7 +71,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm ci
+      # --ignore-scripts: this is a supply-chain gate, so it must NOT execute a
+      # fresh (potentially malicious) dependency's install/postinstall scripts on
+      # the runner before it has a chance to block the merge. The gate reads only
+      # package-lock.json + scripts/ (node built-ins, no third-party imports), so
+      # skipping lifecycle scripts costs nothing here.
+      - run: npm ci --ignore-scripts
       # Persist publish-time lookups across runs. Entries are immutable
       # (name@version -> publish date), so we want the cache to ACCUMULATE, not
       # reset whenever the lockfile changes. A stable prefix in restore-keys
