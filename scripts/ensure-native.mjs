@@ -20,7 +20,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, copyFileSync, renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { computeCacheKey, validateNodeMajor, orchestrate } from "./native-cache.mjs";
+import {
+  computeCacheKey,
+  validateNodeMajor,
+  orchestrate,
+  withBestEffortCleanup,
+} from "./native-cache.mjs";
 
 const require = createRequire(import.meta.url);
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -130,13 +135,16 @@ function atomicCopy(src, dest) {
   const tmp = `${dest}.tmp-${process.pid}`;
   // S1: clean up the temp sibling whether the copy/rename succeeds or throws,
   // so a failed copy never leaves an orphaned `.tmp-<pid>` behind. On success
-  // the rename consumes tmp and rmSync(force) is a no-op.
-  try {
-    copyFileSync(src, tmp);
-    renameSync(tmp, dest);
-  } finally {
-    rmSync(tmp, { force: true });
-  }
+  // the rename consumes tmp and rmSync(force) is a no-op. withBestEffortCleanup
+  // ensures a cleanup error (e.g. EPERM unlinking tmp) never masks the real
+  // copy/rename failure the caller needs to diagnose.
+  withBestEffortCleanup(
+    () => {
+      copyFileSync(src, tmp);
+      renameSync(tmp, dest);
+    },
+    () => rmSync(tmp, { force: true }),
+  );
 }
 
 /** I5: rebuild from source — no remote .node binary is fetched. */

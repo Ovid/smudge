@@ -1,5 +1,63 @@
 import { describe, it, expect } from "vitest";
-import { computeCacheKey, validateNodeMajor, orchestrate } from "../native-cache.mjs";
+import {
+  computeCacheKey,
+  validateNodeMajor,
+  orchestrate,
+  withBestEffortCleanup,
+} from "../native-cache.mjs";
+
+describe("withBestEffortCleanup", () => {
+  it("returns the body's value and runs cleanup on success", () => {
+    /** @type {string[]} */
+    const ran = [];
+    const result = withBestEffortCleanup(
+      () => "body-value",
+      () => ran.push("cleanup"),
+    );
+    expect(result).toBe("body-value");
+    expect(ran).toEqual(["cleanup"]);
+  });
+
+  it("propagates the body error and still runs cleanup when the body throws", () => {
+    /** @type {string[]} */
+    const ran = [];
+    expect(() =>
+      withBestEffortCleanup(
+        () => {
+          throw new Error("body failed");
+        },
+        () => ran.push("cleanup"),
+      ),
+    ).toThrow("body failed");
+    expect(ran).toEqual(["cleanup"]);
+  });
+
+  // S1: the load-bearing case — a cleanup failure must never mask the real body
+  // error (JS try/finally otherwise replaces the in-flight error with the
+  // cleanup error, misdiagnosing the failure).
+  it("propagates the BODY error, not the cleanup error, when both throw", () => {
+    expect(() =>
+      withBestEffortCleanup(
+        () => {
+          throw new Error("real cause: ENOSPC");
+        },
+        () => {
+          throw new Error("cleanup noise: EPERM");
+        },
+      ),
+    ).toThrow("real cause: ENOSPC");
+  });
+
+  it("swallows a cleanup failure on the success path and returns the body value", () => {
+    const result = withBestEffortCleanup(
+      () => 42,
+      () => {
+        throw new Error("EPERM unlink tmp");
+      },
+    );
+    expect(result).toBe(42);
+  });
+});
 
 describe("validateNodeMajor", () => {
   it("accepts a matching single-major form (22.x against 22.22.2)", () => {

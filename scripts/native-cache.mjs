@@ -64,6 +64,30 @@ export function computeCacheKey({ version, platform, arch, abiVersion }) {
 }
 
 /**
+ * Run `body` and return its value, then ALWAYS run `cleanup` — but never let a
+ * cleanup failure mask the body's outcome. JS `try { … } finally { cleanup() }`
+ * has the opposite default: a throw from the `finally` replaces whatever the
+ * body returned or threw, so a noisy cleanup error (e.g. `EPERM` unlinking a
+ * temp file) would hide the real cause (e.g. `ENOSPC` from the copy). Here a
+ * cleanup error is swallowed; the body's return value or error is what escapes.
+ * @template T
+ * @param {() => T} body
+ * @param {() => void} cleanup
+ * @returns {T}
+ */
+export function withBestEffortCleanup(body, cleanup) {
+  try {
+    return body();
+  } finally {
+    try {
+      cleanup();
+    } catch {
+      // Best-effort: a cleanup failure must not override the body's outcome.
+    }
+  }
+}
+
+/**
  * @typedef {object} OrchestrateDeps
  * @property {string} key                          Cache key for the active target.
  * @property {() => boolean} probe                 Does better_sqlite3 currently dlopen?
