@@ -1475,7 +1475,9 @@ The two declarations describe the same prototype-pollution defense for TipTap ca
 > handler in `app.ts` renders the envelope in exactly one place — i.e. F-3
 > delivered this phase's "single owner of the 404 envelope" goal by a superior
 > throw-based mechanism. `grep -rn 'res.status(404)' packages/server/src` over
-> non-test files returns zero matches. Implementing the originally-specified
+> non-test files returns a single match — a descriptive comment in
+> `errors/appError.ts`, not a response handler; zero hand-written 404 response
+> blocks remain. Implementing the originally-specified
 > `notFound(res, resource)` helper would be a **regression**: it would
 > reintroduce a second, `res`-mutating way to emit 404s alongside the throw
 > taxonomy (contradicting CLAUDE.md §API Design). The original phase text is
