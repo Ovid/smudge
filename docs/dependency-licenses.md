@@ -4,7 +4,7 @@ All direct dependencies used by Smudge are compatible with commercial
 use. This document catalogs every license in the project and explains
 any that need special attention.
 
-Last audited: 2026-04-15
+Last audited: 2026-06-01
 
 ---
 
