@@ -54,9 +54,9 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.8    | TipTap Extension Consolidation            | Move client+server TipTap extension config to `packages/shared/`; both packages re-export. Eliminates the parity test enforced by review.                                                                                                                                                                                                                                                                                                                                                                                                                             | Done    |
 | 4b.9    | Chapter Status Type Alignment             | Replace `Chapter.status: string` with `ChapterStatusValue = z.infer<typeof ChapterStatus>` so the TS type matches the Zod 5-value enum.                                                                                                                                                                                                                                                                                                                                                                                                                               | Done |
 | 4b.10   | Shared TipTap Unsafe-Keys Set             | Extract `CANONICAL_UNSAFE_KEYS` into `packages/shared/` so `tiptap-text.ts` and `snapshots/content-hash.ts` share one declaration of `__proto__`/`prototype`/`constructor` strip.                                                                                                                                                                                                                                                                                                                                                                                     | Done |
-| 4b.11   | 404 Route-Response Helper                 | Replace ~20 hand-written `res.status(404).json({ error: { code: "NOT_FOUND", … } })` blocks across `projects`/`chapters`/`snapshots`/`search` routes with a `notFound(res, resource)` helper in `app.ts`.                                                                                                                                                                                                                                                                                                                                                             | Planned |
-| 4b.12   | Validation Error Response Helper          | Add `validationError(res, msg)` + `respondValidationParse(res, parsed)` helpers; migrate ~6 `safeParse` ladders so the 400 envelope has one owner.                                                                                                                                                                                                                                                                                                                                                                                                                    | Planned |
-| 4b.13   | TipTap Depth-Guard Regression Test        | Add a single test that walks a depth-65 TipTap doc through every consumer (`extractText`, `canonicalize`, image `walk`, depth validator) and asserts each bails safely. Codifies the contract behind today's four independent depth checks.                                                                                                                                                                                                                                                                                                                           | Planned |
+| 4b.11   | 404 Route-Response Helper                 | Replace ~20 hand-written `res.status(404).json({ error: { code: "NOT_FOUND", … } })` blocks across `projects`/`chapters`/`snapshots`/`search` routes with a `notFound(res, resource)` helper in `app.ts`.                                                                                                                                                                                                                                                                                                                                                             | Done    |
+| 4b.12   | Validation Error Response Helper          | Add `validationError(res, msg)` + `respondValidationParse(res, parsed)` helpers; migrate ~6 `safeParse` ladders so the 400 envelope has one owner.                                                                                                                                                                                                                                                                                                                                                                                                                    | Done    |
+| 4b.13   | TipTap Depth-Guard Regression Test        | Add a single test that walks a depth-65 TipTap doc through every consumer (`extractText`, `canonicalize`, image `walk`, depth validator) and asserts each bails safely. Codifies the contract behind today's four independent depth checks.                                                                                                                                                                                                                                                                                                                           | Done |
 | 4b.14   | Operational Backup Stopgap                | `make backup` / `make restore` Makefile targets producing a zip archive of `<data-dir>/smudge.db` + `<data-dir>/images/` (data dir defaults to `packages/server/data/`, honors `DB_PATH`). Interim escape hatch for SQLite corruption until Phase 8b ships. Uses SQLite `VACUUM INTO` for live-safe snapshots; restore moves existing data aside, never deletes.                                                                                                                                                                                                       | Planned |
 | 4b.15   | Inline Title-Editing Hook                 | Extract a generic `useInlineTitleEditing(currentId, save, gates, options?)`; reduce `useChapterTitleEditing` and `useProjectTitleEditing` to thin wrappers that pass slug-drift check + post-save navigate as options.                                                                                                                                                                                                                                                                                                                                                | Planned |
 | 4b.16   | Dialog Lifecycle Hook                     | Extract `useDialogLifecycle(dialogRef, { open, onClose, initialFocusRef, blockEscapePropagation, role })` and migrate the 5 dialogs (Confirm, Export, NewProject, ProjectSettings, ShortcutHelp) one at a time; preserve `stopImmediatePropagation` and happy-dom guards as opt-ins.                                                                                                                                                                                                                                                                                  | Planned |
@@ -1466,6 +1466,22 @@ The two declarations describe the same prototype-pollution defense for TipTap ca
 ---
 
 ## Phase 4b.11: 404 Route-Response Helper
+<!-- plan: n/a — RETIRED, superseded by the F-3 server error taxonomy (commit 13028ae, 2026-05-29), which landed after the dedup report (2026-04-28, I1) that spawned this phase. No design doc; marked Done in the Phase Structure table. Marker present so /roadmap skips this section. See the Reconciliation note below. -->
+
+> **RECONCILIATION (2026-06-01): This phase is retired as already-done.** The
+> F-3 `AppError` taxonomy (`packages/server/src/errors/appError.ts`, commit
+> `13028ae`) eliminated every hand-written `res.status(404).json(...)` block
+> this phase targeted. Routes now `throw new NotFoundError("…")` and the global
+> handler in `app.ts` renders the envelope in exactly one place — i.e. F-3
+> delivered this phase's "single owner of the 404 envelope" goal by a superior
+> throw-based mechanism. `grep -rn 'res.status(404)' packages/server/src` over
+> non-test files returns a single match — a descriptive comment in
+> `errors/appError.ts`, not a response handler; zero hand-written 404 response
+> blocks remain. Implementing the originally-specified
+> `notFound(res, resource)` helper would be a **regression**: it would
+> reintroduce a second, `res`-mutating way to emit 404s alongside the throw
+> taxonomy (contradicting CLAUDE.md §API Design). The original phase text is
+> preserved below as historical record.
 
 ### Goal
 
@@ -1503,6 +1519,18 @@ The pattern is the implementation of one rule from CLAUDE.md §API Design (404 e
 ---
 
 ## Phase 4b.12: Validation Error Response Helper
+<!-- plan: n/a — RETIRED, superseded by the F-3 server error taxonomy (commit 13028ae, 2026-05-29), which landed after the dedup report (2026-04-28, I2) that spawned this phase. No design doc; marked Done in the Phase Structure table. Marker present so /roadmap skips this section. See the Reconciliation note below. -->
+
+> **RECONCILIATION (2026-06-01): This phase is retired as already-done.** The
+> F-3 `AppError` taxonomy (`packages/server/src/errors/appError.ts`, commit
+> `13028ae`) centralized the 400 envelope: routes now `throw new
+> BadRequestError("…")` (default code `VALIDATION_ERROR`) and the global handler
+> in `app.ts` renders it in one place. `grep -rn 'VALIDATION_ERROR'
+> packages/server/src/*/*.routes.ts` returns zero literals in route files. The
+> `validationError(res, msg)` / `respondValidationParse(res, parsed)` helpers
+> this phase specified would be a **regression** for the same reason as 4b.11:
+> they reintroduce `res`-mutating emission alongside the throw taxonomy. The
+> original phase text is preserved below as historical record.
 
 ### Goal
 
@@ -1541,10 +1569,11 @@ The validation envelope contract is implicit. Six sites parse Zod and emit a nea
 ---
 
 ## Phase 4b.13: TipTap Depth-Guard Regression Test
+<!-- plan: 2026-06-01-tiptap-depth-guard-regression-test-design.md -->
 
 ### Goal
 
-Pin the contract that _every_ consumer of TipTap JSON honors `MAX_TIPTAP_DEPTH = 64` and bails safely on a depth-65 document. The six current consumers — `validateTipTapDepth` (canonical, in `tiptap-depth.ts`), `extractText` (wordcount), `canonicalize` (content-hash), `walk` (images.references), plus `collectLeafBlocks` and `canonicalJSON` (both in `tiptap-text.ts`) — each implement their own depth-counted recursion; the constant is shared but the recursions are not.
+Pin the contract that _every_ consumer of TipTap JSON honors `MAX_TIPTAP_DEPTH = 64` and bails safely on a depth-65 document. The six current consumers — `validateTipTapDepth` (canonical, in `tiptap-safety.ts`), `extractText` (wordcount), `canonicalize` (content-hash), `walk` (images.references), plus `collectLeafBlocks` and `canonicalJSON` (both in `tiptap-text.ts`) — each implement their own depth-counted recursion; the constant is shared but the recursions are not.
 
 ### Why Now
 
