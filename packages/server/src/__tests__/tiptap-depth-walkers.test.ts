@@ -154,7 +154,10 @@ describe("TipTap depth-guard contract (MAX_TIPTAP_DEPTH walkers)", () => {
     };
     const { doc: result, count } = replaceInDoc(doc, "a", "b");
     expect(count).toBe(2);
-    const paragraph = (result.content as Array<Record<string, unknown>>)[0];
+    const paragraph = (result.content as Array<Record<string, unknown>>)[0] as Record<
+      string,
+      unknown
+    >;
     const inline = paragraph.content as unknown[];
     expect(inline).toHaveLength(1); // merged: marks compared equal under the cap
   });
