@@ -517,6 +517,11 @@ export function useInlineTitleEditing<T>(
     setEditing(false);
   }
 
+  // Plain per-render closures: do NOT useCallback-wrap start/save. They must
+  // read the latest draft, entity, gates, and options (notably driftCheck)
+  // each render; a useCallback with an incomplete dep array would capture a
+  // stale draft or stale driftCheck and silently save the wrong text or skip
+  // the drift bail. setDraft and inputRef are already stable. (Design Finding 2.)
   return {
     editing,
     draft,
@@ -847,7 +852,7 @@ If `git status` is clean after `make all`, skip this commit.
 - Save-result contract generalized to `T | undefined`; chapter returns `true` sentinel → Task 3 Step 3.
 - Two normalizations (latch reset + clearError on entity change), each test-pinned → generic tests (Task 2) + chapter test (Task 3) + project test (Task 4).
 - Project no-op characterization test (pushback Finding 1) → Task 1.
-- "Do not `useCallback`-wrap save/start" (pushback Finding 2) → satisfied by the Task 2 implementation, which returns plain per-render closures; no memoization introduced.
+- "Do not `useCallback`-wrap save/start" (pushback Finding 2) → satisfied by the Task 2 implementation, which returns plain per-render closures with an in-code comment at the `return` block anchoring the constraint (alignment Finding 1); no memoization introduced.
 - CLAUDE.md discoverability deferred (pushback Finding 3) → no task; recorded in design step-7 review.
 - Existing wrapper tests pass unmodified → Tasks 3 & 4 append-only; Task 5 Step 2 runs the full suite.
 - Coverage floors / zero warnings → Task 5 Step 3.
