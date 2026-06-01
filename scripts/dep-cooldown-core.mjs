@@ -145,3 +145,75 @@ export function parseAllowlist(entries) {
   }
   return byId;
 }
+
+/**
+ * Is an HTTP status (or 0 for a network/timeout error) a transient
+ * infrastructure blip worth retrying, as opposed to a definitive answer? The
+ * shell retries these; a non-retriable failure is surfaced as an infra error
+ * (it cannot be silently treated as a pass — the gate fails closed).
+ * @param {number} status
+ * @returns {boolean}
+ */
+export function isRetriableStatus(status) {
+  return status === 0 || status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * @typedef {{ id: string, ageDays: number | null, kind: "young" | "absent" }} Violation
+ */
+
+/**
+ * Decide, for every registry version in the tree, whether it violates the
+ * cooldown. A version violates if it is younger than `cooldownDays` and not
+ * allowlisted ("young"), or if the registry returned no publish date for it
+ * ("absent" — yanked/tampered/unexpected; only reached when the registry WAS
+ * reachable, since infra failures are handled in the shell). Allowlist
+ * diagnostics are non-failing: a waiver whose version is now old is "stale", a
+ * waiver whose id is no longer in the tree is "orphaned" — both are hygiene
+ * hints, not violations.
+ * @param {{
+ *   versions: RegistryVersion[],
+ *   publishDates: Map<string, string | null>,
+ *   allowlist: Map<string, Waiver>,
+ *   now: number,
+ *   cooldownDays: number,
+ * }} args
+ * @returns {{ violations: Violation[], staleWaivers: string[], orphanedWaivers: string[] }}
+ */
+export function classify({ versions, publishDates, allowlist, now, cooldownDays }) {
+  const cooldownMs = cooldownDays * DAY_MS;
+  /** @type {Violation[]} */
+  const violations = [];
+  /** @type {string[]} */
+  const staleWaivers = [];
+  const usedWaivers = new Set();
+
+  for (const v of versions) {
+    const waived = allowlist.has(v.id);
+    if (waived) usedWaivers.add(v.id);
+
+    const published = publishDates.get(v.id);
+    if (published === null || published === undefined) {
+      // Registry reachable but no publish time for this version.
+      if (!waived) violations.push({ id: v.id, ageDays: null, kind: "absent" });
+      continue;
+    }
+
+    const ageMs = now - Date.parse(published);
+    if (ageMs >= cooldownMs) {
+      if (waived) staleWaivers.push(v.id); // old enough now — waiver no longer needed
+      continue;
+    }
+    if (!waived) violations.push({ id: v.id, ageDays: ageMs / DAY_MS, kind: "young" });
+  }
+
+  /** @type {string[]} */
+  const orphanedWaivers = [];
+  for (const id of allowlist.keys()) {
+    if (!usedWaivers.has(id)) orphanedWaivers.push(id);
+  }
+
+  return { violations, staleWaivers, orphanedWaivers };
+}

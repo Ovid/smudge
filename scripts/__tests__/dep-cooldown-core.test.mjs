@@ -6,6 +6,8 @@ import {
   collectRegistryVersions,
   groupVersionsByName,
   parseAllowlist,
+  isRetriableStatus,
+  classify,
 } from "../dep-cooldown-core.mjs";
 
 describe("derivePackageName", () => {
@@ -156,5 +158,95 @@ describe("parseAllowlist", () => {
       /reason/,
     );
     expect(() => parseAllowlist([{ package: "p", version: "1.0.0", reason: 42 }])).toThrow(/reason/);
+  });
+});
+
+describe("isRetriableStatus", () => {
+  it("treats network (0), 408, 425, 429, and 5xx as retriable infra blips", () => {
+    for (const s of [0, 408, 425, 429, 500, 502, 503, 504]) {
+      expect(isRetriableStatus(s)).toBe(true);
+    }
+  });
+  it("treats 404 and other 4xx as non-retriable", () => {
+    for (const s of [400, 401, 403, 404]) {
+      expect(isRetriableStatus(s)).toBe(false);
+    }
+  });
+});
+
+describe("classify", () => {
+  // Fixed reference clock so fixtures are deterministic.
+  const now = Date.parse("2026-06-01T00:00:00.000Z");
+  const day = 24 * 60 * 60 * 1000;
+  const iso = (/** @type {number} */ msAgo) => new Date(now - msAgo).toISOString();
+  const base = { now, cooldownDays: 7 };
+
+  const mk = (/** @type {string} */ id) => {
+    const [name, version] = id.split(/@(?=[^@]+$)/);
+    return { name: name ?? "", version: version ?? "", id };
+  };
+
+  it("flags a young, non-allowlisted version as a violation", () => {
+    const { violations } = classify({
+      ...base,
+      versions: [mk("react@19.0.0")],
+      publishDates: new Map([["react@19.0.0", iso(3 * day)]]),
+      allowlist: new Map(),
+    });
+    expect(violations).toEqual([{ id: "react@19.0.0", ageDays: 3, kind: "young" }]);
+  });
+
+  it("passes a version at least cooldownDays old", () => {
+    const { violations } = classify({
+      ...base,
+      versions: [mk("react@18.3.1")],
+      publishDates: new Map([["react@18.3.1", iso(10 * day)]]),
+      allowlist: new Map(),
+    });
+    expect(violations).toEqual([]);
+  });
+
+  it("passes a young version that is allowlisted", () => {
+    const { violations } = classify({
+      ...base,
+      versions: [mk("react@19.0.0")],
+      publishDates: new Map([["react@19.0.0", iso(1 * day)]]),
+      allowlist: new Map([["react@19.0.0", { reason: "CVE" }]]),
+    });
+    expect(violations).toEqual([]);
+  });
+
+  it("flags a version absent from registry publish times as an 'absent' violation", () => {
+    const { violations } = classify({
+      ...base,
+      versions: [mk("sketchy@9.9.9")],
+      publishDates: new Map([["sketchy@9.9.9", null]]),
+      allowlist: new Map(),
+    });
+    expect(violations).toEqual([{ id: "sketchy@9.9.9", ageDays: null, kind: "absent" }]);
+  });
+
+  it("reports a stale waiver (allowlisted but now old) without failing", () => {
+    const result = classify({
+      ...base,
+      versions: [mk("react@18.3.1")],
+      publishDates: new Map([["react@18.3.1", iso(30 * day)]]),
+      allowlist: new Map([["react@18.3.1", { reason: "old CVE" }]]),
+    });
+    expect(result.violations).toEqual([]);
+    expect(result.staleWaivers).toEqual(["react@18.3.1"]);
+    expect(result.orphanedWaivers).toEqual([]);
+  });
+
+  it("reports an orphaned waiver (id no longer in the tree) without failing", () => {
+    const result = classify({
+      ...base,
+      versions: [mk("react@18.3.1")],
+      publishDates: new Map([["react@18.3.1", iso(30 * day)]]),
+      allowlist: new Map([["gone@1.0.0", { reason: "left over" }]]),
+    });
+    expect(result.violations).toEqual([]);
+    expect(result.orphanedWaivers).toEqual(["gone@1.0.0"]);
+    expect(result.staleWaivers).toEqual([]);
   });
 });
