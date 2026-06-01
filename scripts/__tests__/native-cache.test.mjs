@@ -72,6 +72,15 @@ describe("computeCacheKey", () => {
       }),
     ).toBe("better-sqlite3@11.10.0-darwin-x64-abi131");
   });
+
+  it.each(["../../etc", "11.10.0/..", "a/b", "a\\b"])(
+    "refuses a version that would escape the cache directory (%s)",
+    (version) => {
+      expect(() =>
+        computeCacheKey({ version, platform: "linux", arch: "arm64", abiVersion: "127" }),
+      ).toThrow(/unsafe cache key/i);
+    },
+  );
 });
 
 /**
@@ -184,5 +193,62 @@ describe("orchestrate", () => {
     expect(orchestrate(deps)).toBe("rebuilt-but-unloadable");
     expect(calls.rebuild).toBe(1);
     expect(calls.saveToCache).toEqual([]);
+  });
+
+  // I1: cache warming is opportunistic — a failed cache write must never fail a
+  // run whose binary already loads.
+  it("tolerates a cache-warm write failure on the happy path", () => {
+    const { deps, calls } = makeDeps({
+      probe: () => true,
+      cacheHas: () => false,
+      saveToCache: () => {
+        throw new Error("EROFS: read-only file system");
+      },
+    });
+    expect(orchestrate(deps)).toBe("loaded-warmed");
+    expect(calls.rebuild).toBe(0);
+    expect(calls.log.some((m) => /could not (?:warm|write).*cache/i.test(m))).toBe(true);
+  });
+
+  // I1/S2: a restore that throws (read-only mount, or a concurrent same-platform
+  // run deleting the entry between cacheHas() and the copy) must fall through to
+  // a rebuild rather than abort.
+  it("falls through to rebuild when a cache restore throws", () => {
+    const { deps, calls } = makeDeps({
+      probe: probeSequence([false, true]),
+      cacheHas: () => true,
+      restoreFromCache: () => {
+        throw new Error("ENOENT: cache entry vanished");
+      },
+    });
+    expect(orchestrate(deps)).toBe("cache-corrupt-rebuilt");
+    expect(calls.rebuild).toBe(1);
+    expect(calls.saveToCache).toEqual([deps.key]);
+  });
+
+  // I1: a failed warm-save after a successful rebuild must not mask the success.
+  it("tolerates a cache-warm write failure after a successful rebuild", () => {
+    const { deps, calls } = makeDeps({
+      probe: probeSequence([false, true]),
+      cacheHas: () => false,
+      saveToCache: () => {
+        throw new Error("ENOSPC: no space left on device");
+      },
+    });
+    expect(orchestrate(deps)).toBe("rebuilt-from-source");
+    expect(calls.rebuild).toBe(1);
+  });
+
+  // I1: a deleteCacheEntry failure while discarding a corrupt entry is best-effort.
+  it("tolerates a deleteCacheEntry failure when discarding a corrupt entry", () => {
+    const { deps, calls } = makeDeps({
+      probe: probeSequence([false, false, true]),
+      cacheHas: () => true,
+      deleteCacheEntry: () => {
+        throw new Error("EACCES: permission denied");
+      },
+    });
+    expect(orchestrate(deps)).toBe("cache-corrupt-rebuilt");
+    expect(calls.rebuild).toBe(1);
   });
 });
