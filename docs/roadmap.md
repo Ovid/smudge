@@ -1545,7 +1545,7 @@ The validation envelope contract is implicit. Six sites parse Zod and emit a nea
 
 ### Goal
 
-Pin the contract that _every_ consumer of TipTap JSON honors `MAX_TIPTAP_DEPTH = 64` and bails safely on a depth-65 document. The six current consumers — `validateTipTapDepth` (canonical, in `tiptap-depth.ts`), `extractText` (wordcount), `canonicalize` (content-hash), `walk` (images.references), plus `collectLeafBlocks` and `canonicalJSON` (both in `tiptap-text.ts`) — each implement their own depth-counted recursion; the constant is shared but the recursions are not.
+Pin the contract that _every_ consumer of TipTap JSON honors `MAX_TIPTAP_DEPTH = 64` and bails safely on a depth-65 document. The six current consumers — `validateTipTapDepth` (canonical, in `tiptap-safety.ts`), `extractText` (wordcount), `canonicalize` (content-hash), `walk` (images.references), plus `collectLeafBlocks` and `canonicalJSON` (both in `tiptap-text.ts`) — each implement their own depth-counted recursion; the constant is shared but the recursions are not.
 
 ### Why Now
 
