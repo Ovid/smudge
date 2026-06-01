@@ -27,10 +27,10 @@ import {
   fetchPublishTimes,
   publishDateFromTime,
   isValidRegistryName,
+  parseCooldownDays,
 } from "./dep-cooldown-core.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const COOLDOWN_DAYS = Number(process.env.DEP_COOLDOWN_DAYS ?? "7");
 const CACHE_PATH = join(repoRoot, ".dep-cooldown-cache.json");
 const ALLOWLIST_PATH = join(repoRoot, "dependency-cooldown-allowlist.json");
 const LOCKFILE_PATH = join(repoRoot, "package-lock.json");
@@ -75,6 +75,15 @@ function fetchTimes(name) {
 }
 
 async function main() {
+  let cooldownDays;
+  try {
+    cooldownDays = parseCooldownDays(process.env.DEP_COOLDOWN_DAYS);
+  } catch (err) {
+    console.error(`✗ ${errMsg(err)}`);
+    process.exitCode = 1;
+    return;
+  }
+
   let lockfile;
   try {
     lockfile = readJson(LOCKFILE_PATH);
@@ -159,22 +168,22 @@ async function main() {
     publishDates,
     allowlist,
     now: Date.now(),
-    cooldownDays: COOLDOWN_DAYS,
+    cooldownDays,
   });
-  const { lines, blocking } = buildReport({ ...result, skipped, cooldownDays: COOLDOWN_DAYS });
+  const { lines, blocking } = buildReport({ ...result, skipped, cooldownDays });
   for (const line of lines) console.log(line);
 
   if (blocking) {
     console.error(
-      `\nDependency cooldown: ${result.violations.length} version(s) younger than ${COOLDOWN_DAYS} days and not allowlisted.`,
+      `\nDependency cooldown: ${result.violations.length} version(s) younger than ${cooldownDays} days and not allowlisted.`,
     );
     console.error(
-      `Wait until they are ${COOLDOWN_DAYS} days old, or add an entry with a reason to dependency-cooldown-allowlist.json.`,
+      `Wait until they are ${cooldownDays} days old, or add an entry with a reason to dependency-cooldown-allowlist.json.`,
     );
     process.exitCode = 1;
   } else {
     console.log(
-      `Dependency cooldown: OK — all ${versions.length} checked version(s) ≥ ${COOLDOWN_DAYS} days old or allowlisted.`,
+      `Dependency cooldown: OK — all ${versions.length} checked version(s) ≥ ${cooldownDays} days old or allowlisted.`,
     );
   }
 }

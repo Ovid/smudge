@@ -7,6 +7,7 @@ import {
   collectRegistryVersions,
   groupVersionsByName,
   parseAllowlist,
+  parseCooldownDays,
   isRetriableStatus,
   fetchPublishTimes,
   publishDateFromTime,
@@ -223,6 +224,29 @@ describe("parseAllowlist", () => {
     expect(() => parseAllowlist([{ package: "p", version: "1.0.0", reason: 42 }])).toThrow(
       /reason/,
     );
+  });
+});
+
+describe("parseCooldownDays", () => {
+  it("defaults to 7 when the value is unset", () => {
+    expect(parseCooldownDays(undefined)).toBe(7);
+  });
+
+  it("parses a positive number, including fractional", () => {
+    expect(parseCooldownDays("14")).toBe(14);
+    expect(parseCooldownDays("3.5")).toBe(3.5);
+  });
+
+  // S4: an empty string coerces to 0 via Number(""), which would pass EVERY
+  // version and report "OK" — a silently disabled gate. Fail closed instead.
+  it("rejects an empty string instead of silently disabling the gate", () => {
+    expect(() => parseCooldownDays("")).toThrow(/DEP_COOLDOWN_DAYS/);
+  });
+
+  it("rejects non-numeric, zero, and negative values (fail closed)", () => {
+    expect(() => parseCooldownDays("abc")).toThrow(/DEP_COOLDOWN_DAYS/);
+    expect(() => parseCooldownDays("0")).toThrow(/DEP_COOLDOWN_DAYS/);
+    expect(() => parseCooldownDays("-3")).toThrow(/DEP_COOLDOWN_DAYS/);
   });
 });
 

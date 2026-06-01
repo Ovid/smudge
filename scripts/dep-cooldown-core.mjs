@@ -188,6 +188,26 @@ export function parseAllowlist(entries) {
 }
 
 /**
+ * Coerce the cooldown-window setting (the `DEP_COOLDOWN_DAYS` override, default
+ * "7") to a positive, finite number of days. `Number("")` is 0 — which would
+ * pass EVERY version and report "OK", a silently disabled gate — and a
+ * non-numeric value is NaN (every version flagged young); both, plus zero and
+ * negatives, are rejected so a misconfigured window fails closed rather than
+ * neutering the gate. An unset value (undefined) takes the 7-day default.
+ * @param {string | undefined} raw
+ * @returns {number}
+ */
+export function parseCooldownDays(raw) {
+  const n = Number(raw ?? "7");
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error(
+      `invalid DEP_COOLDOWN_DAYS ${JSON.stringify(raw)} — expected a positive number of days`,
+    );
+  }
+  return n;
+}
+
+/**
  * Is an HTTP status (or 0 for a network/timeout error) a transient
  * infrastructure blip worth retrying, as opposed to a definitive answer? The
  * shell retries these; a non-retriable failure is surfaced as an infra error
