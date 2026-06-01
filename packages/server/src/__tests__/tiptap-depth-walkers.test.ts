@@ -64,4 +64,12 @@ describe("TipTap depth-guard contract (MAX_TIPTAP_DEPTH walkers)", () => {
     // return true (no over-depth rejection).
     expect(validateTipTapDepth(deepDoc(OVER_CAP_DEPTH, { type: "text", text: "x" }))).toBe(false);
   });
+
+  it("countWords drops text below the depth cap (extractText bails)", () => {
+    // Only text in the doc sits below the cap. Cap present → extractText
+    // returns "" for the deep subtree → 0 words. If the bail were removed,
+    // the deep "hello world" would be counted (>= 2).
+    const doc = deepDoc(OVER_CAP_DEPTH, { type: "text", text: "hello world" });
+    expect(countWords(doc)).toBe(0);
+  });
 });
