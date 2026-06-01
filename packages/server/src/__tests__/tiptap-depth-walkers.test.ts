@@ -83,4 +83,16 @@ describe("TipTap depth-guard contract (MAX_TIPTAP_DEPTH walkers)", () => {
     });
     expect(extractImageIds(doc)).toEqual([]);
   });
+
+  it("searchInDoc finds nothing below the depth cap (collectLeafBlocks bails)", () => {
+    // The matchable paragraph sits below the cap, reachable only by recursing
+    // through the blockquote chain. Cap present → collectLeafBlocks bails
+    // before reaching it → no leaf blocks → no matches. If the bail were
+    // removed, the deep paragraph would be collected and "x" matched.
+    const doc = deepDoc(OVER_CAP_DEPTH, {
+      type: "paragraph",
+      content: [{ type: "text", text: "x" }],
+    });
+    expect(searchInDoc(doc, "x")).toEqual([]);
+  });
 });
