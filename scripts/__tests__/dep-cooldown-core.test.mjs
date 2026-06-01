@@ -23,9 +23,9 @@ describe("derivePackageName", () => {
   // The bug a naive split would cause: for a NESTED scoped package the name is
   // everything after the LAST node_modules/, which still contains a slash.
   it("derives a nested scoped package from the last node_modules/ segment", () => {
-    expect(
-      derivePackageName("node_modules/@types/serve-static/node_modules/@types/send"),
-    ).toBe("@types/send");
+    expect(derivePackageName("node_modules/@types/serve-static/node_modules/@types/send")).toBe(
+      "@types/send",
+    );
   });
 
   it("returns null for a workspace/own-code key with no node_modules/", () => {
@@ -48,9 +48,9 @@ describe("versionId", () => {
 describe("isRegistryResolved", () => {
   it("accepts an npm registry tarball URL (incl. scoped)", () => {
     expect(isRegistryResolved("https://registry.npmjs.org/react/-/react-18.3.1.tgz")).toBe(true);
-    expect(
-      isRegistryResolved("https://registry.npmjs.org/@types/node/-/node-22.0.0.tgz"),
-    ).toBe(true);
+    expect(isRegistryResolved("https://registry.npmjs.org/@types/node/-/node-22.0.0.tgz")).toBe(
+      true,
+    );
     expect(isRegistryResolved("http://registry.npmjs.org/x/-/x-1.0.0.tgz")).toBe(true);
   });
 
@@ -158,7 +158,9 @@ describe("parseAllowlist", () => {
     expect(() => parseAllowlist([{ package: "p", version: "1.0.0", reason: "   " }])).toThrow(
       /reason/,
     );
-    expect(() => parseAllowlist([{ package: "p", version: "1.0.0", reason: 42 }])).toThrow(/reason/);
+    expect(() => parseAllowlist([{ package: "p", version: "1.0.0", reason: 42 }])).toThrow(
+      /reason/,
+    );
   });
 });
 

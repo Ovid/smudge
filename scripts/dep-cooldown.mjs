@@ -100,7 +100,9 @@ async function main() {
     try {
       cache = readJson(CACHE_PATH);
     } catch {
-      console.error("  note: .dep-cooldown-cache.json is unreadable — ignoring cache, will re-fetch.");
+      console.error(
+        "  note: .dep-cooldown-cache.json is unreadable — ignoring cache, will re-fetch.",
+      );
     }
   }
 

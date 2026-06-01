@@ -256,14 +256,20 @@ export function buildReport({ violations, staleWaivers, orphanedWaivers, skipped
     }
   }
   for (const id of staleWaivers) {
-    lines.push(`note: waiver for ${id} no longer needed (now ≥ ${cooldownDays} days old); safe to remove.`);
+    lines.push(
+      `note: waiver for ${id} no longer needed (now ≥ ${cooldownDays} days old); safe to remove.`,
+    );
   }
   for (const id of orphanedWaivers) {
-    lines.push(`note: waiver for ${id} references a version no longer in the tree; safe to remove.`);
+    lines.push(
+      `note: waiver for ${id} references a version no longer in the tree; safe to remove.`,
+    );
   }
   if (skipped > 0) {
     const noun = skipped === 1 ? "entry" : "entries";
-    lines.push(`info: skipped ${skipped} non-registry dependency ${noun} (git/file/link — no publish date to check).`);
+    lines.push(
+      `info: skipped ${skipped} non-registry dependency ${noun} (git/file/link — no publish date to check).`,
+    );
   }
 
   return { lines, blocking: violations.length > 0 };
