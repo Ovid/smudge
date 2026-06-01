@@ -10,7 +10,7 @@
     "playwright.config.ts",
     "e2e/**/*.ts",
     "vitest.config.ts",
-    "scripts/*.mjs",
+    "scripts/**/*.mjs",
     "scripts/vitest.config.ts"
   ]
 }

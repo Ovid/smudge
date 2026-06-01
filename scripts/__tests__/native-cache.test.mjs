@@ -190,6 +190,8 @@ describe("computeCacheKey", () => {
  * A probe that returns the next scripted boolean each call, clamping to the
  * last value once the script is exhausted (orchestrate may probe up to 3x:
  * initial, after-restore, after-rebuild).
+ * @param {boolean[]} values
+ * @returns {() => boolean}
  */
 function probeSequence(values) {
   let i = 0;
@@ -200,26 +202,33 @@ function probeSequence(values) {
   };
 }
 
+/**
+ * @param {Partial<import("../native-cache.mjs").OrchestrateDeps>} [overrides]
+ */
 function makeDeps(overrides = {}) {
   const calls = {
+    /** @type {string[]} */
     restoreFromCache: [],
+    /** @type {string[]} */
     saveToCache: [],
+    /** @type {string[]} */
     deleteCacheEntry: [],
     rebuild: 0,
+    /** @type {string[]} */
     log: [],
   };
   const deps = {
     key: "better-sqlite3@11.10.0-linux-arm64-abi127",
     probe: () => true,
     cacheHas: () => false,
-    restoreFromCache: (k) => calls.restoreFromCache.push(k),
-    saveToCache: (k) => calls.saveToCache.push(k),
-    deleteCacheEntry: (k) => calls.deleteCacheEntry.push(k),
+    restoreFromCache: (/** @type {string} */ k) => calls.restoreFromCache.push(k),
+    saveToCache: (/** @type {string} */ k) => calls.saveToCache.push(k),
+    deleteCacheEntry: (/** @type {string} */ k) => calls.deleteCacheEntry.push(k),
     rebuild: () => {
       calls.rebuild += 1;
       return true;
     },
-    log: (m) => calls.log.push(m),
+    log: (/** @type {string} */ m) => calls.log.push(m),
     ...overrides,
   };
   return { deps, calls };
