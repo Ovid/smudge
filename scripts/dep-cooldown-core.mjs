@@ -199,6 +199,90 @@ export function isRetriableStatus(status) {
   return status === 0 || status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
+/**
+ * @typedef {{ ok: boolean, status: number, json: () => Promise<any> }} FetchResult
+ */
+
+/**
+ * Resolve a package's registry `time` object (per-version publish dates) with
+ * bounded-retry, keeping the two failure classes the gate must never conflate
+ * cleanly separated. IO is injected (`fetchDoc`, `sleep`) so the retry control
+ * and the fail-closed exhaustion path — the gate's central safety property —
+ * are unit-testable offline.
+ *
+ * Outcomes:
+ *  - success → resolves with the `time` object;
+ *  - a RETRIABLE status (5xx/408/425/429), a network/timeout rejection, malformed
+ *    JSON, or a 200 whose whole `time` object is absent/non-object (S2) → retried
+ *    with backoff up to `maxAttempts`, then THROWS (the shell surfaces this as a
+ *    distinct infrastructure error and fails closed — never a silent pass, I1);
+ *  - a NON-RETRIABLE status (e.g. 404) → THROWS immediately, no wasted retries (S1).
+ *
+ * @param {{
+ *   name: string,
+ *   fetchDoc: (name: string) => Promise<FetchResult>,
+ *   sleep: (ms: number) => Promise<void>,
+ *   maxAttempts: number,
+ *   backoffMs?: (attempt: number) => number,
+ * }} args
+ * @returns {Promise<Record<string, unknown>>}
+ */
+export async function fetchPublishTimes({
+  name,
+  fetchDoc,
+  sleep,
+  maxAttempts,
+  backoffMs = (attempt) => 500 * 2 ** (attempt - 1),
+}) {
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    /** @type {FetchResult | null} */
+    let res = null;
+    try {
+      res = await fetchDoc(name);
+    } catch (err) {
+      lastErr = err; // network/timeout — retriable
+    }
+    if (res) {
+      if (res.ok) {
+        try {
+          const doc = await res.json();
+          const time = doc && typeof doc.time === "object" && doc.time !== null ? doc.time : null;
+          if (time) return time;
+          // S2: a 200 without a usable `time` object is a transient/partial
+          // response, not a per-version yank — retriable infra, not a violation.
+          lastErr = new Error(`registry metadata for ${name} has no usable "time" object`);
+        } catch (err) {
+          lastErr = err; // malformed JSON — treat as a transient/partial response
+        }
+      } else if (!isRetriableStatus(res.status)) {
+        // S1: a definitive, non-retriable status fails fast — this throw is
+        // outside any try, so the retry loop ends immediately.
+        throw new Error(`registry responded ${res.status} for ${name}`);
+      } else {
+        lastErr = new Error(`registry responded ${res.status} for ${name}`);
+      }
+    }
+    if (attempt < maxAttempts) await sleep(backoffMs(attempt));
+  }
+  throw lastErr ?? new Error(`could not fetch registry metadata for ${name}`);
+}
+
+/**
+ * Read a single version's publish date from a registry `time` object by EXACT
+ * key. The `time` object also carries `created`/`modified` sentinel keys that
+ * are not per-version dates; an exact-key lookup ignores them by construction
+ * (no `Object.entries` walk that could mistake a sentinel for a version). A
+ * missing or non-string value yields null ("no usable publish date").
+ * @param {Record<string, unknown>} time
+ * @param {string} version
+ * @returns {string | null}
+ */
+export function publishDateFromTime(time, version) {
+  const iso = time[version];
+  return typeof iso === "string" ? iso : null;
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**

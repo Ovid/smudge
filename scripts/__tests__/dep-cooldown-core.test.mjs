@@ -8,6 +8,8 @@ import {
   groupVersionsByName,
   parseAllowlist,
   isRetriableStatus,
+  fetchPublishTimes,
+  publishDateFromTime,
   classify,
   buildReport,
 } from "../dep-cooldown-core.mjs";
@@ -235,6 +237,189 @@ describe("isRetriableStatus", () => {
       expect(isRetriableStatus(s)).toBe(false);
     }
     expect(isRetriableStatus(499)).toBe(false);
+  });
+});
+
+describe("fetchPublishTimes", () => {
+  const noopSleep = async () => {};
+  const okDoc = (/** @type {Record<string, unknown>} */ time) => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ time }),
+  });
+  const status = (/** @type {number} */ s) => ({ ok: false, status: s, json: async () => ({}) });
+
+  it("returns the time object on the first successful fetch", async () => {
+    const time = { "1.0.0": "2026-01-01T00:00:00.000Z" };
+    let calls = 0;
+    const got = await fetchPublishTimes({
+      name: "react",
+      maxAttempts: 4,
+      sleep: noopSleep,
+      fetchDoc: async () => {
+        calls++;
+        return okDoc(time);
+      },
+    });
+    expect(got).toEqual(time);
+    expect(calls).toBe(1);
+  });
+
+  it("retries a retriable status, then succeeds", async () => {
+    const time = { "1.0.0": "2026-01-01T00:00:00.000Z" };
+    const seq = [status(503), okDoc(time)];
+    let i = 0;
+    let slept = 0;
+    const got = await fetchPublishTimes({
+      name: "react",
+      maxAttempts: 4,
+      sleep: async () => {
+        slept++;
+      },
+      fetchDoc: async () => {
+        const r = seq[i++];
+        if (!r) throw new Error("test fixture exhausted its fetchDoc sequence");
+        return r;
+      },
+    });
+    expect(got).toEqual(time);
+    expect(slept).toBe(1);
+  });
+
+  // I1: the central fail-closed property — exhausted retries THROW (the shell
+  // maps the throw to a distinct infra exit 3), never silently pass.
+  it("throws after retries are exhausted on a 5xx (fail closed)", async () => {
+    let calls = 0;
+    let slept = 0;
+    await expect(
+      fetchPublishTimes({
+        name: "react",
+        maxAttempts: 4,
+        sleep: async () => {
+          slept++;
+        },
+        fetchDoc: async () => {
+          calls++;
+          return status(503);
+        },
+      }),
+    ).rejects.toThrow(/503/);
+    expect(calls).toBe(4);
+    expect(slept).toBe(3); // backoff happens BETWEEN attempts only
+  });
+
+  it("retries a network/timeout rejection, then exhausts and throws", async () => {
+    let calls = 0;
+    await expect(
+      fetchPublishTimes({
+        name: "react",
+        maxAttempts: 3,
+        sleep: noopSleep,
+        fetchDoc: async () => {
+          calls++;
+          throw new Error("ECONNRESET");
+        },
+      }),
+    ).rejects.toThrow(/ECONNRESET/);
+    expect(calls).toBe(3);
+  });
+
+  // S1: a non-retriable status (e.g. 404) fails fast — no wasted retries/backoff.
+  it("fails fast on a non-retriable status without retrying", async () => {
+    let calls = 0;
+    let slept = 0;
+    await expect(
+      fetchPublishTimes({
+        name: "react",
+        maxAttempts: 4,
+        sleep: async () => {
+          slept++;
+        },
+        fetchDoc: async () => {
+          calls++;
+          return status(404);
+        },
+      }),
+    ).rejects.toThrow(/404/);
+    expect(calls).toBe(1);
+    expect(slept).toBe(0);
+  });
+
+  // S2: a 200 whose whole `time` object is missing is a transient/partial
+  // response (retry → infra), NOT a per-version "absent" violation.
+  it("treats a 200 with no usable time object as infra and retries to exhaustion", async () => {
+    let calls = 0;
+    await expect(
+      fetchPublishTimes({
+        name: "react",
+        maxAttempts: 3,
+        sleep: noopSleep,
+        fetchDoc: async () => {
+          calls++;
+          return { ok: true, status: 200, json: async () => ({}) };
+        },
+      }),
+    ).rejects.toThrow(/time/);
+    expect(calls).toBe(3);
+  });
+
+  it("treats a 200 with a non-object time as infra (retries)", async () => {
+    let calls = 0;
+    await expect(
+      fetchPublishTimes({
+        name: "react",
+        maxAttempts: 2,
+        sleep: noopSleep,
+        fetchDoc: async () => {
+          calls++;
+          return { ok: true, status: 200, json: async () => ({ time: "nope" }) };
+        },
+      }),
+    ).rejects.toThrow(/time/);
+    expect(calls).toBe(2);
+  });
+
+  it("treats a 200 with malformed JSON as a retriable infra blip", async () => {
+    let calls = 0;
+    await expect(
+      fetchPublishTimes({
+        name: "react",
+        maxAttempts: 2,
+        sleep: noopSleep,
+        fetchDoc: async () => {
+          calls++;
+          return {
+            ok: true,
+            status: 200,
+            json: async () => {
+              throw new Error("Unexpected end of JSON input");
+            },
+          };
+        },
+      }),
+    ).rejects.toThrow();
+    expect(calls).toBe(2);
+  });
+});
+
+describe("publishDateFromTime", () => {
+  // S3: per-version dates are read by EXACT key, so the `created`/`modified`
+  // sentinel keys in a registry `time` object are never mistaken for versions.
+  it("reads a version's date by exact key, ignoring created/modified sentinels", () => {
+    const time = {
+      created: "2020-01-01T00:00:00.000Z",
+      modified: "2026-01-01T00:00:00.000Z",
+      "1.2.3": "2026-05-01T00:00:00.000Z",
+    };
+    expect(publishDateFromTime(time, "1.2.3")).toBe("2026-05-01T00:00:00.000Z");
+  });
+
+  it("returns null for a version absent from the time object", () => {
+    expect(publishDateFromTime({ created: "x", "1.0.0": "y" }, "9.9.9")).toBeNull();
+  });
+
+  it("returns null for a non-string date value", () => {
+    expect(publishDateFromTime({ "1.0.0": 12345 }, "1.0.0")).toBeNull();
   });
 });
 

@@ -24,7 +24,8 @@ import {
   parseAllowlist,
   classify,
   buildReport,
-  isRetriableStatus,
+  fetchPublishTimes,
+  publishDateFromTime,
   isValidRegistryName,
 } from "./dep-cooldown-core.mjs";
 
@@ -50,34 +51,27 @@ function errMsg(err) {
 }
 
 /**
- * Fetch a package's FULL registry metadata document, retrying transient infra
- * failures with exponential backoff. A non-retriable response (e.g. 404) or
- * exhausted retries throws — the caller surfaces it as an infrastructure error
- * (fail closed), distinct from a real policy violation.
+ * Resolve a package's per-version publish-time map from the registry. The
+ * retry/backoff control and the two-failure-class distinction (retriable infra
+ * vs. fail-fast non-retriable status, S1/S2/I1) live in the pure, unit-tested
+ * core; this wrapper only supplies real `fetch` (with safe URL encoding) and
+ * `sleep`. Throws on exhausted retries or a non-retriable status — the caller
+ * surfaces that as a fail-closed infrastructure error.
  * @param {string} name
- * @returns {Promise<any>}
+ * @returns {Promise<Record<string, unknown>>}
  */
-async function fetchMetadata(name) {
-  // Encode EVERY slash (replaceAll, not replace): a scoped name has one, but the
-  // name is untrusted lockfile input — encoding all slashes keeps `new URL()`
-  // from normalizing a crafted `…/../…` into a different package's path. Callers
-  // additionally pre-validate the name via isValidRegistryName (C1).
-  const url = `${REGISTRY}/${name.replaceAll("/", "%2F")}`;
-  let lastErr;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    try {
-      const res = await fetch(url, { headers: { accept: "application/json" } });
-      if (res.ok) return await res.json();
-      if (!isRetriableStatus(res.status)) {
-        throw new Error(`registry responded ${res.status}`);
-      }
-      lastErr = new Error(`registry responded ${res.status}`);
-    } catch (err) {
-      lastErr = err;
-    }
-    if (attempt < MAX_ATTEMPTS) await sleep(500 * 2 ** (attempt - 1));
-  }
-  throw lastErr ?? new Error("unknown fetch failure");
+function fetchTimes(name) {
+  return fetchPublishTimes({
+    name,
+    maxAttempts: MAX_ATTEMPTS,
+    sleep,
+    // Encode EVERY slash (replaceAll, not replace): a scoped name has one, but
+    // the name is untrusted lockfile input — encoding all slashes keeps
+    // `new URL()` from normalizing a crafted `…/../…` into a different
+    // package's path. Names are also pre-validated via isValidRegistryName (C1).
+    fetchDoc: (n) =>
+      fetch(`${REGISTRY}/${n.replaceAll("/", "%2F")}`, { headers: { accept: "application/json" } }),
+  });
 }
 
 async function main() {
@@ -133,9 +127,9 @@ async function main() {
       for (const g of group) publishDates.set(g.id, cache[g.id] ?? null);
       continue;
     }
-    let doc;
+    let times;
     try {
-      doc = await fetchMetadata(name);
+      times = await fetchTimes(name);
     } catch (err) {
       console.error(
         `✗ infrastructure error: could not fetch registry metadata for ${name} (${errMsg(err)}).`,
@@ -146,9 +140,8 @@ async function main() {
       process.exitCode = 3;
       return;
     }
-    const times = (doc && doc.time) || {};
     for (const g of group) {
-      const iso = typeof times[g.version] === "string" ? times[g.version] : null;
+      const iso = publishDateFromTime(times, g.version);
       publishDates.set(g.id, iso);
       if (iso) cache[g.id] = iso; // cache positive dates only (immutable)
     }
