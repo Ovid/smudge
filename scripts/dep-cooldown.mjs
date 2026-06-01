@@ -77,7 +77,14 @@ async function fetchMetadata(name) {
 }
 
 async function main() {
-  const lockfile = readJson(LOCKFILE_PATH);
+  let lockfile;
+  try {
+    lockfile = readJson(LOCKFILE_PATH);
+  } catch (err) {
+    console.error(`✗ ${LOCKFILE_PATH}: ${errMsg(err)}`);
+    process.exitCode = 1;
+    return;
+  }
   const { versions, skipped } = collectRegistryVersions(lockfile);
 
   // Allowlist — a missing file means "no waivers".
