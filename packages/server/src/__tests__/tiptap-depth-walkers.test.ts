@@ -54,6 +54,18 @@ function deepDoc(depth: number, leaf: Record<string, unknown>): Record<string, u
   return { type: "doc", content: [node] };
 }
 
+/**
+ * A mark whose attrs nest `depth` levels with `leafValue` at the bottom.
+ * Two such marks share every level except the leaf — which sits BELOW the
+ * cap, so canonicalJSON (used by marks comparison) truncates it to "null"
+ * for both when the cap is present, making them compare equal.
+ */
+function markWithNestedAttrs(depth: number, leafValue: string): Record<string, unknown> {
+  let attrs: Record<string, unknown> = { v: leafValue };
+  for (let i = 0; i < depth; i++) attrs = { nested: attrs };
+  return { type: "highlight", attrs };
+}
+
 describe("TipTap depth-guard contract (MAX_TIPTAP_DEPTH walkers)", () => {
   beforeEach(() => {
     // canonicalContentHash warns once per unique content digest; reset the
@@ -120,5 +132,30 @@ describe("TipTap depth-guard contract (MAX_TIPTAP_DEPTH walkers)", () => {
     } finally {
       warnSpy.mockRestore();
     }
+  });
+
+  it("replaceInDoc merges adjacent runs whose marks differ only below the cap (canonicalJSON bails)", () => {
+    // Two adjacent text nodes carry marks identical above the cap and
+    // divergent ("A" vs "B") only below it. Cap present → canonicalJSON
+    // truncates both marks to the same string → marksEqual → the replacement
+    // runs MERGE into a single text node. If canonicalJSON's bail were
+    // removed, the marks would serialize fully, differ, and NOT merge.
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "a", marks: [markWithNestedAttrs(OVER_CAP_DEPTH, "A")] },
+            { type: "text", text: "a", marks: [markWithNestedAttrs(OVER_CAP_DEPTH, "B")] },
+          ],
+        },
+      ],
+    };
+    const { doc: result, count } = replaceInDoc(doc, "a", "b");
+    expect(count).toBe(2);
+    const paragraph = (result.content as Array<Record<string, unknown>>)[0];
+    const inline = paragraph.content as unknown[];
+    expect(inline).toHaveLength(1); // merged: marks compared equal under the cap
   });
 });
