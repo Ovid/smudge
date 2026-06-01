@@ -22,10 +22,10 @@ export function useProjectTitleEditing(
     { isActionBusy, isEditorLocked },
     {
       // C3: refuse if the URL slug has drifted ahead of loaded project state.
-      // project is non-null here: the shared hook's empty-id guard
-      // (currentId = project?.id) returns before driftCheck when project is
-      // null, so the assertion cannot throw.
-      driftCheck: () => project!.slug !== slug,
+      // project is non-null whenever this runs: the shared hook's empty-id
+      // guard (currentId = project?.id) returns before driftCheck when project
+      // is null, so project?.slug here is always the loaded project's slug.
+      driftCheck: () => project?.slug !== slug,
       onAfterSave: (newSlug) => {
         if (newSlug !== slug) {
           navigate(`/projects/${newSlug}`, { replace: true });
