@@ -120,9 +120,9 @@ export function isV3Lockfile(value) {
  * Walk a parsed package-lock v3 and collect the distinct registry-resolved
  * `name@version` pairs. Workspace/own packages (no `node_modules/` segment) and
  * symlinked workspace deps (`link: true`) are ignored; non-registry deps
- * (git/file) — and any malformed entry missing a `version` — are counted in
- * `skipped` (they have no publish date to check).
- * @param {{ packages?: Record<string, { name?: string, version?: string, resolved?: unknown, link?: boolean }> }} lockfile
+ * (git/file) — and any malformed entry (a non-object value, or one missing a
+ * `version`) — are counted in `skipped` (they have no publish date to check).
+ * @param {{ packages?: Record<string, unknown> }} lockfile
  * @returns {{ versions: RegistryVersion[], skipped: number }}
  */
 export function collectRegistryVersions(lockfile) {
@@ -132,10 +132,20 @@ export function collectRegistryVersions(lockfile) {
   const seen = new Set();
   let skipped = 0;
 
-  for (const [key, entry] of Object.entries(packages)) {
+  for (const [key, value] of Object.entries(packages)) {
     if (key === "") continue; // the root project
     const derived = derivePackageName(key);
     if (derived === null) continue; // workspace/own package — not a dependency
+    // isV3Lockfile guards the top-level `packages` type but not each entry; a
+    // null/non-object entry has no fields to read — skip it rather than let a
+    // bare `entry.link` deref throw and escape the shell's try/catch (S1).
+    if (value === null || typeof value !== "object") {
+      skipped++;
+      continue;
+    }
+    const entry = /** @type {{ name?: string, version?: string, resolved?: unknown, link?: boolean }} */ (
+      value
+    );
     if (entry.link) continue; // symlink to a workspace package
     // npm aliases (e.g. "foo": "npm:bar@1") put the REAL registry package in
     // entry.name while the key holds the alias. Prefer entry.name when present;

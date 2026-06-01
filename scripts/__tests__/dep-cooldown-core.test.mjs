@@ -175,6 +175,26 @@ describe("collectRegistryVersions", () => {
       { name: "string-width", version: "4.2.3", id: "string-width@4.2.3" },
     ]);
   });
+
+  // isV3Lockfile validates the top-level `packages` type but not each entry. A
+  // null (or otherwise non-object) entry must be skipped, not dereferenced — a
+  // bare `entry.link` throw would otherwise escape main()'s try/catch and exit
+  // with the violation code under a raw stack trace instead of failing closed
+  // cleanly. (S1)
+  it("skips a null or non-object entry instead of crashing", () => {
+    const { versions, skipped } = collectRegistryVersions({
+      packages: {
+        "node_modules/bad": null,
+        "node_modules/also-bad": "not-an-object",
+        "node_modules/react": {
+          version: "18.3.1",
+          resolved: "https://registry.npmjs.org/react/-/react-18.3.1.tgz",
+        },
+      },
+    });
+    expect(versions.map((v) => v.id)).toEqual(["react@18.3.1"]);
+    expect(skipped).toBe(2);
+  });
 });
 
 describe("isV3Lockfile", () => {
