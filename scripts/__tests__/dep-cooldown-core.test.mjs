@@ -328,4 +328,16 @@ describe("buildReport", () => {
     });
     expect(lines.join("\n")).toMatch(/skipped 1 non-registry dependency entry\b/);
   });
+
+  it("returns no lines and is non-blocking for a clean run (all empty)", () => {
+    const { lines, blocking } = buildReport({
+      violations: [],
+      staleWaivers: [],
+      orphanedWaivers: [],
+      skipped: 0,
+      cooldownDays: 7,
+    });
+    expect(lines).toEqual([]);
+    expect(blocking).toBe(false);
+  });
 });

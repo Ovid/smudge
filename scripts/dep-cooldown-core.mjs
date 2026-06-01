@@ -248,8 +248,11 @@ export function buildReport({ violations, staleWaivers, orphanedWaivers, skipped
     if (v.kind === "absent") {
       lines.push(`✗ ${v.id} — not found in registry publish times (yanked or tampered?)`);
     } else {
-      const age = (v.ageDays ?? 0).toFixed(1);
-      lines.push(`✗ ${v.id} — published ${age} days ago (min ${cooldownDays})`);
+      // A "young" violation always carries a numeric ageDays (the "absent"
+      // branch above is the only producer of null). JSDoc can't narrow through
+      // the `kind` discriminant, so assert it.
+      const ageDays = /** @type {number} */ (v.ageDays);
+      lines.push(`✗ ${v.id} — published ${ageDays.toFixed(1)} days ago (min ${cooldownDays})`);
     }
   }
   for (const id of staleWaivers) {
