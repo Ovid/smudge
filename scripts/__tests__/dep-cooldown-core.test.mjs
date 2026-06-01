@@ -60,6 +60,24 @@ describe("isRegistryResolved", () => {
     expect(isRegistryResolved(undefined)).toBe(false);
     expect(isRegistryResolved("")).toBe(false);
   });
+
+  // C2: a /-/ tarball path on a NON-npmjs host must NOT be treated as a
+  // registry dep — otherwise the gate fetches registry.npmjs.org/<name> and
+  // age-checks an unrelated npmjs artifact instead of the off-host one.
+  it("rejects a /-/ tarball URL whose host is not registry.npmjs.org", () => {
+    expect(isRegistryResolved("https://evil.example/foo/-/foo-1.0.0.tgz")).toBe(false);
+    expect(isRegistryResolved("http://evil.example/foo/-/foo-1.0.0.tgz")).toBe(false);
+    // a look-alike host (suffix attack) must not match
+    expect(isRegistryResolved("https://registry.npmjs.org.evil.com/foo/-/foo-1.0.0.tgz")).toBe(
+      false,
+    );
+    // a custom registry that does not even use the /-/ convention, off-host
+    expect(isRegistryResolved("https://npm.pkg.github.com/@scope/foo")).toBe(false);
+  });
+
+  it("rejects a non-URL string that merely contains the /-/ marker", () => {
+    expect(isRegistryResolved("not a url /-/ but has the marker")).toBe(false);
+  });
 });
 
 describe("collectRegistryVersions", () => {

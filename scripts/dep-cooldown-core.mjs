@@ -11,6 +11,14 @@
 const NODE_MODULES = "node_modules/";
 
 /**
+ * The only registry host whose publish times this gate trusts. A lockfile entry
+ * resolved to any other host has no comparable publish-time API here and — more
+ * importantly — must NOT be age-checked against the same-named npmjs artifact
+ * (that would let an off-host version borrow an innocent npmjs package's age).
+ */
+export const REGISTRY_HOST = "registry.npmjs.org";
+
+/**
  * Derive a package name from a package-lock v3 `packages` key (a path). The
  * name is everything after the FINAL `node_modules/` segment and may include an
  * `@scope/` prefix. A naive last-path-segment split is WRONG for scoped
@@ -41,18 +49,31 @@ export function versionId(name, version) {
 }
 
 /**
- * Is a lockfile entry's `resolved` URL an npm-registry tarball? Registry
- * tarballs are `https://<registry>/<name>/-/<name>-<version>.tgz` — the `/-/`
- * segment is characteristic and git (`git+…`) / file (`file:…`) sources lack
- * the `http(s)://…/-/` shape. Non-registry sources have no publish date and are
- * skipped by the gate. Private registries that do not follow the `/-/`
- * tarball-path convention are treated as non-registry and skipped (conservative:
- * the gate never holds an unrecognized source against the cooldown).
+ * Is a lockfile entry's `resolved` URL an npmjs-registry tarball? Registry
+ * tarballs are `https://registry.npmjs.org/<name>/-/<name>-<version>.tgz` — the
+ * host must be `REGISTRY_HOST` (parsed, not substring-matched, so a look-alike
+ * like `registry.npmjs.org.evil.com` cannot pass) and the path carries the
+ * characteristic `/-/` segment. git (`git+…`) / file (`file:…`) sources and any
+ * other host lack this shape. Non-npmjs sources have no publish date we can
+ * check here and are skipped by the gate (conservative: the gate never holds an
+ * unrecognized source against the cooldown, and — critically — never age-checks
+ * an off-host artifact against the same-named npmjs package).
  * @param {unknown} resolved
  * @returns {boolean}
  */
 export function isRegistryResolved(resolved) {
-  return typeof resolved === "string" && /^https?:\/\//.test(resolved) && resolved.includes("/-/");
+  if (typeof resolved !== "string") return false;
+  let url;
+  try {
+    url = new URL(resolved);
+  } catch {
+    return false;
+  }
+  return (
+    (url.protocol === "https:" || url.protocol === "http:") &&
+    url.hostname === REGISTRY_HOST &&
+    url.pathname.includes("/-/")
+  );
 }
 
 /**
