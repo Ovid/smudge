@@ -27,6 +27,7 @@ import {
   orchestrate,
   withBestEffortCleanup,
   buildTempPath,
+  interpretProbeError,
 } from "./native-cache.mjs";
 
 const require = createRequire(import.meta.url);
@@ -100,11 +101,21 @@ function probe() {
   try {
     execFileSync(process.execPath, ["-e", PROBE_SCRIPT], { stdio: "ignore" });
     return true;
-  } catch {
-    // process.execPath is the interpreter already running this script, so a
-    // spawn failure (ENOENT/EACCES) is impossible here — a throw means the
-    // binary did not dlopen. The terminal "rebuilt-but-unloadable" path calls
-    // printDlopenError() to surface the actual loader error it swallows here.
+  } catch (err) {
+    // S2: a throw is usually a clean dlopen failure (the child ran and threw on
+    // require), but execFileSync also throws if the child was killed by a signal
+    // (e.g. an OOM SIGKILL) or could not be spawned, or exits non-zero for an
+    // unrelated reason (a NODE_OPTIONS/--require preload error). Those are NOT
+    // load failures; surface them so a spurious restore/rebuild is not silent.
+    // We still return false either way so the recovery path runs and the
+    // terminal "rebuilt-but-unloadable" branch can call printDlopenError() to
+    // show the real loader error this routine probe swallows.
+    const kind = interpretProbeError(err);
+    if (kind !== "exited-nonzero") {
+      console.error(
+        `→ note: the better-sqlite3 load probe did not exit cleanly (${kind}); treating it as a load failure, but this may be an environment problem rather than the binary.`,
+      );
+    }
     return false;
   }
 }

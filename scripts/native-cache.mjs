@@ -106,6 +106,30 @@ export function buildTempPath(dest, pid, token) {
 }
 
 /**
+ * @typedef {"exited-nonzero" | "killed" | "spawn-error" | "unknown"} ProbeErrorKind
+ */
+
+/**
+ * Classify an error thrown by the child-process load probe. S2: only
+ * "exited-nonzero" (the child RAN and exited non-zero — i.e. `require`'d
+ * better-sqlite3 and threw on dlopen) is the expected clean "binary won't load"
+ * signal. "killed" (the child died to a signal, e.g. an OOM SIGKILL),
+ * "spawn-error" (the child could not be started at all), and "unknown" are NOT
+ * dlopen failures; the caller surfaces them so a spurious restore/rebuild is
+ * not triggered silently by an unrelated environment problem.
+ * @param {unknown} err
+ * @returns {ProbeErrorKind}
+ */
+export function interpretProbeError(err) {
+  if (typeof err !== "object" || err === null) return "unknown";
+  const e = /** @type {{ signal?: unknown, status?: unknown, code?: unknown }} */ (err);
+  if (e.signal != null) return "killed";
+  if (typeof e.status === "number") return "exited-nonzero";
+  if (typeof e.code === "string") return "spawn-error";
+  return "unknown";
+}
+
+/**
  * @typedef {object} OrchestrateDeps
  * @property {string} key                          Cache key for the active target.
  * @property {() => boolean} probe                 Does better_sqlite3 currently dlopen?

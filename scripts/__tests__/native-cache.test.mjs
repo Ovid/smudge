@@ -5,7 +5,36 @@ import {
   orchestrate,
   withBestEffortCleanup,
   buildTempPath,
+  interpretProbeError,
 } from "../native-cache.mjs";
+
+describe("interpretProbeError", () => {
+  // S2: only a child that RAN and exited non-zero is a clean "binary won't
+  // dlopen" signal; everything else is an environment problem we must not
+  // silently relabel as a load failure.
+  it("classifies a non-zero child exit as exited-nonzero (the dlopen-failure case)", () => {
+    expect(interpretProbeError({ status: 1, signal: null })).toBe("exited-nonzero");
+  });
+
+  it("classifies a signal kill (e.g. OOM) as killed, even if a status is also present", () => {
+    expect(interpretProbeError({ status: null, signal: "SIGKILL" })).toBe("killed");
+    expect(interpretProbeError({ status: 137, signal: "SIGKILL" })).toBe("killed");
+  });
+
+  it.each(["ENOENT", "EACCES", "ETXTBSY", "EAGAIN"])(
+    "classifies a spawn-level errno (%s) with no exit status as spawn-error",
+    (code) => {
+      expect(interpretProbeError({ code })).toBe("spawn-error");
+    },
+  );
+
+  it.each([null, undefined, "oops", 42, {}])(
+    "classifies an unrecognized error shape (%s) as unknown",
+    (err) => {
+      expect(interpretProbeError(err)).toBe("unknown");
+    },
+  );
+});
 
 describe("buildTempPath", () => {
   it("builds a sibling temp path that embeds both pid and the random token", () => {
