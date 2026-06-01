@@ -162,9 +162,16 @@ target with a single `@node scripts/ensure-native.mjs`. New `scripts/` dir:
   - `computeCacheKey({ version, platform, arch, abiVersion }) → string`
   - `validateNodeMajor(enginesNode, actualNodeVersion) → { ok, expected, actual, reason? }`
   - an `orchestrate(deps)` function that takes injected IO (`probe`, `cacheHas`,
-    `copyFromCache`, `copyToCache`, `deleteCacheEntry`, `rebuild`, `log`) and
-    returns the action taken (e.g. `"loaded-warmed"`, `"cache-hit"`,
-    `"rebuilt-saved"`, `"cache-corrupt-rebuilt"`, `"rebuild-failed"`).
+    `restoreFromCache`, `saveToCache`, `deleteCacheEntry`, `rebuild`, `log`) and
+    returns the action taken — one of `"loaded-warmed"`,
+    `"loaded-cached-already"`, `"restored-from-cache"`, `"cache-corrupt-rebuilt"`,
+    `"rebuilt-from-source"`, `"rebuild-failed"`, or `"rebuilt-but-unloadable"`.
+  - small pure helpers the entry point composes with real IO:
+    `withBestEffortCleanup(body, cleanup)` (cleanup never masks the body's
+    outcome — S1), `buildTempPath(dest, pid, token)` (collision-resistant temp
+    sibling for the atomic copy — S4), and `interpretProbeError(err)` (classify a
+    child-probe failure so only a clean non-zero exit counts as a dlopen failure
+    — S2).
 
 All review-sourced rationale (I5, S10, S6, the dlopen-symptom explanation)
 moves from the Makefile comments into the `scripts/ensure-native.mjs` header so
