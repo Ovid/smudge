@@ -5,6 +5,7 @@ import {
   isRegistryResolved,
   collectRegistryVersions,
   groupVersionsByName,
+  parseAllowlist,
 } from "../dep-cooldown-core.mjs";
 
 describe("derivePackageName", () => {
@@ -118,5 +119,37 @@ describe("groupVersionsByName", () => {
     expect([...grouped.keys()].sort()).toEqual(["@types/node", "react"]);
     expect(grouped.get("react")).toHaveLength(2);
     expect(grouped.get("@types/node")).toHaveLength(1);
+  });
+});
+
+describe("parseAllowlist", () => {
+  it("maps each entry by its name@version id", () => {
+    const map = parseAllowlist([
+      { package: "react", version: "19.0.0", reason: "CVE fix", added: "2026-06-01" },
+      { package: "@types/node", version: "22.9.0", reason: "needed now" },
+    ]);
+    expect(map.get("react@19.0.0")).toEqual({ reason: "CVE fix", added: "2026-06-01" });
+    expect(map.get("@types/node@22.9.0")?.reason).toBe("needed now");
+  });
+
+  it("returns an empty map for an empty array", () => {
+    expect(parseAllowlist([]).size).toBe(0);
+  });
+
+  it("throws when the top level is not an array", () => {
+    // @ts-expect-error deliberately wrong type
+    expect(() => parseAllowlist({})).toThrow(/must be a JSON array/);
+  });
+
+  it("throws when an entry is missing package or version", () => {
+    expect(() => parseAllowlist([{ version: "1.0.0", reason: "x" }])).toThrow(/package/);
+    expect(() => parseAllowlist([{ package: "p", reason: "x" }])).toThrow(/version/);
+  });
+
+  it("throws when reason is missing or blank (no silent waivers)", () => {
+    expect(() => parseAllowlist([{ package: "p", version: "1.0.0" }])).toThrow(/reason/);
+    expect(() => parseAllowlist([{ package: "p", version: "1.0.0", reason: "   " }])).toThrow(
+      /reason/,
+    );
   });
 });

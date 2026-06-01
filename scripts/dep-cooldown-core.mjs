@@ -109,3 +109,39 @@ export function groupVersionsByName(versions) {
   }
   return byName;
 }
+
+/**
+ * @typedef {{ reason: string, added?: string }} Waiver
+ */
+
+/**
+ * Parse and validate the allowlist file contents into an id→waiver map. A
+ * waiver bypasses the cooldown for an EXACT `name@version`. `reason` is
+ * mandatory and non-blank so nothing can be waved through silently — a missing
+ * or blank reason is a hard error.
+ * @param {readonly Record<string, unknown>[]} entries
+ * @returns {Map<string, Waiver>}
+ */
+export function parseAllowlist(entries) {
+  if (!Array.isArray(entries)) {
+    throw new Error("dependency-cooldown allowlist must be a JSON array");
+  }
+  /** @type {Map<string, Waiver>} */
+  const byId = new Map();
+  for (const e of entries) {
+    const pkg = e && typeof e.package === "string" ? e.package : "";
+    const version = e && typeof e.version === "string" ? e.version : "";
+    if (!pkg) throw new Error(`allowlist entry is missing a "package": ${JSON.stringify(e)}`);
+    if (!version) {
+      throw new Error(`allowlist entry "${pkg}" is missing a "version"`);
+    }
+    if (!e || typeof e.reason !== "string" || e.reason.trim() === "") {
+      throw new Error(`allowlist entry "${pkg}@${version}" is missing a non-empty "reason"`);
+    }
+    byId.set(versionId(pkg, version), {
+      reason: e.reason,
+      added: typeof e.added === "string" ? e.added : undefined,
+    });
+  }
+  return byId;
+}
