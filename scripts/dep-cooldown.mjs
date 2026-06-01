@@ -25,6 +25,7 @@ import {
   classify,
   buildReport,
   isRetriableStatus,
+  isValidRegistryName,
 } from "./dep-cooldown-core.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -57,8 +58,11 @@ function errMsg(err) {
  * @returns {Promise<any>}
  */
 async function fetchMetadata(name) {
-  // Scoped names contain exactly one slash; encode it for the registry path.
-  const url = `${REGISTRY}/${name.replace("/", "%2F")}`;
+  // Encode EVERY slash (replaceAll, not replace): a scoped name has one, but the
+  // name is untrusted lockfile input — encoding all slashes keeps `new URL()`
+  // from normalizing a crafted `…/../…` into a different package's path. Callers
+  // additionally pre-validate the name via isValidRegistryName (C1).
+  const url = `${REGISTRY}/${name.replaceAll("/", "%2F")}`;
   let lastErr;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
@@ -117,6 +121,13 @@ async function main() {
   const publishDates = new Map();
 
   for (const [name, group] of groupVersionsByName(versions)) {
+    // Fail closed on a name that is not a valid npm package name (C1): never
+    // fetch (or trust a cached date) for a crafted name that could borrow an
+    // unrelated package's publish date. No usable date → an "absent" violation.
+    if (!isValidRegistryName(name)) {
+      for (const g of group) publishDates.set(g.id, null);
+      continue;
+    }
     const needFetch = group.some((g) => !(g.id in cache));
     if (!needFetch) {
       for (const g of group) publishDates.set(g.id, cache[g.id] ?? null);

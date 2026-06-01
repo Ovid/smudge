@@ -3,6 +3,7 @@ import {
   derivePackageName,
   versionId,
   isRegistryResolved,
+  isValidRegistryName,
   collectRegistryVersions,
   groupVersionsByName,
   parseAllowlist,
@@ -77,6 +78,31 @@ describe("isRegistryResolved", () => {
 
   it("rejects a non-URL string that merely contains the /-/ marker", () => {
     expect(isRegistryResolved("not a url /-/ but has the marker")).toBe(false);
+  });
+});
+
+describe("isValidRegistryName", () => {
+  it("accepts plain, scoped, and dotted package names", () => {
+    expect(isValidRegistryName("react")).toBe(true);
+    expect(isValidRegistryName("@types/node")).toBe(true);
+    expect(isValidRegistryName("string-width")).toBe(true);
+    expect(isValidRegistryName("lodash.merge")).toBe(true);
+    expect(isValidRegistryName("@scope/some-package")).toBe(true);
+  });
+
+  // C1: an un-validated name from the (untrusted) lockfile could smuggle a path
+  // and make the metadata fetch read a DIFFERENT package's publish date.
+  it("rejects names that could change the fetch target or smuggle a path", () => {
+    expect(isValidRegistryName("@scope/a/../../b")).toBe(false); // C1 traversal
+    expect(isValidRegistryName("a/b/c")).toBe(false); // more than one slash
+    expect(isValidRegistryName("..")).toBe(false);
+    expect(isValidRegistryName("/etc/passwd")).toBe(false);
+    expect(isValidRegistryName("foo/")).toBe(false); // trailing slash
+    expect(isValidRegistryName(".hidden")).toBe(false); // may not start with a dot
+    expect(isValidRegistryName("Foo")).toBe(false); // uppercase not allowed
+    expect(isValidRegistryName("")).toBe(false);
+    expect(isValidRegistryName(undefined)).toBe(false);
+    expect(isValidRegistryName(42)).toBe(false);
   });
 });
 

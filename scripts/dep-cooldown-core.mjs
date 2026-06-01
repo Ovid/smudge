@@ -77,6 +77,22 @@ export function isRegistryResolved(resolved) {
 }
 
 /**
+ * npm package-name grammar restricted to what is safe to splice into a registry
+ * metadata URL: an optional single `@scope/` prefix followed by the bare name,
+ * lowercase, no path-traversal (`..`), no extra slashes, no leading dot/underscore.
+ * The lockfile — and therefore the derived/alias name — is the untrusted input
+ * the gate exists to police, so a name is validated BEFORE it is used to build
+ * the fetch URL: a crafted name like `@scope/a/../../b` would otherwise URL-
+ * normalize to a different package and borrow its (innocent, aged) publish date.
+ * @param {unknown} name
+ * @returns {boolean}
+ */
+export function isValidRegistryName(name) {
+  if (typeof name !== "string") return false;
+  return /^(?:@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/.test(name);
+}
+
+/**
  * @typedef {{ name: string, version: string, id: string }} RegistryVersion
  */
 
