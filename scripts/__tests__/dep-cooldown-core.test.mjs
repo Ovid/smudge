@@ -3,8 +3,6 @@ import {
   derivePackageName,
   versionId,
   isRegistryResolved,
-} from "../dep-cooldown-core.mjs";
-import {
   collectRegistryVersions,
   groupVersionsByName,
 } from "../dep-cooldown-core.mjs";
@@ -84,6 +82,11 @@ describe("collectRegistryVersions", () => {
         version: "1.0.0",
         resolved: "git+ssh://git@github.com/x/y.git#abc123",
       },
+      // file: dependency — also non-registry, counted as skipped
+      "node_modules/file-dep": {
+        version: "1.0.0",
+        resolved: "file:../local-pkg",
+      },
       // workspace symlink — ignored entirely (not a registry dep, not skipped)
       "node_modules/@smudge/shared": { link: true, resolved: "packages/shared" },
     },
@@ -97,7 +100,7 @@ describe("collectRegistryVersions", () => {
 
   it("counts non-registry (git/file) deps as skipped", () => {
     const { skipped } = collectRegistryVersions(lockfile);
-    expect(skipped).toBe(1); // only git-dep; the link and workspace entries are not deps
+    expect(skipped).toBe(2); // git-dep and file-dep; the link and workspace entries are not deps
   });
 
   it("tolerates a lockfile with no packages map", () => {
@@ -114,5 +117,6 @@ describe("groupVersionsByName", () => {
     ]);
     expect([...grouped.keys()].sort()).toEqual(["@types/node", "react"]);
     expect(grouped.get("react")).toHaveLength(2);
+    expect(grouped.get("@types/node")).toHaveLength(1);
   });
 });

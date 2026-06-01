@@ -63,7 +63,8 @@ export function isRegistryResolved(resolved) {
  * Walk a parsed package-lock v3 and collect the distinct registry-resolved
  * `name@version` pairs. Workspace/own packages (no `node_modules/` segment) and
  * symlinked workspace deps (`link: true`) are ignored; non-registry deps
- * (git/file) are counted in `skipped` (they have no publish date to check).
+ * (git/file) — and any malformed entry missing a `version` — are counted in
+ * `skipped` (they have no publish date to check).
  * @param {{ packages?: Record<string, { version?: string, resolved?: unknown, link?: boolean }> }} lockfile
  * @returns {{ versions: RegistryVersion[], skipped: number }}
  */
