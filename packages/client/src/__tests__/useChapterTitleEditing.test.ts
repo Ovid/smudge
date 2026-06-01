@@ -169,5 +169,61 @@ describe("useChapterTitleEditing", () => {
       rerender({ ch: chapter2 });
       expect(result.current.editingTitle).toBe(false);
     });
+
+    it("resets the in-flight save latch when the active chapter changes (4b.15 normalization)", async () => {
+      const chapter1 = buildChapter({ id: "c1", title: "One" });
+      const chapter2 = buildChapter({ id: "c2", title: "Two" });
+      let resolveFirst: (() => void) | undefined;
+      let calls = 0;
+      const handleRenameChapter = vi.fn((): Promise<void> => {
+        calls += 1;
+        if (calls === 1) {
+          return new Promise<void>((resolve) => {
+            resolveFirst = resolve;
+          });
+        }
+        return Promise.resolve();
+      });
+      const isActionBusy = vi.fn(() => false);
+      const isEditorLocked = vi.fn(() => false);
+
+      const { result, rerender } = renderHook(
+        ({ ch }: { ch: typeof chapter1 }) =>
+          useChapterTitleEditing(ch, handleRenameChapter, isActionBusy, isEditorLocked),
+        { initialProps: { ch: chapter1 } },
+      );
+
+      // Start a save on c1 that hangs, holding the in-flight latch.
+      act(() => result.current.startEditingTitle());
+      act(() => result.current.setTitleDraft("One edited"));
+      let firstSave!: Promise<void>;
+      act(() => {
+        firstSave = result.current.saveTitle();
+      });
+      expect(handleRenameChapter).toHaveBeenCalledTimes(1);
+
+      // Navigate to c2 mid-save: the normalization resets the latch.
+      rerender({ ch: chapter2 });
+
+      // A fresh edit+save on c2 must proceed despite the still-pending save.
+      act(() => result.current.startEditingTitle());
+      act(() => result.current.setTitleDraft("Two edited"));
+      await act(async () => {
+        await result.current.saveTitle();
+      });
+
+      expect(handleRenameChapter).toHaveBeenCalledTimes(2);
+      expect(handleRenameChapter).toHaveBeenLastCalledWith(
+        "c2",
+        "Two edited",
+        expect.any(Function),
+      );
+
+      // Release the now-stale first save to avoid a dangling pending promise.
+      resolveFirst?.();
+      await act(async () => {
+        await firstSave;
+      });
+    });
   });
 });
