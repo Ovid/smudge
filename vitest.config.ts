@@ -24,6 +24,10 @@ export default defineConfig({
         "**/vite-env.d.ts",
         "**/types.ts",
         "**/*.types.ts",
+        // Thin IO shell for `make ensure-native`: npm-rebuild spawn, fs copies,
+        // child-process probe. The testable logic lives in scripts/native-cache.mjs
+        // (kept under coverage). See the spec, "Coverage scope (Finding 1)".
+        "scripts/ensure-native.mjs",
       ],
       thresholds: {
         statements: 95,
@@ -32,6 +36,6 @@ export default defineConfig({
         lines: 95,
       },
     },
-    projects: ["packages/shared", "packages/server", "packages/client"],
+    projects: ["packages/shared", "packages/server", "packages/client", "scripts"],
   },
 });

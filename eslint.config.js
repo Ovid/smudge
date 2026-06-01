@@ -4,6 +4,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 import importPlugin from "eslint-plugin-import";
 import prettierConfig from "eslint-config-prettier";
+import globals from "globals";
 
 export default tseslint.config(
   { ignores: ["**/dist/", "**/node_modules/", "**/*.d.ts"] },
@@ -186,6 +187,18 @@ export default tseslint.config(
     ],
     rules: {
       "no-console": "off",
+    },
+  },
+  {
+    // Tooling scripts are plain Node ESM (.mjs). They need Node globals
+    // (process, console) that the TS files get for free, and they legitimately
+    // use createRequire's require() for JSON / module resolution.
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
     },
   },
   prettierConfig,

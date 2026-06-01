@@ -158,3 +158,8 @@ playwright-report/
 
 # Third-party devcontainer template — managed by `devc template .` outside git.
 /.devcontainer/
+
+# Locally-compiled better-sqlite3 native binaries, keyed by
+# {version, platform, arch, node-ABI}. Dev-only; see
+# docs/superpowers/specs/2026-05-31-native-binary-cache-design.md
+.native-cache/
