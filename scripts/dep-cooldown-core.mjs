@@ -287,7 +287,14 @@ export async function fetchPublishTimes({
       if (res.ok) {
         try {
           const doc = await res.json();
-          const time = doc && typeof doc.time === "object" && doc.time !== null ? doc.time : null;
+          // An array is `typeof === "object"`; exclude it (as isV3Lockfile and
+          // sanitizeCache do) so `time: []` is not mistaken for a usable — but
+          // empty — per-version map. A non-plain-object `time` is a partial/
+          // malformed response, retried below, never a usable result.
+          const time =
+            doc && typeof doc.time === "object" && doc.time !== null && !Array.isArray(doc.time)
+              ? doc.time
+              : null;
           if (time) return time;
           // S2: a 200 without a usable `time` object is a transient/partial
           // response, not a per-version yank — retriable infra, not a violation.

@@ -472,6 +472,27 @@ describe("fetchPublishTimes", () => {
     expect(calls).toBe(2);
   });
 
+  // An array is `typeof === "object"` in JS, but it is NOT a usable per-version
+  // time map: `time[version]` is always undefined, so every version would read
+  // as "absent" (a blocking yanked/tampered violation) instead of the intended
+  // retry-then-infra-error path a malformed `time` is supposed to take. A proxy
+  // or CDN returning `time: []` must therefore be treated as infra, not success.
+  it("treats a 200 with an array time as infra (retries)", async () => {
+    let calls = 0;
+    await expect(
+      fetchPublishTimes({
+        name: "react",
+        maxAttempts: 2,
+        sleep: noopSleep,
+        fetchDoc: async () => {
+          calls++;
+          return { ok: true, status: 200, json: async () => ({ time: [] }) };
+        },
+      }),
+    ).rejects.toThrow(/time/);
+    expect(calls).toBe(2);
+  });
+
   it("treats a 200 with malformed JSON as a retriable infra blip", async () => {
     let calls = 0;
     await expect(
