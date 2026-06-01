@@ -267,5 +267,36 @@ describe("useProjectTitleEditing", () => {
       expect(result.current.editingProjectTitle).toBe(true);
       expect(navigate).not.toHaveBeenCalled();
     });
+
+    it("no-ops when draft matches existing title (no mutation, no navigation)", async () => {
+      const project = buildProject({ title: "Project" });
+      const handleUpdateProjectTitle = vi.fn(async () => "project");
+      const setProjectTitleError = vi.fn();
+      const navigate = vi.fn();
+      const isActionBusy = vi.fn(() => false);
+      const isEditorLocked = vi.fn(() => false);
+
+      const { result } = renderHook(() =>
+        useProjectTitleEditing(
+          project,
+          "project",
+          handleUpdateProjectTitle,
+          setProjectTitleError,
+          navigate,
+          isActionBusy,
+          isEditorLocked,
+        ),
+      );
+
+      act(() => result.current.startEditingProjectTitle());
+      act(() => result.current.setProjectTitleDraft("Project"));
+      await act(async () => {
+        await result.current.saveProjectTitle();
+      });
+
+      expect(handleUpdateProjectTitle).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(result.current.editingProjectTitle).toBe(false);
+    });
   });
 });
