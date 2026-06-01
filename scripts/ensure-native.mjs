@@ -17,6 +17,7 @@
  */
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, copyFileSync, renameSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +26,7 @@ import {
   validateNodeMajor,
   orchestrate,
   withBestEffortCleanup,
+  buildTempPath,
 } from "./native-cache.mjs";
 
 const require = createRequire(import.meta.url);
@@ -132,7 +134,9 @@ function printDlopenError() {
  */
 function atomicCopy(src, dest) {
   mkdirSync(dirname(dest), { recursive: true });
-  const tmp = `${dest}.tmp-${process.pid}`;
+  // S4: pid + per-invocation randomness, so two cross-platform runs that share
+  // a numeric pid across the bind mount never pick the same temp path.
+  const tmp = buildTempPath(dest, process.pid, randomBytes(6).toString("hex"));
   // S1: clean up the temp sibling whether the copy/rename succeeds or throws,
   // so a failed copy never leaves an orphaned `.tmp-<pid>` behind. On success
   // the rename consumes tmp and rmSync(force) is a no-op. withBestEffortCleanup

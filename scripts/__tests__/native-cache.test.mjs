@@ -4,7 +4,23 @@ import {
   validateNodeMajor,
   orchestrate,
   withBestEffortCleanup,
+  buildTempPath,
 } from "../native-cache.mjs";
+
+describe("buildTempPath", () => {
+  it("builds a sibling temp path that embeds both pid and the random token", () => {
+    const tmp = buildTempPath("/repo/.native-cache/k/better_sqlite3.node", 4242, "a1b2c3");
+    expect(tmp).toBe("/repo/.native-cache/k/better_sqlite3.node.tmp-4242-a1b2c3");
+  });
+
+  // S4: PIDs are per-namespace, so a macOS host and a Linux container sharing
+  // one bind-mounted node_modules can pick the SAME pid for the SAME dest. The
+  // random token must disambiguate them even when pid and dest collide.
+  it("yields distinct paths for the same dest and pid when the token differs", () => {
+    const dest = "/repo/node_modules/better-sqlite3/build/Release/better_sqlite3.node";
+    expect(buildTempPath(dest, 100, "deadbe")).not.toBe(buildTempPath(dest, 100, "f00d12"));
+  });
+});
 
 describe("withBestEffortCleanup", () => {
   it("returns the body's value and runs cleanup on success", () => {

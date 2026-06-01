@@ -88,6 +88,24 @@ export function withBestEffortCleanup(body, cleanup) {
 }
 
 /**
+ * Build a collision-resistant temp sibling path for an atomic copy-then-rename.
+ * The temp file must live in the SAME directory as `dest` so the rename is a
+ * cheap intra-filesystem move. S4: `pid` alone is not unique — PIDs are
+ * per-namespace, so a macOS host process and a Linux container process sharing
+ * one bind-mounted node_modules can collide on the same pid AND the same `dest`
+ * (the single shared `build/Release` slot), letting two `copyFileSync` writers
+ * tear one temp file. The caller passes a per-invocation random `token` so the
+ * temp path is distinct even when pid and dest collide across that boundary.
+ * @param {string} dest
+ * @param {number} pid
+ * @param {string} token  a random, per-invocation hex string
+ * @returns {string}
+ */
+export function buildTempPath(dest, pid, token) {
+  return `${dest}.tmp-${pid}-${token}`;
+}
+
+/**
  * @typedef {object} OrchestrateDeps
  * @property {string} key                          Cache key for the active target.
  * @property {() => boolean} probe                 Does better_sqlite3 currently dlopen?
