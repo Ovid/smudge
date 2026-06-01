@@ -119,7 +119,7 @@ export function groupVersionsByName(versions) {
  * waiver bypasses the cooldown for an EXACT `name@version`. `reason` is
  * mandatory and non-blank so nothing can be waved through silently — a missing
  * or blank reason is a hard error.
- * @param {readonly Record<string, unknown>[]} entries
+ * @param {unknown} entries
  * @returns {Map<string, Waiver>}
  */
 export function parseAllowlist(entries) {

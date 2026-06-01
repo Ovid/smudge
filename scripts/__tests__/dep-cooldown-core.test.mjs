@@ -137,7 +137,6 @@ describe("parseAllowlist", () => {
   });
 
   it("throws when the top level is not an array", () => {
-    // @ts-expect-error deliberately wrong type
     expect(() => parseAllowlist({})).toThrow(/must be a JSON array/);
   });
 
