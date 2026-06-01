@@ -143,8 +143,9 @@ export interface InlineTitleEditing {
 export function useInlineTitleEditing<T>(
   currentId: string | undefined,
   currentTitle: string | undefined,
-  // undefined return ⇒ failure (keep edit mode open); defined ⇒ success
-  save: (id: string, title: string) => Promise<T | undefined>,
+  // undefined return ⇒ failure (keep edit mode open); defined ⇒ success.
+  // Named `onSave` (not `save`) to avoid colliding with the returned `save`.
+  onSave: (id: string, title: string) => Promise<T | undefined>,
   gates: InlineTitleGates,
   options?: InlineTitleOptions<T>,
 ): InlineTitleEditing;
@@ -167,7 +168,7 @@ export function useInlineTitleEditing<T>(
   4. if `options.driftCheck?.()` is true, return (keep edit mode open);
   5. if `gates.isActionBusy()` or `gates.isEditorLocked()`, return (keep open);
   6. set the latch; in `try`: compute `trimmed`; if `trimmed === currentTitle`
-     skip the mutation; else `const result = await save(currentId, trimmed)`
+     skip the mutation; else `const result = await onSave(currentId, trimmed)`
      and if `result === undefined` return (keep open) else
      `options.onAfterSave?.(result)`; set the escape sentinel; exit edit mode;
      `finally` clears the latch.
@@ -249,7 +250,11 @@ export function useProjectTitleEditing(
     (_id, title) => handleUpdateProjectTitle(title),
     { isActionBusy, isEditorLocked },
     {
-      driftCheck: () => !!project && project.slug !== slug,
+      // project is non-null here: the shared hook's empty-id guard
+      // (currentId = project?.id) returns before driftCheck runs when
+      // project is null, so the assertion cannot throw. Using `!` instead
+      // of `!!project &&` avoids an unreachable defensive branch.
+      driftCheck: () => project!.slug !== slug,
       onAfterSave: (newSlug) => {
         if (newSlug !== slug) navigate(`/projects/${newSlug}`, { replace: true });
       },
@@ -268,10 +273,13 @@ export function useProjectTitleEditing(
 }
 ```
 
-Note: `driftCheck` guards on `project` being present so a null project (the
-no-entity case already handled by step 3 of `save()`) cannot throw. The
-existing project hook reaches the `project.slug !== slug` check only after
-the `!project` guard, so `!!project && …` is faithful.
+Note: `driftCheck` runs only when `project` is non-null. The shared hook's
+empty-id guard (step 3 of `save()`, with `currentId = project?.id`) returns
+before `driftCheck` is reached when `project` is null. This mirrors the
+existing project hook, which reaches `project.slug !== slug` only after its
+own `!project` guard. The `project!` assertion is therefore safe and avoids
+an unreachable `!!project &&` defensive branch that would otherwise show as
+uncovered.
 
 ## Testing
 
