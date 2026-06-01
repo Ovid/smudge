@@ -340,7 +340,7 @@ Then add the test:
     // If the bail were removed, canonicalize would succeed (100 levels is well
     // within engine limits) → a canonical hash and NO warn.
     const json = JSON.stringify(deepDoc(OVER_CAP_DEPTH, { type: "text", text: "x" }));
-    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
     try {
       const hash = canonicalContentHash(json);
       expect(hash).toHaveLength(64);
