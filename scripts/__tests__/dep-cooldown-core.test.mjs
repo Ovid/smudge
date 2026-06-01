@@ -8,6 +8,7 @@ import {
   parseAllowlist,
   isRetriableStatus,
   classify,
+  buildReport,
 } from "../dep-cooldown-core.mjs";
 
 describe("derivePackageName", () => {
@@ -282,5 +283,49 @@ describe("classify", () => {
     });
     expect(result.violations).toEqual([]);
     expect(result.orphanedWaivers).toEqual([]);
+  });
+});
+
+describe("buildReport", () => {
+  it("is non-blocking and lists info when there are no violations", () => {
+    const { lines, blocking } = buildReport({
+      violations: [],
+      staleWaivers: ["react@18.3.1"],
+      orphanedWaivers: ["gone@1.0.0"],
+      skipped: 2,
+      cooldownDays: 7,
+    });
+    expect(blocking).toBe(false);
+    expect(lines.join("\n")).toMatch(/waiver for react@18\.3\.1 no longer needed/);
+    expect(lines.join("\n")).toMatch(/waiver for gone@1\.0\.0 references a version no longer/);
+    expect(lines.join("\n")).toMatch(/skipped 2 non-registry/);
+  });
+
+  it("is blocking and renders young + absent violations distinctly", () => {
+    const { lines, blocking } = buildReport({
+      violations: [
+        { id: "react@19.0.0", ageDays: 3.25, kind: "young" },
+        { id: "sketchy@9.9.9", ageDays: null, kind: "absent" },
+      ],
+      staleWaivers: [],
+      orphanedWaivers: [],
+      skipped: 0,
+      cooldownDays: 7,
+    });
+    expect(blocking).toBe(true);
+    const text = lines.join("\n");
+    expect(text).toMatch(/react@19\.0\.0 — published 3\.3 days ago \(min 7\)/);
+    expect(text).toMatch(/sketchy@9\.9\.9 — not found in registry publish times/);
+  });
+
+  it("uses singular phrasing for a single skipped entry", () => {
+    const { lines } = buildReport({
+      violations: [],
+      staleWaivers: [],
+      orphanedWaivers: [],
+      skipped: 1,
+      cooldownDays: 7,
+    });
+    expect(lines.join("\n")).toMatch(/skipped 1 non-registry dependency entry\b/);
   });
 });

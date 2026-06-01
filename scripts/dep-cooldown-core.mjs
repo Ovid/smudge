@@ -226,3 +226,42 @@ export function classify({ versions, publishDates, allowlist, now, cooldownDays 
 
   return { violations, staleWaivers, orphanedWaivers };
 }
+
+/**
+ * Render the human-readable report lines and decide whether the run blocks.
+ * Only violations block; stale/orphaned waivers and the skipped count are
+ * informational. Kept pure (returns strings) so the shell only prints.
+ * @param {{
+ *   violations: Violation[],
+ *   staleWaivers: string[],
+ *   orphanedWaivers: string[],
+ *   skipped: number,
+ *   cooldownDays: number,
+ * }} args
+ * @returns {{ lines: string[], blocking: boolean }}
+ */
+export function buildReport({ violations, staleWaivers, orphanedWaivers, skipped, cooldownDays }) {
+  /** @type {string[]} */
+  const lines = [];
+
+  for (const v of violations) {
+    if (v.kind === "absent") {
+      lines.push(`✗ ${v.id} — not found in registry publish times (yanked or tampered?)`);
+    } else {
+      const age = (v.ageDays ?? 0).toFixed(1);
+      lines.push(`✗ ${v.id} — published ${age} days ago (min ${cooldownDays})`);
+    }
+  }
+  for (const id of staleWaivers) {
+    lines.push(`note: waiver for ${id} no longer needed (now ≥ ${cooldownDays} days old); safe to remove.`);
+  }
+  for (const id of orphanedWaivers) {
+    lines.push(`note: waiver for ${id} references a version no longer in the tree; safe to remove.`);
+  }
+  if (skipped > 0) {
+    const noun = skipped === 1 ? "entry" : "entries";
+    lines.push(`info: skipped ${skipped} non-registry dependency ${noun} (git/file/link — no publish date to check).`);
+  }
+
+  return { lines, blocking: violations.length > 0 };
+}
