@@ -65,7 +65,7 @@ export function isRegistryResolved(resolved) {
  * symlinked workspace deps (`link: true`) are ignored; non-registry deps
  * (git/file) — and any malformed entry missing a `version` — are counted in
  * `skipped` (they have no publish date to check).
- * @param {{ packages?: Record<string, { version?: string, resolved?: unknown, link?: boolean }> }} lockfile
+ * @param {{ packages?: Record<string, { name?: string, version?: string, resolved?: unknown, link?: boolean }> }} lockfile
  * @returns {{ versions: RegistryVersion[], skipped: number }}
  */
 export function collectRegistryVersions(lockfile) {
@@ -77,9 +77,13 @@ export function collectRegistryVersions(lockfile) {
 
   for (const [key, entry] of Object.entries(packages)) {
     if (key === "") continue; // the root project
-    const name = derivePackageName(key);
-    if (name === null) continue; // workspace/own package — not a dependency
+    const derived = derivePackageName(key);
+    if (derived === null) continue; // workspace/own package — not a dependency
     if (entry.link) continue; // symlink to a workspace package
+    // npm aliases (e.g. "foo": "npm:bar@1") put the REAL registry package in
+    // entry.name while the key holds the alias. Prefer entry.name when present;
+    // the path-derived name is correct only for non-aliased deps.
+    const name = typeof entry.name === "string" && entry.name ? entry.name : derived;
     if (!entry.version || !isRegistryResolved(entry.resolved)) {
       skipped++;
       continue;

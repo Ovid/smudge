@@ -110,6 +110,22 @@ describe("collectRegistryVersions", () => {
   it("tolerates a lockfile with no packages map", () => {
     expect(collectRegistryVersions({})).toEqual({ versions: [], skipped: 0 });
   });
+
+  it("uses the entry's real `name` for aliased deps, not the path key", () => {
+    const { versions } = collectRegistryVersions({
+      packages: {
+        // npm alias: key is the alias, entry.name is the real registry package
+        "node_modules/string-width-cjs": {
+          name: "string-width",
+          version: "4.2.3",
+          resolved: "https://registry.npmjs.org/string-width/-/string-width-4.2.3.tgz",
+        },
+      },
+    });
+    expect(versions).toEqual([
+      { name: "string-width", version: "4.2.3", id: "string-width@4.2.3" },
+    ]);
+  });
 });
 
 describe("groupVersionsByName", () => {

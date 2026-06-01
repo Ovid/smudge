@@ -160,7 +160,9 @@ lookup is handled per "Edge cases" below, not silently passed.
    remainder is the name and may include an `@scope/` prefix
    (e.g. `node_modules/@types/serve-static/node_modules/@types/send` →
    `@types/send`). A naive last-path-segment split is wrong for scoped packages
-   and is explicitly rejected.
+   and is explicitly rejected. For npm **alias** dependencies the lockfile entry
+   carries a `name` field holding the real registry package (the key is the
+   alias); when present, `name` takes precedence over the path-derived name.
 3. **Deduplicate** to a set of distinct `name@version` (the same package appears
    at multiple lockfile paths; the current tree has ~885 entries collapsing to
    ~850 distinct pairs). Resolve and report each distinct pair once.
