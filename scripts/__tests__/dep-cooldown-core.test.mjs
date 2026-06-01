@@ -26,6 +26,10 @@ describe("derivePackageName", () => {
     expect(derivePackageName("packages/server")).toBeNull();
     expect(derivePackageName("")).toBeNull();
   });
+
+  it("returns null for a malformed key that ends in node_modules/ with no name", () => {
+    expect(derivePackageName("node_modules/@scope/x/node_modules/")).toBeNull();
+  });
 });
 
 describe("versionId", () => {
@@ -41,6 +45,7 @@ describe("isRegistryResolved", () => {
     expect(
       isRegistryResolved("https://registry.npmjs.org/@types/node/-/node-22.0.0.tgz"),
     ).toBe(true);
+    expect(isRegistryResolved("http://registry.npmjs.org/x/-/x-1.0.0.tgz")).toBe(true);
   });
 
   it("rejects git, file, and missing resolved URLs", () => {

@@ -17,13 +17,16 @@ const NODE_MODULES = "node_modules/";
  * packages (it would yield `send` from `@types/send`), so we slice from the
  * last marker instead. Keys without a `node_modules/` segment are the root
  * project or a workspace package — not a dependency — and return null.
+ * A key that ends in `node_modules/` with no name after it (a malformed key
+ * that cannot occur in a real lockfile) also returns null.
  * @param {string} key
  * @returns {string | null}
  */
 export function derivePackageName(key) {
   const idx = key.lastIndexOf(NODE_MODULES);
   if (idx === -1) return null;
-  return key.slice(idx + NODE_MODULES.length);
+  const name = key.slice(idx + NODE_MODULES.length);
+  return name === "" ? null : name;
 }
 
 /**
@@ -42,7 +45,9 @@ export function versionId(name, version) {
  * tarballs are `https://<registry>/<name>/-/<name>-<version>.tgz` — the `/-/`
  * segment is characteristic and git (`git+…`) / file (`file:…`) sources lack
  * the `http(s)://…/-/` shape. Non-registry sources have no publish date and are
- * skipped by the gate.
+ * skipped by the gate. Private registries that do not follow the `/-/`
+ * tarball-path convention are treated as non-registry and skipped (conservative:
+ * the gate never holds an unrecognized source against the cooldown).
  * @param {unknown} resolved
  * @returns {boolean}
  */
