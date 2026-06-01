@@ -298,5 +298,37 @@ describe("useProjectTitleEditing", () => {
       expect(navigate).not.toHaveBeenCalled();
       expect(result.current.editingProjectTitle).toBe(false);
     });
+
+    it("clears the project title error when the project changes (4b.15 normalization)", () => {
+      const project1 = buildProject({ id: "p1", title: "Alpha", slug: "alpha" });
+      const project2 = buildProject({ id: "p2", title: "Beta", slug: "beta" });
+      const handleUpdateProjectTitle = vi.fn(async () => "alpha");
+      const setProjectTitleError = vi.fn();
+      const navigate = vi.fn();
+      const isActionBusy = vi.fn(() => false);
+      const isEditorLocked = vi.fn(() => false);
+
+      const { result, rerender } = renderHook(
+        ({ p, s }: { p: typeof project1; s: string }) =>
+          useProjectTitleEditing(
+            p,
+            s,
+            handleUpdateProjectTitle,
+            setProjectTitleError,
+            navigate,
+            isActionBusy,
+            isEditorLocked,
+          ),
+        { initialProps: { p: project1, s: "alpha" } },
+      );
+
+      act(() => result.current.startEditingProjectTitle());
+      // startEditing already cleared the error once; isolate the change effect.
+      setProjectTitleError.mockClear();
+
+      rerender({ p: project2, s: "beta" });
+
+      expect(setProjectTitleError).toHaveBeenCalledWith(null);
+    });
   });
 });
