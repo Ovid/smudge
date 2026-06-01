@@ -13,6 +13,7 @@ skimmed at a glance for patterns.
 
 | Date       | Phase                          | Model              | Pushback (C/I/M) | Alignment (C/I/M) | Entry |
 |------------|--------------------------------|--------------------|------------------|-------------------|-------|
+| 2026-06-01 | Phase 4b.13: TipTap Depth-Guard Regression Test | claude-opus-4-8 | 0/2/2 | 0/0/0 | [link](2026-06-01-phase-4b-13-tiptap-depth-guard-regression-test.md) |
 | 2026-05-31 | Phase 4b.10: Shared TipTap Unsafe-Keys Set | claude-opus-4-8 | 0/1/1 | 0/0/1 | [link](2026-05-31-phase-4b-10-shared-tiptap-unsafe-keys-set.md) |
 | 2026-05-31 | Phase 4b.9: Chapter Status Type Alignment | claude-opus-4-8 | 2/2/2 | 1/3/1 | [link](2026-05-31-phase-4b-9-chapter-status-type-alignment.md) |
 | 2026-05-31 | Phase 4b.8: TipTap Extension Consolidation | claude-opus-4-8 | 0/1/1 | 0/0/0 | [link](2026-05-31-phase-4b-8-tiptap-extension-consolidation.md) |
