@@ -18,7 +18,7 @@ export interface InlineTitleEditing {
   editing: boolean;
   draft: string;
   setDraft: (value: string) => void;
-  inputRef: React.RefObject<HTMLInputElement>;
+  inputRef: React.RefObject<HTMLInputElement | null>;
   start: () => void;
   save: () => Promise<void>;
   cancel: () => void;

@@ -9,7 +9,7 @@ const gates = { isActionBusy: noBusy, isEditorLocked: notLocked };
 describe("useInlineTitleEditing", () => {
   it("start() enters edit mode, seeds the draft, and clears the error", () => {
     const clearError = vi.fn();
-    const onSave = vi.fn(async () => true);
+    const onSave = vi.fn(async (): Promise<true> => true);
     const { result } = renderHook(() =>
       useInlineTitleEditing<true>("e1", "Title", onSave, gates, { clearError }),
     );
@@ -22,7 +22,7 @@ describe("useInlineTitleEditing", () => {
   });
 
   it("start() is a no-op when currentId is undefined", () => {
-    const onSave = vi.fn(async () => true);
+    const onSave = vi.fn(async (): Promise<true> => true);
     const { result } = renderHook(() =>
       useInlineTitleEditing<true>(undefined, undefined, onSave, gates),
     );
