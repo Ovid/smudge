@@ -277,3 +277,31 @@ Line count is not a hard limit — a 3,000-line migration can be fine, a 500-lin
 4. **Not acceptable:** GPL, AGPL, SSPL, EUPL, or any strong-copyleft license. These would impose licensing requirements on Smudge itself. Flag immediately if encountered.
 5. **Dual-licensed packages:** Explicitly elect the permissive option and document the election in `docs/dependency-licenses.md`
 6. Update `docs/dependency-licenses.md` with the new dependency, its license, and any notes
+
+## Dependency Cooldown (Supply-Chain)
+
+**No package version in `package-lock.json` may be younger than 7 days unless
+explicitly allowlisted with a reason.** Most malicious npm releases are caught
+and yanked within days; a 7-day quarantine catches the common case before it
+reaches Smudge. Enforced by the `dep-cooldown` CI job (authoritative) and the
+on-demand `make dep-cooldown` target — never part of `make all` (the offline
+local full-pass stays network-free).
+
+- **Scope:** every registry-resolved version in the lockfile — **direct and
+  transitive** (transitive is where real attacks land). Non-registry deps
+  (git/file/link) are skipped (no publish date).
+- **Escape hatch:** `dependency-cooldown-allowlist.json` (repo root, committed).
+  Add `{ "package", "version", "reason", "added" }` to adopt a sub-cooldown
+  version — for an urgent CVE fix **or** any new dep needed before it is 7 days
+  old. `reason` is mandatory (a blank reason is a hard error). Every waiver is a
+  reviewable diff — the paper trail is the point.
+- **Hygiene:** the gate warns (without failing) when a waiver is no longer
+  needed (its version is now ≥7 days old) or orphaned (its version left the
+  tree). Remove those entries.
+- **What it does NOT do:** age is a proxy, not integrity. Tamper detection is
+  the lockfile `integrity` hashes that `npm ci` already enforces — a separate
+  layer. See the spec for the full threat model:
+  `docs/superpowers/specs/2026-06-01-dependency-cooldown-design.md`.
+- **Implementation:** pure logic in `scripts/dep-cooldown-core.mjs` (unit-tested,
+  under coverage); thin IO shell in `scripts/dep-cooldown.mjs` (coverage-excluded,
+  per the `ensure-native.mjs` precedent).
