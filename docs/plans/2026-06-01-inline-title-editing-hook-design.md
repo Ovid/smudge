@@ -176,6 +176,19 @@ export function useInlineTitleEditing<T>(
   `undefined → first id`): set the escape sentinel, reset the saving latch,
   exit edit mode, call `options.clearError?.()`.
 
+### Memoization constraint (pushback Finding 2)
+
+The shared hook returns **plain per-render closures** for `start` and
+`save`. Do **not** wrap them in `useCallback`. Both current hooks rely on
+fresh-closure-per-render to read the latest `draft`, entity, `gates`, and
+`options` (notably `driftCheck`); a `useCallback` with an incomplete
+dependency array — easy to write, since `gates`/`options` are fresh objects
+each render — would capture a stale `draft` or stale `driftCheck` and
+silently save the wrong text or skip the drift bail. The `useState` setter
+`setDraft` and the `inputRef` are already stable; no return value needs
+memoization. These callbacks are not passed to memoized children, so there
+is no stability benefit to trade against the staleness risk.
+
 ## The two wrappers
 
 Both keep their **exact** existing signatures and return shapes — verified
@@ -268,7 +281,13 @@ Red-green-refactor throughout (CLAUDE.md §Testing Philosophy).
    and `useProjectTitleEditing` test files pin the load-bearing differences
    (slug drift, post-save navigate, failure-keeps-open, gates, escape, no-op
    skip, cancel-on-change). They already do; add any missing case before
-   touching the hooks.
+   touching the hooks. **Specifically add a project no-op characterization
+   test** (pushback Finding 1): the chapter suite has a no-op-skip test but
+   the project suite does not, and the shared hook now centralizes the
+   trim-and-compare skip. Assert that when `projectTitleDraft` equals the
+   current title, `handleUpdateProjectTitle` is *not* called, `navigate` is
+   *not* called (no spurious navigation via `onAfterSave`), and edit mode
+   exits. Land this before the extraction.
 
 2. **New `useInlineTitleEditing.test.ts`** exercises the machine directly:
    start/cancel/save happy paths; each bail path (latch, escape, empty,
@@ -294,6 +313,12 @@ Neither title hook is referenced in CLAUDE.md, and this extraction introduces
 no new invariant, endpoint, error code, table, test layer, or top-level
 folder. Expected outcome: **no CLAUDE.md change required.** This will be
 re-confirmed against the final design during the roadmap step-7 check.
+
+Pushback Finding 3 considered whether the new shared hook (now the single
+owner of the title-PATCH busy/lock gate) warrants a CLAUDE.md mention for
+discoverability. Decision: **defer to step 7, leaning toward no change** —
+the gate is pre-existing and undocumented, and adding a doc entry for a pure
+internal-dedup phase expands scope without a strong need.
 
 ## Out of scope
 
