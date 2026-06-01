@@ -129,7 +129,7 @@ describe("parseAllowlist", () => {
       { package: "@types/node", version: "22.9.0", reason: "needed now" },
     ]);
     expect(map.get("react@19.0.0")).toEqual({ reason: "CVE fix", added: "2026-06-01" });
-    expect(map.get("@types/node@22.9.0")?.reason).toBe("needed now");
+    expect(map.get("@types/node@22.9.0")).toEqual({ reason: "needed now", added: undefined });
   });
 
   it("returns an empty map for an empty array", () => {
@@ -145,10 +145,16 @@ describe("parseAllowlist", () => {
     expect(() => parseAllowlist([{ package: "p", reason: "x" }])).toThrow(/version/);
   });
 
+  it("throws when an entry is null or not an object", () => {
+    expect(() => parseAllowlist([null])).toThrow(/package/);
+    expect(() => parseAllowlist([42])).toThrow(/package/);
+  });
+
   it("throws when reason is missing or blank (no silent waivers)", () => {
     expect(() => parseAllowlist([{ package: "p", version: "1.0.0" }])).toThrow(/reason/);
     expect(() => parseAllowlist([{ package: "p", version: "1.0.0", reason: "   " }])).toThrow(
       /reason/,
     );
+    expect(() => parseAllowlist([{ package: "p", version: "1.0.0", reason: 42 }])).toThrow(/reason/);
   });
 });

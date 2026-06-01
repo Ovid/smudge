@@ -135,7 +135,7 @@ export function parseAllowlist(entries) {
     if (!version) {
       throw new Error(`allowlist entry "${pkg}" is missing a "version"`);
     }
-    if (!e || typeof e.reason !== "string" || e.reason.trim() === "") {
+    if (typeof e.reason !== "string" || e.reason.trim() === "") {
       throw new Error(`allowlist entry "${pkg}@${version}" is missing a non-empty "reason"`);
     }
     byId.set(versionId(pkg, version), {
