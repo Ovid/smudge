@@ -142,9 +142,7 @@ describe("useInlineTitleEditing", () => {
 
   it("save() exits silently when cancel() set the escape sentinel", async () => {
     const onSave = vi.fn(async () => "x");
-    const { result } = renderHook(() =>
-      useInlineTitleEditing<string>("e1", "Old", onSave, gates),
-    );
+    const { result } = renderHook(() => useInlineTitleEditing<string>("e1", "Old", onSave, gates));
 
     act(() => result.current.start());
     act(() => result.current.setDraft("New"));
@@ -159,9 +157,7 @@ describe("useInlineTitleEditing", () => {
 
   it("save() exits without committing when the draft is whitespace-only", async () => {
     const onSave = vi.fn(async () => "x");
-    const { result } = renderHook(() =>
-      useInlineTitleEditing<string>("e1", "Old", onSave, gates),
-    );
+    const { result } = renderHook(() => useInlineTitleEditing<string>("e1", "Old", onSave, gates));
 
     act(() => result.current.start());
     act(() => result.current.setDraft("   "));
@@ -175,12 +171,13 @@ describe("useInlineTitleEditing", () => {
 
   it("save() ignores re-entry while a save is already in flight", async () => {
     let resolve: ((v: string) => void) | undefined;
-    const onSave = vi.fn(() => new Promise<string>((r) => {
-      resolve = r;
-    }));
-    const { result } = renderHook(() =>
-      useInlineTitleEditing<string>("e1", "Old", onSave, gates),
+    const onSave = vi.fn(
+      () =>
+        new Promise<string>((r) => {
+          resolve = r;
+        }),
     );
+    const { result } = renderHook(() => useInlineTitleEditing<string>("e1", "Old", onSave, gates));
 
     act(() => result.current.start());
     act(() => result.current.setDraft("New"));
