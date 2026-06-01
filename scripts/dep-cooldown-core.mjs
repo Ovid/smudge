@@ -54,3 +54,57 @@ export function versionId(name, version) {
 export function isRegistryResolved(resolved) {
   return typeof resolved === "string" && /^https?:\/\//.test(resolved) && resolved.includes("/-/");
 }
+
+/**
+ * @typedef {{ name: string, version: string, id: string }} RegistryVersion
+ */
+
+/**
+ * Walk a parsed package-lock v3 and collect the distinct registry-resolved
+ * `name@version` pairs. Workspace/own packages (no `node_modules/` segment) and
+ * symlinked workspace deps (`link: true`) are ignored; non-registry deps
+ * (git/file) are counted in `skipped` (they have no publish date to check).
+ * @param {{ packages?: Record<string, { version?: string, resolved?: unknown, link?: boolean }> }} lockfile
+ * @returns {{ versions: RegistryVersion[], skipped: number }}
+ */
+export function collectRegistryVersions(lockfile) {
+  const packages = lockfile.packages ?? {};
+  /** @type {RegistryVersion[]} */
+  const versions = [];
+  const seen = new Set();
+  let skipped = 0;
+
+  for (const [key, entry] of Object.entries(packages)) {
+    if (key === "") continue; // the root project
+    const name = derivePackageName(key);
+    if (name === null) continue; // workspace/own package — not a dependency
+    if (entry.link) continue; // symlink to a workspace package
+    if (!entry.version || !isRegistryResolved(entry.resolved)) {
+      skipped++;
+      continue;
+    }
+    const id = versionId(name, entry.version);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    versions.push({ name, version: entry.version, id });
+  }
+
+  return { versions, skipped };
+}
+
+/**
+ * Group versions by package name so the shell fetches each package's metadata
+ * document at most once even when several versions of it are in the tree.
+ * @param {RegistryVersion[]} versions
+ * @returns {Map<string, RegistryVersion[]>}
+ */
+export function groupVersionsByName(versions) {
+  /** @type {Map<string, RegistryVersion[]>} */
+  const byName = new Map();
+  for (const v of versions) {
+    const group = byName.get(v.name);
+    if (group) group.push(v);
+    else byName.set(v.name, [v]);
+  }
+  return byName;
+}
