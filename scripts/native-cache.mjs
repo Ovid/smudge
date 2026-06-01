@@ -100,7 +100,9 @@ export function orchestrate(deps) {
     try {
       saveToCache(key);
     } catch (err) {
-      log(`→ note: could not write to the native-binary cache (${describeError(err)}); continuing.`);
+      log(
+        `→ note: could not write to the native-binary cache (${describeError(err)}); continuing.`,
+      );
     }
   };
 
