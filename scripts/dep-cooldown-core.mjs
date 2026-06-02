@@ -415,8 +415,9 @@ export function publishDateFromTime(time, version) {
  * (forced when ANY group member is uncached) re-derives the date for EVERY
  * member from the new doc; without this fallback, a doc momentarily missing an
  * already-cached version would discard the good cached date and turn the version
- * into a spurious "absent" (blocking) violation. `id in cache` is safe on the
- * null-prototype map sanitizeCache returns. (S2)
+ * into a spurious "absent" (blocking) violation. Indexing the null-prototype
+ * map sanitizeCache returns yields the cached string or undefined; `?? null`
+ * folds a miss back to null. (S2)
  * @param {Record<string, unknown>} times
  * @param {string} version
  * @param {string} id
@@ -424,7 +425,7 @@ export function publishDateFromTime(time, version) {
  * @returns {string | null}
  */
 export function resolvePublishDate(times, version, id, cache) {
-  return publishDateFromTime(times, version) ?? (id in cache ? cache[id] : null);
+  return publishDateFromTime(times, version) ?? cache[id] ?? null;
 }
 
 /**
