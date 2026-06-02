@@ -45,6 +45,23 @@ It explicitly does **not** provide, and must not be presented as:
 The 7-day window is a risk-reduction measure against the common case, not a
 guarantee.
 
+**Identity ↔ artifact binding (added).** The gate ages the *artifact npm
+installs*, not the identity the lockfile merely declares. `npm ci` fetches the
+tarball at a `packages` entry's `resolved` URL and does **not** verify the
+downloaded package's real name/version against the entry's `name`/`version`
+fields (verified: a lockfile declaring `left-pad@1.3.0` whose `resolved` points
+at the `is-number` tarball installs `is-number@7.0.0` with exit 0; the `integrity`
+hash matches the installed bytes, so it does not catch the swap). Aging the
+declared `name@version` would therefore let an attacker who can edit
+`package-lock.json` borrow an aged-innocent package's age while a young/malicious
+tarball is what lands. The gate closes this by reconstructing the canonical
+`registry.npmjs.org/<name>/-/<unscoped>-<version>.tgz` path from the declared
+`name@version` and comparing it to `resolved`; any mismatch fails closed (the run
+blocks) instead of being aged under an identity that is not the installed
+artifact. This complements — does not replace — `integrity`: that hash binds to
+content, this check binds the lockfile's *self-declared identity* to the artifact
+it points at.
+
 ## Policy
 
 > No package version present in `package-lock.json` may be younger than
@@ -154,7 +171,10 @@ lookup is handled per "Edge cases" below, not silently passed.
 ## Data flow
 
 1. Parse `package-lock.json`; collect every `packages` entry that resolves to
-   the npm registry (has a `resolved` registry URL and a `version`).
+   the npm registry (has a `resolved` registry URL and a `version`). An entry
+   whose `resolved` tarball does not match its declared `name@version` (see the
+   threat model's identity↔artifact binding) is diverted to a `mismatched` list
+   that blocks the run, rather than aged under its declared identity.
 2. **Derive the package name** from each `packages` key (a path): strip
    everything up to and including the **final** `node_modules/` segment; the
    remainder is the name and may include an `@scope/` prefix
