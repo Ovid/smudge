@@ -77,6 +77,44 @@ export function isRegistryResolved(resolved) {
 }
 
 /**
+ * Does a registry `resolved` URL actually name the declared `name@version`?
+ *
+ * This is the gate's defense against a name/version identity decoupled from the
+ * tarball npm installs (I1). `npm ci` fetches the artifact at `resolved` and
+ * does NOT verify the downloaded package's real name/version against the
+ * lockfile entry's `name`/`version` fields (verified empirically: a lockfile
+ * declaring left-pad@1.3.0 whose `resolved` points at the is-number tarball
+ * installs is-number@7.0.0 with exit 0). The `integrity` hash binds to tarball
+ * CONTENT, not to those fields, so it does not catch the swap. Aging the
+ * declared identity would therefore let a crafted entry borrow an aged-innocent
+ * package's age while a young/malicious tarball is what actually lands.
+ *
+ * A registry.npmjs.org tarball URL is canonical:
+ * `https://registry.npmjs.org/<name>/-/<unscoped>-<version>.tgz` — the path
+ * before `/-/` is the full (scope-bearing) name and the basename after it is
+ * `<unscoped>-<version>.tgz` (the scope is dropped from the basename). We
+ * reconstruct that exact pathname from the declared `name`/`version` and compare
+ * it to the resolved URL's pathname. An equal path is honest (the common case —
+ * no behavior change); any mismatch is treated as fail-closed by the caller.
+ * @param {unknown} resolved
+ * @param {string} name
+ * @param {string} version
+ * @returns {boolean}
+ */
+export function tarballMatchesIdentity(resolved, name, version) {
+  if (typeof resolved !== "string") return false;
+  let url;
+  try {
+    url = new URL(resolved);
+  } catch {
+    return false;
+  }
+  const slash = name.lastIndexOf("/");
+  const unscoped = slash === -1 ? name : name.slice(slash + 1);
+  return url.pathname === `/${name}/-/${unscoped}-${version}.tgz`;
+}
+
+/**
  * npm package-name grammar restricted to what is safe to splice into a registry
  * metadata URL: an optional single `@scope/` prefix followed by the bare name,
  * lowercase, no path-traversal (`..`), no extra slashes, no leading dot/underscore.
@@ -117,19 +155,30 @@ export function isV3Lockfile(value) {
  */
 
 /**
+ * @typedef {{ id: string, resolved: string }} MismatchedEntry
+ */
+
+/**
  * Walk a parsed package-lock v3 and collect the distinct registry-resolved
  * `name@version` pairs. Workspace/own packages (no `node_modules/` segment) and
  * symlinked workspace deps (`link: true`) are ignored; non-registry deps
  * (git/file) — and any malformed entry (a non-object value, or one missing a
  * `version`) — are counted in `skipped` (they have no publish date to check).
+ * A registry entry whose `resolved` tarball disagrees with its declared
+ * `name@version` is diverted to `mismatched` (a fail-closed, blocking outcome —
+ * see tarballMatchesIdentity / I1) rather than aged under an identity that is
+ * not the artifact npm will install.
  * @param {{ packages?: Record<string, unknown> }} lockfile
- * @returns {{ versions: RegistryVersion[], skipped: number }}
+ * @returns {{ versions: RegistryVersion[], skipped: number, mismatched: MismatchedEntry[] }}
  */
 export function collectRegistryVersions(lockfile) {
   const packages = lockfile.packages ?? {};
   /** @type {RegistryVersion[]} */
   const versions = [];
+  /** @type {MismatchedEntry[]} */
+  const mismatched = [];
   const seen = new Set();
+  const seenMismatch = new Set();
   let skipped = 0;
 
   for (const [key, value] of Object.entries(packages)) {
@@ -156,12 +205,23 @@ export function collectRegistryVersions(lockfile) {
       continue;
     }
     const id = versionId(name, entry.version);
+    // Fail closed when the resolved tarball is not this name@version: aging the
+    // declared identity would let an attacker who can edit the lockfile borrow
+    // an aged-innocent package's age while npm installs the (young/malicious)
+    // tarball at `resolved`. Divert to `mismatched`, which blocks the run (I1).
+    if (!tarballMatchesIdentity(entry.resolved, name, entry.version)) {
+      if (!seenMismatch.has(id)) {
+        seenMismatch.add(id);
+        mismatched.push({ id, resolved: /** @type {string} */ (entry.resolved) });
+      }
+      continue;
+    }
     if (seen.has(id)) continue;
     seen.add(id);
     versions.push({ name, version: entry.version, id });
   }
 
-  return { versions, skipped };
+  return { versions, skipped, mismatched };
 }
 
 /**
@@ -465,21 +525,35 @@ export function classify({ versions, publishDates, allowlist, now, cooldownDays 
 
 /**
  * Render the human-readable report lines and decide whether the run blocks.
- * Only violations block; stale/orphaned waivers and the skipped count are
- * informational. Kept pure (returns strings) so the shell only prints.
+ * Violations and identity mismatches block; stale/orphaned waivers and the
+ * skipped count are informational. Kept pure (returns strings) so the shell only
+ * prints. `mismatched` defaults to empty so existing callers stay valid.
  * @param {{
  *   violations: Violation[],
  *   staleWaivers: string[],
  *   orphanedWaivers: string[],
  *   skipped: number,
  *   cooldownDays: number,
+ *   mismatched?: MismatchedEntry[],
  * }} args
  * @returns {{ lines: string[], blocking: boolean }}
  */
-export function buildReport({ violations, staleWaivers, orphanedWaivers, skipped, cooldownDays }) {
+export function buildReport({
+  violations,
+  staleWaivers,
+  orphanedWaivers,
+  skipped,
+  cooldownDays,
+  mismatched = [],
+}) {
   /** @type {string[]} */
   const lines = [];
 
+  for (const m of mismatched) {
+    lines.push(
+      `✗ ${m.id} — lockfile "resolved" points at ${m.resolved}, which does not match this name@version (lockfile tamper or corruption?)`,
+    );
+  }
   for (const v of violations) {
     if (v.kind === "absent") {
       lines.push(`✗ ${v.id} — not found in registry publish times (yanked or tampered?)`);
@@ -508,5 +582,5 @@ export function buildReport({ violations, staleWaivers, orphanedWaivers, skipped
     );
   }
 
-  return { lines, blocking: violations.length > 0 };
+  return { lines, blocking: violations.length > 0 || mismatched.length > 0 };
 }

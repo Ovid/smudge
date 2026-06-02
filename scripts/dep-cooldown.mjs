@@ -106,7 +106,7 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  const { versions, skipped } = collectRegistryVersions(lockfile);
+  const { versions, skipped, mismatched } = collectRegistryVersions(lockfile);
 
   // Allowlist — a missing file means "no waivers".
   let allowlist;
@@ -198,16 +198,23 @@ async function main() {
     now: Date.now(),
     cooldownDays,
   });
-  const { lines, blocking } = buildReport({ ...result, skipped, cooldownDays });
+  const { lines, blocking } = buildReport({ ...result, skipped, mismatched, cooldownDays });
   for (const line of lines) console.log(line);
 
   if (blocking) {
-    console.error(
-      `\nDependency cooldown: ${result.violations.length} version(s) younger than ${cooldownDays} days and not allowlisted.`,
-    );
-    console.error(
-      `Wait until they are ${cooldownDays} days old, or add an entry with a reason to dependency-cooldown-allowlist.json.`,
-    );
+    if (mismatched.length > 0) {
+      console.error(
+        `\nDependency cooldown: ${mismatched.length} lockfile entr${mismatched.length === 1 ? "y" : "ies"} whose declared name@version does not match the "resolved" tarball — refusing to age an identity that is not the artifact npm installs.`,
+      );
+    }
+    if (result.violations.length > 0) {
+      console.error(
+        `\nDependency cooldown: ${result.violations.length} version(s) younger than ${cooldownDays} days and not allowlisted.`,
+      );
+      console.error(
+        `Wait until they are ${cooldownDays} days old, or add an entry with a reason to dependency-cooldown-allowlist.json.`,
+      );
+    }
     process.exitCode = 1;
   } else {
     console.log(

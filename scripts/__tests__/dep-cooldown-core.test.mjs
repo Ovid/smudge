@@ -3,6 +3,7 @@ import {
   derivePackageName,
   versionId,
   isRegistryResolved,
+  tarballMatchesIdentity,
   isValidRegistryName,
   isV3Lockfile,
   sanitizeCache,
@@ -158,7 +159,71 @@ describe("collectRegistryVersions", () => {
   });
 
   it("tolerates a lockfile with no packages map", () => {
-    expect(collectRegistryVersions({})).toEqual({ versions: [], skipped: 0 });
+    expect(collectRegistryVersions({})).toEqual({ versions: [], skipped: 0, mismatched: [] });
+  });
+
+  // I1: npm ci installs the tarball at `resolved` and never checks it against
+  // the entry's declared name/version (verified: a lockfile claiming
+  // left-pad@1.3.0 whose `resolved` points at the is-number tarball installs
+  // is-number). Aging the DECLARED identity would let a crafted entry borrow an
+  // aged-innocent package's age while a young/malicious tarball is installed. So
+  // an entry whose `resolved` tarball disagrees with its name@version is diverted
+  // to `mismatched` (a blocking outcome), never aged as a normal version.
+  it("diverts an entry whose resolved tarball disagrees with name@version", () => {
+    const { versions, mismatched, skipped } = collectRegistryVersions({
+      packages: {
+        "node_modules/left-pad": {
+          version: "1.3.0",
+          resolved: "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz",
+        },
+        "node_modules/react": {
+          version: "18.3.1",
+          resolved: "https://registry.npmjs.org/react/-/react-18.3.1.tgz",
+        },
+      },
+    });
+    expect(versions.map((v) => v.id)).toEqual(["react@18.3.1"]);
+    expect(mismatched).toEqual([
+      {
+        id: "left-pad@1.3.0",
+        resolved: "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz",
+      },
+    ]);
+    expect(skipped).toBe(0);
+  });
+
+  // The same decoupling via the npm-alias branch (entry.name preferred over the
+  // path key) is also diverted — verified to install the resolved tarball too.
+  it("diverts an aliased entry whose resolved tarball disagrees with entry.name", () => {
+    const { versions, mismatched } = collectRegistryVersions({
+      packages: {
+        "node_modules/vendor-thing": {
+          name: "left-pad",
+          version: "1.3.0",
+          resolved: "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz",
+        },
+      },
+    });
+    expect(versions).toEqual([]);
+    expect(mismatched).toEqual([
+      {
+        id: "left-pad@1.3.0",
+        resolved: "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz",
+      },
+    ]);
+  });
+
+  it("keeps a scoped package whose resolved tarball matches its name@version", () => {
+    const { versions, mismatched } = collectRegistryVersions({
+      packages: {
+        "node_modules/@types/node": {
+          version: "22.0.0",
+          resolved: "https://registry.npmjs.org/@types/node/-/node-22.0.0.tgz",
+        },
+      },
+    });
+    expect(versions.map((v) => v.id)).toEqual(["@types/node@22.0.0"]);
+    expect(mismatched).toEqual([]);
   });
 
   it("uses the entry's real `name` for aliased deps, not the path key", () => {
@@ -195,6 +260,62 @@ describe("collectRegistryVersions", () => {
     });
     expect(versions.map((v) => v.id)).toEqual(["react@18.3.1"]);
     expect(skipped).toBe(2);
+  });
+});
+
+describe("tarballMatchesIdentity", () => {
+  it("matches a canonical unscoped tarball path", () => {
+    expect(
+      tarballMatchesIdentity("https://registry.npmjs.org/react/-/react-18.3.1.tgz", "react", "18.3.1"),
+    ).toBe(true);
+  });
+
+  it("matches a canonical scoped tarball path (scope dropped in the basename)", () => {
+    expect(
+      tarballMatchesIdentity(
+        "https://registry.npmjs.org/@types/node/-/node-22.0.0.tgz",
+        "@types/node",
+        "22.0.0",
+      ),
+    ).toBe(true);
+  });
+
+  it("matches a name or version containing hyphens", () => {
+    expect(
+      tarballMatchesIdentity(
+        "https://registry.npmjs.org/string-width/-/string-width-4.2.3.tgz",
+        "string-width",
+        "4.2.3",
+      ),
+    ).toBe(true);
+    expect(
+      tarballMatchesIdentity(
+        "https://registry.npmjs.org/pkg/-/pkg-1.0.0-beta.1.tgz",
+        "pkg",
+        "1.0.0-beta.1",
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects a tarball naming a different package than the declared name", () => {
+    expect(
+      tarballMatchesIdentity(
+        "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz",
+        "left-pad",
+        "1.3.0",
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects a tarball whose version differs from the declared version", () => {
+    expect(
+      tarballMatchesIdentity("https://registry.npmjs.org/react/-/react-19.0.0.tgz", "react", "18.3.1"),
+    ).toBe(false);
+  });
+
+  it("rejects a non-string or unparseable resolved value", () => {
+    expect(tarballMatchesIdentity(null, "react", "18.3.1")).toBe(false);
+    expect(tarballMatchesIdentity("not a url", "react", "18.3.1")).toBe(false);
   });
 });
 
@@ -724,6 +845,24 @@ describe("buildReport", () => {
     const text = lines.join("\n");
     expect(text).toMatch(/react@19\.0\.0 — published 3\.3 days ago \(min 7\)/);
     expect(text).toMatch(/sketchy@9\.9\.9 — not found in registry publish times/);
+  });
+
+  it("blocks and renders a name/version-vs-resolved mismatch (I1)", () => {
+    const { lines, blocking } = buildReport({
+      violations: [],
+      staleWaivers: [],
+      orphanedWaivers: [],
+      mismatched: [
+        { id: "left-pad@1.3.0", resolved: "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz" },
+      ],
+      skipped: 0,
+      cooldownDays: 7,
+    });
+    expect(blocking).toBe(true);
+    const text = lines.join("\n");
+    expect(text).toMatch(/left-pad@1\.3\.0/);
+    expect(text).toMatch(/is-number-7\.0\.0\.tgz/);
+    expect(text).toMatch(/does not match|tamper/i);
   });
 
   it("uses singular phrasing for a single skipped entry", () => {
