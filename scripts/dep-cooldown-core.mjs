@@ -192,9 +192,10 @@ export function collectRegistryVersions(lockfile) {
       skipped++;
       continue;
     }
-    const entry = /** @type {{ name?: string, version?: string, resolved?: unknown, link?: boolean }} */ (
-      value
-    );
+    const entry =
+      /** @type {{ name?: string, version?: string, resolved?: unknown, link?: boolean }} */ (
+        value
+      );
     if (entry.link) continue; // symlink to a workspace package
     // npm aliases (e.g. "foo": "npm:bar@1") put the REAL registry package in
     // entry.name while the key holds the alias. Prefer entry.name when present;

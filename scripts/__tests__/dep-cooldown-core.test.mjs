@@ -266,7 +266,11 @@ describe("collectRegistryVersions", () => {
 describe("tarballMatchesIdentity", () => {
   it("matches a canonical unscoped tarball path", () => {
     expect(
-      tarballMatchesIdentity("https://registry.npmjs.org/react/-/react-18.3.1.tgz", "react", "18.3.1"),
+      tarballMatchesIdentity(
+        "https://registry.npmjs.org/react/-/react-18.3.1.tgz",
+        "react",
+        "18.3.1",
+      ),
     ).toBe(true);
   });
 
@@ -309,7 +313,11 @@ describe("tarballMatchesIdentity", () => {
 
   it("rejects a tarball whose version differs from the declared version", () => {
     expect(
-      tarballMatchesIdentity("https://registry.npmjs.org/react/-/react-19.0.0.tgz", "react", "18.3.1"),
+      tarballMatchesIdentity(
+        "https://registry.npmjs.org/react/-/react-19.0.0.tgz",
+        "react",
+        "18.3.1",
+      ),
     ).toBe(false);
   });
 
@@ -683,9 +691,7 @@ describe("resolvePublishDate", () => {
   it("prefers the freshly-fetched registry date", () => {
     const times = { "1.0.0": "2026-05-01T00:00:00.000Z" };
     const cache = { "pkg@1.0.0": "2026-04-01T00:00:00.000Z" };
-    expect(resolvePublishDate(times, "1.0.0", "pkg@1.0.0", cache)).toBe(
-      "2026-05-01T00:00:00.000Z",
-    );
+    expect(resolvePublishDate(times, "1.0.0", "pkg@1.0.0", cache)).toBe("2026-05-01T00:00:00.000Z");
   });
 
   // S2: a partial-group refetch (some member uncached) re-derives the date for
@@ -695,9 +701,7 @@ describe("resolvePublishDate", () => {
   it("falls back to the cached date when the fresh doc omits the version", () => {
     const times = { "2.0.0": "2026-05-01T00:00:00.000Z" }; // 1.0.0 missing
     const cache = { "pkg@1.0.0": "2026-04-01T00:00:00.000Z" };
-    expect(resolvePublishDate(times, "1.0.0", "pkg@1.0.0", cache)).toBe(
-      "2026-04-01T00:00:00.000Z",
-    );
+    expect(resolvePublishDate(times, "1.0.0", "pkg@1.0.0", cache)).toBe("2026-04-01T00:00:00.000Z");
   });
 
   it("returns null when neither the fresh doc nor the cache has the version", () => {
@@ -853,7 +857,10 @@ describe("buildReport", () => {
       staleWaivers: [],
       orphanedWaivers: [],
       mismatched: [
-        { id: "left-pad@1.3.0", resolved: "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz" },
+        {
+          id: "left-pad@1.3.0",
+          resolved: "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz",
+        },
       ],
       skipped: 0,
       cooldownDays: 7,
