@@ -78,25 +78,38 @@ jobs:
       # skipping lifecycle scripts costs nothing here.
       - run: npm ci --ignore-scripts
       # Persist publish-time lookups across runs. Entries are immutable
-      # (name@version -> publish date), so we want the cache to ACCUMULATE, not
-      # reset whenever the lockfile changes. The `key` is per-run-unique
-      # (github.run_id), so it NEVER restore-hits — every run therefore saves a
-      # fresh superset at job end, persisting the dates it fetched. A
+      # (name@version -> publish date), so the cache should ACCUMULATE, not reset
+      # whenever the lockfile changes. The `key` is per-run-unique (github.run_id)
+      # so it NEVER restore-hits — every run therefore saves a fresh superset at
+      # job end, persisting the dates it fetched. This is deliberate (S3): a
       # hash-keyed `key` would skip the save on the common stable-lockfile run
-      # (exact-key restore hit => no save), so dates fetched that run would be
-      # re-fetched next time. The stable `restore-keys` prefix restores the most
-      # recent prior cache, so each run fetches only what is new. (S3)
+      # (exact-key restore hit => no save), and because GitHub caches are
+      # IMMUTABLE a stable key can be written only once and never grows — so
+      # stragglers fetched on a later run would be re-fetched forever. The stable
+      # `restore-keys` prefix restores the most recent prior cache, so each run
+      # fetches only what is new. The per-run key does write a new cache entry
+      # every run, but the payload is tiny (a JSON map of dates) and GitHub
+      # auto-evicts caches unused for 7 days and by LRU past the repo's 10 GB
+      # budget, so the churn is bounded and self-cleaning — an accepted cost of
+      # accumulation, not a reason to revert to a stable (non-accumulating) key.
       #
       # TRUST BOUNDARY: the gate trusts cached publish dates AS-IS (no integrity
-      # check), so a forged entry could make a young package read as old. This
-      # is acceptable because (1) GitHub scopes caches per-branch — a run on
-      # `main` (the authoritative gate) restores only main/base caches, so a
-      # feature-branch or fork cache cannot be injected onto main; and (2) the
-      # gate is an age PROXY by design — artifact integrity is enforced
-      # separately by `npm ci`'s lockfile `integrity` hashes, which a forged
-      # publish DATE does not touch. The accumulation benefit (not re-fetching
-      # ~770 metadata docs per run) is worth this documented residual risk; see
-      # docs/superpowers/specs/2026-06-01-dependency-cooldown-design.md.
+      # check), so a forged entry could make a young package read as old. The
+      # committed-cache vector (a PR author committing a forged
+      # .dep-cooldown-cache.json) is closed in the gate itself, which refuses to
+      # run when that file is git-tracked. The residual is a forged date arriving
+      # through a TRUSTED channel, which stays acceptable because (1) GitHub
+      # restricts cache access by scope — a branch/fork PR reads only its own ref
+      # plus the base/default branch and cannot WRITE the base/default-branch
+      # scope, so it cannot poison the cache a `main` run restores. That is an
+      # access restriction, not an absolute guarantee: the broad `restore-keys`
+      # prefix still widens the restore surface within the allowed scopes, which
+      # is why we do not lean on scoping alone. (2) The gate is an age PROXY by
+      # design — artifact integrity is enforced separately by `npm ci`'s lockfile
+      # `integrity` hashes, which a forged publish DATE does not touch; that hash
+      # check is the load-bearing tamper defense. The accumulation benefit (not
+      # re-fetching ~770 metadata docs per run) is worth this documented residual;
+      # see docs/superpowers/specs/2026-06-01-dependency-cooldown-design.md.
       - name: Restore dependency-cooldown publish-time cache
         uses: actions/cache@v4
         with:
