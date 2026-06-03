@@ -49,6 +49,37 @@ export function versionId(name, version) {
 }
 
 /**
+ * Is `x` a plain (non-array, non-null) object? This is the gate's security-
+ * relevant shape check — it fails closed for the degenerate JSON values a
+ * lockfile or cache file could parse to (`null`, a primitive, an array). It was
+ * previously reimplemented inline in several places that the comments noted
+ * "must stay in sync"; a single helper removes that silent-drift hazard (S3). As
+ * a type predicate it also narrows `unknown` to an indexable object for callers.
+ * @param {unknown} x
+ * @returns {x is Record<string, unknown>}
+ */
+function isPlainObject(x) {
+  return x !== null && typeof x === "object" && !Array.isArray(x);
+}
+
+/**
+ * Parse a string into a WHATWG `URL`, or null if it is not a string or not a
+ * valid URL. Centralizes the `typeof` + `try/new URL/catch` preamble that
+ * `isRegistryResolved` and `tarballMatchesIdentity` both need (S3); each caller
+ * keeps its own protocol/host/path checks on the returned URL.
+ * @param {unknown} value
+ * @returns {URL | null}
+ */
+function parseUrl(value) {
+  if (typeof value !== "string") return null;
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Is a lockfile entry's `resolved` URL an npmjs-registry tarball? Registry
  * tarballs are `https://registry.npmjs.org/<name>/-/<name>-<version>.tgz` — the
  * host must be `REGISTRY_HOST` (parsed, not substring-matched, so a look-alike
@@ -62,13 +93,8 @@ export function versionId(name, version) {
  * @returns {boolean}
  */
 export function isRegistryResolved(resolved) {
-  if (typeof resolved !== "string") return false;
-  let url;
-  try {
-    url = new URL(resolved);
-  } catch {
-    return false;
-  }
+  const url = parseUrl(resolved);
+  if (url === null) return false;
   return (
     (url.protocol === "https:" || url.protocol === "http:") &&
     url.hostname === REGISTRY_HOST &&
@@ -102,13 +128,8 @@ export function isRegistryResolved(resolved) {
  * @returns {boolean}
  */
 export function tarballMatchesIdentity(resolved, name, version) {
-  if (typeof resolved !== "string") return false;
-  let url;
-  try {
-    url = new URL(resolved);
-  } catch {
-    return false;
-  }
+  const url = parseUrl(resolved);
+  if (url === null) return false;
   const slash = name.lastIndexOf("/");
   const unscoped = slash === -1 ? name : name.slice(slash + 1);
   // WHATWG URL leaves the pathname percent-encoded (it does NOT decode %40/%2F),
@@ -165,9 +186,8 @@ export function isValidRegistryName(name) {
  * @returns {boolean}
  */
 export function isV3Lockfile(value) {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  const packages = /** @type {{ packages?: unknown }} */ (value).packages;
-  return packages !== null && typeof packages === "object" && !Array.isArray(packages);
+  if (!isPlainObject(value)) return false;
+  return isPlainObject(value.packages);
 }
 
 /**
@@ -410,14 +430,11 @@ export async function fetchPublishTimes({
       if (res.ok) {
         try {
           const doc = await res.json();
-          // An array is `typeof === "object"`; exclude it (as isV3Lockfile and
-          // sanitizeCache do) so `time: []` is not mistaken for a usable — but
-          // empty — per-version map. A non-plain-object `time` is a partial/
-          // malformed response, retried below, never a usable result.
-          const time =
-            doc && typeof doc.time === "object" && doc.time !== null && !Array.isArray(doc.time)
-              ? doc.time
-              : null;
+          // isPlainObject excludes an array (`typeof [] === "object"`) so
+          // `time: []` is not mistaken for a usable — but empty — per-version
+          // map. A non-plain-object `time` is a partial/malformed response,
+          // retried below, never a usable result.
+          const time = doc && isPlainObject(doc.time) ? doc.time : null;
           if (time) return time;
           // S2: a 200 without a usable `time` object is a transient/partial
           // response, not a per-version yank — retriable infra, not a violation.
@@ -512,7 +529,7 @@ export function resolvePublishDate(times, version, id, cache) {
 export function sanitizeCache(parsed) {
   /** @type {Record<string, string>} */
   const clean = Object.create(null);
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+  if (!isPlainObject(parsed)) {
     return clean;
   }
   for (const [id, value] of Object.entries(parsed)) {
