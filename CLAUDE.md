@@ -208,6 +208,17 @@ phase; until then, it is enforced by review.
 
 **String externalization.** All UI strings in `packages/client/src/strings.ts` as constants, never raw literals in components. Enforced by `no-restricted-syntax` selectors in `eslint.config.js` (Phase 4b.4) that flag **word-bearing** literals (text containing a Unicode letter, `\p{L}`) in JSX text children and the user-facing attributes `aria-label`, `aria-description`, `aria-roledescription`, `title`, `placeholder`, `alt`. The rule is intentionally letters-only: glyphs, separators, and punctuation are language-neutral (not i18n surface), and bare-glyph accessible-name coverage is owned by aXe-core, not this rule. A decorative word-bearing glyph (e.g. the `Aa`/`ab|` find-replace toggles) is **named** — extracted to a constant and rendered as `{GLYPH}`, which the rule does not flag — keeping the visible symbol paired with its `STRINGS`-sourced `aria-label`. Test fixtures take an inline `// eslint-disable-next-line no-restricted-syntax -- test fixture (not user-facing)` (the description separator is two hyphens `--`; an em-dash silently disables nothing). ESLint reports a JSXText violation at the opening tag's line, so a disable comment must sit above the _opening tag_ (or use the block `eslint-disable`/`eslint-enable` form) — a comment directly above the visible text does not suppress it. The exemption-reason string is load-bearing — `git grep "eslint-disable-next-line no-restricted-syntax" packages/client/` is the audit surface. Prepares for future i18n without architectural changes.
 
+**Dialog lifecycle lives in one hook.** Native `<dialog>` show/close sync,
+focus-on-open, Escape-to-close, and backdrop-click-to-close route through
+`useDialogLifecycle` (`packages/client/src/hooks/useDialogLifecycle.ts`)
+rather than per-dialog `useEffect`/listener reimplementations. Options:
+`initialFocusRef` (focus a specific element after `showModal()`) and
+`blockEscapePropagation` (capture-phase Escape + `stopImmediatePropagation`,
+as `ConfirmDialog` uses to shield the FindReplacePanel's Escape listener). The
+hook owns the lifecycle effects and returns an opt-in `onBackdropClick`; ARIA
+(`role`, `aria-*`) stays in each component's JSX. New dialogs adopt the hook
+rather than copying a neighbour.
+
 ## API Design
 
 REST endpoints under `/api/`. Error envelope: `{ "error": { "code": "MACHINE_READABLE", "message": "Human-readable" } }`. HTTP status codes: 200, 201, 204, 400, 404, 409, 413, 500. The allowlist governs codes the Smudge server itself emits; client error scopes may additionally map proxy-only codes (502/503/504, etc.) for resilience under reverse-proxy deployments. Error responses (4xx/5xx) are produced by the `AppError` taxonomy (`packages/server/src/errors/appError.ts`): routes `throw` a typed `AppError` and the global handler (`app.ts`) renders the envelope. The error-status subset is 400, 404, 409, 413, 500 — `AppError` never emits 2xx.
