@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
+import { useDialogLifecycle } from "../hooks/useDialogLifecycle";
 
 interface ConfirmDialogProps {
   title: string;
@@ -17,34 +18,13 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog && !dialog.open) {
-      dialog.showModal();
-    }
-    cancelRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        // Stop other document-level keydown listeners (notably the
-        // FindReplacePanel's Escape-to-close) from also firing: a single
-        // Escape should cancel this dialog without wiping the underlying
-        // panel's query + results state.
-        e.stopImmediatePropagation();
-        onCancel();
-      }
-    }
-    // Capture phase so we run before other document-level listeners and
-    // can stopImmediatePropagation on them.
-    document.addEventListener("keydown", handleKeyDown, true);
-    return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [onCancel]);
+  const { dialogRef, onBackdropClick } = useDialogLifecycle({
+    open: true,
+    onClose: onCancel,
+    initialFocusRef: cancelRef,
+    blockEscapePropagation: true,
+  });
 
   return (
     <dialog
@@ -53,9 +33,7 @@ export function ConfirmDialog({
       aria-label={title}
       aria-describedby="confirm-dialog-body"
       className="fixed inset-0 z-50 flex items-center justify-center bg-transparent m-0 p-0 w-full h-full border-none backdrop:bg-black/30"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onCancel();
-      }}
+      onClick={onBackdropClick}
     >
       <div className="rounded-xl bg-bg-primary p-8 shadow-xl max-w-sm w-full mx-auto mt-[20vh] border border-border/60">
         <p className="text-text-primary font-semibold text-base mb-2">{title}</p>
