@@ -1,11 +1,11 @@
 ---
 name: roadmap
-description: Read the feature roadmap, find the next unplanned phase, brainstorm it, and update the roadmap with the resulting document name
+description: Read the feature roadmap, find the next phase to work on, brainstorm it if it is not already brainstormed, and update the roadmap with the resulting document name
 ---
 
 ## Start
 
-Announce: **"Checking roadmap for next unplanned phase…"**
+Announce: **"Checking the roadmap for the next phase to work on…"**
 
 Read @CLAUDE.md.
 
@@ -58,14 +58,64 @@ Example of an incomplete phase (no comment, or no `<!-- plan: … -->` line):
 ## Phase 3: Export
 ```
 
-## 2. Identify the Next Unplanned Phase
+## 2. Identify the Phase to Act On
 
-Scan phases in order (Phase 1, 2, 3, … 7). The first phase whose section does **not** have a `<!-- plan: … -->` comment is the target.
+This skill works on **one phase at a time** and **never brainstorms ahead of a
+phase that is already brainstormed but not yet shipped.** Implementing a phase
+routinely changes how later phases should be designed — slugs drift, an API gets
+reshaped, a "while I'm here" fix lands — so a design written against an
+unfinished phase is built on sand. A brainstormed-but-unshipped phase therefore
+**blocks** brainstorming of every later phase until it ships.
 
-If **all** phases have plan comments, announce:
-> **All roadmap phases have been brainstormed.** Nothing to do.
+Two independent signals classify each phase:
 
-…and stop.
+- The `<!-- plan: … -->` comment after its `---`/heading marks it as
+  **brainstormed** (a design doc exists).
+- Its status in the **Phase Structure** table (`Planned` / `In Progress` /
+  `Done`) marks how far it has progressed. `Done` means shipped and merged.
+
+Scan phases in order (Phase 1, 2, 3, …) and find the **first phase that is not
+`Done`** in the Phase Structure table. Call it the *current phase*, then apply
+exactly one of these cases:
+
+1. **Current phase has no plan comment** → it is the brainstorm target. Proceed
+   to §2a.
+
+2. **Current phase has a plan comment** → it is already brainstormed but not
+   marked `Done`. Do **not** skip past it to brainstorm a later phase. You cannot
+   tell from the file alone whether it is (a) genuinely waiting to be implemented
+   or (b) already implemented and merged but never flipped to `Done` (the table
+   lags). This is the one place a runtime question is required for correctness —
+   **ask the user**:
+
+   > Phase N: *Name* is already brainstormed — its design/plan exist
+   > (`<plan filename>`) — but it is not marked **Done**. Has it been implemented
+   > and merged?
+
+   - **No / not yet** → **stop.** Do **not** brainstorm any later phase. Tell the
+     user this phase is brainstormed and waiting to be implemented; point them at
+     its design and plan docs in `docs/plans/` and at the implementation skills
+     (`superpowers:executing-plans` or `superpowers:subagent-driven-development`,
+     run in a separate session). Note that brainstorming ahead now would design
+     against an implementation that may still change. Only brainstorm a later
+     phase if, after this, the user **explicitly** directs you to in this
+     conversation.
+   - **Yes, it shipped** → **record** that this phase should be flipped to `Done`
+     (do not write it yet — all Phase Structure table edits are applied in §5b,
+     after §2a has created the working branch, so no roadmap edit lands on `main`
+     before then). Then **repeat this scan from the top.** The next not-`Done`
+     phase becomes the new current phase; re-apply cases 1–2 (so several
+     confirmations in a row can walk forward through multiple already-shipped
+     phases until you reach one to brainstorm, or run out).
+
+If **every** phase is `Done` (after applying any confirmations from this scan),
+announce:
+> **All roadmap phases are complete.** Nothing to do.
+
+…and stop. In this path there is no §5b to write the confirmations, so if you
+flipped one or more phases to `Done` during the scan above, apply those edits to
+the Phase Structure table now and tell the user to commit them (if on `main`,
+suggest committing on a branch or confirming the carry-over first).
 
 ## 2a. Suggest a Working Branch (if on `main`)
 
@@ -231,12 +281,21 @@ Insert a plan comment on the line immediately after the `---` separator that pre
 
 The filename is whatever the brainstorming skill created (it follows the pattern `YYYY-MM-DD-<topic>-design.md`).
 
-### 5b. Update the Phase Structure table statuses
+### 5b. Update the Phase Structure table status
 
-In the **Phase Structure** table near the top of the roadmap, make two updates:
+In the **Phase Structure** table near the top of the roadmap:
 
-1. **Mark the current phase as "In Progress"** — change its status from `Planned` to `In Progress`.
-2. **Mark the previous phase as "Done"** — if the phase immediately before the current one has status `In Progress`, change it to `Done` (it must have been completed if we're moving on to brainstorm the next phase).
+1. Mark the phase you just brainstormed as **In Progress** (change its status from
+   `Planned` to `In Progress`).
+2. Flip to **Done** every phase the user confirmed as shipped during the §2 scan
+   (case 2, "Yes, it shipped"). These are the writes that step deferred to here so
+   they land on the working branch rather than on `main`. If §2 confirmed none,
+   this sub-step is a no-op.
+
+Do **not** infer any other phase's status. In particular, do not mark a phase
+`Done` on the assumption that brainstorming a later one implies it shipped — that
+inference is exactly what let the skill skip ahead of unfinished work. A phase
+becomes `Done` only on the explicit user confirmation captured in §2.
 
 The valid statuses are:
 
@@ -339,7 +398,8 @@ If a /roadmap run produced zero pushback issues *and* zero alignment issues, sti
 > - Design: `docs/plans/<filename>-design.md`
 > - Plan: `docs/plans/<filename>-plan.md`
 > - Decision log: `docs/roadmap-decisions/<filename>.md`
-> Next unplanned phase: Phase M: [Name] (or "all phases planned").
+> Next step: **implement Phase N** — a later phase will not be brainstormed until
+> this one ships (see §2), since finishing it may change how later phases are designed.
 
 Offer to move to implementing the plan (via `superpowers:subagent-driven-development` or `superpowers:executing-plans` in a separate session), or to review the updated roadmap.
 
