@@ -13,6 +13,7 @@ skimmed at a glance for patterns.
 
 | Date       | Phase                          | Model              | Pushback (C/I/M) | Alignment (C/I/M) | Entry |
 |------------|--------------------------------|--------------------|------------------|-------------------|-------|
+| 2026-06-03 | Phase 4b.14: Operational Backup Stopgap | claude-opus-4-8 | 1/3/2 | 0/1/3 | [link](2026-06-03-phase-4b-14-operational-backup-stopgap.md) |
 | 2026-06-03 | Phase 4b.16: Dialog Lifecycle Hook | claude-opus-4-8 | 0/1/2 | 0/0/1 | [link](2026-06-03-phase-4b-16-dialog-lifecycle-hook.md) |
 | 2026-06-01 | Phase 4b.15: Inline Title-Editing Hook | claude-opus-4-8 | 0/2/1 | 0/0/1 | [link](2026-06-01-phase-4b-15-inline-title-editing-hook.md) |
 | 2026-06-01 | Phase 4b.13: TipTap Depth-Guard Regression Test | claude-opus-4-8 | 0/2/2 | 0/0/0 | [link](2026-06-01-phase-4b-13-tiptap-depth-guard-regression-test.md) |
