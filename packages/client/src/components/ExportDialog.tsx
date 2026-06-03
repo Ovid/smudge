@@ -3,6 +3,7 @@ import { EXPORT_FILE_EXTENSIONS, type ExportFormatType } from "@smudge/shared";
 import { api } from "../api/client";
 import { mapApiError, applyMappedError } from "../errors";
 import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
+import { useDialogLifecycle } from "../hooks/useDialogLifecycle";
 import { STRINGS } from "../strings";
 
 interface ExportDialogProps {
@@ -20,8 +21,12 @@ export function ExportDialog({
   chapters,
   onClose,
 }: ExportDialogProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const { dialogRef, onBackdropClick } = useDialogLifecycle({
+    open,
+    onClose,
+    initialFocusRef: cancelRef,
+  });
 
   const [format, setFormat] = useState<ExportFormatType>("html");
   const [includeToc, setIncludeToc] = useState(true);
@@ -55,37 +60,6 @@ export function ExportDialog({
     }
     prevOpenRef.current = open;
   }, [open, chapters, exportOp]);
-
-  // Show/close modal
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-
-    if (open && !dialog.open) {
-      try {
-        dialog.showModal();
-      } catch {
-        // happy-dom doesn't fully support showModal
-      }
-      cancelRef.current?.focus();
-    } else if (!open && dialog.open) {
-      dialog.close();
-    }
-  }, [open]);
-
-  // Escape key handler
-  useEffect(() => {
-    if (!open) return;
-
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
 
   useEffect(() => {
     if ((format === "epub" || format === "docx") && open) {
@@ -206,9 +180,7 @@ export function ExportDialog({
       ref={dialogRef}
       aria-label={STRINGS.export.dialogTitle}
       className="fixed inset-0 z-50 flex items-center justify-center bg-transparent m-0 p-0 w-full h-full border-none backdrop:bg-black/30"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+      onClick={onBackdropClick}
     >
       <div className="rounded-xl bg-bg-primary p-8 shadow-xl max-w-sm w-full mx-auto mt-[15vh] border border-border/60">
         <h2 className="text-text-primary font-semibold text-base mb-4">
