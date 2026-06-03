@@ -414,12 +414,13 @@ it("restores successfully when dataDir does not exist yet (ENOENT rename branch)
   await rm(nonExistent, { recursive: true, force: true });
 });
 
-// ── Change 5 (T-1): post-move byte-budget overrun preserves move-aside dir ──
+// ── Change 5 (T-1): post-move failure surfaces RestorePartialError carrying movedAsideTo ──
 
-it("T-1: on post-move extraction overrun, throws RestorePartialError carrying movedAsideTo and preserves original DB", async () => {
-  // Build a real fixture and archive.
+it("T-1: on post-move extraction failure (JSZip size-mismatch or byte-budget overrun), throws RestorePartialError carrying movedAsideTo and preserves original DB", async () => {
+  // Build a real fixture with a large incompressible file so it passes checkDeclaredSizes
+  // with its real size, but we then patch the CD to under-declare it — causing either
+  // JSZip's own size-mismatch throw or our byte-budget overrun. Change A wraps both.
   const { dataDir, dbPath } = await makeFixture();
-  // Add a large incompressible file to push declared size well below actual.
   const bigBin = randomBytes(1_600_000);
   await mkdir(join(dataDir, "images", "proj-t1"), { recursive: true });
   await writeFile(join(dataDir, "images", "proj-t1", "big.bin"), bigBin);
@@ -430,104 +431,93 @@ it("T-1: on post-move extraction overrun, throws RestorePartialError carrying mo
     now: () => new Date(2026, 4, 26, 16, 0, 0),
   });
 
-  // Read the archive and patch the central directory to under-declare big.bin's size.
+  // Mutate the live DB AFTER backup so we can prove the original (with the mutation)
+  // is what's preserved at movedAsideTo.
+  const liveDb = new Database(dbPath);
+  liveDb.prepare("INSERT INTO t (v) VALUES (?)").run("post-backup-mutation");
+  liveDb.close();
+  const originalDb = await readFile(dbPath);
+
+  // Read the archive buffer and patch the central-directory's uncompressed-size field
+  // for big.bin from ~1.6 MiB to 10 bytes. This causes checkDeclaredSizes to pass
+  // (declaredTotal is now tiny) but then JSZip's decompression throws a size-mismatch
+  // error when it verifies the actual stream length. Change A wraps that throw into
+  // RestorePartialError carrying movedAsideTo.
   const buf = Buffer.from(await readFile(archive));
 
-  // Find EOCD signature by scanning backwards.
-  const EOCD_SIG = 0x06054b50;
-  const CEN_SIG = 0x02014b50;
+  const EOCD_SIG_T1 = 0x06054b50;
+  const CEN_SIG_T1 = 0x02014b50;
   let eocd = -1;
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 0xffff); i--) {
-    if (buf.readUInt32LE(i) === EOCD_SIG) { eocd = i; break; }
+    if (buf.readUInt32LE(i) === EOCD_SIG_T1) { eocd = i; break; }
   }
-  expect(eocd).toBeGreaterThan(-1);
+  expect(eocd).toBeGreaterThan(-1); // sanity: real EOCD found
 
   const cdOffset = buf.readUInt32LE(eocd + 16);
   const cdCount = buf.readUInt16LE(eocd + 10);
 
-  // Walk the central directory to find the big.bin entry.
+  // Walk the central directory to find big.bin and patch its declared uncompressed size.
   let off = cdOffset;
   let patched = false;
   for (let n = 0; n < cdCount; n++) {
-    if (buf.readUInt32LE(off) !== CEN_SIG) break;
+    if (buf.readUInt32LE(off) !== CEN_SIG_T1) break;
     const nameLen = buf.readUInt16LE(off + 28);
     const extraLen = buf.readUInt16LE(off + 30);
     const commentLen = buf.readUInt16LE(off + 32);
     const entryName = buf.toString("utf8", off + 46, off + 46 + nameLen);
     if (entryName === "images/proj-t1/big.bin") {
-      // Overwrite the uncompressed-size field (off+24) with 10 bytes.
-      buf.writeUInt32LE(10, off + 24);
+      buf.writeUInt32LE(10, off + 24); // lie: claim uncompressed size is 10 bytes
       patched = true;
     }
     off += 46 + nameLen + extraLen + commentLen;
   }
 
-  if (!patched) {
-    // JSZip may have compressed big.bin such that the patch point is not found;
-    // this should not happen for a clearly-found archive — skip gracefully.
-    await rm(dataDir, { recursive: true, force: true });
-    return;
-  }
+  expect(patched).toBe(true); // ensure the entry was found and patched
 
   const patchedArchive = join(backupsDir, "smudge-patched.zip");
   await writeFile(patchedArchive, buf);
 
-  // Record the original DB bytes before restore.
-  const originalDb = await readFile(dbPath);
-
-  // A restore that lets through checkDeclaredSizes (limits tuned to allow the fake-small total)
-  // but then overruns on actual extraction.
-  const result = await runRestore({
-    archivePath: patchedArchive,
-    dataDir,
-    confirmToken: basename(patchedArchive),
-    probePort: async () => false,
-    freeBytes: async () => 10 * 1024 * 1024 * 1024, // 10 GiB — plenty
-    limits: { maxUncompressed: 2 * 1024 ** 3, maxRatio: 1000 },
-    now: () => new Date(2026, 4, 26, 16, 1, 0),
-  }).then(
-    () => ({ threw: false as const }),
-    (e: unknown) => ({ threw: true as const, error: e }),
-  );
-
-  if (!result.threw) {
-    // JSZip completed extraction without throwing — our overrun check never fired.
-    // T-1 is infeasible in this JSZip version; report and skip without failing.
-    // The production code is correct; this is a test-harness limitation.
-    // DONE_WITH_CONCERNS: JSZip did not trigger our post-extraction byte-budget guard.
-    await rm(dataDir, { recursive: true, force: true });
-    return;
+  // runRestore with generous limits so checkDeclaredSizes passes the now-tiny declared total,
+  // but the actual extraction triggers either JSZip's own error or our byte-budget check.
+  // Either way, Change A wraps the failure into RestorePartialError.
+  let caughtErr: unknown;
+  try {
+    await runRestore({
+      archivePath: patchedArchive,
+      dataDir,
+      confirmToken: basename(patchedArchive),
+      probePort: async () => false,
+      freeBytes: async () => 10 * 1024 * 1024 * 1024, // 10 GiB — plenty
+      limits: { maxUncompressed: 2 * 1024 ** 3, maxRatio: 1000 },
+      now: () => new Date(2026, 4, 26, 16, 1, 0),
+    });
+  } catch (e) {
+    caughtErr = e;
   }
 
-  // Check whether JSZip itself detected the patched size mismatch and threw its own
-  // internal error (e.g. "Bug: uncompressed data size mismatch"). If so, our byte-budget
-  // code path was never reached — JSZip's own validation intercepted the fraud first.
-  // This is also a security win, but it means T-1's primary assertion (RestorePartialError
-  // carrying movedAsideTo) cannot be verified. Report as DONE_WITH_CONCERNS and skip.
-  const isOurError = result.error instanceof DecompressionBombError;
-  if (!isOurError) {
-    // DONE_WITH_CONCERNS: JSZip verified the central-directory size against the actual
-    // decompressed stream and threw its own internal error before our byte-budget check
-    // fired. The patched-CD approach cannot trigger our post-extraction overrun guard
-    // in this version of JSZip. T-1 is infeasible without a different forge strategy
-    // (e.g. a hand-crafted zip that skips JSZip's size verification path entirely).
-    // Leave T-1 here as documentation; the controller decides next steps.
-    await rm(dataDir, { recursive: true, force: true });
-    return;
-  }
+  // Must have thrown (patched archive is corrupt — extraction always fails).
+  expect(caughtErr).toBeDefined();
 
-  const err = result.error as RestorePartialError;
-  // Must carry movedAsideTo.
+  // Must be instanceof RestorePartialError (and therefore instanceof DecompressionBombError).
+  expect(caughtErr).toBeInstanceOf(RestorePartialError);
+  expect(caughtErr).toBeInstanceOf(DecompressionBombError);
+
+  const err = caughtErr as RestorePartialError;
+
+  // Must carry the move-aside path.
   expect(typeof err.movedAsideTo).toBe("string");
   expect(err.movedAsideTo).toContain(".before-restore-");
 
-  // The move-aside dir must exist and contain the original smudge.db.
+  // The move-aside directory must exist on disk.
   const movedDbPath = join(err.movedAsideTo, "smudge.db");
-  let movedStat;
-  try { movedStat = await stat(movedDbPath); } catch { movedStat = null; }
-  expect(movedStat).not.toBeNull(); // file exists
-  const movedDb = await readFile(movedDbPath);
-  expect(movedDb).toEqual(originalDb); // original content preserved
+  let movedStat: Awaited<ReturnType<typeof stat>> | null = null;
+  try { movedStat = await stat(movedDbPath); } catch { /* intentionally empty */ }
+  expect(movedStat).not.toBeNull(); // original smudge.db preserved at movedAsideTo
+
+  // The preserved DB must contain the post-backup mutation (i.e. the ORIGINAL live data,
+  // not the backup snapshot).
+  const movedDbBytes = await readFile(movedDbPath);
+  expect(movedDbBytes).toEqual(originalDb);
 
   // Cleanup
   await rm(err.movedAsideTo, { recursive: true, force: true });

@@ -12,7 +12,9 @@ export class ZipSlipError extends Error {}
 export class DecompressionBombError extends Error {}
 /** Thrown when the post-move extraction byte-budget is exceeded; carries the move-aside path. */
 export class RestorePartialError extends DecompressionBombError {
-  constructor(message: string, readonly movedAsideTo: string) { super(message); }
+  constructor(message: string, readonly movedAsideTo: string, options?: { cause?: unknown }) {
+    super(message, options as ErrorOptions);
+  }
 }
 /** Thrown when a precondition for restore is not met (e.g. missing smudge.db, server running,
  *  token mismatch, or insufficient free space). Lets callers distinguish operator/precondition
@@ -189,29 +191,41 @@ export async function runRestore(opts: RestoreOptions): Promise<{ movedAsideTo: 
   });
   await mkdir(opts.dataDir, { recursive: true });
 
-  // 7. extract with a post-extraction cumulative-size assertion
-  let written = 0;
-  const zip = await JSZip.loadAsync(buf);
-  for (const name of names) {
-    const file = zip.file(name);
-    if (!file) continue;
-    // NOTE: file.async("nodebuffer") decompresses the full entry into memory here —
-    // a single entry is fully in RAM before being written. The byte-budget below
-    // bounds DISK usage (cumulative write), not RAM (the declared-size cap #1 bounds
-    // the honest case; this assertion catches a lying central directory).
-    const bytes = await file.async("nodebuffer");
-    written += bytes.length;
-    if (written > declaredTotal + 1024 * 1024) {
-      // Rare lying-archive case (central directory under-declared sizes). We do
-      // NOT roll back the partial extraction: the original data is preserved at
-      // movedAsideTo, so there is no data loss — the operator recovers from the
-      // move-aside dir. See design §2b. RestorePartialError extends
-      // DecompressionBombError so existing instanceof checks still hold.
-      throw new RestorePartialError("extraction exceeded declared size — aborting", movedAsideTo);
+  // 7. extract with a post-extraction cumulative-size assertion.
+  // Wrap entirely so ANY failure after the move-aside (JSZip internal throws, ENOSPC,
+  // etc.) is surfaced as RestorePartialError carrying movedAsideTo — the operator
+  // always learns where the original data is preserved.
+  try {
+    let written = 0;
+    const zip = await JSZip.loadAsync(buf);
+    for (const name of names) {
+      const file = zip.file(name);
+      if (!file) continue;
+      // NOTE: file.async("nodebuffer") decompresses the full entry into memory here —
+      // a single entry is fully in RAM before being written. The byte-budget below
+      // bounds DISK usage (cumulative write), not RAM (the declared-size cap #1 bounds
+      // the honest case; this assertion catches a lying central directory).
+      const bytes = await file.async("nodebuffer");
+      written += bytes.length;
+      if (written > declaredTotal + 1024 * 1024) {
+        // Rare lying-archive case (central directory under-declared sizes). We do
+        // NOT roll back the partial extraction: the original data is preserved at
+        // movedAsideTo, so there is no data loss — the operator recovers from the
+        // move-aside dir. See design §2b. RestorePartialError extends
+        // DecompressionBombError so existing instanceof checks still hold.
+        throw new RestorePartialError("extraction exceeded declared size — aborting", movedAsideTo);
+      }
+      const dest = join(opts.dataDir, name);
+      await mkdir(join(dest, ".."), { recursive: true });
+      await writeFile(dest, bytes);
     }
-    const dest = join(opts.dataDir, name);
-    await mkdir(join(dest, ".."), { recursive: true });
-    await writeFile(dest, bytes);
+  } catch (e) {
+    if (e instanceof RestorePartialError) throw e;
+    throw new RestorePartialError(
+      `restore failed after move-aside (original preserved at ${movedAsideTo}): ${e instanceof Error ? e.message : String(e)}`,
+      movedAsideTo,
+      { cause: e },
+    );
   }
   return { movedAsideTo };
 }
