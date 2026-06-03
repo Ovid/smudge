@@ -584,7 +584,7 @@ export function buildReport({
   if (skipped > 0) {
     const noun = skipped === 1 ? "entry" : "entries";
     lines.push(
-      `info: skipped ${skipped} non-registry dependency ${noun} (git/file/link — no publish date to check).`,
+      `info: skipped ${skipped} non-registry dependency ${noun} (git/file/unrecognized — no publish date to check).`,
     );
   }
 

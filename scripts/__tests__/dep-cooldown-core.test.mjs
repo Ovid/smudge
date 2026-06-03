@@ -906,6 +906,23 @@ describe("buildReport", () => {
     expect(lines.join("\n")).toMatch(/skipped 1 non-registry dependency entry\b/);
   });
 
+  // S7: the skipped count includes git/file (non-registry resolved) deps AND
+  // malformed/non-object entries ("unrecognized"), but NOT link: true entries
+  // (those are `continue`d without counting). The wording must name what is
+  // actually counted, not a category (link) that isn't.
+  it("names the actually-counted skipped categories, not link", () => {
+    const { lines } = buildReport({
+      violations: [],
+      staleWaivers: [],
+      orphanedWaivers: [],
+      skipped: 3,
+      cooldownDays: 7,
+    });
+    const text = lines.join("\n");
+    expect(text).toMatch(/git\/file\/unrecognized/);
+    expect(text).not.toMatch(/link/);
+  });
+
   it("returns no lines and is non-blocking for a clean run (all empty)", () => {
     const { lines, blocking } = buildReport({
       violations: [],
