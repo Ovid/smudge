@@ -158,11 +158,17 @@ immutable, so entries never expire and the cache only grows. Two consumers:
 - **CI (authoritative gate):** because CI checks out fresh, the cache is
   **persisted across runs via `actions/cache`** so the gate does not refetch the
   entire tree's full metadata documents (hundreds of MB) on every run. Keying:
-  a **stable primary key plus `restore-keys` prefix** so the accumulated cache
-  is restored and extended rather than invalidated whenever the lockfile changes
-  (keying solely on the lockfile hash would discard the cache at exactly the
-  moment new dependencies are added). Only genuinely-new `name@version` pairs
-  trigger a fetch.
+  a **per-run-unique primary key (`dep-cooldown-${{ github.run_id }}`) plus a
+  stable `restore-keys` prefix**. The implementation deliberately diverged here
+  from the original "stable primary key" sketch: GitHub Actions caches are
+  *immutable*, so a stable primary key can be written exactly once and then never
+  grows — stragglers fetched on a later run would be re-fetched forever (the
+  exact-key restore hit suppresses the save). A per-run key always writes a fresh
+  superset at job end, while the stable `restore-keys` prefix still restores the
+  most recent prior cache so each run fetches only what is new. The payload is a
+  tiny JSON date map and GitHub auto-evicts by age/LRU, so the churn is bounded.
+  See the inline `ci.yml` comment and commit `b5bd9d2`. Only genuinely-new
+  `name@version` pairs trigger a fetch.
 
 The cache is an optimization for *speed*, never the source of truth for a
 *missing* lookup — a cache miss falls through to a live fetch, and a failed
@@ -221,9 +227,13 @@ lookup is handled per "Edge cases" below, not silently passed.
 
 ## Edge cases & error handling
 
-- **Non-registry deps** (git, `file:`, `link:`, workspace packages) have no
-  registry publish date → skipped, with an informational count reported. They
-  cannot be cooldown-checked.
+- **Non-registry deps** (git, `file:`, unrecognized sources) have no registry
+  publish date → skipped, with an informational count reported. They cannot be
+  cooldown-checked. **Symlinked workspace deps (`link: true`) and workspace/own
+  packages are passed over entirely and are NOT included in the skipped count** —
+  they are local, not fetched artifacts, so they are not a "dependency the gate
+  declined to check." (The report wording is "git/file/unrecognized", not
+  "link".)
 - **Two distinct failure classes, handled differently** (the gate must not
   conflate "can't verify" with "found a violation"):
   - **Infrastructure failure** — registry unreachable, timeout, 5xx, or 429
@@ -258,7 +268,9 @@ offline. Cases:
   `send`) → resolves the correct package.
 - Same `name@version` at two lockfile paths → exactly **one** violation row
   (dedupe).
-- Non-registry dep (git/file/link/workspace) → **skipped**, counted.
+- Non-registry dep (git/file/unrecognized) → **skipped**, counted. A `link: true`
+  workspace symlink and workspace/own packages → **passed over**, NOT counted in
+  the skipped tally.
 - Registry **infrastructure failure** (timeout/5xx/429) after retries →
   non-zero **infra** exit, distinct message.
 - Version **absent from `time`** on a reachable registry → **violation**.
@@ -272,10 +284,13 @@ noise (per the project's zero-warnings testing rule).
 - **`Makefile`:** add a `dep-cooldown:` target invoking
   `node scripts/dep-cooldown.mjs`. **Not** added to `make all`.
 - **`.github/workflows/ci.yml`:** add a `dep-cooldown` job (checkout →
-  `setup-node@v4` (node 22) → `npm ci` → restore/save the publish-time cache via
-  `actions/cache` (stable key + `restore-keys`) → `make dep-cooldown`), running
-  in parallel with the existing `lint-format`, `test-build`, and `e2e` jobs.
-  This job is the authoritative gate.
+  `setup-node@v4` (node 22) → restore/save the publish-time cache via
+  `actions/cache` (per-run-unique key + stable `restore-keys`) →
+  `make dep-cooldown`), running in parallel with the existing `lint-format`,
+  `test-build`, and `e2e` jobs. This job is the authoritative gate. No `npm ci`
+  step: the gate reads only `package-lock.json` + node built-ins, so installing
+  dependencies is both wasted CI time and unnecessary attack surface on the very
+  runner whose job is supply-chain safety.
 - **`.gitignore`:** ignore the local publish-time cache path.
 - **Docs:** add a "Dependency Cooldown" policy section to `CLAUDE.md`
   (alongside the existing "Dependency Licenses" policy), describing the 7-day

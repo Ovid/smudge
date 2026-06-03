@@ -172,9 +172,13 @@ export function isValidRegistryName(name) {
 }
 
 /**
- * Is `value` a recognizable npm package-lock **v3** object — one this gate can
- * actually scan? v3 carries every dependency under a `packages` map; v1/v2 used
- * `dependencies` and lack the per-entry `resolved`/`version` shape we read. The
+ * Is `value` a recognizable npm package-lock object this gate can actually scan?
+ * It must carry every dependency under a `packages` map with the per-entry
+ * `resolved`/`version` shape we read. lockfileVersion 2 AND 3 both carry that
+ * map (v2 also keeps a legacy `dependencies` tree for old tooling, which we
+ * ignore), so both pass; only the long-obsolete v1 — which had `dependencies`
+ * alone and no `packages` map — is rejected. (The name says "v3" for the modern
+ * default; the accepted shape is "has a usable `packages` map".) The
  * lockfile is read from disk and must be shape-checked BEFORE use: a degenerate
  * but still-valid-JSON value (`{}`, a v1/v2 lockfile, `{packages: 5}`,
  * `{packages: []}`, a bare primitive, or `null`) collects zero registry versions,

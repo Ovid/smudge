@@ -311,7 +311,9 @@ local full-pass stays network-free).
 
 - **Scope:** every registry-resolved version in the lockfile — **direct and
   transitive** (transitive is where real attacks land). Non-registry deps
-  (git/file/link) are skipped (no publish date).
+  (git/file/unrecognized) are skipped — no publish date to check. Symlinked
+  workspace deps (`link: true`) are also passed over (not counted in the
+  skipped tally, since they are local, not a fetched artifact).
 - **Escape hatch:** `dependency-cooldown-allowlist.json` (repo root, committed).
   Add `{ "package", "version", "reason", "added" }` to adopt a sub-cooldown
   version — for an urgent CVE fix **or** any new dep needed before it is 7 days
