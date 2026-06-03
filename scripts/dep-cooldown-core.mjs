@@ -111,7 +111,19 @@ export function tarballMatchesIdentity(resolved, name, version) {
   }
   const slash = name.lastIndexOf("/");
   const unscoped = slash === -1 ? name : name.slice(slash + 1);
-  return url.pathname === `/${name}/-/${unscoped}-${version}.tgz`;
+  // WHATWG URL leaves the pathname percent-encoded (it does NOT decode %40/%2F),
+  // so a non-canonical lockfile whose scoped `resolved` is percent-encoded would
+  // false-mismatch the unencoded expected path and spuriously divert a legitimate
+  // dep to `mismatched` (a blocking outcome). Decode before comparing so
+  // equivalent encodings are equal. A malformed escape makes decodeURIComponent
+  // throw — a genuinely unusable URL that stays a mismatch (fail-closed). (S2)
+  let pathname;
+  try {
+    pathname = decodeURIComponent(url.pathname);
+  } catch {
+    return false;
+  }
+  return pathname === `/${name}/-/${unscoped}-${version}.tgz`;
 }
 
 /**

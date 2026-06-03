@@ -348,6 +348,29 @@ describe("tarballMatchesIdentity", () => {
     expect(tarballMatchesIdentity(null, "react", "18.3.1")).toBe(false);
     expect(tarballMatchesIdentity("not a url", "react", "18.3.1")).toBe(false);
   });
+
+  // S2: a non-canonical lockfile whose scoped `resolved` is percent-encoded
+  // (%40 for @, %2F for the scope slash) names the SAME tarball as the unencoded
+  // form. WHATWG URL leaves the pathname percent-encoded, so a raw === comparison
+  // would false-mismatch and divert a legitimate dep to `mismatched` (a spurious
+  // block). Decoding before comparison treats equivalent encodings as equal.
+  it("matches a percent-encoded scoped tarball path (%40/%2F)", () => {
+    expect(
+      tarballMatchesIdentity(
+        "https://registry.npmjs.org/%40types%2Fnode/-/node-22.0.0.tgz",
+        "@types/node",
+        "22.0.0",
+      ),
+    ).toBe(true);
+  });
+
+  // A malformed percent-escape is a genuinely unusable URL — stays a mismatch
+  // (fail-closed), never throws out of the comparison.
+  it("rejects a resolved URL with a malformed percent-escape", () => {
+    expect(tarballMatchesIdentity("https://registry.npmjs.org/%zz/-/x-1.0.0.tgz", "x", "1.0.0")).toBe(
+      false,
+    );
+  });
 });
 
 describe("isV3Lockfile", () => {
