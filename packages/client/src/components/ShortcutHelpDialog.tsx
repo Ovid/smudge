@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
 import { STRINGS } from "../strings";
+import { useDialogLifecycle } from "../hooks/useDialogLifecycle";
 
 interface ShortcutHelpDialogProps {
   open: boolean;
@@ -7,27 +7,14 @@ interface ShortcutHelpDialogProps {
 }
 
 export function ShortcutHelpDialog({ open, onClose }: ShortcutHelpDialogProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    if (open) {
-      if (!dialog.open) dialog.showModal();
-    } else {
-      if (dialog.open) dialog.close();
-    }
-  }, [open]);
+  const { dialogRef, onBackdropClick } = useDialogLifecycle({ open, onClose });
 
   return (
     <dialog
       ref={dialogRef}
       aria-label={STRINGS.shortcuts.dialogTitle}
       className="z-50 rounded-xl bg-bg-primary p-8 shadow-xl max-w-sm w-full border border-border/60 backdrop:bg-black/30"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      onClose={onClose}
+      onClick={onBackdropClick}
     >
       <h3 className="text-lg font-semibold text-text-primary mb-5">
         {STRINGS.shortcuts.dialogTitle}
