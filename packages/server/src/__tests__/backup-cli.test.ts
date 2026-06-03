@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, mkdir, writeFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import Database from "better-sqlite3";
 
 const run = promisify(execFile);
@@ -21,6 +21,25 @@ async function manualArchivesBefore(): Promise<Set<string>> {
     );
   } catch {
     return new Set();
+  }
+}
+
+/**
+ * A successful restore moves the data dir aside to `<dataDir>.before-restore-<stamp>`
+ * (a sibling in the same parent). Remove any such sibling so the test leaves no
+ * residue in os.tmpdir().
+ */
+async function removeMovedAsideSiblings(dir: string): Promise<void> {
+  try {
+    const parent = dirname(dir);
+    const prefix = `${basename(dir)}.before-restore-`;
+    for (const entry of await readdir(parent)) {
+      if (entry.startsWith(prefix)) {
+        await rm(join(parent, entry), { recursive: true, force: true });
+      }
+    }
+  } catch {
+    /* parent unreadable / already gone — nothing to clean */
   }
 }
 
@@ -63,6 +82,7 @@ describe("backup CLI wiring", () => {
     } finally {
       if (archive) await rm(archive, { force: true });
       await rm(dataDir, { recursive: true, force: true });
+      await removeMovedAsideSiblings(dataDir);
     }
   }, 60_000);
 
@@ -101,6 +121,7 @@ describe("backup CLI wiring", () => {
       srv.close();
       if (archive) await rm(archive, { force: true });
       await rm(dataDir, { recursive: true, force: true });
+      await removeMovedAsideSiblings(dataDir);
     }
   }, 60_000);
 });
