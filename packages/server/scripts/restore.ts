@@ -18,23 +18,37 @@ if (!archivePath) {
 const port = Number(process.env.SMUDGE_PORT ?? 3456);
 const probePort = () =>
   new Promise<boolean>((resolve) => {
-    let done = false;
-    const finish = (v: boolean) => {
-      if (!done) {
-        done = true;
-        resolve(v);
+    const hosts = ["127.0.0.1", "::1"];
+    let pending = hosts.length;
+    let settled = false;
+    const succeed = () => {
+      if (!settled) {
+        settled = true;
+        resolve(true);
       }
     };
-    for (const host of ["127.0.0.1", "::1"]) {
+    const failOne = () => {
+      pending -= 1;
+      if (!settled && pending === 0) {
+        settled = true;
+        resolve(false);
+      }
+    };
+    for (const host of hosts) {
+      let socketDone = false;
       const s = connect({ host, port }, () => {
+        socketDone = true;
         s.destroy();
-        finish(true);
+        succeed();
       });
-      s.on("error", () => finish(false));
-      s.setTimeout(500, () => {
+      const fail = () => {
+        if (socketDone) return;
+        socketDone = true;
         s.destroy();
-        finish(false);
-      });
+        failOne();
+      };
+      s.on("error", fail);
+      s.setTimeout(500, fail);
     }
   });
 
@@ -53,8 +67,8 @@ try {
     confirmToken,
     probePort,
     limits: {
-      maxUncompressed: Number(arg("max-uncompressed") ?? DEFAULT_BOMB_LIMITS.maxUncompressed),
-      maxRatio: Number(arg("max-ratio") ?? DEFAULT_BOMB_LIMITS.maxRatio),
+      maxUncompressed: Number(arg("max-uncompressed")) || DEFAULT_BOMB_LIMITS.maxUncompressed,
+      maxRatio: Number(arg("max-ratio")) || DEFAULT_BOMB_LIMITS.maxRatio,
     },
   });
   console.log(`Restored from ${archivePath}. Previous data preserved at ${movedAsideTo}.`);
