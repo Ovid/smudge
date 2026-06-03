@@ -9,6 +9,57 @@ export const DEFAULT_KEEP = 10;
 export const DEFAULT_BOMB_LIMITS = { maxUncompressed: 2 * 1024 ** 3, maxRatio: 10 } as const;
 
 export class ZipSlipError extends Error {}
+export class DecompressionBombError extends Error {}
+
+const EOCD_SIG = 0x06054b50;
+const CEN_SIG = 0x02014b50;
+const ZIP64_SENTINEL = 0xffffffff;
+
+/** Parse declared uncompressed sizes from the central directory without decompressing. */
+export function readCentralDirectorySizes(buf: Buffer): { path: string; uncompressedSize: number }[] {
+  // Locate EOCD by scanning backwards (max comment 64KiB).
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 0xffff); i--) {
+    if (buf.readUInt32LE(i) === EOCD_SIG) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new DecompressionBombError("not a valid zip (no EOCD)");
+  const count = buf.readUInt16LE(eocd + 10);
+  let off = buf.readUInt32LE(eocd + 16);
+  if (off === ZIP64_SENTINEL) throw new DecompressionBombError("zip64 archive refused (declared sizes unverifiable)");
+  const out: { path: string; uncompressedSize: number }[] = [];
+  for (let n = 0; n < count; n++) {
+    if (buf.readUInt32LE(off) !== CEN_SIG) throw new DecompressionBombError("corrupt central directory");
+    const uncompressed = buf.readUInt32LE(off + 24);
+    if (uncompressed === ZIP64_SENTINEL) throw new DecompressionBombError("zip64 entry refused");
+    const nameLen = buf.readUInt16LE(off + 28);
+    const extraLen = buf.readUInt16LE(off + 30);
+    const commentLen = buf.readUInt16LE(off + 32);
+    const path = buf.toString("utf8", off + 46, off + 46 + nameLen);
+    out.push({ path, uncompressedSize: uncompressed });
+    off += 46 + nameLen + extraLen + commentLen;
+  }
+  return out;
+}
+
+export interface BombLimits { maxUncompressed: number; maxRatio: number; }
+
+export function checkDeclaredSizes(
+  entries: { uncompressedSize: number }[],
+  compressedTotal: number,
+  limits: BombLimits,
+): void {
+  const total = entries.reduce((n, e) => n + e.uncompressedSize, 0);
+  if (total > limits.maxUncompressed) {
+    throw new DecompressionBombError(
+      `decompression bomb: declared ${total} bytes exceeds cap ${limits.maxUncompressed}`,
+    );
+  }
+  if (compressedTotal > 0 && total / compressedTotal > limits.maxRatio) {
+    throw new DecompressionBombError(
+      `decompression bomb: ratio ${(total / compressedTotal).toFixed(1)} exceeds ${limits.maxRatio}`,
+    );
+  }
+}
 
 export function validateEntryPaths(entryPaths: string[], targetRoot: string): void {
   const root = resolve(targetRoot);

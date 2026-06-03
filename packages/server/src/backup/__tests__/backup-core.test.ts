@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import JSZip from "jszip";
-import { isoStampLocal, buildBackupName, runBackup, ZipSlipError, validateEntryPaths } from "../backup-core";
+import { isoStampLocal, buildBackupName, runBackup, ZipSlipError, validateEntryPaths, readCentralDirectorySizes, checkDeclaredSizes, DecompressionBombError, DEFAULT_BOMB_LIMITS } from "../backup-core";
 
 describe("isoStampLocal", () => {
   it("formats local time as YYYY-MM-DD-HHmmss with hyphens only", () => {
@@ -94,6 +94,34 @@ describe("validateEntryPaths", () => {
     // This also documents that the '..' guard catches it (belt-and-suspenders).
     const bad = "../target-evil/smudge.db";
     expect(() => validateEntryPaths([bad], root)).toThrow(ZipSlipError);
+  });
+});
+
+it("readCentralDirectorySizes returns each entry's declared uncompressed size", async () => {
+  const zip = new JSZip();
+  zip.file("a.txt", "x".repeat(1000));
+  zip.file("b.txt", "y".repeat(2000));
+  const buf = await zip.generateAsync({ type: "nodebuffer" });
+  const sizes = readCentralDirectorySizes(buf);
+  const total = sizes.reduce((n, e) => n + e.uncompressedSize, 0);
+  expect(total).toBe(3000);
+});
+
+describe("checkDeclaredSizes", () => {
+  it("refuses when total exceeds maxUncompressed", () => {
+    expect(() =>
+      checkDeclaredSizes([{ uncompressedSize: 10 }], 1, { maxUncompressed: 5, maxRatio: 1000 }),
+    ).toThrow(DecompressionBombError);
+  });
+  it("refuses when ratio exceeds maxRatio", () => {
+    expect(() =>
+      checkDeclaredSizes([{ uncompressedSize: 1000 }], 10, { maxUncompressed: 1e9, maxRatio: 10 }),
+    ).toThrow(DecompressionBombError);
+  });
+  it("accepts a normal 2-4x archive", () => {
+    expect(() =>
+      checkDeclaredSizes([{ uncompressedSize: 300 }], 100, DEFAULT_BOMB_LIMITS),
+    ).not.toThrow();
   });
 });
 
