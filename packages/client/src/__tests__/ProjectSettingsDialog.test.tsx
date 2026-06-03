@@ -531,4 +531,17 @@ describe("ProjectSettingsDialog", () => {
       expect(screen.getByRole("alert")).toHaveTextContent(/unable to load settings/i);
     });
   });
+
+  it("calls onClose when clicking the backdrop (4b.16)", () => {
+    render(
+      <ProjectSettingsDialog
+        open={true}
+        project={defaultProject as never}
+        onClose={onClose}
+        onUpdate={onUpdate}
+      />,
+    );
+    fireEvent.click(screen.getByRole("dialog"));
+    expect(onClose).toHaveBeenCalled();
+  });
 });

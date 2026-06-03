@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import { STRINGS } from "../strings";
 import { mapApiError, clientError } from "../errors";
 import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
+import { useDialogLifecycle } from "../hooks/useDialogLifecycle";
 
 const TIMEZONES = (() => {
   try {
@@ -33,7 +34,7 @@ export function ProjectSettingsDialog({
   onClose,
   onUpdate,
 }: ProjectSettingsDialogProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const { dialogRef, onBackdropClick } = useDialogLifecycle({ open, onClose });
   const [wordCountTarget, setWordCountTarget] = useState(
     project.target_word_count != null ? String(project.target_word_count) : "",
   );
@@ -148,27 +149,6 @@ export function ProjectSettingsDialog({
   // S-10 (Phase 4b.3b): both timezoneOp and fieldOp now auto-abort on
   // unmount via the useAbortableAsyncOperation hook, so the explicit
   // unmount-cleanup useEffect is no longer needed.
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-
-    if (open) {
-      if (!dialog.open) {
-        try {
-          dialog.showModal();
-        } catch {
-          // happy-dom does not support showModal — open attribute handles visibility
-        }
-      }
-    } else {
-      try {
-        dialog.close();
-      } catch {
-        // happy-dom does not support close
-      }
-    }
-  }, [open]);
 
   async function saveField(data: Parameters<typeof api.projects.update>[1]) {
     setFieldSaveError(null);
@@ -301,8 +281,8 @@ export function ProjectSettingsDialog({
   return (
     <dialog
       ref={dialogRef}
-      onClose={onClose}
-      className="w-full max-w-sm rounded-none rounded-l-xl bg-bg-primary p-6 shadow-xl backdrop:bg-black/50 overflow-y-auto"
+      onClick={onBackdropClick}
+      className="w-full max-w-sm rounded-l-xl backdrop:bg-black/50 border-none m-0 p-0"
       style={{
         position: "fixed",
         right: "0",
@@ -313,125 +293,127 @@ export function ProjectSettingsDialog({
         maxHeight: "100vh",
       }}
     >
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-text-primary font-sans">
-          {STRINGS.projectSettings.heading}
-        </h2>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-text-muted hover:text-text-secondary rounded-md p-1 focus:outline-none focus:ring-2 focus:ring-focus-ring"
-          aria-label={STRINGS.projectSettings.close}
-        >
-          ✕
-        </button>
-      </div>
-
-      {(fieldSaveError || timezoneSaveError) && (
-        <p className="mb-4 text-sm text-status-error" role="alert">
-          {fieldSaveError || timezoneSaveError}
-        </p>
-      )}
-
-      <div className="flex flex-col gap-4">
-        <div>
-          <label
-            className="block text-sm font-medium text-text-secondary mb-1 font-sans"
-            htmlFor="project-word-count-target"
+      <div className="w-full h-full bg-bg-primary p-6 overflow-y-auto rounded-l-xl shadow-xl">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-text-primary font-sans">
+            {STRINGS.projectSettings.heading}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-text-muted hover:text-text-secondary rounded-md p-1 focus:outline-none focus:ring-2 focus:ring-focus-ring"
+            aria-label={STRINGS.projectSettings.close}
           >
-            {STRINGS.projectSettings.wordCountTarget}
-          </label>
-          <div className="flex gap-2">
-            <input
-              id="project-word-count-target"
-              type="number"
-              min="1"
-              step="1"
-              value={wordCountTarget}
-              onChange={(e) => setWordCountTarget(e.target.value)}
-              onBlur={handleWordCountBlur}
-              className="flex-1 rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring"
-              placeholder={STRINGS.projectSettings.wordCountPlaceholder}
-            />
-            <button
-              type="button"
-              data-clear-word-count="true"
-              onClick={() => {
-                setWordCountTarget("");
-                saveField({ target_word_count: null });
-              }}
-              className="rounded-lg px-3 py-2 text-sm text-text-secondary hover:bg-bg-secondary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring"
+            ✕
+          </button>
+        </div>
+
+        {(fieldSaveError || timezoneSaveError) && (
+          <p className="mb-4 text-sm text-status-error" role="alert">
+            {fieldSaveError || timezoneSaveError}
+          </p>
+        )}
+
+        <div className="flex flex-col gap-4">
+          <div>
+            <label
+              className="block text-sm font-medium text-text-secondary mb-1 font-sans"
+              htmlFor="project-word-count-target"
             >
-              {STRINGS.projectSettings.clear}
-            </button>
+              {STRINGS.projectSettings.wordCountTarget}
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="project-word-count-target"
+                type="number"
+                min="1"
+                step="1"
+                value={wordCountTarget}
+                onChange={(e) => setWordCountTarget(e.target.value)}
+                onBlur={handleWordCountBlur}
+                className="flex-1 rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring"
+                placeholder={STRINGS.projectSettings.wordCountPlaceholder}
+              />
+              <button
+                type="button"
+                data-clear-word-count="true"
+                onClick={() => {
+                  setWordCountTarget("");
+                  saveField({ target_word_count: null });
+                }}
+                className="rounded-lg px-3 py-2 text-sm text-text-secondary hover:bg-bg-secondary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring"
+              >
+                {STRINGS.projectSettings.clear}
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div>
-          <label
-            className="block text-sm font-medium text-text-secondary mb-1 font-sans"
-            htmlFor="project-deadline"
-          >
-            {STRINGS.projectSettings.deadline}
-          </label>
-          <div className="flex gap-2">
-            <input
-              id="project-deadline"
-              type="date"
-              value={deadline}
-              onChange={(e) => handleDeadlineChange(e.target.value)}
-              className="flex-1 rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                setDeadline("");
-                saveField({ target_deadline: null });
-              }}
-              className="rounded-lg px-3 py-2 text-sm text-text-secondary hover:bg-bg-secondary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring"
+          <div>
+            <label
+              className="block text-sm font-medium text-text-secondary mb-1 font-sans"
+              htmlFor="project-deadline"
             >
-              {STRINGS.projectSettings.clear}
-            </button>
+              {STRINGS.projectSettings.deadline}
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="project-deadline"
+                type="date"
+                value={deadline}
+                onChange={(e) => handleDeadlineChange(e.target.value)}
+                className="flex-1 rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setDeadline("");
+                  saveField({ target_deadline: null });
+                }}
+                className="rounded-lg px-3 py-2 text-sm text-text-secondary hover:bg-bg-secondary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring"
+              >
+                {STRINGS.projectSettings.clear}
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div>
-          <label
-            className="block text-sm font-medium text-text-secondary mb-1 font-sans"
-            htmlFor="project-author-name"
-          >
-            {STRINGS.projectSettings.authorName}
-          </label>
-          <input
-            id="project-author-name"
-            type="text"
-            value={authorName}
-            onChange={(e) => setAuthorName(e.target.value)}
-            onBlur={handleAuthorNameBlur}
-            className="w-full rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring"
-            placeholder={STRINGS.projectSettings.authorNamePlaceholder}
-          />
-        </div>
+          <div>
+            <label
+              className="block text-sm font-medium text-text-secondary mb-1 font-sans"
+              htmlFor="project-author-name"
+            >
+              {STRINGS.projectSettings.authorName}
+            </label>
+            <input
+              id="project-author-name"
+              type="text"
+              value={authorName}
+              onChange={(e) => setAuthorName(e.target.value)}
+              onBlur={handleAuthorNameBlur}
+              className="w-full rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring"
+              placeholder={STRINGS.projectSettings.authorNamePlaceholder}
+            />
+          </div>
 
-        <div className="border-t border-border/40 pt-4">
-          <label
-            className="block text-sm font-medium text-text-secondary mb-1 font-sans"
-            htmlFor="settings-timezone"
-          >
-            {STRINGS.settings.timezoneLabel}
-          </label>
-          <select
-            id="settings-timezone"
-            value={timezone}
-            onChange={(e) => handleTimezoneChange(e.target.value)}
-            className="w-full rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring"
-          >
-            {TIMEZONES.map((tz) => (
-              <option key={tz} value={tz}>
-                {tz}
-              </option>
-            ))}
-          </select>
+          <div className="border-t border-border/40 pt-4">
+            <label
+              className="block text-sm font-medium text-text-secondary mb-1 font-sans"
+              htmlFor="settings-timezone"
+            >
+              {STRINGS.settings.timezoneLabel}
+            </label>
+            <select
+              id="settings-timezone"
+              value={timezone}
+              onChange={(e) => handleTimezoneChange(e.target.value)}
+              className="w-full rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary font-sans focus:outline-none focus:ring-2 focus:ring-focus-ring"
+            >
+              {TIMEZONES.map((tz) => (
+                <option key={tz} value={tz}>
+                  {tz}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
     </dialog>
