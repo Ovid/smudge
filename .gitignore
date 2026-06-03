@@ -170,3 +170,5 @@ playwright-report/
 # Operational backups (Phase 4b.14) — never commit the writer's manuscript.
 backups/
 *.backup-staging.db
+# Restore moves the data dir aside to <data-dir>.before-restore-<time>/ — never commit it.
+*.before-restore-*/
