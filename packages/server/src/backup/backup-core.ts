@@ -12,7 +12,11 @@ export class ZipSlipError extends Error {}
 export class DecompressionBombError extends Error {}
 /** Thrown when the post-move extraction byte-budget is exceeded; carries the move-aside path. */
 export class RestorePartialError extends DecompressionBombError {
-  constructor(message: string, readonly movedAsideTo: string, options?: { cause?: unknown }) {
+  constructor(
+    message: string,
+    readonly movedAsideTo: string,
+    options?: { cause?: unknown },
+  ) {
     super(message, options as ErrorOptions);
   }
 }
@@ -27,20 +31,27 @@ const CEN_SIG = 0x02014b50;
 const ZIP64_SENTINEL = 0xffffffff;
 
 /** Parse declared uncompressed sizes from the central directory without decompressing. */
-export function readCentralDirectorySizes(buf: Buffer): { path: string; uncompressedSize: number }[] {
+export function readCentralDirectorySizes(
+  buf: Buffer,
+): { path: string; uncompressedSize: number }[] {
   // Locate EOCD by scanning backwards (max comment 64KiB).
   let eocd = -1;
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 0xffff); i--) {
-    if (buf.readUInt32LE(i) === EOCD_SIG) { eocd = i; break; }
+    if (buf.readUInt32LE(i) === EOCD_SIG) {
+      eocd = i;
+      break;
+    }
   }
   if (eocd < 0) throw new DecompressionBombError("not a valid zip (no EOCD)");
   const count = buf.readUInt16LE(eocd + 10);
   let off = buf.readUInt32LE(eocd + 16);
-  if (off === ZIP64_SENTINEL) throw new DecompressionBombError("zip64 archive refused (declared sizes unverifiable)");
+  if (off === ZIP64_SENTINEL)
+    throw new DecompressionBombError("zip64 archive refused (declared sizes unverifiable)");
   const out: { path: string; uncompressedSize: number }[] = [];
   for (let n = 0; n < count; n++) {
     try {
-      if (buf.readUInt32LE(off) !== CEN_SIG) throw new DecompressionBombError("corrupt central directory");
+      if (buf.readUInt32LE(off) !== CEN_SIG)
+        throw new DecompressionBombError("corrupt central directory");
       const uncompressed = buf.readUInt32LE(off + 24);
       if (uncompressed === ZIP64_SENTINEL) throw new DecompressionBombError("zip64 entry refused");
       const nameLen = buf.readUInt16LE(off + 28);
@@ -57,7 +68,10 @@ export function readCentralDirectorySizes(buf: Buffer): { path: string; uncompre
   return out;
 }
 
-export interface BombLimits { maxUncompressed: number; maxRatio: number; }
+export interface BombLimits {
+  maxUncompressed: number;
+  maxRatio: number;
+}
 
 export function checkDeclaredSizes(
   entries: { uncompressedSize: number }[],
@@ -148,10 +162,12 @@ export interface RestoreOptions {
 
 export async function runRestore(opts: RestoreOptions): Promise<{ movedAsideTo: string }> {
   const limits = opts.limits ?? DEFAULT_BOMB_LIMITS;
-  const freeBytesImpl = opts.freeBytes ?? (async (p: string) => {
-    const s = await statfs(p);
-    return s.bavail * s.bsize;
-  });
+  const freeBytesImpl =
+    opts.freeBytes ??
+    (async (p: string) => {
+      const s = await statfs(p);
+      return s.bavail * s.bsize;
+    });
   const buf = await readFile(opts.archivePath);
 
   // 1. zip-slip + presence validation (read names from central directory)
@@ -172,7 +188,9 @@ export async function runRestore(opts: RestoreOptions): Promise<{ movedAsideTo: 
   }
   // 4. typed-filename confirmation
   if (opts.confirmToken !== basename(opts.archivePath)) {
-    throw new RestorePreconditionError("restore not confirmed: token did not match the backup filename.");
+    throw new RestorePreconditionError(
+      "restore not confirmed: token did not match the backup filename.",
+    );
   }
   // 5. free-space pre-check (design §2b defense #3): must have declaredTotal + 100 MiB
   // available on the partition. Use the PARENT of dataDir (always exists, same partition).
@@ -186,8 +204,9 @@ export async function runRestore(opts: RestoreOptions): Promise<{ movedAsideTo: 
   const stamp = isoStampLocal((opts.now ?? (() => new Date()))());
   const movedAsideTo = `${opts.dataDir}.before-restore-${stamp}`;
   await rename(opts.dataDir, movedAsideTo).catch(async (e) => {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") { /* nothing to move */ }
-    else throw e;
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+      /* nothing to move */
+    } else throw e;
   });
   await mkdir(opts.dataDir, { recursive: true });
 
@@ -233,7 +252,12 @@ export async function runRestore(opts: RestoreOptions): Promise<{ movedAsideTo: 
 export type AutoStatus = "ok" | "skipped-no-db" | "skipped-optout" | "failed";
 
 export async function runAutoBackup(o: {
-  dataDir: string; dbPath: string; backupsDir: string; keep: number; skip?: boolean; now?: () => Date;
+  dataDir: string;
+  dbPath: string;
+  backupsDir: string;
+  keep: number;
+  skip?: boolean;
+  now?: () => Date;
 }): Promise<{ status: AutoStatus; outFile?: string; warning?: string }> {
   if (o.skip) return { status: "skipped-optout" };
   try {
@@ -243,16 +267,25 @@ export async function runAutoBackup(o: {
   }
   try {
     const { outFile } = await runBackup({
-      dataDir: o.dataDir, dbPath: o.dbPath, backupsDir: o.backupsDir, mode: "auto", now: o.now,
+      dataDir: o.dataDir,
+      dbPath: o.dbPath,
+      backupsDir: o.backupsDir,
+      mode: "auto",
+      now: o.now,
     });
-    await rotateAutoBackups({ backupsDir: o.backupsDir, keep: o.keep }).catch(() => {/* rotation is best-effort */});
+    await rotateAutoBackups({ backupsDir: o.backupsDir, keep: o.keep }).catch(() => {
+      /* rotation is best-effort */
+    });
     return { status: "ok", outFile };
   } catch (e) {
     return { status: "failed", warning: e instanceof Error ? e.message : String(e) };
   }
 }
 
-export async function rotateAutoBackups(o: { backupsDir: string; keep: number }): Promise<{ deleted: string[] }> {
+export async function rotateAutoBackups(o: {
+  backupsDir: string;
+  keep: number;
+}): Promise<{ deleted: string[] }> {
   let names: string[];
   try {
     names = await readdir(o.backupsDir);

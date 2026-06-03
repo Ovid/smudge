@@ -16,9 +16,7 @@ const REPO = join(__dirname, "../../../.."); // /workspace/packages/server/src/_
 async function manualArchivesBefore(): Promise<Set<string>> {
   try {
     const entries = await readdir(join(REPO, "backups"));
-    return new Set(
-      entries.filter((f) => f.startsWith("smudge-") && !f.startsWith("smudge-auto-")),
-    );
+    return new Set(entries.filter((f) => f.startsWith("smudge-") && !f.startsWith("smudge-auto-")));
   } catch {
     return new Set();
   }

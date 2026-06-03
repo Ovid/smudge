@@ -5,7 +5,22 @@ import { join, basename, dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 import Database from "better-sqlite3";
 import JSZip from "jszip";
-import { isoStampLocal, buildBackupName, runBackup, runRestore, rotateAutoBackups, runAutoBackup, ZipSlipError, validateEntryPaths, readCentralDirectorySizes, checkDeclaredSizes, DecompressionBombError, RestorePreconditionError, RestorePartialError, DEFAULT_BOMB_LIMITS } from "../backup-core";
+import {
+  isoStampLocal,
+  buildBackupName,
+  runBackup,
+  runRestore,
+  rotateAutoBackups,
+  runAutoBackup,
+  ZipSlipError,
+  validateEntryPaths,
+  readCentralDirectorySizes,
+  checkDeclaredSizes,
+  DecompressionBombError,
+  RestorePreconditionError,
+  RestorePartialError,
+  DEFAULT_BOMB_LIMITS,
+} from "../backup-core";
 
 // ── Temp-dir registry: guarantees cleanup even when assertions throw ──────────
 const tempDirs: string[] = [];
@@ -61,7 +76,10 @@ it("runBackup writes a zip with smudge.db + nested images/", async () => {
   const { dataDir, dbPath } = await makeFixture();
   const backupsDir = join(dataDir, "backups");
   const { outFile } = await runBackup({
-    dataDir, dbPath, backupsDir, mode: "manual",
+    dataDir,
+    dbPath,
+    backupsDir,
+    mode: "manual",
     now: () => new Date(2026, 4, 26, 14, 32, 11),
   });
   expect(outFile).toBe(join(backupsDir, "smudge-2026-05-26-143211.zip"));
@@ -93,23 +111,29 @@ describe("validateEntryPaths", () => {
     ["foo bar"],
   ])("rejects %s and names it", (bad) => {
     expect(() => validateEntryPaths([bad], root)).toThrow(ZipSlipError);
-    try { validateEntryPaths([bad], root); } catch (e) { expect((e as Error).message).toContain(bad); }
+    try {
+      validateEntryPaths([bad], root);
+    } catch (e) {
+      expect((e as Error).message).toContain(bad);
+    }
   });
 
   it("rejects a null-byte entry and mentions 'null byte' in the message", () => {
     const bad = "images/p/a\0.png";
     expect(() => validateEntryPaths([bad], root)).toThrow(ZipSlipError);
-    try { validateEntryPaths([bad], root); } catch (e) {
+    try {
+      validateEntryPaths([bad], root);
+    } catch (e) {
       expect((e as Error).message).toContain("null byte");
     }
   });
 
-  it.each([
-    ["C:/Windows/system32/evil"],
-    ["C:relative"],
-  ])("rejects Windows/drive-absolute entry %s", (bad) => {
-    expect(() => validateEntryPaths([bad], root)).toThrow(ZipSlipError);
-  });
+  it.each([["C:/Windows/system32/evil"], ["C:relative"]])(
+    "rejects Windows/drive-absolute entry %s",
+    (bad) => {
+      expect(() => validateEntryPaths([bad], root)).toThrow(ZipSlipError);
+    },
+  );
 
   it("rejects a sibling directory that shares the root name prefix", () => {
     // "../target-evil/smudge.db" resolves to /tmp/target-evil/smudge.db —
@@ -131,9 +155,9 @@ it("readCentralDirectorySizes returns each entry's declared uncompressed size", 
 });
 
 it("readCentralDirectorySizes throws DecompressionBombError for garbage / non-ZIP buffer", () => {
-  expect(() =>
-    readCentralDirectorySizes(Buffer.from("this is definitely not a zip file")),
-  ).toThrow(DecompressionBombError);
+  expect(() => readCentralDirectorySizes(Buffer.from("this is definitely not a zip file"))).toThrow(
+    DecompressionBombError,
+  );
 });
 
 it("readCentralDirectorySizes throws DecompressionBombError (not RangeError) for truncated central directory", async () => {
@@ -144,7 +168,10 @@ it("readCentralDirectorySizes throws DecompressionBombError (not RangeError) for
   // Locate the EOCD by scanning backwards for its signature (0x06054b50).
   let eocd = -1;
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 0xffff); i--) {
-    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+    if (buf.readUInt32LE(i) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
   }
   expect(eocd).toBeGreaterThan(-1); // sanity: real EOCD found
 
@@ -185,7 +212,10 @@ it("runBackup snapshots committed state while a write txn is open", async () => 
   live.prepare("INSERT INTO t (v) VALUES (?)").run("uncommitted");
 
   const { outFile } = await runBackup({
-    dataDir, dbPath, backupsDir, mode: "manual",
+    dataDir,
+    dbPath,
+    backupsDir,
+    mode: "manual",
     now: () => new Date(2026, 4, 26, 9, 0, 0),
   });
 
@@ -207,7 +237,10 @@ it("runBackup snapshots committed state while a write txn is open", async () => 
 async function makeArchive(dataDir: string, mode: "manual" | "auto" = "manual") {
   const backupsDir = join(dataDir, "backups");
   const { outFile } = await runBackup({
-    dataDir, dbPath: join(dataDir, "smudge.db"), backupsDir, mode,
+    dataDir,
+    dbPath: join(dataDir, "smudge.db"),
+    backupsDir,
+    mode,
     now: () => new Date(2026, 4, 26, 12, 0, 0),
   });
   return outFile;
@@ -222,7 +255,9 @@ it("runRestore round-trips after wiping the data dir; old data is moved aside", 
   db.close();
 
   const { movedAsideTo } = await runRestore({
-    archivePath: archive, dataDir, confirmToken: basename(archive),
+    archivePath: archive,
+    dataDir,
+    confirmToken: basename(archive),
     probePort: async () => false, // server not running
     now: () => new Date(2026, 4, 26, 13, 0, 0),
   });
@@ -238,19 +273,28 @@ it("runRestore round-trips after wiping the data dir; old data is moved aside", 
 it("refuses if the server is running (port probe true)", async () => {
   const { dataDir } = await makeFixture();
   const archive = await makeArchive(dataDir);
-  await expect(runRestore({
-    archivePath: archive, dataDir, confirmToken: basename(archive),
-    probePort: async () => true,
-  })).rejects.toThrow(/running/i);
+  await expect(
+    runRestore({
+      archivePath: archive,
+      dataDir,
+      confirmToken: basename(archive),
+      probePort: async () => true,
+    }),
+  ).rejects.toThrow(/running/i);
 });
 
 it("refuses on a confirmation-token mismatch without touching the data dir", async () => {
   const { dataDir } = await makeFixture();
   const archive = await makeArchive(dataDir);
   const before = await readFile(join(dataDir, "smudge.db"));
-  await expect(runRestore({
-    archivePath: archive, dataDir, confirmToken: "WRONG", probePort: async () => false,
-  })).rejects.toThrow(/confirm/i);
+  await expect(
+    runRestore({
+      archivePath: archive,
+      dataDir,
+      confirmToken: "WRONG",
+      probePort: async () => false,
+    }),
+  ).rejects.toThrow(/confirm/i);
   expect(await readFile(join(dataDir, "smudge.db"))).toEqual(before);
 });
 
@@ -261,9 +305,14 @@ it("refuses an archive missing smudge.db", async () => {
   const bad = join(dataDir, "backups", "smudge-bad.zip");
   await mkdir(join(dataDir, "backups"), { recursive: true });
   await writeFile(bad, await zip.generateAsync({ type: "nodebuffer" }));
-  await expect(runRestore({
-    archivePath: bad, dataDir, confirmToken: "smudge-bad.zip", probePort: async () => false,
-  })).rejects.toThrow(/smudge\.db/);
+  await expect(
+    runRestore({
+      archivePath: bad,
+      dataDir,
+      confirmToken: "smudge-bad.zip",
+      probePort: async () => false,
+    }),
+  ).rejects.toThrow(/smudge\.db/);
 });
 
 it("refuses a zip-slip archive and leaves the data dir untouched", async () => {
@@ -275,9 +324,14 @@ it("refuses a zip-slip archive and leaves the data dir untouched", async () => {
   const bad = join(dataDir, "backups", "smudge-slip.zip");
   await mkdir(join(dataDir, "backups"), { recursive: true });
   await writeFile(bad, await zip.generateAsync({ type: "nodebuffer" }));
-  await expect(runRestore({
-    archivePath: bad, dataDir, confirmToken: "smudge-slip.zip", probePort: async () => false,
-  })).rejects.toThrow(ZipSlipError);
+  await expect(
+    runRestore({
+      archivePath: bad,
+      dataDir,
+      confirmToken: "smudge-slip.zip",
+      probePort: async () => false,
+    }),
+  ).rejects.toThrow(ZipSlipError);
   // data dir untouched: original DB intact, no move-aside sibling created for THIS dataDir
   expect(await readFile(join(dataDir, "smudge.db"))).toEqual(before);
   const dataDirBasename = basename(dataDir);
@@ -296,10 +350,15 @@ it("refuses a declared-size bomb archive and leaves the data dir untouched", asy
   const bad = join(dataDir, "backups", "smudge-bomb.zip");
   await mkdir(join(dataDir, "backups"), { recursive: true });
   await writeFile(bad, await zip.generateAsync({ type: "nodebuffer" }));
-  await expect(runRestore({
-    archivePath: bad, dataDir, confirmToken: "smudge-bomb.zip", probePort: async () => false,
-    limits: { maxUncompressed: 1, maxRatio: 1 }, // tiny caps force the refusal
-  })).rejects.toThrow(DecompressionBombError);
+  await expect(
+    runRestore({
+      archivePath: bad,
+      dataDir,
+      confirmToken: "smudge-bomb.zip",
+      probePort: async () => false,
+      limits: { maxUncompressed: 1, maxRatio: 1 }, // tiny caps force the refusal
+    }),
+  ).rejects.toThrow(DecompressionBombError);
   expect(await readFile(join(dataDir, "smudge.db"))).toEqual(before); // validate-before-move-aside
 });
 
@@ -310,13 +369,15 @@ it("refuses restore when free space is insufficient, leaving data dir untouched"
   const archive = await makeArchive(dataDir);
   const before = await readFile(join(dataDir, "smudge.db"));
 
-  await expect(runRestore({
-    archivePath: archive,
-    dataDir,
-    confirmToken: basename(archive),
-    probePort: async () => false,
-    freeBytes: async () => 0, // simulate a full disk
-  })).rejects.toThrow(RestorePreconditionError);
+  await expect(
+    runRestore({
+      archivePath: archive,
+      dataDir,
+      confirmToken: basename(archive),
+      probePort: async () => false,
+      freeBytes: async () => 0, // simulate a full disk
+    }),
+  ).rejects.toThrow(RestorePreconditionError);
 
   // data dir untouched: original DB intact, no move-aside sibling for this dataDir
   expect(await readFile(join(dataDir, "smudge.db"))).toEqual(before);
@@ -357,26 +418,40 @@ it("throws RestorePreconditionError (not bare Error) for missing smudge.db", asy
   const bad = join(dataDir, "backups", "smudge-bad.zip");
   await mkdir(join(dataDir, "backups"), { recursive: true });
   await writeFile(bad, await zip.generateAsync({ type: "nodebuffer" }));
-  await expect(runRestore({
-    archivePath: bad, dataDir, confirmToken: "smudge-bad.zip", probePort: async () => false,
-  })).rejects.toBeInstanceOf(RestorePreconditionError);
+  await expect(
+    runRestore({
+      archivePath: bad,
+      dataDir,
+      confirmToken: "smudge-bad.zip",
+      probePort: async () => false,
+    }),
+  ).rejects.toBeInstanceOf(RestorePreconditionError);
 });
 
 it("throws RestorePreconditionError (not bare Error) when the server is running", async () => {
   const { dataDir } = await makeFixture();
   const archive = await makeArchive(dataDir);
-  await expect(runRestore({
-    archivePath: archive, dataDir, confirmToken: basename(archive),
-    probePort: async () => true,
-  })).rejects.toBeInstanceOf(RestorePreconditionError);
+  await expect(
+    runRestore({
+      archivePath: archive,
+      dataDir,
+      confirmToken: basename(archive),
+      probePort: async () => true,
+    }),
+  ).rejects.toBeInstanceOf(RestorePreconditionError);
 });
 
 it("throws RestorePreconditionError (not bare Error) on confirmation-token mismatch", async () => {
   const { dataDir } = await makeFixture();
   const archive = await makeArchive(dataDir);
-  await expect(runRestore({
-    archivePath: archive, dataDir, confirmToken: "WRONG", probePort: async () => false,
-  })).rejects.toBeInstanceOf(RestorePreconditionError);
+  await expect(
+    runRestore({
+      archivePath: archive,
+      dataDir,
+      confirmToken: "WRONG",
+      probePort: async () => false,
+    }),
+  ).rejects.toBeInstanceOf(RestorePreconditionError);
 });
 
 // ── Change 4 (T-3): fresh-restore into a non-existent dataDir ───────────────
@@ -391,7 +466,7 @@ it("restores successfully when dataDir does not exist yet (ENOENT rename branch)
   db.prepare("INSERT INTO t (v) VALUES (?)").run("t3-value");
   db.close();
   await mkdir(join(fixtureDir, "images", "proj-t3"), { recursive: true });
-  await writeFile(join(fixtureDir, "images", "proj-t3", "x.png"), Buffer.from([0xAB]));
+  await writeFile(join(fixtureDir, "images", "proj-t3", "x.png"), Buffer.from([0xab]));
 
   const backupsDir = join(fixtureDir, "backups");
   const { outFile: archive } = await runBackup({
@@ -435,7 +510,10 @@ it("T-1: on post-move extraction failure (JSZip size-mismatch or byte-budget ove
 
   const backupsDir = join(dataDir, "backups");
   const { outFile: archive } = await runBackup({
-    dataDir, dbPath, backupsDir, mode: "manual",
+    dataDir,
+    dbPath,
+    backupsDir,
+    mode: "manual",
     now: () => new Date(2026, 4, 26, 16, 0, 0),
   });
 
@@ -457,7 +535,10 @@ it("T-1: on post-move extraction failure (JSZip size-mismatch or byte-budget ove
   const CEN_SIG_T1 = 0x02014b50;
   let eocd = -1;
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 0xffff); i--) {
-    if (buf.readUInt32LE(i) === EOCD_SIG_T1) { eocd = i; break; }
+    if (buf.readUInt32LE(i) === EOCD_SIG_T1) {
+      eocd = i;
+      break;
+    }
   }
   expect(eocd).toBeGreaterThan(-1); // sanity: real EOCD found
 
@@ -520,7 +601,11 @@ it("T-1: on post-move extraction failure (JSZip size-mismatch or byte-budget ove
   // afterEach handles its cleanup via the move-aside sibling scan registered against dataDir.
   const movedDbPath = join(err.movedAsideTo, "smudge.db");
   let movedStat: Awaited<ReturnType<typeof stat>> | null = null;
-  try { movedStat = await stat(movedDbPath); } catch { /* intentionally empty */ }
+  try {
+    movedStat = await stat(movedDbPath);
+  } catch {
+    /* intentionally empty */
+  }
   expect(movedStat).not.toBeNull(); // original smudge.db preserved at movedAsideTo
 
   // The preserved DB must contain the post-backup mutation (i.e. the ORIGINAL live data,
@@ -534,9 +619,16 @@ it("T-1: on post-move extraction failure (JSZip size-mismatch or byte-budget ove
 it("keeps newest N auto-backups; never touches manual or unrelated files", async () => {
   const dir = await mkdtemp(join(tmpdir(), "smudge-rot-"));
   tempDirs.push(dir);
-  const autos = Array.from({ length: 12 }, (_, i) =>
-    `smudge-auto-2026-05-26-1000${String(i).padStart(2, "0")}.zip`);
-  for (const f of [...autos, "smudge-2026-05-01-090000.zip", "smudge-2026-05-02-090000.zip", "notes.txt"]) {
+  const autos = Array.from(
+    { length: 12 },
+    (_, i) => `smudge-auto-2026-05-26-1000${String(i).padStart(2, "0")}.zip`,
+  );
+  for (const f of [
+    ...autos,
+    "smudge-2026-05-01-090000.zip",
+    "smudge-2026-05-02-090000.zip",
+    "notes.txt",
+  ]) {
     await writeFile(join(dir, f), Buffer.from("x"));
   }
   const { deleted } = await rotateAutoBackups({ backupsDir: dir, keep: 10 });
@@ -567,7 +659,10 @@ it("runBackup succeeds when there is no images directory (walkFiles readdir-catc
   // No images/ dir created — exercises the walkFiles readdir-catch return.
   const backupsDir = join(dataDir, "backups");
   const { outFile } = await runBackup({
-    dataDir, dbPath, backupsDir, mode: "manual",
+    dataDir,
+    dbPath,
+    backupsDir,
+    mode: "manual",
     now: () => new Date(2026, 4, 26, 10, 0, 0),
   });
   const zip = await JSZip.loadAsync(await readFile(outFile));
@@ -592,7 +687,10 @@ it("skips when there is no database", async () => {
   const dir = await mkdtemp(join(tmpdir(), "smudge-auto-"));
   tempDirs.push(dir);
   const r = await runAutoBackup({
-    dataDir: dir, dbPath: join(dir, "smudge.db"), backupsDir: join(dir, "backups"), keep: 10,
+    dataDir: dir,
+    dbPath: join(dir, "smudge.db"),
+    backupsDir: join(dir, "backups"),
+    keep: 10,
   });
   expect(r.status).toBe("skipped-no-db");
   expect(r.outFile).toBeUndefined();
@@ -614,7 +712,10 @@ it("skips on opt-out", async () => {
 it("produces a smudge-auto archive and rotates, status ok", async () => {
   const { dataDir, dbPath } = await makeFixture();
   const r = await runAutoBackup({
-    dataDir, dbPath, backupsDir: join(dataDir, "backups"), keep: 10,
+    dataDir,
+    dbPath,
+    backupsDir: join(dataDir, "backups"),
+    keep: 10,
     now: () => new Date(2026, 4, 26, 8, 0, 0),
   });
   expect(r.status).toBe("ok");
@@ -627,7 +728,10 @@ it("is best-effort: returns 'failed' with a warning instead of throwing", async 
   const blocker = join(dataDir, "blocker");
   await writeFile(blocker, "x");
   const r = await runAutoBackup({
-    dataDir, dbPath, backupsDir: join(blocker, "backups"), keep: 10,
+    dataDir,
+    dbPath,
+    backupsDir: join(blocker, "backups"),
+    keep: 10,
   });
   expect(r.status).toBe("failed");
   expect(r.warning).toBeTruthy();
