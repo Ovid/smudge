@@ -100,6 +100,10 @@ function fetchTimes(name) {
     // the name is untrusted lockfile input — encoding all slashes keeps
     // `new URL()` from normalizing a crafted `…/../…` into a different
     // package's path. Names are also pre-validated via isValidRegistryName (C1).
+    // Deliberately NOT encodeURIComponent(n): the npm registry expects a scoped
+    // name as `@scope%2Fname` — the `/` encoded but the `@` LITERAL — whereas
+    // encodeURIComponent would also escape `@` to `%40`, which the registry does
+    // not resolve, 404-ing every scoped package. Only the `/` needs encoding.
     fetchDoc: (n) =>
       fetch(`${REGISTRY}/${n.replaceAll("/", "%2F")}`, { headers: { accept: "application/json" } }),
   });
