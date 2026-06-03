@@ -444,11 +444,21 @@ export async function fetchPublishTimes({
  * are not per-version dates; an exact-key lookup ignores them by construction
  * (no `Object.entries` walk that could mistake a sentinel for a version). A
  * missing or non-string value yields null ("no usable publish date").
+ *
+ * The exact-key lookup is safe only for real version strings; a crafted lockfile
+ * entry whose `version` is literally "created" or "modified" (nothing upstream
+ * rejects it — version is only checked for being a non-empty string) would read
+ * the package-level timestamp (years old) and clear the cooldown. Reject those
+ * two sentinel keys explicitly so the "ignored by construction" guarantee holds
+ * even for that input. Not exploitable on its own ("created"/"modified" are not
+ * valid semver, so no real tarball exists at that path and `npm ci` would reject
+ * the install), but it closes the contract gap cheaply (S1, defense-in-depth).
  * @param {Record<string, unknown>} time
  * @param {string} version
  * @returns {string | null}
  */
 export function publishDateFromTime(time, version) {
+  if (version === "created" || version === "modified") return null;
   const iso = time[version];
   return typeof iso === "string" ? iso : null;
 }

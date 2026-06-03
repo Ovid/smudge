@@ -761,6 +761,20 @@ describe("publishDateFromTime", () => {
   it("returns null for a non-string date value", () => {
     expect(publishDateFromTime({ "1.0.0": 12345 }, "1.0.0")).toBeNull();
   });
+
+  // S1: a crafted lockfile entry with version "created"/"modified" passes every
+  // upstream guard (version is only checked for being a non-empty string) and
+  // would otherwise borrow the package-level created/modified timestamp (years
+  // old), clearing the cooldown. Reject the sentinel keys explicitly so the
+  // docstring's "ignored by construction" claim holds for these inputs too.
+  it("returns null when the version is a created/modified sentinel key", () => {
+    const time = {
+      created: "2020-01-01T00:00:00.000Z",
+      modified: "2026-01-01T00:00:00.000Z",
+    };
+    expect(publishDateFromTime(time, "created")).toBeNull();
+    expect(publishDateFromTime(time, "modified")).toBeNull();
+  });
 });
 
 describe("resolvePublishDate", () => {
