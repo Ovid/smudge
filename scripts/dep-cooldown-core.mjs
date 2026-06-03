@@ -201,7 +201,11 @@ export function collectRegistryVersions(lockfile) {
     // entry.name while the key holds the alias. Prefer entry.name when present;
     // the path-derived name is correct only for non-aliased deps.
     const name = typeof entry.name === "string" && entry.name ? entry.name : derived;
-    if (!entry.version || !isRegistryResolved(entry.resolved)) {
+    // Type-check version as a string (symmetric with name above): a non-string
+    // truthy version (5, true, {}) is malformed lockfile input, not a real dep —
+    // skip it rather than stringify it into an id/tarball path where being
+    // fail-closed would only be a coincidence of how it stringifies (S4).
+    if (typeof entry.version !== "string" || !entry.version || !isRegistryResolved(entry.resolved)) {
       skipped++;
       continue;
     }

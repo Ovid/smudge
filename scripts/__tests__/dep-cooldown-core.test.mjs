@@ -261,6 +261,29 @@ describe("collectRegistryVersions", () => {
     expect(versions.map((v) => v.id)).toEqual(["react@18.3.1"]);
     expect(skipped).toBe(2);
   });
+
+  // S4: entry.version is type-checked as a string, symmetric with entry.name. A
+  // non-string-but-truthy version (a number/boolean/object from a tampered or
+  // hand-edited lockfile) is malformed input, not a real registry dep — skip it
+  // (consistent with the no-version skip) rather than stringify it into an id and
+  // tarball path where its fail-closed safety would rest on a coincidence.
+  it("skips an entry whose version is truthy but not a string", () => {
+    const { versions, mismatched, skipped } = collectRegistryVersions({
+      packages: {
+        "node_modules/weird": {
+          version: 5,
+          resolved: "https://registry.npmjs.org/weird/-/weird-5.tgz",
+        },
+        "node_modules/react": {
+          version: "18.3.1",
+          resolved: "https://registry.npmjs.org/react/-/react-18.3.1.tgz",
+        },
+      },
+    });
+    expect(versions.map((v) => v.id)).toEqual(["react@18.3.1"]);
+    expect(mismatched).toEqual([]);
+    expect(skipped).toBe(1);
+  });
 });
 
 describe("tarballMatchesIdentity", () => {
