@@ -1,11 +1,34 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { mkdtemp, mkdir, writeFile, readFile, rm, readdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, basename } from "node:path";
+import { join, basename, dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 import Database from "better-sqlite3";
 import JSZip from "jszip";
 import { isoStampLocal, buildBackupName, runBackup, runRestore, rotateAutoBackups, runAutoBackup, ZipSlipError, validateEntryPaths, readCentralDirectorySizes, checkDeclaredSizes, DecompressionBombError, RestorePreconditionError, RestorePartialError, DEFAULT_BOMB_LIMITS } from "../backup-core";
+
+// ── Temp-dir registry: guarantees cleanup even when assertions throw ──────────
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  for (const dir of tempDirs) {
+    await rm(dir, { recursive: true, force: true });
+    // Also clean up any move-aside siblings created by runRestore
+    try {
+      const parent = dirname(dir);
+      const base = basename(dir);
+      const entries = await readdir(parent);
+      for (const entry of entries) {
+        if (entry.startsWith(base + ".before-restore-")) {
+          await rm(join(parent, entry), { recursive: true, force: true });
+        }
+      }
+    } catch {
+      // Parent may not exist or may have been removed already — ignore
+    }
+  }
+  tempDirs.length = 0;
+});
 
 describe("isoStampLocal", () => {
   it("formats local time as YYYY-MM-DD-HHmmss with hyphens only", () => {
@@ -23,6 +46,7 @@ describe("buildBackupName", () => {
 
 async function makeFixture() {
   const dataDir = await mkdtemp(join(tmpdir(), "smudge-bk-"));
+  tempDirs.push(dataDir);
   const dbPath = join(dataDir, "smudge.db");
   const db = new Database(dbPath);
   db.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)");
@@ -54,8 +78,6 @@ it("runBackup writes a zip with smudge.db + nested images/", async () => {
   db.close();
   // staging file is cleaned up
   expect((await readdir(dataDir)).some((f) => f.endsWith(".backup-staging.db"))).toBe(false);
-
-  await rm(dataDir, { recursive: true, force: true });
 });
 
 describe("validateEntryPaths", () => {
@@ -178,7 +200,6 @@ it("runBackup snapshots committed state while a write txn is open", async () => 
   // Only the committed row is present; the uncommitted insert is absent.
   expect(snap.prepare("SELECT COUNT(*) c FROM t").get()).toEqual({ c: 1 });
   snap.close();
-  await rm(dataDir, { recursive: true, force: true });
 });
 
 // ── runRestore tests (Task 7) ────────────────────────────────────────────────
@@ -210,8 +231,8 @@ it("runRestore round-trips after wiping the data dir; old data is moved aside", 
   expect(restored.prepare("SELECT COUNT(*) c FROM t").get()).toEqual({ c: 1 }); // "after-backup" gone
   restored.close();
   expect(movedAsideTo).toContain(".before-restore-");
-  await rm(movedAsideTo, { recursive: true, force: true });
-  await rm(dataDir, { recursive: true, force: true });
+  // movedAsideTo is a sibling of dataDir — afterEach handles cleanup via the
+  // move-aside sibling scan registered against dataDir
 });
 
 it("refuses if the server is running (port probe true)", async () => {
@@ -221,7 +242,6 @@ it("refuses if the server is running (port probe true)", async () => {
     archivePath: archive, dataDir, confirmToken: basename(archive),
     probePort: async () => true,
   })).rejects.toThrow(/running/i);
-  await rm(dataDir, { recursive: true, force: true });
 });
 
 it("refuses on a confirmation-token mismatch without touching the data dir", async () => {
@@ -232,7 +252,6 @@ it("refuses on a confirmation-token mismatch without touching the data dir", asy
     archivePath: archive, dataDir, confirmToken: "WRONG", probePort: async () => false,
   })).rejects.toThrow(/confirm/i);
   expect(await readFile(join(dataDir, "smudge.db"))).toEqual(before);
-  await rm(dataDir, { recursive: true, force: true });
 });
 
 it("refuses an archive missing smudge.db", async () => {
@@ -245,7 +264,6 @@ it("refuses an archive missing smudge.db", async () => {
   await expect(runRestore({
     archivePath: bad, dataDir, confirmToken: "smudge-bad.zip", probePort: async () => false,
   })).rejects.toThrow(/smudge\.db/);
-  await rm(dataDir, { recursive: true, force: true });
 });
 
 it("refuses a zip-slip archive and leaves the data dir untouched", async () => {
@@ -268,7 +286,6 @@ it("refuses a zip-slip archive and leaves the data dir untouched", async () => {
       (f) => f.startsWith(dataDirBasename) && f.includes(".before-restore-"),
     ),
   ).toBe(false);
-  await rm(dataDir, { recursive: true, force: true });
 });
 
 it("refuses a declared-size bomb archive and leaves the data dir untouched", async () => {
@@ -284,7 +301,6 @@ it("refuses a declared-size bomb archive and leaves the data dir untouched", asy
     limits: { maxUncompressed: 1, maxRatio: 1 }, // tiny caps force the refusal
   })).rejects.toThrow(DecompressionBombError);
   expect(await readFile(join(dataDir, "smudge.db"))).toEqual(before); // validate-before-move-aside
-  await rm(dataDir, { recursive: true, force: true });
 });
 
 // ── Change 1: free-space pre-check ──────────────────────────────────────────
@@ -310,8 +326,6 @@ it("refuses restore when free space is insufficient, leaving data dir untouched"
       (f) => f.startsWith(dataDirBasename) && f.includes(".before-restore-"),
     ),
   ).toBe(false);
-
-  await rm(dataDir, { recursive: true, force: true });
 });
 
 it("includes the needed and available byte counts in the free-space error message", async () => {
@@ -332,7 +346,6 @@ it("includes the needed and available byte counts in the free-space error messag
   }
   expect(caughtMessage).toMatch(/insufficient free space/);
   expect(caughtMessage).toContain("42"); // reports have bytes
-  await rm(dataDir, { recursive: true, force: true });
 });
 
 // ── Change 3: typed precondition errors ─────────────────────────────────────
@@ -347,7 +360,6 @@ it("throws RestorePreconditionError (not bare Error) for missing smudge.db", asy
   await expect(runRestore({
     archivePath: bad, dataDir, confirmToken: "smudge-bad.zip", probePort: async () => false,
   })).rejects.toBeInstanceOf(RestorePreconditionError);
-  await rm(dataDir, { recursive: true, force: true });
 });
 
 it("throws RestorePreconditionError (not bare Error) when the server is running", async () => {
@@ -357,7 +369,6 @@ it("throws RestorePreconditionError (not bare Error) when the server is running"
     archivePath: archive, dataDir, confirmToken: basename(archive),
     probePort: async () => true,
   })).rejects.toBeInstanceOf(RestorePreconditionError);
-  await rm(dataDir, { recursive: true, force: true });
 });
 
 it("throws RestorePreconditionError (not bare Error) on confirmation-token mismatch", async () => {
@@ -366,7 +377,6 @@ it("throws RestorePreconditionError (not bare Error) on confirmation-token misma
   await expect(runRestore({
     archivePath: archive, dataDir, confirmToken: "WRONG", probePort: async () => false,
   })).rejects.toBeInstanceOf(RestorePreconditionError);
-  await rm(dataDir, { recursive: true, force: true });
 });
 
 // ── Change 4 (T-3): fresh-restore into a non-existent dataDir ───────────────
@@ -375,6 +385,7 @@ it("restores successfully when dataDir does not exist yet (ENOENT rename branch)
   // Build the archive from a separate fixture, then point restore at a sibling
   // path that does not exist — exercises the rename().catch(ENOENT) path.
   const fixtureDir = await mkdtemp(join(tmpdir(), "smudge-t3-src-"));
+  tempDirs.push(fixtureDir);
   const db = new Database(join(fixtureDir, "smudge.db"));
   db.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)");
   db.prepare("INSERT INTO t (v) VALUES (?)").run("t3-value");
@@ -393,6 +404,7 @@ it("restores successfully when dataDir does not exist yet (ENOENT rename branch)
 
   // Target a non-existent sibling directory
   const nonExistent = join(fixtureDir, "..", `smudge-t3-does-not-exist-${Date.now()}`);
+  tempDirs.push(nonExistent);
   const { movedAsideTo } = await runRestore({
     archivePath: archive,
     dataDir: nonExistent,
@@ -408,10 +420,6 @@ it("restores successfully when dataDir does not exist yet (ENOENT rename branch)
   const restoredDb = new Database(join(nonExistent, "smudge.db"), { readonly: true });
   expect(restoredDb.prepare("SELECT v FROM t").get()).toEqual({ v: "t3-value" });
   restoredDb.close();
-
-  // Cleanup
-  await rm(fixtureDir, { recursive: true, force: true });
-  await rm(nonExistent, { recursive: true, force: true });
 });
 
 // ── Change 5 (T-1): post-move failure surfaces RestorePartialError carrying movedAsideTo ──
@@ -509,6 +517,7 @@ it("T-1: on post-move extraction failure (JSZip size-mismatch or byte-budget ove
   expect(err.movedAsideTo).toContain(".before-restore-");
 
   // The move-aside directory must exist on disk.
+  // afterEach handles its cleanup via the move-aside sibling scan registered against dataDir.
   const movedDbPath = join(err.movedAsideTo, "smudge.db");
   let movedStat: Awaited<ReturnType<typeof stat>> | null = null;
   try { movedStat = await stat(movedDbPath); } catch { /* intentionally empty */ }
@@ -518,16 +527,13 @@ it("T-1: on post-move extraction failure (JSZip size-mismatch or byte-budget ove
   // not the backup snapshot).
   const movedDbBytes = await readFile(movedDbPath);
   expect(movedDbBytes).toEqual(originalDb);
-
-  // Cleanup
-  await rm(err.movedAsideTo, { recursive: true, force: true });
-  await rm(dataDir, { recursive: true, force: true });
 });
 
 // ── Task 8: rotateAutoBackups ────────────────────────────────────────────────
 
 it("keeps newest N auto-backups; never touches manual or unrelated files", async () => {
   const dir = await mkdtemp(join(tmpdir(), "smudge-rot-"));
+  tempDirs.push(dir);
   const autos = Array.from({ length: 12 }, (_, i) =>
     `smudge-auto-2026-05-26-1000${String(i).padStart(2, "0")}.zip`);
   for (const f of [...autos, "smudge-2026-05-01-090000.zip", "smudge-2026-05-02-090000.zip", "notes.txt"]) {
@@ -535,6 +541,10 @@ it("keeps newest N auto-backups; never touches manual or unrelated files", async
   }
   const { deleted } = await rotateAutoBackups({ backupsDir: dir, keep: 10 });
   expect(deleted).toHaveLength(2); // 12 - 10
+  expect([...deleted].sort()).toEqual([
+    "smudge-auto-2026-05-26-100000.zip",
+    "smudge-auto-2026-05-26-100001.zip",
+  ]);
   const left = (await readdir(dir)).sort();
   expect(left).toContain("smudge-2026-05-01-090000.zip");
   expect(left).toContain("smudge-2026-05-02-090000.zip");
@@ -543,13 +553,13 @@ it("keeps newest N auto-backups; never touches manual or unrelated files", async
   // the two OLDEST autos are the ones gone
   expect(left).not.toContain("smudge-auto-2026-05-26-100000.zip");
   expect(left).not.toContain("smudge-auto-2026-05-26-100001.zip");
-  await rm(dir, { recursive: true, force: true });
 });
 
 // ── walkFiles: no images dir (catch-return branch) ──────────────────────────
 
 it("runBackup succeeds when there is no images directory (walkFiles readdir-catch branch)", async () => {
   const dataDir = await mkdtemp(join(tmpdir(), "smudge-noimages-"));
+  tempDirs.push(dataDir);
   const dbPath = join(dataDir, "smudge.db");
   const db = new Database(dbPath);
   db.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)");
@@ -564,38 +574,41 @@ it("runBackup succeeds when there is no images directory (walkFiles readdir-catc
   expect(zip.file("smudge.db")).toBeTruthy();
   // No images entries
   expect(Object.keys(zip.files).filter((k) => k.startsWith("images/"))).toHaveLength(0);
-  await rm(dataDir, { recursive: true, force: true });
 });
 
 // ── Task 8 supplemental: rotateAutoBackups with non-existent backupsDir ─────
 
 it("rotateAutoBackups returns empty deleted list when backupsDir does not exist", async () => {
   const dir = await mkdtemp(join(tmpdir(), "smudge-rot-nodir-"));
+  tempDirs.push(dir);
   const nonExistent = join(dir, "does-not-exist");
   const { deleted } = await rotateAutoBackups({ backupsDir: nonExistent, keep: 10 });
   expect(deleted).toEqual([]);
-  await rm(dir, { recursive: true, force: true });
 });
 
 // ── Task 9: runAutoBackup ────────────────────────────────────────────────────
 
 it("skips when there is no database", async () => {
   const dir = await mkdtemp(join(tmpdir(), "smudge-auto-"));
+  tempDirs.push(dir);
   const r = await runAutoBackup({
     dataDir: dir, dbPath: join(dir, "smudge.db"), backupsDir: join(dir, "backups"), keep: 10,
   });
   expect(r.status).toBe("skipped-no-db");
   expect(r.outFile).toBeUndefined();
-  await rm(dir, { recursive: true, force: true });
 });
 
 it("skips on opt-out", async () => {
-  const { dataDir, dbPath } = await makeFixture();
+  const dir = await mkdtemp(join(tmpdir(), "smudge-auto-optout-"));
+  tempDirs.push(dir);
   const r = await runAutoBackup({
-    dataDir, dbPath, backupsDir: join(dataDir, "backups"), keep: 10, skip: true,
+    dataDir: dir,
+    dbPath: join(dir, "does-not-exist.db"),
+    backupsDir: join(dir, "backups"),
+    keep: 10,
+    skip: true,
   });
   expect(r.status).toBe("skipped-optout");
-  await rm(dataDir, { recursive: true, force: true });
 });
 
 it("produces a smudge-auto archive and rotates, status ok", async () => {
@@ -606,7 +619,6 @@ it("produces a smudge-auto archive and rotates, status ok", async () => {
   });
   expect(r.status).toBe("ok");
   expect(r.outFile).toContain("smudge-auto-2026-05-26-080000.zip");
-  await rm(dataDir, { recursive: true, force: true });
 });
 
 it("is best-effort: returns 'failed' with a warning instead of throwing", async () => {
@@ -619,5 +631,4 @@ it("is best-effort: returns 'failed' with a warning instead of throwing", async 
   });
   expect(r.status).toBe("failed");
   expect(r.warning).toBeTruthy();
-  await rm(dataDir, { recursive: true, force: true });
 });
