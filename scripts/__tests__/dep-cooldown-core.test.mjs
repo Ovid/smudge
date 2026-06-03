@@ -477,8 +477,29 @@ describe("parseAllowlist", () => {
   });
 
   it("throws when an entry is null or not an object", () => {
-    expect(() => parseAllowlist([null])).toThrow(/package/);
-    expect(() => parseAllowlist([42])).toThrow(/package/);
+    expect(() => parseAllowlist([null])).toThrow(/must be an object/);
+    expect(() => parseAllowlist([42])).toThrow(/must be an object/);
+  });
+
+  // Copilot review: duplicate package@version entries were silently last-write-
+  // wins via Map#set, letting conflicting reasons/added dates hide and weakening
+  // the allowlist's auditability. A duplicate id is now a hard error naming it.
+  it("throws on a duplicate package@version entry", () => {
+    expect(() =>
+      parseAllowlist([
+        { package: "react", version: "19.0.0", reason: "first" },
+        { package: "react", version: "19.0.0", reason: "second" },
+      ]),
+    ).toThrow(/duplicate.*react@19\.0\.0/i);
+  });
+
+  // The same package at two DIFFERENT versions is not a duplicate.
+  it("allows the same package at two different versions", () => {
+    const map = parseAllowlist([
+      { package: "react", version: "19.0.0", reason: "a" },
+      { package: "react", version: "19.0.1", reason: "b" },
+    ]);
+    expect(map.size).toBe(2);
   });
 
   it("throws when reason is missing or blank (no silent waivers)", () => {

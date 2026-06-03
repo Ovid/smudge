@@ -277,8 +277,15 @@ export function parseAllowlist(entries) {
   /** @type {Map<string, Waiver>} */
   const byId = new Map();
   for (const e of entries) {
-    const pkg = e && typeof e.package === "string" ? e.package : "";
-    const version = e && typeof e.version === "string" ? e.version : "";
+    // Guard the entry shape once up front rather than relying on the later
+    // !pkg/!version throws to fire first for a null/primitive entry — that
+    // ordering is fragile, and reading e.reason off a primitive would throw a
+    // raw TypeError instead of this curated message (S6).
+    if (e === null || typeof e !== "object") {
+      throw new Error(`allowlist entry must be an object: ${JSON.stringify(e)}`);
+    }
+    const pkg = typeof e.package === "string" ? e.package : "";
+    const version = typeof e.version === "string" ? e.version : "";
     if (!pkg) throw new Error(`allowlist entry is missing a "package": ${JSON.stringify(e)}`);
     if (!version) {
       throw new Error(`allowlist entry "${pkg}" is missing a "version"`);
@@ -286,7 +293,15 @@ export function parseAllowlist(entries) {
     if (typeof e.reason !== "string" || e.reason.trim() === "") {
       throw new Error(`allowlist entry "${pkg}@${version}" is missing a non-empty "reason"`);
     }
-    byId.set(versionId(pkg, version), {
+    const id = versionId(pkg, version);
+    // Reject duplicate package@version entries rather than silently last-write-
+    // wins via Map#set: a duplicate hides conflicting reasons/added dates and
+    // weakens the allowlist's auditability (every waiver should be one
+    // unambiguous, reviewable line).
+    if (byId.has(id)) {
+      throw new Error(`duplicate allowlist entry for "${id}" — each package@version may be waived only once.`);
+    }
+    byId.set(id, {
       reason: e.reason,
       added: typeof e.added === "string" ? e.added : undefined,
     });
