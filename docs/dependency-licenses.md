@@ -48,6 +48,7 @@ or other strong-copyleft licenses are present.
 | pino                      | MIT     | Structured logging                               |
 | docx                      | MIT     | Programmatic Word (.docx) generation             |
 | epub-gen-memory           | MIT     | EPUB generation from HTML content                |
+| jszip                     | MIT OR GPL-3.0-or-later | We elect **MIT**. Promoted devDep→dep in Phase 4b.14 for backup/restore zipping. See [JSZip](#jszip) |
 | turndown                  | MIT     | HTML-to-Markdown conversion for export           |
 | uuid                      | MIT     |                                                  |
 
@@ -84,7 +85,7 @@ All dev dependencies are MIT or Apache-2.0, with one exception:
 | @axe-core/playwright                                     | MPL-2.0                 | Dev-only (a11y testing). See [axe-core](#axe-core)                                                                                               |
 | @playwright/test                                         | Apache-2.0              |                                                                                                                                                  |
 | typescript                                               | Apache-2.0              |                                                                                                                                                  |
-| jszip                                                    | MIT OR GPL-3.0-or-later | Dev + transitive production (via docx, epub-gen-memory). We elect **MIT**. See [JSZip](#jszip)                                                   |
+| jszip                                                    | MIT OR GPL-3.0-or-later | Promoted to production dep in Phase 4b.14 (see packages/server above). We elect **MIT**. See [JSZip](#jszip)                                     |
 | globals                                                  | MIT                     | Node/browser globals lists for ESLint flat config; promoted from transitive to direct devDependency because eslint.config.js imports it directly |
 | eslint, prettier, vitest, vite, tailwindcss, jsdom, etc. | MIT                     |                                                                                                                                                  |
 | pino-pretty                                              | MIT                     | Dev-only (structured log formatting)                                                                                                             |
@@ -128,9 +129,10 @@ the license text (included in the npm package).
 
 jszip is dual-licensed under **MIT OR GPL-3.0-or-later**. We elect
 the **MIT** license, which is a permissive license with no copyleft
-requirements. jszip is a direct dev dependency (used for inspecting
-generated .docx and .epub files in tests) and also ships transitively
-in production as a runtime dependency of both `docx` and
+requirements. jszip was promoted from a direct dev dependency to a
+direct runtime dependency of `packages/server` in Phase 4b.14
+(operational backup/restore zipping). It also ships transitively in
+production as a runtime dependency of both `docx` and
 `epub-gen-memory`.
 
 ### axe-core
