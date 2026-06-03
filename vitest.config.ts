@@ -28,6 +28,11 @@ export default defineConfig({
         // child-process probe. The testable logic lives in scripts/native-cache.mjs
         // (kept under coverage). See the spec, "Coverage scope (Finding 1)".
         "scripts/ensure-native.mjs",
+        // Thin IO shell for `make dep-cooldown`: registry fetch, fs cache,
+        // process exit. The testable logic lives in scripts/dep-cooldown-core.mjs
+        // (kept under coverage). Same precedent as ensure-native.mjs above; see
+        // docs/superpowers/specs/2026-06-01-dependency-cooldown-design.md.
+        "scripts/dep-cooldown.mjs",
       ],
       thresholds: {
         statements: 95,

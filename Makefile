@@ -3,7 +3,7 @@
 # userland-punycode fixes.
 export NODE_OPTIONS := --disable-warning=DEP0040 ${NODE_OPTIONS}
 
-.PHONY: all test cover e2e e2e-clean lint lint-check format format-check typecheck dev build clean loc help ensure-native
+.PHONY: all test cover e2e e2e-clean lint lint-check format format-check typecheck dev build clean loc help ensure-native dep-cooldown
 
 all: lint-check format-check typecheck cover e2e ## Full CI pass: lint-check, format-check, typecheck, test+coverage, e2e
 
@@ -73,6 +73,15 @@ build: ## Build client for production
 
 loc: ## Count lines of code in our own files
 	cloc packages/shared/src packages/server/src packages/client/src e2e --exclude-dir=node_modules,dist,coverage
+
+dep-cooldown: ## Supply-chain cooldown gate: fail if any package-lock version is <7 days old and not allowlisted (needs network; NOT part of `make all`)
+	@# Authoritative gate runs in CI (dep-cooldown job) where the publish-time
+	@# cache is persisted via actions/cache. This target is the on-demand local
+	@# equivalent: first run fetches registry publish times (slow, ~1 doc per
+	@# distinct package); later runs reuse .dep-cooldown-cache.json. Kept out of
+	@# `make all` so the offline local full-pass stays network-free. See
+	@# docs/superpowers/specs/2026-06-01-dependency-cooldown-design.md.
+	@node scripts/dep-cooldown.mjs
 
 clean: ## Remove SQLite database files (full reset)
 	rm -f packages/server/data/smudge.db packages/server/data/smudge.db-shm packages/server/data/smudge.db-wal

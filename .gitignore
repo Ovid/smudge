@@ -163,3 +163,6 @@ playwright-report/
 # {version, platform, arch, node-ABI}. Dev-only; see
 # docs/superpowers/specs/2026-05-31-native-binary-cache-design.md
 .native-cache/
+
+# Dependency-cooldown publish-time cache (gitignored locally; persisted in CI via actions/cache)
+.dep-cooldown-cache.json
