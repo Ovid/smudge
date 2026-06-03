@@ -72,6 +72,29 @@ describe("validateEntryPaths", () => {
     expect(() => validateEntryPaths([bad], root)).toThrow(ZipSlipError);
     try { validateEntryPaths([bad], root); } catch (e) { expect((e as Error).message).toContain(bad); }
   });
+
+  it("rejects a null-byte entry and mentions 'null byte' in the message", () => {
+    const bad = "images/p/a\0.png";
+    expect(() => validateEntryPaths([bad], root)).toThrow(ZipSlipError);
+    try { validateEntryPaths([bad], root); } catch (e) {
+      expect((e as Error).message).toContain("null byte");
+    }
+  });
+
+  it.each([
+    ["C:/Windows/system32/evil"],
+    ["C:relative"],
+  ])("rejects Windows/drive-absolute entry %s", (bad) => {
+    expect(() => validateEntryPaths([bad], root)).toThrow(ZipSlipError);
+  });
+
+  it("rejects a sibling directory that shares the root name prefix", () => {
+    // "../target-evil/smudge.db" resolves to /tmp/target-evil/smudge.db —
+    // a sibling that must not be accepted even though it starts with "/tmp/target".
+    // This also documents that the '..' guard catches it (belt-and-suspenders).
+    const bad = "../target-evil/smudge.db";
+    expect(() => validateEntryPaths([bad], root)).toThrow(ZipSlipError);
+  });
 });
 
 it("runBackup snapshots committed state while a write txn is open", async () => {
