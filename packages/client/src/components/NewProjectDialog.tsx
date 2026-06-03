@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { ProjectModeType as ProjectMode } from "@smudge/shared";
 import { STRINGS } from "../strings";
+import { useDialogLifecycle } from "../hooks/useDialogLifecycle";
 
 interface NewProjectDialogProps {
   open: boolean;
@@ -9,19 +10,9 @@ interface NewProjectDialogProps {
 }
 
 export function NewProjectDialog({ open, onClose, onCreate }: NewProjectDialogProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const { dialogRef } = useDialogLifecycle({ open, onClose });
   const [title, setTitle] = useState("");
   const [mode, setMode] = useState<ProjectMode>("fiction");
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    if (open && !dialog.open) {
-      dialog.showModal();
-    } else if (!open && dialog.open) {
-      dialog.close();
-    }
-  }, [open]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -41,7 +32,6 @@ export function NewProjectDialog({ open, onClose, onCreate }: NewProjectDialogPr
   return (
     <dialog
       ref={dialogRef}
-      onClose={onClose}
       className="rounded-xl border border-border/60 bg-bg-primary p-8 shadow-xl backdrop:bg-black/30 max-w-md w-full"
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
