@@ -11,6 +11,7 @@ export const DEFAULT_BOMB_LIMITS = { maxUncompressed: 2 * 1024 ** 3, maxRatio: 1
 export class ZipSlipError extends Error {}
 export class DecompressionBombError extends Error {}
 
+// ZIP end-of-central-directory + central-directory record signatures (PKWARE APPNOTE).
 const EOCD_SIG = 0x06054b50;
 const CEN_SIG = 0x02014b50;
 const ZIP64_SENTINEL = 0xffffffff;
@@ -28,15 +29,20 @@ export function readCentralDirectorySizes(buf: Buffer): { path: string; uncompre
   if (off === ZIP64_SENTINEL) throw new DecompressionBombError("zip64 archive refused (declared sizes unverifiable)");
   const out: { path: string; uncompressedSize: number }[] = [];
   for (let n = 0; n < count; n++) {
-    if (buf.readUInt32LE(off) !== CEN_SIG) throw new DecompressionBombError("corrupt central directory");
-    const uncompressed = buf.readUInt32LE(off + 24);
-    if (uncompressed === ZIP64_SENTINEL) throw new DecompressionBombError("zip64 entry refused");
-    const nameLen = buf.readUInt16LE(off + 28);
-    const extraLen = buf.readUInt16LE(off + 30);
-    const commentLen = buf.readUInt16LE(off + 32);
-    const path = buf.toString("utf8", off + 46, off + 46 + nameLen);
-    out.push({ path, uncompressedSize: uncompressed });
-    off += 46 + nameLen + extraLen + commentLen;
+    try {
+      if (buf.readUInt32LE(off) !== CEN_SIG) throw new DecompressionBombError("corrupt central directory");
+      const uncompressed = buf.readUInt32LE(off + 24);
+      if (uncompressed === ZIP64_SENTINEL) throw new DecompressionBombError("zip64 entry refused");
+      const nameLen = buf.readUInt16LE(off + 28);
+      const extraLen = buf.readUInt16LE(off + 30);
+      const commentLen = buf.readUInt16LE(off + 32);
+      const path = buf.toString("utf8", off + 46, off + 46 + nameLen);
+      out.push({ path, uncompressedSize: uncompressed });
+      off += 46 + nameLen + extraLen + commentLen;
+    } catch (e) {
+      if (e instanceof DecompressionBombError) throw e;
+      throw new DecompressionBombError(`central directory read overrun at entry ${n}`);
+    }
   }
   return out;
 }

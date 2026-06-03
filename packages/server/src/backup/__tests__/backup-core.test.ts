@@ -107,6 +107,34 @@ it("readCentralDirectorySizes returns each entry's declared uncompressed size", 
   expect(total).toBe(3000);
 });
 
+it("readCentralDirectorySizes throws DecompressionBombError for garbage / non-ZIP buffer", () => {
+  expect(() =>
+    readCentralDirectorySizes(Buffer.from("this is definitely not a zip file")),
+  ).toThrow(DecompressionBombError);
+});
+
+it("readCentralDirectorySizes throws DecompressionBombError (not RangeError) for truncated central directory", async () => {
+  const zip = new JSZip();
+  zip.file("a.txt", "x".repeat(2000));
+  const buf = await zip.generateAsync({ type: "nodebuffer" });
+
+  // Locate the EOCD by scanning backwards for its signature (0x06054b50).
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 0xffff); i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  expect(eocd).toBeGreaterThan(-1); // sanity: real EOCD found
+
+  // Overwrite the central-directory offset (EOCD+16) with an out-of-range value.
+  // Use 0xFFFFFFFE — not the zip64 sentinel (0xFFFFFFFF) — so it hits the read-overrun
+  // path rather than the zip64-refused early-exit.
+  const corrupted = Buffer.from(buf);
+  corrupted.writeUInt32LE(0xfffffffe, eocd + 16);
+
+  // Without Fix 1 this would throw a raw Node RangeError; with Fix 1 it must be DecompressionBombError.
+  expect(() => readCentralDirectorySizes(corrupted)).toThrow(DecompressionBombError);
+});
+
 describe("checkDeclaredSizes", () => {
   it("refuses when total exceeds maxUncompressed", () => {
     expect(() =>
