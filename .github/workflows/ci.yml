@@ -71,12 +71,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # --ignore-scripts: this is a supply-chain gate, so it must NOT execute a
-      # fresh (potentially malicious) dependency's install/postinstall scripts on
-      # the runner before it has a chance to block the merge. The gate reads only
-      # package-lock.json + scripts/ (node built-ins, no third-party imports), so
-      # skipping lifecycle scripts costs nothing here.
-      - run: npm ci --ignore-scripts
+      # No `npm ci` here: the gate reads only package-lock.json + scripts/ (node
+      # built-ins, no third-party imports), so it needs no installed deps. Beyond
+      # saving CI time, NOT installing means this supply-chain gate's own runner
+      # never fetches or runs a fresh (potentially malicious) dependency's
+      # install/postinstall scripts before it has a chance to block the merge —
+      # strictly better than `npm ci --ignore-scripts`, which still downloads
+      # them. A package.json/lockfile desync is caught by the other CI jobs that
+      # do run `npm ci`, so dropping it here loses no real fail-fast signal.
       # Persist publish-time lookups across runs. Entries are immutable
       # (name@version -> publish date), so the cache should ACCUMULATE, not reset
       # whenever the lockfile changes. The `key` is per-run-unique (github.run_id)
