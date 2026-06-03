@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { mkdtemp, mkdir, writeFile, readFile, rm, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import Database from "better-sqlite3";
 import JSZip from "jszip";
-import { isoStampLocal, buildBackupName, runBackup, ZipSlipError, validateEntryPaths, readCentralDirectorySizes, checkDeclaredSizes, DecompressionBombError, DEFAULT_BOMB_LIMITS } from "../backup-core";
+import { isoStampLocal, buildBackupName, runBackup, runRestore, ZipSlipError, validateEntryPaths, readCentralDirectorySizes, checkDeclaredSizes, DecompressionBombError, DEFAULT_BOMB_LIMITS } from "../backup-core";
 
 describe("isoStampLocal", () => {
   it("formats local time as YYYY-MM-DD-HHmmss with hyphens only", () => {
@@ -177,5 +177,111 @@ it("runBackup snapshots committed state while a write txn is open", async () => 
   // Only the committed row is present; the uncommitted insert is absent.
   expect(snap.prepare("SELECT COUNT(*) c FROM t").get()).toEqual({ c: 1 });
   snap.close();
+  await rm(dataDir, { recursive: true, force: true });
+});
+
+// ── runRestore tests (Task 7) ────────────────────────────────────────────────
+
+async function makeArchive(dataDir: string, mode: "manual" | "auto" = "manual") {
+  const backupsDir = join(dataDir, "backups");
+  const { outFile } = await runBackup({
+    dataDir, dbPath: join(dataDir, "smudge.db"), backupsDir, mode,
+    now: () => new Date(2026, 4, 26, 12, 0, 0),
+  });
+  return outFile;
+}
+
+it("runRestore round-trips after wiping the data dir; old data is moved aside", async () => {
+  const { dataDir } = await makeFixture();
+  const archive = await makeArchive(dataDir);
+  // mutate live data so we can prove restore reverts it
+  const db = new Database(join(dataDir, "smudge.db"));
+  db.prepare("INSERT INTO t (v) VALUES (?)").run("after-backup");
+  db.close();
+
+  const { movedAsideTo } = await runRestore({
+    archivePath: archive, dataDir, confirmToken: basename(archive),
+    probePort: async () => false, // server not running
+    now: () => new Date(2026, 4, 26, 13, 0, 0),
+  });
+
+  const restored = new Database(join(dataDir, "smudge.db"), { readonly: true });
+  expect(restored.prepare("SELECT COUNT(*) c FROM t").get()).toEqual({ c: 1 }); // "after-backup" gone
+  restored.close();
+  expect(movedAsideTo).toContain(".before-restore-");
+  await rm(movedAsideTo, { recursive: true, force: true });
+  await rm(dataDir, { recursive: true, force: true });
+});
+
+it("refuses if the server is running (port probe true)", async () => {
+  const { dataDir } = await makeFixture();
+  const archive = await makeArchive(dataDir);
+  await expect(runRestore({
+    archivePath: archive, dataDir, confirmToken: basename(archive),
+    probePort: async () => true,
+  })).rejects.toThrow(/running/i);
+  await rm(dataDir, { recursive: true, force: true });
+});
+
+it("refuses on a confirmation-token mismatch without touching the data dir", async () => {
+  const { dataDir } = await makeFixture();
+  const archive = await makeArchive(dataDir);
+  const before = await readFile(join(dataDir, "smudge.db"));
+  await expect(runRestore({
+    archivePath: archive, dataDir, confirmToken: "WRONG", probePort: async () => false,
+  })).rejects.toThrow(/confirm/i);
+  expect(await readFile(join(dataDir, "smudge.db"))).toEqual(before);
+  await rm(dataDir, { recursive: true, force: true });
+});
+
+it("refuses an archive missing smudge.db", async () => {
+  const { dataDir } = await makeFixture();
+  const zip = new JSZip();
+  zip.file("images/p/a.png", Buffer.from([9]));
+  const bad = join(dataDir, "backups", "smudge-bad.zip");
+  await mkdir(join(dataDir, "backups"), { recursive: true });
+  await writeFile(bad, await zip.generateAsync({ type: "nodebuffer" }));
+  await expect(runRestore({
+    archivePath: bad, dataDir, confirmToken: "smudge-bad.zip", probePort: async () => false,
+  })).rejects.toThrow(/smudge\.db/);
+  await rm(dataDir, { recursive: true, force: true });
+});
+
+it("refuses a zip-slip archive and leaves the data dir untouched", async () => {
+  const { dataDir } = await makeFixture();
+  const before = await readFile(join(dataDir, "smudge.db"));
+  const zip = new JSZip();
+  zip.file("smudge.db", before);
+  zip.file("../../escape.txt", Buffer.from("x"));
+  const bad = join(dataDir, "backups", "smudge-slip.zip");
+  await mkdir(join(dataDir, "backups"), { recursive: true });
+  await writeFile(bad, await zip.generateAsync({ type: "nodebuffer" }));
+  await expect(runRestore({
+    archivePath: bad, dataDir, confirmToken: "smudge-slip.zip", probePort: async () => false,
+  })).rejects.toThrow(ZipSlipError);
+  // data dir untouched: original DB intact, no move-aside sibling created for THIS dataDir
+  expect(await readFile(join(dataDir, "smudge.db"))).toEqual(before);
+  const dataDirBasename = basename(dataDir);
+  expect(
+    (await readdir(join(dataDir, ".."))).some(
+      (f) => f.startsWith(dataDirBasename) && f.includes(".before-restore-"),
+    ),
+  ).toBe(false);
+  await rm(dataDir, { recursive: true, force: true });
+});
+
+it("refuses a declared-size bomb archive and leaves the data dir untouched", async () => {
+  const { dataDir } = await makeFixture();
+  const before = await readFile(join(dataDir, "smudge.db"));
+  const zip = new JSZip();
+  zip.file("smudge.db", before);
+  const bad = join(dataDir, "backups", "smudge-bomb.zip");
+  await mkdir(join(dataDir, "backups"), { recursive: true });
+  await writeFile(bad, await zip.generateAsync({ type: "nodebuffer" }));
+  await expect(runRestore({
+    archivePath: bad, dataDir, confirmToken: "smudge-bomb.zip", probePort: async () => false,
+    limits: { maxUncompressed: 1, maxRatio: 1 }, // tiny caps force the refusal
+  })).rejects.toThrow(DecompressionBombError);
+  expect(await readFile(join(dataDir, "smudge.db"))).toEqual(before); // validate-before-move-aside
   await rm(dataDir, { recursive: true, force: true });
 });

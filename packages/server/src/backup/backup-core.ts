@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import JSZip from "jszip";
 import { mkdir, rm, readFile, writeFile, readdir, rename } from "node:fs/promises";
-import { join, relative, sep, resolve, isAbsolute, win32 } from "node:path";
+import { join, relative, sep, resolve, isAbsolute, win32, basename } from "node:path";
 
 export type BackupMode = "manual" | "auto";
 
@@ -119,6 +119,68 @@ async function* walkFiles(dir: string): AsyncGenerator<string> {
     if (e.isDirectory()) yield* walkFiles(full);
     else if (e.isFile()) yield full;
   }
+}
+
+export interface RestoreOptions {
+  archivePath: string;
+  dataDir: string;
+  confirmToken: string;
+  now?: () => Date;
+  probePort?: () => Promise<boolean>;
+  limits?: BombLimits;
+}
+
+export async function runRestore(opts: RestoreOptions): Promise<{ movedAsideTo: string }> {
+  const limits = opts.limits ?? { ...DEFAULT_BOMB_LIMITS };
+  const buf = await readFile(opts.archivePath);
+
+  // 1. zip-slip + presence validation (read names from central directory)
+  const sizes = readCentralDirectorySizes(buf);
+  const names = sizes.map((e) => e.path);
+  validateEntryPaths(names, opts.dataDir);
+  if (!names.includes("smudge.db")) {
+    throw new Error(`archive is missing smudge.db: ${opts.archivePath}`);
+  }
+  // 2. bomb limits (declared sizes, before loadAsync)
+  checkDeclaredSizes(sizes, buf.length, limits);
+  // 3. running-server probe
+  if (opts.probePort && (await opts.probePort())) {
+    throw new Error("Smudge is running — stop it and rerun restore.");
+  }
+  // 4. typed-filename confirmation
+  if (opts.confirmToken !== basename(opts.archivePath)) {
+    throw new Error("restore not confirmed: token did not match the backup filename.");
+  }
+  // 5. move existing data dir aside (never delete)
+  const stamp = isoStampLocal((opts.now ?? (() => new Date()))());
+  const movedAsideTo = `${opts.dataDir}.before-restore-${stamp}`;
+  await rename(opts.dataDir, movedAsideTo).catch(async (e) => {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") { /* nothing to move */ }
+    else throw e;
+  });
+  await mkdir(opts.dataDir, { recursive: true });
+
+  // 6. extract with a post-extraction cumulative-size assertion
+  const declaredTotal = sizes.reduce((n, e) => n + e.uncompressedSize, 0);
+  let written = 0;
+  const zip = await JSZip.loadAsync(buf);
+  for (const name of names) {
+    const file = zip.file(name);
+    if (!file) continue;
+    const bytes = await file.async("nodebuffer");
+    written += bytes.length;
+    if (written > declaredTotal + 1024 * 1024) {
+      // Rare lying-archive case (central directory under-declared sizes). We do
+      // NOT roll back the partial extraction: the original data is preserved at
+      // movedAsideTo, so there is no data loss — the operator recovers from the
+      // move-aside dir. See design §2b.
+      throw new DecompressionBombError("extraction exceeded declared size — aborting");
+    }
+    const dest = join(opts.dataDir, name);
+    await mkdir(join(dest, ".."), { recursive: true });
+    await writeFile(dest, bytes);
+  }
+  return { movedAsideTo };
 }
 
 export async function runBackup(opts: BackupOptions): Promise<{ outFile: string }> {
