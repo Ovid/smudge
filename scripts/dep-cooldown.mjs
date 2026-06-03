@@ -268,4 +268,17 @@ async function main() {
   }
 }
 
-await main();
+try {
+  await main();
+} catch (err) {
+  // An unexpected throw escaping main() (e.g. a defect reached outside the
+  // per-step try/catch blocks above) must NOT exit with the violation code 1 —
+  // that is indistinguishable from a real cooldown violation and would read as
+  // "a package is too young." Surface it as a distinct non-violation failure
+  // (exit 3, the same non-1 bucket as an infra error) with a clear message and
+  // the stack, so CI shows the gate itself misbehaved rather than implying a
+  // young/tampered package. Still fails closed: the merge stays blocked. (S1)
+  console.error(`✗ unexpected error in the dependency-cooldown gate: ${errMsg(err)}`);
+  if (err instanceof Error && err.stack) console.error(err.stack);
+  process.exitCode = 3;
+}
