@@ -76,7 +76,7 @@ auto-backup: ensure-native
 	@node_modules/.bin/tsx packages/server/scripts/auto-backup.ts || true
 
 restore: ensure-native ## Restore a backup zip: make restore BACKUP=backups/smudge-….zip
-	@node_modules/.bin/tsx packages/server/scripts/restore.ts
+	@node_modules/.bin/tsx packages/server/scripts/restore.ts $(if $(MAX_UNCOMPRESSED),--max-uncompressed=$(MAX_UNCOMPRESSED)) $(if $(MAX_RATIO),--max-ratio=$(MAX_RATIO))
 
 build: ## Build client for production
 	npm run build -w packages/client

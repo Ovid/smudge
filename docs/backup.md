@@ -119,10 +119,11 @@ the restore.
 
 The archive validator rejects files whose declared uncompressed size
 exceeds 2 GiB or whose compression ratio exceeds 10×. For legitimate
-large databases you can raise those limits:
+large databases you can raise those limits with the `MAX_UNCOMPRESSED`
+(bytes) and `MAX_RATIO` make variables:
 
 ```bash
-make restore BACKUP=backups/smudge-….zip -- --max-uncompressed=4294967296 --max-ratio=20
+make restore BACKUP=backups/smudge-….zip MAX_UNCOMPRESSED=4294967296 MAX_RATIO=20
 ```
 
 ### Restore with a non-default port
