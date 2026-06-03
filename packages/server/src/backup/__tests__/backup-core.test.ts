@@ -5,7 +5,7 @@ import { join, basename } from "node:path";
 import { randomBytes } from "node:crypto";
 import Database from "better-sqlite3";
 import JSZip from "jszip";
-import { isoStampLocal, buildBackupName, runBackup, runRestore, rotateAutoBackups, ZipSlipError, validateEntryPaths, readCentralDirectorySizes, checkDeclaredSizes, DecompressionBombError, RestorePreconditionError, RestorePartialError, DEFAULT_BOMB_LIMITS } from "../backup-core";
+import { isoStampLocal, buildBackupName, runBackup, runRestore, rotateAutoBackups, runAutoBackup, ZipSlipError, validateEntryPaths, readCentralDirectorySizes, checkDeclaredSizes, DecompressionBombError, RestorePreconditionError, RestorePartialError, DEFAULT_BOMB_LIMITS } from "../backup-core";
 
 describe("isoStampLocal", () => {
   it("formats local time as YYYY-MM-DD-HHmmss with hyphens only", () => {
@@ -544,4 +544,80 @@ it("keeps newest N auto-backups; never touches manual or unrelated files", async
   expect(left).not.toContain("smudge-auto-2026-05-26-100000.zip");
   expect(left).not.toContain("smudge-auto-2026-05-26-100001.zip");
   await rm(dir, { recursive: true, force: true });
+});
+
+// ── walkFiles: no images dir (catch-return branch) ──────────────────────────
+
+it("runBackup succeeds when there is no images directory (walkFiles readdir-catch branch)", async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), "smudge-noimages-"));
+  const dbPath = join(dataDir, "smudge.db");
+  const db = new Database(dbPath);
+  db.exec("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)");
+  db.close();
+  // No images/ dir created — exercises the walkFiles readdir-catch return.
+  const backupsDir = join(dataDir, "backups");
+  const { outFile } = await runBackup({
+    dataDir, dbPath, backupsDir, mode: "manual",
+    now: () => new Date(2026, 4, 26, 10, 0, 0),
+  });
+  const zip = await JSZip.loadAsync(await readFile(outFile));
+  expect(zip.file("smudge.db")).toBeTruthy();
+  // No images entries
+  expect(Object.keys(zip.files).filter((k) => k.startsWith("images/"))).toHaveLength(0);
+  await rm(dataDir, { recursive: true, force: true });
+});
+
+// ── Task 8 supplemental: rotateAutoBackups with non-existent backupsDir ─────
+
+it("rotateAutoBackups returns empty deleted list when backupsDir does not exist", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "smudge-rot-nodir-"));
+  const nonExistent = join(dir, "does-not-exist");
+  const { deleted } = await rotateAutoBackups({ backupsDir: nonExistent, keep: 10 });
+  expect(deleted).toEqual([]);
+  await rm(dir, { recursive: true, force: true });
+});
+
+// ── Task 9: runAutoBackup ────────────────────────────────────────────────────
+
+it("skips when there is no database", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "smudge-auto-"));
+  const r = await runAutoBackup({
+    dataDir: dir, dbPath: join(dir, "smudge.db"), backupsDir: join(dir, "backups"), keep: 10,
+  });
+  expect(r.status).toBe("skipped-no-db");
+  expect(r.outFile).toBeUndefined();
+  await rm(dir, { recursive: true, force: true });
+});
+
+it("skips on opt-out", async () => {
+  const { dataDir, dbPath } = await makeFixture();
+  const r = await runAutoBackup({
+    dataDir, dbPath, backupsDir: join(dataDir, "backups"), keep: 10, skip: true,
+  });
+  expect(r.status).toBe("skipped-optout");
+  await rm(dataDir, { recursive: true, force: true });
+});
+
+it("produces a smudge-auto archive and rotates, status ok", async () => {
+  const { dataDir, dbPath } = await makeFixture();
+  const r = await runAutoBackup({
+    dataDir, dbPath, backupsDir: join(dataDir, "backups"), keep: 10,
+    now: () => new Date(2026, 4, 26, 8, 0, 0),
+  });
+  expect(r.status).toBe("ok");
+  expect(r.outFile).toContain("smudge-auto-2026-05-26-080000.zip");
+  await rm(dataDir, { recursive: true, force: true });
+});
+
+it("is best-effort: returns 'failed' with a warning instead of throwing", async () => {
+  const { dataDir, dbPath } = await makeFixture();
+  // point backupsDir at a path whose parent is a FILE, so mkdir fails
+  const blocker = join(dataDir, "blocker");
+  await writeFile(blocker, "x");
+  const r = await runAutoBackup({
+    dataDir, dbPath, backupsDir: join(blocker, "backups"), keep: 10,
+  });
+  expect(r.status).toBe("failed");
+  expect(r.warning).toBeTruthy();
+  await rm(dataDir, { recursive: true, force: true });
 });

@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import JSZip from "jszip";
-import { mkdir, rm, readFile, writeFile, readdir, rename, statfs } from "node:fs/promises";
+import { mkdir, rm, readFile, writeFile, readdir, rename, statfs, access } from "node:fs/promises";
 import { join, relative, sep, resolve, isAbsolute, win32, basename, dirname } from "node:path";
 
 export type BackupMode = "manual" | "auto";
@@ -228,6 +228,28 @@ export async function runRestore(opts: RestoreOptions): Promise<{ movedAsideTo: 
     );
   }
   return { movedAsideTo };
+}
+
+export type AutoStatus = "ok" | "skipped-no-db" | "skipped-optout" | "failed";
+
+export async function runAutoBackup(o: {
+  dataDir: string; dbPath: string; backupsDir: string; keep: number; skip?: boolean; now?: () => Date;
+}): Promise<{ status: AutoStatus; outFile?: string; warning?: string }> {
+  if (o.skip) return { status: "skipped-optout" };
+  try {
+    await access(o.dbPath);
+  } catch {
+    return { status: "skipped-no-db" };
+  }
+  try {
+    const { outFile } = await runBackup({
+      dataDir: o.dataDir, dbPath: o.dbPath, backupsDir: o.backupsDir, mode: "auto", now: o.now,
+    });
+    await rotateAutoBackups({ backupsDir: o.backupsDir, keep: o.keep }).catch(() => {/* rotation is best-effort */});
+    return { status: "ok", outFile };
+  } catch (e) {
+    return { status: "failed", warning: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 export async function rotateAutoBackups(o: { backupsDir: string; keep: number }): Promise<{ deleted: string[] }> {
