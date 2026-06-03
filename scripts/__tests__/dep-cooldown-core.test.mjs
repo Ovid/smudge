@@ -97,6 +97,16 @@ describe("isValidRegistryName", () => {
     expect(isValidRegistryName("@scope/some-package")).toBe(true);
   });
 
+  // npm only enforces lowercase for NEWLY published names; pre-2017 names with
+  // uppercase letters (JSONStream, UglifyJS, Base64) remain valid and installable,
+  // and registry.npmjs.org paths are case-sensitive. A lowercase-only grammar
+  // would falsely block such a dep with a misleading "yanked or tampered?" message. (I1)
+  it("accepts legacy uppercase package names", () => {
+    expect(isValidRegistryName("JSONStream")).toBe(true);
+    expect(isValidRegistryName("UglifyJS")).toBe(true);
+    expect(isValidRegistryName("@Scope/Thing")).toBe(true);
+  });
+
   // C1: an un-validated name from the (untrusted) lockfile could smuggle a path
   // and make the metadata fetch read a DIFFERENT package's publish date.
   it("rejects names that could change the fetch target or smuggle a path", () => {
@@ -106,7 +116,6 @@ describe("isValidRegistryName", () => {
     expect(isValidRegistryName("/etc/passwd")).toBe(false);
     expect(isValidRegistryName("foo/")).toBe(false); // trailing slash
     expect(isValidRegistryName(".hidden")).toBe(false); // may not start with a dot
-    expect(isValidRegistryName("Foo")).toBe(false); // uppercase not allowed
     expect(isValidRegistryName("")).toBe(false);
     expect(isValidRegistryName(undefined)).toBe(false);
     expect(isValidRegistryName(42)).toBe(false);

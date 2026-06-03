@@ -129,17 +129,25 @@ export function tarballMatchesIdentity(resolved, name, version) {
 /**
  * npm package-name grammar restricted to what is safe to splice into a registry
  * metadata URL: an optional single `@scope/` prefix followed by the bare name,
- * lowercase, no path-traversal (`..`), no extra slashes, no leading dot/underscore.
+ * no path-traversal (`..`), no extra slashes, no leading dot/underscore.
  * The lockfile — and therefore the derived/alias name — is the untrusted input
  * the gate exists to police, so a name is validated BEFORE it is used to build
  * the fetch URL: a crafted name like `@scope/a/../../b` would otherwise URL-
  * normalize to a different package and borrow its (innocent, aged) publish date.
+ *
+ * Uppercase is ALLOWED: npm only enforces lowercase for newly published names,
+ * but pre-2017 names (JSONStream, UglifyJS, Base64) keep their uppercase and are
+ * still installable, and registry.npmjs.org paths are case-sensitive. A
+ * lowercase-only grammar would falsely divert such a legitimate dep to a
+ * misleading "yanked or tampered?" violation (I1). The structural guards that do
+ * the security work (single optional `@scope/`, no `..` reachable, no extra
+ * slash, no leading dot/underscore) are case-independent and unchanged.
  * @param {unknown} name
  * @returns {boolean}
  */
 export function isValidRegistryName(name) {
   if (typeof name !== "string") return false;
-  return /^(?:@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/.test(name);
+  return /^(?:@[a-zA-Z0-9-~][a-zA-Z0-9-._~]*\/)?[a-zA-Z0-9-~][a-zA-Z0-9-._~]*$/.test(name);
 }
 
 /**
