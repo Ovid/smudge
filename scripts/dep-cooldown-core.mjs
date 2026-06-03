@@ -217,7 +217,11 @@ export function collectRegistryVersions(lockfile) {
     // truthy version (5, true, {}) is malformed lockfile input, not a real dep —
     // skip it rather than stringify it into an id/tarball path where being
     // fail-closed would only be a coincidence of how it stringifies (S4).
-    if (typeof entry.version !== "string" || !entry.version || !isRegistryResolved(entry.resolved)) {
+    if (
+      typeof entry.version !== "string" ||
+      !entry.version ||
+      !isRegistryResolved(entry.resolved)
+    ) {
       skipped++;
       continue;
     }
@@ -299,7 +303,9 @@ export function parseAllowlist(entries) {
     // weakens the allowlist's auditability (every waiver should be one
     // unambiguous, reviewable line).
     if (byId.has(id)) {
-      throw new Error(`duplicate allowlist entry for "${id}" — each package@version may be waived only once.`);
+      throw new Error(
+        `duplicate allowlist entry for "${id}" — each package@version may be waived only once.`,
+      );
     }
     byId.set(id, {
       reason: e.reason,

@@ -367,9 +367,9 @@ describe("tarballMatchesIdentity", () => {
   // A malformed percent-escape is a genuinely unusable URL — stays a mismatch
   // (fail-closed), never throws out of the comparison.
   it("rejects a resolved URL with a malformed percent-escape", () => {
-    expect(tarballMatchesIdentity("https://registry.npmjs.org/%zz/-/x-1.0.0.tgz", "x", "1.0.0")).toBe(
-      false,
-    );
+    expect(
+      tarballMatchesIdentity("https://registry.npmjs.org/%zz/-/x-1.0.0.tgz", "x", "1.0.0"),
+    ).toBe(false);
   });
 });
 
