@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import JSZip from "jszip";
-import { isoStampLocal, buildBackupName, runBackup } from "../backup-core";
+import { isoStampLocal, buildBackupName, runBackup, ZipSlipError, validateEntryPaths } from "../backup-core";
 
 describe("isoStampLocal", () => {
   it("formats local time as YYYY-MM-DD-HHmmss with hyphens only", () => {
@@ -55,6 +55,23 @@ it("runBackup writes a zip with smudge.db + nested images/", async () => {
   expect((await readdir(dataDir)).some((f) => f.endsWith(".backup-staging.db"))).toBe(false);
 
   await rm(dataDir, { recursive: true, force: true });
+});
+
+describe("validateEntryPaths", () => {
+  const root = "/tmp/target";
+  it("accepts in-tree entries", () => {
+    expect(() => validateEntryPaths(["smudge.db", "images/p/a.png"], root)).not.toThrow();
+  });
+  it.each([
+    ["../../etc/passwd"],
+    ["/etc/passwd"],
+    ["a/../../etc/passwd"],
+    ["images/../../escape"],
+    ["foo bar"],
+  ])("rejects %s and names it", (bad) => {
+    expect(() => validateEntryPaths([bad], root)).toThrow(ZipSlipError);
+    try { validateEntryPaths([bad], root); } catch (e) { expect((e as Error).message).toContain(bad); }
+  });
 });
 
 it("runBackup snapshots committed state while a write txn is open", async () => {
