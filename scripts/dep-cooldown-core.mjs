@@ -449,6 +449,16 @@ export function publishDateFromTime(time, version) {
  * into a spurious "absent" (blocking) violation. Indexing the null-prototype
  * map sanitizeCache returns yields the cached string or undefined; `?? null`
  * folds a miss back to null. (S2)
+ *
+ * Accepted residual (S5): if the fresh doc omits a version because the registry
+ * GENUINELY yanked it (not a transient partial response), this fallback
+ * resurrects the stale cached date and the version passes instead of being
+ * flagged "absent". The window is narrow — a sibling version must force the
+ * refetch, and fetchPublishTimes already throws when the whole `time` object is
+ * missing/malformed, so a successful return with a single key absent is more
+ * often a transient omission than a yank. We keep the S2 false-"absent" fix over
+ * closing S5: the former would block a legitimate dependency on every partial
+ * refetch, the latter requires an exact yank-during-sibling-refetch coincidence.
  * @param {Record<string, unknown>} times
  * @param {string} version
  * @param {string} id
