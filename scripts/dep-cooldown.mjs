@@ -16,6 +16,7 @@
  * See docs/superpowers/specs/2026-06-01-dependency-cooldown-design.md.
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -50,6 +51,34 @@ function readJson(p) {
 /** @param {unknown} err */
 function errMsg(err) {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Is the publish-time cache file committed to git? It must NEVER be — it is a
+ * local/CI-only artifact (gitignored locally, restored via actions/cache in CI).
+ * A committed cache is the C1 fail-open: CI checks out the PR tree, so a PR
+ * author who `git add -f`s a `.dep-cooldown-cache.json` of forged old dates could
+ * (on a cold cache, before actions/cache restores over it) have those dates
+ * trusted by the `needFetch` short-circuit and skip the registry entirely — a
+ * young/malicious package passing the gate. The same file would also be trusted
+ * by a maintainer who checks out the PR branch and runs `make dep-cooldown`
+ * locally (no actions/cache there at all). We refuse to run rather than depend on
+ * cache-restore ordering. `git ls-files --error-unmatch` exits 0 only when the
+ * path is tracked; a non-zero exit (untracked, or git/not-a-repo) means "not
+ * committed" and we proceed normally. A cache file merely PRESENT but untracked
+ * (the legitimate restored/local cache) is fine.
+ * @returns {boolean}
+ */
+function cacheFileIsGitTracked() {
+  try {
+    execFileSync("git", ["ls-files", "--error-unmatch", CACHE_PATH], {
+      cwd: repoRoot,
+      stdio: "ignore",
+    });
+    return true; // exit 0 => the path is tracked
+  } catch {
+    return false; // non-zero exit: untracked, or git unavailable / not a repo
+  }
 }
 
 /**
@@ -119,16 +148,32 @@ async function main() {
     return;
   }
 
+  // C1: refuse to run if the publish-time cache is committed to git. A committed
+  // cache from a PR author's tree could feed the gate forged old dates and skip
+  // the registry via the needFetch short-circuit (a fail-open) — see
+  // cacheFileIsGitTracked. This guard closes that vector for both CI (the cold-
+  // cache window before actions/cache restores) and local `make dep-cooldown`,
+  // without depending on cache-restore ordering.
+  if (cacheFileIsGitTracked()) {
+    console.error(
+      `✗ ${CACHE_PATH} is committed to git, but it is a local/CI publish-time cache that must never be tracked — a committed cache could feed the gate forged publish dates (fail-open). Remove it from version control (\`git rm --cached .dep-cooldown-cache.json\`); it is already gitignored.`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   // Publish-time cache (immutable entries; gitignored locally, actions/cache in CI).
   // A corrupt/partial cache file (e.g. a prior run killed mid-write) must not
   // crash the gate — fall back to an empty cache and re-fetch.
   //
   // TRUST BOUNDARY: cached dates are trusted as-is (no integrity check), so a
-  // forged entry could age a young package. This is an accepted, documented
-  // residual risk — CI cache scoping isolates main from untrusted branches, and
+  // forged entry could age a young package. The committed-file vector (a PR
+  // author committing a forged cache, C1) is closed by the git-tracked guard
+  // above; the residual is a forged entry reaching the cache through a TRUSTED
+  // channel — CI cache scoping isolates main from untrusted branches, and
   // artifact integrity is enforced separately by `npm ci`'s `integrity` hashes
-  // (a forged publish DATE does not bypass them). See the CI cache step and the
-  // design spec's threat model for the full rationale.
+  // (a forged publish DATE does not bypass them). This is an accepted, documented
+  // residual risk; see the CI cache step and the design spec's threat model.
   // sanitizeCache coerces a non-object-but-valid-JSON file (null/number/string/
   // array — which would crash `g.id in cache` below) to an empty map and drops
   // any non-string entry value (a tampered date that would otherwise age a young
