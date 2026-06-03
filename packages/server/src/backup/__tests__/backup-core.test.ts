@@ -5,7 +5,7 @@ import { join, basename } from "node:path";
 import { randomBytes } from "node:crypto";
 import Database from "better-sqlite3";
 import JSZip from "jszip";
-import { isoStampLocal, buildBackupName, runBackup, runRestore, ZipSlipError, validateEntryPaths, readCentralDirectorySizes, checkDeclaredSizes, DecompressionBombError, RestorePreconditionError, RestorePartialError, DEFAULT_BOMB_LIMITS } from "../backup-core";
+import { isoStampLocal, buildBackupName, runBackup, runRestore, rotateAutoBackups, ZipSlipError, validateEntryPaths, readCentralDirectorySizes, checkDeclaredSizes, DecompressionBombError, RestorePreconditionError, RestorePartialError, DEFAULT_BOMB_LIMITS } from "../backup-core";
 
 describe("isoStampLocal", () => {
   it("formats local time as YYYY-MM-DD-HHmmss with hyphens only", () => {
@@ -522,4 +522,26 @@ it("T-1: on post-move extraction failure (JSZip size-mismatch or byte-budget ove
   // Cleanup
   await rm(err.movedAsideTo, { recursive: true, force: true });
   await rm(dataDir, { recursive: true, force: true });
+});
+
+// ── Task 8: rotateAutoBackups ────────────────────────────────────────────────
+
+it("keeps newest N auto-backups; never touches manual or unrelated files", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "smudge-rot-"));
+  const autos = Array.from({ length: 12 }, (_, i) =>
+    `smudge-auto-2026-05-26-1000${String(i).padStart(2, "0")}.zip`);
+  for (const f of [...autos, "smudge-2026-05-01-090000.zip", "smudge-2026-05-02-090000.zip", "notes.txt"]) {
+    await writeFile(join(dir, f), Buffer.from("x"));
+  }
+  const { deleted } = await rotateAutoBackups({ backupsDir: dir, keep: 10 });
+  expect(deleted).toHaveLength(2); // 12 - 10
+  const left = (await readdir(dir)).sort();
+  expect(left).toContain("smudge-2026-05-01-090000.zip");
+  expect(left).toContain("smudge-2026-05-02-090000.zip");
+  expect(left).toContain("notes.txt");
+  expect(left.filter((f) => f.startsWith("smudge-auto-"))).toHaveLength(10);
+  // the two OLDEST autos are the ones gone
+  expect(left).not.toContain("smudge-auto-2026-05-26-100000.zip");
+  expect(left).not.toContain("smudge-auto-2026-05-26-100001.zip");
+  await rm(dir, { recursive: true, force: true });
 });

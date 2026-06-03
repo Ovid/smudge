@@ -230,6 +230,19 @@ export async function runRestore(opts: RestoreOptions): Promise<{ movedAsideTo: 
   return { movedAsideTo };
 }
 
+export async function rotateAutoBackups(o: { backupsDir: string; keep: number }): Promise<{ deleted: string[] }> {
+  let names: string[];
+  try {
+    names = await readdir(o.backupsDir);
+  } catch {
+    return { deleted: [] };
+  }
+  const autos = names.filter((f) => f.startsWith("smudge-auto-") && f.endsWith(".zip")).sort(); // lexical == chronological
+  const toDelete = autos.slice(0, Math.max(0, autos.length - o.keep));
+  for (const f of toDelete) await rm(join(o.backupsDir, f), { force: true });
+  return { deleted: toDelete };
+}
+
 export async function runBackup(opts: BackupOptions): Promise<{ outFile: string }> {
   const now = (opts.now ?? (() => new Date()))();
   const stamp = isoStampLocal(now);
