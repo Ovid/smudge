@@ -56,3 +56,30 @@ it("runBackup writes a zip with smudge.db + nested images/", async () => {
 
   await rm(dataDir, { recursive: true, force: true });
 });
+
+it("runBackup snapshots committed state while a write txn is open", async () => {
+  const { dataDir, dbPath } = await makeFixture();
+  const backupsDir = join(dataDir, "backups");
+  // Open a second connection and hold an uncommitted write open.
+  const live = new Database(dbPath);
+  live.exec("BEGIN IMMEDIATE");
+  live.prepare("INSERT INTO t (v) VALUES (?)").run("uncommitted");
+
+  const { outFile } = await runBackup({
+    dataDir, dbPath, backupsDir, mode: "manual",
+    now: () => new Date(2026, 4, 26, 9, 0, 0),
+  });
+
+  live.exec("ROLLBACK");
+  live.close();
+
+  const zip = await JSZip.loadAsync(await readFile(outFile));
+  const dbBytes = await zip.file("smudge.db")!.async("nodebuffer");
+  const tmp = join(dataDir, "snap.db");
+  await writeFile(tmp, dbBytes);
+  const snap = new Database(tmp, { readonly: true });
+  // Only the committed row is present; the uncommitted insert is absent.
+  expect(snap.prepare("SELECT COUNT(*) c FROM t").get()).toEqual({ c: 1 });
+  snap.close();
+  await rm(dataDir, { recursive: true, force: true });
+});
