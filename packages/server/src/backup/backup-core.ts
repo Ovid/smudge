@@ -94,6 +94,21 @@ export function checkDeclaredSizes(
   }
 }
 
+/** Resolve a `--max-*` restore CLI value. Absent or blank → fallback (the default
+ *  applies only when the flag is omitted). A finite value >= 0 is used verbatim,
+ *  so `--max-*=0` applies the strictest possible cap instead of being silently
+ *  coerced to the default. NaN / negative / Infinity (a typo'd or nonsensical cap)
+ *  throws rather than silently defaulting, so the operator is never told a
+ *  stricter limit is in force than actually is. */
+export function resolveBombLimit(raw: string | undefined, fallback: number, label: string): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) {
+    throw new Error(`invalid ${label}: ${JSON.stringify(raw)} (expected a number >= 0)`);
+  }
+  return n;
+}
+
 export function validateEntryPaths(entryPaths: string[], targetRoot: string): void {
   const root = resolve(targetRoot);
   for (const p of entryPaths) {

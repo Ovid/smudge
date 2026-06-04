@@ -2,7 +2,12 @@ import { createInterface } from "node:readline/promises";
 import { connect } from "node:net";
 import { basename } from "node:path";
 import { getDataDir, getDbPath } from "../src/config/paths";
-import { runRestore, RestorePartialError, DEFAULT_BOMB_LIMITS } from "../src/backup/backup-core";
+import {
+  runRestore,
+  RestorePartialError,
+  DEFAULT_BOMB_LIMITS,
+  resolveBombLimit,
+} from "../src/backup/backup-core";
 
 function arg(name: string): string | undefined {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -68,8 +73,12 @@ try {
     confirmToken,
     probePort,
     limits: {
-      maxUncompressed: Number(arg("max-uncompressed")) || DEFAULT_BOMB_LIMITS.maxUncompressed,
-      maxRatio: Number(arg("max-ratio")) || DEFAULT_BOMB_LIMITS.maxRatio,
+      maxUncompressed: resolveBombLimit(
+        arg("max-uncompressed"),
+        DEFAULT_BOMB_LIMITS.maxUncompressed,
+        "max-uncompressed",
+      ),
+      maxRatio: resolveBombLimit(arg("max-ratio"), DEFAULT_BOMB_LIMITS.maxRatio, "max-ratio"),
     },
   });
   console.log(`Restored from ${archivePath}. Previous data preserved at ${movedAsideTo}.`);

@@ -14,6 +14,7 @@ import {
   runAutoBackup,
   ZipSlipError,
   resolveKeep,
+  resolveBombLimit,
   DEFAULT_KEEP,
   validateEntryPaths,
   readCentralDirectorySizes,
@@ -146,6 +147,29 @@ it("S2/I3: runBackup replaces an existing archive atomically and leaves no .tmp 
 
   // No per-process .tmp file left behind by the publish.
   expect((await readdir(backupsDir)).filter((f) => f.includes(".tmp"))).toEqual([]);
+});
+
+describe("resolveBombLimit (I5)", () => {
+  it("returns the fallback when the flag is absent or blank", () => {
+    expect(resolveBombLimit(undefined, 2048, "max-uncompressed")).toBe(2048);
+    expect(resolveBombLimit("", 2048, "max-uncompressed")).toBe(2048);
+    expect(resolveBombLimit("   ", 2048, "max-uncompressed")).toBe(2048);
+  });
+  it("honors an explicit 0 as the strictest cap (not a fallback)", () => {
+    expect(resolveBombLimit("0", 2048, "max-uncompressed")).toBe(0);
+  });
+  it("uses a finite non-negative value verbatim, including fractional ratios", () => {
+    expect(resolveBombLimit("50", 2048, "max-uncompressed")).toBe(50);
+    expect(resolveBombLimit("2.5", 10, "max-ratio")).toBe(2.5);
+  });
+  it.each([["abc"], ["-1"], ["Infinity"], ["NaN"]])(
+    "throws for the invalid value %j instead of silently defaulting",
+    (raw) => {
+      expect(() => resolveBombLimit(raw, 2048, "max-uncompressed")).toThrow(
+        /invalid max-uncompressed/,
+      );
+    },
+  );
 });
 
 describe("validateEntryPaths", () => {
