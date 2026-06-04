@@ -10,14 +10,17 @@ export const DEFAULT_BOMB_LIMITS = { maxUncompressed: 2 * 1024 ** 3, maxRatio: 1
 
 export class ZipSlipError extends Error {}
 export class DecompressionBombError extends Error {}
-/** Thrown when the post-move extraction byte-budget is exceeded; carries the move-aside path. */
+/** Thrown when the post-move extraction byte-budget is exceeded; carries the move-aside path(s). */
 export class RestorePartialError extends DecompressionBombError {
+  /** When the DB lives outside dataDir, the sibling where the prior external DB was preserved. */
+  readonly dbMovedAsideTo?: string;
   constructor(
     message: string,
     readonly movedAsideTo: string,
-    options?: { cause?: unknown },
+    options?: { cause?: unknown; dbMovedAsideTo?: string },
   ) {
     super(message, options as ErrorOptions);
+    this.dbMovedAsideTo = options?.dbMovedAsideTo;
   }
 }
 /** Thrown when a precondition for restore is not met (e.g. missing smudge.db, server running,
@@ -150,6 +153,11 @@ const FREE_SPACE_HEADROOM = 100 * 1024 * 1024;
 export interface RestoreOptions {
   archivePath: string;
   dataDir: string;
+  /** Absolute path to the DB file; defaults to `join(dataDir, "smudge.db")`.
+   *  May point OUTSIDE dataDir (the `DB_PATH` config that backup already
+   *  honors). When external, restore writes the restored DB here and preserves
+   *  the prior external DB at a `.before-restore-<stamp>` sibling. */
+  dbPath?: string;
   confirmToken: string;
   now?: () => Date;
   probePort?: () => Promise<boolean>;
@@ -160,8 +168,15 @@ export interface RestoreOptions {
   freeBytes?: (path: string) => Promise<number>;
 }
 
-export async function runRestore(opts: RestoreOptions): Promise<{ movedAsideTo: string }> {
+export async function runRestore(
+  opts: RestoreOptions,
+): Promise<{ movedAsideTo: string; dbMovedAsideTo?: string }> {
   const limits = opts.limits ?? DEFAULT_BOMB_LIMITS;
+  // The DB may live outside dataDir (DB_PATH config). When it does, the data-dir
+  // move-aside below will NOT preserve it, so we move it aside separately and
+  // write the restored DB to its real home rather than into dataDir.
+  const dbPath = opts.dbPath ?? join(opts.dataDir, "smudge.db");
+  const dbIsExternal = !resolve(dbPath).startsWith(resolve(opts.dataDir) + sep);
   const freeBytesImpl =
     opts.freeBytes ??
     (async (p: string) => {
@@ -200,21 +215,37 @@ export async function runRestore(opts: RestoreOptions): Promise<{ movedAsideTo: 
       `insufficient free space: need ${declaredTotal + FREE_SPACE_HEADROOM} bytes, have ${available}`,
     );
   }
-  // 6. move existing data dir aside (never delete)
+  // 6. move existing data dir aside (never delete). A rename failure here means
+  // nothing was touched yet, so it propagates as a precondition-style raw error.
   const stamp = isoStampLocal((opts.now ?? (() => new Date()))());
   const movedAsideTo = `${opts.dataDir}.before-restore-${stamp}`;
-  await rename(opts.dataDir, movedAsideTo).catch(async (e) => {
+  await rename(opts.dataDir, movedAsideTo).catch((e) => {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") {
       /* nothing to move */
     } else throw e;
   });
-  await mkdir(opts.dataDir, { recursive: true });
 
-  // 7. extract with a post-extraction cumulative-size assertion.
-  // Wrap entirely so ANY failure after the move-aside (JSZip internal throws, ENOSPC,
-  // etc.) is surfaced as RestorePartialError carrying movedAsideTo — the operator
-  // always learns where the original data is preserved.
+  // 7. recreate dataDir, move an external DB aside, and extract — all inside one
+  // try so ANY failure after the data-dir move-aside (mkdir recreate, the external
+  // DB rename, JSZip internal throws, ENOSPC, the byte-budget overrun) surfaces as
+  // RestorePartialError carrying the preservation path(s). The operator always
+  // learns where the original data is. (I1: mkdir is inside; C1: external DB here.)
+  let dbMovedAsideTo: string | undefined;
   try {
+    await mkdir(opts.dataDir, { recursive: true });
+    if (dbIsExternal) {
+      const dbAside = `${dbPath}.before-restore-${stamp}`;
+      await rename(dbPath, dbAside).then(
+        () => {
+          dbMovedAsideTo = dbAside;
+        },
+        (e) => {
+          if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+            /* no existing external DB to preserve */
+          } else throw e;
+        },
+      );
+    }
     let written = 0;
     const zip = await JSZip.loadAsync(buf);
     for (const name of names) {
@@ -232,9 +263,17 @@ export async function runRestore(opts: RestoreOptions): Promise<{ movedAsideTo: 
         // movedAsideTo, so there is no data loss — the operator recovers from the
         // move-aside dir. See design §2b. RestorePartialError extends
         // DecompressionBombError so existing instanceof checks still hold.
-        throw new RestorePartialError("extraction exceeded declared size — aborting", movedAsideTo);
+        throw new RestorePartialError(
+          "extraction exceeded declared size — aborting",
+          movedAsideTo,
+          {
+            dbMovedAsideTo,
+          },
+        );
       }
-      const dest = join(opts.dataDir, name);
+      // The DB lands at its real home (possibly outside dataDir); everything else
+      // extracts into the freshly recreated dataDir.
+      const dest = name === "smudge.db" ? dbPath : join(opts.dataDir, name);
       await mkdir(join(dest, ".."), { recursive: true });
       await writeFile(dest, bytes);
     }
@@ -243,10 +282,10 @@ export async function runRestore(opts: RestoreOptions): Promise<{ movedAsideTo: 
     throw new RestorePartialError(
       `restore failed after move-aside (original preserved at ${movedAsideTo}): ${e instanceof Error ? e.message : String(e)}`,
       movedAsideTo,
-      { cause: e },
+      { cause: e, dbMovedAsideTo },
     );
   }
-  return { movedAsideTo };
+  return { movedAsideTo, dbMovedAsideTo };
 }
 
 export type AutoStatus = "ok" | "skipped-no-db" | "skipped-optout" | "failed";

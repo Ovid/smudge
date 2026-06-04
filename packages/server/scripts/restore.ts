@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline/promises";
 import { connect } from "node:net";
 import { basename } from "node:path";
-import { getDataDir } from "../src/config/paths";
+import { getDataDir, getDbPath } from "../src/config/paths";
 import { runRestore, RestorePartialError, DEFAULT_BOMB_LIMITS } from "../src/backup/backup-core";
 
 function arg(name: string): string | undefined {
@@ -61,9 +61,10 @@ const confirmToken = (
 rl.close();
 
 try {
-  const { movedAsideTo } = await runRestore({
+  const { movedAsideTo, dbMovedAsideTo } = await runRestore({
     archivePath,
     dataDir: getDataDir(),
+    dbPath: getDbPath(),
     confirmToken,
     probePort,
     limits: {
@@ -72,10 +73,16 @@ try {
     },
   });
   console.log(`Restored from ${archivePath}. Previous data preserved at ${movedAsideTo}.`);
+  if (dbMovedAsideTo) {
+    console.log(`Previous database (outside the data dir) preserved at ${dbMovedAsideTo}.`);
+  }
 } catch (e) {
   if (e instanceof RestorePartialError) {
     console.error(`Restore aborted mid-extraction: ${e.message}`);
     console.error(`Your previous data is preserved at: ${e.movedAsideTo}`);
+    if (e.dbMovedAsideTo) {
+      console.error(`Your previous database is preserved at: ${e.dbMovedAsideTo}`);
+    }
   } else {
     console.error(`Restore aborted: ${e instanceof Error ? e.message : String(e)}`);
   }

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtemp, mkdir, writeFile, readFile, rm, readdir, stat } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm, readdir, stat, chmod } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, basename, dirname } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -496,6 +496,121 @@ it("restores successfully when dataDir does not exist yet (ENOENT rename branch)
   expect(restoredDb.prepare("SELECT v FROM t").get()).toEqual({ v: "t3-value" });
   restoredDb.close();
 });
+
+// ── C1: restore honors an external DB_PATH (outside the data dir) ────────────
+
+it("C1: restore writes smudge.db to an external dbPath and preserves the old external DB", async () => {
+  // DB_PATH-outside config: dataDir holds images only; the live DB lives in a
+  // sibling directory outside dataDir. Backup honors getDbPath(); restore must too.
+  const parent = await mkdtemp(join(tmpdir(), "smudge-c1-"));
+  tempDirs.push(parent);
+  const dataDir = join(parent, "data");
+  const dbPath = join(parent, "external", "smudge.db"); // outside dataDir
+  await mkdir(join(dataDir, "images", "p"), { recursive: true });
+  await writeFile(join(dataDir, "images", "p", "a.png"), Buffer.from([1, 2, 3]));
+  await mkdir(dirname(dbPath), { recursive: true });
+  const seed = new Database(dbPath);
+  seed.exec("CREATE TABLE t (v TEXT)");
+  seed.prepare("INSERT INTO t VALUES (?)").run("backed-up");
+  seed.close();
+
+  // Backup reads the DB from the external dbPath.
+  const backupsDir = join(parent, "backups");
+  const { outFile: archive } = await runBackup({
+    dataDir,
+    dbPath,
+    backupsDir,
+    mode: "manual",
+    now: () => new Date(2026, 4, 26, 12, 0, 0),
+  });
+
+  // Mutate the external DB after backup so we can prove restore reverts it AND
+  // preserves the mutated copy at the move-aside path.
+  const live = new Database(dbPath);
+  live.prepare("INSERT INTO t VALUES (?)").run("after-backup");
+  live.close();
+  const mutatedDb = await readFile(dbPath);
+
+  const { movedAsideTo, dbMovedAsideTo } = await runRestore({
+    archivePath: archive,
+    dataDir,
+    dbPath,
+    confirmToken: basename(archive),
+    probePort: async () => false,
+    now: () => new Date(2026, 4, 26, 13, 0, 0),
+  });
+
+  // The external DB was restored to the backed-up state (the post-backup mutation is gone).
+  const restored = new Database(dbPath, { readonly: true });
+  expect(restored.prepare("SELECT COUNT(*) c FROM t").get()).toEqual({ c: 1 });
+  restored.close();
+
+  // The old external DB was preserved (never deleted), with its mutation intact.
+  expect(dbMovedAsideTo).toBeTruthy();
+  expect(dbMovedAsideTo).toContain(".before-restore-");
+  expect(await readFile(dbMovedAsideTo!)).toEqual(mutatedDb);
+
+  // Images restored into dataDir; the old data dir was moved aside.
+  expect(await readFile(join(dataDir, "images", "p", "a.png"))).toEqual(Buffer.from([1, 2, 3]));
+  expect(movedAsideTo).toContain(".before-restore-");
+});
+
+it("C1: an internal dbPath (default) reports no separate dbMovedAsideTo", async () => {
+  // Default config: DB lives inside dataDir. The data-dir move-aside already
+  // preserves it, so there must be no second move-aside path.
+  const { dataDir } = await makeFixture();
+  const archive = await makeArchive(dataDir);
+  const { dbMovedAsideTo } = await runRestore({
+    archivePath: archive,
+    dataDir,
+    dbPath: join(dataDir, "smudge.db"),
+    confirmToken: basename(archive),
+    probePort: async () => false,
+    now: () => new Date(2026, 4, 26, 13, 0, 0),
+  });
+  expect(dbMovedAsideTo).toBeUndefined();
+});
+
+// ── I1: a recreate (mkdir) failure after the move-aside is wrapped, not raw ──
+
+// Root bypasses the directory-permission check, so the failure injection only
+// works as a non-root user. The mkdir-inside-try branch itself is covered by
+// every happy-path restore test regardless; this gates only the fault injection.
+it.skipIf(typeof process.getuid === "function" && process.getuid() === 0)(
+  "I1: mkdir-recreate failure after move-aside throws RestorePartialError carrying movedAsideTo",
+  async () => {
+    const { dataDir: srcDir } = await makeFixture();
+    const archive = await makeArchive(srcDir);
+
+    // Read-only parent; dataDir itself does not exist. The move-aside rename is a
+    // clean ENOENT no-op (source absent), then mkdir(dataDir) fails EACCES on the
+    // read-only parent. Before the fix that mkdir sat outside the try and threw a
+    // raw fs error; it must now surface as RestorePartialError carrying movedAsideTo.
+    const roParent = await mkdtemp(join(tmpdir(), "smudge-i1-ro-"));
+    tempDirs.push(roParent);
+    const dataDir = join(roParent, "data"); // does not exist
+    await chmod(roParent, 0o500);
+    try {
+      let caught: unknown;
+      try {
+        await runRestore({
+          archivePath: archive,
+          dataDir,
+          confirmToken: basename(archive),
+          probePort: async () => false,
+          freeBytes: async () => 10 * 1024 ** 3, // bypass the free-space precheck
+          now: () => new Date(2026, 4, 26, 17, 0, 0),
+        });
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(RestorePartialError);
+      expect((caught as RestorePartialError).movedAsideTo).toContain(".before-restore-");
+    } finally {
+      await chmod(roParent, 0o700); // restore perms so afterEach cleanup can rm it
+    }
+  },
+);
 
 // ── Change 5 (T-1): post-move failure surfaces RestorePartialError carrying movedAsideTo ──
 
