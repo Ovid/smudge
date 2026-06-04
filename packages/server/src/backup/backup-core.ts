@@ -370,10 +370,15 @@ export async function rotateAutoBackups(o: {
   }
   const autos = names.filter((f) => f.startsWith("smudge-auto-") && f.endsWith(".zip")).sort(); // lexical == chronological
   // Defensive clamp: a negative/non-integer keep reaching this low-level function
-  // (the env-string sanitizing lives in resolveKeep) must never produce a
-  // len-(-k) over-read. keep<0 → 0 (delete all); keep is floored.
+  // (the env-string sanitizing lives in resolveKeep) must never delete the wrong
+  // set. keep<0 → 0 (delete all); keep is floored.
   const keep = Math.max(0, Math.floor(o.keep));
-  const toDelete = autos.slice(0, Math.max(0, autos.length - keep));
+  // Keep the newest `keep` BY NAME (S7), then delete every other auto. Keying on
+  // names rather than a positional slice makes concurrent rotations idempotent:
+  // each run only ever removes archives outside the newest-`keep` survivor set,
+  // so two overlapping `make dev` rotations can't over-prune a recent backup.
+  const survivors = new Set(keep > 0 ? autos.slice(-keep) : []);
+  const toDelete = autos.filter((f) => !survivors.has(f));
   for (const f of toDelete) await rm(join(o.backupsDir, f), { force: true });
   return { deleted: toDelete };
 }
