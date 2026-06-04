@@ -628,6 +628,44 @@ it("C1: restore writes smudge.db to an external dbPath and preserves the old ext
   expect(movedAsideTo).toContain(".before-restore-");
 });
 
+it("C1: restore into an external dbPath with no prior DB file succeeds (ENOENT branch)", async () => {
+  // External dbPath, but nothing lives there yet → the move-aside rename hits
+  // ENOENT (nothing to preserve) and dbMovedAsideTo stays undefined.
+  const parent = await mkdtemp(join(tmpdir(), "smudge-c1b-"));
+  tempDirs.push(parent);
+  const dataDir = join(parent, "data");
+  const dbPath = join(parent, "external", "smudge.db");
+  await mkdir(join(dataDir, "images", "p"), { recursive: true });
+  await writeFile(join(dataDir, "images", "p", "a.png"), Buffer.from([5]));
+  await mkdir(dirname(dbPath), { recursive: true });
+  const seed = new Database(dbPath);
+  seed.exec("CREATE TABLE t (v TEXT)");
+  seed.prepare("INSERT INTO t VALUES (?)").run("seed");
+  seed.close();
+  const backupsDir = join(parent, "backups");
+  const { outFile: archive } = await runBackup({
+    dataDir,
+    dbPath,
+    backupsDir,
+    mode: "manual",
+    now: () => new Date(2026, 4, 26, 12, 0, 0),
+  });
+  await rm(dbPath); // remove the external DB so restore preserves nothing
+
+  const { dbMovedAsideTo } = await runRestore({
+    archivePath: archive,
+    dataDir,
+    dbPath,
+    confirmToken: basename(archive),
+    probePort: async () => false,
+    now: () => new Date(2026, 4, 26, 13, 0, 0),
+  });
+  expect(dbMovedAsideTo).toBeUndefined();
+  const restored = new Database(dbPath, { readonly: true });
+  expect(restored.prepare("SELECT v FROM t").get()).toEqual({ v: "seed" });
+  restored.close();
+});
+
 it("C1: an internal dbPath (default) reports no separate dbMovedAsideTo", async () => {
   // Default config: DB lives inside dataDir. The data-dir move-aside already
   // preserves it, so there must be no second move-aside path.
