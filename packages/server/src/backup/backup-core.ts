@@ -138,8 +138,13 @@ async function* walkFiles(dir: string): AsyncGenerator<string> {
   let entries;
   try {
     entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return; // images dir may not exist yet
+  } catch (e) {
+    // ENOENT is the only swallowable case — the images dir (or a project subdir
+    // mid-walk) may legitimately not exist yet. A permission/IO error (EACCES,
+    // EPERM, …) would otherwise silently omit real images from a "successful"
+    // backup, so re-throw and fail the backup loudly.
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw e;
   }
   for (const e of entries) {
     const full = join(dir, e.name);

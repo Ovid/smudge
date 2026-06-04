@@ -100,6 +100,33 @@ it("runBackup writes a zip with smudge.db + nested images/", async () => {
   expect((await readdir(dataDir)).some((f) => f.endsWith(".backup-staging.db"))).toBe(false);
 });
 
+// Root bypasses directory-permission checks, so the unreadable-dir injection only
+// works as a non-root user.
+it.skipIf(typeof process.getuid === "function" && process.getuid() === 0)(
+  "I4: runBackup fails loudly when an images subdir is unreadable (no silent image loss)",
+  async () => {
+    const { dataDir, dbPath } = await makeFixture();
+    const locked = join(dataDir, "images", "proj-locked");
+    await mkdir(locked, { recursive: true });
+    await writeFile(join(locked, "secret.png"), Buffer.from([9]));
+    await chmod(locked, 0o000); // unreadable → readdir EACCES during the walk
+    const backupsDir = join(dataDir, "backups");
+    try {
+      await expect(
+        runBackup({
+          dataDir,
+          dbPath,
+          backupsDir,
+          mode: "manual",
+          now: () => new Date(2026, 4, 26, 11, 0, 0),
+        }),
+      ).rejects.toThrow();
+    } finally {
+      await chmod(locked, 0o700); // restore so afterEach cleanup can rm it
+    }
+  },
+);
+
 it("S2/I3: runBackup replaces an existing archive atomically and leaves no .tmp file", async () => {
   const { dataDir, dbPath } = await makeFixture();
   const backupsDir = join(dataDir, "backups");
