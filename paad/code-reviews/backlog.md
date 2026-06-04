@@ -283,3 +283,39 @@
 - **First seen:** 2026-05-27 on branch `consumer-recovery-independent-fixes` at `a4bb07e`
 - **Last seen:** 2026-05-27 on branch `consumer-recovery-independent-fixes` at `a4bb07e`
 - **Severity:** Suggestion
+
+## `fa8e879a` — restore inflates each archive entry fully into RAM before the byte-budget check
+- **File (at first sighting):** `packages/server/src/backup/backup-core.ts` (`runRestore`, the `file.async("nodebuffer")` extraction loop)
+- **Symbol:** `runRestore` per-entry extraction
+- **Bug class:** Security (resource exhaustion)
+- **Description:** `file.async("nodebuffer")` decompresses a full entry into memory before the post-write cumulative-size assertion fires, so a central directory that lies about declared sizes can OOM the host before the disk-budget check. This is an explicitly documented tradeoff: design §2b and the inline comment acknowledge per-entry RAM is unbounded under jszip's in-memory model and ship no mitigation. Review S1 (operational-backup-stopgap).
+- **Suggested fix:** Future hardening pass — stream-decompress with a running counter, or bound per-entry declared size before inflating. Deferred from the 4b.14 review pass as an accepted design tradeoff (not a regression).
+- **Confidence:** High (behavior), Low (real-world risk — stopgap consumes its own archives)
+- **Found by:** Security (`claude-opus-4-8[1m]`)
+- **First seen:** 2026-06-04 on branch `operational-backup-stopgap` at `1aa1eec`
+- **Last seen:** 2026-06-04 on branch `operational-backup-stopgap` at `1aa1eec`
+- **Severity:** Suggestion
+
+## `248bf265` — restore probe-then-act TOCTOU: server can bind between probePort() and the move-aside
+- **File (at first sighting):** `packages/server/src/backup/backup-core.ts` (`runRestore`, between the `probePort()` check and the move-aside rename)
+- **Symbol:** `runRestore` running-server guard
+- **Bug class:** Concurrency
+- **Description:** A Smudge server binding the port between `probePort() === false` and the move-aside rename is not re-detected → potential split-brain. Inherent to any probe-then-act guard; the move-aside ("never delete") is the deliberate backstop and restore is manual/confirmed/rare. Review S5 (operational-backup-stopgap).
+- **Suggested fix:** Optionally re-probe immediately before the rename, or document the residual window. Deferred from the 4b.14 review pass as an accepted, backstopped tradeoff.
+- **Confidence:** High (window exists), Low (single-operator usage model)
+- **Found by:** Concurrency & State (`claude-opus-4-8[1m]`)
+- **First seen:** 2026-06-04 on branch `operational-backup-stopgap` at `1aa1eec`
+- **Last seen:** 2026-06-04 on branch `operational-backup-stopgap` at `1aa1eec`
+- **Severity:** Suggestion
+
+## `e8ba6c7b` — EOCD backward scan can mis-identify a 0x06054b50 inside the archive comment
+- **File (at first sighting):** `packages/server/src/backup/backup-core.ts` (`findEocdOffset`)
+- **Symbol:** `findEocdOffset`
+- **Bug class:** Logic / Security (safe-failure)
+- **Description:** The end-of-central-directory backward scan stops at the first `0x06054b50`; a zip comment containing those bytes after the true EOCD causes a mis-parse. Safe-failure — a valid archive is *refused* (DecompressionBombError), never clobbered — and low likelihood (our archives carry no comment; image names are UUIDs). Review S4 (operational-backup-stopgap). NOTE: not part of the enumerated "cheap suggestions" set addressed in the 4b.14 review pass; explicitly descoped, recorded here.
+- **Suggested fix:** In `findEocdOffset`, validate the candidate EOCD's comment-length field (`buf.readUInt16LE(i + 20)`) reaches exactly end-of-buffer (`i + 22 + commentLen === buf.length`) before accepting it; continue scanning otherwise. Now a ~3-line guard since the parser is centralized (S9).
+- **Confidence:** High
+- **Found by:** Logic & Correctness / Security (`claude-opus-4-8[1m]`)
+- **First seen:** 2026-06-04 on branch `operational-backup-stopgap` at `1aa1eec`
+- **Last seen:** 2026-06-04 on branch `operational-backup-stopgap` at `1aa1eec`
+- **Severity:** Suggestion
