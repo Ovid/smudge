@@ -24,11 +24,19 @@ const port = Number(process.env.SMUDGE_PORT ?? 3456);
 const probePort = () =>
   new Promise<boolean>((resolve) => {
     const hosts = ["127.0.0.1", "::1"];
+    const sockets: ReturnType<typeof connect>[] = [];
     let pending = hosts.length;
     let settled = false;
+    // Destroy every socket on settle (S8): once one host connects, the other
+    // host's socket + its 500 ms timeout timer would otherwise keep the event
+    // loop alive and delay process exit by up to ~500 ms.
+    const cleanup = () => {
+      for (const s of sockets) s.destroy();
+    };
     const succeed = () => {
       if (!settled) {
         settled = true;
+        cleanup();
         resolve(true);
       }
     };
@@ -36,6 +44,7 @@ const probePort = () =>
       pending -= 1;
       if (!settled && pending === 0) {
         settled = true;
+        cleanup();
         resolve(false);
       }
     };
@@ -43,9 +52,9 @@ const probePort = () =>
       let socketDone = false;
       const s = connect({ host, port }, () => {
         socketDone = true;
-        s.destroy();
         succeed();
       });
+      sockets.push(s);
       const fail = () => {
         if (socketDone) return;
         socketDone = true;
