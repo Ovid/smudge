@@ -18,6 +18,8 @@ import {
   DEFAULT_KEEP,
   validateEntryPaths,
   readCentralDirectorySizes,
+  findEocdOffset,
+  walkCentralDirectory,
   checkDeclaredSizes,
   DecompressionBombError,
   RestorePreconditionError,
@@ -242,14 +244,8 @@ it("readCentralDirectorySizes throws DecompressionBombError (not RangeError) for
   zip.file("a.txt", "x".repeat(2000));
   const buf = await zip.generateAsync({ type: "nodebuffer" });
 
-  // Locate the EOCD by scanning backwards for its signature (0x06054b50).
-  let eocd = -1;
-  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 0xffff); i--) {
-    if (buf.readUInt32LE(i) === 0x06054b50) {
-      eocd = i;
-      break;
-    }
-  }
+  // Locate the EOCD with the shared production parser (S9: no hand-rolled offsets).
+  const eocd = findEocdOffset(buf);
   expect(eocd).toBeGreaterThan(-1); // sanity: real EOCD found
 
   // Overwrite the central-directory offset (EOCD+16) with an out-of-range value.
@@ -736,34 +732,14 @@ it("T-1: on post-move extraction failure (JSZip size-mismatch or byte-budget ove
   // RestorePartialError carrying movedAsideTo.
   const buf = Buffer.from(await readFile(archive));
 
-  const EOCD_SIG_T1 = 0x06054b50;
-  const CEN_SIG_T1 = 0x02014b50;
-  let eocd = -1;
-  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 0xffff); i--) {
-    if (buf.readUInt32LE(i) === EOCD_SIG_T1) {
-      eocd = i;
-      break;
-    }
-  }
-  expect(eocd).toBeGreaterThan(-1); // sanity: real EOCD found
-
-  const cdOffset = buf.readUInt32LE(eocd + 16);
-  const cdCount = buf.readUInt16LE(eocd + 10);
-
-  // Walk the central directory to find big.bin and patch its declared uncompressed size.
-  let off = cdOffset;
+  // Walk the central directory with the shared production parser (S9) and patch
+  // big.bin's declared uncompressed size at its real byte offset.
   let patched = false;
-  for (let n = 0; n < cdCount; n++) {
-    if (buf.readUInt32LE(off) !== CEN_SIG_T1) break;
-    const nameLen = buf.readUInt16LE(off + 28);
-    const extraLen = buf.readUInt16LE(off + 30);
-    const commentLen = buf.readUInt16LE(off + 32);
-    const entryName = buf.toString("utf8", off + 46, off + 46 + nameLen);
-    if (entryName === "images/proj-t1/big.bin") {
-      buf.writeUInt32LE(10, off + 24); // lie: claim uncompressed size is 10 bytes
+  for (const entry of walkCentralDirectory(buf)) {
+    if (entry.path === "images/proj-t1/big.bin") {
+      buf.writeUInt32LE(10, entry.sizeFieldOffset); // lie: claim uncompressed size is 10 bytes
       patched = true;
     }
-    off += 46 + nameLen + extraLen + commentLen;
   }
 
   expect(patched).toBe(true); // ensure the entry was found and patched

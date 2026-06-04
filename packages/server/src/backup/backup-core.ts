@@ -33,24 +33,35 @@ const EOCD_SIG = 0x06054b50;
 const CEN_SIG = 0x02014b50;
 const ZIP64_SENTINEL = 0xffffffff;
 
-/** Parse declared uncompressed sizes from the central directory without decompressing. */
-export function readCentralDirectorySizes(
-  buf: Buffer,
-): { path: string; uncompressedSize: number }[] {
-  // Locate EOCD by scanning backwards (max comment 64KiB).
-  let eocd = -1;
+/** Locate the end-of-central-directory record by scanning backward from the end
+ *  (max 64 KiB comment). Returns its byte offset, or -1 if not found. Exported so
+ *  the security-critical bomb tests parse archives with the SAME logic as
+ *  production — the byte offsets cannot drift apart (S9). */
+export function findEocdOffset(buf: Buffer): number {
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 0xffff); i--) {
-    if (buf.readUInt32LE(i) === EOCD_SIG) {
-      eocd = i;
-      break;
-    }
+    if (buf.readUInt32LE(i) === EOCD_SIG) return i;
   }
+  return -1;
+}
+
+export interface CentralDirEntry {
+  path: string;
+  uncompressedSize: number;
+  /** Absolute byte offset of this entry's 4-byte uncompressed-size field (CEN+24). */
+  sizeFieldOffset: number;
+}
+
+/** Walk the central directory, yielding each entry's declared uncompressed size
+ *  and the byte offset of its size field — without decompressing. Shared by
+ *  readCentralDirectorySizes (production) and the bomb tests (which patch the
+ *  size field) so the offset arithmetic lives in exactly one place (S9). */
+export function* walkCentralDirectory(buf: Buffer): Generator<CentralDirEntry> {
+  const eocd = findEocdOffset(buf);
   if (eocd < 0) throw new DecompressionBombError("not a valid zip (no EOCD)");
   const count = buf.readUInt16LE(eocd + 10);
   let off = buf.readUInt32LE(eocd + 16);
   if (off === ZIP64_SENTINEL)
     throw new DecompressionBombError("zip64 archive refused (declared sizes unverifiable)");
-  const out: { path: string; uncompressedSize: number }[] = [];
   for (let n = 0; n < count; n++) {
     try {
       if (buf.readUInt32LE(off) !== CEN_SIG)
@@ -61,12 +72,22 @@ export function readCentralDirectorySizes(
       const extraLen = buf.readUInt16LE(off + 30);
       const commentLen = buf.readUInt16LE(off + 32);
       const path = buf.toString("utf8", off + 46, off + 46 + nameLen);
-      out.push({ path, uncompressedSize: uncompressed });
+      yield { path, uncompressedSize: uncompressed, sizeFieldOffset: off + 24 };
       off += 46 + nameLen + extraLen + commentLen;
     } catch (e) {
       if (e instanceof DecompressionBombError) throw e;
       throw new DecompressionBombError(`central directory read overrun at entry ${n}`);
     }
+  }
+}
+
+/** Parse declared uncompressed sizes from the central directory without decompressing. */
+export function readCentralDirectorySizes(
+  buf: Buffer,
+): { path: string; uncompressedSize: number }[] {
+  const out: { path: string; uncompressedSize: number }[] = [];
+  for (const e of walkCentralDirectory(buf)) {
+    out.push({ path: e.path, uncompressedSize: e.uncompressedSize });
   }
   return out;
 }
