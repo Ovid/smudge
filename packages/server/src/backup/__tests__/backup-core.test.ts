@@ -648,6 +648,19 @@ it("C1: an internal dbPath (default) reports no separate dbMovedAsideTo", async 
   expect(dbMovedAsideTo).toBeUndefined();
 });
 
+it("S6: move-aside path includes the pid to avoid same-second restore collisions", async () => {
+  const { dataDir } = await makeFixture();
+  const archive = await makeArchive(dataDir);
+  const { movedAsideTo } = await runRestore({
+    archivePath: archive,
+    dataDir,
+    confirmToken: basename(archive),
+    probePort: async () => false,
+    now: () => new Date(2026, 4, 26, 13, 0, 0),
+  });
+  expect(movedAsideTo.endsWith(`.${process.pid}`)).toBe(true);
+});
+
 // ── I1: a recreate (mkdir) failure after the move-aside is wrapped, not raw ──
 
 // Root bypasses the directory-permission check, so the failure injection only

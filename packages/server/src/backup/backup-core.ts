@@ -240,7 +240,9 @@ export async function runRestore(
   }
   // 6. move existing data dir aside (never delete). A rename failure here means
   // nothing was touched yet, so it propagates as a precondition-style raw error.
-  const stamp = isoStampLocal((opts.now ?? (() => new Date()))());
+  // pid-qualified (S6): two same-second restores must not compute the same
+  // move-aside target (a rename collision would risk the never-delete guarantee).
+  const stamp = `${isoStampLocal((opts.now ?? (() => new Date()))())}.${process.pid}`;
   const movedAsideTo = `${opts.dataDir}.before-restore-${stamp}`;
   await rename(opts.dataDir, movedAsideTo).catch((e) => {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") {
