@@ -13,6 +13,8 @@ import {
   rotateAutoBackups,
   runAutoBackup,
   ZipSlipError,
+  resolveKeep,
+  DEFAULT_KEEP,
   validateEntryPaths,
   readCentralDirectorySizes,
   checkDeclaredSizes,
@@ -727,6 +729,56 @@ it("T-1: on post-move extraction failure (JSZip size-mismatch or byte-budget ove
   // not the backup snapshot).
   const movedDbBytes = await readFile(movedDbPath);
   expect(movedDbBytes).toEqual(originalDb);
+});
+
+// ── I2: SMUDGE_BACKUP_KEEP resolution ────────────────────────────────────────
+
+describe("resolveKeep", () => {
+  it("falls back to DEFAULT_KEEP when the env var is absent", () => {
+    expect(resolveKeep(undefined)).toBe(DEFAULT_KEEP);
+  });
+  it("honors a valid non-negative integer", () => {
+    expect(resolveKeep("5")).toBe(5);
+  });
+  it("treats an explicit 0 as 'keep none' (not a fallback)", () => {
+    expect(resolveKeep("0")).toBe(0);
+  });
+  it("falls back to DEFAULT_KEEP for a negative value (must not wipe backups)", () => {
+    expect(resolveKeep("-5")).toBe(DEFAULT_KEEP);
+  });
+  it.each([["abc"], ["3.5"], [""], ["  "], ["NaN"]])(
+    "falls back to DEFAULT_KEEP for the invalid input %j",
+    (raw) => {
+      expect(resolveKeep(raw)).toBe(DEFAULT_KEEP);
+    },
+  );
+});
+
+it("rotateAutoBackups with keep=0 deletes every auto-backup", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "smudge-rot0-"));
+  tempDirs.push(dir);
+  for (const f of [
+    "smudge-auto-2026-05-26-100000.zip",
+    "smudge-auto-2026-05-26-100001.zip",
+    "smudge-2026-05-01-090000.zip", // manual — must survive
+  ]) {
+    await writeFile(join(dir, f), Buffer.from("x"));
+  }
+  const { deleted } = await rotateAutoBackups({ backupsDir: dir, keep: 0 });
+  expect([...deleted].sort()).toEqual([
+    "smudge-auto-2026-05-26-100000.zip",
+    "smudge-auto-2026-05-26-100001.zip",
+  ]);
+  expect(await readdir(dir)).toEqual(["smudge-2026-05-01-090000.zip"]);
+});
+
+it("rotateAutoBackups clamps a negative keep to 0 rather than over-reading", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "smudge-rotneg-"));
+  tempDirs.push(dir);
+  await writeFile(join(dir, "smudge-auto-2026-05-26-100000.zip"), Buffer.from("x"));
+  // A negative keep must not produce a len-(-k) over-read; clamped to 0 → delete all.
+  const { deleted } = await rotateAutoBackups({ backupsDir: dir, keep: -5 });
+  expect(deleted).toEqual(["smudge-auto-2026-05-26-100000.zip"]);
 });
 
 // ── Task 8: rotateAutoBackups ────────────────────────────────────────────────

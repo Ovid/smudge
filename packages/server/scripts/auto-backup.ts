@@ -1,8 +1,8 @@
 import { join } from "node:path";
 import { getDataDir, getDbPath } from "../src/config/paths";
-import { runAutoBackup, DEFAULT_KEEP } from "../src/backup/backup-core";
+import { runAutoBackup, resolveKeep } from "../src/backup/backup-core";
 
-const keep = Number(process.env.SMUDGE_BACKUP_KEEP ?? DEFAULT_KEEP) || DEFAULT_KEEP;
+const keep = resolveKeep(process.env.SMUDGE_BACKUP_KEEP);
 const r = await runAutoBackup({
   dataDir: getDataDir(),
   dbPath: getDbPath(),

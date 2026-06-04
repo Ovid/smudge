@@ -288,6 +288,18 @@ export async function runRestore(
   return { movedAsideTo, dbMovedAsideTo };
 }
 
+/** Resolve a raw `SMUDGE_BACKUP_KEEP` env value to a retention count. Absent or
+ *  invalid (negative, NaN, non-integer) falls back to {@link DEFAULT_KEEP} so a
+ *  typo can never wipe retained backups — a clamp-to-0 would silently delete them
+ *  all. An explicit `"0"` is honored as "keep none". */
+export function resolveKeep(raw: string | undefined): number {
+  // Absent or blank (`SMUDGE_BACKUP_KEEP=` / whitespace) is treated as
+  // not-provided — Number("") is 0, which would silently wipe every backup.
+  if (raw === undefined || raw.trim() === "") return DEFAULT_KEEP;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 ? n : DEFAULT_KEEP;
+}
+
 export type AutoStatus = "ok" | "skipped-no-db" | "skipped-optout" | "failed";
 
 export async function runAutoBackup(o: {
@@ -332,7 +344,11 @@ export async function rotateAutoBackups(o: {
     return { deleted: [] };
   }
   const autos = names.filter((f) => f.startsWith("smudge-auto-") && f.endsWith(".zip")).sort(); // lexical == chronological
-  const toDelete = autos.slice(0, Math.max(0, autos.length - o.keep));
+  // Defensive clamp: a negative/non-integer keep reaching this low-level function
+  // (the env-string sanitizing lives in resolveKeep) must never produce a
+  // len-(-k) over-read. keep<0 → 0 (delete all); keep is floored.
+  const keep = Math.max(0, Math.floor(o.keep));
+  const toDelete = autos.slice(0, Math.max(0, autos.length - keep));
   for (const f of toDelete) await rm(join(o.backupsDir, f), { force: true });
   return { deleted: toDelete };
 }
