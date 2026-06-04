@@ -378,9 +378,13 @@ export async function runBackup(opts: BackupOptions): Promise<{ outFile: string 
     }
 
     const buf = await zip.generateAsync({ type: "nodebuffer" });
-    const tmpOut = `${outFile}.tmp`;
+    // Per-process temp (I3): two same-mode backups in the same wall-clock second
+    // must not share a temp path and interleave their writes into a torn archive.
+    const tmpOut = `${outFile}.${process.pid}.tmp`;
     await writeFile(tmpOut, buf);
-    await rm(outFile, { force: true });
+    // rename atomically replaces any existing outFile (S2): the prior explicit
+    // rm(outFile) was redundant and opened a no-file window a concurrent backup
+    // could delete the other's just-published archive through.
     await rename(tmpOut, outFile); // atomic publish
     return { outFile };
   } finally {

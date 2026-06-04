@@ -100,6 +100,27 @@ it("runBackup writes a zip with smudge.db + nested images/", async () => {
   expect((await readdir(dataDir)).some((f) => f.endsWith(".backup-staging.db"))).toBe(false);
 });
 
+it("S2/I3: runBackup replaces an existing archive atomically and leaves no .tmp file", async () => {
+  const { dataDir, dbPath } = await makeFixture();
+  const backupsDir = join(dataDir, "backups");
+  const now = () => new Date(2026, 4, 26, 14, 32, 11);
+  // Pre-place a stale file at the exact target path: rename must replace it
+  // without the previous explicit rm (which opened a no-file window).
+  await mkdir(backupsDir, { recursive: true });
+  const outPath = join(backupsDir, "smudge-2026-05-26-143211.zip");
+  await writeFile(outPath, Buffer.from("STALE"));
+
+  const { outFile } = await runBackup({ dataDir, dbPath, backupsDir, mode: "manual", now });
+  expect(outFile).toBe(outPath);
+
+  // Stale content gone; the published file is a valid archive.
+  const zip = await JSZip.loadAsync(await readFile(outFile));
+  expect(zip.file("smudge.db")).toBeTruthy();
+
+  // No per-process .tmp file left behind by the publish.
+  expect((await readdir(backupsDir)).filter((f) => f.includes(".tmp"))).toEqual([]);
+});
+
 describe("validateEntryPaths", () => {
   const root = "/tmp/target";
   it("accepts in-tree entries", () => {
