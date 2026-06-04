@@ -113,7 +113,10 @@ export function validateEntryPaths(entryPaths: string[], targetRoot: string): vo
   const root = resolve(targetRoot);
   for (const p of entryPaths) {
     if (p.includes("\0")) throw new ZipSlipError(`null byte in entry path: ${p}`);
-    if (/\s/.test(p)) throw new ZipSlipError(`whitespace in entry path: ${p}`);
+    // S3: no blanket whitespace reject — a space is not a traversal vector and the
+    // design enumerates only null/absolute/drive/.. /escapes-root. The resolve()
+    // containment check below is the real backstop; rejecting whitespace would
+    // mislabel a benign filename and break the "any old archive restorable" pledge.
     if (isAbsolute(p) || win32.isAbsolute(p) || /^[a-zA-Z]:/.test(p)) {
       throw new ZipSlipError(`absolute entry path rejected: ${p}`);
     }

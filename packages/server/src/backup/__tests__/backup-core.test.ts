@@ -177,20 +177,23 @@ describe("validateEntryPaths", () => {
   it("accepts in-tree entries", () => {
     expect(() => validateEntryPaths(["smudge.db", "images/p/a.png"], root)).not.toThrow();
   });
-  it.each([
-    ["../../etc/passwd"],
-    ["/etc/passwd"],
-    ["a/../../etc/passwd"],
-    ["images/../../escape"],
-    ["foo bar"],
-  ])("rejects %s and names it", (bad) => {
-    expect(() => validateEntryPaths([bad], root)).toThrow(ZipSlipError);
-    try {
-      validateEntryPaths([bad], root);
-    } catch (e) {
-      expect((e as Error).message).toContain(bad);
-    }
+  it("accepts an in-tree entry containing whitespace (S3: not a traversal vector)", () => {
+    // A space in a filename is safe — it resolves inside root. The design's
+    // enumerated checks (null/absolute/drive/.. /escapes-root) do not include
+    // whitespace, and forward-compat requires any old archive to stay restorable.
+    expect(() => validateEntryPaths(["images/p/my chapter.png"], root)).not.toThrow();
   });
+  it.each([["../../etc/passwd"], ["/etc/passwd"], ["a/../../etc/passwd"], ["images/../../escape"]])(
+    "rejects %s and names it",
+    (bad) => {
+      expect(() => validateEntryPaths([bad], root)).toThrow(ZipSlipError);
+      try {
+        validateEntryPaths([bad], root);
+      } catch (e) {
+        expect((e as Error).message).toContain(bad);
+      }
+    },
+  );
 
   it("rejects a null-byte entry and mentions 'null byte' in the message", () => {
     const bad = "images/p/a\0.png";
