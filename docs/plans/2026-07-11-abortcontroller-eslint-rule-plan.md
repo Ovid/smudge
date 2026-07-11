@@ -179,9 +179,17 @@ Append to the `describe` block. The disable sits on the line **directly above** 
     `;
     const results = await lintCode(code);
     expect(results).toHaveLength(1);
-    // Zero messages total: the rule violation is suppressed AND the
-    // directive is used (so reportUnusedDisableDirectives stays quiet).
-    expect(results[0]!.messages).toHaveLength(0);
+    const messages = results[0]!.messages;
+    // Two precise guarantees, immune to ambient rules-of-hooks /
+    // react-refresh noise on the `export function x()` wrapper (which is
+    // why we do NOT assert messages.length === 0 — react-hooks/rules-of-hooks
+    // fires on a hook called in a non-component/non-hook function):
+    //   (a) the rule is suppressed — zero no-restricted-syntax messages
+    expect(messages.filter((m) => m.ruleId === "no-restricted-syntax")).toHaveLength(0);
+    //   (b) the directive is USED — no unused-disable-directive report
+    //       (reportUnusedDisableDirectives defaults to "warn"; an unused
+    //       directive would fail --max-warnings 0 at the real call sites).
+    expect(messages.filter((m) => /unused eslint-disable/i.test(m.message))).toHaveLength(0);
   });
 ```
 
@@ -376,7 +384,10 @@ Expected: lint, format, typecheck, coverage, and e2e all green. Coverage stays a
 - [ ] `make all` green.
 - [ ] No user-visible behavior change (pure tooling/refactor).
 
-**Step 3 (if the roadmap prose edit is in scope for this PR):** the roadmap Phase 4b.17 description still says "4 surviving allocation sites." Update it to "6 surviving allocation sites across 5 files (post F-2 split)" so the shipped reality matches. Commit:
+**Step 3: Correct the stale roadmap count.** The Phase 4b.17 description in `docs/roadmap.md` still says *"each of the 4 surviving allocation sites."* Update it to "each of the 6 surviving allocation sites across 5 files (post F-2 split)" so the shipped roadmap matches reality. This is a firm step, not optional — it's a one-line doc edit tightly coupled to the phase.
+
+Run: `grep -n "4 surviving allocation" docs/roadmap.md`
+Expected (after the edit): no output.
 
 ```bash
 git add docs/roadmap.md

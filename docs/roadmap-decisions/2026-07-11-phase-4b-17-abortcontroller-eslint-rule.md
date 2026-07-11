@@ -45,3 +45,26 @@ alignment:
 - Pushback raised 2 issues; both resulted in design changes (1 Important feasibility de-risk via RED-first + fallback selector; 1 Minor scope/omission note). None dismissed.
 - Alignment raised 1 issue; it resulted in a design change (design-gap closed so the plan's comment-reconciliation is recorded intent).
 - Notable side-finding, surfaced during brainstorming and baked into both docs: the roadmap prose's "4 surviving sites / 4 allocations" is stale — the F-2 split (2026-05-29) made it 6 allocations across 5 files. The plan's Task 5 corrects the roadmap prose.
+
+## Plan Pushback (ad-hoc, 2026-07-11)
+
+A second `paad:pushback` pass was run against the **implementation plan**
+(`docs/plans/2026-07-11-abortcontroller-eslint-rule-plan.md`) at the user's
+request — outside the standard /roadmap flow (which runs pushback on the design
+and alignment on the plan). Recorded here so the evidence is not lost; the
+frontmatter `pushback`/`alignment` counts above are unchanged (they track the
+standard run).
+
+### [1] Disabled-fixture test asserts total-zero and will fail even when the rule works
+- **Severity:** Important
+- **Category:** Feasibility
+- **Summary:** Task 1 Step 5's contract-test fixture wraps the hook call in `export function x()`. Running ESLint against that fixture (confirmed empirically via `--stdin`) shows `react-hooks/rules-of-hooks` fires at severity 2 — a message present regardless of the new rule. The test asserted `messages.length === 0` (total), so it would fail even when the disable behaves perfectly; the other tests dodge this by filtering to `ruleId === "no-restricted-syntax"`. The plan handed executable-but-wrong test code to a zero-context implementer.
+- **Resolution:** fixed-in-plan — replaced the total-zero assertion with two targeted checks: zero `no-restricted-syntax` messages (rule suppressed) AND zero `/unused eslint-disable/i` messages (directive used), ignoring ambient hook-rule noise.
+
+### [2] Roadmap-prose correction left optional
+- **Severity:** Minor
+- **Category:** Ambiguity
+- **Summary:** Task 5 Step 3 hedged the "4 → 6 sites" roadmap correction with "if the roadmap prose edit is in scope for this PR," risking the PR shipping with the stale count the run had already flagged.
+- **Resolution:** fixed-in-plan — made it a firm step with a `grep` verification that no "4 surviving allocation" text remains.
+
+Plan pushback raised 2 issues; both resulted in plan changes (1 Important test-correctness fix, 1 Minor scope-firming). None dismissed.
