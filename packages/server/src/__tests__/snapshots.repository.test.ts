@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { v4 as uuid } from "uuid";
+import { randomUUID as uuid } from "node:crypto";
 import { canonicalContentHash } from "../snapshots/content-hash";
 import { setupTestDb } from "./test-helpers";
 import * as SnapshotsRepo from "../snapshots/snapshots.repository";

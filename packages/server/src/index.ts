@@ -1,4 +1,5 @@
 import { initDb, closeDb } from "./db/connection";
+import { createKnexConfig } from "./db/knexfile";
 import { initProjectStore, resetProjectStore } from "./stores/project-store.injectable";
 import { createApp } from "./app";
 import { purgeOldTrash } from "./db/purge";
@@ -22,22 +23,12 @@ try {
   );
   process.exit(1);
 }
-const DB_PATH = process.env.DB_PATH;
-
 async function main() {
-  const db = await initDb(
-    DB_PATH
-      ? {
-          client: "better-sqlite3",
-          connection: { filename: DB_PATH },
-          useNullAsDefault: true,
-          migrations: {
-            directory: new URL("./db/migrations", import.meta.url).pathname,
-            loadExtensions: [".js"],
-          },
-        }
-      : undefined,
-  );
+  // F-6: build the Knex config through the single-owner helper, which
+  // honors process.env.DB_PATH via getDbPath() (see config/paths.ts).
+  // The previous inline config here duplicated the migrations block and
+  // bypassed that single owner.
+  const db = await initDb(createKnexConfig());
 
   initProjectStore(db);
 

@@ -1,5 +1,5 @@
 import type { Knex } from "knex";
-import { v4 as uuid } from "uuid";
+import { randomUUID as uuid } from "node:crypto";
 
 export async function upsertDailySnapshot(
   db: Knex.Transaction | Knex,

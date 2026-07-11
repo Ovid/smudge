@@ -1,5 +1,5 @@
 import path from "node:path";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID as uuidv4 } from "node:crypto";
 import { UpdateImageSchema } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { extractImageIds, scanImageReferences } from "./images.references";

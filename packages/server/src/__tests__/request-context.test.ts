@@ -1,11 +1,25 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import express from "express";
+import knex from "knex";
 import { createApp, globalErrorHandler } from "../app";
 import { requestContext } from "../requestContext";
 import { logger } from "../logger";
+import { setDb, closeDb } from "../db/connection";
+import { createTestKnexConfig } from "../db/knexfile";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// /api/health now runs a real SQLite liveness probe (F-14), so these
+// middleware tests need an initialized DB for the endpoint to return 200
+// quietly — matching production, where initDb() always runs before the
+// app serves requests.
+beforeAll(async () => {
+  await setDb(knex(createTestKnexConfig()));
+});
+afterAll(async () => {
+  await closeDb();
+});
 
 describe("requestContext middleware (F-10 request correlation)", () => {
   it("sets an X-Request-Id response header (generated UUID) when none is provided", async () => {

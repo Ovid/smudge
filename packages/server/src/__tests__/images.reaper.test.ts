@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID as uuidv4 } from "node:crypto";
 import fsPromises, { mkdtemp, mkdir, writeFile, rm, readdir } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";

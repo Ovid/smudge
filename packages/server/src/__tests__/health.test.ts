@@ -12,6 +12,20 @@ describe("GET /api/health", () => {
     expect(res.body).toEqual({ status: "ok" });
   });
 
+  it("returns 503 with status error when the SQLite handle is unusable (F-14)", async () => {
+    const logSpy = vi.spyOn(logger, "error").mockImplementation(() => logger);
+    const rawSpy = vi
+      .spyOn(ctx.db, "raw")
+      .mockRejectedValueOnce(new Error("database is locked") as never);
+
+    const res = await request(ctx.app).get("/api/health");
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ status: "error" });
+
+    rawSpy.mockRestore();
+    logSpy.mockRestore();
+  });
+
   it("includes security headers from helmet", async () => {
     const res = await request(ctx.app).get("/api/health");
     expect(res.headers["x-content-type-options"]).toBe("nosniff");

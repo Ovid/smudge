@@ -116,6 +116,41 @@ describe("projects.service", () => {
       expect(img.reference_count).toBe(0);
     });
 
+    it("does not decrement an image belonging to a different project (F-7)", async () => {
+      // Project B owns an image with refcount 1.
+      const projectB = await createProject({ title: "Owner Project", mode: "fiction" });
+      if (!("project" in projectB)) throw new Error("unexpected");
+      const foreignImageId = randomUUID();
+      await t.db("images").insert({
+        id: foreignImageId,
+        project_id: projectB.project.id,
+        filename: "foreign.png",
+        mime_type: "image/png",
+        size_bytes: 10,
+        reference_count: 1,
+        created_at: new Date().toISOString(),
+      });
+
+      // Project A's chapter references project B's image via a stale/pasted URL.
+      const projectA = await createProject({ title: "Stale Ref Project", mode: "fiction" });
+      if (!("project" in projectA)) throw new Error("unexpected");
+      const chapterA = await t.db("chapters").where({ project_id: projectA.project.id }).first();
+      await t
+        .db("chapters")
+        .where({ id: chapterA.id })
+        .update({
+          content: JSON.stringify({
+            type: "doc",
+            content: [{ type: "image", attrs: { src: `/api/images/${foreignImageId}` } }],
+          }),
+        });
+
+      // Deleting project A must not touch project B's image ref count.
+      expect(await deleteProject(projectA.project.slug)).toBe(true);
+      const img = await t.db("images").where({ id: foreignImageId }).first();
+      expect(img.reference_count).toBe(1);
+    });
+
     it("skips chapters whose content is not valid JSON during delete", async () => {
       const created = await createProject({ title: "Corrupt Content", mode: "fiction" });
       if (!("project" in created)) throw new Error("unexpected");
