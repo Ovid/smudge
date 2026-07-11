@@ -188,6 +188,10 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** The auto-search debounce is a bare inline `setTimeout(..., 300)`, inconsistent with the named `AUTO_SAVE_DEBOUNCE_MS = 1500` and `SAVE_BACKOFF_MS` constants elsewhere; "300ms" is repeated across five comments but exists nowhere as a constant.
 - **Evidence:** `packages/client/src/hooks/useFindReplaceState.ts:321` (plus comments at 62, 163, 270, 301, 316).
 - **Found by:** Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** Extracted `SEARCH_DEBOUNCE_MS = 300` (matching the `AUTO_SAVE_DEBOUNCE_MS` idiom) and used it at the `setTimeout`; the four "300ms" comments now name the constant so the value lives in exactly one place. Behavior-identical refactor covered by the existing debounce-timing tests in `useFindReplaceState.test.ts` (35 pass).
+- **Status date:** 2026-07-11 19:50 UTC
+- **Status commit:** f42cf75c18f5eb4611168c7ccd44592bb666483b
 
 ### [F-12] No-op ref backfilled after a circular hook declaration
 - **Category:** Flaw 27 (Temporal coupling)
