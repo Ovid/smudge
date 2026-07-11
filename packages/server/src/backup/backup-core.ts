@@ -425,7 +425,18 @@ export async function runBackup(opts: BackupOptions): Promise<{ outFile: string 
     const imagesDir = join(opts.dataDir, "images");
     for await (const file of walkFiles(imagesDir)) {
       const rel = relative(opts.dataDir, file).split(sep).join("/"); // images/<proj>/<file>
-      zip.file(rel, await readFile(file));
+      // I1 (F3): "safe while running" — the image reaper (or a delete) can unlink
+      // a file between walkFiles' readdir and this read. Skip a vanished image
+      // (ENOENT) rather than aborting the whole backup; re-throw every other IO
+      // error (EACCES/EIO/…) so a real failure never silently omits an image.
+      let bytes: Buffer;
+      try {
+        bytes = await readFile(file);
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw e;
+      }
+      zip.file(rel, bytes);
     }
 
     const buf = await zip.generateAsync({ type: "nodebuffer" });
