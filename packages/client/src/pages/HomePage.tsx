@@ -30,8 +30,8 @@ export function HomePage() {
   // project create). Routing this through createOp would auto-abort the
   // recovery refresh whenever the user kicks off another create —
   // exactly the case where the previous error's recovery still needs to
-  // run to completion. Phase 4b.4 replaces this file-level allowlist
-  // entry with an inline `// eslint-disable-next-line` on the same line.
+  // run to completion.
+  // eslint-disable-next-line no-restricted-syntax -- second-tier create-recovery: must outlive createOp's auto-abort (see comment above)
   const createRecoveryAbortRef = useRef<AbortController | null>(null);
   const createOp = useAbortableAsyncOperation();
   const deleteOp = useAbortableAsyncOperation();

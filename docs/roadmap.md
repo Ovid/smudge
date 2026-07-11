@@ -57,10 +57,10 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.11   | 404 Route-Response Helper                 | Replace ~20 hand-written `res.status(404).json({ error: { code: "NOT_FOUND", … } })` blocks across `projects`/`chapters`/`snapshots`/`search` routes with a `notFound(res, resource)` helper in `app.ts`.                                                                                                                                                                                                                                                                                                                                                             | Done    |
 | 4b.12   | Validation Error Response Helper          | Add `validationError(res, msg)` + `respondValidationParse(res, parsed)` helpers; migrate ~6 `safeParse` ladders so the 400 envelope has one owner.                                                                                                                                                                                                                                                                                                                                                                                                                    | Done    |
 | 4b.13   | TipTap Depth-Guard Regression Test        | Add a single test that walks a depth-65 TipTap doc through every consumer (`extractText`, `canonicalize`, image `walk`, depth validator) and asserts each bails safely. Codifies the contract behind today's four independent depth checks.                                                                                                                                                                                                                                                                                                                           | Done |
-| 4b.14   | Operational Backup Stopgap                | `make backup` / `make restore` Makefile targets producing a zip archive of `<data-dir>/smudge.db` + `<data-dir>/images/` (data dir defaults to `packages/server/data/`, honors `DB_PATH`). Interim escape hatch for SQLite corruption until Phase 8b ships. Uses SQLite `VACUUM INTO` for live-safe snapshots; restore moves existing data aside, never deletes.                                                                                                                                                                                                       | In Progress |
+| 4b.14   | Operational Backup Stopgap                | `make backup` / `make restore` Makefile targets producing a zip archive of `<data-dir>/smudge.db` + `<data-dir>/images/` (data dir defaults to `packages/server/data/`, honors `DB_PATH`). Interim escape hatch for SQLite corruption until Phase 8b ships. Uses SQLite `VACUUM INTO` for live-safe snapshots; restore moves existing data aside, never deletes.                                                                                                                                                                                                       | Done |
 | 4b.15   | Inline Title-Editing Hook                 | Extract a generic `useInlineTitleEditing(currentId, save, gates, options?)`; reduce `useChapterTitleEditing` and `useProjectTitleEditing` to thin wrappers that pass slug-drift check + post-save navigate as options.                                                                                                                                                                                                                                                                                                                                                | Done |
-| 4b.16   | Dialog Lifecycle Hook                     | Extract `useDialogLifecycle({ open, onClose, initialFocusRef, blockEscapePropagation }) => { dialogRef, onBackdropClick }` and migrate the 5 dialogs (Confirm, Export, NewProject, ProjectSettings, ShortcutHelp) one at a time; preserve `stopImmediatePropagation` as an opt-in (`blockEscapePropagation`); ARIA `role` stays in JSX and the `showModal/close` try/catch is an always-on guard.                                                                                                                                                                                                                                                                                  | In Progress |
-| 4b.17   | AbortController ESLint Rule               | Add ESLint rule banning hand-rolled `useRef<AbortController>` allocations; convert `migrationStructuralCheck.test.ts`'s `PHASE_4B_3B_ALLOWLIST` + companion assertion to inline `// eslint-disable-next-line` annotations on each of the 4 surviving allocation sites. Split from Phase 4b.4 on 2026-05-28 per §Pull Request Scope one-feature rule. | Planned |
+| 4b.16   | Dialog Lifecycle Hook                     | Extract `useDialogLifecycle({ open, onClose, initialFocusRef, blockEscapePropagation }) => { dialogRef, onBackdropClick }` and migrate the 5 dialogs (Confirm, Export, NewProject, ProjectSettings, ShortcutHelp) one at a time; preserve `stopImmediatePropagation` as an opt-in (`blockEscapePropagation`); ARIA `role` stays in JSX and the `showModal/close` try/catch is an always-on guard.                                                                                                                                                                                                                                                                                  | Done |
+| 4b.17   | AbortController ESLint Rule               | Add ESLint rule banning hand-rolled `useRef<AbortController>` allocations; convert `migrationStructuralCheck.test.ts`'s `PHASE_4B_3B_ALLOWLIST` + companion assertion to inline `// eslint-disable-next-line` annotations on each of the 6 surviving allocation sites across 5 files (post F-2 split). Split from Phase 4b.4 on 2026-05-28 per §Pull Request Scope one-feature rule. | In Progress |
 | 4c      | Notes, Tags & Outtakes                    | Inline notes, paragraph tags, scratchpad for cut text                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Planned |
 | 5a      | Fiction: Characters                       | Character sheets with structured fields and freeform notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Planned |
 | 5b      | Fiction: Scene Cards                      | Scene cards / outline mode with drag-and-drop                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Planned |
@@ -1767,6 +1767,7 @@ If a hardening pass (S2), a CLAUDE.md doc-pass (S3), or a fourth image-upload en
 ---
 
 ## Phase 4b.17: AbortController ESLint Rule
+<!-- plan: 2026-07-11-abortcontroller-eslint-rule-design.md -->
 
 ### Goal
 
@@ -1791,10 +1792,10 @@ disable comment itself the documented exception.
   `useRef<AbortController>` allocations using an AST shape that covers
   the realistic drift forms already pinned by
   `USE_REF_ABORT_CONTROLLER_PATTERN`'s regex test cases.
-- Migrate the 4 surviving sites (`useProjectEditor.ts`,
-  `useSnapshotState.ts`, `useTrashManager.ts`, `HomePage.tsx`) to use
-  inline `// eslint-disable-next-line` + their existing justification
-  comment.
+- Migrate the 6 surviving sites across 5 files (`useChapterCrud.ts`,
+  `useChapterMetadata.ts` (two refs), `useSnapshotState.ts`,
+  `useTrashManager.ts`, `HomePage.tsx`) to use inline
+  `// eslint-disable-next-line` + their existing justification comment.
 - Delete `PHASE_4B_3B_ALLOWLIST` and the companion "allowlist actually
   contains" assertion from `migrationStructuralCheck.test.ts`. The
   broader migration checks (binding extraction, import patterns)
@@ -1804,14 +1805,14 @@ disable comment itself the documented exception.
 
 ### Out of Scope
 
-- Migrating any of the 4 surviving allocations to
+- Migrating any of the 6 surviving allocations to
   `useAbortableAsyncOperation` — those are documented second-tier
   recovery patterns; migration is a separate per-site decision.
 
 ### Definition of Done
 
 - ESLint rule fires on any new `useRef<AbortController>` allocation.
-- The 4 surviving sites pass lint with inline disables.
+- The 6 surviving sites, plus the canonical `useAbortableAsyncOperation` hook itself, pass lint with inline disables.
 - `migrationStructuralCheck.test.ts` no longer references
   `PHASE_4B_3B_ALLOWLIST`.
 - CLAUDE.md §Save-Pipeline Invariants Rule 4 updated.

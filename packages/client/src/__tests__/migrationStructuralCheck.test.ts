@@ -14,28 +14,10 @@ import { tmpdir } from "node:os";
 // counter. One grep across the whole client source tree is enough.
 const clientSrcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-// Pattern shared between the source-tree migration check and the regex
-// drift-spec test below. Keep in lockstep — if you change the regex, the
-// spec test is what pins the new contract.
-//
-// S2 (review 2026-05-25): broadened to match AbortController anywhere
-// inside the generic argument list — not just as the first/sole token.
-// Pre-fix `/useRef\s*<\s*AbortController\b[^>]*>/` required AbortController
-// to be the FIRST token after `<`, which silently let nested generics
-// like `useRef<Record<string, AbortController>>` slip through. Future
-// per-key cancellation patterns would have false-passed the structural
-// check. The new shape `[^>]*\bAbortController\b` doesn't require a
-// closing `>` (because nested generics carry their own), and the word
-// boundary still rejects `AbortControllerWrapper`.
-const USE_REF_ABORT_CONTROLLER_PATTERN = /useRef\s*<[^>]*\bAbortController\b/;
-
 // S1/S3 (review 2026-05-25): the prior `.run(` import-implies-call check
-// and the "allowlist actually contains useRef<AbortController>" check
-// both matched commented occurrences as if they were live code. A file
+// matched commented occurrences as if they were live code. A file
 // that imported the hook with a single `.run(` reference in a JSDoc
-// example silently passed the import-implies-call ban; a file whose
-// only `useRef<AbortController>` was a comment from a prior refactor
-// would keep the allowlist entry alive even after migration.
+// example silently passed the import-implies-call ban.
 //
 // Strips line (`// ...`) and block (`/* ... */`) comments from
 // TypeScript source so the structural checks see only executable code.
@@ -129,8 +111,8 @@ export function collectTsSources(root: string): string[] {
 // real factory). Add new entries here when new delegation helpers
 // are introduced.
 //
-// Limitation (review S1, 2026-05-28): the matching pattern below at
-// line ~304 uses `[^)]*` to span the argument list. `[^)]*` cannot
+// Limitation (review S1, 2026-05-28): the delegation-matching pattern
+// below uses `[^)]*` to span the argument list. `[^)]*` cannot
 // match a delegation call with nested parens — a future call like
 // `refreshTrashList(getProject(), projectRef, trashOp)` would silently
 // fail to recognize `trashOp` as consumed and surface a false-positive
@@ -138,9 +120,10 @@ export function collectTsSources(root: string): string[] {
 // `refreshTrashList(project, projectRef, trashOp)` (no nested parens),
 // so the check works. When a delegation call site needs nested parens,
 // extend the matcher with a paren-counting walker rather than tweaking
-// the regex — the symmetry with the inner `[^>]*` non-nested generic
-// note at line ~290 is deliberate (each false-pass/false-fail surfaces
-// as a forcing function rather than silent drift).
+// the regex — the symmetry with the inner `[^>]*` non-nested-generic
+// note on the `<binding>.run(` call pattern is deliberate (each
+// false-pass/false-fail surfaces as a forcing function rather than
+// silent drift).
 const KNOWN_DELEGATION_HELPERS = ["refreshTrashList"];
 
 describe("client source-tree migration structural check", () => {
@@ -193,85 +176,6 @@ describe("client source-tree migration structural check", () => {
     for (const file of migrated) {
       const source = readFileSync(file, "utf-8");
       expect(source, `${file} should import useAbortableSequence`).toMatch(pattern);
-    }
-  });
-
-  // Phase 4b.3b post-sweep state: a handful of files retain hand-rolled
-  // useRef<AbortController> for documented second-tier-recovery
-  // (HomePage.createRecoveryAbortRef; the chapter-CRUD / chapter-metadata
-  // recovery refs) or simultaneously-live-controller patterns
-  // (useSnapshotState.restoreFollowupAbortRef; useTrashManager's
-  // restoreRecoveryAbortRef). Each retained ref carries an inline
-  // justification comment at its allocation. Phase 4b.4 replaces this
-  // file-level allowlist with inline `// eslint-disable-next-line` on each
-  // of the surviving lines and removes this `PHASE_4B_3B_ALLOWLIST` set
-  // entirely.
-  //
-  // F-2 (2026-05-29): useProjectEditor.ts was split into useChapterCrud +
-  // useChapterMetadata. Its three recovery refs migrated with the handlers
-  // that own them — createRecoveryAbortRef → useChapterCrud,
-  // statusRecoveryAbortRef + titleRecoveryAbortRef → useChapterMetadata — so
-  // the allowlist entry moved off useProjectEditor onto the two sub-hooks.
-  //
-  // Files in the allowlist are pinned by absolute-path equivalence
-  // (resolved against clientSrcRoot) so the assertion stays robust
-  // against rename within the tree. A file that's renamed without
-  // updating this list will fail the ban — that's the intended
-  // forcing function.
-  const PHASE_4B_3B_ALLOWLIST = new Set([
-    // F-2 (2026-05-29): createRecoveryAbortRef (migrated from useProjectEditor)
-    resolve(clientSrcRoot, "hooks/useChapterCrud.ts"),
-    // F-2 (2026-05-29): statusRecoveryAbortRef + titleRecoveryAbortRef (migrated from useProjectEditor)
-    resolve(clientSrcRoot, "hooks/useChapterMetadata.ts"),
-    resolve(clientSrcRoot, "hooks/useSnapshotState.ts"),
-    resolve(clientSrcRoot, "hooks/useTrashManager.ts"), // 4b.3c.3 I4: restoreRecoveryAbortRef
-    // useProjectEditor.ts removed by F-2 (2026-05-29): its three recovery refs
-    // migrated to useChapterCrud + useChapterMetadata when the god hook was split.
-    // EditorPage.tsx removed by Phase 4b.3b row S-1 (settingsRefreshAbortRef migrated)
-    // ProjectSettingsDialog.tsx removed by Phase 4b.3b row S-10 (fieldAbortRef + timezoneAbortRef migrated)
-    // SnapshotPanel.tsx removed by Phase 4b.3b row S-12 (fetchAbortRef + mutateAbortRef migrated)
-    // ExportDialog.tsx removed by Phase 4b.3b row S-8 (abortRef migrated)
-    resolve(clientSrcRoot, "pages/HomePage.tsx"),
-  ]);
-
-  it("no file in packages/client/src (excluding __tests__, the hook itself, and the Phase 4b.3b allowlist) contains raw useRef<AbortController>", () => {
-    const HOOK_FILE = resolve(clientSrcRoot, "hooks/useAbortableAsyncOperation.ts");
-    const files = collectTsSources(clientSrcRoot);
-    const offenders: string[] = [];
-    for (const file of files) {
-      if (file === HOOK_FILE) continue;
-      if (PHASE_4B_3B_ALLOWLIST.has(file)) continue;
-      // S3 (review 2026-05-25): strip comments before testing so a
-      // commented-out `useRef<AbortController>` reference can't keep
-      // a migrated file flagged as an offender. Symmetric with the
-      // allowlist "actually contains" check below.
-      const source = stripCommentsFromTsSource(readFileSync(file, "utf-8"));
-      if (USE_REF_ABORT_CONTROLLER_PATTERN.test(source)) {
-        offenders.push(file.replace(clientSrcRoot, "packages/client/src"));
-      }
-    }
-    expect(offenders).toEqual([]);
-  });
-
-  it("Phase 4b.3b allowlist entries actually contain useRef<AbortController>", () => {
-    // If an entry no longer matches, the file was either renamed (update
-    // the allowlist), migrated to useAbortableAsyncOperation (remove the
-    // entry), or deleted (remove the entry). All three cases are work
-    // for Phase 4b.3b's per-site evaluation. Letting dead entries linger
-    // would mask drift in files that still need migration.
-    //
-    // S3 (review 2026-05-25): the file's text must contain a LIVE
-    // useRef<AbortController> — not just a commented mention of one.
-    // The chapter-CRUD / chapter-metadata sub-hooks in particular carry
-    // historical comments that reference the prior hand-rolled pattern; a
-    // future refactor migrating all live refs while leaving those
-    // comments in place would silently keep the file allowlisted.
-    for (const file of PHASE_4B_3B_ALLOWLIST) {
-      const source = stripCommentsFromTsSource(readFileSync(file, "utf-8"));
-      expect(
-        source,
-        `${file} is on the allowlist but no longer contains LIVE useRef<AbortController> (comments don't count)`,
-      ).toMatch(USE_REF_ABORT_CONTROLLER_PATTERN);
     }
   });
 
@@ -424,47 +328,6 @@ describe("client source-tree migration structural check", () => {
     expect(delegationPattern.test(fixture)).toBe(true);
   });
 
-  it("useRef<AbortController> regex catches all realistic drift forms (S1)", () => {
-    // Direct exercise of USE_REF_ABORT_CONTROLLER_PATTERN. If the regex is
-    // ever tightened or loosened, this test pins the contract explicitly
-    // rather than relying on a future drift to surface it.
-    expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<AbortController>(null)")).toBe(true);
-    expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<AbortController | null>(null)")).toBe(
-      true,
-    );
-    expect(
-      USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<AbortController | undefined>(undefined)"),
-    ).toBe(true);
-    expect(
-      USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<AbortController | null | undefined>(null)"),
-    ).toBe(true);
-    // S5 (review 2026-05-25): multi-line generic forms. The codebase uses
-    // single-line today, but a future reformat-of-long-types pass must
-    // not silently break the structural check.
-    expect(
-      USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<\n  AbortController | null\n>(null)"),
-    ).toBe(true);
-    expect(
-      USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<\n  AbortController\n  | null\n>(null)"),
-    ).toBe(true);
-    // S2 (review 2026-05-25): nested generics. Future per-key cancellation
-    // patterns like `useRef<Record<string, AbortController>>` MUST match
-    // — the pre-fix regex missed these (verified empirically by Copilot
-    // review).
-    expect(
-      USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<Record<string, AbortController>>(new Map())"),
-    ).toBe(true);
-    expect(
-      USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<Map<string, AbortController | null>>(null)"),
-    ).toBe(true);
-    // Negative cases — must NOT match.
-    expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<AbortControllerWrapper>(null)")).toBe(
-      false,
-    );
-    expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<MyAbortController>(null)")).toBe(false);
-    expect(USE_REF_ABORT_CONTROLLER_PATTERN.test("useRef<string>(null)")).toBe(false);
-  });
-
   it("extractAbortableAsyncOperationBindings extracts hook bindings and rejects mutation.run drift (S1 re-review 2026-05-25)", () => {
     // Direct exercise of the helper that powers the import-implies-call
     // assertion. Pins the contract that the per-binding `.run(` pattern
@@ -548,8 +411,8 @@ describe("client source-tree migration structural check", () => {
     // The helper pins S1/S3 behavior: structural checks must see only
     // executable code, never commented mentions. If this contract drifts
     // (e.g. someone naively tries to strip comments with a non-greedy
-    // pattern that crosses adjacent blocks), the downstream import/
-    // allowlist checks would silently re-acquire the false-pass risk.
+    // pattern that crosses adjacent blocks), the downstream import
+    // check would silently re-acquire the false-pass risk.
     expect(stripCommentsFromTsSource("const x = 1; // comment\n")).toBe("const x = 1; \n");
     expect(stripCommentsFromTsSource("const /* inline */ y = 2;")).toBe("const  y = 2;");
     expect(stripCommentsFromTsSource("/* multi\n  line */\nconst z = 3;")).toBe("\nconst z = 3;");

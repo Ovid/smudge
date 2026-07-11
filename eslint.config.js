@@ -164,6 +164,33 @@ export default tseslint.config(
           message:
             "Spy on console via expectConsole() from src/__tests__/expectConsole.ts (CLAUDE.md §Testing Philosophy). Raw console spies must be asserted; the helper enforces it.",
         },
+        {
+          // Phase 4b.17: ban hand-rolled useRef<AbortController> allocations.
+          // Cancellation belongs in useAbortableAsyncOperation (network) /
+          // useAbortableSequence (staleness). The DESCENDANT combinator (space)
+          // after TSTypeParameterInstantiation is load-bearing: it covers the
+          // union (`AbortController | null`), nested (`Record<string,
+          // AbortController>`), and multi-line generic forms in one selector, and
+          // the exact typeName rejects `AbortControllerWrapper`/`MyAbortController`.
+          // Justified survivors carry an inline
+          // `// eslint-disable-next-line no-restricted-syntax -- <reason>`.
+          //
+          // DELIBERATE GAPS (same "add a selector when it shows up" discipline
+          // as the seq-ref/raw-string rules; all zero-occurrence today):
+          //   - callee shape: keys on `callee.name='useRef'`, so a
+          //     `React.useRef<AbortController>` MemberExpression callee, or an
+          //     aliased `import { useRef as ur }`, slips through. Every useRef<
+          //     site today is a bare, unaliased `useRef`.
+          //   - qualified type name: keys on `typeName.name`, so a qualified
+          //     `useRef<globalThis.AbortController>` (a TSQualifiedName, which
+          //     has no `.name`) slips through. Every site uses the bare global
+          //     `AbortController`. The deleted regex caught this textually; add
+          //     `[typeName.right.name='AbortController']` if one ever appears.
+          selector:
+            "CallExpression[callee.name='useRef'] > TSTypeParameterInstantiation TSTypeReference[typeName.name='AbortController']",
+          message:
+            "Hand-rolled useRef<AbortController> is banned. Route network cancellation through useAbortableAsyncOperation (packages/client/src/hooks/useAbortableAsyncOperation.ts) or response-staleness through useAbortableSequence. A justified second-tier-recovery survivor uses `// eslint-disable-next-line no-restricted-syntax -- <reason>` (the separator is two hyphens).",
+        },
       ],
     },
   },

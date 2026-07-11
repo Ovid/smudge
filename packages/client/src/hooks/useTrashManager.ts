@@ -66,8 +66,8 @@ export function useTrashManager(
   // one). Routing this through restoreOp would cause the next restore
   // to cancel the previous restore's recovery refresh — exactly the
   // case where the previous error's user-visible state most needs the
-  // refresh to land. Phase 4b.4 replaces this file-level allowlist
-  // entry with inline `// eslint-disable-next-line` on the line below.
+  // refresh to land.
+  // eslint-disable-next-line no-restricted-syntax -- second-tier restore-recovery: must outlive restoreOp's auto-abort (see comment above)
   const restoreRecoveryAbortRef = useRef<AbortController | null>(null);
   useEffect(() => {
     return () => {
