@@ -1,14 +1,3 @@
-The join(dataDir, "images") filesystem-path duplication is real — 4 sites:
-backup-core.ts:475, images.reaper.ts:41, images.paths.ts:70, db/purge.ts:61,
-with no getImagesDir() in config/paths.ts. But three of those modules are
-unrelated to backup, and CLAUDE.md's one-feature rule ("a PR delivers a single
-feature or a single refactor — never both") makes bundling a cross-module
-refactor into this feature branch a violation. Touching only backup-core's
-line would leave a getImagesDir() that 3 of 4 sites ignore — a worse
-half-refactor. So per rule 3a I'm deferring S-F9 to its own refactor PR
-(reported below), not bundling it.
-
-
 Need import/export roundtrip tests for Smudge.
 
 - Need to look at agentic code simplification in the agentic review?
