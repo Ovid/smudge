@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID as uuidv4 } from "node:crypto";
 import { countWords, TipTapDocSchema, sanitizeSnapshotLabel } from "@smudge/shared";
 import { truncateGraphemes } from "../utils/grapheme";
 import { buildAutoSnapshotLabel } from "./labels";

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
-import { v4 as uuid } from "uuid";
+import { randomUUID as uuid } from "node:crypto";
 import { safeTimezone } from "../timezone";
 import { formatDateFromParts } from "../velocity/velocity.service";
 import { logger } from "../logger";

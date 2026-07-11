@@ -51,7 +51,7 @@ export async function up(knex) {
   // Seed baseline SaveEvents and DailySnapshots for existing chapters/projects
   const now = new Date().toISOString();
   const today = now.slice(0, 10);
-  const { v4: uuid } = await import("uuid");
+  const { randomUUID: uuid } = await import("node:crypto");
 
   const chapters = await knex("chapters")
     .whereNull("deleted_at")

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { v4 as uuid } from "uuid";
+import { randomUUID as uuid } from "node:crypto";
 import { setupTestDb } from "./test-helpers";
 import * as ChapterRepo from "../chapters/chapters.repository";
 import { logger } from "../logger";
