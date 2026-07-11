@@ -168,6 +168,22 @@ it("S2/I3: runBackup replaces an existing archive atomically and leaves no .tmp 
   expect((await readdir(backupsDir)).filter((f) => f.includes(".tmp"))).toEqual([]);
 });
 
+it("S1: cleans up the .tmp publish file when the atomic rename fails", async () => {
+  const { dataDir, dbPath } = await makeFixture();
+  const backupsDir = join(dataDir, "backups");
+  const now = () => new Date(Date.UTC(2026, 4, 26, 14, 32, 11)); // deterministic filename
+  const outPath = join(backupsDir, "smudge-2026-05-26T143211Z.zip");
+  // Occupy the target path with a NON-EMPTY directory so `rename(tmp, outFile)`
+  // fails (EISDIR/ENOTEMPTY) AFTER the .tmp has been written. rotateAutoBackups
+  // only prunes `.zip`, so a leaked `.tmp` would accumulate forever.
+  await mkdir(join(outPath, "occupant"), { recursive: true });
+
+  await expect(runBackup({ dataDir, dbPath, backupsDir, mode: "manual", now })).rejects.toThrow();
+
+  // The publish failed, but no orphan .tmp is left in backups/.
+  expect((await readdir(backupsDir)).filter((f) => f.includes(".tmp"))).toEqual([]);
+});
+
 describe("resolveBombLimit (I5)", () => {
   it("returns the fallback when the flag is absent or blank", () => {
     expect(resolveBombLimit(undefined, 2048, "max-uncompressed")).toBe(2048);

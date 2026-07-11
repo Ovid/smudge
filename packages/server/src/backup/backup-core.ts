@@ -479,6 +479,12 @@ export async function runBackup(opts: BackupOptions): Promise<{ outFile: string 
   const stamp = isoStampUtc(now); // UTC → rotation name-sort never inverts (S-F1)
   const outFile = join(opts.backupsDir, buildBackupName(stamp, opts.mode));
   const staging = join(opts.dataDir, `${stamp}.${process.pid}.backup-staging.db`);
+  // Per-process temp (I3): two same-mode backups in the same wall-clock second must
+  // not share a temp path and interleave their writes into a torn archive. Declared
+  // here (not inside the try) so the finally can remove it even when the publish
+  // rename throws AFTER the write — rotateAutoBackups only prunes `.zip`, so a
+  // leaked `.tmp` would otherwise accumulate in backups/ forever (S1).
+  const tmpOut = `${outFile}.${process.pid}.tmp`;
 
   await mkdir(opts.backupsDir, { recursive: true });
   await rm(staging, { force: true });
@@ -510,9 +516,6 @@ export async function runBackup(opts: BackupOptions): Promise<{ outFile: string 
     }
 
     const buf = await zip.generateAsync({ type: "nodebuffer" });
-    // Per-process temp (I3): two same-mode backups in the same wall-clock second
-    // must not share a temp path and interleave their writes into a torn archive.
-    const tmpOut = `${outFile}.${process.pid}.tmp`;
     await writeFile(tmpOut, buf);
     // rename atomically replaces any existing outFile (S2): the prior explicit
     // rm(outFile) was redundant and opened a no-file window a concurrent backup
@@ -521,5 +524,8 @@ export async function runBackup(opts: BackupOptions): Promise<{ outFile: string 
     return { outFile };
   } finally {
     await rm(staging, { force: true });
+    // On the happy path the rename already consumed tmpOut (force ignores ENOENT);
+    // on a mid-publish failure this reclaims the orphan.
+    await rm(tmpOut, { force: true });
   }
 }
