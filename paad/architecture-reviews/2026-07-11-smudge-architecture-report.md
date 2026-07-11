@@ -250,6 +250,10 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** `backup-core.ts` bundles low-level ZIP wire-format parsing (EOCD scan, central-directory walk, declared-size reads, zip-slip/bomb guards) with high-level backup lifecycle orchestration (`runBackup`/`runRestore`/`runAutoBackup`/rotation) in one 543-line file. Mitigated: the co-location is a deliberate security decision — the bomb tests must parse archives with the exact same byte-offset logic as production, so the format primitives are shared with tests to prevent offset drift.
 - **Evidence:** `packages/server/src/backup/backup-core.ts:42-56` (format layer) alongside `runRestore`/`runBackup`/`rotateAutoBackups` (orchestration).
 - **Found by:** Structure & Boundaries
+- **Status:** Fixed
+- **Status reason:** Extracted the ZIP wire-format + zip-slip/bomb primitives (`findEocdOffset`, `walkCentralDirectory`, `readCentralDirectorySizes`, `checkDeclaredSizes`, `validateEntryPaths`, `ZipSlipError`, `DecompressionBombError`, `CentralDirEntry`, `BombLimits`, `DEFAULT_BOMB_LIMITS`, sig constants) into a new `backup-zip-format.ts`. The anti-drift guarantee (S9) is preserved by a shared *module* rather than single-file co-location — both `runRestore` (production) and the bomb/zip-slip tests import the same byte-offset logic. `backup-core.ts` re-exports every symbol so all importers (tests, scripts) are unchanged. Pure move; server typecheck clean, 80 backup tests pass.
+- **Status date:** 2026-07-11 21:13 UTC
+- **Status commit:** (pending)
 
 ### [F-18] Anemic domain model
 - **Category:** Flaw 10 (Feature envy / anemic domain model)
