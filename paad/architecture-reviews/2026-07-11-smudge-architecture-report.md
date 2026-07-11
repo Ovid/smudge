@@ -207,6 +207,10 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** `applyReloadFailedLockRef` is initialized to `() => {}` and only assigned its real handler further down the component body (because the handler depends on state `useProjectEditor` itself produces), creating a one-render-tick window where a lock request is silently dropped. The window is documented as doubly backstopped by the 1.5s auto-save debounce and an `isLocked()` no-op.
 - **Evidence:** `packages/client/src/pages/EditorPage.tsx:52,82,328`.
 - **Found by:** Coupling & Dependencies
+- **Status:** Fixed
+- **Status reason:** Removed the `applyReloadFailedLockRef` no-op-then-backfill entirely. The ref worked around a circular declaration that no longer exists: the 2026-05-30 machine refactor reduced `applyReloadFailedLock` to a single `editorMachine.dispatch`, so it now depends only on `editorMachine` (which takes no dependencies). Hoisted both `editorMachine` and `applyReloadFailedLock` above `useProjectEditor` and passed `onRequestEditorLock: applyReloadFailedLock` directly — closing the one-render-tick window where a lock request hit the `() => {}` no-op. Behavior-identical reorder (the moved hooks reference nothing declared above them); the stale "it needs editorRef" comment is gone. Client + server typecheck clean, lint clean, 296 EditorPage/useProjectEditor/mutation tests pass.
+- **Status date:** 2026-07-11 21:16 UTC
+- **Status commit:** (pending)
 
 ### [F-13] Type-only circular dependency in the error module
 - **Category:** Flaw 5 (Circular dependencies)
@@ -253,7 +257,7 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Status:** Fixed
 - **Status reason:** Extracted the ZIP wire-format + zip-slip/bomb primitives (`findEocdOffset`, `walkCentralDirectory`, `readCentralDirectorySizes`, `checkDeclaredSizes`, `validateEntryPaths`, `ZipSlipError`, `DecompressionBombError`, `CentralDirEntry`, `BombLimits`, `DEFAULT_BOMB_LIMITS`, sig constants) into a new `backup-zip-format.ts`. The anti-drift guarantee (S9) is preserved by a shared *module* rather than single-file co-location — both `runRestore` (production) and the bomb/zip-slip tests import the same byte-offset logic. `backup-core.ts` re-exports every symbol so all importers (tests, scripts) are unchanged. Pure move; server typecheck clean, 80 backup tests pass.
 - **Status date:** 2026-07-11 21:13 UTC
-- **Status commit:** (pending)
+- **Status commit:** 2ce864d
 
 ### [F-18] Anemic domain model
 - **Category:** Flaw 10 (Feature envy / anemic domain model)

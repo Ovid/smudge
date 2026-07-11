@@ -15,7 +15,6 @@ import { join, relative, sep, resolve, basename, dirname } from "node:path";
 import { getImagesDir } from "../config/paths";
 import {
   DEFAULT_BOMB_LIMITS,
-  ZipSlipError,
   DecompressionBombError,
   readCentralDirectorySizes,
   checkDeclaredSizes,

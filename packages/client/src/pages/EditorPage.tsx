@@ -44,12 +44,63 @@ import { EditorDialogs } from "../components/EditorDialogs";
 export function EditorPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
-  // I2 (review 2026-04-24): applyReloadFailedLock is defined below (it
-  // needs editorRef, which is in turn declared later in file order).
-  // The save-pipeline callback we pass into useProjectEditor needs to
-  // call it. Indirect through a ref assigned after the useCallback
-  // definition so the closure sees the current helper identity.
-  const applyReloadFailedLockRef = useRef<(msg: string) => void>(() => {});
+
+  // Phase 4b.5: the editor's operational state (lock banner, TipTap editable
+  // intent, mutation-busy) lives in ONE machine so the invariant pair can no
+  // longer drift by hand. The read-only lock is surfaced when a mutation
+  // succeeded server-side but the follow-up reload failed (I1); the Editor is
+  // intentionally left setEditable(false) in that case to prevent the user
+  // from typing over stale content. The lock banner is the only persistent
+  // user-visible signal of that state, so it must NOT be dismissible — it
+  // clears automatically when the Editor is replaced (chapter switch or
+  // reload-key bump) via the EDITOR_REMOUNTED dispatch below.
+  //
+  // Declared above useProjectEditor (F-12) so its onRequestEditorLock can call
+  // applyReloadFailedLock directly. The prior ref indirection worked around a
+  // circular declaration that no longer exists: the 2026-05-30 machine refactor
+  // reduced applyReloadFailedLock to a single machine dispatch, so it now
+  // depends only on editorMachine — which itself takes no dependencies.
+  const editorMachine = useEditorMutationMachine();
+
+  // I6 (review 2026-04-24): invariant-pair helper. CLAUDE.md save-
+  // pipeline invariant #2 requires setEditable(false) around any
+  // mutation that can fail mid-typing; the persistent lock banner is the
+  // only user-visible signal of that read-only state. Three call sites
+  // pair them today (restore stage:"committed_but_unreloaded", restore stage:"mutate"
+  // possiblyCommitted, and finalizeReplaceSuccess non-stale reloadFailed).
+  // Callers keep their surrounding refreshes / cache-clear / stale-chapter
+  // branching inline because those diverge between the restore and replace
+  // flows in non-mechanical ways.
+  const applyReloadFailedLock = useCallback(
+    (bannerMessage: string) => {
+      // COMMITTED_UNRELOADED sets the banner AND editable:false in one machine
+      // transition — the invariant pair can no longer drift. The reconcile
+      // effect pushes editable:false into TipTap; the lock-down setEditable(false)
+      // already ran synchronously inside useEditorMutation for the mutation path,
+      // and for the terminal-save-error path (useProjectEditor.onRequestEditorLock)
+      // the effect applies it.
+      //
+      // S3 (agentic-review 2026-05-30): the terminal-save-error path is
+      // INTENTIONALLY effect-driven, not synchronous. On `main`
+      // applyReloadFailedLock ran safeSetEditable(false) imperatively; now this
+      // helper only dispatches COMMITTED_UNRELOADED, so the onRequestEditorLock
+      // caller (which does NOT pass through useEditorMutation.run(), so no prior
+      // synchronous lock-down ran) leaves TipTap writable for one render tick
+      // until the reconcile effect commits editable:false. This is ratified by
+      // Decided Q3 (synchronous lock-down is scoped to the mutation paths only)
+      // and is safe because that one-tick window is doubly backstopped: the
+      // 1.5s auto-save debounce makes a stray PATCH in a single tick effectively
+      // unreachable, and handleSaveLockGated no-ops any save the instant
+      // isLocked() flips (the machine mirrors lock to its ref during render, so
+      // isLocked() is true in the very commit this dispatch is processed). Do
+      // not "fix" this by re-adding a synchronous setEditable(false) here — the
+      // mutation paths own that, and adding it here would re-couple what Q3
+      // deliberately split.
+      editorMachine.dispatch({ type: "COMMITTED_UNRELOADED", message: bannerMessage });
+    },
+    [editorMachine],
+  );
+
   const {
     project,
     error,
@@ -79,7 +130,7 @@ export function EditorPage() {
   } = useProjectEditor(slug, {
     // I2: route terminal save-fail codes through the invariant-pair
     // helper so the banner and setEditable(false) stay in lock-step.
-    onRequestEditorLock: (msg) => applyReloadFailedLockRef.current(msg),
+    onRequestEditorLock: applyReloadFailedLock,
     // S11 (4b.3c.3): handleCreateChapter 404 means the project was
     // deleted between sidebar render and the POST landing. The
     // dismissible banner is the wrong UX (project doesn't exist for
@@ -138,17 +189,6 @@ export function EditorPage() {
   // "replaced N occurrences" banner and a warning about skipped chapters
   // without conflating success with failure.
   const [actionInfo, setActionInfo] = useState<string | null>(null);
-
-  // Phase 4b.5: the editor's operational state (lock banner, TipTap editable
-  // intent, mutation-busy) lives in ONE machine so the invariant pair can no
-  // longer drift by hand. The read-only lock is surfaced when a mutation
-  // succeeded server-side but the follow-up reload failed (I1); the Editor is
-  // intentionally left setEditable(false) in that case to prevent the user
-  // from typing over stale content. The lock banner is the only persistent
-  // user-visible signal of that state, so it must NOT be dismissible — it
-  // clears automatically when the Editor is replaced (chapter switch or
-  // reload-key bump) via the EDITOR_REMOUNTED dispatch below.
-  const editorMachine = useEditorMutationMachine();
 
   // Editor handle is declared here (above useEditorMutation + the migrated
   // mutation callbacks) so the hook can capture the ref and the callbacks
@@ -282,50 +322,6 @@ export function EditorPage() {
     isActionBusy,
     isEditorLocked,
   ]);
-
-  // I6 (review 2026-04-24): invariant-pair helper. CLAUDE.md save-
-  // pipeline invariant #2 requires setEditable(false) around any
-  // mutation that can fail mid-typing; the persistent lock banner is the
-  // only user-visible signal of that read-only state. Three call sites
-  // pair them today (restore stage:"committed_but_unreloaded", restore stage:"mutate"
-  // possiblyCommitted, and finalizeReplaceSuccess non-stale reloadFailed).
-  // Callers keep their surrounding refreshes / cache-clear / stale-chapter
-  // branching inline because those diverge between the restore and replace
-  // flows in non-mechanical ways.
-  const applyReloadFailedLock = useCallback(
-    (bannerMessage: string) => {
-      // COMMITTED_UNRELOADED sets the banner AND editable:false in one machine
-      // transition — the invariant pair can no longer drift. The reconcile
-      // effect pushes editable:false into TipTap; the lock-down setEditable(false)
-      // already ran synchronously inside useEditorMutation for the mutation path,
-      // and for the terminal-save-error path (useProjectEditor.onRequestEditorLock)
-      // the effect applies it.
-      //
-      // S3 (agentic-review 2026-05-30): the terminal-save-error path is
-      // INTENTIONALLY effect-driven, not synchronous. On `main`
-      // applyReloadFailedLock ran safeSetEditable(false) imperatively; now this
-      // helper only dispatches COMMITTED_UNRELOADED, so the onRequestEditorLock
-      // caller (which does NOT pass through useEditorMutation.run(), so no prior
-      // synchronous lock-down ran) leaves TipTap writable for one render tick
-      // until the reconcile effect commits editable:false. This is ratified by
-      // Decided Q3 (synchronous lock-down is scoped to the mutation paths only)
-      // and is safe because that one-tick window is doubly backstopped: the
-      // 1.5s auto-save debounce makes a stray PATCH in a single tick effectively
-      // unreachable, and handleSaveLockGated no-ops any save the instant
-      // isLocked() flips (the machine mirrors lock to its ref during render, so
-      // isLocked() is true in the very commit this dispatch is processed). Do
-      // not "fix" this by re-adding a synchronous setEditable(false) here — the
-      // mutation paths own that, and adding it here would re-couple what Q3
-      // deliberately split.
-      editorMachine.dispatch({ type: "COMMITTED_UNRELOADED", message: bannerMessage });
-    },
-    [editorMachine],
-  );
-  // I2 (review 2026-04-24): keep the ref used by useProjectEditor's
-  // onRequestEditorLock pointed at the current helper identity. The
-  // helper's identity is stable across renders (deps are stable), and the
-  // ref indirection lets us reference it here without circular declaration.
-  applyReloadFailedLockRef.current = applyReloadFailedLock;
 
   // OOSI1 (agentic-review 2026-05-30): re-assert editor editability after a
   // committed_but_unreloaded replace that settled on a now-unrelated chapter.
