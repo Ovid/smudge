@@ -970,6 +970,26 @@ it("rotateAutoBackups returns empty deleted list when backupsDir does not exist"
   expect(deleted).toEqual([]);
 });
 
+// S-F5: a non-ENOENT readdir failure (EACCES/EIO) must propagate, not be
+// masked as "nothing to prune" — parallels walkFiles' ENOENT-only narrowing.
+it.skipIf(typeof process.getuid === "function" && process.getuid() === 0)(
+  "rotateAutoBackups re-throws a non-ENOENT readdir error (EACCES) instead of swallowing it",
+  async () => {
+    const dir = await mkdtemp(join(tmpdir(), "smudge-rot-eacces-"));
+    tempDirs.push(dir);
+    const locked = join(dir, "backups");
+    await mkdir(locked, { recursive: true });
+    await chmod(locked, 0o000); // unreadable → readdir EACCES
+    try {
+      await expect(rotateAutoBackups({ backupsDir: locked, keep: 10 })).rejects.toMatchObject({
+        code: "EACCES",
+      });
+    } finally {
+      await chmod(locked, 0o700); // restore so afterEach cleanup can rm it
+    }
+  },
+);
+
 // ── Task 9: runAutoBackup ────────────────────────────────────────────────────
 
 it("skips when there is no database", async () => {

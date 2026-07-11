@@ -396,8 +396,12 @@ export async function rotateAutoBackups(o: {
   let names: string[];
   try {
     names = await readdir(o.backupsDir);
-  } catch {
-    return { deleted: [] };
+  } catch (e) {
+    // ENOENT is the only swallowable case — backupsDir may not exist yet.
+    // A permission/IO error (EACCES/EIO/…) would otherwise be masked as
+    // "nothing to prune"; re-throw it (parallels walkFiles' narrowing, S-F5).
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return { deleted: [] };
+    throw e;
   }
   const autos = names.filter((f) => f.startsWith("smudge-auto-") && f.endsWith(".zip")).sort(); // lexical == chronological
   // Defensive clamp: a negative/non-integer keep reaching this low-level function
