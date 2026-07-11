@@ -7,7 +7,7 @@ describe("timezone auto-detection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(api.settings.get).mockResolvedValue({});
-    vi.mocked(api.settings.update).mockResolvedValue({ message: "ok" });
+    vi.mocked(api.settings.update).mockResolvedValue(undefined);
   });
 
   it("detects browser timezone and sends to server when not set", async () => {

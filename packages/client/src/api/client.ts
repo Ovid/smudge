@@ -283,8 +283,9 @@ export const api = {
         ...(signal ? { signal } : {}),
       }),
 
+    // F-9: server returns 204 No Content; apiFetch resolves to undefined.
     reorderChapters: (slug: string, chapterIds: string[], signal?: AbortSignal) =>
-      apiFetch<{ message: string }>(`/projects/${enc(slug)}/chapters/order`, {
+      apiFetch<undefined>(`/projects/${enc(slug)}/chapters/order`, {
         method: "PUT",
         body: JSON.stringify({ chapter_ids: chapterIds }),
         ...(signal ? { signal } : {}),
@@ -595,8 +596,9 @@ export const api = {
     get: (signal?: AbortSignal) =>
       apiFetch<{ timezone?: string }>("/settings", signal ? { signal } : undefined),
 
+    // F-9: server returns 204 No Content; apiFetch resolves to undefined.
     update: (settings: Array<{ key: string; value: string }>, signal?: AbortSignal) =>
-      apiFetch<{ message: string }>("/settings", {
+      apiFetch<undefined>("/settings", {
         method: "PATCH",
         body: JSON.stringify({ settings }),
         ...(signal ? { signal } : {}),

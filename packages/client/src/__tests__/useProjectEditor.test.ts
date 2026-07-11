@@ -49,7 +49,7 @@ vi.mock("../api/client", () => ({
     },
     settings: {
       get: vi.fn().mockResolvedValue({}),
-      update: vi.fn().mockResolvedValue({ message: "ok" }),
+      update: vi.fn().mockResolvedValue(undefined),
     },
   },
 }));
@@ -615,7 +615,7 @@ describe("useProjectEditor", () => {
   });
 
   it("reorders chapters", async () => {
-    vi.mocked(api.projects.reorderChapters).mockResolvedValue({ message: "ok" });
+    vi.mocked(api.projects.reorderChapters).mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
@@ -635,7 +635,7 @@ describe("useProjectEditor", () => {
   // aborts the prior controller and passes its signal into the
   // transport, so the newer reorder severs the older one.
   it("handleReorderChapters threads AbortSignal into reorderChapters (C5)", async () => {
-    vi.mocked(api.projects.reorderChapters).mockResolvedValue({ message: "ok" });
+    vi.mocked(api.projects.reorderChapters).mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
     await waitFor(() => expect(result.current.project).toBeTruthy());
@@ -658,13 +658,13 @@ describe("useProjectEditor", () => {
     vi.mocked(api.projects.reorderChapters)
       .mockImplementationOnce((_slug, _ids, signal) => {
         firstSignal = signal;
-        return new Promise<{ message: string }>((resolve) => {
-          firstResolve = () => resolve({ message: "ok" });
+        return new Promise<undefined>((resolve) => {
+          firstResolve = () => resolve(undefined);
         });
       })
       .mockImplementationOnce((_slug, _ids, signal) => {
         secondSignal = signal;
-        return Promise.resolve({ message: "ok" });
+        return Promise.resolve(undefined);
       });
 
     const { result } = renderHook(() => useProjectEditor("test-project"));
@@ -1322,8 +1322,8 @@ describe("useProjectEditor", () => {
     let resolveReorder!: () => void;
     vi.mocked(api.projects.reorderChapters).mockImplementationOnce(
       () =>
-        new Promise<{ message: string }>((resolve) => {
-          resolveReorder = () => resolve({ message: "ok" });
+        new Promise<undefined>((resolve) => {
+          resolveReorder = () => resolve(undefined);
         }),
     );
 
@@ -2656,8 +2656,8 @@ describe("useProjectEditor", () => {
       .mockReset()
       .mockImplementationOnce(
         () =>
-          new Promise<{ message: string }>((resolve) => {
-            resolveReorder = () => resolve({ message: "ok" });
+          new Promise<undefined>((resolve) => {
+            resolveReorder = () => resolve(undefined);
           }),
       );
 
@@ -2769,8 +2769,8 @@ describe("useProjectEditor", () => {
       .mockReset()
       .mockImplementationOnce(
         () =>
-          new Promise<{ message: string }>((resolve) => {
-            resolveReorder = () => resolve({ message: "ok" });
+          new Promise<undefined>((resolve) => {
+            resolveReorder = () => resolve(undefined);
           }),
       );
 
@@ -2827,7 +2827,7 @@ describe("useProjectEditor", () => {
       .mockReset()
       .mockImplementationOnce(
         () =>
-          new Promise<{ message: string }>((_resolve, reject) => {
+          new Promise<undefined>((_resolve, reject) => {
             rejectReorder = reject;
           }),
       );

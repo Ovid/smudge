@@ -134,6 +134,10 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** CLAUDE.md states the layering is "Routes → Services → Repositories" and its Target Project Structure lists no `stores/`, but no service imports a repository directly — the real path is Routes → Services → `getProjectStore()` (the `SqliteProjectStore` facade) → Repositories. The facade is an intermediate layer absent from the steering docs.
 - **Evidence:** `grep repository packages/server/src/*/*.service.ts` → none; all services import `getProjectStore`; the only repository importer is `sqlite-project-store.ts`.
 - **Found by:** Structure & Boundaries
+- **Status:** Fixed
+- **Status reason:** Reconciled the steering docs with the code (answers Next-Question #1 in favor of naming the layer). CLAUDE.md's Target Project Structure now lists `stores/` (the `SqliteProjectStore` facade over the repositories), and the Architecture line reads `Routes → Services → ProjectStore facade → Repositories`, noting services reach data only via `getProjectStore()` and the facade hosts the `transaction(txStore)` seam. Docs-only change; no code touched.
+- **Status date:** 2026-07-11 20:10 UTC
+- **Status commit:** 69220a38a3e7d424711d627f33b33b19a075d822
 
 ### [F-6] `index.ts` bypasses the DB-path single owner with an inline Knex config
 - **Category:** Flaw 22 (Configuration sprawl)
@@ -170,6 +174,10 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** `PUT .../chapters/order` returns `{message:"Chapter order updated."}` and `PUT /settings` returns `{message:"Settings updated"}`, whereas the F-16 principle is that the client owns the user-facing success toast. F-16 formally governs only DELETEs, so this is not a strict violation — but two endpoints ship English the client ignores, against the spirit of that principle.
 - **Evidence:** `packages/server/src/projects/projects.routes.ts:91`; `packages/server/src/settings/settings.routes.ts:32`.
 - **Found by:** Integration & Data
+- **Status:** Fixed
+- **Status reason:** Both `PUT .../chapters/order` and `PATCH /settings` now return `204` No Content with an empty body instead of a server-authored `{message}` string, fully realizing the F-16 "client owns the success toast" principle. No production caller read the message; the client `apiFetch<undefined>` type params and ~9 test mocks were updated to the 204→undefined contract, and CLAUDE.md §API Design now documents the two endpoints under the body-less-204 contract. Red tests (204 + empty body) added to `projects.test.ts` and `settings.test.ts`; 288 affected tests pass, typecheck clean.
+- **Status date:** 2026-07-11 20:05 UTC
+- **Status commit:** 75564103c91f0e56e64fd3efdf692d66b4661f5c
 
 ### [F-10] Three coexisting DEV-gating idioms, two of them a documented hazard
 - **Category:** Flaw 34 (Inconsistent error/logging conventions)
@@ -188,6 +196,10 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** The auto-search debounce is a bare inline `setTimeout(..., 300)`, inconsistent with the named `AUTO_SAVE_DEBOUNCE_MS = 1500` and `SAVE_BACKOFF_MS` constants elsewhere; "300ms" is repeated across five comments but exists nowhere as a constant.
 - **Evidence:** `packages/client/src/hooks/useFindReplaceState.ts:321` (plus comments at 62, 163, 270, 301, 316).
 - **Found by:** Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** Extracted `SEARCH_DEBOUNCE_MS = 300` (matching the `AUTO_SAVE_DEBOUNCE_MS` idiom) and used it at the `setTimeout`; the four "300ms" comments now name the constant so the value lives in exactly one place. Behavior-identical refactor covered by the existing debounce-timing tests in `useFindReplaceState.test.ts` (35 pass).
+- **Status date:** 2026-07-11 19:50 UTC
+- **Status commit:** f42cf75c18f5eb4611168c7ccd44592bb666483b
 
 ### [F-12] No-op ref backfilled after a circular hook declaration
 - **Category:** Flaw 27 (Temporal coupling)

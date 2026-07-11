@@ -5,6 +5,9 @@ import { mapApiError, isApiError, applyMappedError } from "../errors";
 import { useAbortableSequence } from "./useAbortableSequence";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
 
+/** Debounce window (ms) before an auto-search fires after the user stops typing. */
+const SEARCH_DEBOUNCE_MS = 300;
+
 export interface SearchOptionsShape {
   case_sensitive: boolean;
   whole_word: boolean;
@@ -59,7 +62,7 @@ export function useFindReplaceState(
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestSlugRef = useRef<string | null>(projectSlug ?? null);
   // I2 (review 2026-04-21): tracks the latest panelOpen value so the
-  // debounced auto-search can early-bail if its 300ms timer slipped
+  // debounced auto-search can early-bail if its SEARCH_DEBOUNCE_MS timer slipped
   // past closePanel's clearTimeout (a task-queue race the ref-less
   // check couldn't cover). Without it, the setTimeout callback runs
   // search() on a closed panel — the fetch has its own fresh abort
@@ -160,7 +163,7 @@ export function useFindReplaceState(
     // for a search the user has clearly moved on from.
     op.abort();
     // Clear any pending debounced search; if the panel closes inside the
-    // 300ms debounce window, the timer would otherwise fire search(slug)
+    // SEARCH_DEBOUNCE_MS debounce window, the timer would otherwise fire search(slug)
     // after the panel was closed — starting a new sequence and writing a
     // stale result set pinned to the pre-close query/options, visible on
     // reopen.
@@ -267,7 +270,7 @@ export function useFindReplaceState(
       } finally {
         // S2 (review 2026-05-01): the `!token.isStale()` gate is
         // LOAD-BEARING for the rapid-sequential search case: if user
-        // types "a" then "ab" inside the 300ms window, search("a")'s
+        // types "a" then "ab" inside the SEARCH_DEBOUNCE_MS window, search("a")'s
         // finally runs AFTER search("ab") has already called
         // setLoading(true); an unconditional setLoading(false) here
         // would clobber that and the spinner would disappear while a
@@ -298,7 +301,7 @@ export function useFindReplaceState(
     }
     // I3 (review 2026-04-21): read latestSlugRef.current INSIDE the
     // setTimeout callback, not at effect-setup time. A project rename
-    // between the effect running and the 300ms timer firing updates
+    // between the effect running and the SEARCH_DEBOUNCE_MS timer firing updates
     // the ref (via the projectSlug sync useEffect) but does not re-run
     // this effect, so capturing `slug` here would fire the search
     // against the dead slug — directly contradicting the design intent
@@ -318,7 +321,7 @@ export function useFindReplaceState(
       const slug = latestSlugRef.current;
       if (!slug) return;
       search(slug);
-    }, 300);
+    }, SEARCH_DEBOUNCE_MS);
     return () => {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);

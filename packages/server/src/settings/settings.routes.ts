@@ -29,7 +29,7 @@ export function settingsRouter(): Router {
         throw new BadRequestError(`Invalid settings: ${messages}`);
       }
 
-      res.json({ message: "Settings updated" });
+      res.status(204).end();
     }),
   );
 

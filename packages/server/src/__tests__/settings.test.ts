@@ -24,7 +24,10 @@ describe("PATCH /api/settings", () => {
     const res = await request(t.app)
       .patch("/api/settings")
       .send({ settings: [{ key: "timezone", value: "America/New_York" }] });
-    expect(res.status).toBe(200);
+    // F-9: success is 204 No Content with an empty body (client owns the toast).
+    expect(res.status).toBe(204);
+    expect(res.body).toEqual({});
+    expect(res.text).toBe("");
 
     const row = await t.db("settings").where({ key: "timezone" }).first();
     expect(row.value).toBe("America/New_York");
@@ -35,7 +38,8 @@ describe("PATCH /api/settings", () => {
     const res = await request(t.app)
       .patch("/api/settings")
       .send({ settings: [{ key: "timezone", value: "Europe/London" }] });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(204);
+    expect(res.body).toEqual({});
 
     const row = await t.db("settings").where({ key: "timezone" }).first();
     expect(row.value).toBe("Europe/London");
