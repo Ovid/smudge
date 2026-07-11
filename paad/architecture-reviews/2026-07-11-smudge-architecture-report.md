@@ -210,7 +210,7 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Status:** Fixed
 - **Status reason:** Removed the `applyReloadFailedLockRef` no-op-then-backfill entirely. The ref worked around a circular declaration that no longer exists: the 2026-05-30 machine refactor reduced `applyReloadFailedLock` to a single `editorMachine.dispatch`, so it now depends only on `editorMachine` (which takes no dependencies). Hoisted both `editorMachine` and `applyReloadFailedLock` above `useProjectEditor` and passed `onRequestEditorLock: applyReloadFailedLock` directly — closing the one-render-tick window where a lock request hit the `() => {}` no-op. Behavior-identical reorder (the moved hooks reference nothing declared above them); the stale "it needs editorRef" comment is gone. Client + server typecheck clean, lint clean, 296 EditorPage/useProjectEditor/mutation tests pass.
 - **Status date:** 2026-07-11 21:16 UTC
-- **Status commit:** (pending)
+- **Status commit:** 8a61c12
 
 ### [F-13] Type-only circular dependency in the error module
 - **Category:** Flaw 5 (Circular dependencies)
@@ -240,6 +240,10 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** The client renders TipTap→HTML through a hardened DOMPurify instance as documented defense-in-depth against a "hostile backup/snapshot/server payload," but the server export path renders the same stored JSON to a downloadable HTML file via `generateHTML(content, editorExtensions)` with no equivalent sanitize step. The backstop is real (ProseMirror schema-filtering bounds the tag/attr set, titles are `escapeHtml`'d, it is a downloaded file rather than served HTML), so exploitability is marginal — but the two paths treat the same untrusted content asymmetrically.
 - **Evidence:** `packages/server/src/export/export.renderers.ts:33-41,100-149`; `packages/shared/src/schemas.ts:53` (`TipTapDocSchema` uses `.passthrough()`).
 - **Found by:** Security & Code Quality
+- **Status:** Fixed
+- **Status reason:** `chapterContentToHtml` now runs a fail-closed image-src allowlist over the `generateHTML` output before image resolution, mirroring the client sanitizer's `ALLOWED_URI_REGEXP` (relative `/api/images/<uuid>` only). Any `<img>` with an external, `javascript:`, or `data:` src — which previously survived into the downloaded export (tracking-pixel / defense-in-depth-asymmetry vector) — is dropped; the client drops the attr, the server drops the tag, both fail closed. No server-side DOM added: `editorExtensions` emits only `<img src alt>` as URI-bearing output (no Link), so a targeted img-tag pass over the bounded machine-generated HTML suffices. Valid `/api/images/<uuid>` srcs are preserved so resolution still embeds them. Red tests added (external/`javascript:`/`data:` stripped, valid src + surrounding content preserved); all 139 export tests pass, lint + typecheck clean.
+- **Status date:** 2026-07-11 21:19 UTC
+- **Status commit:** (pending)
 
 ### [F-16] Image-URI accept/reject rule encoded twice across packages
 - **Category:** Flaw 6 (Leaky abstraction / duplicated rule)

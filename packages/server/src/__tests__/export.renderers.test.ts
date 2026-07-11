@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import JSZip from "jszip";
-import { renderHtml, renderMarkdown, renderPlainText } from "../export/export.renderers";
+import {
+  renderHtml,
+  renderMarkdown,
+  renderPlainText,
+  chapterContentToHtml,
+} from "../export/export.renderers";
 import { escapeHtml } from "../export/html-escape";
 import { renderDocx } from "../export/docx.renderer";
 import { renderEpub } from "../export/epub.renderer";
@@ -45,6 +50,50 @@ const sampleChapters = [
 ];
 
 const projectInfo = { id: "proj-1", title: "My Novel", author_name: "Jane Doe" };
+
+describe("chapterContentToHtml sanitization (F-15)", () => {
+  const imgDoc = (src: string) => ({
+    type: "doc",
+    content: [{ type: "image", attrs: { src, alt: "x" } }],
+  });
+  const VALID = "/api/images/11111111-2222-3333-4444-555555555555";
+
+  it("strips an <img> whose src is an external URL (tracking-pixel vector)", () => {
+    const html = chapterContentToHtml(imgDoc("http://evil.example/track.gif"));
+    expect(html).not.toContain("evil.example");
+    expect(html).not.toContain("<img");
+  });
+
+  it("strips an <img> with a javascript: src", () => {
+    const html = chapterContentToHtml(imgDoc("javascript:alert(1)"));
+    expect(html).not.toContain("javascript:");
+    expect(html).not.toContain("<img");
+  });
+
+  it("strips an <img> with a data: src (closes the DOMPurify data-URI carve-out asymmetry)", () => {
+    const html = chapterContentToHtml(imgDoc("data:text/html;base64,PHNjcmlwdD4="));
+    expect(html).not.toContain("data:");
+    expect(html).not.toContain("<img");
+  });
+
+  it("preserves a valid /api/images/<uuid> src so image resolution still runs", () => {
+    const html = chapterContentToHtml(imgDoc(VALID));
+    expect(html).toContain(`src="${VALID}"`);
+  });
+
+  it("keeps non-image content intact while dropping a hostile image", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "keep me" }] },
+        { type: "image", attrs: { src: "http://evil.example/x.gif", alt: "x" } },
+      ],
+    };
+    const html = chapterContentToHtml(doc);
+    expect(html).toContain("keep me");
+    expect(html).not.toContain("evil.example");
+  });
+});
 
 describe("renderHtml", () => {
   it("produces a self-contained HTML document", async () => {

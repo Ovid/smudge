@@ -30,10 +30,34 @@ export interface RenderOptions {
 // Helpers
 // ---------------------------------------------------------------------------
 
+// F-15: mirror the client sanitizer's fail-closed image-src allowlist on the
+// server export path. The client renders TipTap JSON through a hardened
+// DOMPurify whose URI hook drops any src that isn't a relative
+// /api/images/<uuid> (packages/client/src/sanitizer.ts) — documented
+// defense-in-depth against a hostile stored/backup payload. The server export
+// rendered the same untrusted JSON via generateHTML with no equivalent pass,
+// so a hostile image node (external tracking pixel, javascript:/data: src)
+// survived into the downloaded file. This regex mirrors the client's
+// ALLOWED_URI_REGEXP shape; the export drops the whole <img> (the client drops
+// the attr, leaving a broken img — both fail closed). No server-side DOM is
+// needed: editorExtensions emits only <img src alt> as URI-bearing output (no
+// Link), so a targeted img-tag pass over the bounded, machine-generated HTML is
+// sufficient. Runs BEFORE resolveImagesInHtml so a valid /api/images/<uuid> src
+// still resolves to its embedded data URI.
+const ALLOWED_IMAGE_SRC =
+  /^\/api\/images\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[?#].*)?$/i;
+
+function stripDisallowedImages(html: string): string {
+  return html.replace(/<img\b[^>]*>/gi, (tag) => {
+    const src = /\ssrc\s*=\s*"([^"]*)"/i.exec(tag)?.[1] ?? "";
+    return ALLOWED_IMAGE_SRC.test(src) ? tag : "";
+  });
+}
+
 export function chapterContentToHtml(content: Record<string, unknown> | null): string {
   if (!content) return "";
   try {
-    return generateHTML(content, editorExtensions);
+    return stripDisallowedImages(generateHTML(content, editorExtensions));
   } catch (err) {
     logger.warn({ err }, "Failed to render chapter content to HTML during export");
     return "";
