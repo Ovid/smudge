@@ -224,6 +224,73 @@ hook owns the lifecycle effects and returns an opt-in `onBackdropClick`; ARIA
 (`role`, `aria-*`) stays in each component's JSX. New dialogs adopt the hook
 rather than copying a neighbour.
 
+## Accepted Architectural Trade-offs
+
+The following patterns are recurring architecture-review flags that have been
+reviewed and **deliberately accepted** for Smudge's single-user, single-process
+design. They are recorded here (not just in a review report) so future reviews
+treat them as decided rather than re-derived defects — a report's per-finding
+"Won't fix" status does not reach a fresh review, but this steering file does.
+Re-flagging one is warranted only if its stated premise changes.
+
+- **Anemic domain model (F-18).** Domain entities are plain `*Row` record types;
+  all business rules live in service free functions over those records. This is
+  idiomatic functional TypeScript, not a defect — a "fix" would mean an OO
+  entities-with-behavior rewrite against the grain of the codebase.
+- **Hidden side effects in chapter mutations (F-19).** `updateChapter` /
+  `deleteChapter` do more than their names suggest (bump project `updated_at`,
+  decrement image ref counts, fire post-commit velocity snapshots). Each side
+  effect is enumerated in the function's doc comment and best-effort failures
+  are logged, not swallowed — the doc discipline, not decomposition, is the
+  mitigation. New mutations with non-obvious side effects must keep it.
+- **Image-URI rule encoded twice (F-16).** The client `ALLOWED_URI_REGEXP`
+  (relative-only, fail-closed XSS allowlist) and the server `IMAGE_SRC_RE`
+  (optional `https?://host` prefix, reference-count matcher) intentionally
+  differ — they serve different threat models and must **not** be unified into
+  `shared`. The only residual is cross-package coupling: a change to one
+  warrants review of the other (cross-referencing comments exist at both sites).
+- **Non-idempotent image upload (F-8).** Each upload mints a fresh UUID + file +
+  DB row with no content-hash dedup. There is no automatic upload-retry path
+  (unlike auto-save's backoff), so the only route to a duplicate is a manual
+  user retry after a committed-but-dropped response — a harmless, user-deletable
+  duplicate in a single-user app. Content-hash dedup (a schema migration +
+  backfill + per-upload hashing) is disproportionate to that risk. Revisit if
+  uploads ever gain an automatic retry.
+- **Store reached via service locator with an init-order contract (F-3).**
+  `store`, `db`, and `velocityServiceOverride` are process-global mutables with
+  `set*/reset*/init*` mutators; services reach the store via `getProjectStore()`
+  rather than constructor injection, and correct operation requires
+  `initProjectStore(db)` to have run once first (getter throws "not
+  initialized", init throws "already initialized"). This IS the deliberate,
+  tested seam that makes the single-process app injectable at all — the
+  runtime-enforced init-order contract is the price of a locator that stays a
+  one-liner at 13 call sites instead of threading `db`/`store` through every
+  route→service→repository signature. "Fixing" it means a DI-container or
+  parameter-threading rewrite that buys nothing for a single-process app.
+- **`ProjectStore` facade is 51 one-line pass-throughs (F-4).** Each
+  `SqliteProjectStore` method delegates to a repository function, and the
+  `ProjectStore` interface has exactly one implementation (no fake implements
+  it; tests construct the concrete class over a real DB). The three-edit-per-
+  operation tax (repo fn + slice interface + delegation) is compiler-guided, and
+  the `transaction(txStore)` seam is genuinely load-bearing. The 7-slice
+  interface's documented data-surface value justifies the type surface; "fixing"
+  it (typing `txStore` as the concrete class, dropping the interface) trades a
+  documented contract for marginally less boilerplate. Net a mild smell, left
+  as-is.
+- **Request correlation not propagated into the service layer (F-2).** `req.id`
+  / `req.log` exist at the HTTP boundary and error handler (strength S-10, with
+  an inbound `X-Request-Id` echo), but there is no `AsyncLocalStorage`, so
+  services/repositories/reapers log through the bare top-level `logger` with no
+  `req_id`. Accepted because the best-effort anomaly logs already carry their
+  domain IDs (`project_id`/`chapter_id`/`image_id`), which for a single-user,
+  single-process app *is* the correlation key — a request ID only earns its keep
+  disambiguating concurrent requests against the same entity, which a single
+  writer never produces. The roadmap trajectory (7g Electron desktop bound to
+  `127.0.0.1`, 8a per-project DBs) makes Smudge *more* single-user, not less;
+  this matches the line-973 roadmap precedent for deferring single-user
+  optimizations. Revisit only if Smudge ever ships a cloud / multi-writer
+  deployment.
+
 ## API Design
 
 REST endpoints under `/api/`. Error envelope: `{ "error": { "code": "MACHINE_READABLE", "message": "Human-readable" } }`. HTTP status codes: 200, 201, 204, 400, 404, 409, 413, 500, plus **503 for `/api/health` only** (the liveness probe emits 503 when the SQLite handle is unreachable — F-14; this is the single documented carve-out and does not extend to any other endpoint or to the `AppError` taxonomy). The allowlist governs codes the Smudge server itself emits; client error scopes may additionally map proxy-only codes (502/503/504, etc.) for resilience under reverse-proxy deployments. Error responses (4xx/5xx) are produced by the `AppError` taxonomy (`packages/server/src/errors/appError.ts`): routes `throw` a typed `AppError` and the global handler (`app.ts`) renders the envelope. The error-status subset is 400, 404, 409, 413, 500 — `AppError` never emits 2xx.

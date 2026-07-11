@@ -113,6 +113,9 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** `req.log`/`req.id` exist only at the HTTP boundary and error handler; there is no `AsyncLocalStorage`, so every service, repository, reaper, and purge module logs through the bare top-level `logger` with no `req_id`. The anomalous best-effort events you would most want to trace (velocity failures, image ref-count warnings, corrupt-JSON search skips) cannot be tied back to the originating request.
 - **Evidence:** `packages/server/src/requestContext.ts:50` (correlation attached) vs. `packages/server/src/chapters/chapters.service.ts:131`, `search.service.ts:144,255,382`, `images/images.references.ts:127,155` (bare `logger`).
 - **Found by:** Error Handling & Observability
+- **Status:** Won't fix
+- **Status reason:** Accepted trade-off (recorded in CLAUDE.md §Accepted Architectural Trade-offs). Verified the three best-effort anomaly logs the report says you'd "most want to trace" already carry their domain IDs — `chapters.service.ts:131` logs `{project_id, chapter_id}`, `images.references.ts:127,155` log `{project_id[, image_id]}`, `search.service.ts:144` logs `{chapter_id, project_id}`. For a single-user, single-process app the entity ID *is* the correlation key; a `req_id` only earns its keep disambiguating concurrent requests against the same entity, which a single writer never produces. The roadmap reinforces this — Phase 7g (Electron desktop bound to `127.0.0.1`) and 8a (per-project DBs) make Smudge *more* single-user; roadmap line 973 sets precedent for deferring single-user optimizations "until the deployment changes (e.g. server in cloud)." Inbound-boundary correlation (S-10, `X-Request-Id` echo) already exists. ALS here is speculative infrastructure for a concurrency profile the design rules out. Ovid's decision (2026-07-11). Revisit if Smudge ever ships a cloud/multi-writer deployment.
+- **Status date:** 2026-07-11 19:28 UTC
 
 ### [F-3] Global mutable singletons reached via a service locator with an undeclared init-order contract
 - **Category:** Flaw 1 (Global mutable state) + Flaw 23 (DI misuse) + Flaw 27 (Temporal coupling)
@@ -120,6 +123,9 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** `let store`, `let db`, and `let velocityServiceOverride` are process-global mutables with `set*/reset*/init*` mutators. Services reach the store via `getProjectStore()` rather than injection, and correct operation requires `initProjectStore(db)` to have run exactly once first (the getter throws "not initialized"; init throws "already initialized") — a call-order contract enforced only at runtime, which also forces serial test setup.
 - **Evidence:** `packages/server/src/stores/project-store.injectable.ts:5-35`; `packages/server/src/db/connection.ts:4,21`; `packages/server/src/velocity/velocity.injectable.ts:8`; 17 `getProjectStore()` call sites; init sequenced in `index.ts:42`. (This is also the deliberate, tested seam that makes the app injectable at all.)
 - **Found by:** Structure & Boundaries, Coupling & Dependencies (agreement)
+- **Status:** Won't fix
+- **Status reason:** Accepted trade-off (recorded in CLAUDE.md §Accepted Architectural Trade-offs). The report itself notes this "is also the deliberate, tested seam that makes the app injectable at all." The runtime-enforced init-order contract is the price of a locator that stays a one-liner at 13 call sites rather than threading `db`/`store` through every route→service→repository signature; "fixing" it means a DI-container/parameter-threading rewrite that buys nothing for a single-process app. Ovid's decision (2026-07-11).
+- **Status date:** 2026-07-11 19:28 UTC
 
 ### [F-4] `ProjectStore` facade: 51 pass-through methods behind a single-implementation interface
 - **Category:** Flaw 9 (Shotgun surgery) + Flaw 7 (Over-abstraction)
@@ -127,6 +133,9 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** Every `SqliteProjectStore` method is a one-line delegation to a repository function, so adding one data operation requires three coordinated edits (repo fn + domain slice interface + delegation method). The `ProjectStore` interface has exactly one implementation, and both test injection points construct that same concrete class over a real DB — no fake implements it, so the "substitution seam" is unrealized. Both frictions are compiler-guided and the `transaction(txStore)` seam is genuinely load-bearing, so this nets to a mild smell.
 - **Evidence:** `packages/server/src/stores/sqlite-project-store.ts:33-296` (51 delegations); `packages/server/src/stores/project-store.types.ts:36-157`; sole `new SqliteProjectStore` sites are the injectable, the tx self-construction, and two tests.
 - **Found by:** Structure & Boundaries, Coupling & Dependencies (agreement)
+- **Status:** Won't fix
+- **Status reason:** Accepted trade-off (recorded in CLAUDE.md §Accepted Architectural Trade-offs). The three-edit-per-operation tax is compiler-guided, the `transaction(txStore)` seam is load-bearing, and the 7-slice interface's documented data-surface value justifies its type surface. The report grades this "nets to a mild smell" and the over-engineering audit flags removal as "not recommended." "Fixing" it (typing `txStore` as the concrete class, dropping the interface) trades a documented contract for marginally less boilerplate. Ovid's decision (2026-07-11).
+- **Status date:** 2026-07-11 19:28 UTC
 
 ### [F-5] Documented architecture omits the store-facade layer
 - **Category:** Flaw 13 (Inconsistent boundaries vs. steering)
@@ -167,6 +176,9 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** Each upload mints a fresh `uuidv4()` plus a new file and DB row, so a client retry after a dropped response produces a duplicate image. No idempotency key or content-hash dedup exists (unlike the manual-snapshot POST, which is content-hash deduped).
 - **Evidence:** `packages/server/src/images/images.service.ts:72-91`.
 - **Found by:** Integration & Data
+- **Status:** Won't fix
+- **Status reason:** Accepted trade-off (recorded in CLAUDE.md §Accepted Architectural Trade-offs). Verified there is no automatic upload-retry path — `ImageGallery.tsx:183` fires a single `mutationOp.run(api.images.upload(...))` with no backoff (unlike auto-save), and the `images` table has no `content_hash` column (migration 012). The only route to a duplicate is a manual user retry after a committed-but-dropped response, yielding a harmless user-deletable duplicate in a single-user app. Content-hash dedup would require a schema migration + backfill + per-upload hashing — disproportionate to a Low-impact, manual-retry-only issue. Ovid's decision (2026-07-11). Revisit if uploads ever gain an automatic retry.
+- **Status date:** 2026-07-11 21:22 UTC
 
 ### [F-9] Two mutation PUTs return a server-authored success string
 - **Category:** Flaw 24 (Inconsistent API contracts)
@@ -207,6 +219,10 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** `applyReloadFailedLockRef` is initialized to `() => {}` and only assigned its real handler further down the component body (because the handler depends on state `useProjectEditor` itself produces), creating a one-render-tick window where a lock request is silently dropped. The window is documented as doubly backstopped by the 1.5s auto-save debounce and an `isLocked()` no-op.
 - **Evidence:** `packages/client/src/pages/EditorPage.tsx:52,82,328`.
 - **Found by:** Coupling & Dependencies
+- **Status:** Fixed
+- **Status reason:** Removed the `applyReloadFailedLockRef` no-op-then-backfill entirely. The ref worked around a circular declaration that no longer exists: the 2026-05-30 machine refactor reduced `applyReloadFailedLock` to a single `editorMachine.dispatch`, so it now depends only on `editorMachine` (which takes no dependencies). Hoisted both `editorMachine` and `applyReloadFailedLock` above `useProjectEditor` and passed `onRequestEditorLock: applyReloadFailedLock` directly — closing the one-render-tick window where a lock request hit the `() => {}` no-op. Behavior-identical reorder (the moved hooks reference nothing declared above them); the stale "it needs editorRef" comment is gone. Client + server typecheck clean, lint clean, 296 EditorPage/useProjectEditor/mutation tests pass.
+- **Status date:** 2026-07-11 21:16 UTC
+- **Status commit:** 8a61c12
 
 ### [F-13] Type-only circular dependency in the error module
 - **Category:** Flaw 5 (Circular dependencies)
@@ -236,6 +252,10 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** The client renders TipTap→HTML through a hardened DOMPurify instance as documented defense-in-depth against a "hostile backup/snapshot/server payload," but the server export path renders the same stored JSON to a downloadable HTML file via `generateHTML(content, editorExtensions)` with no equivalent sanitize step. The backstop is real (ProseMirror schema-filtering bounds the tag/attr set, titles are `escapeHtml`'d, it is a downloaded file rather than served HTML), so exploitability is marginal — but the two paths treat the same untrusted content asymmetrically.
 - **Evidence:** `packages/server/src/export/export.renderers.ts:33-41,100-149`; `packages/shared/src/schemas.ts:53` (`TipTapDocSchema` uses `.passthrough()`).
 - **Found by:** Security & Code Quality
+- **Status:** Fixed
+- **Status reason:** `chapterContentToHtml` now runs a fail-closed image-src allowlist over the `generateHTML` output before image resolution, mirroring the client sanitizer's `ALLOWED_URI_REGEXP` (relative `/api/images/<uuid>` only). Any `<img>` with an external, `javascript:`, or `data:` src — which previously survived into the downloaded export (tracking-pixel / defense-in-depth-asymmetry vector) — is dropped; the client drops the attr, the server drops the tag, both fail closed. No server-side DOM added: `editorExtensions` emits only `<img src alt>` as URI-bearing output (no Link), so a targeted img-tag pass over the bounded machine-generated HTML suffices. Valid `/api/images/<uuid>` srcs are preserved so resolution still embeds them. Red tests added (external/`javascript:`/`data:` stripped, valid src + surrounding content preserved); all 139 export tests pass, lint + typecheck clean.
+- **Status date:** 2026-07-11 21:19 UTC
+- **Status commit:** d97a97a
 
 ### [F-16] Image-URI accept/reject rule encoded twice across packages
 - **Category:** Flaw 6 (Leaky abstraction / duplicated rule)
@@ -243,6 +263,9 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** The client's `ALLOWED_URI_REGEXP` (relative `/api/images/<uuid>` only) and the server's `IMAGE_SRC_RE` (optional `https?://host` prefix) both encode "what is a valid image src." The divergence is deliberate and extensively documented — they serve different threat models (client = fail-closed XSS allowlist; server = conservative ref-count matcher) and are intentionally *not* identical — so the residual issue is only the cross-package coupling (a change to one warrants review of the other), not a rule that should be unified in `shared`.
 - **Evidence:** `packages/client/src/sanitizer.ts:91-92` vs. `packages/server/src/images/images.references.ts:36-39` (each with a cross-referencing comment).
 - **Found by:** Coupling & Dependencies
+- **Status:** Won't fix
+- **Status reason:** Accepted trade-off (recorded in CLAUDE.md §Accepted Architectural Trade-offs). The two regexes serve different threat models (client = fail-closed XSS allowlist, relative-only; server = conservative ref-count matcher, optional host prefix) and must NOT be unified into `shared` — unifying would be a security regression, not a fix. The only residual is cross-package coupling, already mitigated by cross-referencing comments at both sites. Ovid's decision (2026-07-11).
+- **Status date:** 2026-07-11 21:22 UTC
 
 ### [F-17] Low cohesion: ZIP wire-format parsing mixed with backup orchestration
 - **Category:** Flaw 11 (Low cohesion)
@@ -250,6 +273,10 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** `backup-core.ts` bundles low-level ZIP wire-format parsing (EOCD scan, central-directory walk, declared-size reads, zip-slip/bomb guards) with high-level backup lifecycle orchestration (`runBackup`/`runRestore`/`runAutoBackup`/rotation) in one 543-line file. Mitigated: the co-location is a deliberate security decision — the bomb tests must parse archives with the exact same byte-offset logic as production, so the format primitives are shared with tests to prevent offset drift.
 - **Evidence:** `packages/server/src/backup/backup-core.ts:42-56` (format layer) alongside `runRestore`/`runBackup`/`rotateAutoBackups` (orchestration).
 - **Found by:** Structure & Boundaries
+- **Status:** Fixed
+- **Status reason:** Extracted the ZIP wire-format + zip-slip/bomb primitives (`findEocdOffset`, `walkCentralDirectory`, `readCentralDirectorySizes`, `checkDeclaredSizes`, `validateEntryPaths`, `ZipSlipError`, `DecompressionBombError`, `CentralDirEntry`, `BombLimits`, `DEFAULT_BOMB_LIMITS`, sig constants) into a new `backup-zip-format.ts`. The anti-drift guarantee (S9) is preserved by a shared *module* rather than single-file co-location — both `runRestore` (production) and the bomb/zip-slip tests import the same byte-offset logic. `backup-core.ts` re-exports every symbol so all importers (tests, scripts) are unchanged. Pure move; server typecheck clean, 80 backup tests pass.
+- **Status date:** 2026-07-11 21:13 UTC
+- **Status commit:** 2ce864d
 
 ### [F-18] Anemic domain model
 - **Category:** Flaw 10 (Feature envy / anemic domain model)
@@ -257,6 +284,9 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** Domain entities are plain `*Row` record types with no behavior; all business rules (transactional image-ref diffing, velocity side effects, corruption fallback, slug regeneration) live in service free functions operating on those records. This is idiomatic functional TypeScript and "anemic" here is a paradigm judgment rather than a defect — the lowest-value finding in the set.
 - **Evidence:** `packages/server/src/chapters/chapters.service.ts:32-314` (free functions over `ChapterRow`).
 - **Found by:** Structure & Boundaries
+- **Status:** Won't fix
+- **Status reason:** Accepted trade-off (recorded in CLAUDE.md §Accepted Architectural Trade-offs). This is idiomatic functional TypeScript, not a defect — the report itself calls it "the lowest-value finding in the set." A "fix" would be an OO entities-with-behavior rewrite against the grain of the codebase. Ovid's decision (2026-07-11).
+- **Status date:** 2026-07-11 21:22 UTC
 
 ### [F-19] Hidden side effects in chapter mutations (documented)
 - **Category:** Flaw 12 (Hidden side effects)
@@ -264,6 +294,9 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** `updateChapter`/`deleteChapter` do considerably more than their names suggest (bump project `updated_at`, decrement image ref counts, fire post-commit velocity snapshots), which is classic Flaw 12 territory — but each side effect is explicitly enumerated in the function's doc comment and best-effort failures are logged rather than swallowed. A mitigated watch-item; the risk is that future methods may not maintain the same doc discipline.
 - **Evidence:** `packages/server/src/chapters/chapters.service.ts:54-197` (doc comments at 42-53, 155-165; logging at 131, 191).
 - **Found by:** Error Handling & Observability
+- **Status:** Won't fix
+- **Status reason:** Accepted trade-off (recorded in CLAUDE.md §Accepted Architectural Trade-offs). The side effects are load-bearing (a save must bump project `updated_at`, adjust image ref counts, snapshot velocity); each is enumerated in the function's doc comment and best-effort failures are logged, not swallowed. The doc discipline, not decomposition, is the mitigation — new mutations must keep it. Ovid's decision (2026-07-11).
+- **Status date:** 2026-07-11 21:22 UTC
 
 ## Over-Engineering Audit (ponytail)
 
