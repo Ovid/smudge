@@ -23,6 +23,12 @@ if (!archivePath) {
 // (no divergent hardcoded 3456) and parsePort so a garbage SMUDGE_PORT fails
 // fast instead of Number()→NaN silently defeating the running-server probe (I2).
 const port = parsePort(process.env.SMUDGE_PORT ?? String(DEFAULT_SERVER_PORT), "SMUDGE_PORT");
+// S-F10: this dual-stack "is a server listening?" probe intentionally parallels
+// the one in the Makefile `e2e-clean` target (which probes E2E_SERVER_PORT).
+// They are NOT a shared implementation — different port, different timeout
+// (500 ms here vs 2000 ms there), different runtime (TS vs sh) — and extracting
+// across the TS/Makefile boundary isn't worth it. Kept as a cross-reference so a
+// change to the probe semantics here prompts a look at the other.
 const probePort = () =>
   new Promise<boolean>((resolve) => {
     const hosts = ["127.0.0.1", "::1"];

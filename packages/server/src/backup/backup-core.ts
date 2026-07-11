@@ -273,6 +273,11 @@ export async function runRestore(
   // nothing was touched yet, so it propagates as a precondition-style raw error.
   // pid-qualified (S6): two same-second restores must not compute the same
   // move-aside target (a rename collision would risk the never-delete guarantee).
+  // ponytail: single-container assumption — pid alone disambiguates because the
+  // deployment target is one container over one data volume. Two containers in
+  // separate PID namespaces sharing a volume could both be pid 1 and collide;
+  // add a random suffix here (and at the runBackup staging/tmpOut paths) if that
+  // topology ever ships (S-F8).
   const stamp = `${isoStampLocal((opts.now ?? (() => new Date()))())}.${process.pid}`;
   const movedAsideTo = `${opts.dataDir}.before-restore-${stamp}`;
   await rename(opts.dataDir, movedAsideTo).catch((e) => {
