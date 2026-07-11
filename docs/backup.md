@@ -32,8 +32,12 @@ Every `make dev` writes a best-effort auto-backup to `backups/` before
 starting the dev server:
 
 ```
-backups/smudge-auto-YYYY-MM-DD-HHmmss.zip
+backups/smudge-auto-YYYY-MM-DDTHHmmssZ.zip
 ```
+
+The timestamp is **UTC** (the trailing `Z`) so filenames always sort
+chronologically — even across a daylight-saving fall-back, when a local
+wall-clock would briefly run backward and mis-order the rotation.
 
 "Best-effort" means: if the backup fails for any reason, a WARNING is
 printed and the dev server starts anyway. The server is never blocked by
@@ -63,8 +67,10 @@ make backup
 Safe to run while Smudge is up. Writes a timestamped zip to `backups/`:
 
 ```
-backups/smudge-YYYY-MM-DD-HHmmss.zip
+backups/smudge-YYYY-MM-DDTHHmmssZ.zip
 ```
+
+(The timestamp is UTC — the trailing `Z` — same as auto-backups above.)
 
 Manual backups are never auto-pruned. Run them before risky operations
 (schema migrations, bulk edits, dependency upgrades) and keep them as
@@ -79,7 +85,7 @@ Each archive contains a hot-consistent copy of the SQLite database (via
 (or `SMUDGE_PORT`) and refuses to proceed if the server is running.
 
 ```bash
-make restore BACKUP=backups/smudge-2026-06-03-143000.zip
+make restore BACKUP=backups/smudge-2026-06-03T143000Z.zip
 ```
 
 You will be prompted to type the backup filename (just the basename, not
@@ -141,7 +147,7 @@ cherry-pick individual archives — to a USB drive, a cloud-sync folder,
 or any storage you trust:
 
 ```bash
-cp backups/smudge-2026-06-03-143000.zip ~/Dropbox/smudge-backups/
+cp backups/smudge-2026-06-03T143000Z.zip ~/Dropbox/smudge-backups/
 ```
 
 A backup sitting next to the data it was taken from is not a backup in

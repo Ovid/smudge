@@ -163,11 +163,27 @@ export function validateEntryPaths(entryPaths: string[], targetRoot: string): vo
 
 const pad = (n: number, w = 2) => String(n).padStart(w, "0");
 
-/** Local-time stamp "YYYY-MM-DD-HHmmss" (hyphens only — filesystem-safe). */
+/** Local-time stamp "YYYY-MM-DD-HHmmss" (hyphens only — filesystem-safe).
+ *  Operator-facing display only (the restore move-aside path); NOT used for
+ *  backup filenames — see isoStampUtc for why. */
 export function isoStampLocal(d: Date): string {
   return (
     `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
     `-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
+  );
+}
+
+/** UTC stamp "YYYY-MM-DDTHHmmssZ" — filesystem-safe (no colons) and, crucially,
+ *  lexically sortable == chronological even across a DST fall-back or backward
+ *  clock step. Backup FILENAMES use this so rotateAutoBackups' name-based sort
+ *  never inverts and prunes the wrong file (S-F1). '-' < 'T', so any legacy
+ *  `...YYYY-MM-DD-HHmmss.zip` names (made before this change, hence genuinely
+ *  older) sort before all new `...T...Z` names — mixed dirs rotate correctly
+ *  with no migration. isoStampLocal stays for human-facing display. */
+export function isoStampUtc(d: Date): string {
+  return (
+    `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}` +
+    `T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`
   );
 }
 
@@ -421,7 +437,9 @@ export async function rotateAutoBackups(o: {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return { deleted: [] };
     throw e;
   }
-  const autos = names.filter((f) => f.startsWith("smudge-auto-") && f.endsWith(".zip")).sort(); // lexical == chronological
+  // lexical == chronological: filenames carry a UTC isoStampUtc stamp (S-F1), so
+  // the name sort stays monotonic even across a DST fall-back / backward clock step.
+  const autos = names.filter((f) => f.startsWith("smudge-auto-") && f.endsWith(".zip")).sort();
   // Defensive clamp: a negative/non-integer keep reaching this low-level function
   // (the env-string sanitizing lives in resolveKeep) must never delete the wrong
   // set. keep<0 → 0 (delete all); keep is floored.
@@ -438,7 +456,7 @@ export async function rotateAutoBackups(o: {
 
 export async function runBackup(opts: BackupOptions): Promise<{ outFile: string }> {
   const now = (opts.now ?? (() => new Date()))();
-  const stamp = isoStampLocal(now);
+  const stamp = isoStampUtc(now); // UTC → rotation name-sort never inverts (S-F1)
   const outFile = join(opts.backupsDir, buildBackupName(stamp, opts.mode));
   const staging = join(opts.dataDir, `${stamp}.${process.pid}.backup-staging.db`);
 

@@ -7,6 +7,7 @@ import Database from "better-sqlite3";
 import JSZip from "jszip";
 import {
   isoStampLocal,
+  isoStampUtc,
   buildBackupName,
   runBackup,
   runRestore,
@@ -58,6 +59,21 @@ describe("isoStampLocal", () => {
   });
 });
 
+describe("isoStampUtc (S-F1)", () => {
+  it("formats UTC time as YYYY-MM-DDTHHmmssZ (filesystem-safe, no colons)", () => {
+    const d = new Date(Date.UTC(2026, 4, 26, 14, 32, 11));
+    expect(isoStampUtc(d)).toBe("2026-05-26T143211Z");
+  });
+  it("sorts lexically == chronologically across a DST fall-back (unlike local time)", () => {
+    // A backward wall-clock step (DST fall-back / NTP correction) makes a LATER
+    // instant carry an EARLIER local time, inverting a lexical name sort. UTC has
+    // no such inversion, so the newer stamp always sorts after the older.
+    const earlier = new Date(Date.UTC(2026, 10, 1, 8, 30, 0));
+    const later = new Date(Date.UTC(2026, 10, 1, 9, 30, 0));
+    expect(isoStampUtc(earlier) < isoStampUtc(later)).toBe(true);
+  });
+});
+
 describe("buildBackupName", () => {
   it("uses smudge- for manual and smudge-auto- for auto", () => {
     expect(buildBackupName("2026-05-26-143211", "manual")).toBe("smudge-2026-05-26-143211.zip");
@@ -86,9 +102,9 @@ it("runBackup writes a zip with smudge.db + nested images/", async () => {
     dbPath,
     backupsDir,
     mode: "manual",
-    now: () => new Date(2026, 4, 26, 14, 32, 11),
+    now: () => new Date(Date.UTC(2026, 4, 26, 14, 32, 11)), // UTC → deterministic filename
   });
-  expect(outFile).toBe(join(backupsDir, "smudge-2026-05-26-143211.zip"));
+  expect(outFile).toBe(join(backupsDir, "smudge-2026-05-26T143211Z.zip"));
 
   const zip = await JSZip.loadAsync(await readFile(outFile));
   expect(zip.file("smudge.db")).toBeTruthy();
@@ -134,11 +150,11 @@ it.skipIf(typeof process.getuid === "function" && process.getuid() === 0)(
 it("S2/I3: runBackup replaces an existing archive atomically and leaves no .tmp file", async () => {
   const { dataDir, dbPath } = await makeFixture();
   const backupsDir = join(dataDir, "backups");
-  const now = () => new Date(2026, 4, 26, 14, 32, 11);
+  const now = () => new Date(Date.UTC(2026, 4, 26, 14, 32, 11)); // UTC → deterministic filename
   // Pre-place a stale file at the exact target path: rename must replace it
   // without the previous explicit rm (which opened a no-file window).
   await mkdir(backupsDir, { recursive: true });
-  const outPath = join(backupsDir, "smudge-2026-05-26-143211.zip");
+  const outPath = join(backupsDir, "smudge-2026-05-26T143211Z.zip");
   await writeFile(outPath, Buffer.from("STALE"));
 
   const { outFile } = await runBackup({ dataDir, dbPath, backupsDir, mode: "manual", now });
@@ -1071,10 +1087,10 @@ it("produces a smudge-auto archive and rotates, status ok", async () => {
     dbPath,
     backupsDir: join(dataDir, "backups"),
     keep: 10,
-    now: () => new Date(2026, 4, 26, 8, 0, 0),
+    now: () => new Date(Date.UTC(2026, 4, 26, 8, 0, 0)), // UTC → deterministic filename
   });
   expect(r.status).toBe("ok");
-  expect(r.outFile).toContain("smudge-auto-2026-05-26-080000.zip");
+  expect(r.outFile).toContain("smudge-auto-2026-05-26T080000Z.zip");
 });
 
 it("is best-effort: returns 'failed' with a warning instead of throwing", async () => {
