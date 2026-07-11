@@ -33,6 +33,12 @@ export default defineConfig({
         // (kept under coverage). Same precedent as ensure-native.mjs above; see
         // docs/superpowers/specs/2026-06-01-dependency-cooldown-design.md.
         "scripts/dep-cooldown.mjs",
+        // Thin IO shells for `make backup` / `make dev` auto-backup / `make restore`.
+        // The testable logic lives in packages/server/src/backup/backup-core.ts
+        // (under coverage). Same precedent as ensure-native.mjs / dep-cooldown.mjs.
+        "packages/server/scripts/backup.ts",
+        "packages/server/scripts/auto-backup.ts",
+        "packages/server/scripts/restore.ts",
       ],
       thresholds: {
         statements: 95,

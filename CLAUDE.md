@@ -19,7 +19,7 @@ do research you've already done. Every such question **must** include:
    clearly (e.g. put it first and label it "Recommended").
 3. **Why you recommend it** — the reasoning, tied to the trade-offs above.
 4. **Honest skepticism, including of your own recommendation** — name the
-   strongest argument *against* the option you're recommending, and any
+   strongest argument _against_ the option you're recommending, and any
    assumptions your recommendation depends on. Do not perform agreement; if
    the choice is genuinely close, say so.
 
@@ -115,6 +115,8 @@ npx playwright test                  # E2e tests
 # Build & Deploy
 make build                           # Build client for production
 docker compose up                    # Full app on port 3456
+make backup                          # On-demand backup zip under backups/ (safe while running)
+make restore BACKUP=<file>           # Restore a backup zip (Smudge must be stopped; confirms by filename)
 
 # Help
 make help                            # Show all available make targets
@@ -132,6 +134,8 @@ to rm, and the about-to-bind server then migrates against an empty DB.
 Wait for `make e2e` to finish (or kill it) before running cleanup.
 
 **`make ensure-native`** is a prerequisite of `make test/cover/e2e/dev`; you rarely invoke it directly. It probes whether better-sqlite3's `.node` binary loads under the active platform/Node ABI, and on failure rebuilds from source in place (no remote `.node` binary fetched). The rebuild path needs a working C++ toolchain — `build-essential` on Linux, Xcode Command Line Tools on macOS, plus `python3` for node-gyp. Common reason to need it: switching between host (macOS) and a Linux container/VM that share `node_modules` via a bind mount, leaving a wrong-platform binary in place. Direct `npm test` / `npm test -w packages/{shared,server,client}` / `npx playwright test` invocations bypass this check; prefer the `make` entry points after a host↔guest crossing.
+
+**`make dev` auto-backs up.** Each `make dev` writes a rotated `backups/smudge-auto-<time>.zip` of the existing DB+images before starting (best-effort — never blocks the server). Keeps the newest `SMUDGE_BACKUP_KEEP` (default 10); `SMUDGE_SKIP_AUTO_BACKUP=1` skips it. Manual `make backup` archives are never auto-pruned. See `docs/backup.md`. These are operator tools run from a source checkout, an interim stopgap until Phase 8b.
 
 ## Key Architecture Decisions
 

@@ -166,3 +166,9 @@ playwright-report/
 
 # Dependency-cooldown publish-time cache (gitignored locally; persisted in CI via actions/cache)
 .dep-cooldown-cache.json
+
+# Operational backups (Phase 4b.14) — never commit the writer's manuscript.
+backups/
+*.backup-staging.db
+# Restore moves the data dir aside to <data-dir>.before-restore-<time>/ — never commit it.
+*.before-restore-*/

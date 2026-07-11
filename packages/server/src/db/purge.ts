@@ -2,7 +2,7 @@ import type { Knex } from "knex";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { TRASH_RETENTION_MS } from "@smudge/shared";
-import { getDataDir } from "../config/paths";
+import { getDataDir, getImagesDir } from "../config/paths";
 import { logger } from "../logger";
 
 export async function purgeOldTrash(
@@ -58,7 +58,7 @@ export async function purgeOldTrash(
 
   // Best-effort cleanup of image directories on disk
   for (const projectId of purgedProjectIds) {
-    const imageDir = path.join(resolvedDataDir, "images", projectId);
+    const imageDir = path.join(getImagesDir(resolvedDataDir), projectId);
     try {
       await fs.rm(imageDir, { recursive: true, force: true });
     } catch (err) {

@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Knex } from "knex";
-import { getDataDir, UUID_PATTERN, IMAGE_EXT_PATTERN } from "./images.paths";
+import { UUID_PATTERN, IMAGE_EXT_PATTERN } from "./images.paths";
+import { getImagesDir } from "../config/paths";
 import { deleteImageFile } from "./images.fs";
 import { logger } from "../logger";
 
@@ -38,7 +39,7 @@ const IMAGE_FILE_RE = new RegExp(`^(${UUID_PATTERN})\\.(?:${IMAGE_EXT_PATTERN})$
  * @returns the number of orphan files removed.
  */
 export async function reapOrphanImages(db: Knex, dataDir?: string): Promise<number> {
-  const imagesRoot = path.join(dataDir ?? getDataDir(), "images");
+  const imagesRoot = getImagesDir(dataDir);
 
   let projectDirs: string[];
   try {

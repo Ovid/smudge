@@ -3,7 +3,7 @@
 # userland-punycode fixes.
 export NODE_OPTIONS := --disable-warning=DEP0040 ${NODE_OPTIONS}
 
-.PHONY: all test cover e2e e2e-clean lint lint-check format format-check typecheck dev build clean loc help ensure-native dep-cooldown
+.PHONY: all test cover e2e e2e-clean lint lint-check format format-check typecheck dev build clean loc help ensure-native dep-cooldown backup auto-backup restore
 
 all: lint-check format-check typecheck cover e2e ## Full CI pass: lint-check, format-check, typecheck, test+coverage, e2e
 
@@ -65,8 +65,18 @@ format-check: ## Check formatting (CI gate — read-only)
 typecheck: ## Type-check all packages
 	npm run typecheck
 
-dev: ensure-native ## Start dev servers (server + client)
+dev: ensure-native auto-backup ## Start dev servers (server + client)
 	npm run dev
+
+backup: ensure-native ## Make an on-demand backup zip under backups/
+	@node_modules/.bin/tsx packages/server/scripts/backup.ts
+
+# best-effort: a backup hiccup must never block the dev server (|| true).
+auto-backup: ensure-native
+	@node_modules/.bin/tsx packages/server/scripts/auto-backup.ts || true
+
+restore: ensure-native ## Restore a backup zip: make restore BACKUP=backups/smudge-….zip
+	@node_modules/.bin/tsx packages/server/scripts/restore.ts $(if $(MAX_UNCOMPRESSED),--max-uncompressed=$(MAX_UNCOMPRESSED)) $(if $(MAX_RATIO),--max-ratio=$(MAX_RATIO))
 
 build: ## Build client for production
 	npm run build -w packages/client

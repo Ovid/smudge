@@ -24,3 +24,15 @@ export function getDataDir(): string {
 export function getDbPath(): string {
   return process.env.DB_PATH ?? path.join(getDataDir(), "smudge.db");
 }
+
+/**
+ * Directory holding the per-project image store: `<data-dir>/images`.
+ * Single owner of the `images` subdir name (S-F9) — previously hardcoded in
+ * images.paths, images.reaper, db/purge, and backup-core. Pass an explicit
+ * `dataDir` to override the env default (backup/restore, purge, and the reaper
+ * thread their own data dir through and must not read env); omit it to derive
+ * from {@link getDataDir}.
+ */
+export function getImagesDir(dataDir?: string): string {
+  return path.join(dataDir ?? getDataDir(), "images");
+}

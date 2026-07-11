@@ -11,22 +11,23 @@ skimmed at a glance for patterns.
 
 ## Entries
 
-| Date       | Phase                          | Model              | Pushback (C/I/M) | Alignment (C/I/M) | Entry |
-|------------|--------------------------------|--------------------|------------------|-------------------|-------|
-| 2026-06-03 | Phase 4b.16: Dialog Lifecycle Hook | claude-opus-4-8 | 0/1/2 | 0/0/1 | [link](2026-06-03-phase-4b-16-dialog-lifecycle-hook.md) |
-| 2026-06-01 | Phase 4b.15: Inline Title-Editing Hook | claude-opus-4-8 | 0/2/1 | 0/0/1 | [link](2026-06-01-phase-4b-15-inline-title-editing-hook.md) |
-| 2026-06-01 | Phase 4b.13: TipTap Depth-Guard Regression Test | claude-opus-4-8 | 0/2/2 | 0/0/0 | [link](2026-06-01-phase-4b-13-tiptap-depth-guard-regression-test.md) |
-| 2026-05-31 | Phase 4b.10: Shared TipTap Unsafe-Keys Set | claude-opus-4-8 | 0/1/1 | 0/0/1 | [link](2026-05-31-phase-4b-10-shared-tiptap-unsafe-keys-set.md) |
-| 2026-05-31 | Phase 4b.9: Chapter Status Type Alignment | claude-opus-4-8 | 2/2/2 | 1/3/1 | [link](2026-05-31-phase-4b-9-chapter-status-type-alignment.md) |
-| 2026-05-31 | Phase 4b.8: TipTap Extension Consolidation | claude-opus-4-8 | 0/1/1 | 0/0/0 | [link](2026-05-31-phase-4b-8-tiptap-extension-consolidation.md) |
-| 2026-05-30 | Phase 4b.7: Test Warning-Pin Audit | claude-opus-4-8 | 0/3/2 | 0/1/2 | [link](2026-05-30-phase-4b-7-test-warning-pin-audit.md) |
-| 2026-05-29 | Phase 4b.5: Editor State Machine | claude-opus-4-8 | 0/2/2 | 0/2/3 | [link](2026-05-29-phase-4b-5-editor-state-machine.md) |
-| 2026-05-29 | Phase 4b.4: Raw-Strings ESLint Rule | claude-opus-4-8 | 3/1/1 | 0/0/1 | [link](2026-05-29-phase-4b-4-raw-strings-eslint-rule.md) |
-| 2026-05-27 | Phase 4b.3d: Mapper Internals & CLAUDE.md Updates | claude-opus-4-7 | 0/3/5 | 0/0/0 | [link](2026-05-27-phase-4b-3d-mapper-internals-claude-md-updates.md) |
-| 2026-05-26 | Phase 4b.3c: Consumer Recovery Completeness | claude-opus-4-7 | 1/3/3 | 0/1/2 | [link](2026-05-26-phase-4b-3c-consumer-recovery-completeness.md) |
-| 2026-05-25 | Phase 4b.3b: AbortSignal Threading Completion | claude-opus-4-7 | 1/7/2 | 0/0/2 | [link](2026-05-25-phase-4b-3b-abortsignal-threading-completion.md) |
-| 2026-05-25 | Phase 4b.3a.4: Image Gallery Abort Migration | claude-opus-4-7 | 0/1/3 | 0/0/0 | [link](2026-05-25-phase-4b-3a-4-image-gallery-abort-migration.md) |
-| 2026-05-25 | Phase 4b.3a.3: Trash Manager Abort Migration | claude-opus-4-7 | 0/1/0 | 0/1/0 | [link](2026-05-25-phase-4b-3a-3-trash-manager-abort-migration.md) |
-| 2026-05-01 | Phase 4b.3a.2: Find/Replace Abort Migration | claude-opus-4-7 | 0/2/1 | 0/1/1 | [link](2026-05-01-phase-4b-3a-2-find-replace-abort-migration.md) |
-| 2026-04-30 | Phase 4b.3a.1: Abortable Async Operation Hook | claude-opus-4-7 | 0/1/1 | 0/0/1 | [link](2026-04-30-phase-4b-3a-1-abortable-async-operation-hook.md) |
-| 2026-04-29 | Roadmap edit: reorder 4b.14 (now 4b.3a.1) before 4b.3b | claude-opus-4-7 | 0/2/6 | pending | [link](2026-04-29-roadmap-reorder-4b-14-before-4b-3b.md) |
+| Date       | Phase                          | Model                 | Pushback (C/I/M) | Alignment (C/I/M) | Entry                                                                |
+|------------|--------------------------------|-----------------------|------------------|-------------------|----------------------------------------------------------------------|
+| 2026-06-03 | Phase 4b.14: Operational Backup Stopgap                | claude-opus-4-8 | 1/3/2 | 0/1/3      | [link](2026-06-03-phase-4b-14-operational-backup-stopgap.md)         |
+| 2026-06-03 | Phase 4b.16: Dialog Lifecycle Hook                     | claude-opus-4-8 | 0/1/2 | 0/0/1      | [link](2026-06-03-phase-4b-16-dialog-lifecycle-hook.md)              |
+| 2026-06-01 | Phase 4b.15: Inline Title-Editing Hook                 | claude-opus-4-8 | 0/2/1 | 0/0/1      | [link](2026-06-01-phase-4b-15-inline-title-editing-hook.md)          |
+| 2026-06-01 | Phase 4b.13: TipTap Depth-Guard Regression Test        | claude-opus-4-8 | 0/2/2 | 0/0/0      | [link](2026-06-01-phase-4b-13-tiptap-depth-guard-regression-test.md) |
+| 2026-05-31 | Phase 4b.10: Shared TipTap Unsafe-Keys Set             | claude-opus-4-8 | 0/1/1 | 0/0/1      | [link](2026-05-31-phase-4b-10-shared-tiptap-unsafe-keys-set.md)      |
+| 2026-05-31 | Phase 4b.9: Chapter Status Type Alignment              | claude-opus-4-8 | 2/2/2 | 1/3/1      | [link](2026-05-31-phase-4b-9-chapter-status-type-alignment.md)       |
+| 2026-05-31 | Phase 4b.8: TipTap Extension Consolidation             | claude-opus-4-8 | 0/1/1 | 0/0/0      | [link](2026-05-31-phase-4b-8-tiptap-extension-consolidation.md)      |
+| 2026-05-30 | Phase 4b.7: Test Warning-Pin Audit                     | claude-opus-4-8 | 0/3/2 | 0/1/2      | [link](2026-05-30-phase-4b-7-test-warning-pin-audit.md)              |
+| 2026-05-29 | Phase 4b.5: Editor State Machine                       | claude-opus-4-8 | 0/2/2 | 0/2/3      | [link](2026-05-29-phase-4b-5-editor-state-machine.md)                |
+| 2026-05-29 | Phase 4b.4: Raw-Strings ESLint Rule                    | claude-opus-4-8 | 3/1/1 | 0/0/1      | [link](2026-05-29-phase-4b-4-raw-strings-eslint-rule.md)             |
+| 2026-05-27 | Phase 4b.3d: Mapper Internals & CLAUDE.md Updates      | claude-opus-4-7 | 0/3/5 | 0/0/0      | [link](2026-05-27-phase-4b-3d-mapper-internals-claude-md-updates.md) |
+| 2026-05-26 | Phase 4b.3c: Consumer Recovery Completeness            | claude-opus-4-7 | 1/3/3 | 0/1/2      | [link](2026-05-26-phase-4b-3c-consumer-recovery-completeness.md)     |
+| 2026-05-25 | Phase 4b.3b: AbortSignal Threading Completion          | claude-opus-4-7 | 1/7/2 | 0/0/2      | [link](2026-05-25-phase-4b-3b-abortsignal-threading-completion.md)   |
+| 2026-05-25 | Phase 4b.3a.4: Image Gallery Abort Migration           | claude-opus-4-7 | 0/1/3 | 0/0/0      | [link](2026-05-25-phase-4b-3a-4-image-gallery-abort-migration.md)    |
+| 2026-05-25 | Phase 4b.3a.3: Trash Manager Abort Migration           | claude-opus-4-7 | 0/1/0 | 0/1/0      | [link](2026-05-25-phase-4b-3a-3-trash-manager-abort-migration.md)    |
+| 2026-05-01 | Phase 4b.3a.2: Find/Replace Abort Migration            | claude-opus-4-7 | 0/2/1 | 0/1/1      | [link](2026-05-01-phase-4b-3a-2-find-replace-abort-migration.md)     |
+| 2026-04-30 | Phase 4b.3a.1: Abortable Async Operation Hook          | claude-opus-4-7 | 0/1/1 | 0/0/1      | [link](2026-04-30-phase-4b-3a-1-abortable-async-operation-hook.md)   |
+| 2026-04-29 | Roadmap edit: reorder 4b.14 (now 4b.3a.1) before 4b.3b | claude-opus-4-7 | 0/2/6 | ?/?/?      | [link](2026-04-29-roadmap-reorder-4b-14-before-4b-3b.md)             |
