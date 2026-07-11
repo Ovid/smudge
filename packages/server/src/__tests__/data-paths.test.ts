@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import path from "node:path";
 import { createKnexConfig } from "../db/knexfile";
 import { getDataDir } from "../images/images.paths";
+import { getImagesDir } from "../config/paths";
 
 // Safety net for architecture flaw F-5 (configuration sprawl: the
 // data-directory default is duplicated across getDataDir(),
@@ -52,5 +53,17 @@ describe("data-path defaults single-owner relationship (F-5 safety net)", () => 
     process.env.DATA_DIR = "/custom/data";
     const conn = createKnexConfig().connection as { filename: string };
     expect(conn.filename).toBe(path.join("/custom/data", "smudge.db"));
+  });
+
+  // S-F9: config/paths is the single owner of the "images" subdir name too.
+  it("getImagesDir defaults to <data-dir>/images and honors DATA_DIR", () => {
+    expect(getImagesDir()).toBe(path.join(getDataDir(), "images"));
+    process.env.DATA_DIR = "/custom/data";
+    expect(getImagesDir()).toBe(path.join("/custom/data", "images"));
+  });
+
+  it("getImagesDir uses an explicit dataDir override without reading env", () => {
+    process.env.DATA_DIR = "/env/data";
+    expect(getImagesDir("/injected/dir")).toBe(path.join("/injected/dir", "images"));
   });
 });

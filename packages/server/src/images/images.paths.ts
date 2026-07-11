@@ -1,5 +1,5 @@
 import path from "node:path";
-import { getDataDir } from "../config/paths";
+import { getImagesDir } from "../config/paths";
 
 // getDataDir is owned by config/paths (F-5: single data-directory owner)
 // and re-exported here so existing `../images/images.paths` importers and
@@ -67,5 +67,5 @@ export function validateMagicBytes(buffer: Buffer, mime: string): boolean {
 }
 
 export function getImagePath(projectId: string, imageId: string, ext: string): string {
-  return path.join(getDataDir(), "images", projectId, `${imageId}.${ext}`);
+  return path.join(getImagesDir(), projectId, `${imageId}.${ext}`);
 }

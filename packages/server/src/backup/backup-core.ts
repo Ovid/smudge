@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import JSZip from "jszip";
 import { mkdir, rm, readFile, writeFile, readdir, rename, statfs, access } from "node:fs/promises";
 import { join, relative, sep, resolve, isAbsolute, win32, basename, dirname } from "node:path";
+import { getImagesDir } from "../config/paths";
 
 export type BackupMode = "manual" | "auto";
 
@@ -472,7 +473,7 @@ export async function runBackup(opts: BackupOptions): Promise<{ outFile: string 
 
     const zip = new JSZip();
     zip.file("smudge.db", await readFile(staging));
-    const imagesDir = join(opts.dataDir, "images");
+    const imagesDir = getImagesDir(opts.dataDir); // config/paths owns the "images" subdir (S-F9)
     for await (const file of walkFiles(imagesDir)) {
       const rel = relative(opts.dataDir, file).split(sep).join("/"); // images/<proj>/<file>
       // I1 (F3): "safe while running" — the image reaper (or a delete) can unlink
