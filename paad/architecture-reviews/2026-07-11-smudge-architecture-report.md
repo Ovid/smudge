@@ -141,6 +141,10 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** `config/paths.ts` claims sole ownership of DB-location derivation via `getDbPath()`, and `knexfile.ts` honors it — but `index.ts` reads `process.env.DB_PATH` directly and hand-builds an inline Knex config (client/connection/migrations/`loadExtensions`) when the env var is set, duplicating the migrations block. Both paths produce the same outcome, so the cost is duplicated config and a bypassed single-owner helper (drift risk), not a live bug.
 - **Evidence:** `packages/server/src/index.ts:25-40` vs. `packages/server/src/db/knexfile.ts:8-20` and `packages/server/src/config/paths.ts:24-25`.
 - **Found by:** Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** `index.ts` now calls `initDb(createKnexConfig())`; the inline `DB_PATH ? {...} : undefined` block (duplicated migrations config, bypassed single owner) is gone. `createKnexConfig()`→`getDbPath()` honors `process.env.DB_PATH`, proven by `data-paths.test.ts`. Behavior-identical; entrypoint is coverage-excluded.
+- **Status date:** 2026-07-11 19:01 UTC
+- **Status commit:** 2e01462c0f5ecd92d1dd49ee06c8299ff4c1a2d3
 
 ### [F-7] `deleteProject` bypasses the shared image-ref-count guard
 - **Category:** Flaw 17 (No clear ownership of data)
