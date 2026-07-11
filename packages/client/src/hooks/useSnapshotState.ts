@@ -192,9 +192,8 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
   // one useAbortableAsyncOperation instance are not expressible —
   // run() aborts the prior on each call. Splitting into two hook
   // instances loses the entangled-lifecycle context documented at the
-  // existing I8 comment block above. Phase 4b.4 replaces this
-  // file-level allowlist entry with an inline `// eslint-disable-next-line`
-  // on the line below.
+  // existing I8 comment block above.
+  // eslint-disable-next-line no-restricted-syntax -- simultaneously-live controller: entangled restore-followup lifecycle (see I8 block above)
   const restoreFollowupAbortRef = useRef<AbortController | null>(null);
   // Mirror the current chapterId so async handlers can check the live value
   // against their captured one (needed for A→B→A restore detection).

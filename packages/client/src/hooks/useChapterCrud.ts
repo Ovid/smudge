@@ -121,6 +121,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
   // would cause the next mutation to cancel the previous mutation's recovery
   // refresh — exactly the case where the previous error's user-visible
   // state most needs the refresh to land.
+  // eslint-disable-next-line no-restricted-syntax -- second-tier create-recovery: must outlive createChapterOp's auto-abort (see comment above)
   const createRecoveryAbortRef = useRef<AbortController | null>(null);
 
   // Unmount cleanup for the hand-rolled create-recovery controller so a

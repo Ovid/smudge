@@ -63,7 +63,9 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
   // through the primary's hook would cause the next mutation to cancel the
   // previous mutation's recovery refresh — exactly the case where the
   // previous error's user-visible state most needs the refresh to land.
+  // eslint-disable-next-line no-restricted-syntax -- second-tier status-recovery: must outlive the status mutation's auto-abort (see comment above)
   const statusRecoveryAbortRef = useRef<AbortController | null>(null);
+  // eslint-disable-next-line no-restricted-syntax -- second-tier title-recovery: must outlive the title mutation's auto-abort (see comment above)
   const titleRecoveryAbortRef = useRef<AbortController | null>(null);
 
   // Unmount cleanup: abort the hand-rolled recovery controllers so a

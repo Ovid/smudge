@@ -30,6 +30,7 @@ export type AbortableAsyncOperation = {
 };
 
 export function useAbortableAsyncOperation(): AbortableAsyncOperation {
+  // eslint-disable-next-line no-restricted-syntax -- canonical AbortController owner: this IS the hook the rule routes consumers to
   const ref = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
 
