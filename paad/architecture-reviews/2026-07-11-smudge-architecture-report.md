@@ -167,6 +167,9 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** Each upload mints a fresh `uuidv4()` plus a new file and DB row, so a client retry after a dropped response produces a duplicate image. No idempotency key or content-hash dedup exists (unlike the manual-snapshot POST, which is content-hash deduped).
 - **Evidence:** `packages/server/src/images/images.service.ts:72-91`.
 - **Found by:** Integration & Data
+- **Status:** Won't fix
+- **Status reason:** Accepted trade-off (recorded in CLAUDE.md §Accepted Architectural Trade-offs). Verified there is no automatic upload-retry path — `ImageGallery.tsx:183` fires a single `mutationOp.run(api.images.upload(...))` with no backoff (unlike auto-save), and the `images` table has no `content_hash` column (migration 012). The only route to a duplicate is a manual user retry after a committed-but-dropped response, yielding a harmless user-deletable duplicate in a single-user app. Content-hash dedup would require a schema migration + backfill + per-upload hashing — disproportionate to a Low-impact, manual-retry-only issue. Ovid's decision (2026-07-11). Revisit if uploads ever gain an automatic retry.
+- **Status date:** 2026-07-11 21:22 UTC
 
 ### [F-9] Two mutation PUTs return a server-authored success string
 - **Category:** Flaw 24 (Inconsistent API contracts)
@@ -243,7 +246,7 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Status:** Fixed
 - **Status reason:** `chapterContentToHtml` now runs a fail-closed image-src allowlist over the `generateHTML` output before image resolution, mirroring the client sanitizer's `ALLOWED_URI_REGEXP` (relative `/api/images/<uuid>` only). Any `<img>` with an external, `javascript:`, or `data:` src — which previously survived into the downloaded export (tracking-pixel / defense-in-depth-asymmetry vector) — is dropped; the client drops the attr, the server drops the tag, both fail closed. No server-side DOM added: `editorExtensions` emits only `<img src alt>` as URI-bearing output (no Link), so a targeted img-tag pass over the bounded machine-generated HTML suffices. Valid `/api/images/<uuid>` srcs are preserved so resolution still embeds them. Red tests added (external/`javascript:`/`data:` stripped, valid src + surrounding content preserved); all 139 export tests pass, lint + typecheck clean.
 - **Status date:** 2026-07-11 21:19 UTC
-- **Status commit:** (pending)
+- **Status commit:** d97a97a
 
 ### [F-16] Image-URI accept/reject rule encoded twice across packages
 - **Category:** Flaw 6 (Leaky abstraction / duplicated rule)
@@ -251,6 +254,9 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** The client's `ALLOWED_URI_REGEXP` (relative `/api/images/<uuid>` only) and the server's `IMAGE_SRC_RE` (optional `https?://host` prefix) both encode "what is a valid image src." The divergence is deliberate and extensively documented — they serve different threat models (client = fail-closed XSS allowlist; server = conservative ref-count matcher) and are intentionally *not* identical — so the residual issue is only the cross-package coupling (a change to one warrants review of the other), not a rule that should be unified in `shared`.
 - **Evidence:** `packages/client/src/sanitizer.ts:91-92` vs. `packages/server/src/images/images.references.ts:36-39` (each with a cross-referencing comment).
 - **Found by:** Coupling & Dependencies
+- **Status:** Won't fix
+- **Status reason:** Accepted trade-off (recorded in CLAUDE.md §Accepted Architectural Trade-offs). The two regexes serve different threat models (client = fail-closed XSS allowlist, relative-only; server = conservative ref-count matcher, optional host prefix) and must NOT be unified into `shared` — unifying would be a security regression, not a fix. The only residual is cross-package coupling, already mitigated by cross-referencing comments at both sites. Ovid's decision (2026-07-11).
+- **Status date:** 2026-07-11 21:22 UTC
 
 ### [F-17] Low cohesion: ZIP wire-format parsing mixed with backup orchestration
 - **Category:** Flaw 11 (Low cohesion)
@@ -269,6 +275,9 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** Domain entities are plain `*Row` record types with no behavior; all business rules (transactional image-ref diffing, velocity side effects, corruption fallback, slug regeneration) live in service free functions operating on those records. This is idiomatic functional TypeScript and "anemic" here is a paradigm judgment rather than a defect — the lowest-value finding in the set.
 - **Evidence:** `packages/server/src/chapters/chapters.service.ts:32-314` (free functions over `ChapterRow`).
 - **Found by:** Structure & Boundaries
+- **Status:** Won't fix
+- **Status reason:** Accepted trade-off (recorded in CLAUDE.md §Accepted Architectural Trade-offs). This is idiomatic functional TypeScript, not a defect — the report itself calls it "the lowest-value finding in the set." A "fix" would be an OO entities-with-behavior rewrite against the grain of the codebase. Ovid's decision (2026-07-11).
+- **Status date:** 2026-07-11 21:22 UTC
 
 ### [F-19] Hidden side effects in chapter mutations (documented)
 - **Category:** Flaw 12 (Hidden side effects)
@@ -276,6 +285,9 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** `updateChapter`/`deleteChapter` do considerably more than their names suggest (bump project `updated_at`, decrement image ref counts, fire post-commit velocity snapshots), which is classic Flaw 12 territory — but each side effect is explicitly enumerated in the function's doc comment and best-effort failures are logged rather than swallowed. A mitigated watch-item; the risk is that future methods may not maintain the same doc discipline.
 - **Evidence:** `packages/server/src/chapters/chapters.service.ts:54-197` (doc comments at 42-53, 155-165; logging at 131, 191).
 - **Found by:** Error Handling & Observability
+- **Status:** Won't fix
+- **Status reason:** Accepted trade-off (recorded in CLAUDE.md §Accepted Architectural Trade-offs). The side effects are load-bearing (a save must bump project `updated_at`, adjust image ref counts, snapshot velocity); each is enumerated in the function's doc comment and best-effort failures are logged, not swallowed. The doc discipline, not decomposition, is the mitigation — new mutations must keep it. Ovid's decision (2026-07-11).
+- **Status date:** 2026-07-11 21:22 UTC
 
 ## Over-Engineering Audit (ponytail)
 

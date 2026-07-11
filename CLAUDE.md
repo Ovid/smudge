@@ -224,6 +224,39 @@ hook owns the lifecycle effects and returns an opt-in `onBackdropClick`; ARIA
 (`role`, `aria-*`) stays in each component's JSX. New dialogs adopt the hook
 rather than copying a neighbour.
 
+## Accepted Architectural Trade-offs
+
+The following patterns are recurring architecture-review flags that have been
+reviewed and **deliberately accepted** for Smudge's single-user, single-process
+design. They are recorded here (not just in a review report) so future reviews
+treat them as decided rather than re-derived defects — a report's per-finding
+"Won't fix" status does not reach a fresh review, but this steering file does.
+Re-flagging one is warranted only if its stated premise changes.
+
+- **Anemic domain model (F-18).** Domain entities are plain `*Row` record types;
+  all business rules live in service free functions over those records. This is
+  idiomatic functional TypeScript, not a defect — a "fix" would mean an OO
+  entities-with-behavior rewrite against the grain of the codebase.
+- **Hidden side effects in chapter mutations (F-19).** `updateChapter` /
+  `deleteChapter` do more than their names suggest (bump project `updated_at`,
+  decrement image ref counts, fire post-commit velocity snapshots). Each side
+  effect is enumerated in the function's doc comment and best-effort failures
+  are logged, not swallowed — the doc discipline, not decomposition, is the
+  mitigation. New mutations with non-obvious side effects must keep it.
+- **Image-URI rule encoded twice (F-16).** The client `ALLOWED_URI_REGEXP`
+  (relative-only, fail-closed XSS allowlist) and the server `IMAGE_SRC_RE`
+  (optional `https?://host` prefix, reference-count matcher) intentionally
+  differ — they serve different threat models and must **not** be unified into
+  `shared`. The only residual is cross-package coupling: a change to one
+  warrants review of the other (cross-referencing comments exist at both sites).
+- **Non-idempotent image upload (F-8).** Each upload mints a fresh UUID + file +
+  DB row with no content-hash dedup. There is no automatic upload-retry path
+  (unlike auto-save's backoff), so the only route to a duplicate is a manual
+  user retry after a committed-but-dropped response — a harmless, user-deletable
+  duplicate in a single-user app. Content-hash dedup (a schema migration +
+  backfill + per-upload hashing) is disproportionate to that risk. Revisit if
+  uploads ever gain an automatic retry.
+
 ## API Design
 
 REST endpoints under `/api/`. Error envelope: `{ "error": { "code": "MACHINE_READABLE", "message": "Human-readable" } }`. HTTP status codes: 200, 201, 204, 400, 404, 409, 413, 500, plus **503 for `/api/health` only** (the liveness probe emits 503 when the SQLite handle is unreachable — F-14; this is the single documented carve-out and does not extend to any other endpoint or to the `AppError` taxonomy). The allowlist governs codes the Smudge server itself emits; client error scopes may additionally map proxy-only codes (502/503/504, etc.) for resilience under reverse-proxy deployments. Error responses (4xx/5xx) are produced by the `AppError` taxonomy (`packages/server/src/errors/appError.ts`): routes `throw` a typed `AppError` and the global handler (`app.ts`) renders the envelope. The error-status subset is 400, 404, 409, 413, 500 — `AppError` never emits 2xx.
