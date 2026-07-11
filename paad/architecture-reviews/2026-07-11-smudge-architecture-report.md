@@ -198,6 +198,10 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** `apiErrorMapper.ts` value-imports `SCOPES` from `scopes.ts`, while `scopes.ts` type-imports `ScopeEntry` from `apiErrorMapper.ts`; `madge` flags the cycle, but the back-edge is `import type` (erased at compile), so there is no runtime initialization hazard — still a structural cycle that trips tooling and blocks clean module extraction.
 - **Evidence:** `packages/client/src/errors/apiErrorMapper.ts:2` ↔ `packages/client/src/errors/scopes.ts:1`.
 - **Found by:** Coupling & Dependencies
+- **Status:** Fixed
+- **Status reason:** Moved the `ScopeEntry` type definition into `scopes.ts` (its natural home — it types the `SCOPES` registry there) and dropped `scopes.ts`'s `import type ... from "./apiErrorMapper"` back-edge; `apiErrorMapper.ts` imports and re-exports `ScopeEntry` so consumers are unchanged. `madge --circular` now reports zero cycles (previously flagged `apiErrorMapper ↔ scopes`). Pure type move, behavior-identical; 401 error-module tests pass.
+- **Status date:** 2026-07-11 19:03 UTC
+- **Status commit:** 18c9298ea6e2bf0770628fcc75ccfa01d0b99d75
 
 ### [F-14] Health check is not a liveness probe
 - **Category:** Flaw 21 (No observability plan)

@@ -1,7 +1,45 @@
-import type { ScopeEntry } from "./apiErrorMapper";
 import type { ApiRequestError } from "../api/client";
 import { STRINGS } from "../strings";
 import { SEARCH_ERROR_CODES, SNAPSHOT_ERROR_CODES } from "@smudge/shared";
+
+// F-13: ScopeEntry lives here (with the SCOPES registry it types) rather
+// than in apiErrorMapper.ts, so scopes.ts no longer type-imports from
+// apiErrorMapper — removing the madge-flagged circular dependency. It
+// depends only on ApiRequestError; apiErrorMapper.ts re-exports it for
+// existing consumers.
+export type ScopeEntry = {
+  fallback: string;
+  committed?: string;
+  network?: string;
+  byCode?: Partial<Record<string, string>>;
+  byStatus?: Partial<Record<number, string>>;
+  extrasFrom?: (err: ApiRequestError) => Record<string, unknown> | undefined;
+  // S8 (review 2026-04-24): codes whose byCode hit also means "the
+  // server committed the mutation but couldn't serialize the row" —
+  // e.g. RESTORE_READ_FAILURE on trash.restoreChapter,
+  // READ_AFTER_CREATE_FAILURE on chapter.create. Listing them here
+  // lets the mapper surface possiblyCommitted=true for these codes
+  // too, so call sites don't have to re-implement the inline ladder
+  // `possiblyCommitted || err.code === "RESTORE_READ_FAILURE"`. Adding
+  // a new committed-intent code in the future means updating the scope
+  // alone rather than every call site.
+  committedCodes?: string[];
+  // S3/S7 (4b.3c.1): codes whose byCode hit means the save loop must
+  // break and lock the editor without retrying. chapter.save's
+  // BAD_JSON / UPDATE_READ_FAILURE / CORRUPT_CONTENT triple lives here
+  // instead of inline in useProjectEditor.handleSave. Adding a fourth
+  // terminal code is a single-line scope edit.
+  terminalCodes?: string[];
+  // S1 (agentic-review 2026-05-26): byStatus analogue of terminalCodes.
+  // Lets a scope declare that certain HTTP statuses are terminal even
+  // when no byCode entry matches (e.g. a reverse-proxy 404 with no
+  // envelope). chapter.save's `terminalStatuses: [404]` closes the
+  // structural asymmetry that previously forced
+  // useProjectEditor.handleSave to hand-code `status === 404` alongside
+  // the code-name list. Adding a new terminal status is now a one-line
+  // scope edit, matching terminalCodes' promise on the byStatus axis.
+  terminalStatuses?: number[];
+};
 
 // S4 (review 2026-04-25 round 3): surrogate-safe truncation that bounds
 // work at `max` iterations rather than materializing the full string into
