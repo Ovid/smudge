@@ -148,6 +148,10 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** `deleteChapter` decrements image reference counts through `applyImageRefDiff` (which guards `image.project_id !== projectId`), but `deleteProject` loops raw over extracted image IDs and calls `incrementImageReferenceCount(imageId, -1)` unconditionally. A stale or foreign `/api/images/<uuid>` URL pasted into this project's content would decrement a *different* project's ref count — the exact cross-project touch the shared helper exists to prevent.
 - **Evidence:** `packages/server/src/projects/projects.service.ts:186-188` vs. `packages/server/src/images/images.references.ts:97`.
 - **Found by:** Integration & Data
+- **Status:** Fixed
+- **Status reason:** Replaced `deleteProject`'s raw `incrementImageReferenceCount(-1)` loop with the shared `applyImageRefDiff(txStore, ch.content, null, project.id)` per chapter, so the cross-project guard now applies; a stale/foreign image URL can no longer decrement another project's ref count. Red test added in `projects.service.test.ts`.
+- **Status date:** 2026-07-11 18:50 UTC
+- **Status commit:** 4150bafb7f4d3a4996a3e226e8daf23a48aa2bd0
 
 ### [F-8] Image upload POST is non-idempotent with no dedup
 - **Category:** Flaw 19 (Lack of idempotency)

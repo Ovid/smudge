@@ -9,7 +9,7 @@ import {
 import { getProjectStore } from "../stores/project-store.injectable";
 import { BadRequestError } from "../errors/appError";
 import { enrichChaptersWithLabels, enrichChapterWithLabel } from "../chapters/chapters.types";
-import { extractImageIds } from "../images/images.references";
+import { applyImageRefDiff } from "../images/images.references";
 import type { ProjectRow, ProjectListRow, UpdateProjectData } from "./projects.types";
 import type {
   ChapterWithLabel,
@@ -167,24 +167,18 @@ export async function deleteProject(slug: string): Promise<boolean> {
     // Read chapter content inside the transaction so the image ref diff
     // is based on the committed content state.
     const chapters = await txStore.listChapterContentByProject(project.id);
-    const allImageIds: string[] = [];
-    for (const ch of chapters) {
-      if (ch.content) {
-        try {
-          const content = JSON.parse(ch.content);
-          allImageIds.push(...extractImageIds(content));
-        } catch {
-          // Corrupt content — skip
-        }
-      }
-    }
 
     await txStore.softDeleteChaptersByProject(project.id, now);
     await txStore.softDeleteProject(project.id, now);
 
-    // Decrement image reference counts for all images in the deleted chapters
-    for (const imageId of allImageIds) {
-      await txStore.incrementImageReferenceCount(imageId, -1);
+    // Release each chapter's image references through the shared
+    // applyImageRefDiff (old = content, new = null) so its cross-project
+    // guard applies (F-7): a stale/pasted /api/images/<uuid> URL pointing
+    // at a different project's image must not decrement that project's
+    // ref count. Corrupt content is treated as an empty old set (no
+    // decrement), matching the previous skip-on-parse-failure behavior.
+    for (const ch of chapters) {
+      await applyImageRefDiff(txStore, ch.content, null, project.id);
     }
   });
 
