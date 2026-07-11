@@ -132,6 +132,17 @@ large databases you can raise those limits with the `MAX_UNCOMPRESSED`
 make restore BACKUP=backups/smudge-….zip MAX_UNCOMPRESSED=4294967296 MAX_RATIO=20
 ```
 
+### Size ceiling (hard)
+
+`MAX_UNCOMPRESSED` raises a **soft** cap. There is also a **hard** one: the
+archive format is classic (non-zip64), so any archive whose total size or a
+single entry reaches 4 GiB is **refused on restore** ("zip64 archive refused")
+— and no `MAX_*` override lifts that, because the refusal happens before the
+size limits are consulted. In practice keep the whole data directory (DB +
+images) comfortably under ~4 GiB. If a manuscript's images ever approach that,
+split the workload or archive out cold projects; the per-project `.smg` export
+in Phase 8b is the long-term answer for large installs.
+
 ### Restore with a non-default port
 
 If you run Smudge on a port other than 3456:

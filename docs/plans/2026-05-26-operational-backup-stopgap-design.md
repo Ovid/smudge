@@ -92,12 +92,12 @@ backups/smudge-2026-05-26-143211.zip
 
 **Image layout (pushback Issue 6).** Images live in per-project subdirectories — `join(getDataDir(), "images", <projectId>, <file>)` (see `db/purge.ts`). Backup and restore walk the `images/` tree **recursively**, so the nesting round-trips correctly and the mechanism is indifferent to depth; the test fixtures must mirror the real `images/<projectId>/<file>` shape rather than a flat directory.
 
-Filename encodes the trigger and the local time:
+Filename encodes the trigger and a UTC timestamp:
 
-- **Manual** (`make backup`): `smudge-<ISO-8601-local-time>.zip` (e.g. `smudge-2026-05-26-143211.zip`).
-- **Automatic** (`make dev` prerequisite): `smudge-auto-<ISO-8601-local-time>.zip`.
+- **Manual** (`make backup`): `smudge-<ISO-8601-UTC>.zip` (e.g. `smudge-2026-05-26T143211Z.zip`).
+- **Automatic** (`make dev` prerequisite): `smudge-auto-<ISO-8601-UTC>.zip`.
 
-The distinct `-auto` infix is load-bearing: **rotation prunes only `smudge-auto-*.zip`**, never `smudge-*.zip` manual archives (§1a). Local time, not UTC — matches the writer's timezone (consistent with Phase 2's timezone discipline). Hyphens (not colons) so the name is filesystem-safe on every host. The lexical sort of the timestamp is also chronological, so rotation can pick the newest N by sorting filenames — no stat() calls.
+The distinct `-auto` infix is load-bearing: **rotation prunes only `smudge-auto-*.zip`**, never `smudge-*.zip` manual archives (§1a). **UTC, not local time (S-F1):** rotation picks the newest N by a lexical filename sort with no stat() calls, and only a UTC stamp keeps that sort monotonic across a DST fall-back or backward clock step — a local-time stamp can make a later backup sort *before* an earlier one and prune the wrong file. (`-` < `T`, so any legacy local-time `…-HHmmss.zip` names sort before all new `…THHmmssZ` names, and mixed dirs rotate correctly with no migration.) Hyphens/`T`/`Z` (no colons) keep the name filesystem-safe on every host. The operator-facing move-aside path still uses a local-time stamp (`isoStampLocal`) for human readability.
 
 **Format choice: zip, not tar.gz.** Two reasons: (1) consistency with Phase 8b's `.smg` (also a zip archive), so backup-related tooling speaks one format; (2) cross-platform portability — every supported host OS has native zip support, whereas tar.gz on older Windows is a frequent friction point.
 
@@ -144,7 +144,7 @@ async function main() {
   const dataDir = getDataDir();
   const dbPath = getDbPath(); // may live outside dataDir
   const imagesDir = join(dataDir, "images");
-  const stamp = isoStampLocal();
+  const stamp = isoStampUtc(); // UTC → lexical sort stays chronological (S-F1)
   const outFile = resolve("backups", `smudge-${stamp}.zip`);
   const staging = join(dataDir, ".backup-staging.db");
 

@@ -465,9 +465,11 @@ export async function rotateAutoBackups(o: {
   // set. keep<0 → 0 (delete all); keep is floored.
   const keep = Math.max(0, Math.floor(o.keep));
   // Keep the newest `keep` BY NAME (S7), then delete every other auto. Keying on
-  // names rather than a positional slice makes concurrent rotations idempotent:
-  // each run only ever removes archives outside the newest-`keep` survivor set,
-  // so two overlapping `make dev` rotations can't over-prune a recent backup.
+  // names rather than a positional slice makes two rotations run with the SAME
+  // `keep` idempotent: each only removes archives outside the newest-`keep`
+  // survivor set, so overlapping `make dev` rotations can't over-prune a recent
+  // backup. (Two concurrent runs with divergent SMUDGE_BACKUP_KEEP compute
+  // different survivor sets — a non-issue for the single-operator target.)
   const survivors = new Set(keep > 0 ? autos.slice(-keep) : []);
   const toDelete = autos.filter((f) => !survivors.has(f));
   for (const f of toDelete) await rm(join(o.backupsDir, f), { force: true });
