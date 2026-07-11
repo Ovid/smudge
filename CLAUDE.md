@@ -256,6 +256,27 @@ Re-flagging one is warranted only if its stated premise changes.
   duplicate in a single-user app. Content-hash dedup (a schema migration +
   backfill + per-upload hashing) is disproportionate to that risk. Revisit if
   uploads ever gain an automatic retry.
+- **Store reached via service locator with an init-order contract (F-3).**
+  `store`, `db`, and `velocityServiceOverride` are process-global mutables with
+  `set*/reset*/init*` mutators; services reach the store via `getProjectStore()`
+  rather than constructor injection, and correct operation requires
+  `initProjectStore(db)` to have run once first (getter throws "not
+  initialized", init throws "already initialized"). This IS the deliberate,
+  tested seam that makes the single-process app injectable at all — the
+  runtime-enforced init-order contract is the price of a locator that stays a
+  one-liner at 13 call sites instead of threading `db`/`store` through every
+  route→service→repository signature. "Fixing" it means a DI-container or
+  parameter-threading rewrite that buys nothing for a single-process app.
+- **`ProjectStore` facade is 51 one-line pass-throughs (F-4).** Each
+  `SqliteProjectStore` method delegates to a repository function, and the
+  `ProjectStore` interface has exactly one implementation (no fake implements
+  it; tests construct the concrete class over a real DB). The three-edit-per-
+  operation tax (repo fn + slice interface + delegation) is compiler-guided, and
+  the `transaction(txStore)` seam is genuinely load-bearing. The 7-slice
+  interface's documented data-surface value justifies the type surface; "fixing"
+  it (typing `txStore` as the concrete class, dropping the interface) trades a
+  documented contract for marginally less boilerplate. Net a mild smell, left
+  as-is.
 
 ## API Design
 

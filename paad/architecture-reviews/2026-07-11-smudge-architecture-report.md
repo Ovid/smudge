@@ -120,6 +120,9 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** `let store`, `let db`, and `let velocityServiceOverride` are process-global mutables with `set*/reset*/init*` mutators. Services reach the store via `getProjectStore()` rather than injection, and correct operation requires `initProjectStore(db)` to have run exactly once first (the getter throws "not initialized"; init throws "already initialized") — a call-order contract enforced only at runtime, which also forces serial test setup.
 - **Evidence:** `packages/server/src/stores/project-store.injectable.ts:5-35`; `packages/server/src/db/connection.ts:4,21`; `packages/server/src/velocity/velocity.injectable.ts:8`; 17 `getProjectStore()` call sites; init sequenced in `index.ts:42`. (This is also the deliberate, tested seam that makes the app injectable at all.)
 - **Found by:** Structure & Boundaries, Coupling & Dependencies (agreement)
+- **Status:** Won't fix
+- **Status reason:** Accepted trade-off (recorded in CLAUDE.md §Accepted Architectural Trade-offs). The report itself notes this "is also the deliberate, tested seam that makes the app injectable at all." The runtime-enforced init-order contract is the price of a locator that stays a one-liner at 13 call sites rather than threading `db`/`store` through every route→service→repository signature; "fixing" it means a DI-container/parameter-threading rewrite that buys nothing for a single-process app. Ovid's decision (2026-07-11).
+- **Status date:** 2026-07-11 19:28 UTC
 
 ### [F-4] `ProjectStore` facade: 51 pass-through methods behind a single-implementation interface
 - **Category:** Flaw 9 (Shotgun surgery) + Flaw 7 (Over-abstraction)
@@ -127,6 +130,9 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** Every `SqliteProjectStore` method is a one-line delegation to a repository function, so adding one data operation requires three coordinated edits (repo fn + domain slice interface + delegation method). The `ProjectStore` interface has exactly one implementation, and both test injection points construct that same concrete class over a real DB — no fake implements it, so the "substitution seam" is unrealized. Both frictions are compiler-guided and the `transaction(txStore)` seam is genuinely load-bearing, so this nets to a mild smell.
 - **Evidence:** `packages/server/src/stores/sqlite-project-store.ts:33-296` (51 delegations); `packages/server/src/stores/project-store.types.ts:36-157`; sole `new SqliteProjectStore` sites are the injectable, the tx self-construction, and two tests.
 - **Found by:** Structure & Boundaries, Coupling & Dependencies (agreement)
+- **Status:** Won't fix
+- **Status reason:** Accepted trade-off (recorded in CLAUDE.md §Accepted Architectural Trade-offs). The three-edit-per-operation tax is compiler-guided, the `transaction(txStore)` seam is load-bearing, and the 7-slice interface's documented data-surface value justifies its type surface. The report grades this "nets to a mild smell" and the over-engineering audit flags removal as "not recommended." "Fixing" it (typing `txStore` as the concrete class, dropping the interface) trades a documented contract for marginally less boilerplate. Ovid's decision (2026-07-11).
+- **Status date:** 2026-07-11 19:28 UTC
 
 ### [F-5] Documented architecture omits the store-facade layer
 - **Category:** Flaw 13 (Inconsistent boundaries vs. steering)
