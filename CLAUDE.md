@@ -277,6 +277,19 @@ Re-flagging one is warranted only if its stated premise changes.
   it (typing `txStore` as the concrete class, dropping the interface) trades a
   documented contract for marginally less boilerplate. Net a mild smell, left
   as-is.
+- **Request correlation not propagated into the service layer (F-2).** `req.id`
+  / `req.log` exist at the HTTP boundary and error handler (strength S-10, with
+  an inbound `X-Request-Id` echo), but there is no `AsyncLocalStorage`, so
+  services/repositories/reapers log through the bare top-level `logger` with no
+  `req_id`. Accepted because the best-effort anomaly logs already carry their
+  domain IDs (`project_id`/`chapter_id`/`image_id`), which for a single-user,
+  single-process app *is* the correlation key — a request ID only earns its keep
+  disambiguating concurrent requests against the same entity, which a single
+  writer never produces. The roadmap trajectory (7g Electron desktop bound to
+  `127.0.0.1`, 8a per-project DBs) makes Smudge *more* single-user, not less;
+  this matches the line-973 roadmap precedent for deferring single-user
+  optimizations. Revisit only if Smudge ever ships a cloud / multi-writer
+  deployment.
 
 ## API Design
 
