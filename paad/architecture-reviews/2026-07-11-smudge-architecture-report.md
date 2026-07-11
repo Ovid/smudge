@@ -134,6 +134,10 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** CLAUDE.md states the layering is "Routes → Services → Repositories" and its Target Project Structure lists no `stores/`, but no service imports a repository directly — the real path is Routes → Services → `getProjectStore()` (the `SqliteProjectStore` facade) → Repositories. The facade is an intermediate layer absent from the steering docs.
 - **Evidence:** `grep repository packages/server/src/*/*.service.ts` → none; all services import `getProjectStore`; the only repository importer is `sqlite-project-store.ts`.
 - **Found by:** Structure & Boundaries
+- **Status:** Fixed
+- **Status reason:** Reconciled the steering docs with the code (answers Next-Question #1 in favor of naming the layer). CLAUDE.md's Target Project Structure now lists `stores/` (the `SqliteProjectStore` facade over the repositories), and the Architecture line reads `Routes → Services → ProjectStore facade → Repositories`, noting services reach data only via `getProjectStore()` and the facade hosts the `transaction(txStore)` seam. Docs-only change; no code touched.
+- **Status date:** 2026-07-11 20:10 UTC
+- **Status commit:** 69220a38a3e7d424711d627f33b33b19a075d822
 
 ### [F-6] `index.ts` bypasses the DB-path single owner with an inline Knex config
 - **Category:** Flaw 22 (Configuration sprawl)

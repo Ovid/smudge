@@ -82,12 +82,13 @@ packages/
       velocity/           # routes, service, repository, types, injectable
       settings/           # routes, service, repository, types
       chapter-statuses/   # routes, service, repository, types
+      stores/             # SqliteProjectStore facade over the repositories (getProjectStore); injectable + tx seam
       db/                 # connection singleton, migrations/
   client/       # React SPA, components/, hooks/, pages/, api/, errors/, strings.ts
 e2e/            # Playwright tests
 ```
 
-**Architecture:** Routes → Services → Repositories. Routes handle HTTP; services handle business logic and transactions; repositories encapsulate all SQL/Knex.
+**Architecture:** Routes → Services → `ProjectStore` facade → Repositories. Routes handle HTTP; services handle business logic and transactions; the `SqliteProjectStore` facade (reached via `getProjectStore()`, `stores/`) is a thin single-owner seam that delegates to the repositories and hosts the `transaction(txStore)` boundary; repositories encapsulate all SQL/Knex. Services never import a repository directly — they go through the store facade (F-5).
 
 ## Build & Run Commands (Target)
 
