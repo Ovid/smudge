@@ -181,9 +181,9 @@ function safeExtrasFrom(
   try {
     return scope.extrasFrom(err);
   } catch (extrasErr) {
-    if (import.meta.env?.DEV) {
-      clientError("scope.extrasFrom threw; returning undefined:", extrasErr);
-    }
+    // F-10: clientError already gates on the safe isDev() form, so no
+    // outer import.meta.env?.DEV check (the discouraged silent-no-op idiom).
+    clientError("scope.extrasFrom threw; returning undefined:", extrasErr);
     return undefined;
   }
 }

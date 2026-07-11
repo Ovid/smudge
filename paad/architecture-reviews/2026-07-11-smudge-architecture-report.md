@@ -177,6 +177,10 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** `clientLog.ts` uses the guarded `typeof import.meta.env !== "undefined" && import.meta.env.DEV === true` and its own comment explains that the optional-chain form silently no-ops where `import.meta.env` is unpopulated — yet `devWarn.ts` and `apiErrorMapper.ts` still use the discouraged `import.meta.env?.DEV` form.
 - **Evidence:** `packages/client/src/errors/clientLog.ts:17-30`; `packages/client/src/errors/devWarn.ts:3`; `packages/client/src/errors/apiErrorMapper.ts:211`.
 - **Found by:** Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** `devWarn.ts` now routes through `clientWarn`, and `apiErrorMapper.ts` dropped its redundant outer `if (import.meta.env?.DEV)` around the already-guarded `clientError`. Both discouraged `import.meta.env?.DEV` idioms are gone; the only DEV gate is now `clientLog`'s safe `isDev()` (`typeof import.meta.env !== "undefined" && import.meta.env.DEV === true`), used everywhere. Behavior-preserving; covered by `devWarn.test.ts` and `apiErrorMapper.test.ts` (extrasFrom-throws).
+- **Status date:** 2026-07-11 19:05 UTC
+- **Status commit:** aa44c71ac51e53d438fb04f4a61175672ab42657
 
 ### [F-11] Magic-number find/replace debounce
 - **Category:** Flaw 28 (Magic numbers/strings)
