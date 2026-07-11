@@ -539,9 +539,7 @@ it("S-F2: refuses restore when the EXTERNAL DB partition is full even if the dat
   // Precondition failure ⇒ nothing touched: the live external DB is intact and
   // was not moved aside.
   expect(await readFile(dbPath)).toEqual(liveDbBefore);
-  expect(
-    (await readdir(dirname(dbPath))).some((f) => f.includes(".before-restore-")),
-  ).toBe(false);
+  expect((await readdir(dirname(dbPath))).some((f) => f.includes(".before-restore-"))).toBe(false);
 });
 
 it("includes the needed and available byte counts in the free-space error message", async () => {

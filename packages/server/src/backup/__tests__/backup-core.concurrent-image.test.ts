@@ -31,9 +31,8 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 });
 
 const { runBackup } = await import("../backup-core");
-const { readFile: realReadFile } = await vi.importActual<typeof import("node:fs/promises")>(
-  "node:fs/promises",
-);
+const { readFile: realReadFile } =
+  await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
 
 const tempDirs: string[] = [];
 beforeEach(() => {
