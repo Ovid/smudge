@@ -201,6 +201,10 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** `/api/health` returns a static `{status:"ok"}` without checking SQLite reachability, so for the (not-yet-implemented) single-container Docker target an orchestrator probing it could not detect a process whose DB handle is unusable (locked file, disk full, corrupt WAL).
 - **Evidence:** `packages/server/src/app.ts:50-52`.
 - **Found by:** Error Handling & Observability
+- **Status:** Fixed
+- **Status reason:** `/api/health` now runs a `SELECT 1` SQLite liveness probe: 200 `{status:"ok"}` when the handle is usable, 503 `{status:"error"}` when it throws (locked file / full disk / corrupt WAL). Per Ovid's decision, 503 is added to the status allowlist as a documented `/api/health`-only carve-out (CLAUDE.md §API Design). Red test in `health.test.ts`; `request-context.test.ts` given an initialized DB so its `/api/health` fixture stays quietly 200.
+- **Status date:** 2026-07-11 19:00 UTC
+- **Status commit:** 3d5f9ec86da145c3d837be78618078127a87a190
 
 ### [F-15] Server export renders TipTap JSON to HTML without the client's sanitizer pass
 - **Category:** Flaw 30 (Security as an afterthought — defense-in-depth asymmetry)

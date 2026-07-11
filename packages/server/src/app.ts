@@ -1,6 +1,7 @@
 import express from "express";
 import helmet from "helmet";
 import { logger } from "./logger";
+import { getDb } from "./db/connection";
 import { projectsRouter } from "./projects/projects.routes";
 import { chaptersRouter } from "./chapters/chapters.routes";
 import { chapterStatusesRouter } from "./chapter-statuses/chapter-statuses.routes";
@@ -47,8 +48,19 @@ export function createApp(): express.Express {
   app.use("/api/snapshots", snapshotDirectRouter());
   app.use("/api/projects", searchRouter());
 
-  app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok" });
+  app.get("/api/health", async (_req, res) => {
+    // Liveness probe: confirm the SQLite handle is actually usable, not
+    // just that the process is up (F-14). A locked file, full disk, or
+    // corrupt WAL makes this throw, so a (Docker-target) orchestrator sees
+    // the instance as unhealthy. 503 is permitted here as a documented
+    // carve-out to the status allowlist (CLAUDE.md §API Design).
+    try {
+      await getDb().raw("SELECT 1");
+      res.json({ status: "ok" });
+    } catch (err) {
+      logger.error({ err }, "Health check DB probe failed");
+      res.status(503).json({ status: "error" });
+    }
   });
 
   app.use(globalErrorHandler);
