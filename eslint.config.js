@@ -178,7 +178,8 @@ export default tseslint.config(
           // DELIBERATE GAP (same "add a selector when it shows up" discipline as
           // the seq-ref/raw-string rules): keys on `callee.name='useRef'`, so a
           // `React.useRef<AbortController>` MemberExpression callee would slip
-          // through. Zero such calls exist today (all 75 useRef< sites are bare).
+          // through. Zero such calls exist today (every useRef< site is a bare
+          // `useRef`, none via a `React.useRef` member expression).
           selector:
             "CallExpression[callee.name='useRef'] > TSTypeParameterInstantiation TSTypeReference[typeName.name='AbortController']",
           message:
