@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import JSZip from "jszip";
-import { mkdir, rm, readFile, writeFile, readdir, rename, statfs, access } from "node:fs/promises";
+import { mkdir, rm, readFile, writeFile, readdir, rename, statfs, stat, access } from "node:fs/promises";
 import { join, relative, sep, resolve, isAbsolute, win32, basename, dirname } from "node:path";
 import { getImagesDir } from "../config/paths";
 
@@ -237,6 +237,11 @@ export interface RestoreOptions {
    *  Defaults to `statfs(dirname(dataDir))` — the parent always exists and is
    *  on the same partition whether or not dataDir itself exists yet. */
   freeBytes?: (path: string) => Promise<number>;
+  /** Injectable seam: true when both paths reside on the same physical partition.
+   *  Defaults to comparing `stat().dev`. Used only when the DB is external, to
+   *  decide whether the DB + images draw from one free-space pool (reserve the
+   *  full declared total) or two (reserve each half on its own partition). */
+  sameDevice?: (a: string, b: string) => Promise<boolean>;
 }
 
 export async function runRestore(
@@ -253,6 +258,12 @@ export async function runRestore(
     (async (p: string) => {
       const s = await statfs(p);
       return s.bavail * s.bsize;
+    });
+  const sameDeviceImpl =
+    opts.sameDevice ??
+    (async (a: string, b: string) => {
+      const [sa, sb] = await Promise.all([stat(a), stat(b)]);
+      return sa.dev === sb.dev;
     });
   const buf = await readFile(opts.archivePath);
 
@@ -292,12 +303,20 @@ export async function runRestore(
       );
     }
   };
-  if (dbIsExternal) {
+  // "External" only means "outside dataDir", NOT "different disk": an external DB
+  // dir may share dataDir's physical partition. Split the reservation across two
+  // partitions ONLY when they are genuinely different devices; when they share one
+  // (or the DB is internal), the DB + images bytes land on a SINGLE free pool and
+  // must be checked as one sum — otherwise each half validates against the same
+  // free figure and their sum can still ENOSPC mid-write (S-F2 follow-up, I1).
+  const splitPartitions =
+    dbIsExternal && !(await sameDeviceImpl(dirname(dbPath), dirname(opts.dataDir)));
+  if (splitPartitions) {
     const dbDeclared = sizes.find((e) => e.path === "smudge.db")?.uncompressedSize ?? 0;
     await ensureFree(dirname(dbPath), dbDeclared); // DB → its own partition
     await ensureFree(dirname(opts.dataDir), declaredTotal - dbDeclared); // images → dataDir's
   } else {
-    await ensureFree(dirname(opts.dataDir), declaredTotal); // DB + images same partition
+    await ensureFree(dirname(opts.dataDir), declaredTotal); // everything on one partition
   }
   // 6. move existing data dir aside (never delete). A rename failure here means
   // nothing was touched yet, so it propagates as a precondition-style raw error.

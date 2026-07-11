@@ -531,6 +531,9 @@ it("S-F2: refuses restore when the EXTERNAL DB partition is full even if the dat
       dbPath,
       confirmToken: basename(archive),
       probePort: async () => false,
+      // Simulate genuinely different partitions so the DB and images are checked
+      // independently (this test targets the two-partition path, not I1's shared one).
+      sameDevice: async () => false,
       // DB partition (under .../external) is full; dataDir partition is roomy.
       freeBytes: async (p: string) => (p.includes("external") ? 42 : 10 * 1024 ** 3),
     }),
@@ -540,6 +543,57 @@ it("S-F2: refuses restore when the EXTERNAL DB partition is full even if the dat
   // was not moved aside.
   expect(await readFile(dbPath)).toEqual(liveDbBefore);
   expect((await readdir(dirname(dbPath))).some((f) => f.includes(".before-restore-"))).toBe(false);
+});
+
+it("I1: refuses restore when the external DB shares dataDir's partition and the SUM exceeds free (even though each half fits)", async () => {
+  // "External" only means "outside dataDir", not "different disk". When the DB
+  // dir and the dataDir live on the SAME physical partition, the restored DB and
+  // images draw from ONE free-space pool, so the pre-check must reserve the full
+  // declared total — not validate each half independently against the same free
+  // figure (which under-reserves to max(halves) and then ENOSPCs mid-write).
+  const parent = await mkdtemp(join(tmpdir(), "smudge-i1-"));
+  tempDirs.push(parent);
+  const dataDir = join(parent, "data");
+  const dbPath = join(parent, "external", "smudge.db"); // outside dataDir…
+  await mkdir(join(dataDir, "images", "p"), { recursive: true });
+  await writeFile(join(dataDir, "images", "p", "a.png"), Buffer.from([1, 2, 3, 4, 5]));
+  await mkdir(dirname(dbPath), { recursive: true });
+  const seed = new Database(dbPath);
+  seed.exec("CREATE TABLE t (v TEXT)");
+  seed.prepare("INSERT INTO t VALUES (?)").run("live");
+  seed.close();
+  const backupsDir = join(parent, "backups");
+  const { outFile: archive } = await runBackup({
+    dataDir,
+    dbPath,
+    backupsDir,
+    mode: "manual",
+    now: () => new Date(2026, 4, 26, 12, 0, 0),
+  });
+
+  // Derive a free-bytes figure strictly inside the buggy/fixed window:
+  //   max(dbDeclared, imagesDeclared) + headroom  <=  free  <  total + headroom
+  // The buggy per-half check passes at this value; the correct summed check fails.
+  const sizes = readCentralDirectorySizes(await readFile(archive));
+  const total = sizes.reduce((n, e) => n + e.uncompressedSize, 0);
+  const dbDeclared = sizes.find((e) => e.path === "smudge.db")!.uncompressedSize;
+  const images = total - dbDeclared;
+  const HEADROOM = 100 * 1024 * 1024;
+  const free = Math.max(dbDeclared, images) + HEADROOM + 1;
+  expect(free).toBeLessThan(total + HEADROOM); // guard: both halves are non-trivial
+
+  await expect(
+    runRestore({
+      archivePath: archive,
+      dataDir,
+      dbPath,
+      confirmToken: basename(archive),
+      probePort: async () => false,
+      // Same physical partition → the DB and images share one free pool.
+      sameDevice: async () => true,
+      freeBytes: async () => free,
+    }),
+  ).rejects.toThrow(RestorePreconditionError);
 });
 
 it("includes the needed and available byte counts in the free-space error message", async () => {
