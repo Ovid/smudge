@@ -482,6 +482,52 @@ it("refuses restore when free space is insufficient, leaving data dir untouched"
   ).toBe(false);
 });
 
+it("S-F2: refuses restore when the EXTERNAL DB partition is full even if the dataDir partition has room", async () => {
+  // DB_PATH points outside dataDir onto a (simulated) different partition. The
+  // restored smudge.db lands on the DB's partition, images on dataDir's. A
+  // path-aware freeBytes reports the DB partition full but dataDir roomy; the
+  // pre-check must consult BOTH partitions, not just dataDir's.
+  const parent = await mkdtemp(join(tmpdir(), "smudge-f2-"));
+  tempDirs.push(parent);
+  const dataDir = join(parent, "data");
+  const dbPath = join(parent, "external", "smudge.db"); // outside dataDir
+  await mkdir(join(dataDir, "images", "p"), { recursive: true });
+  await writeFile(join(dataDir, "images", "p", "a.png"), Buffer.from([1, 2, 3]));
+  await mkdir(dirname(dbPath), { recursive: true });
+  const seed = new Database(dbPath);
+  seed.exec("CREATE TABLE t (v TEXT)");
+  seed.prepare("INSERT INTO t VALUES (?)").run("live");
+  seed.close();
+  const backupsDir = join(parent, "backups");
+  const { outFile: archive } = await runBackup({
+    dataDir,
+    dbPath,
+    backupsDir,
+    mode: "manual",
+    now: () => new Date(2026, 4, 26, 12, 0, 0),
+  });
+  const liveDbBefore = await readFile(dbPath);
+
+  await expect(
+    runRestore({
+      archivePath: archive,
+      dataDir,
+      dbPath,
+      confirmToken: basename(archive),
+      probePort: async () => false,
+      // DB partition (under .../external) is full; dataDir partition is roomy.
+      freeBytes: async (p: string) => (p.includes("external") ? 42 : 10 * 1024 ** 3),
+    }),
+  ).rejects.toThrow(RestorePreconditionError);
+
+  // Precondition failure ⇒ nothing touched: the live external DB is intact and
+  // was not moved aside.
+  expect(await readFile(dbPath)).toEqual(liveDbBefore);
+  expect(
+    (await readdir(dirname(dbPath))).some((f) => f.includes(".before-restore-")),
+  ).toBe(false);
+});
+
 it("includes the needed and available byte counts in the free-space error message", async () => {
   const { dataDir } = await makeFixture();
   const archive = await makeArchive(dataDir);

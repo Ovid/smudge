@@ -261,13 +261,26 @@ export async function runRestore(
       "restore not confirmed: token did not match the backup filename.",
     );
   }
-  // 5. free-space pre-check (design §2b defense #3): must have declaredTotal + 100 MiB
-  // available on the partition. Use the PARENT of dataDir (always exists, same partition).
-  const available = await freeBytesImpl(dirname(opts.dataDir));
-  if (available < declaredTotal + FREE_SPACE_HEADROOM) {
-    throw new RestorePreconditionError(
-      `insufficient free space: need ${declaredTotal + FREE_SPACE_HEADROOM} bytes, have ${available}`,
-    );
+  // 5. free-space pre-check (design §2b defense #3): each destination partition
+  // must have (its declared bytes) + 100 MiB free. Use the PARENT of dataDir
+  // (always exists, same partition). When the DB is external it may land on a
+  // DIFFERENT partition than the images, so check both separately (S-F2) —
+  // checking only dataDir's partition would let a full external partition slip
+  // through to a mid-write ENOSPC.
+  const ensureFree = async (path: string, need: number) => {
+    const available = await freeBytesImpl(path);
+    if (available < need + FREE_SPACE_HEADROOM) {
+      throw new RestorePreconditionError(
+        `insufficient free space: need ${need + FREE_SPACE_HEADROOM} bytes, have ${available}`,
+      );
+    }
+  };
+  if (dbIsExternal) {
+    const dbDeclared = sizes.find((e) => e.path === "smudge.db")?.uncompressedSize ?? 0;
+    await ensureFree(dirname(dbPath), dbDeclared); // DB → its own partition
+    await ensureFree(dirname(opts.dataDir), declaredTotal - dbDeclared); // images → dataDir's
+  } else {
+    await ensureFree(dirname(opts.dataDir), declaredTotal); // DB + images same partition
   }
   // 6. move existing data dir aside (never delete). A rename failure here means
   // nothing was touched yet, so it propagates as a precondition-style raw error.
