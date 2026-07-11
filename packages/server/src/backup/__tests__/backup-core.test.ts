@@ -15,6 +15,7 @@ import {
   ZipSlipError,
   resolveKeep,
   resolveBombLimit,
+  flagValue,
   DEFAULT_KEEP,
   validateEntryPaths,
   readCentralDirectorySizes,
@@ -172,6 +173,25 @@ describe("resolveBombLimit (I5)", () => {
       );
     },
   );
+});
+
+describe("flagValue (S-F4)", () => {
+  it("returns the value after the first '='", () => {
+    expect(flagValue(["--max-ratio=10"], "max-ratio")).toBe("10");
+  });
+  it("returns undefined when the flag is absent", () => {
+    expect(flagValue(["--other=1"], "max-ratio")).toBeUndefined();
+  });
+  it("keeps the FULL value when it contains '=' (no truncation after the first '=')", () => {
+    // The old split('=')[1] returned "" for "--max-ratio==10", which
+    // resolveBombLimit treated as absent → silent default. Now the "=10" is
+    // preserved so the nonsensical value fails loudly instead.
+    expect(flagValue(["--max-ratio==10"], "max-ratio")).toBe("=10");
+    expect(flagValue(["--k=a=b=c"], "k")).toBe("a=b=c");
+  });
+  it("returns an empty string for a flag given with a trailing '=' and no value", () => {
+    expect(flagValue(["--max-ratio="], "max-ratio")).toBe("");
+  });
 });
 
 describe("validateEntryPaths", () => {

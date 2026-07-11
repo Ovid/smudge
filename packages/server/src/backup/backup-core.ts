@@ -130,6 +130,16 @@ export function resolveBombLimit(raw: string | undefined, fallback: number, labe
   return n;
 }
 
+/** Extract the value of a `--name=value` CLI flag from an argv array.
+ *  Keeps EVERYTHING after the first `=`, so a value that itself contains `=`
+ *  (e.g. a typo'd `--max-ratio==10`) is preserved verbatim and reaches
+ *  {@link resolveBombLimit}, which fails loudly rather than being truncated to
+ *  `""` and silently treated as absent (S-F4). Returns undefined if absent. */
+export function flagValue(argv: string[], name: string): string | undefined {
+  const hit = argv.find((a) => a.startsWith(`--${name}=`));
+  return hit === undefined ? undefined : hit.slice(hit.indexOf("=") + 1);
+}
+
 export function validateEntryPaths(entryPaths: string[], targetRoot: string): void {
   const root = resolve(targetRoot);
   for (const p of entryPaths) {

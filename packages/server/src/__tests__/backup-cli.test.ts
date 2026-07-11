@@ -84,6 +84,36 @@ describe("backup CLI wiring", () => {
     }
   }, 60_000);
 
+  it("restore fails fast on a non-numeric SMUDGE_PORT instead of silently defeating the probe (I2)", async () => {
+    // Number("3456abc") → NaN silently made probePort return false, defeating
+    // the running-server guard. parsePort must reject it up front — before the
+    // data-dir overwrite prompt is even shown.
+    const dataDir = await mkdtemp(join(tmpdir(), "smudge-cli-port-"));
+    try {
+      const db = new Database(join(dataDir, "smudge.db"));
+      db.exec("CREATE TABLE t (v TEXT)");
+      db.close();
+      const env = {
+        ...process.env,
+        DATA_DIR: dataDir,
+        SMUDGE_PORT: "3456abc",
+        BACKUP: join(dataDir, "smudge.db"), // any non-empty value; parse throws first
+      };
+      const err = await run(
+        "bash",
+        ["-c", `echo '' | node_modules/.bin/tsx packages/server/scripts/restore.ts`],
+        { cwd: REPO, env },
+      ).catch((e) => e);
+      expect(err).toBeInstanceOf(Error);
+      const stderr = String((err as { stderr?: string }).stderr ?? "");
+      const stdout = String((err as { stdout?: string }).stdout ?? "");
+      expect(stderr).toMatch(/SMUDGE_PORT must be an integer/);
+      expect(stdout).not.toMatch(/OVERWRITES/); // never reached the confirm prompt
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  }, 60_000);
+
   it("restore refuses while a server is bound on SMUDGE_PORT", async () => {
     const { createServer } = await import("node:net");
     const before = await manualArchivesBefore();

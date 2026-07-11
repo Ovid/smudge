@@ -1,18 +1,17 @@
 import { createInterface } from "node:readline/promises";
 import { connect } from "node:net";
 import { basename } from "node:path";
+import { DEFAULT_SERVER_PORT, parsePort } from "@smudge/shared";
 import { getDataDir, getDbPath } from "../src/config/paths";
 import {
   runRestore,
   RestorePartialError,
   DEFAULT_BOMB_LIMITS,
   resolveBombLimit,
+  flagValue,
 } from "../src/backup/backup-core";
 
-function arg(name: string): string | undefined {
-  const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
-  return hit?.split("=")[1];
-}
+const arg = (name: string) => flagValue(process.argv, name);
 
 const archivePath = process.env.BACKUP;
 if (!archivePath) {
@@ -20,7 +19,10 @@ if (!archivePath) {
   process.exit(2);
 }
 
-const port = Number(process.env.SMUDGE_PORT ?? 3456);
+// Match the server's port parsing (index.ts): use the shared DEFAULT_SERVER_PORT
+// (no divergent hardcoded 3456) and parsePort so a garbage SMUDGE_PORT fails
+// fast instead of Number()→NaN silently defeating the running-server probe (I2).
+const port = parsePort(process.env.SMUDGE_PORT ?? String(DEFAULT_SERVER_PORT), "SMUDGE_PORT");
 const probePort = () =>
   new Promise<boolean>((resolve) => {
     const hosts = ["127.0.0.1", "::1"];
