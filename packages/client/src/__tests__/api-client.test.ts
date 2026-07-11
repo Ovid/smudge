@@ -111,10 +111,11 @@ describe("api.projects", () => {
     });
   });
 
-  it("reorderChapters sends PUT /api/projects/:slug/chapters/order", async () => {
-    mockFetch.mockResolvedValue(jsonResponse({ message: "ok" }));
+  it("reorderChapters sends PUT /api/projects/:slug/chapters/order and resolves undefined (204)", async () => {
+    mockFetch.mockResolvedValue(noContentResponse());
 
-    await api.projects.reorderChapters("p1", ["ch3", "ch1", "ch2"]);
+    const result = await api.projects.reorderChapters("p1", ["ch3", "ch1", "ch2"]);
+    expect(result).toBeUndefined();
     expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1/chapters/order", {
       headers: { "Content-Type": "application/json" },
       method: "PUT",
@@ -123,7 +124,7 @@ describe("api.projects", () => {
   });
 
   it("reorderChapters threads signal to fetch (C5)", async () => {
-    mockFetch.mockResolvedValue(jsonResponse({ message: "ok" }));
+    mockFetch.mockResolvedValue(noContentResponse());
     const controller = new AbortController();
     await api.projects.reorderChapters("p1", ["ch1"], controller.signal);
     expect(mockFetch).toHaveBeenCalledWith("/api/projects/p1/chapters/order", {
@@ -354,11 +355,11 @@ describe("api.settings", () => {
     });
   });
 
-  it("update(settings) sends PATCH /api/settings", async () => {
-    mockFetch.mockResolvedValue(jsonResponse({ message: "ok" }));
+  it("update(settings) sends PATCH /api/settings and resolves undefined (204)", async () => {
+    mockFetch.mockResolvedValue(noContentResponse());
 
     const result = await api.settings.update([{ key: "timezone", value: "UTC" }]);
-    expect(result).toEqual({ message: "ok" });
+    expect(result).toBeUndefined();
     expect(mockFetch).toHaveBeenCalledWith("/api/settings", {
       headers: { "Content-Type": "application/json" },
       method: "PATCH",

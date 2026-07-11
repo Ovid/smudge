@@ -88,7 +88,7 @@ export function projectsRouter(): Router {
           "REORDER_MISMATCH",
         );
       }
-      res.json({ message: "Chapter order updated." });
+      res.status(204).end();
     }),
   );
 

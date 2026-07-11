@@ -362,7 +362,11 @@ describe("PUT /api/projects/:slug/chapters/order", () => {
       .put(`/api/projects/${projectSlug}/chapters/order`)
       .send({ chapter_ids: [ch3Id, ch2Id, ch1Id] });
 
-    expect(res.status).toBe(200);
+    // F-9: success is 204 No Content with an empty body — the client owns
+    // the success toast; the server ships no user-facing copy.
+    expect(res.status).toBe(204);
+    expect(res.body).toEqual({});
+    expect(res.text).toBe("");
 
     const updated = await request(t.app).get(`/api/projects/${projectSlug}`);
     expect(updated.body.chapters.map((c: { id: string }) => c.id)).toEqual([ch3Id, ch2Id, ch1Id]);

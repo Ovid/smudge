@@ -170,6 +170,10 @@ The codebase is notably disciplined: the data layer wraps every multi-step mutat
 - **Explanation:** `PUT .../chapters/order` returns `{message:"Chapter order updated."}` and `PUT /settings` returns `{message:"Settings updated"}`, whereas the F-16 principle is that the client owns the user-facing success toast. F-16 formally governs only DELETEs, so this is not a strict violation — but two endpoints ship English the client ignores, against the spirit of that principle.
 - **Evidence:** `packages/server/src/projects/projects.routes.ts:91`; `packages/server/src/settings/settings.routes.ts:32`.
 - **Found by:** Integration & Data
+- **Status:** Fixed
+- **Status reason:** Both `PUT .../chapters/order` and `PATCH /settings` now return `204` No Content with an empty body instead of a server-authored `{message}` string, fully realizing the F-16 "client owns the success toast" principle. No production caller read the message; the client `apiFetch<undefined>` type params and ~9 test mocks were updated to the 204→undefined contract, and CLAUDE.md §API Design now documents the two endpoints under the body-less-204 contract. Red tests (204 + empty body) added to `projects.test.ts` and `settings.test.ts`; 288 affected tests pass, typecheck clean.
+- **Status date:** 2026-07-11 20:05 UTC
+- **Status commit:** 75564103c91f0e56e64fd3efdf692d66b4661f5c
 
 ### [F-10] Three coexisting DEV-gating idioms, two of them a documented hazard
 - **Category:** Flaw 34 (Inconsistent error/logging conventions)
