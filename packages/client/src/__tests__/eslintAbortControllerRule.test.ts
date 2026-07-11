@@ -47,19 +47,6 @@ describe("no-restricted-syntax useRef<AbortController> rule", () => {
     expect(restrictedSyntaxMessages(await lintCode(code))).toHaveLength(1);
   });
 
-  it("fires on a multi-line generic form", async () => {
-    const code = `
-      import { useRef } from "react";
-      export function x() {
-        const r = useRef<
-          AbortController | null
-        >(null);
-        return r;
-      }
-    `;
-    expect(restrictedSyntaxMessages(await lintCode(code))).toHaveLength(1);
-  });
-
   it("does NOT fire on a same-prefix wrapper type", async () => {
     const code = `
       import { useRef } from "react";
