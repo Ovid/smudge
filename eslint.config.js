@@ -175,11 +175,17 @@ export default tseslint.config(
           // Justified survivors carry an inline
           // `// eslint-disable-next-line no-restricted-syntax -- <reason>`.
           //
-          // DELIBERATE GAP (same "add a selector when it shows up" discipline as
-          // the seq-ref/raw-string rules): keys on `callee.name='useRef'`, so a
-          // `React.useRef<AbortController>` MemberExpression callee would slip
-          // through. Zero such calls exist today (every useRef< site is a bare
-          // `useRef`, none via a `React.useRef` member expression).
+          // DELIBERATE GAPS (same "add a selector when it shows up" discipline
+          // as the seq-ref/raw-string rules; all zero-occurrence today):
+          //   - callee shape: keys on `callee.name='useRef'`, so a
+          //     `React.useRef<AbortController>` MemberExpression callee, or an
+          //     aliased `import { useRef as ur }`, slips through. Every useRef<
+          //     site today is a bare, unaliased `useRef`.
+          //   - qualified type name: keys on `typeName.name`, so a qualified
+          //     `useRef<globalThis.AbortController>` (a TSQualifiedName, which
+          //     has no `.name`) slips through. Every site uses the bare global
+          //     `AbortController`. The deleted regex caught this textually; add
+          //     `[typeName.right.name='AbortController']` if one ever appears.
           selector:
             "CallExpression[callee.name='useRef'] > TSTypeParameterInstantiation TSTypeReference[typeName.name='AbortController']",
           message:
