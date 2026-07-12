@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 /**
  * Codecs are values, not hooks — construct them at MODULE scope. A codec
  * created inline during render is a new object each render and destabilizes
@@ -52,4 +54,32 @@ export function flag(fallback: boolean): SettingCodec<boolean> {
  */
 export function text(fallback: string): SettingCodec<string> {
   return { parse: (raw) => raw, serialize: (value) => value, fallback };
+}
+
+/** Read once, at mount. Any rejection — absent, unparseable, storage unavailable — yields the fallback. */
+function read<T>(key: string, codec: SettingCodec<T>): T {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw !== null) {
+      const parsed = codec.parse(raw);
+      if (parsed !== undefined) return parsed;
+    }
+  } catch {
+    // Deliberately silent — do NOT "fix" this by adding a clientWarn. A UI
+    // preference that fails to load is invisible to the user (they get the
+    // default) and unactionable. The loud path is data loss (useContentCache),
+    // which shares this origin's quota and already warns. Warning here would
+    // train the user to ignore that one.
+  }
+  return codec.fallback;
+}
+
+/**
+ * A useState whose initial value is read from localStorage and validated by
+ * `codec.parse`. The codec is the single validator: whatever `parse` rejects
+ * (or clamps) on the way in is what the state can hold.
+ */
+export function usePersistedState<T>(key: string, codec: SettingCodec<T>) {
+  const [value, setValue] = useState<T>(() => read(key, codec));
+  return [value, setValue] as const; // write path lands in Task 3
 }

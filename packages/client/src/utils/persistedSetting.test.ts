@@ -1,5 +1,19 @@
-import { describe, it, expect } from "vitest";
-import { numberInRange, flag, text } from "./persistedSetting";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { renderHook } from "@testing-library/react";
+import { numberInRange, flag, text, usePersistedState } from "./persistedSetting";
+
+const store = new Map<string, string>();
+const mockLocalStorage = {
+  getItem: vi.fn((key: string) => store.get(key) ?? null),
+  setItem: vi.fn((key: string, value: string) => store.set(key, value)),
+  removeItem: vi.fn((key: string) => store.delete(key)),
+};
+
+Object.defineProperty(globalThis, "localStorage", {
+  value: mockLocalStorage,
+  writable: true,
+  configurable: true,
+});
 
 describe("numberInRange", () => {
   const codec = numberInRange(180, 480, 260);
@@ -83,5 +97,59 @@ describe("text", () => {
 
   it("carries its fallback", () => {
     expect(codec.fallback).toBe("images");
+  });
+});
+
+describe("usePersistedState — read", () => {
+  const WIDTH = numberInRange(180, 480, 260);
+  const KEY = "smudge:test-width";
+
+  beforeEach(() => {
+    store.clear();
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    mockLocalStorage.getItem.mockImplementation((key: string) => store.get(key) ?? null);
+    mockLocalStorage.setItem.mockImplementation((key: string, value: string) =>
+      store.set(key, value),
+    );
+  });
+
+  it("returns the fallback when nothing is stored", () => {
+    const { result } = renderHook(() => usePersistedState(KEY, WIDTH));
+    expect(result.current[0]).toBe(260);
+  });
+
+  it("returns a valid stored value", () => {
+    store.set(KEY, "300");
+    const { result } = renderHook(() => usePersistedState(KEY, WIDTH));
+    expect(result.current[0]).toBe(300);
+  });
+
+  it("clamps an out-of-range stored value", () => {
+    store.set(KEY, "999");
+    const { result } = renderHook(() => usePersistedState(KEY, WIDTH));
+    expect(result.current[0]).toBe(480);
+  });
+
+  it("falls back when the stored value is not a number", () => {
+    store.set(KEY, "not-a-number");
+    const { result } = renderHook(() => usePersistedState(KEY, WIDTH));
+    expect(result.current[0]).toBe(260);
+  });
+
+  it("falls back when the stored value is empty (not clamped to min)", () => {
+    store.set(KEY, "");
+    const { result } = renderHook(() => usePersistedState(KEY, WIDTH));
+    expect(result.current[0]).toBe(260);
+  });
+
+  it("falls back when getItem throws", () => {
+    mockLocalStorage.getItem.mockImplementation(() => {
+      throw new Error("unavailable");
+    });
+    const { result } = renderHook(() => usePersistedState(KEY, WIDTH));
+    expect(result.current[0]).toBe(260);
   });
 });
