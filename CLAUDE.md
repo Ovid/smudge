@@ -28,6 +28,14 @@ without the reasoning behind it is incomplete — do not send it. This applies
 to `AskUserQuestion`, prose questions, and any other way you ask me to choose.
 Asking one decision at a time (not batched) still applies.
 
+**Where the trade-offs go.** Write the pros and cons **as prose in the chat
+message itself**, laid out option by option, before I am asked to pick. Do not
+bury them in `AskUserQuestion` option `description` fields — the UI truncates
+those, so I see bare labels and cannot evaluate anything. `AskUserQuestion` is
+for capturing the *choice* once I already understand it; the explaining happens
+in the message above it. A question whose reasoning is only visible inside the
+picker widget has not been asked.
+
 ## Ignore `.devcontainer/`
 
 `.devcontainer/` is **third-party content** managed out-of-band

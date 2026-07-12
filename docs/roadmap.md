@@ -61,7 +61,7 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.15   | Inline Title-Editing Hook                 | Extract a generic `useInlineTitleEditing(currentId, save, gates, options?)`; reduce `useChapterTitleEditing` and `useProjectTitleEditing` to thin wrappers that pass slug-drift check + post-save navigate as options.                                                                                                                                                                                                                                                                                                                                                | Done |
 | 4b.16   | Dialog Lifecycle Hook                     | Extract `useDialogLifecycle({ open, onClose, initialFocusRef, blockEscapePropagation }) => { dialogRef, onBackdropClick }` and migrate the 5 dialogs (Confirm, Export, NewProject, ProjectSettings, ShortcutHelp) one at a time; preserve `stopImmediatePropagation` as an opt-in (`blockEscapePropagation`); ARIA `role` stays in JSX and the `showModal/close` try/catch is an always-on guard.                                                                                                                                                                                                                                                                                  | Done |
 | 4b.17   | AbortController ESLint Rule               | Add ESLint rule banning hand-rolled `useRef<AbortController>` allocations; convert `migrationStructuralCheck.test.ts`'s `PHASE_4B_3B_ALLOWLIST` + companion assertion to inline `// eslint-disable-next-line` annotations on each of the 6 surviving allocation sites across 5 files (post F-2 split). Split from Phase 4b.4 on 2026-05-28 per §Pull Request Scope one-feature rule. | Done |
-| 4b.18   | Persisted-Setting Storage Helper          | Dedup the four hand-rolled `getSaved* + try/catch` localStorage readers (`useReferencePanelState` width/open/active-tab, `useSidebarState` width) behind one helper. Each reader validates differently (range clamp, strict boolean, string default), so the helper must take the validator — a bare `getSavedString` would re-open the unvalidated-read bug fixed in 4c.0 (review item I1). `useContentCache` is out of scope (own `clientWarn` logging, JSON payloads, not a setting). Raised as a Suggestion in the 4c.0 review (`paad/code-reviews/ovid-4c0-reference-panel-tabs-2026-07-12-14-55-59-3f7822c.md`); split out per §Pull Request Scope one-feature rule. | Planned |
+| 4b.18   | Persisted-Setting Storage Helper          | Dedup the four hand-rolled `getSaved* + try/catch` localStorage readers (`useReferencePanelState` width/open/active-tab, `useSidebarState` width) behind one helper. Each reader validates differently (range clamp, strict boolean, string default), so the helper must take the validator — a bare `getSavedString` would re-open the unvalidated-read bug fixed in 4c.0 (review item I1). `useContentCache` is out of scope (own `clientWarn` logging, JSON payloads, not a setting). Raised as a Suggestion in the 4c.0 review (`paad/code-reviews/ovid-4c0-reference-panel-tabs-2026-07-12-14-55-59-3f7822c.md`); split out per §Pull Request Scope one-feature rule. | In Progress |
 | 4c      | Notes, Tags & Outtakes                    | Inline notes, paragraph tags, scratchpad for cut text (split into 4c.0–4c.3; 4c.0 done)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | In Progress |
 | 5a      | Fiction: Characters                       | Character sheets with structured fields and freeform notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Planned |
 | 5b      | Fiction: Scene Cards                      | Scene cards / outline mode with drag-and-drop                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Planned |
@@ -1825,6 +1825,72 @@ disable comment itself the documented exception.
   reuses for its programmatic-ESLint contract test). The
   `no-restricted-syntax` precedent itself dates from Phase 4b.2's
   sequence-ref rule.
+
+---
+
+## Phase 4b.18: Persisted-Setting Storage Helper
+<!-- plan: 2026-07-12-persisted-setting-storage-helper-design.md -->
+
+### Goal
+
+Replace the four hand-rolled `getSaved* + try/catch` localStorage readers (and
+the five matching `try { setItem } catch {}` writers) across
+`useReferencePanelState` and `useSidebarState` with one `usePersistedState(key,
+codec)` hook, whose `parse` function is the single validator governing **both**
+the read and the write path.
+
+### Why Now
+
+`getSavedActiveTab` (added in 4c.0) was the **third** independent reader in one
+file, with `useSidebarState` a fourth copy elsewhere — and it shipped with no
+validation at all, which became 4c.0 review item [I1]. Each reader validates
+differently (range clamp, strict boolean, bare string), so a bare
+`getSavedString(key, default)` helper would re-open exactly that bug. The helper
+must take the validator.
+
+The same file pair also carries a latent asymmetry: `handlePanelResize` clamps
+before persisting, `handleSidebarResize` does not, and nothing forces them to
+agree. (It is not a live defect — both resize components clamp at the call site —
+but it is unforced, and a shared validator makes it unrepresentable.)
+
+### Scope
+
+- Add `packages/client/src/utils/persistedSetting.ts`: `usePersistedState<T>(key,
+  codec)` plus three codec factories (`numberInRange`, `flag`, `text`). The
+  setter normalizes via `parse(serialize(next))`, so React state is always a
+  fixed point of the storage round-trip.
+- Migrate `useReferencePanelState` (width / open / active-tab) and
+  `useSidebarState` (width). Both keep their exact public API; no consumer
+  component is touched.
+- Storage failures stay **silent** (today's behavior). The data-loss path
+  (`useContentCache`, sharing the same origin quota) already warns loudly.
+- Update CLAUDE.md §Key Architecture Decisions with the new invariant.
+
+### Out of Scope
+
+- Migrating `useContentCache` (JSON payloads, own `clientWarn` logging, a
+  `remove` operation — a draft cache, not a setting).
+- Persisting `sidebarOpen` (a feature, not a refactor).
+- Validating tab ids inside the hook — the hook does not know the tab set;
+  `ReferencePanel` owns that and already falls back to `tabs[0]` (per 4c.0 [I1]).
+- An ESLint rule banning raw `localStorage` outside the helper — a plausible
+  future phase, but bundling it here breaks §Pull Request Scope.
+
+### Definition of Done
+
+- One helper owns every settings read and write; no `try/catch` around
+  `localStorage` survives in the two hooks.
+- `parse` is provably the validator for both directions (fixed-point test:
+  out-of-range input lands normalized in state **and** storage).
+- Both hooks' public APIs unchanged; their existing test suites still pass, edited
+  only where the clamp-on-stale-read delta surfaces.
+- No console output on any failure path.
+- CLAUDE.md updated.
+
+### Dependencies
+
+- Phase 4c.0 (introduced the third reader and the [I1] finding that spawned this
+  phase).
 
 ---
 
