@@ -26,7 +26,10 @@ export function ReferencePanel({
   activeTabId,
   onSelectTab,
 }: ReferencePanelProps) {
-  const activePanel = tabs.find((t) => t.id === activeTabId)?.panel ?? null;
+  // A persisted activeTabId can name a tab that no longer exists (renamed or
+  // removed in a later build). Degrade to the first tab so the panel stays
+  // non-empty and the tablist keeps a valid selection + aria-labelledby target.
+  const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
   const resizeCleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -88,7 +91,7 @@ export function ReferencePanel({
 
       <div role="tablist" className="border-b border-border/40 px-4 py-2 flex gap-2">
         {tabs.map((tab) => {
-          const selected = tab.id === activeTabId;
+          const selected = tab.id === activeTab?.id;
           return (
             <button
               key={tab.id}
@@ -110,12 +113,12 @@ export function ReferencePanel({
       </div>
 
       <div
-        id={`${activeTabId}-tabpanel`}
+        id={activeTab && `${activeTab.id}-tabpanel`}
         role="tabpanel"
-        aria-labelledby={`${activeTabId}-tab`}
+        aria-labelledby={activeTab && `${activeTab.id}-tab`}
         className="flex-1 overflow-y-auto"
       >
-        {activePanel}
+        {activeTab?.panel ?? null}
       </div>
     </aside>
   );

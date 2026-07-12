@@ -101,6 +101,28 @@ describe("ReferencePanel", () => {
       });
     });
 
+    describe("stale activeTabId (e.g. a removed tab still in localStorage)", () => {
+      it("falls back to the first tab: renders its panel and marks it selected", () => {
+        render(<ReferencePanel {...defaultProps} activeTabId="gone" />);
+        expect(screen.getByTestId("panel-content")).toBeInTheDocument();
+        const tab = screen.getByRole("tab", { name: STRINGS.referencePanel.imagesTab });
+        expect(tab).toHaveAttribute("aria-selected", "true");
+      });
+
+      it("labels the tabpanel by the fallback tab, not the stale id", () => {
+        render(<ReferencePanel {...defaultProps} activeTabId="gone" />);
+        const tabpanel = screen.getByRole("tabpanel");
+        expect(tabpanel).toHaveAttribute("id", "images-tabpanel");
+        expect(tabpanel).toHaveAttribute("aria-labelledby", "images-tab");
+      });
+    });
+
+    it("renders without throwing when there are no tabs", () => {
+      render(<ReferencePanel {...defaultProps} tabs={[]} />);
+      expect(screen.getByRole("complementary")).toBeInTheDocument();
+      expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    });
+
     it("applies the width from props as inline style", () => {
       render(<ReferencePanel {...defaultProps} width={400} />);
       const aside = screen.getByRole("complementary");
