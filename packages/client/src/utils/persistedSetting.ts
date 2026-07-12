@@ -11,6 +11,14 @@ export interface SettingCodec<T> {
   serialize: (value: T) => string;
   fallback: T;
 }
+// Two properties every codec MUST hold, because usePersistedState's fixed-point
+// invariant rests on them:
+//   (a) `parse ∘ serialize` is idempotent — normalizing an already-normalized
+//       value must be a no-op, or repeated writes would drift.
+//   (b) `fallback` is a fixed point of it: parse(serialize(fallback)) === fallback.
+//       Violate (b) and read() hands back a value no write could ever produce —
+//       state and reload silently disagree. numberInRange enforces (b) by
+//       clamping its own fallback; a new codec must enforce it too.
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
@@ -33,7 +41,10 @@ export function numberInRange(min: number, max: number, fallback: number): Setti
       return Number.isFinite(n) ? clamp(n, min, max) : undefined;
     },
     serialize: String,
-    fallback,
+    // Clamped so the fallback is a fixed point of the parse above (property (b)):
+    // an out-of-range fallback would have read() return e.g. 900 while every
+    // write normalized to 480.
+    fallback: clamp(fallback, min, max),
   };
 }
 
@@ -78,21 +89,36 @@ function read<T>(key: string, codec: SettingCodec<T>): T {
  * React state backed by a localStorage key, validated by a single codec.
  *
  * `codec.parse` is the ONLY validator, and it governs BOTH directions: the
- * setter normalizes via `parse(serialize(next))`, so state is always a fixed
- * point of the storage round-trip — what you see is exactly what a reload
- * gives back. This is what stops the read and write paths from drifting apart
- * (the asymmetry this helper was written to close: handlePanelResize clamped
- * before persisting, handleSidebarResize did not).
+ * setter normalizes via `parse(serialize(next))`, so state and storage are
+ * always normalized identically — the same value a reload would parse back.
+ * (Identically NORMALIZED, not identical: a failed `setItem` leaves storage
+ * stale while state moves on. See below.) This is what stops the read and
+ * write paths from drifting apart — the asymmetry this helper was written to
+ * close: handlePanelResize clamped before persisting, handleSidebarResize did
+ * not.
+ *
+ * A write the codec cannot represent (NaN, Infinity — e.g. a resize handler
+ * reading a torn-down rect) is IGNORED: state and storage keep the last
+ * known-good value. It is not reset to `codec.fallback`, which would wipe the
+ * user's real 400px width on one bad mousemove. The fallback is the floor for
+ * absent/corrupt STORAGE, not a reset button for a bad live write — at read
+ * time the fallback IS the last known-good value, because there is nothing
+ * else to keep. Same rule, both directions.
  *
  * Storage failures are deliberately SILENT (no clientWarn). The data-loss path
  * — useContentCache, which shares this origin's quota — already warns loudly,
- * and the resize path would otherwise warn at mousemove frequency.
+ * and the resize path would otherwise warn at mousemove frequency. State still
+ * updates, so the setting works for the session even when it cannot persist.
  *
- * CONTRACT: `key` must be constant for the component's lifetime. The stored
- * value is read exactly once, by the lazy `useState` initializer at mount. A
- * changing key would split-brain — state holding the OLD key's value while
- * writes land on the NEW key, with no re-read. Derive per-entity settings by
- * remounting (a `key` prop on the component), not by varying this argument.
+ * CONTRACT: `key` must be constant for the component's lifetime, and one
+ * component owns it. The stored value is read exactly once, by the lazy
+ * `useState` initializer at mount. A changing key would split-brain — state
+ * holding the OLD key's value while writes land on the NEW key, with no
+ * re-read. Two mounted components sharing a key split-brain the same way: each
+ * holds its own state and neither sees the other's writes. There is no
+ * cross-tab `storage` listener either — a deliberate non-goal, matching the
+ * hand-rolled readers this replaces. Derive per-entity settings by remounting
+ * (a `key` prop on the component), not by varying this argument.
  */
 export function usePersistedState<T>(
   key: string,
@@ -110,8 +136,10 @@ export function usePersistedState<T>(
       const requested =
         typeof next === "function" ? (next as (prev: T) => T)(valueRef.current) : next;
 
-      // One validator, both directions.
-      const normalized = codec.parse(codec.serialize(requested)) ?? codec.fallback;
+      // One validator, both directions. A rejected write keeps the last
+      // known-good value rather than resetting to the fallback — valueRef.current
+      // is itself a fixed point of the round-trip, so the invariant holds.
+      const normalized = codec.parse(codec.serialize(requested)) ?? valueRef.current;
 
       valueRef.current = normalized;
       try {

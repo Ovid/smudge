@@ -79,6 +79,15 @@ describe("numberInRange", () => {
   it("carries its fallback", () => {
     expect(codec.fallback).toBe(260);
   });
+
+  // The hook requires `fallback` to be a fixed point of parse∘serialize. An
+  // out-of-range fallback would otherwise make read() return 900 while any
+  // write normalized to 480 — state and reload silently disagreeing.
+  it("clamps an out-of-range fallback so it is a fixed point of its own parse", () => {
+    const bad = numberInRange(180, 480, 900);
+    expect(bad.fallback).toBe(480);
+    expect(bad.parse(bad.serialize(bad.fallback))).toBe(bad.fallback);
+  });
 });
 
 describe("flag", () => {
@@ -186,6 +195,18 @@ describe("usePersistedState — write", () => {
     expect(store.get(KEY)).toBe("480");
   });
 
+  // A fallback is a floor for absent/corrupt STORAGE, not a reset button for a
+  // bad live write. A NaN from, say, a resize handler reading a torn-down rect
+  // must be ignored — resetting to 260 here would silently wipe the user's real
+  // 400px width, in state AND on disk.
+  it("ignores an unrepresentable write, keeping the last known-good value", () => {
+    store.set(KEY, "400");
+    const { result } = renderHook(() => usePersistedState(KEY, WIDTH));
+    act(() => result.current[1](NaN));
+    expect(result.current[0]).toBe(400);
+    expect(store.get(KEY)).toBe("400");
+  });
+
   it("keeps state updated when setItem throws", () => {
     const { result } = renderHook(() => usePersistedState(KEY, WIDTH));
     mockLocalStorage.setItem.mockImplementation(() => {
@@ -204,6 +225,9 @@ describe("usePersistedState — write", () => {
     // Both calls happen before a re-render — the second must see the first's
     // value. A stale closure over `value` would leave this at `true`.
     expect(result.current[0]).toBe(false);
+    // `false` is also the initial value, so the state assertion alone would pass
+    // against a no-op setter. Storage is the proof the writes actually happened.
+    expect(store.get(OPEN_KEY)).toBe("false");
   });
 
   // Guards the trap the design calls out: a setItem side effect INSIDE a
@@ -216,10 +240,14 @@ describe("usePersistedState — write", () => {
     expect(mockLocalStorage.setItem).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps a stable setter identity across re-renders", () => {
-    const { result, rerender } = renderHook(() => usePersistedState(KEY, WIDTH));
+  // Across a STATE CHANGE, not just a no-op rerender: a `value` in the dep list
+  // — the exact regression the valueRef mirror exists to prevent — passes a bare
+  // rerender() and only fails here.
+  it("keeps a stable setter identity across a state change", () => {
+    const { result } = renderHook(() => usePersistedState(KEY, WIDTH));
     const first = result.current[1];
-    rerender();
+    act(() => result.current[1](300));
+    expect(result.current[0]).toBe(300);
     expect(result.current[1]).toBe(first);
   });
 });
