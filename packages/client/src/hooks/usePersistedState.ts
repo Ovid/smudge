@@ -1,10 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 
 /**
- * Codecs are values, not hooks — construct them at MODULE scope. A codec
- * created inline during render is a new object each render and destabilizes
- * usePersistedState's setter identity.
- *
  * Two properties every codec MUST hold, because usePersistedState's fixed-point
  * invariant rests on them:
  *   (a) `parse ∘ serialize` is idempotent — normalizing an already-normalized
@@ -120,12 +116,23 @@ function read<T>(key: string, codec: SettingCodec<T>): T {
  * cross-tab `storage` listener either — a deliberate non-goal, matching the
  * hand-rolled readers this replaces. Derive per-entity settings by remounting
  * (a `key` prop on the component), not by varying this argument.
+ *
+ * `codec`, by contrast, needs no such contract: it is pinned at mount. A codec
+ * built inline during render would otherwise be a new object each render and
+ * churn the setter identity all the way down into memoized editor children.
+ * Pinning also matches the read path, which already parses with the mount-time
+ * codec and never re-reads — honouring a LIVE codec on the write path only
+ * buys the same split-brain the `key` contract warns about.
  */
 export function usePersistedState<T>(
   key: string,
   codec: SettingCodec<T>,
 ): readonly [T, (next: T | ((prev: T) => T)) => void] {
   const [value, setValue] = useState<T>(() => read(key, codec));
+
+  // Pinned at mount — see the CONTRACT note above. Keeps `codec` out of the
+  // setter's deps, so an inline codec cannot destabilize its identity.
+  const codecRef = useRef(codec);
 
   // Mirrors `value` so the functional-updater form can resolve `prev` WITHOUT
   // running the setItem side effect inside a setState updater — React
@@ -134,6 +141,7 @@ export function usePersistedState<T>(
 
   const set = useCallback(
     (next: T | ((prev: T) => T)) => {
+      const codec = codecRef.current;
       const requested =
         typeof next === "function" ? (next as (prev: T) => T)(valueRef.current) : next;
 
@@ -158,7 +166,7 @@ export function usePersistedState<T>(
       }
       setValue(normalized);
     },
-    [key, codec],
+    [key],
   );
 
   return [value, set] as const;

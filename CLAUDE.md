@@ -243,11 +243,13 @@ write paths cannot drift apart. Codec factories: `numberInRange` (note its
 empty-string guard — `Number("")` is `0`, not `NaN`), `flag`, `text`. A codec
 must satisfy two properties the hook rests on: `parse ∘ serialize` is
 idempotent, and `fallback` is a fixed point of it (`numberInRange` enforces the
-latter by clamping its own fallback). Codecs are values, not hooks —
-**construct them at module scope**, or the setter identity churns every render.
-A write the codec cannot represent (a `NaN` width from a torn-down rect) is
-**ignored**, keeping the last known-good value; the fallback is the floor for
-absent or corrupt _storage_, not a reset button for a bad _live write_. Two
+latter by clamping its own fallback). The codec is **pinned at mount** (a ref,
+not a dep), so an inline codec cannot churn the setter identity — there is no
+module-scope contract to remember, and the write path parses with the same codec
+the read path already did. A write the codec cannot represent (a `NaN` width
+from a torn-down rect) is **ignored** — it touches neither state nor storage,
+keeping the last known-good value; the fallback is the floor for absent or
+corrupt _storage_, not a reset button for a bad _live write_. Two
 deliberate constraints: (1) **storage failures are silent** — no `clientWarn` —
 because the data-loss path (`useContentCache`, sharing the same origin quota)
 already warns loudly, and the resize path would otherwise warn at mousemove

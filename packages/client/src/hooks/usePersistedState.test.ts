@@ -34,8 +34,6 @@ afterEach(() => {
 
 const WIDTH = numberInRange(180, 480, 260);
 const KEY = "smudge:test-width";
-// Codecs are module-scope values by contract — an inline one would be a new
-// object each render and destabilize the setter identity.
 const OPEN = flag(false);
 const OPEN_KEY = "smudge:test-open";
 
@@ -262,5 +260,25 @@ describe("usePersistedState — write", () => {
     act(() => result.current[1](300));
     expect(result.current[0]).toBe(300);
     expect(result.current[1]).toBe(first);
+  });
+
+  // A codec built inline during render is a fresh object every render. With
+  // `codec` in the setter's deps that churned the setter identity, and the churn
+  // cascaded: togglePanel → EditorPage's useCallbacks → re-created props into
+  // memoized editor children. The hook pins the mount-time codec instead, which
+  // also matches the read path (the lazy initializer already parses with it and
+  // never re-reads). Callers cannot destabilize the setter, so there is no
+  // module-scope contract left to police.
+  it("keeps a stable setter identity even when the codec is re-created each render", () => {
+    const { result, rerender } = renderHook(() =>
+      usePersistedState(KEY, numberInRange(180, 480, 260)),
+    );
+    const first = result.current[1];
+    rerender();
+    expect(result.current[1]).toBe(first);
+    // Still functional, not just stable: the pinned codec is a real codec.
+    act(() => result.current[1](999));
+    expect(result.current[0]).toBe(480);
+    expect(store.get(KEY)).toBe("480");
   });
 });
