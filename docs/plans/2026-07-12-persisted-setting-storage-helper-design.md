@@ -2,10 +2,31 @@
 
 **Date:** 2026-07-12
 **Phase:** 4b.18 (roadmap `docs/roadmap.md`)
-**Status:** Designed
+**Status:** Shipped, with amendments — see the banner below.
 **Origin:** Suggestion raised in the Phase 4c.0 code review
 (`paad/code-reviews/ovid-4c0-reference-panel-tabs-2026-07-12-14-55-59-3f7822c.md`),
 split out per CLAUDE.md §Pull Request Scope (one-feature rule).
+
+---
+
+## ⚠️ SUPERSEDED IN PART — read this before copying anything below
+
+This document is the **approved design as written**, preserved verbatim so the
+decision log's "the design said X, we shipped Y" entries stay verifiable. Four
+of its decisions did not survive implementation and review. The **code and
+CLAUDE.md are authoritative**; where they disagree with this document, this
+document is wrong.
+
+| Below, the design says…                                             | What actually shipped                                                                                                                   | Recorded as    |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| The helper lives at `packages/client/src/utils/persistedSetting.ts` | `packages/client/src/hooks/usePersistedState.ts` — a `utils/` home made the `git grep localStorage .../hooks/` audit structurally blind | `[I3]`         |
+| A rejected write resets to `?? codec.fallback`                      | A rejected write is **dropped entirely** — it touches neither state nor storage, so both keep the last known-good value                 | `[I1]`, `[I6]` |
+| `numberInRange` takes its `fallback` as given                       | It **clamps its own fallback**, so `fallback` is a fixed point of `parse ∘ serialize`                                                   | `[I4]`         |
+| Codecs **must** be constructed at module scope (an unenforced rule) | The codec is **pinned at mount** in a ref; the contract is deleted, not policed                                                         | `[I5]`         |
+
+The `?? codec.fallback` form is the dangerous one to copy: it wipes the user's
+real 400px width back to the default on one bad mousemove. Full reasoning for
+every amendment: `docs/roadmap-decisions/2026-07-12-phase-4b18-persisted-setting-storage-helper.md`.
 
 ---
 
@@ -19,12 +40,12 @@ both directions.
 
 ## Current State
 
-| Setting          | File                              | Validation on read                       |
-| ---------------- | --------------------------------- | ---------------------------------------- |
-| ref-panel width  | `useReferencePanelState.ts:11-24` | clamp to `[240, 480]`, else default 320  |
-| ref-panel open   | `useReferencePanelState.ts:26-34` | strict `stored === "true"`, else `false`  |
-| ref-panel tab    | `useReferencePanelState.ts:36-44` | **none** — raw string returned verbatim   |
-| sidebar width    | `useSidebarState.ts:8-21`         | clamp to `[180, 480]`, else default 260  |
+| Setting         | File                              | Validation on read                       |
+| --------------- | --------------------------------- | ---------------------------------------- |
+| ref-panel width | `useReferencePanelState.ts:11-24` | clamp to `[240, 480]`, else default 320  |
+| ref-panel open  | `useReferencePanelState.ts:26-34` | strict `stored === "true"`, else `false` |
+| ref-panel tab   | `useReferencePanelState.ts:36-44` | **none** — raw string returned verbatim  |
+| sidebar width   | `useSidebarState.ts:8-21`         | clamp to `[180, 480]`, else default 260  |
 
 Write sites: `handlePanelResize`, `setPanelOpen`, `togglePanel`, `setActiveTab`
 (all `useReferencePanelState.ts`), and `handleSidebarResize`
@@ -43,7 +64,7 @@ out-of-range width never reaches either hook through the UI. The hook-level clam
 in `useReferencePanelState` is defense-in-depth; its absence in `useSidebarState`
 is an unforced gap, reachable only via hand-edited storage.
 
-It is nonetheless the same *character* of gap as the finding that spawned this
+It is nonetheless the same _character_ of gap as the finding that spawned this
 phase: 4c.0 review item **[I1]** (unvalidated `activeTabId`) was also explicitly
 "not reachable by a normal user today", reachable only via corrupted storage or a
 future tab rename. Closing latent-but-unforced validation gaps is what this phase
@@ -85,7 +106,7 @@ const normalized = codec.parse(codec.serialize(next)) ?? codec.fallback;
 
 This round-trip is the load-bearing decision. **`parse` is the single validator,
 and it governs both directions by construction** — the write path cannot drift
-from the read path, because the write path *is* the read path. Whatever lands in
+from the read path, because the write path _is_ the read path. Whatever lands in
 React state is guaranteed to be a fixed point of the storage round-trip: what the
 user sees is exactly what a reload would give back. This is what makes the
 asymmetry above unrepresentable, and it is the reason the hook shape was chosen
@@ -102,8 +123,8 @@ module-level constants at every call site.
 **Contract: `key` must be constant for the component's lifetime.** The stored
 value is read exactly once, in the lazy `useState` initializer, but the setter's
 deps include `key`. A `key` that changed between renders would split-brain —
-state still holding the value read from the *old* key while writes land on the
-*new* one — with no re-read and no reset, which would present as "the setting
+state still holding the value read from the _old_ key while writes land on the
+_new_ one — with no re-read and no reset, which would present as "the setting
 didn't load" while quietly persisting correctly. Unreachable today (all four keys
 are module-level string literals), but the hook is advertised as the way to add
 future settings, and a per-project key (`smudge:panel-width:${projectId}`, a
@@ -122,21 +143,21 @@ console output. This preserves today's behavior exactly.
 
 Rationale — and it is not "storage never fails":
 
-- `localStorage` is *present* in every target runtime. Under Phase 7g the
+- `localStorage` is _present_ in every target runtime. Under Phase 7g the
   Electron renderer loads Smudge over `http://127.0.0.1:<port>`, an ordinary HTTP
   origin in Chromium. (The dicey Electron case is a `file://` opaque origin; that
   is not the architecture on the roadmap.)
-- But `setItem` can still *fail*, on two reachable paths: **quota exhaustion**
+- But `setItem` can still _fail_, on two reachable paths: **quota exhaustion**
   (localStorage is ~5–10MB per origin, and Smudge shares that origin between
   these setting keys and `useContentCache`, which stringifies whole chapter
   drafts into `smudge:draft:<id>`), and **storage blocked by policy** (Chrome
   "block all cookies", enterprise profiles, privacy extensions).
 - On the quota path, **the failure that matters is already logged**:
-  `useContentCache` fires `clientWarn` when a *draft* fails to cache. That is the
+  `useContentCache` fires `clientWarn` when a _draft_ fails to cache. That is the
   data-loss signal. A settings write failing is the same root cause reported a
   second time in a lower-stakes voice — and, because `handlePanelResize` fires on
-  every mousemove during a resize drag, it would be reported at *mousemove
-  frequency*. That is precisely the "30 expected warnings so nobody reads the
+  every mousemove during a resize drag, it would be reported at _mousemove
+  frequency_. That is precisely the "30 expected warnings so nobody reads the
   31st" failure CLAUDE.md §Testing Philosophy warns against.
 - A failed panel-width persist is cosmetic and self-healing. No data loss — the
   only place CLAUDE.md instructs us not to be lazy about error handling.
@@ -150,20 +171,20 @@ at mount, and this formalizes a second `localStorage` convention alongside
 Three factories ship alongside the hook:
 
 ```ts
-numberInRange(min, max, fallback)
+numberInRange(min, max, fallback);
 // parse: (raw) => {
 //   if (raw.trim() === "") return undefined;   // "" and "   " are NOT numbers
 //   const n = Number(raw);
 //   return Number.isFinite(n) ? clamp(n, min, max) : undefined;
 // }
 
-flag(fallback)   // "true" → true; "false" → false; anything else → reject
-text(fallback)   // identity
+flag(fallback); // "true" → true; "false" → false; anything else → reject
+text(fallback); // identity
 ```
 
 **The empty-string guard is load-bearing, not defensive noise.** `Number("")` is
 `0`, not `NaN` — and `0` is finite, so without the `trim()` check an empty or
-whitespace-only stored value would take the *clamp* branch and silently become
+whitespace-only stored value would take the _clamp_ branch and silently become
 `min` (180px / 240px) instead of falling back to the sensible default. An empty
 string is exactly what a partially-failed write or a storage-clearing extension
 leaves behind, so it is not an exotic input. Turning garbage into a
@@ -173,13 +194,13 @@ irony. The guard keeps "is this a number at all?" and "is this number in range?"
 as two distinct questions.
 
 (`Number` has other coercion quirks the guard does not address — `"0x10"` → 16,
-`"1e3"` → 1000 — but those produce *honest* numbers that then clamp safely, so
+`"1e3"` → 1000 — but those produce _honest_ numbers that then clamp safely, so
 they degrade correctly. `""` is the only one that degrades to a wrong-but-valid
 value.)
 
 `text()` is deliberately dumb — it does **not** validate the tab id. This is the
-direct instruction from 4c.0 [I1]'s resolution: *"Validating in the hook is
-worse: the hook does not know the tab set; the component does."* `ReferencePanel`
+direct instruction from 4c.0 [I1]'s resolution: _"Validating in the hook is
+worse: the hook does not know the tab set; the component does."_ `ReferencePanel`
 already degrades an unknown `activeTabId` to `tabs[0]`. The codec's job is
 storage hygiene; domain validity stays with the component that owns the domain.
 
@@ -191,15 +212,17 @@ storage hygiene; domain validity stays with the component that owns the domain.
 const SIDEBAR_WIDTH_CODEC = numberInRange(SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH, 260);
 
 export function useSidebarState() {
-  const [sidebarWidth, handleSidebarResize] =
-    usePersistedState("smudge:sidebar-width", SIDEBAR_WIDTH_CODEC);
+  const [sidebarWidth, handleSidebarResize] = usePersistedState(
+    "smudge:sidebar-width",
+    SIDEBAR_WIDTH_CODEC,
+  );
   const [sidebarOpen, setSidebarOpen] = useState(true); // not persisted, unchanged
   const toggleSidebar = useCallback(() => setSidebarOpen((p) => !p), []);
   return { sidebarWidth, sidebarOpen, setSidebarOpen, handleSidebarResize, toggleSidebar };
 }
 ```
 
-`handleSidebarResize` *is* the setter; the clamp lives in the codec, so the
+`handleSidebarResize` _is_ the setter; the clamp lives in the codec, so the
 asymmetry is closed by construction rather than by a remembered `Math.min`.
 
 `useReferencePanelState.ts` (100 → ~30 lines): three `usePersistedState` calls
@@ -228,7 +251,7 @@ Only two, both on the read path:
 
 1. **Stale out-of-range stored width now clamps instead of resetting.** A stored
    `"600"` yields `480` (the max) rather than falling back to `260`/`320`.
-   Today's readers *reject* out-of-range; the codec *clamps*, because clamping is
+   Today's readers _reject_ out-of-range; the codec _clamps_, because clamping is
    what makes `parse` usable as the write-side normalizer. Reachable via
    hand-edited storage — or, realistically, the day someone narrows a `MAX_WIDTH`
    constant, where existing users get a graceful clamp instead of a surprise
@@ -299,7 +322,7 @@ No e2e changes — nothing user-visible.
    > by remounting, not by varying the key. The hook does **not** validate domain
    > values it cannot know (e.g. tab ids); that stays with the component that
    > owns the domain (`ReferencePanel` degrades an unknown tab to `tabs[0]`).
-   > `useContentCache` is deliberately *not* a client of this hook — it is a
+   > `useContentCache` is deliberately _not_ a client of this hook — it is a
    > draft cache with JSON payloads, its own logging, and a different failure
    > contract.
 
@@ -307,7 +330,7 @@ No e2e changes — nothing user-visible.
 
 Checked and **no change needed**: §API Design (no endpoints/codes/envelopes —
 `localStorage` is client-only), §Data Model (no tables/columns), §Testing
-Philosophy (the phase *conforms* to the zero-warnings rule rather than extending
+Philosophy (the phase _conforms_ to the zero-warnings rule rather than extending
 it — the silent-failure decision means no `expectConsole()` is needed anywhere),
 §Target Project Structure (`utils/` already exists and already hosts
 `abortable.ts` / `editorSafeOps.ts`), §Accessibility (the `aria-valuemin` /
@@ -344,7 +367,7 @@ known defect class. It also leaves the `useState`-plus-persist pairing repeated
 four times.
 
 The decision was taken with the correctness argument explicitly retracted: an
-early survey mistakenly reported the sidebar clamp gap as a *live* bug, and the
+early survey mistakenly reported the sidebar clamp gap as a _live_ bug, and the
 caller-side clamps (`Sidebar.tsx:481-484` et al.) disprove that. The hook was
 chosen anyway, on dedup value plus the codebase's established "one hook owns the
 pattern" convention (`useDialogLifecycle`, `useAbortableSequence`,

@@ -2,6 +2,26 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
+## ⚠️ EXECUTED AND SUPERSEDED IN PART — do not re-derive the hook from this
+
+This plan has been executed. It is preserved as written so the decision log's
+"the plan said X, we shipped Y" entries stay verifiable — which means **its code
+blocks are not a template**. Four decisions changed during implementation and
+review; the **code and CLAUDE.md are authoritative**.
+
+| Below, the plan says…                                                        | What actually shipped                                                                                                                             | Recorded as    |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| Files live at `packages/client/src/utils/persistedSetting.{ts,test.ts}`      | `packages/client/src/hooks/usePersistedState.{ts,test.ts}` — a `utils/` home made the `git grep localStorage .../hooks/` audit structurally blind | `[I3]`         |
+| Task 3's setter: `codec.parse(codec.serialize(requested)) ?? codec.fallback` | A rejected write is **dropped entirely** (early return) — it touches neither state nor storage, so both keep the last known-good value            | `[I1]`, `[I6]` |
+| Task 1's `numberInRange` returns a plain `fallback,`                         | It **clamps its own fallback**, so `fallback` is a fixed point of `parse ∘ serialize`                                                             | `[I4]`         |
+| Codecs **must** be constructed at module scope (an unenforced rule)          | The codec is **pinned at mount** in a ref; the contract is deleted, not policed                                                                   | `[I5]`         |
+
+Copying Task 3's `?? codec.fallback` is the one that bites: it wipes the user's
+real 400px width back to the default on one bad mousemove. Full reasoning:
+`docs/roadmap-decisions/2026-07-12-phase-4b18-persisted-setting-storage-helper.md`.
+
+---
+
 **Goal:** Replace four hand-rolled `getSaved* + try/catch` localStorage readers and five matching `try { setItem } catch {}` writers with one `usePersistedState(key, codec)` hook whose `parse` is the single validator for both the read and the write path.
 
 **Architecture:** A new `packages/client/src/utils/persistedSetting.ts` exports `usePersistedState<T>(key, codec)` plus three codec factories (`numberInRange`, `flag`, `text`). The setter normalizes every write through `parse(serialize(next))`, so React state is always a fixed point of the storage round-trip — the read and write paths cannot drift apart. `useReferencePanelState` and `useSidebarState` become thin consumers; their public APIs (returned members **and** exported `*_MIN_WIDTH` / `*_MAX_WIDTH` constants) are unchanged, so no component is touched.
@@ -48,6 +68,7 @@ nothing to refactor. This omission is a decision, not an oversight.
 Pure functions, no React. The `numberInRange` empty-string guard is the load-bearing bit — `Number("")` is `0`, not `NaN`.
 
 **Files:**
+
 - Create: `packages/client/src/utils/persistedSetting.ts`
 - Create: `packages/client/src/utils/persistedSetting.test.ts`
 
@@ -102,11 +123,11 @@ describe("numberInRange", () => {
 describe("flag", () => {
   const codec = flag(false);
 
-  it("parses \"true\"", () => {
+  it('parses "true"', () => {
     expect(codec.parse("true")).toBe(true);
   });
 
-  it("parses \"false\"", () => {
+  it('parses "false"', () => {
     expect(codec.parse("false")).toBe(false);
   });
 
@@ -205,6 +226,7 @@ Expected: PASS (16 tests).
 **Step 5: REFACTOR**
 
 Look for, specifically:
+
 - **The shared codec shape.** All three factories build the same
   `{ parse, serialize, fallback }` literal. Is that duplication worth extracting,
   or is three object literals the honest floor? (Likely the latter — do not
@@ -229,6 +251,7 @@ git commit -m "feat(4b.18): setting codecs — numberInRange, flag, text"
 ## Task 2: `usePersistedState` — the read path
 
 **Files:**
+
 - Modify: `packages/client/src/utils/persistedSetting.ts`
 - Modify: `packages/client/src/utils/persistedSetting.test.ts`
 
@@ -351,12 +374,13 @@ Expected: PASS.
 **Step 5: REFACTOR**
 
 Look for, specifically:
+
 - **Is `read()` a free function or should it be inline?** It is called from
   exactly one place (the `useState` initializer). Keeping it separate is
   justified only if Task 3's setter also needs it — check whether it does once
   you get there, and collapse it if not.
-- **The empty `catch` block.** Confirm the comment explains *why* it is empty
-  (the deliberate-silence decision), not merely *that* it is. A future reader
+- **The empty `catch` block.** Confirm the comment explains _why_ it is empty
+  (the deliberate-silence decision), not merely _that_ it is. A future reader
   must not "fix" it by adding a `clientWarn`.
 
 **Step 6: Commit**
@@ -373,6 +397,7 @@ git commit -m "feat(4b.18): usePersistedState read path — validate via codec, 
 The heart of the design: the setter normalizes through `parse(serialize(next))`, making state a **fixed point of the storage round-trip**.
 
 **Files:**
+
 - Modify: `packages/client/src/utils/persistedSetting.ts`
 - Modify: `packages/client/src/utils/persistedSetting.test.ts`
 
@@ -521,6 +546,7 @@ Expected: PASS (all read + write tests).
 **Step 5: REFACTOR**
 
 Look for, specifically:
+
 - **The double `serialize` call.** The setter calls
   `codec.parse(codec.serialize(requested))` and then `codec.serialize(normalized)`
   — two serializations per write. Hoisting the second is possible only when
@@ -531,7 +557,7 @@ Look for, specifically:
   the only shared thing is `codec.parse`, `read()` stays where it is.
 - **The doc comment.** It now carries three load-bearing facts (the fixed-point
   invariant, the deliberate silence, the constant-key contract). Confirm each is
-  stated as a *reason*, not a restatement of the code.
+  stated as a _reason_, not a restatement of the code.
 
 **Step 6: Commit**
 
@@ -545,6 +571,7 @@ git commit -m "feat(4b.18): usePersistedState write path — codec normalizes st
 ## Task 4: Migrate `useSidebarState`
 
 **Files:**
+
 - Modify: `packages/client/src/hooks/useSidebarState.ts` (whole file, 41 → ~17 lines)
 - Modify: `packages/client/src/__tests__/useSidebarState.test.ts:157-171` (two cases)
 
@@ -625,7 +652,7 @@ export function useSidebarState() {
 }
 ```
 
-`handleSidebarResize` *is* the setter now — the clamp lives in the codec, so the write path can no longer disagree with the read path.
+`handleSidebarResize` _is_ the setter now — the clamp lives in the codec, so the write path can no longer disagree with the read path.
 
 **Step 4: Run tests to verify they pass**
 
@@ -644,6 +671,7 @@ git commit -m "refactor(4b.18): useSidebarState reads and writes through usePers
 ## Task 5: Migrate `useReferencePanelState`
 
 **Files:**
+
 - Modify: `packages/client/src/hooks/useReferencePanelState.ts` (whole file, 100 → ~32 lines)
 - Modify: `packages/client/src/__tests__/useReferencePanelState.test.ts:165-171` (one case)
 
@@ -746,6 +774,7 @@ git commit -m "refactor(4b.18): useReferencePanelState reads and writes through 
 Not an afterthought — without this the next setting gets hand-rolled and the phase was theatre.
 
 **Files:**
+
 - Modify: `CLAUDE.md` (§Key Architecture Decisions)
 
 **Step 1: Add the entry**
@@ -771,7 +800,7 @@ git commit -m "docs(4b.18): CLAUDE.md — persisted UI settings live in one hook
 **Step 1: Confirm no hand-rolled storage access survives in the two hooks**
 
 Run: `git grep -n "localStorage" packages/client/src/hooks/`
-Expected: **only** `useContentCache.ts` (deliberately out of scope — a draft cache with JSON payloads and its own `clientWarn` logging). If `useSidebarState.ts` or `useReferencePanelState.ts` appear, the migration is incomplete.
+Expected: `usePersistedState.ts` (the sanctioned owner — it now lives here, per `[I3]`) and `useContentCache.ts` (deliberately out of scope — a draft cache with JSON payloads and its own `clientWarn` logging). **Nothing else.** If `useSidebarState.ts` or `useReferencePanelState.ts` appear, the migration is incomplete.
 
 **Step 2: Confirm the phase added no console noise**
 

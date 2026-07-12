@@ -66,8 +66,8 @@ alignment:
 
 ## Implementation Findings
 
-Two decisions were taken during execution that the design did not anticipate.
-Both were surfaced by the per-task code-quality review and are recorded here
+Four decisions were taken during execution that the design did not anticipate.
+Most were surfaced by the per-task code-quality review and are recorded here
 because they change what the design says.
 
 ### [I1] A rejected write keeps the last known-good value, not the fallback
@@ -137,13 +137,111 @@ because they change what the design says.
   final whole-phase review; the per-task reviews could not see it, because each
   was scoped to a diff that took the file's location as given.
 
-A third review finding is worth noting as process rather than decision: the
+### [I4] `numberInRange` clamps its own fallback
+
+- **Severity:** Minor
+- **Category:** design-gap
+- **Summary:** The design and plan both had `numberInRange` return its
+  `fallback` as given (plan Task 1 ships a plain `fallback,`). The shipped code
+  clamps it: `fallback: clamp(fallback, min, max)`. This adds a property to the
+  codec contract that neither document states — **`fallback` must be a fixed
+  point of `parse ∘ serialize`** — and it is load-bearing, because the hook's
+  whole promise is that state is always a value a reload would parse back. An
+  out-of-range fallback breaks that directly: `read()` would hand back 900 while
+  every write normalized to 480, so state and reload silently disagree with no
+  write in between. Unreachable today (all four fallbacks are already in range),
+  which is why it slipped the log — but the hook is the sanctioned way to add
+  future settings, and the next author picking a fallback outside their own
+  bounds is exactly the caller it protects.
+- **Resolution:** `accepted` — kept, and now stated as an explicit codec
+  contract in the hook's doc comment ("two properties every codec MUST hold")
+  and in CLAUDE.md, with a test that constructs `numberInRange(180, 480, 900)`
+  and asserts the fallback is both clamped and a fixed point of its own parse.
+  Recorded here late: this was the one implementation-time deviation that
+  reached CLAUDE.md and the tests without reaching the log. Surfaced by the
+  whole-phase review as `[S4]`.
+
+## Post-Review Decisions
+
+The whole-phase agentic review
+(`paad/code-reviews/persisted-setting-storage-helper-2026-07-12-22-13-22-bc71226.md`)
+returned no Critical and no Important findings. Two of its seven suggestions
+changed code and are recorded here because they amend what the design, the plan,
+_and_ CLAUDE.md say.
+
+### [I5] The codec is pinned at mount; the module-scope contract is deleted, not policed
+
+- **Severity:** Minor
+- **Category:** design-deviation (user-approved)
+- **Summary:** The shipped hook told callers that codecs **must** be constructed
+  at module scope, and nothing enforced it. The failure was silent and cascading:
+  an inline codec is a fresh object each render → `codec` in the setter's
+  `useCallback` deps churns the setter identity → `togglePanel` churns →
+  EditorPage's `useCallback`s churn → re-created props into memoized editor
+  children. Performance only, never correctness. But this repo enforces exactly
+  this class of hook contract mechanically — the `no-restricted-syntax`
+  AbortController ban with its rule-fires test, the `strings.ts` externalization
+  rule — and an unenforced "must" in the steering file is how CLAUDE.md goes
+  stale.
+- **Resolution:** `fixed-in-code` — the codec now lives in a ref, pinned at
+  mount, and is out of the setter's deps, so an inline codec cannot destabilize
+  anything and there is no contract left to remember. Deleting the rule beat
+  authoring an ESLint rule plus its proving test for one hook with two consumers.
+  Pinning also makes the hook internally consistent: the **read** path already
+  parsed with the mount-time codec and never re-reads, so honouring a _live_
+  codec on the write path only bought the same split-brain the constant-`key`
+  contract warns about (state parsed by the old codec, writes normalized by the
+  new one). The residual — a future caller wanting a props-dependent codec gets
+  it silently ignored — is a caller the old contract already forbade, and who
+  today would have been half-honoured, which is worse. The user was asked and
+  chose this over softening the CLAUDE.md wording. Review item `[S5]`.
+
+### [I6] "Ignored" now means ignored in storage too — an amendment to [I1]
+
+- **Severity:** Minor
+- **Category:** doc-code-mismatch
+- **Summary:** `[I1]` changed the rejected-write arm to `?? valueRef.current`,
+  and the hook doc and CLAUDE.md both went on to promise that an unrepresentable
+  write is **IGNORED**. It wasn't, quite: the coalesced value was then written to
+  storage unconditionally. Against **empty** storage that persisted the in-memory
+  fallback — `set(NaN)` on a fresh profile left `localStorage["smudge:sidebar-width"]`
+  set to `"260"`, materializing today's default as if the user had chosen it and
+  pinning it against any future change to `SIDEBAR_DEFAULT_WIDTH`. Nothing
+  observable changes today, and the path is unreachable from the UI (both resize
+  components clamp finite numbers before calling), so this was a doc/code
+  mismatch on a defensive path rather than a live bug — but the defensive path is
+  the whole reason the arm exists.
+- **Resolution:** `fixed-in-code` — the setter returns early when `parse` rejects,
+  touching neither state nor storage. `[I1]`'s rule is unchanged and now literally
+  true in both halves. The existing test pre-seeded `"400"` and therefore could
+  not see this; a second test starts from empty storage and asserts `setItem` is
+  never called. Review item `[S3]`.
+
+### Accepted out-of-scope change: CLAUDE.md §"Where the trade-offs go"
+
+The design commit (`f23574d`) also added an eight-line CLAUDE.md subsection about
+how `AskUserQuestion` must present trade-offs — a steering-preference change with
+no connection to persisted settings, and a deviation from CLAUDE.md §Pull Request
+Scope's one-feature rule. It is recorded here rather than reverted: the commit
+message disclosed it, it has zero code coupling, and it governs how questions are
+asked in _this_ conversation, which is where it was written. Noted so the "every
+commit on this branch is 4b.18" claim stays auditable. Review item `[S6]`.
+
+## Process Notes
+
+A review finding worth keeping as process rather than decision: the
 Task 4 reviewer reverted the migrated `useSidebarState` to its pre-phase
 asymmetry (unclamped write, reject-on-read) and found **all 17 of its tests
 still passed** — the phase had shipped a fix for a write-path bug with no test
 on the write path at that hook. Two cases asserting state _and_ storage were
 added, and verified to fail against the planted regression. `useReferencePanelState`
 already had the equivalent coverage; the hook that actually had the bug did not.
+
+The same shape recurred in the whole-phase review, twice: `[I6]` and `[I4]` were
+both branches the tests _touched_ but did not _pin_ — `[I6]`'s test pre-seeded a
+value and so could not see the empty-storage case, and `[I4]`'s clamp had no test
+until the review asked for one. The lesson is the Task 4 lesson again: a test that
+passes against the planted regression is not coverage.
 
 ## Summary
 
