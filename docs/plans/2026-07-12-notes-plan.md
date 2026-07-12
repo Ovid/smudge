@@ -187,6 +187,20 @@ export const NoteMark = Mark.create({
 
 Append to `editorExtensions.ts` array: `NoteMark,` (import at top). Verify `npm test -w packages/shared` stays green (existing extension-parity/consumers unaffected). **Commit:** `feat(4c.1): note TipTap mark`.
 
+**Step 6 — Style the highlight (alignment Gap 1).** The mark only emits a class; add the actual style so noted text is visibly (and accessibly) marked.
+
+- Modify the client editor CSS (the same layer/file that styles other editor content — grep for existing `.ProseMirror` / prose rules, e.g. `packages/client/src/index.css` or the Tailwind layer).
+- Add a rule using a warm-palette accent tint that is **visibly distinct** from both the browser text-selection color and the find-replace match highlight (grep the find-replace highlight class first and pick a different hue/treatment — e.g. a soft ochre underline+tint vs. find-replace's block highlight):
+
+```css
+.note-highlight {
+  background-color: rgb(107 71 32 / 0.12); /* accent #6B4720 @ ~12% — soft, distinct from selection */
+  border-bottom: 2px solid rgb(107 71 32 / 0.45);
+}
+```
+
+- Add/extend a test (or a Playwright assertion in Task 14) that a noted range carries the `note-highlight` class and that the rule exists. Color is not the sole cue — the panel + dialog carry the note textually (design). **Commit:** `feat(4c.1): note highlight style`.
+
 ---
 
 ## Task 4: `replaceInDoc` preserves the note mark (shared, verification)
@@ -359,7 +373,9 @@ The entry point for **creating** a note.
 2. Compute `selectionOverlapState(editor)`. If `"multi-or-partial"` → announce `STRINGS.notes.overlapWarning` via the aria-live region, stop. If `"single"` → open the dialog to **edit** the existing note (`noteRangeAt`). If `"none"` with a non-empty selection → **capture** `{from,to}` and open `NoteDialog` empty; Save → `setNote(editor, capturedRange, text)`; announce `STRINGS.notes.added`.
 3. Empty selection → button disabled / shortcut no-op.
 
-**Step 1 — Failing tests:** button disabled with no selection; with a selection, click opens the dialog and Save applies a note over the captured range even after focus left the editor (Issue B); Ctrl+Alt+M mirrors the button; overlap `multi-or-partial` announces the warning and creates nothing; `locked`/`busy` → no-op. **Implement, run, commit:** `feat(4c.1): add-note button + shortcut`.
+**Aria-live wiring (alignment Gap 2).** Before wiring the announcements, locate the existing polite live region used for save status (`grep -rn 'aria-live' packages/client/src`). If it is reachable from `EditorPage` (it is owned there or via a passed setter), route `STRINGS.notes.added` and `STRINGS.notes.overlapWarning` through it. If it is **not** cleanly reachable, add a small dedicated `<div aria-live="polite" className="sr-only">` owned by `EditorPage` and push announcements to it. Do not assume the region exists — verify.
+
+**Step 1 — Failing tests:** button disabled with no selection; with a selection, click opens the dialog and Save applies a note over the captured range even after focus left the editor (Issue B); Ctrl+Alt+M mirrors the button; overlap `multi-or-partial` announces `STRINGS.notes.overlapWarning` **and** creates nothing; a successful add announces `STRINGS.notes.added` into the live region (assert the region's text content); `locked`/`busy` → no-op. **Implement, run, commit:** `feat(4c.1): add-note button + shortcut + live-region announcements`.
 
 ---
 
