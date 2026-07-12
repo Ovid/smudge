@@ -61,7 +61,7 @@ Phases are ordered by writer impact and dependency: Phases 1–2 are complete. P
 | 4b.15   | Inline Title-Editing Hook                 | Extract a generic `useInlineTitleEditing(currentId, save, gates, options?)`; reduce `useChapterTitleEditing` and `useProjectTitleEditing` to thin wrappers that pass slug-drift check + post-save navigate as options.                                                                                                                                                                                                                                                                                                                                                | Done |
 | 4b.16   | Dialog Lifecycle Hook                     | Extract `useDialogLifecycle({ open, onClose, initialFocusRef, blockEscapePropagation }) => { dialogRef, onBackdropClick }` and migrate the 5 dialogs (Confirm, Export, NewProject, ProjectSettings, ShortcutHelp) one at a time; preserve `stopImmediatePropagation` as an opt-in (`blockEscapePropagation`); ARIA `role` stays in JSX and the `showModal/close` try/catch is an always-on guard.                                                                                                                                                                                                                                                                                  | Done |
 | 4b.17   | AbortController ESLint Rule               | Add ESLint rule banning hand-rolled `useRef<AbortController>` allocations; convert `migrationStructuralCheck.test.ts`'s `PHASE_4B_3B_ALLOWLIST` + companion assertion to inline `// eslint-disable-next-line` annotations on each of the 6 surviving allocation sites across 5 files (post F-2 split). Split from Phase 4b.4 on 2026-05-28 per §Pull Request Scope one-feature rule. | In Progress |
-| 4c      | Notes, Tags & Outtakes                    | Inline notes, paragraph tags, scratchpad for cut text                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Planned |
+| 4c      | Notes, Tags & Outtakes                    | Inline notes, paragraph tags, scratchpad for cut text (split into 4c.0–4c.3; 4c.0 done)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | In Progress |
 | 5a      | Fiction: Characters                       | Character sheets with structured fields and freeform notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Planned |
 | 5b      | Fiction: Scene Cards                      | Scene cards / outline mode with drag-and-drop                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Planned |
 | 5c      | Fiction: World-Building                   | World-building bible, "who's in the room" tracker                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Planned |
@@ -1828,6 +1828,22 @@ disable comment itself the documented exception.
 ---
 
 ## Phase 4c: Notes, Tags & Outtakes
+<!-- plan: 2026-07-12-notes-design.md -->
+
+> **Split (2026-07-12):** Phase 4c bundled three independent features and is
+> split per CLAUDE.md §Pull Request Scope into: **4c.0** Reference Panel
+> Multi-Tab Refactor (prerequisite), **4c.1** Inline Notes, **4c.2** Scratchpad
+> / Outtakes, **4c.3** Tags & Cross-References. The `plan:` comment above points
+> at the **4c.1 Notes** design (`docs/plans/2026-07-12-notes-design.md`), which
+> also specs 4c.0. 4c.2 and 4c.3 get their own designs when reached.
+>
+> **Status:**
+> - **4c.0** Reference Panel Multi-Tab Refactor — ✅ **Done**
+>   (`docs/plans/2026-07-12-4c0-reference-panel-tabs-plan.md`). `ReferencePanel`
+>   now takes a `tabs[]` + `activeTabId` + `onSelectTab` API; Images stays the
+>   only tab (no behavior change). Unblocks 4c.1.
+> - **4c.1** Inline Notes — next.
+> - **4c.2 / 4c.3** — planned.
 
 ### Goal
 
