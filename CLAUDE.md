@@ -235,7 +235,7 @@ rather than copying a neighbour.
 **Persisted UI settings live in one hook.** Every `localStorage`-backed UI
 setting (panel width, panel open, active tab, sidebar width) routes through
 `usePersistedState(key, codec)`
-(`packages/client/src/utils/persistedSetting.ts`) rather than a hand-rolled
+(`packages/client/src/hooks/usePersistedState.ts`) rather than a hand-rolled
 `getSaved* + try/catch` reader. The codec's `parse` is the **single validator
 for both directions** — the setter normalizes via `parse(serialize(next))`, so
 React state is always a fixed point of the storage round-trip and the read and

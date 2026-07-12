@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { numberInRange, usePersistedState } from "../utils/persistedSetting";
+import { numberInRange, usePersistedState } from "./usePersistedState";
 
 const SIDEBAR_DEFAULT_WIDTH = 260;
 // Exported: Sidebar.tsx imports these for its drag clamp, its keyboard clamps,

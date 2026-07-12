@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { flag, numberInRange, text, usePersistedState } from "../utils/persistedSetting";
+import { flag, numberInRange, text, usePersistedState } from "./usePersistedState";
 
 const PANEL_DEFAULT_WIDTH = 320;
 // Exported: ReferencePanel.tsx imports these for its drag clamp, its keyboard

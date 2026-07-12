@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { StrictMode } from "react";
-import { numberInRange, flag, text, usePersistedState } from "./persistedSetting";
+import { numberInRange, flag, text, usePersistedState } from "./usePersistedState";
 
 const store = new Map<string, string>();
 const mockLocalStorage = {

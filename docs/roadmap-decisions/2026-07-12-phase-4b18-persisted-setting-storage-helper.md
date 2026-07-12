@@ -109,6 +109,34 @@ because they change what the design says.
   would cost a cast or an explicit annotation to buy nothing. Recorded rather
   than fixed.
 
+### [I3] The helper belongs in `hooks/`, not `utils/` — the design's premise was false
+
+- **Severity:** Important
+- **Category:** design-deviation
+- **Summary:** The design placed the helper at
+  `packages/client/src/utils/persistedSetting.ts`, justifying it as "joining
+  `abortable.ts` and `editorSafeOps.ts` in the established `utils/` home for
+  cross-cutting helpers." That premise does not survive checking: neither of
+  those files exports a React hook (`abortable.ts` exports `sleep`;
+  `editorSafeOps.ts` exports `safeSetEditable` / `quiesceEditorForServerOp`).
+  All 28 of the client's hooks live in `hooks/`, including the two CLAUDE.md
+  names as canonical patterns (`useAbortableSequence`, `useDialogLifecycle`),
+  and §Target Project Structure lists `hooks/` as their home. `usePersistedState`
+  would have been the only hook in the repo outside it. The cost was not
+  aesthetic: the phase's own Task 7 audit command
+  (`git grep -n "localStorage" packages/client/src/hooks/`) was **structurally
+  blind to the helper it audits**, and would have passed just as happily if a
+  future author hand-rolled `localStorage` into `utils/`. The CLAUDE.md entry
+  would then have enshrined the wrong path as the reference for every future
+  setting.
+- **Resolution:** `fixed-in-code` — moved to
+  `packages/client/src/hooks/usePersistedState.ts` (renamed to match the `use*`
+  convention every neighbour follows), with the colocated test alongside it, per
+  the `useAbortableSequence.test.ts` / `useDialogLifecycle.test.tsx` precedent.
+  CLAUDE.md and the roadmap's Scope section point at the real path. Caught by the
+  final whole-phase review; the per-task reviews could not see it, because each
+  was scoped to a diff that took the file's location as given.
+
 A third review finding is worth noting as process rather than decision: the
 Task 4 reviewer reverted the migrated `useSidebarState` to its pre-phase
 asymmetry (unclamped write, reject-on-read) and found **all 17 of its tests
