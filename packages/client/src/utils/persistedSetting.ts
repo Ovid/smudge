@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 /**
  * Codecs are values, not hooks — construct them at MODULE scope. A codec
@@ -56,7 +56,7 @@ export function text(fallback: string): SettingCodec<string> {
   return { parse: (raw) => raw, serialize: (value) => value, fallback };
 }
 
-/** Read once, at mount. Any rejection — absent, unparseable, storage unavailable — yields the fallback. */
+/** Any rejection — absent, unparseable, storage unavailable — yields the fallback. */
 function read<T>(key: string, codec: SettingCodec<T>): T {
   try {
     const raw = localStorage.getItem(key);
@@ -75,11 +75,58 @@ function read<T>(key: string, codec: SettingCodec<T>): T {
 }
 
 /**
- * A useState whose initial value is read from localStorage and validated by
- * `codec.parse`. The codec is the single validator: whatever `parse` rejects
- * (or clamps) on the way in is what the state can hold.
+ * React state backed by a localStorage key, validated by a single codec.
+ *
+ * `codec.parse` is the ONLY validator, and it governs BOTH directions: the
+ * setter normalizes via `parse(serialize(next))`, so state is always a fixed
+ * point of the storage round-trip — what you see is exactly what a reload
+ * gives back. This is what stops the read and write paths from drifting apart
+ * (the asymmetry this helper was written to close: handlePanelResize clamped
+ * before persisting, handleSidebarResize did not).
+ *
+ * Storage failures are deliberately SILENT (no clientWarn). The data-loss path
+ * — useContentCache, which shares this origin's quota — already warns loudly,
+ * and the resize path would otherwise warn at mousemove frequency.
+ *
+ * CONTRACT: `key` must be constant for the component's lifetime. The stored
+ * value is read exactly once, by the lazy `useState` initializer at mount. A
+ * changing key would split-brain — state holding the OLD key's value while
+ * writes land on the NEW key, with no re-read. Derive per-entity settings by
+ * remounting (a `key` prop on the component), not by varying this argument.
  */
-export function usePersistedState<T>(key: string, codec: SettingCodec<T>) {
+export function usePersistedState<T>(
+  key: string,
+  codec: SettingCodec<T>,
+): readonly [T, (next: T | ((prev: T) => T)) => void] {
   const [value, setValue] = useState<T>(() => read(key, codec));
-  return [value, setValue] as const; // write path lands in Task 3
+
+  // Mirrors `value` so the functional-updater form can resolve `prev` WITHOUT
+  // running the setItem side effect inside a setState updater — React
+  // StrictMode double-invokes updaters, which would persist twice.
+  const valueRef = useRef(value);
+
+  const set = useCallback(
+    (next: T | ((prev: T) => T)) => {
+      const requested =
+        typeof next === "function" ? (next as (prev: T) => T)(valueRef.current) : next;
+
+      // One validator, both directions.
+      const normalized = codec.parse(codec.serialize(requested)) ?? codec.fallback;
+
+      valueRef.current = normalized;
+      try {
+        // Yes, this serializes a second time. Hoisting the first result is only
+        // valid when `normalized === requested`, which is not the common case —
+        // the branch would cost more than the String() it saves. Left as-is.
+        localStorage.setItem(key, codec.serialize(normalized));
+      } catch {
+        // Silent — see the doc comment above. State still updates below, so the
+        // setting works for this session even when it cannot be persisted.
+      }
+      setValue(normalized);
+    },
+    [key, codec],
+  );
+
+  return [value, set] as const;
 }
