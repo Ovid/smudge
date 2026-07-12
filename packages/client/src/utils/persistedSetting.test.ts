@@ -73,6 +73,12 @@ describe("text", () => {
     // unknown id to tabs[0]. See 4c.0 review item [I1].
     expect(codec.parse("notes")).toBe("notes");
     expect(codec.parse("a-tab-that-no-longer-exists")).toBe("a-tab-that-no-longer-exists");
+    // Unlike numberInRange, an empty string is a legitimate value here, not garbage.
+    expect(codec.parse("")).toBe("");
+  });
+
+  it("serializes a string unchanged", () => {
+    expect(codec.serialize("notes")).toBe("notes");
   });
 
   it("carries its fallback", () => {

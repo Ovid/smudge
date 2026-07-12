@@ -1,3 +1,8 @@
+/**
+ * Codecs are values, not hooks — construct them at MODULE scope. A codec
+ * created inline during render is a new object each render and destabilizes
+ * usePersistedState's setter identity.
+ */
 export interface SettingCodec<T> {
   /** Parse a raw storage string. Return undefined to reject it → fallback. */
   parse: (raw: string) => T | undefined;
