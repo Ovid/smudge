@@ -207,6 +207,19 @@ describe("usePersistedState — write", () => {
     expect(store.get(KEY)).toBe("400");
   });
 
+  // "Ignored" has to mean ignored in STORAGE too. With nothing stored, the
+  // last known-good value is the in-memory fallback — which the user never
+  // chose. Persisting it would materialize today's default as if they had,
+  // pinning it against a future change to SIDEBAR_DEFAULT_WIDTH. The test above
+  // pre-seeds "400" and so cannot see this.
+  it("persists nothing when an unrepresentable write hits empty storage", () => {
+    const { result } = renderHook(() => usePersistedState(KEY, WIDTH));
+    act(() => result.current[1](NaN));
+    expect(result.current[0]).toBe(260);
+    expect(store.has(KEY)).toBe(false);
+    expect(mockLocalStorage.setItem).not.toHaveBeenCalled();
+  });
+
   it("keeps state updated when setItem throws", () => {
     const { result } = renderHook(() => usePersistedState(KEY, WIDTH));
     mockLocalStorage.setItem.mockImplementation(() => {

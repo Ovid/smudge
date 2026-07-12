@@ -137,10 +137,14 @@ export function usePersistedState<T>(
       const requested =
         typeof next === "function" ? (next as (prev: T) => T)(valueRef.current) : next;
 
-      // One validator, both directions. A rejected write keeps the last
-      // known-good value rather than resetting to the fallback — valueRef.current
-      // is itself a fixed point of the round-trip, so the invariant holds.
-      const normalized = codec.parse(codec.serialize(requested)) ?? valueRef.current;
+      // One validator, both directions. A rejected write is dropped entirely —
+      // it touches neither state nor storage, so both keep the last known-good
+      // value rather than resetting to the fallback. Returning early (rather
+      // than writing `valueRef.current` back) matters when storage is EMPTY:
+      // persisting the in-memory fallback would materialize today's default as
+      // if the user had chosen it.
+      const normalized = codec.parse(codec.serialize(requested));
+      if (normalized === undefined) return;
 
       valueRef.current = normalized;
       try {
