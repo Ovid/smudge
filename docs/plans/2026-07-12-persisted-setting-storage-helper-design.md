@@ -356,8 +356,20 @@ pattern" convention (`useDialogLifecycle`, `useAbortableSequence`,
   setter's identity every render. Mitigated by convention (module-level `const`
   at all four sites) and by the `useCallback` deps being honest about it. Low
   risk: nothing outside these two hooks calls the helper.
-- **Test churn.** Two working hooks' test files (~500 lines) get reworked. This
-  is the acknowledged cost of the hook shape over free functions.
+- **Test churn — measured, and far smaller than first estimated.** The initial
+  risk assessment claimed "two working hooks' test files (~500 lines) get
+  reworked," and cited that as the headline cost of the hook shape over free
+  functions. Writing the plan disproved it. The actual churn is **three cases
+  rewritten and two added**: `useSidebarState.test.ts` (`"50"` and `"999"` move
+  from reset-to-260 to clamp-to-180/480) and `useReferencePanelState.test.ts`
+  (`"50"` moves from reset-to-320 to clamp-to-240), plus one new empty-string
+  case in each file. Everything else in those ~500 lines — the exported-constants
+  blocks, the return-shape blocks, the write-clamp tests, the `"garbage"` →
+  `open: false` case, every `setItem`-throws case — passes **verbatim**. Those
+  survivors are not churn; they are the regression net proving the public APIs
+  were preserved. Recorded here because test churn was the cost weighed when
+  Option A was chosen over Option B, and the record should say what is true
+  rather than what was guessed.
 
 ## PR Scope
 
