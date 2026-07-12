@@ -108,6 +108,8 @@ interface EditorMainContentProps {
   panelOpen: boolean;
   panelWidth: number;
   onPanelResize: ComponentProps<typeof ReferencePanel>["onResize"];
+  activeTabId: ComponentProps<typeof ReferencePanel>["activeTabId"];
+  onSelectTab: ComponentProps<typeof ReferencePanel>["onSelectTab"];
   galleryExternalRefreshKey: number;
   onInsertImage: (url: string, alt: string) => void;
 
@@ -179,6 +181,8 @@ export function EditorMainContent({
   panelOpen,
   panelWidth,
   onPanelResize,
+  activeTabId,
+  onSelectTab,
   galleryExternalRefreshKey,
   onInsertImage,
   snapshotPanelOpen,
@@ -372,14 +376,26 @@ export function EditorMainContent({
         )}
       </div>
       {panelOpen && (
-        <ReferencePanel width={panelWidth} onResize={onPanelResize}>
-          <ImageGallery
-            projectId={project.id}
-            externalRefreshKey={galleryExternalRefreshKey}
-            onInsertImage={onInsertImage}
-            onNavigateToChapter={onSelectChapter}
-          />
-        </ReferencePanel>
+        <ReferencePanel
+          width={panelWidth}
+          onResize={onPanelResize}
+          activeTabId={activeTabId}
+          onSelectTab={onSelectTab}
+          tabs={[
+            {
+              id: "images",
+              label: STRINGS.referencePanel.imagesTab,
+              panel: (
+                <ImageGallery
+                  projectId={project.id}
+                  externalRefreshKey={galleryExternalRefreshKey}
+                  onInsertImage={onInsertImage}
+                  onNavigateToChapter={onSelectChapter}
+                />
+              ),
+            },
+          ]}
+        />
       )}
       {snapshotPanelOpen && activeChapter && (
         <SnapshotPanel
