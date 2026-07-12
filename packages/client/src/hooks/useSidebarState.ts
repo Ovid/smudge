@@ -20,8 +20,8 @@ export function useSidebarState() {
     SIDEBAR_WIDTH_KEY,
     SIDEBAR_WIDTH_CODEC,
   );
-  // Deliberately NOT persisted — same as before. Persisting it would be a
-  // feature, not this refactor.
+  // Session-only by design: the sidebar reopens on every load. Persisting it is
+  // a product change, not a storage one.
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const toggleSidebar = useCallback(() => setSidebarOpen((prev) => !prev), []);
 

@@ -117,6 +117,32 @@ describe("useSidebarState", () => {
       });
       expect(store.get("smudge:sidebar-width")).toBe("350");
     });
+
+    it("clamps a write above the maximum in both state and storage", async () => {
+      const { useSidebarState } = await loadHook();
+      const { result } = renderHook(() => useSidebarState());
+
+      act(() => {
+        result.current.handleSidebarResize(999);
+      });
+
+      expect(result.current.sidebarWidth).toBe(480);
+      // The pre-4b.18 hook persisted the raw "999" here: the write path did not
+      // clamp, and only the next read rejected it. The codec now owns both.
+      expect(store.get("smudge:sidebar-width")).toBe("480");
+    });
+
+    it("clamps a write below the minimum in both state and storage", async () => {
+      const { useSidebarState } = await loadHook();
+      const { result } = renderHook(() => useSidebarState());
+
+      act(() => {
+        result.current.handleSidebarResize(50);
+      });
+
+      expect(result.current.sidebarWidth).toBe(180);
+      expect(store.get("smudge:sidebar-width")).toBe("180");
+    });
   });
 
   describe("reads initial width from localStorage", () => {
