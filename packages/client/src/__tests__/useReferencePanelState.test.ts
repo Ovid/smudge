@@ -162,8 +162,16 @@ describe("useReferencePanelState", () => {
       expect(result.current.panelWidth).toBe(320);
     });
 
-    it("falls back to default width for out-of-range value", async () => {
+    it("clamps a stored width below the minimum", async () => {
       store.set("smudge:ref-panel-width", "50");
+      const { useReferencePanelState } = await loadHook();
+      const { result } = renderHook(() => useReferencePanelState());
+
+      expect(result.current.panelWidth).toBe(240);
+    });
+
+    it("falls back to the default width for an empty stored value", async () => {
+      store.set("smudge:ref-panel-width", "");
       const { useReferencePanelState } = await loadHook();
       const { result } = renderHook(() => useReferencePanelState());
 
