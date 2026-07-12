@@ -93,6 +93,13 @@ True stacked/overlapping notes are explicitly **not** supported — they are not
 representable with a single text-carrying mark without multiple mark types or a
 side table, and are over-engineered for "note to self."
 
+**Accepted behavior — adjacent identical-text notes merge (pushback Issue C).**
+Because identity is position and ProseMirror merges adjacent text nodes carrying
+equal marks (`marksEqual`), two *separate* notes with the *same* text on
+*adjacent* ranges collapse into one note. Non-adjacent identical-text notes
+(separated by any unmarked text) are unaffected. This is accepted — even
+desirable — for "note to self," not a defect.
+
 ---
 
 ## Invisibility in preview and export
@@ -120,6 +127,18 @@ stripNoteMarks(doc: TipTapDoc): TipTapDoc   // removes every `note` mark, keeps 
 One helper, called at two sites, closes the whole leak surface. Deliberately
 explicit over clever: the note text cannot appear because we delete the mark
 carrying it before HTML generation, and there is exactly one function to test.
+
+**Composes with export image-src sanitization (pushback Issue E).** The export
+path already runs image-src sanitization before `generateHTML` (F-15, commit
+`d97a97a`). `stripNoteMarks` is a second, independent pre-render transform —
+it touches note *marks*, sanitization touches image *nodes*, so the two are
+order-independent and do not conflict.
+
+**Word count is unaffected (pushback Issue D).** The note text lives in a mark
+*attribute*; `countWords`/`extractText` (`packages/shared/src/wordcount.ts`)
+read text *nodes*, not mark attributes — so note text is structurally excluded
+from word count. Pinned by a test: a chapter with notes has the same word count
+as the same chapter without them.
 
 ### Find-and-replace interaction (Phase 4b) — notes are preserved
 
@@ -200,6 +219,42 @@ roadmap only asked for current-chapter, and this keeps 4c.1 client-only.
 
 ---
 
+## Editor integration: guards, selection, persistence
+
+**Note actions are guarded editor-mutating entry points (pushback Issue A).**
+Add-note, edit-note, and delete-note each mutate editor content (set/remove a
+`note` mark), so per CLAUDE.md F-1 / §Save-pipeline invariants they must:
+
+1. Be **guarded on the editor's operational state** — a no-op while the editor
+   is `locked` or `busy` (e.g. mid snapshot-restore or mid replace-all). The
+   toolbar button and keyboard shortcut live *outside* the ProseMirror editable
+   surface, so `setEditable(false)` does **not** automatically disable them;
+   the guard is explicit. They are **local-doc** mutations (no server round-trip),
+   so they do **not** route through `useEditorMutation` — they mutate the doc and
+   let normal autosave persist, exactly like ordinary typing.
+2. Be **enumerated in `editorEntryPointSurface.test.ts`** — the forcing-pause
+   snapshot turns red when they're added, forcing a conscious guard-axis choice
+   (here: content-path, no-op while locked/busy).
+
+**Persistence rides normal autosave.** A note mutation changes the doc →
+`onUpdate` fires → the existing 1.5s-debounced autosave persists the note (it is
+part of the chapter JSON). No separate save path, no new endpoint.
+
+**Capture the target range before opening the modal (pushback Issue B).** A
+modal `<dialog>` moves focus out of the editor and loses the ProseMirror
+selection. Therefore:
+
+- **Add:** snapshot the selection `{from, to}` **before** `showModal()`; the
+  Save handler applies the `note` mark to that **captured** range, never the
+  live (now-collapsed) selection.
+- **Edit / delete:** capture the clicked note's mark range at click time; apply
+  the update/removal to the captured range.
+
+Test: open the dialog (focus leaves the editor), Save → the mark lands on the
+original range.
+
+---
+
 ## Visual treatment
 
 A single soft background highlight from the warm palette (ochre/amber tint,
@@ -251,8 +306,14 @@ textually, satisfying WCAG "color not sole information carrier."
 
 **client**
 - Note mark applies / edits / deletes.
-- Popover focus management + keyboard operation.
-- Notes panel lists in document order; scroll-to-note works; live-updates.
+- Note dialog focus management + keyboard operation (`useDialogLifecycle`).
+- **Range captured before the modal opens** survives focus leaving the editor
+  (Issue B): Save marks the original range.
+- Note actions are **no-ops while the editor is `locked`/`busy`** (Issue A), and
+  the new entry points appear in `editorEntryPointSurface.test.ts`.
+- Notes panel lists in document order; scroll-to-note works; live-updates from
+  the lifted note-list.
+- A chapter's **word count is identical with and without notes** (Issue D).
 - **Preview shows no highlight and no note text.**
 
 **server**
