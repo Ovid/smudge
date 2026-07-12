@@ -4,6 +4,15 @@ import { useCallback, useRef, useState } from "react";
  * Codecs are values, not hooks — construct them at MODULE scope. A codec
  * created inline during render is a new object each render and destabilizes
  * usePersistedState's setter identity.
+ *
+ * Two properties every codec MUST hold, because usePersistedState's fixed-point
+ * invariant rests on them:
+ *   (a) `parse ∘ serialize` is idempotent — normalizing an already-normalized
+ *       value must be a no-op, or repeated writes would drift.
+ *   (b) `fallback` is a fixed point of it: parse(serialize(fallback)) === fallback.
+ *       Violate (b) and read() hands back a value no write could ever produce —
+ *       state and reload silently disagree. numberInRange enforces (b) by
+ *       clamping its own fallback; a new codec must enforce it too.
  */
 export interface SettingCodec<T> {
   /** Parse a raw storage string. Return undefined to reject it → fallback. */
@@ -11,14 +20,6 @@ export interface SettingCodec<T> {
   serialize: (value: T) => string;
   fallback: T;
 }
-// Two properties every codec MUST hold, because usePersistedState's fixed-point
-// invariant rests on them:
-//   (a) `parse ∘ serialize` is idempotent — normalizing an already-normalized
-//       value must be a no-op, or repeated writes would drift.
-//   (b) `fallback` is a fixed point of it: parse(serialize(fallback)) === fallback.
-//       Violate (b) and read() hands back a value no write could ever produce —
-//       state and reload silently disagree. numberInRange enforces (b) by
-//       clamping its own fallback; a new codec must enforce it too.
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
