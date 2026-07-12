@@ -6,11 +6,18 @@ import { PANEL_MIN_WIDTH, PANEL_MAX_WIDTH } from "../hooks/useReferencePanelStat
 import { STRINGS } from "../strings";
 
 describe("ReferencePanel", () => {
+  const imagesTab = {
+    id: "images",
+    label: STRINGS.referencePanel.imagesTab,
+    // eslint-disable-next-line no-restricted-syntax -- test fixture (not user-facing)
+    panel: <div data-testid="panel-content">Gallery content</div>,
+  };
   const defaultProps = {
     width: 320,
     onResize: vi.fn(),
-    // eslint-disable-next-line no-restricted-syntax -- test fixture (not user-facing)
-    children: <div data-testid="panel-content">Gallery content</div>,
+    tabs: [imagesTab],
+    activeTabId: "images",
+    onSelectTab: vi.fn(),
   };
 
   afterEach(() => {
@@ -27,13 +34,13 @@ describe("ReferencePanel", () => {
       expect(aside).toBeInTheDocument();
     });
 
-    it("renders children in the tabpanel", () => {
+    it("renders the active tab's panel in the tabpanel", () => {
       render(<ReferencePanel {...defaultProps} />);
       expect(screen.getByTestId("panel-content")).toBeInTheDocument();
       expect(screen.getByText("Gallery content")).toBeInTheDocument();
     });
 
-    it("renders the Images tab", () => {
+    it("renders the Images tab as selected", () => {
       render(<ReferencePanel {...defaultProps} />);
       const tab = screen.getByRole("tab", { name: STRINGS.referencePanel.imagesTab });
       expect(tab).toBeInTheDocument();
@@ -45,9 +52,75 @@ describe("ReferencePanel", () => {
       expect(screen.getByRole("tablist")).toBeInTheDocument();
     });
 
-    it("renders a tabpanel", () => {
+    it("renders a tabpanel wired to the active tab", () => {
       render(<ReferencePanel {...defaultProps} />);
-      expect(screen.getByRole("tabpanel")).toBeInTheDocument();
+      const tabpanel = screen.getByRole("tabpanel");
+      expect(tabpanel).toBeInTheDocument();
+      expect(tabpanel).toHaveAttribute("aria-labelledby", "images-tab");
+      const tab = screen.getByRole("tab", { name: STRINGS.referencePanel.imagesTab });
+      expect(tab).toHaveAttribute("aria-controls", "images-tabpanel");
+    });
+
+    describe("multiple tabs", () => {
+      const secondProps = {
+        ...defaultProps,
+        tabs: [
+          imagesTab,
+          {
+            id: "notes",
+            label: "Notes",
+            // eslint-disable-next-line no-restricted-syntax -- test fixture (not user-facing)
+            panel: <div data-testid="notes-content">Notes content</div>,
+          },
+        ],
+      };
+
+      it("renders one button per tab", () => {
+        render(<ReferencePanel {...secondProps} />);
+        expect(screen.getAllByRole("tab")).toHaveLength(2);
+      });
+
+      it("marks the non-active tab aria-selected false and hides its panel", () => {
+        render(<ReferencePanel {...secondProps} />);
+        const notesTab = screen.getByRole("tab", { name: "Notes" });
+        expect(notesTab).toHaveAttribute("aria-selected", "false");
+        expect(screen.queryByTestId("notes-content")).not.toBeInTheDocument();
+      });
+
+      it("calls onSelectTab with the clicked tab id", async () => {
+        const onSelectTab = vi.fn();
+        render(<ReferencePanel {...secondProps} onSelectTab={onSelectTab} />);
+        await userEvent.click(screen.getByRole("tab", { name: "Notes" }));
+        expect(onSelectTab).toHaveBeenCalledWith("notes");
+      });
+
+      it("shows the active tab's panel when a different tab is active", () => {
+        render(<ReferencePanel {...secondProps} activeTabId="notes" />);
+        expect(screen.getByTestId("notes-content")).toBeInTheDocument();
+        expect(screen.queryByTestId("panel-content")).not.toBeInTheDocument();
+      });
+    });
+
+    describe("stale activeTabId (e.g. a removed tab still in localStorage)", () => {
+      it("falls back to the first tab: renders its panel and marks it selected", () => {
+        render(<ReferencePanel {...defaultProps} activeTabId="gone" />);
+        expect(screen.getByTestId("panel-content")).toBeInTheDocument();
+        const tab = screen.getByRole("tab", { name: STRINGS.referencePanel.imagesTab });
+        expect(tab).toHaveAttribute("aria-selected", "true");
+      });
+
+      it("labels the tabpanel by the fallback tab, not the stale id", () => {
+        render(<ReferencePanel {...defaultProps} activeTabId="gone" />);
+        const tabpanel = screen.getByRole("tabpanel");
+        expect(tabpanel).toHaveAttribute("id", "images-tabpanel");
+        expect(tabpanel).toHaveAttribute("aria-labelledby", "images-tab");
+      });
+    });
+
+    it("renders without throwing when there are no tabs", () => {
+      render(<ReferencePanel {...defaultProps} tabs={[]} />);
+      expect(screen.getByRole("complementary")).toBeInTheDocument();
+      expect(screen.queryAllByRole("tab")).toHaveLength(0);
     });
 
     it("applies the width from props as inline style", () => {

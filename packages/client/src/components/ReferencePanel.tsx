@@ -2,13 +2,34 @@ import { useRef, useEffect } from "react";
 import { PANEL_MIN_WIDTH, PANEL_MAX_WIDTH } from "../hooks/useReferencePanelState";
 import { STRINGS } from "../strings";
 
+export interface ReferencePanelTab {
+  id: string;
+  label: string;
+  panel: React.ReactNode;
+}
+
 interface ReferencePanelProps {
   width: number;
   onResize: (newWidth: number) => void;
-  children: React.ReactNode;
+  tabs: ReferencePanelTab[];
+  activeTabId: string;
+  onSelectTab: (id: string) => void;
 }
 
-export function ReferencePanel({ width, onResize, children }: ReferencePanelProps) {
+// ponytail: native-button tabs, no roving-tabindex arrow nav until 2+ tabs
+// warrant APG polish. Each <button role="tab"> is Tab-focusable and
+// Enter/Space-activatable, satisfying WCAG 2.1.1.
+export function ReferencePanel({
+  width,
+  onResize,
+  tabs,
+  activeTabId,
+  onSelectTab,
+}: ReferencePanelProps) {
+  // A persisted activeTabId can name a tab that no longer exists (renamed or
+  // removed in a later build). Degrade to the first tab so the panel stays
+  // non-empty and the tablist keeps a valid selection + aria-labelledby target.
+  const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
   const resizeCleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -69,24 +90,35 @@ export function ReferencePanel({ width, onResize, children }: ReferencePanelProp
       />
 
       <div role="tablist" className="border-b border-border/40 px-4 py-2 flex gap-2">
-        <button
-          id="images-tab"
-          role="tab"
-          aria-selected={true}
-          aria-controls="images-tabpanel"
-          className="text-sm font-medium text-text-primary px-2 py-1 border-b-2 border-accent"
-        >
-          {STRINGS.referencePanel.imagesTab}
-        </button>
+        {tabs.map((tab) => {
+          const selected = tab.id === activeTab?.id;
+          return (
+            <button
+              key={tab.id}
+              id={`${tab.id}-tab`}
+              role="tab"
+              aria-selected={selected}
+              aria-controls={`${tab.id}-tabpanel`}
+              onClick={() => onSelectTab(tab.id)}
+              className={
+                selected
+                  ? "text-sm font-medium text-text-primary px-2 py-1 border-b-2 border-accent"
+                  : "text-sm font-medium text-text-secondary px-2 py-1 border-b-2 border-transparent hover:text-text-primary"
+              }
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
       <div
-        id="images-tabpanel"
+        id={activeTab && `${activeTab.id}-tabpanel`}
         role="tabpanel"
-        aria-labelledby="images-tab"
+        aria-labelledby={activeTab && `${activeTab.id}-tab`}
         className="flex-1 overflow-y-auto"
       >
-        {children}
+        {activeTab?.panel ?? null}
       </div>
     </aside>
   );

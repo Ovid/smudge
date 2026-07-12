@@ -222,6 +222,61 @@ describe("useReferencePanelState", () => {
     });
   });
 
+  describe("activeTabId", () => {
+    it("defaults to images", async () => {
+      const { useReferencePanelState } = await loadHook();
+      const { result } = renderHook(() => useReferencePanelState());
+
+      expect(result.current.activeTabId).toBe("images");
+    });
+
+    it("setActiveTab updates state and persists to localStorage", async () => {
+      const { useReferencePanelState } = await loadHook();
+      const { result } = renderHook(() => useReferencePanelState());
+
+      act(() => {
+        result.current.setActiveTab("notes");
+      });
+
+      expect(result.current.activeTabId).toBe("notes");
+      expect(store.get("smudge:ref-panel-active-tab")).toBe("notes");
+    });
+
+    it("reads a saved active tab on init", async () => {
+      store.set("smudge:ref-panel-active-tab", "notes");
+      const { useReferencePanelState } = await loadHook();
+      const { result } = renderHook(() => useReferencePanelState());
+
+      expect(result.current.activeTabId).toBe("notes");
+    });
+
+    it("falls back to images when localStorage throws", async () => {
+      mockLocalStorage.getItem.mockImplementation(() => {
+        throw new Error("unavailable");
+      });
+      const { useReferencePanelState } = await loadHook();
+      const { result } = renderHook(() => useReferencePanelState());
+
+      expect(result.current.activeTabId).toBe("images");
+    });
+
+    it("handles localStorage.setItem throwing on setActiveTab", async () => {
+      const { useReferencePanelState } = await loadHook();
+      const { result } = renderHook(() => useReferencePanelState());
+
+      mockLocalStorage.setItem.mockImplementation(() => {
+        throw new Error("QuotaExceededError");
+      });
+
+      act(() => {
+        result.current.setActiveTab("notes");
+      });
+
+      // State still updates even if persistence fails
+      expect(result.current.activeTabId).toBe("notes");
+    });
+  });
+
   describe("exported constants", () => {
     it("exports PANEL_MIN_WIDTH as 240", async () => {
       const { PANEL_MIN_WIDTH } = await loadHook();

@@ -139,8 +139,15 @@ export function EditorPage() {
   });
 
   const { sidebarWidth, sidebarOpen, handleSidebarResize, toggleSidebar } = useSidebarState();
-  const { panelWidth, panelOpen, setPanelOpen, handlePanelResize, togglePanel } =
-    useReferencePanelState();
+  const {
+    panelWidth,
+    panelOpen,
+    setPanelOpen,
+    handlePanelResize,
+    togglePanel,
+    activeTabId,
+    setActiveTab,
+  } = useReferencePanelState();
 
   const {
     snapshotPanelOpen,
@@ -1043,6 +1050,8 @@ export function EditorPage() {
         panelOpen={panelOpen}
         panelWidth={panelWidth}
         onPanelResize={handlePanelResize}
+        activeTabId={activeTabId}
+        onSelectTab={setActiveTab}
         galleryExternalRefreshKey={galleryExternalRefreshKey}
         onInsertImage={(url, alt) => {
           // I4: gate behind isActionBusy() like every other editor-
