@@ -154,16 +154,24 @@ describe("useSidebarState", () => {
       expect(result.current.sidebarWidth).toBe(260);
     });
 
-    it("falls back to default width for value below minimum", async () => {
+    it("clamps a stored width below the minimum", async () => {
       store.set("smudge:sidebar-width", "50");
       const { useSidebarState } = await loadHook();
       const { result } = renderHook(() => useSidebarState());
 
-      expect(result.current.sidebarWidth).toBe(260);
+      expect(result.current.sidebarWidth).toBe(180);
     });
 
-    it("falls back to default width for value above maximum", async () => {
+    it("clamps a stored width above the maximum", async () => {
       store.set("smudge:sidebar-width", "999");
+      const { useSidebarState } = await loadHook();
+      const { result } = renderHook(() => useSidebarState());
+
+      expect(result.current.sidebarWidth).toBe(480);
+    });
+
+    it("falls back to the default width for an empty stored value", async () => {
+      store.set("smudge:sidebar-width", "");
       const { useSidebarState } = await loadHook();
       const { result } = renderHook(() => useSidebarState());
 
