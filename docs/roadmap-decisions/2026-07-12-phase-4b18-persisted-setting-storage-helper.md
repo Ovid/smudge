@@ -24,7 +24,7 @@ alignment:
 
 - **Severity:** Important
 - **Category:** Omission
-- **Summary:** The design's `numberInRange` codec specified "`Number(raw)`; finite → clamp; NaN → reject." But `Number("")` and `Number("   ")` both evaluate to `0`, which is finite — so an empty or whitespace-only stored width would take the *clamp* branch and silently become the minimum (180px / 240px) rather than falling back to the sensible default (260px / 320px). This was an undocumented third behavior delta, and unlike the two the design did list, it was a regression in quality: it converts garbage into a plausible-looking legitimate value. An empty string is exactly what a partially-failed write or a storage-clearing extension leaves behind, so it is not an exotic input. Shipping it would have reproduced the precise bug class of 4c.0 review item [I1] — a loose parse producing a wrong-but-plausible value — inside the very phase written to generalize the fix for it.
+- **Summary:** The design's `numberInRange` codec specified "`Number(raw)`; finite → clamp; NaN → reject." But `Number("")` and `Number("   ")` both evaluate to `0`, which is finite — so an empty or whitespace-only stored width would take the _clamp_ branch and silently become the minimum (180px / 240px) rather than falling back to the sensible default (260px / 320px). This was an undocumented third behavior delta, and unlike the two the design did list, it was a regression in quality: it converts garbage into a plausible-looking legitimate value. An empty string is exactly what a partially-failed write or a storage-clearing extension leaves behind, so it is not an exotic input. Shipping it would have reproduced the precise bug class of 4c.0 review item [I1] — a loose parse producing a wrong-but-plausible value — inside the very phase written to generalize the fix for it.
 - **Resolution:** `fixed-in-design` — added an explicit `raw.trim() === "" → undefined` guard before coercion, keeping "is this a number at all?" separate from "is this number in range?", with a pinning test case in the plan (Task 1 and Task 2).
 
 ### [2] The design froze "the public API" but only named half of it
@@ -38,7 +38,7 @@ alignment:
 
 - **Severity:** Minor
 - **Category:** Omission
-- **Summary:** The hook reads storage exactly once, in the lazy `useState` initializer, but its setter's `useCallback` deps include `key`. A `key` that changed between renders would leave the two halves disagreeing: state still holding the value read from the *old* key while writes land on the *new* one, with no re-read and no reset. The failure is silent and would present as "the setting didn't load" while quietly persisting correctly. Unreachable today (all four keys are module-level string literals), but the hook is being introduced as the sanctioned way to add future settings, and a per-project key (`smudge:panel-width:${projectId}` — a plausible Phase 8a want) walks straight into it.
+- **Summary:** The hook reads storage exactly once, in the lazy `useState` initializer, but its setter's `useCallback` deps include `key`. A `key` that changed between renders would leave the two halves disagreeing: state still holding the value read from the _old_ key while writes land on the _new_ one, with no re-read and no reset. The failure is silent and would present as "the setting didn't load" while quietly persisting correctly. Unreachable today (all four keys are module-level string literals), but the hook is being introduced as the sanctioned way to add future settings, and a per-project key (`smudge:panel-width:${projectId}` — a plausible Phase 8a want) walks straight into it.
 - **Resolution:** `fixed-in-design` — documented the constant-key contract in the hook's doc comment and in the CLAUDE.md entry, naming the escape hatch (derive per-entity settings by remounting via a `key` prop, not by varying the argument). Supporting a changing key was explicitly rejected as speculative machinery for a caller that does not exist.
 
 ## Alignment Findings
@@ -57,15 +57,68 @@ alignment:
 - **Summary:** The design's §"Deliverables Beyond Code" names two items: the `docs/roadmap.md` §Phase 4b.18 body section (the phase previously existed only as a table row) and the CLAUDE.md §Key Architecture Decisions entry. The plan had a task for the second (Task 6) but nothing at all for the first — no task, no Definition-of-Done line, no mention. The reason was benign (the roadmap section was written during this `/roadmap` run and committed in `f23574d`), but the plan never said so, and the plan is the document an executor works from — possibly in a fresh session with no memory of this conversation. They would hit a design deliverable with no corresponding task and either re-do it, producing a duplicate section, or flag it as a planning bug.
 - **Resolution:** `fixed-in-plan` — added an "Already Done (do not redo)" preamble naming the commit, plus a pre-ticked Definition-of-Done checkbox, so the plan's deliverable list matches the design's one-for-one and is self-contained for a zero-context executor.
 
-### [3] The plan was red-green-*commit*, not red-green-**refactor**
+### [3] The plan was red-green-_commit_, not red-green-**refactor**
 
 - **Severity:** Minor
 - **Category:** tdd-format
-- **Summary:** Every task ran write-failing-test → watch-it-fail → minimal-implementation → watch-it-pass → commit. That is RED and GREEN faithfully, but no task carried a REFACTOR step, and CLAUDE.md §Testing Philosophy states "ALL CODE MUST USE RED-GREEN-REFACTOR if feasible." Refactor is precisely the step that gets skipped once the tests are green, which is why it belongs in the written plan rather than being left to discipline. The step is only meaningful for the three tasks that create code, though: Tasks 4–5 *are* the refactor (the whole phase is one), and Tasks 6–7 are documentation and verification with no code to refactor.
+- **Summary:** Every task ran write-failing-test → watch-it-fail → minimal-implementation → watch-it-pass → commit. That is RED and GREEN faithfully, but no task carried a REFACTOR step, and CLAUDE.md §Testing Philosophy states "ALL CODE MUST USE RED-GREEN-REFACTOR if feasible." Refactor is precisely the step that gets skipped once the tests are green, which is why it belongs in the written plan rather than being left to discipline. The step is only meaningful for the three tasks that create code, though: Tasks 4–5 _are_ the refactor (the whole phase is one), and Tasks 6–7 are documentation and verification with no code to refactor.
 - **Resolution:** `fixed-in-plan` — added an explicit REFACTOR step to Tasks 1–3 naming concrete things to look for (the shared codec-literal shape; the double `serialize` call in the setter and why it should be left alone; whether `read()` earns its extraction), and a Ground Rules note recording that Tasks 4–7 omit the step by decision rather than oversight. The plan states that "looked, found nothing worth changing" is a legitimate outcome — the look is the point, not a mandatory edit.
+
+## Implementation Findings
+
+Two decisions were taken during execution that the design did not anticipate.
+Both were surfaced by the per-task code-quality review and are recorded here
+because they change what the design says.
+
+### [I1] A rejected write keeps the last known-good value, not the fallback
+
+- **Severity:** Important
+- **Category:** design-deviation (user-approved)
+- **Summary:** The design and plan both specified the setter as
+  `codec.parse(codec.serialize(next)) ?? codec.fallback`. That `?? fallback` arm
+  was the one branch no test covered, and it is destructive: a write the codec
+  cannot represent (a `NaN` width out of a resize handler reading a torn-down
+  rect) would not be ignored — it would **reset the setting to the factory
+  default and persist that**, wiping the user's real 400px width. A fallback is
+  the floor for absent-or-corrupt _storage_, not a reset button for a bad _live
+  write_.
+- **Resolution:** `fixed-in-code` — changed to `?? valueRef.current`, so an
+  unrepresentable write is ignored and state and storage keep the last
+  known-good value. `valueRef.current` is itself a fixed point of the round
+  trip, so the fixed-point invariant still holds. This is not a read/write
+  asymmetry: the rule is "keep the last known-good value," and at read time the
+  fallback _is_ the last known-good value, because there is nothing else to
+  keep. Same rule, both directions. The uncovered branch is now pinned by test.
+  The user was asked and approved the deviation from the approved design.
+
+### [I2] "Public API unchanged" held for the member list, not the signatures
+
+- **Severity:** Minor
+- **Category:** design-gap
+- **Summary:** The design froze both hooks' public APIs, and pushback finding
+  [2] widened that to include the exported bounds constants. Both held. But the
+  _setter signatures_ silently widened: `handleSidebarResize` went from
+  `(newWidth: number) => void` to `usePersistedState`'s React-setter shape
+  `(next: number | ((prev: number) => number)) => void`, and the same for
+  `setPanelOpen` / `setActiveTab`. Every call site still compiles (a wider
+  parameter type is assignable to a narrower one, and `tsc` is clean), and the
+  full 1573-test client suite passes with no consumer edited — but the frozen
+  surface was the member _list_, not the member _types_.
+- **Resolution:** `accepted` — the widening is what makes `togglePanel` a
+  one-liner over the functional setter, and narrowing it at the hook boundary
+  would cost a cast or an explicit annotation to buy nothing. Recorded rather
+  than fixed.
+
+A third review finding is worth noting as process rather than decision: the
+Task 4 reviewer reverted the migrated `useSidebarState` to its pre-phase
+asymmetry (unclamped write, reject-on-read) and found **all 17 of its tests
+still passed** — the phase had shipped a fix for a write-path bug with no test
+on the write path at that hook. Two cases asserting state _and_ storage were
+added, and verified to fail against the planted regression. `useReferencePanelState`
+already had the equivalent coverage; the hook that actually had the bug did not.
 
 ## Summary
 
 - Pushback raised 3 issues; all 3 resulted in design changes (1 Important, 2 Minor). The Important one — the `Number("") === 0` coercion trap — would have shipped a garbage-to-plausible-value conversion inside the phase whose stated purpose is preventing exactly that, in a codec deliberately designed to be the single validator for both the read and write paths.
-- Alignment raised 3 issues (all Minor); 1 resulted in a design change and 2 in plan changes. Requirements coverage was complete in both directions before the review — every design requirement traced to a task and every task traced back to a requirement, with no scope creep and no orphaned tasks. The findings were about the *accuracy* of the design's own risk accounting, the plan's self-containment for a zero-context executor, and conformance to the repository's mandated TDD format.
-- Notable process note: during brainstorming, an early survey claimed the sidebar clamp asymmetry was a *live* bug (that a user could drag the sidebar past 480px and have it reset to 260 on reload). Tracing the callers disproved this — `Sidebar.tsx:481-484` and `ReferencePanel.tsx:62-66` both clamp at the drag site — and the claim was retracted to the user *before* the design was written, along with an explicit re-offer of the rejected alternative (Option B, free functions), since the retracted correctness argument had been part of the case for Option A. The user re-confirmed Option A on the remaining grounds (dedup value plus the codebase's established "one hook owns the pattern" convention). The design's §Alternatives Considered records this so the decision's real basis survives.
+- Alignment raised 3 issues (all Minor); 1 resulted in a design change and 2 in plan changes. Requirements coverage was complete in both directions before the review — every design requirement traced to a task and every task traced back to a requirement, with no scope creep and no orphaned tasks. The findings were about the _accuracy_ of the design's own risk accounting, the plan's self-containment for a zero-context executor, and conformance to the repository's mandated TDD format.
+- Notable process note: during brainstorming, an early survey claimed the sidebar clamp asymmetry was a _live_ bug (that a user could drag the sidebar past 480px and have it reset to 260 on reload). Tracing the callers disproved this — `Sidebar.tsx:481-484` and `ReferencePanel.tsx:62-66` both clamp at the drag site — and the claim was retracted to the user _before_ the design was written, along with an explicit re-offer of the rejected alternative (Option B, free functions), since the retracted correctness argument had been part of the case for Option A. The user re-confirmed Option A on the remaining grounds (dedup value plus the codebase's established "one hook owns the pattern" convention). The design's §Alternatives Considered records this so the decision's real basis survives.
