@@ -290,6 +290,29 @@ Re-flagging one is warranted only if its stated premise changes.
   this matches the line-973 roadmap precedent for deferring single-user
   optimizations. Revisit only if Smudge ever ships a cloud / multi-writer
   deployment.
+- **`EditorPage` god-orchestrator, accepted with an enforcement net (F-1).**
+  `packages/client/src/pages/EditorPage.tsx` (~1094 lines) owns the shared
+  mutable busy/lock state and threads it into every editor-mutating entry point;
+  the cross-hook invariant holds because this one component wires the same
+  objects consistently. Five prior decompositions already extracted rendering
+  and the controller hooks — the residual concentration is irreducible cross-hook
+  coordination, not accidental complexity. The only structural "fix" (a React
+  context/provider lift) would *hide* invariant-critical mutable state and buy
+  near-zero safety: the two controllers already receive that state via
+  compile-checked typed deps interfaces, so mis-wiring them is already a compile
+  error. Accepted as-is. The one real residual — nothing *mechanically* forced a
+  NEW editor-mutating entry point to be guarded — is closed by
+  `packages/client/src/__tests__/editorEntryPointSurface.test.ts`, a
+  forcing-pause snapshot of the full entry-point surface (`EditorHeader` /
+  `EditorMainContent` / `EditorDialogs` props + `useKeyboardShortcuts` keys) that
+  turns red when any entry point is added or removed, forcing the author to
+  consciously choose the new point's guard axis (busy latch / lock check /
+  content-path machine) per §Save-pipeline invariants before updating the list.
+  It converts reviewer-optional into author-mandatory acknowledgment; it does
+  not verify the guard is *correct* — the behavioral tests in
+  `EditorPageFeatures.test.tsx` do that for the current handlers. Do not
+  "refactor away" EditorPage's explicit wiring; keep new mutating entry points
+  guarded and listed.
 
 ## API Design
 
