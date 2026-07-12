@@ -94,8 +94,26 @@ over free `readSetting`/`writeSetting` functions (see Alternatives).
 The setter accepts the functional `(prev) => next` form, which `togglePanel`
 needs. It resolves `prev` from an internal ref rather than from inside a
 `setState` updater: a `setItem` side effect inside an updater fires twice under
-React StrictMode's double-invoke. Setter identity is stable — `useCallback` on
-`[key, codec]`, both module-level constants at every call site.
+React StrictMode's double-invoke, and `<StrictMode>` **is** enabled
+(`packages/client/src/main.tsx:14`), so this is a live concern in dev, not a
+hypothetical. Setter identity is stable — `useCallback` on `[key, codec]`, both
+module-level constants at every call site.
+
+**Contract: `key` must be constant for the component's lifetime.** The stored
+value is read exactly once, in the lazy `useState` initializer, but the setter's
+deps include `key`. A `key` that changed between renders would split-brain —
+state still holding the value read from the *old* key while writes land on the
+*new* one — with no re-read and no reset, which would present as "the setting
+didn't load" while quietly persisting correctly. Unreachable today (all four keys
+are module-level string literals), but the hook is advertised as the way to add
+future settings, and a per-project key (`smudge:panel-width:${projectId}`, a
+plausible Phase 8a want) is the obvious trap. **Derive per-entity settings by
+remounting** — put a `key` prop on the component — **not by varying this
+argument.** This constraint goes in the hook's doc comment and in the CLAUDE.md
+entry. Supporting a changing `key` (re-read on change) is deliberately not built:
+it is speculative machinery for a caller that does not exist, and it raises
+questions with no obviously right answer (does the old key get cleaned up? if the
+new key is absent, fall back or keep the current value?).
 
 ### Failure handling: deliberately silent
 
@@ -132,10 +150,32 @@ at mount, and this formalizes a second `localStorage` convention alongside
 Three factories ship alongside the hook:
 
 ```ts
-numberInRange(min, max, fallback)  // Number(raw); finite → clamp to [min,max]; NaN → reject
-flag(fallback)                     // "true" → true; "false" → false; else reject
-text(fallback)                     // identity
+numberInRange(min, max, fallback)
+// parse: (raw) => {
+//   if (raw.trim() === "") return undefined;   // "" and "   " are NOT numbers
+//   const n = Number(raw);
+//   return Number.isFinite(n) ? clamp(n, min, max) : undefined;
+// }
+
+flag(fallback)   // "true" → true; "false" → false; anything else → reject
+text(fallback)   // identity
 ```
+
+**The empty-string guard is load-bearing, not defensive noise.** `Number("")` is
+`0`, not `NaN` — and `0` is finite, so without the `trim()` check an empty or
+whitespace-only stored value would take the *clamp* branch and silently become
+`min` (180px / 240px) instead of falling back to the sensible default. An empty
+string is exactly what a partially-failed write or a storage-clearing extension
+leaves behind, so it is not an exotic input. Turning garbage into a
+plausible-looking legitimate value is precisely the bug class of 4c.0 [I1], which
+this phase exists to generalize; shipping it inside the fix would be an unhappy
+irony. The guard keeps "is this a number at all?" and "is this number in range?"
+as two distinct questions.
+
+(`Number` has other coercion quirks the guard does not address — `"0x10"` → 16,
+`"1e3"` → 1000 — but those produce *honest* numbers that then clamp safely, so
+they degrade correctly. `""` is the only one that degrades to a wrong-but-valid
+value.)
 
 `text()` is deliberately dumb — it does **not** validate the tab id. This is the
 direct instruction from 4c.0 [I1]'s resolution: *"Validating in the hook is
@@ -169,6 +209,19 @@ Both hooks keep their **exact public API** — same returned member names, same
 signatures. `EditorPage.tsx`, `Sidebar.tsx`, `ReferencePanel.tsx`, and
 `EditorMainContent.tsx` are **not touched**.
 
+**The frozen surface includes the module-level constants, not just the returned
+members.** Both hooks export their bounds, and components import them directly:
+`Sidebar.tsx:2` takes `SIDEBAR_MIN_WIDTH` / `SIDEBAR_MAX_WIDTH` for its drag
+clamp (`:481-482`), its keyboard clamps (`:501,505`), and — importantly — the
+`aria-valuemin` / `aria-valuemax` it announces on the resize separator
+(`:471-472`); `ReferencePanel.tsx` does the same with `PANEL_MIN_WIDTH` /
+`PANEL_MAX_WIDTH`. Under this refactor those bounds also become arguments to a
+codec factory, and the tempting tidy-up is to inline them there and drop the
+exports. **Do not.** That silently breaks the components' clamps and their ARIA
+bounds. (TypeScript catches the deletion, which is why this is a footnote and not
+a risk — but the a11y coupling deserves to be named rather than rediscovered by
+`tsc`.)
+
 ## Behavior Deltas
 
 Only two, both on the read path:
@@ -186,7 +239,10 @@ Only two, both on the read path:
 
 Everything else is identical: `"garbage"` still reads as `open: false`; the tab
 id still passes through untouched; failures stay silent; all four defaults
-unchanged.
+unchanged. In particular an **empty stored width still falls back to the default**
+(260/320) rather than clamping to `min` — see the `Number("") === 0` guard in
+§Codecs. That the delta list stays at two, and does not quietly grow a third, is
+the point of that guard.
 
 ## Testing
 
@@ -196,8 +252,10 @@ Red-green-refactor throughout, per CLAUDE.md §Testing Philosophy. Coverage floo
 New `packages/client/src/utils/persistedSetting.test.ts` (colocated, following
 the `utils/abortable.test.ts` precedent):
 
-- **Read:** valid → parsed; absent → fallback; malformed → fallback;
-  out-of-range → **clamped**; `getItem` throws → fallback.
+- **Read:** valid → parsed; absent → fallback; malformed (`"abc"`) → fallback;
+  **empty / whitespace-only (`""`, `"   "`) → fallback, NOT clamped to `min`**
+  (pins the `Number("") === 0` guard); out-of-range → **clamped**; `getItem`
+  throws → fallback.
 - **Write:** persists the serialized value; out-of-range input → the same
   normalized value lands in state **and** storage (the fixed-point invariant);
   `setItem` throws → state still updates and no throw escapes.
@@ -220,12 +278,43 @@ No e2e changes — nothing user-visible.
 1. **`docs/roadmap.md` gains a `## Phase 4b.18` body section.** The phase
    currently exists only as a row in the Phase Structure table; every other phase
    has a Goal / Scope / Out of Scope / Definition of Done / Dependencies section.
-2. **CLAUDE.md §Key Architecture Decisions gains an entry** — "Persisted UI
-   settings live in one hook" — recording that new persisted settings route
-   through `usePersistedState` with a codec, that `parse` is the single validator
-   for both directions, and that storage failures are deliberately silent (with
-   the `useContentCache`-already-warns reasoning). Without this, the next setting
-   gets hand-rolled and the phase was theatre.
+2. **CLAUDE.md §Key Architecture Decisions gains an entry**, placed immediately
+   after the "Dialog lifecycle lives in one hook" entry it parallels. Without it,
+   the next setting gets hand-rolled and the phase was theatre. Approved text:
+
+   > **Persisted UI settings live in one hook.** Every `localStorage`-backed UI
+   > setting (panel width, panel open, active tab, sidebar width) routes through
+   > `usePersistedState(key, codec)`
+   > (`packages/client/src/utils/persistedSetting.ts`) rather than a hand-rolled
+   > `getSaved* + try/catch` reader. The codec's `parse` is the **single
+   > validator for both directions** — the setter normalizes via
+   > `parse(serialize(next))`, so React state is always a fixed point of the
+   > storage round-trip and the read and write paths cannot drift apart. Codec
+   > factories: `numberInRange` (note its empty-string guard — `Number("")` is
+   > `0`, not `NaN`), `flag`, `text`. Two deliberate constraints: (1) **storage
+   > failures are silent** — no `clientWarn` — because the data-loss path
+   > (`useContentCache`, sharing the same origin quota) already warns loudly, and
+   > the resize path would otherwise warn at mousemove frequency; (2) **`key`
+   > must be constant for a component's lifetime** — derive per-entity settings
+   > by remounting, not by varying the key. The hook does **not** validate domain
+   > values it cannot know (e.g. tab ids); that stays with the component that
+   > owns the domain (`ReferencePanel` degrades an unknown tab to `tabs[0]`).
+   > `useContentCache` is deliberately *not* a client of this hook — it is a
+   > draft cache with JSON payloads, its own logging, and a different failure
+   > contract.
+
+### CLAUDE.md review (all other sections)
+
+Checked and **no change needed**: §API Design (no endpoints/codes/envelopes —
+`localStorage` is client-only), §Data Model (no tables/columns), §Testing
+Philosophy (the phase *conforms* to the zero-warnings rule rather than extending
+it — the silent-failure decision means no `expectConsole()` is needed anywhere),
+§Target Project Structure (`utils/` already exists and already hosts
+`abortable.ts` / `editorSafeOps.ts`), §Accessibility (the `aria-valuemin` /
+`aria-valuemax` coupling is a fact about these two hooks, documented at the call
+site in §Call Sites, not a project-wide a11y primitive), §Visual Design (n/a), and
+§Pull Request Scope (one refactor, no new hazard — this phase is itself an
+instance of the existing split rule working).
 
 ## Non-Goals
 
