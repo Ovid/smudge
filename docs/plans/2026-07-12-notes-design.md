@@ -44,9 +44,17 @@ today; there is no `Mark.create` precedent).
 
 **Mark attributes:**
 
-- `id` — a stable identifier, used for panel→document scroll-to and to
-  disambiguate two notes with identical noted text.
-- `text` — the note's plain-text content (multi-line allowed).
+- `text` — the note's plain-text content (multi-line allowed). This is the
+  mark's **only** attribute.
+
+**No `id` attribute — identity is document position.** An earlier draft gave
+the mark an `id`, but nothing needs it: scroll-to-note and panel disambiguation
+both use the mark's **document position** (what ProseMirror gives natively), and
+the panel list is re-derived live on every editor update (see "Notes panel"),
+so positions are always current. An `id` would also introduce a
+**copy/paste collision** — pasting a noted range duplicates the mark verbatim,
+so two notes would share an id and break id-based lookup. Dropping `id` removes
+both the dead attribute and that latent bug. (Pushback Issue 4.)
 
 **Why a mark, not a table.** Because the note lives inside the chapter's TipTap
 JSON, it rides along for free:
@@ -113,18 +121,26 @@ One helper, called at two sites, closes the whole leak surface. Deliberately
 explicit over clever: the note text cannot appear because we delete the mark
 carrying it before HTML generation, and there is exactly one function to test.
 
-### Find-and-replace interaction (Phase 4b)
+### Find-and-replace interaction (Phase 4b) — notes are preserved
 
-Project-wide replace rewrites text runs server-side (`tiptap-text.ts`). The
-`note` mark already passes validation (`TipTapDocSchema` does not whitelist
-mark types).
+Project-wide replace rewrites text runs server-side (`tiptap-text.ts`). Verified
+behavior (pushback Issue 1): **`replaceInDoc` is mark-aware** — it tracks marks
+per-offset (`marksAtOffset`, `tiptap-text.ts:556`) and rebuilds text nodes
+carrying them (`appendWithMarks`, line 782); a match's replacement inherits the
+marks at the match start (`makeTextNode(repText, marks)`, line 745). The `note`
+mark also already passes validation (`TipTapDocSchema` does not whitelist mark
+types).
 
-**Invariant:** a replace landing inside a noted range must **not crash** and
-must **not silently corrupt** the document. Worst acceptable outcome is the note
-detaching. The plan carries an explicit test (replace text within a noted range
-→ doc still valid, note preserved or cleanly dropped). Exact preservation
-behavior is confirmed against `tiptap-text.ts` at plan-writing time, not guessed
-here.
+**Result:** replacing "Marcus" → "Lucius" inside a noted "Marcus drew his
+sword" yields "Lucius drew his sword" **with the note intact**. Partial replace
+keeps the note; deleting all noted text removes it — matching in-editor editing.
+One harmless edge: a match that straddles a note's boundary inherits the
+start-offset's marks, so the note may grow or shrink slightly at that edge. No
+crash, no data loss.
+
+**Invariant / test:** replace text within a noted range → doc stays valid and
+the note mark is preserved. A test asserts this (the earlier "worst case: note
+detaching" framing was too pessimistic and is dropped).
 
 ---
 
@@ -137,22 +153,44 @@ here.
   fallback Ctrl+Shift+M if Alt proves flaky cross-browser). Both free of
   existing bindings (Ctrl+/, Ctrl+S, Ctrl+H, Ctrl+Shift+N/W/P/\\, Ctrl+.,
   Ctrl+Shift+Up/Down).
-- Opens a small **popover** anchored to the selection: plain-text `<textarea>`
-  + Save/Cancel. Saving empty = no note (or delete existing).
+- Opens the note editor — a **modal `<dialog>`** (pushback Issue 3):
+  plain-text `<textarea>` + Save/Cancel. Saving empty = no note (or delete
+  existing).
+
+**The note dialog is a modal `<dialog>` via `useDialogLifecycle`** — the same
+pattern as the existing five dialogs (Confirm, Export, NewProject,
+ProjectSettings, ShortcutHelp). It inherits focus-on-open, Escape-to-close,
+backdrop-click, and the `stopImmediatePropagation` opt-in for free, so no new
+focus-management/a11y surface is hand-built. (An inline selection-anchored
+popover was considered and rejected: a brand-new, unreused a11y pattern against
+a mandatory constraint.)
 
 **Viewing / editing / deleting.**
 
 - Noted text carries a subtle highlight. Click it (or a panel row) → the same
-  popover opens showing the note, with Edit and Delete.
+  dialog opens showing the note, with Edit and Delete.
 - Delete removes the `note` mark, restoring plain text.
 
 **Notes panel tab** (in the reference panel, post-4c.0).
 
-- A "Notes" tab walks the **open chapter's editor JSON** for `note` marks and
-  lists them **in document order** — each row: noted-text excerpt + note.
-- Clicking a row scrolls the editor to that mark and opens its popover.
+- A "Notes" tab renders from a **minimal note-list** (noted-text excerpt + note
+  + document position) lifted out of the editor, listed **in document order**.
+- Clicking a row scrolls the editor to that mark's position and opens the note
+  dialog.
 - **Live-updates** as the writer adds/edits/deletes — no server round-trip, no
-  cache staleness (data source is the in-memory editor doc).
+  cache staleness.
+
+**Panel data path (pushback Issue 2).** The TipTap editor instance is
+encapsulated in `Editor.tsx`; the panel does not get it directly. Instead,
+`Editor.tsx`'s existing `onUpdate` (fired on every change, line 260) extracts
+the minimal note-list (text + position per `note` mark) and pushes it up through
+the state `EditorPage` already owns; the panel is a dumb renderer over that
+array. This reuses the existing update tick and the Editor→EditorPage seam,
+keeps one source of truth, and — because the list re-derives on every update —
+makes document position a reliable identity key (see "No `id` attribute").
+Threading one more derived value through `EditorPage` is the accepted F-1
+orchestrator pattern; the entry-point surface test will flag the new wiring as
+intended.
 
 **Notes panel scope: current chapter only, client-side.** No
 `GET /api/projects/{id}/notes` endpoint in v1. The panel reads the open
@@ -175,9 +213,8 @@ textually, satisfying WCAG "color not sole information carrier."
 
 ## Accessibility (WCAG 2.1 AA — mandatory)
 
-- The popover is keyboard-operable with managed focus — reuse
-  `useDialogLifecycle` if it renders as a `<dialog>`, else an explicit focus
-  trap + Escape-to-close.
+- The note dialog is keyboard-operable with managed focus via
+  `useDialogLifecycle` (modal `<dialog>`) — see Interaction model.
 - The "Add Note" button carries an `aria-label` from `strings.ts`.
 - The Notes panel list is fully keyboard-navigable — every note reachable
   without a pointer.
@@ -192,7 +229,9 @@ textually, satisfying WCAG "color not sole information carrier."
 - **Delete-through:** deleting all noted text deletes the note; partial deletion
   shrinks the range, note survives.
 - **Copy/paste:** noted text pasted elsewhere carries the mark (note travels
-  with its text); pasting into a noted range keeps the surrounding note.
+  with its text); pasting into a noted range keeps the surrounding note. With no
+  `id` attribute, a pasted copy is simply a second note over the copied text —
+  no identity collision.
 - **Empty note:** saving an empty popover deletes the note rather than storing a
   blank annotation.
 - **Snapshot restore:** restoring an old snapshot restores whatever notes
@@ -203,9 +242,12 @@ textually, satisfying WCAG "color not sole information carrier."
 ## Testing (TDD, red-green-refactor)
 
 **shared**
-- `stripNoteMarks`: removes marks, preserves text, handles nested marks and the
-  depth cap.
+- `stripNoteMarks`: removes marks, preserves text, handles nested marks, and
+  **honors the `MAX_TIPTAP_DEPTH` guard** (bails safely on an over-deep doc,
+  per the Phase 4b.13 depth-guard contract).
 - `note` mark `renderHTML`/`parseHTML` round-trip.
+- `replaceInDoc` preserves a `note` mark across a partial replace within a noted
+  range (pushback Issue 1).
 
 **client**
 - Note mark applies / edits / deletes.
