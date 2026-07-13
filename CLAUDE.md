@@ -433,6 +433,31 @@ Line count is not a hard limit — a 3,000-line migration can be fine, a 500-lin
 
 **Exceptions to the one-feature rule require an explicit decision recorded in the phase's decision log; the rule defaults to enforcement.** Recorded precedents live in `docs/roadmap-decisions/` (the earliest, Phase 4b.3, is in `docs/plans/2026-04-25-4b3a-review-followups-design.md`) — consult them for precedent rather than re-deriving the policy.
 
+## Merging Branches
+
+**Land a feature branch on `main` with `git done` (`~/bin/git-done`), never a
+bare `git merge`.** `git done` rebases the branch onto `main` _first_, then
+merges with `--no-ff`. The rebase is the load-bearing step: it puts the merge
+commit's second parent right next to the tip, so the branch shows up in
+`git lg` as a small bubble that opens and closes immediately. A bare
+`git merge --no-ff` of a branch that has fallen behind `main` produces a merge
+commit whose second parent reaches back to the branch's original fork point,
+drawing a line across every commit in between — the further behind the branch,
+the worse the tangle (a 2026-07-13 merge of two stale branches, 263 and 874
+commits behind, is what prompted this rule).
+
+`git done` also pushes the rebased branch and the merged target, and prints the
+branch-cleanup commands. `-l`/`--local` merges without pushing; `-y`/`--yes`
+skips the confirmation prompt. It derives the target branch from
+`refs/remotes/origin/HEAD` and refuses to run from the target branch itself, so
+check out the feature branch before invoking it.
+
+If a merge has _already_ landed with the wrong shape, the repair is to recreate
+the branch tip from the merge commit's second parent, rewind `main` to the
+pre-merge commit, then rebase-and-merge as above. Verify the repair by
+comparing tree hashes (`git rev-parse <old>^{tree}` vs `HEAD^{tree}`) — they
+must be identical, since only the graph shape may change, never the content.
+
 ## Dependency Licenses
 
 **All dependencies must be compatible with commercial use.** A full audit lives in `docs/dependency-licenses.md`. When adding a new dependency or updating an existing one:
