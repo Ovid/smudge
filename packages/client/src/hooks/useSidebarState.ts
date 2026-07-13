@@ -1,41 +1,29 @@
 import { useState, useCallback } from "react";
+import { numberInRange, usePersistedState } from "./usePersistedState";
 
 const SIDEBAR_DEFAULT_WIDTH = 260;
+// Exported: Sidebar.tsx imports these for its drag clamp, its keyboard clamps,
+// AND its aria-valuemin/aria-valuemax on the resize separator. Do not inline
+// them into the codec call.
 export const SIDEBAR_MIN_WIDTH = 180;
 export const SIDEBAR_MAX_WIDTH = 480;
 const SIDEBAR_WIDTH_KEY = "smudge:sidebar-width";
 
-function getSavedSidebarWidth(): number {
-  try {
-    const stored = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-    if (stored !== null) {
-      const parsed = Number(stored);
-      if (!Number.isNaN(parsed) && parsed >= SIDEBAR_MIN_WIDTH && parsed <= SIDEBAR_MAX_WIDTH) {
-        return parsed;
-      }
-    }
-  } catch {
-    // localStorage unavailable
-  }
-  return SIDEBAR_DEFAULT_WIDTH;
-}
+const SIDEBAR_WIDTH_CODEC = numberInRange(
+  SIDEBAR_MIN_WIDTH,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_DEFAULT_WIDTH,
+);
 
 export function useSidebarState() {
-  const [sidebarWidth, setSidebarWidth] = useState(getSavedSidebarWidth);
+  const [sidebarWidth, handleSidebarResize] = usePersistedState(
+    SIDEBAR_WIDTH_KEY,
+    SIDEBAR_WIDTH_CODEC,
+  );
+  // Session-only by design: the sidebar reopens on every load. Persisting it is
+  // a product change, not a storage one.
   const [sidebarOpen, setSidebarOpen] = useState(true);
-
-  const handleSidebarResize = useCallback((newWidth: number) => {
-    setSidebarWidth(newWidth);
-    try {
-      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(newWidth));
-    } catch {
-      // localStorage unavailable
-    }
-  }, []);
-
-  const toggleSidebar = useCallback(() => {
-    setSidebarOpen((prev) => !prev);
-  }, []);
+  const toggleSidebar = useCallback(() => setSidebarOpen((prev) => !prev), []);
 
   return { sidebarWidth, sidebarOpen, setSidebarOpen, handleSidebarResize, toggleSidebar };
 }

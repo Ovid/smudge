@@ -28,6 +28,14 @@ without the reasoning behind it is incomplete — do not send it. This applies
 to `AskUserQuestion`, prose questions, and any other way you ask me to choose.
 Asking one decision at a time (not batched) still applies.
 
+**Where the trade-offs go.** Write the pros and cons **as prose in the chat
+message itself**, laid out option by option, before I am asked to pick. Do not
+bury them in `AskUserQuestion` option `description` fields — the UI truncates
+those, so I see bare labels and cannot evaluate anything. `AskUserQuestion` is
+for capturing the _choice_ once I already understand it; the explaining happens
+in the message above it. A question whose reasoning is only visible inside the
+picker widget has not been asked.
+
 ## Ignore `.devcontainer/`
 
 `.devcontainer/` is **third-party content** managed out-of-band
@@ -224,6 +232,36 @@ hook owns the lifecycle effects and returns an opt-in `onBackdropClick`; ARIA
 (`role`, `aria-*`) stays in each component's JSX. New dialogs adopt the hook
 rather than copying a neighbour.
 
+**Persisted UI settings live in one hook.** Every `localStorage`-backed UI
+setting (panel width, panel open, active tab, sidebar width) routes through
+`usePersistedState(key, codec)`
+(`packages/client/src/hooks/usePersistedState.ts`) rather than a hand-rolled
+`getSaved* + try/catch` reader. The codec's `parse` is the **single validator
+for both directions** — the setter normalizes via `parse(serialize(next))`, so
+React state is always a fixed point of the storage round-trip and the read and
+write paths cannot drift apart. Codec factories: `numberInRange` (note its
+empty-string guard — `Number("")` is `0`, not `NaN`), `flag`, `text`. A codec
+must satisfy two properties the hook rests on: `parse ∘ serialize` is
+idempotent, and `fallback` is a fixed point of it (`numberInRange` enforces the
+latter by clamping its own fallback). The codec is **pinned at mount** (a ref,
+not a dep), so an inline codec cannot churn the setter identity — there is no
+module-scope contract to remember, and the write path parses with the same codec
+the read path already did. A write the codec cannot represent (a `NaN` width
+from a torn-down rect) is **ignored** — it touches neither state nor storage,
+keeping the last known-good value; the fallback is the floor for absent or
+corrupt _storage_, not a reset button for a bad _live write_. Two
+deliberate constraints: (1) **storage failures are silent** — no `clientWarn` —
+because the data-loss path (`useContentCache`, sharing the same origin quota)
+already warns loudly, and the resize path would otherwise warn at mousemove
+frequency; (2) **`key` must be constant for a component's lifetime, and one
+component owns it** — derive per-entity settings by remounting, not by varying
+the key. There is no cross-tab `storage` listener (a deliberate non-goal). The
+hook does **not** validate domain values it cannot know (e.g. tab ids); that
+stays with the component that owns the domain (`ReferencePanel` degrades an
+unknown tab to `tabs[0]`). `useContentCache` is deliberately _not_ a client of
+this hook — it is a draft cache with JSON payloads, its own logging, and a
+different failure contract.
+
 ## Accepted Architectural Trade-offs
 
 The following patterns are recurring architecture-review flags that have been
@@ -283,10 +321,10 @@ Re-flagging one is warranted only if its stated premise changes.
   services/repositories/reapers log through the bare top-level `logger` with no
   `req_id`. Accepted because the best-effort anomaly logs already carry their
   domain IDs (`project_id`/`chapter_id`/`image_id`), which for a single-user,
-  single-process app *is* the correlation key — a request ID only earns its keep
+  single-process app _is_ the correlation key — a request ID only earns its keep
   disambiguating concurrent requests against the same entity, which a single
   writer never produces. The roadmap trajectory (7g Electron desktop bound to
-  `127.0.0.1`, 8a per-project DBs) makes Smudge *more* single-user, not less;
+  `127.0.0.1`, 8a per-project DBs) makes Smudge _more_ single-user, not less;
   this matches the line-973 roadmap precedent for deferring single-user
   optimizations. Revisit only if Smudge ever ships a cloud / multi-writer
   deployment.
@@ -297,10 +335,10 @@ Re-flagging one is warranted only if its stated premise changes.
   objects consistently. Five prior decompositions already extracted rendering
   and the controller hooks — the residual concentration is irreducible cross-hook
   coordination, not accidental complexity. The only structural "fix" (a React
-  context/provider lift) would *hide* invariant-critical mutable state and buy
+  context/provider lift) would _hide_ invariant-critical mutable state and buy
   near-zero safety: the two controllers already receive that state via
   compile-checked typed deps interfaces, so mis-wiring them is already a compile
-  error. Accepted as-is. The one real residual — nothing *mechanically* forced a
+  error. Accepted as-is. The one real residual — nothing _mechanically_ forced a
   NEW editor-mutating entry point to be guarded — is closed by
   `packages/client/src/__tests__/editorEntryPointSurface.test.ts`, a
   forcing-pause snapshot of the full entry-point surface (`EditorHeader` /
@@ -309,7 +347,7 @@ Re-flagging one is warranted only if its stated premise changes.
   consciously choose the new point's guard axis (busy latch / lock check /
   content-path machine) per §Save-pipeline invariants before updating the list.
   It converts reviewer-optional into author-mandatory acknowledgment; it does
-  not verify the guard is *correct* — the behavioral tests in
+  not verify the guard is _correct_ — the behavioral tests in
   `EditorPageFeatures.test.tsx` do that for the current handlers. Do not
   "refactor away" EditorPage's explicit wiring; keep new mutating entry points
   guarded and listed.

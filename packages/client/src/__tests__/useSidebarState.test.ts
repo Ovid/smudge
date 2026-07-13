@@ -117,6 +117,32 @@ describe("useSidebarState", () => {
       });
       expect(store.get("smudge:sidebar-width")).toBe("350");
     });
+
+    it("clamps a write above the maximum in both state and storage", async () => {
+      const { useSidebarState } = await loadHook();
+      const { result } = renderHook(() => useSidebarState());
+
+      act(() => {
+        result.current.handleSidebarResize(999);
+      });
+
+      expect(result.current.sidebarWidth).toBe(480);
+      // The pre-4b.18 hook persisted the raw "999" here: the write path did not
+      // clamp, and only the next read rejected it. The codec now owns both.
+      expect(store.get("smudge:sidebar-width")).toBe("480");
+    });
+
+    it("clamps a write below the minimum in both state and storage", async () => {
+      const { useSidebarState } = await loadHook();
+      const { result } = renderHook(() => useSidebarState());
+
+      act(() => {
+        result.current.handleSidebarResize(50);
+      });
+
+      expect(result.current.sidebarWidth).toBe(180);
+      expect(store.get("smudge:sidebar-width")).toBe("180");
+    });
   });
 
   describe("reads initial width from localStorage", () => {
@@ -154,16 +180,24 @@ describe("useSidebarState", () => {
       expect(result.current.sidebarWidth).toBe(260);
     });
 
-    it("falls back to default width for value below minimum", async () => {
+    it("clamps a stored width below the minimum", async () => {
       store.set("smudge:sidebar-width", "50");
       const { useSidebarState } = await loadHook();
       const { result } = renderHook(() => useSidebarState());
 
-      expect(result.current.sidebarWidth).toBe(260);
+      expect(result.current.sidebarWidth).toBe(180);
     });
 
-    it("falls back to default width for value above maximum", async () => {
+    it("clamps a stored width above the maximum", async () => {
       store.set("smudge:sidebar-width", "999");
+      const { useSidebarState } = await loadHook();
+      const { result } = renderHook(() => useSidebarState());
+
+      expect(result.current.sidebarWidth).toBe(480);
+    });
+
+    it("falls back to the default width for an empty stored value", async () => {
+      store.set("smudge:sidebar-width", "");
       const { useSidebarState } = await loadHook();
       const { result } = renderHook(() => useSidebarState());
 
