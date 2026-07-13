@@ -14,6 +14,7 @@ skimmed at a glance for patterns.
 | Date       | Phase                          | Model                 | Pushback (C/I/M) | Alignment (C/I/M) | Entry                                                                |
 |------------|--------------------------------|-----------------------|------------------|-------------------|----------------------------------------------------------------------|
 | 2026-07-12 | Phase 4b.18: Persisted-Setting Storage Helper          | claude-opus-4-8 | 0/1/2 | 0/0/3      | [link](2026-07-12-phase-4b18-persisted-setting-storage-helper.md)    |
+| 2026-07-12 | Phase 4c.1: Inline Notes                                | claude-opus-4-8 | 0/5/5 | 0/0/2      | [link](2026-07-12-phase-4c-1-inline-notes.md)                        |
 | 2026-07-11 | Phase 4b.17: AbortController ESLint Rule                | claude-opus-4-8 | 0/1/1 | 0/0/1      | [link](2026-07-11-phase-4b-17-abortcontroller-eslint-rule.md)        |
 | 2026-06-03 | Phase 4b.14: Operational Backup Stopgap                | claude-opus-4-8 | 1/3/2 | 0/1/3      | [link](2026-06-03-phase-4b-14-operational-backup-stopgap.md)         |
 | 2026-06-03 | Phase 4b.16: Dialog Lifecycle Hook                     | claude-opus-4-8 | 0/1/2 | 0/0/1      | [link](2026-06-03-phase-4b-16-dialog-lifecycle-hook.md)              |
