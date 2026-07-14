@@ -9,6 +9,7 @@
 // cap propagates automatically instead of silently drifting from the
 // schema-side value.
 import { MAX_TIPTAP_DEPTH as MAX_WALK_DEPTH, CANONICAL_UNSAFE_KEYS } from "./tiptap-safety";
+import { NOTE_MARK_NAME } from "./tiptap-notes";
 
 type Mark = { type: string; attrs?: Record<string, unknown> };
 
@@ -560,6 +561,39 @@ function marksAtOffset(segments: TextSegment[], offset: number): Mark[] | undefi
   return undefined;
 }
 
+/**
+ * Marks for a replacement node covering [start, end).
+ *
+ * The base is the marks at the match's START offset — a match that begins in
+ * un-bolded text and runs into bold produces un-bolded replacement text, which
+ * is what every editor does and what the user expects of *formatting*.
+ *
+ * A note is not formatting. Its `text` attr is the writer's own words, and
+ * project-wide replace is a server-committed mutation followed by a reload:
+ * there is no editor undo, and the draft cache is cleared after server success
+ * (save-pipeline invariant 3), so a note dropped here is gone except by
+ * snapshot restore. So a note overlapping ANY part of the match rides onto the
+ * replacement instead of being erased with the text it annotated.
+ *
+ * If the match spans two different notes, the first in document order wins — a
+ * text node can only carry one mark of a given type, and merging two notes'
+ * bodies would fabricate content the writer never typed.
+ */
+function marksForReplacement(
+  segments: TextSegment[],
+  start: number,
+  end: number,
+): Mark[] | undefined {
+  const base = marksAtOffset(segments, start);
+  if (base?.some((m) => m.type === NOTE_MARK_NAME)) return base;
+  for (const seg of segments) {
+    if (seg.end <= start || seg.start >= end) continue;
+    const note = seg.marks?.find((m) => m.type === NOTE_MARK_NAME);
+    if (note) return [...(base ?? []), note];
+  }
+  return base;
+}
+
 // --- Public API ---
 
 export function searchInDoc(
@@ -742,7 +776,7 @@ export function replaceInDoc(
         }
         const repText = expandReplacement(effectiveReplacement, match.m, !!opts.regex);
         if (repText.length > 0) {
-          const marks = marksAtOffset(segments, match.start);
+          const marks = marksForReplacement(segments, match.start, match.end);
           newNodes.push(makeTextNode(repText, marks));
         }
         if (outputCap !== undefined) {
