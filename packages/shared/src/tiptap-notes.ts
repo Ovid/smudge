@@ -32,24 +32,41 @@ export interface ExtractedNote {
 }
 
 /**
- * Remove every `note` mark, preserving the text it annotated. Returns a new
- * doc; the input is untouched. Depth-capped at MAX_TIPTAP_DEPTH per the Phase
- * 4b.13 depth-guard contract — an over-deep subtree is returned as-is rather
- * than blowing the stack.
+ * Remove every `note` mark, preserving the text it annotated. The input is
+ * untouched: every node on the path to a mark is copied. The copy is shallow
+ * below that — leaf `attrs` and surviving mark objects are shared by reference
+ * with the input, which is safe because nothing here mutates them, but means
+ * the result is not a deep clone. Depth-capped at MAX_TIPTAP_DEPTH: an
+ * over-deep subtree is DROPPED (see strip()), not returned as-is.
  */
 export function stripNoteMarks<T>(doc: T): T {
+  // depth 0 is never over the cap, so the top-level node always survives.
   return strip(doc as unknown as TipTapNode, 0) as unknown as T;
 }
 
-function strip(node: TipTapNode, depth: number): TipTapNode {
-  if (depth > MAX_TIPTAP_DEPTH) return node;
+function strip(node: TipTapNode, depth: number): TipTapNode | undefined {
+  // Chapters read from the DB bypass Zod, so a walker cannot rely on the shape
+  // the schema promises (see tiptap-text.ts:70-76). A non-object node is passed
+  // through untouched — spreading a string would corrupt it into a character map.
+  if (!node || typeof node !== "object") return node;
+  // Fail CLOSED at the depth cap: drop the over-deep subtree rather than return
+  // it verbatim. Returning it would ship its note marks straight into export —
+  // strip() is the one walker whose failing open is a confidentiality leak, and
+  // extractNotes() already reports 0 notes down there, so the writer would be
+  // told there is nothing to hide while the export carries it. Every sibling
+  // walker fails closed too (collectLeafBlocks → [], validateTipTapDepth →
+  // false). Unreachable via the API (Zod rejects depth > MAX_TIPTAP_DEPTH);
+  // reachable from a hand-edited DB or a restored backup.
+  if (depth > MAX_TIPTAP_DEPTH) return undefined;
   const next: TipTapNode = { ...node };
-  if (node.marks) {
-    const kept = node.marks.filter((m) => m.type !== NOTE_MARK_NAME);
+  if (Array.isArray(node.marks)) {
+    const kept = node.marks.filter((m) => m?.type !== NOTE_MARK_NAME);
     if (kept.length) next.marks = kept;
     else delete next.marks;
   }
-  if (node.content) next.content = node.content.map((child) => strip(child, depth + 1));
+  if (Array.isArray(node.content)) {
+    next.content = node.content.flatMap((child) => strip(child, depth + 1) ?? []);
+  }
   return next;
 }
 
@@ -66,7 +83,8 @@ export function extractNotes(doc: unknown): ExtractedNote[] {
 
 function collect(node: TipTapNode, depth: number, out: ExtractedNote[]): void {
   if (depth > MAX_TIPTAP_DEPTH || !node || typeof node !== "object") return;
-  const noteMark = node.marks?.find((m) => m.type === NOTE_MARK_NAME);
+  const marks = Array.isArray(node.marks) ? node.marks : [];
+  const noteMark = marks.find((m) => m?.type === NOTE_MARK_NAME);
   if (noteMark && typeof node.text === "string") {
     const text = noteMark.attrs?.text;
     out.push({ note: typeof text === "string" ? text : "", excerpt: node.text });

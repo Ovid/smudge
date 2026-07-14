@@ -1,6 +1,35 @@
 import { describe, it, expect } from "vitest";
 import { stripNoteMarks, extractNotes } from "../tiptap-notes";
 
+/** A note buried below MAX_TIPTAP_DEPTH (64). Rejected by Zod on the API path,
+ *  but reachable from a hand-edited DB or a restored backup — the same threat
+ *  model sanitizer.ts and stripDisallowedImages already defend against. */
+function overDeepNotedDoc(): Record<string, unknown> {
+  let node: Record<string, unknown> = {
+    type: "text",
+    text: "buried",
+    marks: [{ type: "note", attrs: { text: "SECRET" } }],
+  };
+  for (let i = 0; i < 200; i++) node = { type: "x", content: [node] };
+  return { type: "doc", content: [node] };
+}
+
+/** Malformed docs that all pass TipTapDocSchema.safeParse — nested children are
+ *  typed only as z.record(z.unknown()), so nested shape is unvalidated. Chapters
+ *  read from the DB bypass Zod entirely (see tiptap-text.ts:70-76). */
+const malformed: Record<string, Record<string, unknown>> = {
+  "null child": { type: "doc", content: [{ type: "paragraph", content: [null] }] },
+  "non-array marks": {
+    type: "doc",
+    content: [{ type: "paragraph", content: [{ type: "text", text: "x", marks: {} }] }],
+  },
+  "non-array content": {
+    type: "doc",
+    content: [{ type: "paragraph", content: "oops" }],
+  },
+  "string child": { type: "doc", content: [{ type: "paragraph", content: ["oops"] }] },
+};
+
 describe("stripNoteMarks", () => {
   it("removes note marks but keeps the text", () => {
     const doc = {
@@ -61,13 +90,24 @@ describe("stripNoteMarks", () => {
     expect(stripNoteMarks(doc)).toEqual(doc);
   });
 
-  it("bails safely on an over-deep doc (no throw)", () => {
-    let node: { type: string; text?: string; content?: unknown[] } = {
-      type: "text",
-      text: "deep",
+  it("fails closed on an over-deep doc — drops the subtree rather than passing the note through", () => {
+    const out = stripNoteMarks(overDeepNotedDoc());
+    expect(JSON.stringify(out)).not.toContain("SECRET");
+    expect(JSON.stringify(out)).not.toContain("buried");
+  });
+
+  it.each(Object.keys(malformed))("survives a malformed doc: %s", (key) => {
+    const doc = malformed[key]!;
+    const before = structuredClone(doc);
+    expect(() => stripNoteMarks(doc)).not.toThrow();
+    expect(doc).toEqual(before);
+  });
+
+  it("does not corrupt a string child into a character map", () => {
+    const out = stripNoteMarks(malformed["string child"]!) as {
+      content: [{ content: unknown[] }];
     };
-    for (let i = 0; i < 200; i++) node = { type: "x", content: [node] };
-    expect(() => stripNoteMarks({ type: "doc", content: [node] })).not.toThrow();
+    expect(out.content[0].content[0]).toBe("oops");
   });
 });
 
@@ -118,11 +158,10 @@ describe("extractNotes", () => {
   });
 
   it("bails safely on an over-deep doc (no throw)", () => {
-    let node: { type: string; text?: string; content?: unknown[] } = {
-      type: "text",
-      text: "deep",
-    };
-    for (let i = 0; i < 200; i++) node = { type: "x", content: [node] };
-    expect(() => extractNotes({ type: "doc", content: [node] })).not.toThrow();
+    expect(() => extractNotes(overDeepNotedDoc())).not.toThrow();
+  });
+
+  it.each(Object.keys(malformed))("survives a malformed doc: %s", (key) => {
+    expect(() => extractNotes(malformed[key]!)).not.toThrow();
   });
 });
