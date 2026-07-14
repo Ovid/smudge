@@ -237,7 +237,9 @@ describe("replaceInDoc note-mark survival (Phase 4c.1)", () => {
   });
 
   it("keeps the note when the match starts inside it and extends past its end", () => {
-    const d = doc(paragraph(text("He drew his sword", [note("check the weapon")]), text(" again.")));
+    const d = doc(
+      paragraph(text("He drew his sword", [note("check the weapon")]), text(" again.")),
+    );
     const result = replaceInDoc(d, "sword again", "blade twice");
     expect(result.count).toBe(1);
     expect(extractNotes(result.doc).map((n) => n.note)).toEqual(["check the weapon"]);

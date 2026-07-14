@@ -48,8 +48,8 @@ describe("stripNoteMarks", () => {
       ],
     };
     const out = stripNoteMarks(doc);
-    expect(out.content[0].content[0].marks).toBeUndefined();
-    expect(out.content[0].content[0].text).toBe("Marcus drew his sword");
+    expect(out.content[0]!.content[0]!.marks).toBeUndefined();
+    expect(out.content[0]!.content[0]!.text).toBe("Marcus drew his sword");
   });
 
   it("keeps other marks on the same text node", () => {
@@ -63,18 +63,16 @@ describe("stripNoteMarks", () => {
         },
       ],
     };
-    expect(stripNoteMarks(doc).content[0].marks).toEqual([{ type: "bold" }]);
+    expect(stripNoteMarks(doc).content[0]!.marks).toEqual([{ type: "bold" }]);
   });
 
   it("does not mutate the input", () => {
     const doc = {
       type: "doc",
-      content: [
-        { type: "text", text: "x", marks: [{ type: "note", attrs: { text: "n" } }] },
-      ],
+      content: [{ type: "text", text: "x", marks: [{ type: "note", attrs: { text: "n" } }] }],
     };
     stripNoteMarks(doc);
-    expect(doc.content[0].marks).toHaveLength(1);
+    expect(doc.content[0]!.marks).toHaveLength(1);
   });
 
   it("leaves a doc without notes structurally equal", () => {
