@@ -114,6 +114,18 @@ input {
   color: var(--color-text-primary);
 }
 
+/* ─── Inline notes (Phase 4c.1) ───
+   Editor-only: the `note` mark is stripped before preview/export, so this rule
+   never applies to rendered output. The underline carries the signal so colour
+   is not the sole cue; the tint stays lighter than ::selection (#d4c4a8) and
+   uses a different treatment from the find-replace match highlight (a solid
+   amber block, in the panel) so the two never read as the same thing. */
+.tiptap .note-highlight {
+  background-color: rgb(107 71 32 / 0.1); /* accent #6B4720 @ 10% */
+  border-bottom: 2px solid rgb(107 71 32 / 0.45);
+  cursor: pointer;
+}
+
 /* ─── Writing area prose enhancements ─── */
 .tiptap.prose {
   font-size: 1.2rem;
