@@ -104,7 +104,9 @@ function walk(node: Node, depth: number): Node {
 
 ## Task 2: `extractNotes` pure helper (shared)
 
-Given a TipTap doc, return the ordered list of notes with their character offsets — the data the panel renders and the lift feeds. Offsets are computed over the same flat text model the rest of the app uses.
+Given a TipTap doc, return the ordered list of notes with their display fields (note body + annotated excerpt) — the data the panel renders. **No character offsets:** a note's identity is its document position, which only a live editor knows, so offsets arrive with the Task 10 lift. (This header previously promised offsets, contradicting its own Step 1 sketch below; the code followed the sketch and is right. Task 10 must be built against the display-fields contract, not an offsets one.)
+
+One entry per **note**, not per text node: ProseMirror splits a text run on every mark change, so one note over "Marcus **drew** his sword" is three adjacent text nodes. `extractNotes` coalesces them, because the panel counts notes.
 
 **Files:** same `tiptap-notes.ts` / test / barrel.
 
@@ -203,65 +205,47 @@ Append to `editorExtensions.ts` array: `NoteMark,` (import at top). Verify `npm 
 
 ---
 
-## Task 4: `replaceInDoc` preserves the note mark (shared, verification)
+## Task 4: `replaceInDoc` preserves the note mark (shared) — **DONE (code review, 2026-07-14)**
 
-No implementation — pins the verified Issue-1 behavior so a future `tiptap-text.ts` change can't silently regress it.
+**Rewritten after code review.** As originally specified this task asserted only the
+match-starts-*inside*-the-note case ("Marcus"→"Lucius" within a noted range). That case
+already passed. The task would have gone green while certifying the one case that was
+never at risk.
 
-**Files:** Modify `packages/shared/src/__tests__/tiptap-text.test.ts`.
+The case that was actually broken: a match starting **outside** a noted range and running
+into it. `replaceInDoc` gave the replacement node the marks at the match's *start* offset
+only, so the note mark — and the writer's note body with it — was erased. Project-wide
+replace is server-committed with a reload after it, so there was no undo.
 
-**Step 1 — Test:** build a doc where "Marcus drew his sword" carries a `note` mark; run the module's `replaceInDoc` replacing "Marcus"→"Lucius" (match the existing tests' call shape in that file); assert the result text is "Lucius drew his sword" **and** the run still carries a `note` mark. Run → PASS (behavior already exists; this is a characterization test). **Commit:** `test(4c.1): pin note-mark survival across replaceInDoc`.
-
----
-
-## Task 5: Strip notes in the server export path
-
-**Files:**
-- Modify: `packages/server/src/export/export.renderers.ts` (`chapterContentToHtml`, ~line 57)
-- Modify: `packages/server/src/__tests__/export.*.test.ts` (nearest existing export renderer test)
-- **Check:** grep the export dir for any docx/epub/pdf renderer that converts chapter JSON **without** going through `chapterContentToHtml` (`grep -rn "generateHTML\|editorExtensions" packages/server/src/export`). If one exists, strip there too.
-
-**Step 1 — Failing test:** render a chapter whose content has a `note` mark (text "SECRET") through `renderHtml`/`renderMarkdown`/`renderPlainText`; assert output contains neither `"SECRET"` nor `"note-highlight"`.
-
-**Step 3 — Implement:** at the top of `chapterContentToHtml`:
-
-```ts
-import { stripNoteMarks } from "@smudge/shared";
-// ...
-export function chapterContentToHtml(content: Record<string, unknown> | null): string {
-  if (!content) return "";
-  const clean = stripNoteMarks(content); // editor-only marks never reach output
-  try {
-    return stripDisallowedImages(generateHTML(clean, editorExtensions));
-  } catch (err) { /* unchanged */ }
-}
-```
-
-Order-independent with the existing `stripDisallowedImages` (disjoint concerns — design Issue E). **Commit:** `feat(4c.1): strip note marks from all exports`.
+Fixed in `marksForReplacement` (`tiptap-text.ts`): a note overlapping any part of the match
+rides onto the replacement. Tests cover inside, outside-in, and inside-out.
 
 ---
 
-## Task 6: Strip notes in client preview
+## Task 5: Strip notes in the server export path — **DONE (code review, 2026-07-14)**
 
-**Files:**
-- Modify: `packages/client/src/components/PreviewMode.tsx` (`renderChapterHtml`, ~line 35)
-- Modify: `packages/client/src/components/__tests__/PreviewMode.test.tsx` (or create)
+## Task 6: Strip notes in client preview — **DONE (code review, 2026-07-14)**
 
-**Step 1 — Failing test:** render `<PreviewMode>` with a chapter carrying a note (text "SECRET"); assert the rendered DOM contains neither "SECRET" nor an element with class `note-highlight`. (Use `expectConsole` if any warning is expected; none should be.)
+**Tasks 5 and 6 were pulled forward and merged.** They were sequenced *after* Task 3, which
+registers `NoteMark` in `editorExtensions` — the array the server export renderer consumes.
+That ordering meant Task 3 shipped a live leak: note text into HTML export
+(`<span data-note="SECRET">`), note positions into EPUB. Worse, before Task 3 a stored note
+mark made `generateHTML` *throw* ("no mark type note in this schema"), which
+`chapterContentToHtml` catches — registering the mark converted a fail-closed throw into a
+successful leak.
 
-**Step 3 — Implement:**
+**A render site was also missing from this plan.** The census is three, not two:
+`export.renderers.ts` (all five export formats funnel through `chapterContentToHtml`),
+`PreviewMode.tsx`, and `useSnapshotController.ts`.
 
-```ts
-import { stripNoteMarks } from "@smudge/shared";
-// ...
-function renderChapterHtml(content: Record<string, unknown> | null): string | null {
-  if (!content) return null;
-  try {
-    return generateHTML(stripNoteMarks(content) as Parameters<typeof generateHTML>[0], editorExtensions);
-  } catch { return null; }
-}
-```
+Rather than hand-place `stripNoteMarks()` at three sites, all three now route through
+`renderEditorHtml()` in the shared `editor-extensions` subpath — the strip lives where the
+extension registration lives, so a mark cannot be made renderable without being stripped.
+The live editor is the only surface that renders TipTap JSON without it.
 
-**Commit:** `feat(4c.1): strip note marks from preview`.
+**Consequence for Phase 4c.3 (tags):** an editor-only tag mark strips inside
+`renderEditorHtml()`. Do not add a fourth bare `generateHTML()` call site. The extension-set
+test in `editorExtensions.test.ts` turns red if you add an extension without deciding this.
 
 ---
 
@@ -397,15 +381,20 @@ Cover: (1) select text → Ctrl+Alt+M → type → Save → noted text shows the
 
 ---
 
-## Task 15: CLAUDE.md invariant
+## Task 15: CLAUDE.md invariant — **PARTLY DONE (code review, 2026-07-14)**
 
-**Files:** Modify `CLAUDE.md` (§Key Architecture Decisions).
+The strip invariant is recorded in `CLAUDE.md` §Key Architecture Decisions ("One route
+from TipTap JSON to rendered HTML"). It was landed early: the code review found the
+opposite of the invariant shipping (notes leaking into every HTML export), and the fix is
+only durable if the rule is written down where future phases read it. The wording differs
+from the sketch below — it names `renderEditorHtml()` as the chokepoint rather than
+describing three hand-placed `stripNoteMarks()` calls, and it names the extension-set test
+as the forcing pause.
 
-Add:
-
-> **Editor-only marks are stripped before preview/export.** The `note` mark (Phase 4c.1) is visible only while editing; `stripNoteMarks()` in `shared` removes it before `generateHTML()` in both preview (`PreviewMode`) and export (`chapterContentToHtml`), so neither the `note-highlight` nor the attribute-held note text reaches output. Note add/edit/delete are guarded editor-mutating entry points (no-op while `locked`/`busy`) that persist via normal autosave. Future editor-only marks (e.g. Phase 4c.3 tags) follow the same strip-before-render pattern.
-
-**Commit:** `docs(4c.1): document editor-only-mark strip invariant`.
+**Still to do here:** once notes have a UI (Tasks 8/9/12), add the sentence about note
+add/edit/delete being guarded editor-mutating entry points (no-op while `locked`/`busy`,
+persisted via normal autosave), and list them in `editorEntryPointSurface.test.ts` per
+Task 13.
 
 ---
 
