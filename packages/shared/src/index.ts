@@ -34,6 +34,7 @@ export {
 } from "./tiptap-text";
 export type { SearchMatch, SearchOptions } from "./tiptap-text";
 export { CANONICAL_UNSAFE_KEYS } from "./tiptap-safety";
+export { stripNoteMarks, NOTE_MARK_NAME } from "./tiptap-notes";
 export { generateSlug } from "./slugify";
 export { parsePort } from "./parsePort";
 // Helpers that import node:fs / node:path (findFirstNonDirectoryAncestor,
