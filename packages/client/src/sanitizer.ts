@@ -27,6 +27,16 @@ const purifier = DOMPurify(window);
 //   codeBlock, image
 // The image tag needs src / alt attributes; everything else needs no
 // attributes beyond core id for anchors (not used today — excluded).
+//
+// Phase 4c.1: `span` is deliberately absent. editorExtensions now legitimately
+// emits `<span data-note="…" class="note-highlight">` for the editor-only note
+// mark, so the sentence above ("any tag outside that set is … attacker-
+// controlled") no longer holds for span alone. Every rendered surface strips
+// note marks upstream via renderEditorHtml(), so a span reaching this
+// sanitizer is still a bug — the exclusion is the second line of that defense,
+// not a leftover. Do NOT add `span` to this list to support a future mark
+// without first confirming its marks are stripped before render; DOMPurify's
+// ALLOW_DATA_ATTR defaults to true, so `data-note` would ride in with it.
 const ALLOWED_TAGS = [
   "p",
   "h3",

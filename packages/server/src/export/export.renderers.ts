@@ -1,6 +1,5 @@
-import { generateHTML } from "@tiptap/html";
 import TurndownService from "turndown";
-import { editorExtensions } from "@smudge/shared/editor-extensions";
+import { renderEditorHtml } from "@smudge/shared/editor-extensions";
 import { resolveImagesInHtml, type ImageSource } from "./image-resolver";
 import { escapeHtml } from "./html-escape";
 import { logger } from "../logger";
@@ -57,7 +56,7 @@ function stripDisallowedImages(html: string): string {
 export function chapterContentToHtml(content: Record<string, unknown> | null): string {
   if (!content) return "";
   try {
-    return stripDisallowedImages(generateHTML(content, editorExtensions));
+    return stripDisallowedImages(renderEditorHtml(content));
   } catch (err) {
     logger.warn({ err }, "Failed to render chapter content to HTML during export");
     return "";

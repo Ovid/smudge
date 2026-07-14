@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { generateHTML } from "@tiptap/html";
 import { sanitizeEditorHtml } from "../sanitizer";
 import type { Chapter } from "@smudge/shared";
-import { editorExtensions } from "@smudge/shared/editor-extensions";
+import { renderEditorHtml } from "@smudge/shared/editor-extensions";
 import { STRINGS } from "../strings";
 
 interface PreviewModeProps {
@@ -35,7 +34,7 @@ export function PreviewMode({ chapters, onNavigateToChapter }: PreviewModeProps)
   function renderChapterHtml(content: Record<string, unknown> | null): string | null {
     if (!content) return null;
     try {
-      return generateHTML(content as Parameters<typeof generateHTML>[0], editorExtensions);
+      return renderEditorHtml(content);
     } catch {
       return null;
     }

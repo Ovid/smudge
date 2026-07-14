@@ -95,6 +95,58 @@ describe("chapterContentToHtml sanitization (F-15)", () => {
   });
 });
 
+describe("note marks never reach an export (Phase 4c.1)", () => {
+  const notedChapter = {
+    id: "ch-note",
+    title: "Noted",
+    content: {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Marcus drew his sword",
+              marks: [{ type: "note", attrs: { text: "SECRET" } }],
+            },
+          ],
+        },
+      ],
+    },
+    sort_order: 0,
+  };
+
+  it("drops the note text and highlight from chapterContentToHtml (the shared chokepoint)", () => {
+    const html = chapterContentToHtml(notedChapter.content);
+    expect(html).not.toContain("SECRET");
+    expect(html).not.toContain("note-highlight");
+    expect(html).not.toContain("data-note");
+    expect(html).toContain("Marcus drew his sword");
+  });
+
+  it("keeps the note out of the HTML export", async () => {
+    const html = await renderHtml(projectInfo, [notedChapter], { includeToc: false }, imageSrc);
+    expect(html).not.toContain("SECRET");
+    expect(html).not.toContain("note-highlight");
+    expect(html).toContain("Marcus drew his sword");
+  });
+
+  it("keeps the note position out of the EPUB export", async () => {
+    const buf = await renderEpub(projectInfo, [notedChapter], { includeToc: false }, imageSrc);
+    const zip = await JSZip.loadAsync(buf);
+    const xhtml = await Promise.all(
+      Object.keys(zip.files)
+        .filter((n) => n.endsWith(".xhtml"))
+        .map((n) => zip.files[n]!.async("string")),
+    );
+    const all = xhtml.join("");
+    expect(all).not.toContain("SECRET");
+    expect(all).not.toContain("note-highlight");
+    expect(all).toContain("Marcus drew his sword");
+  });
+});
+
 describe("renderHtml", () => {
   it("produces a self-contained HTML document", async () => {
     const html = await renderHtml(projectInfo, sampleChapters, { includeToc: true }, imageSrc);
