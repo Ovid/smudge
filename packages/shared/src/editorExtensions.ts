@@ -1,6 +1,7 @@
 import StarterKit from "@tiptap/starter-kit";
 import Heading from "@tiptap/extension-heading";
 import Image from "@tiptap/extension-image";
+import { NoteMark } from "./noteMark";
 
 /**
  * The single source of truth for Smudge's TipTap extension configuration.
@@ -26,4 +27,6 @@ export const editorExtensions = [
     inline: false,
     allowBase64: false,
   }),
+  // Editor-only: stripped before preview/export via stripNoteMarks().
+  NoteMark,
 ];
