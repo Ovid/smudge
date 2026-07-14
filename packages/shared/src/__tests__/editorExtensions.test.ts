@@ -63,6 +63,20 @@ const notedDoc = {
 };
 
 describe("shared editor extensions", () => {
+  // Forcing pause, in the spirit of editorEntryPointSurface.test.ts (CLAUDE.md
+  // §F-1). This array is consumed by the SERVER export renderer and the client
+  // preview/snapshot views, not just the editor — so adding an extension here
+  // changes what ships to a beta reader. Nothing turned red when the note mark
+  // was added, and it leaked private note text into every HTML export.
+  //
+  // If this test fails you have added or removed an extension. Before updating
+  // the list, answer: does this extension render into output? If it is
+  // editor-only (like `note`), it MUST be stripped inside renderEditorHtml()
+  // below — that is the only route from TipTap JSON to any rendered surface.
+  it("pins the extension set consumed by export, preview, and snapshot view", () => {
+    expect(editorExtensions.map((e) => e.name)).toEqual(["starterKit", "heading", "image", "note"]);
+  });
+
   it("renders a reference TipTap document to valid HTML", () => {
     const html = generateHTML(referenceTipTapDoc, editorExtensions);
     expect(html).toContain("<strong>world</strong>");
