@@ -25,6 +25,12 @@ type TipTapNode = {
   content?: TipTapNode[];
 };
 
+/** A note as the panel renders it: the note body plus the text it annotates. */
+export interface ExtractedNote {
+  note: string;
+  excerpt: string;
+}
+
 /**
  * Remove every `note` mark, preserving the text it annotated. Returns a new
  * doc; the input is untouched. Depth-capped at MAX_TIPTAP_DEPTH per the Phase
@@ -45,4 +51,27 @@ function strip(node: TipTapNode, depth: number): TipTapNode {
   }
   if (node.content) next.content = node.content.map((child) => strip(child, depth + 1));
   return next;
+}
+
+/**
+ * Collect every note in document order. Display fields only — a note's identity
+ * is its document position, which only a live editor knows (see collectNotes on
+ * the client). Keeping this helper JSON-only makes it testable without TipTap.
+ */
+export function extractNotes(doc: unknown): ExtractedNote[] {
+  const notes: ExtractedNote[] = [];
+  collect(doc as TipTapNode, 0, notes);
+  return notes;
+}
+
+function collect(node: TipTapNode, depth: number, out: ExtractedNote[]): void {
+  if (depth > MAX_TIPTAP_DEPTH || !node || typeof node !== "object") return;
+  const noteMark = node.marks?.find((m) => m.type === NOTE_MARK_NAME);
+  if (noteMark && typeof node.text === "string") {
+    const text = noteMark.attrs?.text;
+    out.push({ note: typeof text === "string" ? text : "", excerpt: node.text });
+  }
+  if (Array.isArray(node.content)) {
+    for (const child of node.content) collect(child, depth + 1, out);
+  }
 }
