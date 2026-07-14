@@ -71,9 +71,10 @@ function strip(node: TipTapNode, depth: number): TipTapNode | undefined {
 }
 
 /**
- * Collect every note in document order. Display fields only — a note's identity
- * is its document position, which only a live editor knows (see collectNotes on
- * the client). Keeping this helper JSON-only makes it testable without TipTap.
+ * Collect every note in document order — one entry per note, not per text node.
+ * Display fields only: a note's identity is its document position, which only a
+ * live editor knows (see collectNotes on the client). Keeping this helper
+ * JSON-only makes it testable without TipTap.
  */
 export function extractNotes(doc: unknown): ExtractedNote[] {
   const notes: ExtractedNote[] = [];
@@ -81,15 +82,40 @@ export function extractNotes(doc: unknown): ExtractedNote[] {
   return notes;
 }
 
+/** The note text carried by this node, or null if it carries no note mark. */
+function noteTextOf(node: TipTapNode): string | null {
+  if (!node || typeof node !== "object") return null;
+  const marks = Array.isArray(node.marks) ? node.marks : [];
+  const mark = marks.find((m) => m?.type === NOTE_MARK_NAME);
+  if (!mark) return null;
+  const text = mark.attrs?.text;
+  return typeof text === "string" ? text : "";
+}
+
 function collect(node: TipTapNode, depth: number, out: ExtractedNote[]): void {
   if (depth > MAX_TIPTAP_DEPTH || !node || typeof node !== "object") return;
-  const marks = Array.isArray(node.marks) ? node.marks : [];
-  const noteMark = marks.find((m) => m?.type === NOTE_MARK_NAME);
-  if (noteMark && typeof node.text === "string") {
-    const text = noteMark.attrs?.text;
-    out.push({ note: typeof text === "string" ? text : "", excerpt: node.text });
-  }
-  if (Array.isArray(node.content)) {
-    for (const child of node.content) collect(child, depth + 1, out);
+  if (!Array.isArray(node.content)) return;
+
+  // ProseMirror splits a text run on every mark change, so one note over
+  // "Marcus **drew** his sword" is stored as three adjacent text nodes. Walk
+  // siblings and merge a run of them carrying an equal note into one entry —
+  // the panel counts notes, not nodes. Adjacency is required: two equal notes
+  // separated by un-noted text, or sitting in different blocks, stay distinct.
+  //
+  // Two genuinely separate notes that happen to carry identical text AND end up
+  // adjacent do fuse into one. That is inherent to the design's decision to give
+  // notes no `id` (identity is document position) — the same reason
+  // find-and-replace's cleanupTextNodes already merges them structurally. The
+  // information lost is a duplicate.
+  let run: ExtractedNote | null = null;
+  for (const child of node.content) {
+    const noteText = noteTextOf(child);
+    if (noteText !== null && typeof child.text === "string") {
+      if (run && run.note === noteText) run.excerpt += child.text;
+      else out.push((run = { note: noteText, excerpt: child.text }));
+      continue;
+    }
+    run = null;
+    collect(child, depth + 1, out);
   }
 }

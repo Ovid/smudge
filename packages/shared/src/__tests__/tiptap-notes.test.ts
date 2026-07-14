@@ -145,6 +145,75 @@ describe("extractNotes", () => {
     ]);
   });
 
+  it("coalesces one note spanning several text nodes into a single entry", () => {
+    // ProseMirror splits a run on every mark change, so "Marcus **drew** his
+    // sword" under one note is three text nodes — but it is ONE note.
+    const note = { type: "note", attrs: { text: "rename?" } };
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Marcus ", marks: [note] },
+            { type: "text", text: "drew", marks: [{ type: "bold" }, note] },
+            { type: "text", text: " his sword", marks: [note] },
+          ],
+        },
+      ],
+    };
+    expect(extractNotes(doc)).toEqual([{ note: "rename?", excerpt: "Marcus drew his sword" }]);
+  });
+
+  it("keeps adjacent notes with different text separate", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "one", marks: [{ type: "note", attrs: { text: "first" } }] },
+            { type: "text", text: "two", marks: [{ type: "note", attrs: { text: "second" } }] },
+          ],
+        },
+      ],
+    };
+    expect(extractNotes(doc)).toEqual([
+      { note: "first", excerpt: "one" },
+      { note: "second", excerpt: "two" },
+    ]);
+  });
+
+  it("does not coalesce equal notes across a block boundary", () => {
+    const note = { type: "note", attrs: { text: "same" } };
+    const doc = {
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "one", marks: [note] }] },
+        { type: "paragraph", content: [{ type: "text", text: "two", marks: [note] }] },
+      ],
+    };
+    expect(extractNotes(doc)).toHaveLength(2);
+  });
+
+  it("does not coalesce equal notes separated by un-noted text", () => {
+    const note = { type: "note", attrs: { text: "same" } };
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "one", marks: [note] },
+            { type: "text", text: " gap " },
+            { type: "text", text: "two", marks: [note] },
+          ],
+        },
+      ],
+    };
+    expect(extractNotes(doc)).toHaveLength(2);
+  });
+
   it("returns [] when there are no notes", () => {
     expect(extractNotes({ type: "doc", content: [] })).toEqual([]);
   });
