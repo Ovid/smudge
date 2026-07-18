@@ -53,10 +53,23 @@ function stripDisallowedImages(html: string): string {
   });
 }
 
+// S1: defense-in-depth second layer for note confidentiality, mirroring the
+// client's DOMPurify `span` exclusion (packages/client/src/sanitizer.ts) on the
+// server export path. renderEditorHtml() strips note marks upstream, so a note
+// span reaching here means that strip regressed — this unwraps it so a bug in
+// our own strip cannot ship the writer's private commentary into a beta-reader
+// file. In Smudge's rendered HTML, <span> is emitted ONLY by the note mark, so
+// dropping every span tag (open + close) discards the `data-note` payload and
+// `note-highlight` class while keeping the annotated manuscript text — the same
+// net effect as the client dropping the tag but keeping its children.
+export function stripNoteSpans(html: string): string {
+  return html.replace(/<\/?span\b[^>]*>/gi, "");
+}
+
 export function chapterContentToHtml(content: Record<string, unknown> | null): string {
   if (!content) return "";
   try {
-    return stripDisallowedImages(renderEditorHtml(content));
+    return stripNoteSpans(stripDisallowedImages(renderEditorHtml(content)));
   } catch (err) {
     logger.warn({ err }, "Failed to render chapter content to HTML during export");
     return "";

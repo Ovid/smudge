@@ -5,6 +5,7 @@ import {
   renderMarkdown,
   renderPlainText,
   chapterContentToHtml,
+  stripNoteSpans,
 } from "../export/export.renderers";
 import { escapeHtml } from "../export/html-escape";
 import { renderDocx } from "../export/docx.renderer";
@@ -155,6 +156,24 @@ describe("note marks never reach an export (Phase 4c.1)", () => {
     const xml = await docxXml(buf);
     expect(xml).not.toContain("SECRET");
     expect(xml).toContain("Marcus drew his sword");
+  });
+
+  // Defense-in-depth second layer (S1): mirrors the client's DOMPurify span
+  // exclusion (sanitizer.ts) on the server export path. It only fires if a note
+  // span survived the upstream stripNoteMarks — a bug in our own strip — so it is
+  // exercised directly here with pre-rendered HTML rather than through the
+  // chokepoint (which always strips first). In Smudge's rendered HTML, <span> is
+  // emitted ONLY by the note mark, so dropping every span unwraps the note while
+  // keeping the annotated manuscript text.
+  it("stripNoteSpans unwraps a leaked note span, keeping the annotated text", () => {
+    const leaked =
+      '<p><span data-note="SECRET" class="note-highlight">Marcus drew his sword</span></p>';
+    const cleaned = stripNoteSpans(leaked);
+    expect(cleaned).not.toContain("SECRET");
+    expect(cleaned).not.toContain("data-note");
+    expect(cleaned).not.toContain("note-highlight");
+    expect(cleaned).not.toContain("<span");
+    expect(cleaned).toContain("Marcus drew his sword");
   });
 });
 
