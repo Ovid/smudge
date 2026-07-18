@@ -212,6 +212,46 @@ describe("extractNotes", () => {
     expect(extractNotes(doc)).toHaveLength(2);
   });
 
+  it("coalesces one note spanning a hardBreak into a single entry", () => {
+    // A note applied across a line break is stored as text(note), hardBreak,
+    // text(note). The content-less hardBreak must not split the note in two.
+    const note = { type: "note", attrs: { text: "rename?" } };
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Marcus", marks: [note] },
+            { type: "hardBreak" },
+            { type: "text", text: "drew", marks: [note] },
+          ],
+        },
+      ],
+    };
+    expect(extractNotes(doc)).toEqual([{ note: "rename?", excerpt: "Marcusdrew" }]);
+  });
+
+  it("keeps different notes separated by a hardBreak distinct", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "one", marks: [{ type: "note", attrs: { text: "a" } }] },
+            { type: "hardBreak" },
+            { type: "text", text: "two", marks: [{ type: "note", attrs: { text: "b" } }] },
+          ],
+        },
+      ],
+    };
+    expect(extractNotes(doc)).toEqual([
+      { note: "a", excerpt: "one" },
+      { note: "b", excerpt: "two" },
+    ]);
+  });
+
   it("returns [] when there are no notes", () => {
     expect(extractNotes({ type: "doc", content: [] })).toEqual([]);
   });

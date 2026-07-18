@@ -120,6 +120,18 @@ function collect(node: TipTapNode, depth: number, out: ExtractedNote[]): void {
       else out.push((run = { note: noteText, excerpt: child.text }));
       continue;
     }
+    // A content-less inline leaf (e.g. hardBreak) is not a note boundary: a note
+    // applied across a line break is stored as text(note), hardBreak, text(note),
+    // so skipping the break without resetting `run` keeps the two halves one
+    // entry. Un-noted text (which has a string `text`) and block nodes (which
+    // have `content`) still fall through below and break the run.
+    if (
+      child &&
+      typeof child === "object" &&
+      !Array.isArray(child.content) &&
+      typeof child.text !== "string"
+    )
+      continue;
     run = null;
     collect(child, depth + 1, out);
   }
