@@ -11,6 +11,7 @@ import {
   LevelFormat,
   ShadingType,
 } from "docx";
+import { stripNoteMarks } from "@smudge/shared";
 import type { ExportProjectInfo, ExportChapter, RenderOptions } from "./export.renderers";
 import { resolveImage, buildCaptionText, type ImageSource } from "./image-resolver";
 import { UUID_PATTERN } from "../images/images.paths";
@@ -411,7 +412,14 @@ async function tipTapToParagraphs(
   state: DocxBuildState,
 ): Promise<Paragraph[]> {
   if (!content) return [];
-  const docContent = content.content as Array<Record<string, unknown>> | undefined;
+  // DOCX walks TipTap JSON directly instead of the chapterContentToHtml
+  // chokepoint, so it strips editor-only note marks here — its own equivalent of
+  // the renderEditorHtml() strip the other four formats get. Without this, note
+  // confidentiality on the DOCX path would hold only by accident (today's
+  // marksToProps/inlineToRuns never read mark.attrs); a future mark handler that
+  // does read attrs must still never see a note's private text.
+  const stripped = stripNoteMarks(content);
+  const docContent = stripped.content as Array<Record<string, unknown>> | undefined;
   if (!docContent) return [];
   const paragraphs: Paragraph[] = [];
   for (const node of docContent) {

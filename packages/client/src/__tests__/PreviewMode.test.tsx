@@ -66,6 +66,34 @@ const chapters: Chapter[] = [
 ];
 
 describe("PreviewMode", () => {
+  it("strips note marks — neither the note text nor the highlight reaches the preview", () => {
+    const noted: Chapter[] = [
+      {
+        ...chapters[0]!,
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "text",
+                  text: "Marcus drew his sword",
+                  marks: [{ type: "note", attrs: { text: "SECRET" } }],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ];
+    const { container } = render(<PreviewMode chapters={noted} onNavigateToChapter={vi.fn()} />);
+
+    expect(screen.getByText("Marcus drew his sword")).toBeInTheDocument();
+    expect(container.innerHTML).not.toContain("SECRET");
+    expect(container.querySelector(".note-highlight")).toBeNull();
+  });
+
   it("renders all chapter titles as h2 headings", () => {
     render(<PreviewMode chapters={chapters} onNavigateToChapter={vi.fn()} />);
 

@@ -2,13 +2,12 @@ import { useCallback, useRef } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { Chapter } from "@smudge/shared";
 import { SNAPSHOT_ERROR_CODES } from "@smudge/shared";
-import { generateHTML } from "@tiptap/html";
 import { mapApiError, clientWarn } from "../errors";
 import { ApiRequestError } from "../errors";
 import { clearCachedContent } from "./useContentCache";
 import { safeSetEditable, quiesceEditorForServerOp } from "../utils/editorSafeOps";
 import { sanitizeEditorHtml } from "../sanitizer";
-import { editorExtensions } from "@smudge/shared/editor-extensions";
+import { renderEditorHtml } from "@smudge/shared/editor-extensions";
 import { STRINGS } from "../strings";
 import type { EditorHandle } from "../components/Editor";
 import type { useEditorMutation } from "./useEditorMutation";
@@ -46,8 +45,7 @@ class RestoreFailedError extends Error {
 
 export function renderSnapshotContent(content: Record<string, unknown>): string {
   try {
-    const html = generateHTML(content as Parameters<typeof generateHTML>[0], editorExtensions);
-    return sanitizeEditorHtml(html);
+    return sanitizeEditorHtml(renderEditorHtml(content));
   } catch {
     return `<p>${STRINGS.snapshots.renderError}</p>`;
   }

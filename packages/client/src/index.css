@@ -114,6 +114,15 @@ input {
   color: var(--color-text-primary);
 }
 
+/* ─── Inline notes (Phase 4c.1) ───
+   Scoped to .tiptap: preview does not render inside it, so this rule cannot
+   paint outside the editor even if a note mark ever reached a rendered surface.
+   The underline carries the signal, so colour is not the sole cue. */
+.tiptap .note-highlight {
+  background-color: rgb(107 71 32 / 0.1); /* accent #6B4720 @ 10% */
+  border-bottom: 2px solid rgb(107 71 32 / 0.45);
+}
+
 /* ─── Writing area prose enhancements ─── */
 .tiptap.prose {
   font-size: 1.2rem;

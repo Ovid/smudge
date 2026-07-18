@@ -5,6 +5,7 @@ import {
   renderMarkdown,
   renderPlainText,
   chapterContentToHtml,
+  stripNoteSpans,
 } from "../export/export.renderers";
 import { escapeHtml } from "../export/html-escape";
 import { renderDocx } from "../export/docx.renderer";
@@ -92,6 +93,87 @@ describe("chapterContentToHtml sanitization (F-15)", () => {
     const html = chapterContentToHtml(doc);
     expect(html).toContain("keep me");
     expect(html).not.toContain("evil.example");
+  });
+});
+
+describe("note marks never reach an export (Phase 4c.1)", () => {
+  const notedChapter = {
+    id: "ch-note",
+    title: "Noted",
+    content: {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Marcus drew his sword",
+              marks: [{ type: "note", attrs: { text: "SECRET" } }],
+            },
+          ],
+        },
+      ],
+    },
+    sort_order: 0,
+  };
+
+  it("drops the note text and highlight from chapterContentToHtml (the shared chokepoint)", () => {
+    const html = chapterContentToHtml(notedChapter.content);
+    expect(html).not.toContain("SECRET");
+    expect(html).not.toContain("note-highlight");
+    expect(html).not.toContain("data-note");
+    expect(html).toContain("Marcus drew his sword");
+  });
+
+  it("keeps the note out of the HTML export", async () => {
+    const html = await renderHtml(projectInfo, [notedChapter], { includeToc: false }, imageSrc);
+    expect(html).not.toContain("SECRET");
+    expect(html).not.toContain("note-highlight");
+    expect(html).toContain("Marcus drew his sword");
+  });
+
+  it("keeps the note position out of the EPUB export", async () => {
+    const buf = await renderEpub(projectInfo, [notedChapter], { includeToc: false }, imageSrc);
+    const zip = await JSZip.loadAsync(buf);
+    const xhtml = await Promise.all(
+      Object.keys(zip.files)
+        .filter((n) => n.endsWith(".xhtml"))
+        .map((n) => zip.files[n]!.async("string")),
+    );
+    const all = xhtml.join("");
+    expect(all).not.toContain("SECRET");
+    expect(all).not.toContain("note-highlight");
+    expect(all).toContain("Marcus drew his sword");
+  });
+
+  // DOCX has its own TipTap walker (not the chapterContentToHtml chokepoint), so
+  // it strips notes at its own entry (stripNoteMarks in tipTapToParagraphs). This
+  // guards the structural guarantee: a future mark handler that reads mark.attrs
+  // must still never see the note payload.
+  it("keeps the note text out of the DOCX export", async () => {
+    const buf = await renderDocx(projectInfo, [notedChapter], { includeToc: false }, imageSrc);
+    const xml = await docxXml(buf);
+    expect(xml).not.toContain("SECRET");
+    expect(xml).toContain("Marcus drew his sword");
+  });
+
+  // Defense-in-depth second layer (S1): mirrors the client's DOMPurify span
+  // exclusion (sanitizer.ts) on the server export path. It only fires if a note
+  // span survived the upstream stripNoteMarks — a bug in our own strip — so it is
+  // exercised directly here with pre-rendered HTML rather than through the
+  // chokepoint (which always strips first). In Smudge's rendered HTML, <span> is
+  // emitted ONLY by the note mark, so dropping every span unwraps the note while
+  // keeping the annotated manuscript text.
+  it("stripNoteSpans unwraps a leaked note span, keeping the annotated text", () => {
+    const leaked =
+      '<p><span data-note="SECRET" class="note-highlight">Marcus drew his sword</span></p>';
+    const cleaned = stripNoteSpans(leaked);
+    expect(cleaned).not.toContain("SECRET");
+    expect(cleaned).not.toContain("data-note");
+    expect(cleaned).not.toContain("note-highlight");
+    expect(cleaned).not.toContain("<span");
+    expect(cleaned).toContain("Marcus drew his sword");
   });
 });
 

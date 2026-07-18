@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { searchInDoc, replaceInDoc, assertSafeRegexPattern } from "../tiptap-text";
+import { extractNotes } from "../tiptap-notes";
 
 // --- Typed helpers for building TipTap doc fixtures ---
 
@@ -205,6 +206,43 @@ describe("searchInDoc", () => {
     expect(results[0]!.offset).toBe(0);
     expect(results[1]!.offset).toBe(4);
     expect(results[2]!.offset).toBe(8);
+  });
+});
+
+describe("replaceInDoc note-mark survival (Phase 4c.1)", () => {
+  const note = (t: string): TipTapMark =>
+    ({ type: "note", attrs: { text: t } }) as unknown as TipTapMark;
+
+  it("keeps the note when the match sits inside the noted range", () => {
+    const d = doc(paragraph(text("Marcus drew his sword", [note("check the weapon")])));
+    const result = replaceInDoc(d, "Marcus", "Lucius");
+    expect(result.count).toBe(1);
+    expect(extractNotes(result.doc)).toEqual([
+      { note: "check the weapon", excerpt: "Lucius drew his sword" },
+    ]);
+  });
+
+  it("keeps the note when the match starts OUTSIDE it and extends into it", () => {
+    // The replacement node inherits the marks at the match's START offset. A
+    // match beginning in un-noted text used to erase the note it swallowed —
+    // and with it the writer's note body, unrecoverable (project-wide replace
+    // is server-committed, the draft cache is cleared after success, and there
+    // is no editor undo across a reload).
+    const d = doc(
+      paragraph(text("He drew his "), text("sword", [note("check the weapon")]), text(" again.")),
+    );
+    const result = replaceInDoc(d, "his sword", "her blade");
+    expect(result.count).toBe(1);
+    expect(extractNotes(result.doc)).toEqual([{ note: "check the weapon", excerpt: "her blade" }]);
+  });
+
+  it("keeps the note when the match starts inside it and extends past its end", () => {
+    const d = doc(
+      paragraph(text("He drew his sword", [note("check the weapon")]), text(" again.")),
+    );
+    const result = replaceInDoc(d, "sword again", "blade twice");
+    expect(result.count).toBe(1);
+    expect(extractNotes(result.doc).map((n) => n.note)).toEqual(["check the weapon"]);
   });
 });
 
