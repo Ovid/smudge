@@ -35,18 +35,23 @@ export const editorExtensions = [
 
 /**
  * The one route from TipTap JSON to rendered HTML: preview, snapshot view, and
- * every export format (all five go through the server's chapterContentToHtml).
- * The live editor is the only surface that renders TipTap JSON *without* this
- * function — because the editor is the only surface allowed to show
- * editor-only marks.
+ * four of the five export formats (HTML, EPUB, markdown, plaintext all go
+ * through the server's chapterContentToHtml). DOCX is the exception: it walks
+ * TipTap JSON directly rather than rendering HTML, so it strips editor-only
+ * marks at its own walker entry (docx.renderer.ts `tipTapToParagraphs` calls
+ * `stripNoteMarks`) — a separate route to the same confidentiality guarantee.
+ * The live editor is the only surface that renders TipTap JSON *without* any
+ * strip — because the editor is the only surface allowed to show editor-only
+ * marks.
  *
- * Editor-only marks are stripped here rather than at each call site. That is
- * the whole point: registering a mark in `editorExtensions` above is what makes
- * it renderable, so the strip has to live where the extensions do, or a new
- * render site silently ships private content. Notes are the first such mark
+ * Editor-only marks are stripped here rather than at each HTML call site. That
+ * is the whole point: registering a mark in `editorExtensions` above is what
+ * makes it renderable, so the strip has to live where the extensions do, or a
+ * new render site silently ships private content. Notes are the first such mark
  * (Phase 4c.1) — a note's text is the writer's private commentary, and HTML is
  * the format you hand to a beta reader. A future editor-only mark (Phase 4c.3
- * tags) strips here too; do not add a fourth bare generateHTML() call site.
+ * tags) strips here too; do not add a bare generateHTML() call site — and a new
+ * non-HTML export walker (like DOCX) must strip at its own entry.
  *
  * Callers keep their own error handling and post-processing (the server's
  * image-src allowlist, the client's DOMPurify pass) — this function only

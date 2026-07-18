@@ -2,10 +2,14 @@
  * Inline-note helpers over TipTap JSON (Phase 4c.1).
  *
  * A note is a `note` mark carrying a plain-text `text` attribute on the noted
- * range. The mark is editor-only: `renderEditorHtml` (editorExtensions.ts)
- * calls `stripNoteMarks` before generateHTML, and it is the single route from
- * TipTap JSON to preview, snapshot view, and every export format — so neither
- * the highlight nor the note text reaches a rendered surface.
+ * range. The mark is editor-only. Every rendered surface strips it via
+ * `stripNoteMarks`: `renderEditorHtml` (editorExtensions.ts) calls it before
+ * generateHTML for preview, snapshot view, and four of the five export formats
+ * (HTML, EPUB, markdown, plaintext all funnel through `chapterContentToHtml`).
+ * DOCX walks TipTap JSON directly rather than rendering HTML, so it calls
+ * `stripNoteMarks` at its own walker entry (docx.renderer.ts `tipTapToParagraphs`)
+ * — a separate route to the same guarantee. Either way, neither the highlight
+ * nor the note text reaches a rendered surface.
  *
  * Pure JSON walkers — no TipTap import — so they live in the package barrel
  * (the mark itself lives in editorExtensions, behind the subpath export).

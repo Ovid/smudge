@@ -145,6 +145,17 @@ describe("note marks never reach an export (Phase 4c.1)", () => {
     expect(all).not.toContain("note-highlight");
     expect(all).toContain("Marcus drew his sword");
   });
+
+  // DOCX has its own TipTap walker (not the chapterContentToHtml chokepoint), so
+  // it strips notes at its own entry (stripNoteMarks in tipTapToParagraphs). This
+  // guards the structural guarantee: a future mark handler that reads mark.attrs
+  // must still never see the note payload.
+  it("keeps the note text out of the DOCX export", async () => {
+    const buf = await renderDocx(projectInfo, [notedChapter], { includeToc: false }, imageSrc);
+    const xml = await docxXml(buf);
+    expect(xml).not.toContain("SECRET");
+    expect(xml).toContain("Marcus drew his sword");
+  });
 });
 
 describe("renderHtml", () => {

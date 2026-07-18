@@ -150,22 +150,29 @@ Wait for `make e2e` to finish (or kill it) before running cleanup.
 
 **TipTap JSON as source of truth.** Chapter content is stored as TipTap's native JSON, not HTML. HTML is generated on-demand via `generateHTML()` for preview/export. This enables structured operations (word counting walks the JSON tree) and future custom node types.
 
-**One route from TipTap JSON to rendered HTML.** Every rendered surface —
-preview, snapshot view, and all five export formats (which funnel through the
-server's `chapterContentToHtml`) — goes through `renderEditorHtml()` in
-`packages/shared/src/editorExtensions.ts`. The **live editor is the only surface
-that renders TipTap JSON without it**, because the editor is the only surface
-allowed to show editor-only marks. `renderEditorHtml()` strips those marks
-(today: `note`, Phase 4c.1) before `generateHTML`. Do not add a bare
+**One route from TipTap JSON to rendered HTML.** Every rendered *HTML* surface —
+preview, snapshot view, and four of the five export formats (HTML, EPUB,
+markdown, plaintext, which funnel through the server's `chapterContentToHtml`) —
+goes through `renderEditorHtml()` in `packages/shared/src/editorExtensions.ts`.
+**DOCX is the exception:** it walks TipTap JSON directly into Word paragraphs
+rather than rendering HTML, so it cannot go through `renderEditorHtml()` — it
+strips editor-only marks at its own walker entry instead
+(`docx.renderer.ts` `tipTapToParagraphs` calls `stripNoteMarks`), a separate
+route to the same confidentiality guarantee. The **live editor is the only
+surface that renders TipTap JSON without any strip**, because the editor is the
+only surface allowed to show editor-only marks. `renderEditorHtml()` strips
+those marks (today: `note`, Phase 4c.1) before `generateHTML`. Do not add a bare
 `generateHTML()` call site: registering a mark in `editorExtensions` is what
 makes it renderable, so a new render site that skips the strip silently ships
 the writer's private commentary into the file they hand a beta reader — which is
 exactly what happened when the note mark was registered ahead of its strip. A
-new editor-only mark (Phase 4c.3 tags) strips here too. The extension-set
-assertion in `editorExtensions.test.ts` is the forcing pause: it turns red when
-an extension is added, so the author must decide whether it renders into output.
-Callers keep their own post-processing (the server's image-src allowlist, the
-client's DOMPurify pass); `renderEditorHtml` only renders.
+new editor-only mark (Phase 4c.3 tags) strips here too — and in every non-HTML
+export walker (DOCX today). The DOCX note-leak test in `export.renderers.test.ts`
+guards that walker's strip; the extension-set assertion in
+`editorExtensions.test.ts` is the forcing pause: it turns red when an extension
+is added, so the author must decide whether it renders into output. Callers keep
+their own post-processing (the server's image-src allowlist, the client's
+DOMPurify pass); `renderEditorHtml` only renders.
 
 **Shared `countWords()` function.** Lives in `packages/shared/`, used by both client (live display) and server (persisted `word_count` column). Uses `Intl.Segmenter` with `granularity: 'word'` for correct CJK and Unicode handling. Client and server word counts must always agree.
 
