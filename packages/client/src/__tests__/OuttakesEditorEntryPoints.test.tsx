@@ -225,3 +225,46 @@ describe("E1: Outtakes reference-panel tab", () => {
     expect(await screen.findByText(STRINGS.outtakes.empty)).toBeInTheDocument();
   });
 });
+
+describe("F1: insert outtake at cursor", () => {
+  it("inserts the block ARRAY (content.content), not the doc node", async () => {
+    const user = userEvent.setup();
+    const blocks = [{ type: "paragraph", content: [{ type: "text", text: "cut text" }] }];
+    vi.mocked(api.outtakes.list).mockResolvedValue([outtake({ content: { type: "doc", content: blocks } })]);
+
+    renderEditorPage();
+    await openOuttakesTab(user);
+
+    await user.click(await screen.findByRole("button", { name: STRINGS.outtakes.insert }));
+
+    expect(insertContentSpy).toHaveBeenCalledTimes(1);
+    expect(insertContentSpy).toHaveBeenCalledWith(blocks);
+  });
+
+  it("no-ops when the editor is not editable (content/save guard axis)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.outtakes.list).mockResolvedValue([outtake()]);
+
+    renderEditorPage();
+    await openOuttakesTab(user);
+
+    // toolbarEditor.isEditable mirrors the machine's editable/lock; false means
+    // a mutation is in flight or the persistent lock is up.
+    mockControls.editable = false;
+    await user.click(await screen.findByRole("button", { name: STRINGS.outtakes.insert }));
+
+    expect(insertContentSpy).not.toHaveBeenCalled();
+  });
+
+  it("no-ops when the outtake has no blocks (empty doc)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.outtakes.list).mockResolvedValue([outtake({ content: { type: "doc", content: [] } })]);
+
+    renderEditorPage();
+    await openOuttakesTab(user);
+
+    await user.click(await screen.findByRole("button", { name: STRINGS.outtakes.insert }));
+
+    expect(insertContentSpy).not.toHaveBeenCalled();
+  });
+});
