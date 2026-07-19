@@ -9,6 +9,15 @@ import type { OuttakeRow } from "./outtakes.types";
  * the drawer never holds image references — this is what keeps outtakes out of
  * every image-refcount and export path structurally.
  *
+ * Editor-only `note` marks are DELIBERATELY preserved (review 2026-07-19 S3):
+ * an outtake is an editor-trusted round-trip surface — it only ever surfaces as
+ * plaintext in the panel (marks don't render) or is re-inserted into the editor
+ * (the one surface allowed to show notes). Stripping notes on capture would
+ * destroy the writer's private commentary on a stash-and-restash. The stored
+ * JSON therefore holds notes, so any FUTURE code that renders outtake content
+ * to HTML/export MUST strip them there (see the note-strip discipline in
+ * CLAUDE.md). The forcing test in outtakes.service.test.ts pins this decision.
+ *
  * Every operation enforces parent-project liveness via findProjectById (which
  * filters deleted_at IS NULL): an outtake under a soft-deleted project reads as
  * gone (404), matching the snapshots-under-trashed-chapter contract.

@@ -429,7 +429,13 @@ Core tables, all using UUID primary keys (except `settings` and `chapter_statuse
   only by an outtake would be GC'd. Outtakes are excluded from the manuscript word
   count, export, preview, and find-and-replace **by table separation** — any future
   "all project content" iteration must consciously opt them in, and must never do
-  so for images without extending ref-tracking.
+  so for images without extending ref-tracking. Editor-only `note` marks are
+  **deliberately preserved** on capture (unlike images): an outtake is an
+  editor-trusted round-trip surface — shown only as plaintext in the panel or
+  re-inserted into the editor — so stripping notes would lose the writer's private
+  commentary. The stored JSON therefore holds notes, so any future code that
+  renders outtake content to HTML/export **must** strip them there (§note-strip
+  discipline); the forcing test in `outtakes.service.test.ts` pins the decision.
 
 ## Testing Philosophy
 

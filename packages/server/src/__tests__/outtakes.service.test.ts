@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { randomUUID as uuid } from "node:crypto";
+import { NOTE_MARK_NAME } from "@smudge/shared";
 import { setupTestDb } from "./test-helpers";
 import {
   createOuttake,
@@ -15,6 +16,22 @@ const DOC_WITH_IMAGE = {
   content: [
     { type: "paragraph", content: [{ type: "text", text: "keep me" }] },
     { type: "image", attrs: { src: "/api/images/abc" } },
+  ],
+};
+
+const DOC_WITH_NOTE = {
+  type: "doc",
+  content: [
+    {
+      type: "paragraph",
+      content: [
+        {
+          type: "text",
+          text: "annotated",
+          marks: [{ type: NOTE_MARK_NAME, attrs: { text: "private note" } }],
+        },
+      ],
+    },
   ],
 };
 
@@ -47,6 +64,22 @@ describe("outtakes.service", () => {
       const flat = JSON.stringify(outtake.content);
       expect(flat).not.toContain("image");
       expect(flat).toContain("keep me");
+    });
+
+    // Forcing pause (review 2026-07-19 S3): outtakes DELIBERATELY preserve
+    // editor-only `note` marks on capture — an outtake is an editor-trusted
+    // round-trip surface (only ever shown as plaintext in the panel, or
+    // re-inserted into the editor, which is the one surface allowed to render
+    // notes). Stripping them would destroy the writer's private commentary on a
+    // mere stash-and-restash. If a future change adds an HTML/export render of
+    // outtake content it MUST strip notes there (per CLAUDE.md), and whoever
+    // decides to scrub on capture instead must consciously flip this test.
+    it("preserves editor-only note marks (editor-trusted round-trip surface)", async () => {
+      const projectId = await createProject();
+      const result = await createOuttake(projectId, DOC_WITH_NOTE, "Cut scene");
+      const flat = JSON.stringify(result!.content);
+      expect(flat).toContain(NOTE_MARK_NAME);
+      expect(flat).toContain("private note");
     });
 
     it("coerces an empty-string label to null", async () => {
