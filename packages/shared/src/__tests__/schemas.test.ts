@@ -316,6 +316,15 @@ describe("CreateOuttakeSchema", () => {
   it("rejects a non-TipTap content", () => {
     expect(CreateOuttakeSchema.safeParse({ content: 42 }).success).toBe(false);
   });
+  it("trims surrounding whitespace from the label", () => {
+    const result = CreateOuttakeSchema.safeParse({ content: doc, label: "  Cut scene  " });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.label).toBe("Cut scene");
+  });
+  it("rejects an over-max label", () => {
+    const result = CreateOuttakeSchema.safeParse({ content: doc, label: "a".repeat(501) });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("UpdateOuttakeSchema", () => {
@@ -323,5 +332,14 @@ describe("UpdateOuttakeSchema", () => {
     expect(UpdateOuttakeSchema.safeParse({ label: "x" }).success).toBe(true);
     expect(UpdateOuttakeSchema.safeParse({ label: null }).success).toBe(true);
     expect(UpdateOuttakeSchema.safeParse({ content: {} }).success).toBe(false);
+  });
+  it("trims surrounding whitespace from the label", () => {
+    const result = UpdateOuttakeSchema.safeParse({ label: "  Cut scene  " });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.label).toBe("Cut scene");
+  });
+  it("rejects an over-max label", () => {
+    const result = UpdateOuttakeSchema.safeParse({ label: "a".repeat(501) });
+    expect(result.success).toBe(false);
   });
 });
