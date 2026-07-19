@@ -6,6 +6,7 @@ interface EditorToolbarProps {
   snapshotCount?: number;
   onToggleSnapshots?: () => void;
   onToggleFindReplace?: () => void;
+  onSendSelectionToOuttakes?: () => void;
   snapshotsTriggerRef?: React.Ref<HTMLButtonElement>;
   findReplaceTriggerRef?: React.Ref<HTMLButtonElement>;
 }
@@ -15,6 +16,7 @@ export function EditorToolbar({
   snapshotCount,
   onToggleSnapshots,
   onToggleFindReplace,
+  onSendSelectionToOuttakes,
   snapshotsTriggerRef,
   findReplaceTriggerRef,
 }: EditorToolbarProps) {
@@ -181,6 +183,37 @@ export function EditorToolbar({
             >
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+          </button>
+        </>
+      )}
+      {onSendSelectionToOuttakes && (
+        <>
+          <span className="mx-0.5 self-stretch w-px bg-border/40" aria-hidden="true" />
+          <button
+            type="button"
+            onClick={onSendSelectionToOuttakes}
+            aria-label={STRINGS.outtakes.newFromSelection}
+            title={STRINGS.outtakes.newFromSelection}
+            className="rounded-md px-2.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-focus-ring text-text-muted hover:text-text-secondary hover:bg-bg-hover"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="6" cy="6" r="3" />
+              <circle cx="6" cy="18" r="3" />
+              <line x1="20" y1="4" x2="8.12" y2="15.88" />
+              <line x1="14.47" y1="14.48" x2="20" y2="20" />
+              <line x1="8.12" y1="8.12" x2="12" y2="12" />
             </svg>
           </button>
         </>

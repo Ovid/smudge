@@ -134,6 +134,42 @@ describe("EditorToolbar", () => {
     });
   });
 
+  describe("send-selection-to-outtakes button", () => {
+    it("does not render the button when onSendSelectionToOuttakes is not provided", () => {
+      const editor = createMockEditor();
+      const { container } = render(<EditorToolbar editor={editor} />);
+      const toolbar = container.querySelector("[role='toolbar']") as HTMLElement;
+      expect(
+        within(toolbar).queryByRole("button", { name: /send selection to outtakes/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("renders the button when onSendSelectionToOuttakes is provided", () => {
+      const editor = createMockEditor();
+      const { container } = render(
+        <EditorToolbar editor={editor} onSendSelectionToOuttakes={vi.fn()} />,
+      );
+      const toolbar = container.querySelector("[role='toolbar']") as HTMLElement;
+      expect(
+        within(toolbar).getByRole("button", { name: /send selection to outtakes/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("calls onSendSelectionToOuttakes when clicked, not editor.chain", () => {
+      const editor = createMockEditor();
+      const onSend = vi.fn();
+      const { container } = render(
+        <EditorToolbar editor={editor} onSendSelectionToOuttakes={onSend} />,
+      );
+      const toolbar = container.querySelector("[role='toolbar']") as HTMLElement;
+      fireEvent.click(
+        within(toolbar).getByRole("button", { name: /send selection to outtakes/i }),
+      );
+      expect(onSend).toHaveBeenCalledOnce();
+      expect(editor.chain).not.toHaveBeenCalled();
+    });
+  });
+
   describe("snapshot button", () => {
     it("does not render snapshot button when onToggleSnapshots is not provided", () => {
       const editor = createMockEditor();

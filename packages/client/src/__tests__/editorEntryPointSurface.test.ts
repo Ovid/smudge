@@ -104,6 +104,10 @@ const EDITOR_HEADER_PROPS = [
   "snapshotCount",
   "onToggleSnapshots",
   "onToggleFindReplace",
+  // Phase 4c.2: non-destructive read + POST (copy selection to outtakes).
+  // Guard axis: NONE — it writes no editor content, so save-pipeline
+  // invariants 1-4 do not apply and no busy/lock gate is needed.
+  "onSendSelectionToOuttakes",
   "snapshotsTriggerRef",
   "findReplaceTriggerRef",
   "onSwitchToView",

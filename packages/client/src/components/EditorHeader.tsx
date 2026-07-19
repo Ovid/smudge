@@ -33,6 +33,7 @@ interface EditorHeaderProps {
   snapshotCount: number | null;
   onToggleSnapshots: () => void;
   onToggleFindReplace: () => void;
+  onSendSelectionToOuttakes: () => void;
   snapshotsTriggerRef: RefObject<HTMLButtonElement | null>;
   findReplaceTriggerRef: RefObject<HTMLButtonElement | null>;
 
@@ -61,6 +62,7 @@ export function EditorHeader({
   snapshotCount,
   onToggleSnapshots,
   onToggleFindReplace,
+  onSendSelectionToOuttakes,
   snapshotsTriggerRef,
   findReplaceTriggerRef,
   onSwitchToView,
@@ -117,6 +119,7 @@ export function EditorHeader({
           snapshotCount={snapshotCount ?? undefined}
           onToggleSnapshots={onToggleSnapshots}
           onToggleFindReplace={onToggleFindReplace}
+          onSendSelectionToOuttakes={onSendSelectionToOuttakes}
           snapshotsTriggerRef={snapshotsTriggerRef}
           findReplaceTriggerRef={findReplaceTriggerRef}
         />

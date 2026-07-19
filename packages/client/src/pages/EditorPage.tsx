@@ -877,6 +877,36 @@ export function EditorPage() {
     }
   }, [slug, setProject, setActionError, navigate, mutation, isActionBusy, settingsRefreshOp]);
 
+  // Dedicated abortable op for the capture POST — never reuse a content-
+  // mutation op (this flow touches no editor content).
+  const captureOp = useAbortableAsyncOperation();
+
+  // Send the current selection to outtakes (non-destructive copy). Reads the
+  // selection, strips images, POSTs a new outtake, then bumps the refresh
+  // nonce so the panel reloads. It never writes editor content, so
+  // save-pipeline invariants 1-4 do NOT apply and NO busy/lock guard is
+  // needed (guard axis: none — non-destructive read + POST). A toolbar click
+  // is safe on a blurred editor because ProseMirror keeps state.selection.
+  const handleSendSelectionToOuttakes = useCallback(async () => {
+    if (!toolbarEditor || !project) return;
+    const { from, to } = toolbarEditor.state.selection;
+    if (from === to) return; // nothing selected
+    const slice = toolbarEditor.state.doc.slice(from, to);
+    const content = stripImageNodes({ type: "doc", content: slice.content.toJSON() ?? [] });
+    const label = `${STRINGS.outtakes.fromChapterPrefix}${activeChapter?.title ?? ""}`;
+    const { promise, signal } = captureOp.run((s) =>
+      api.outtakes.create(project.id, { content, label }, s),
+    );
+    try {
+      await promise;
+      if (signal.aborted) return;
+      setOuttakesRefreshNonce((n) => n + 1);
+    } catch (err) {
+      if (signal.aborted) return;
+      applyMappedError(mapApiError(err, "outtake.create"), { onMessage: setActionError });
+    }
+  }, [toolbarEditor, project, activeChapter, captureOp, setActionError]);
+
   useKeyboardShortcuts({
     shortcutHelpOpen,
     deleteTarget,
@@ -1007,6 +1037,7 @@ export function EditorPage() {
         snapshotCount={snapshotCount}
         onToggleSnapshots={handleToggleSnapshotPanel}
         onToggleFindReplace={handleToggleFindReplace}
+        onSendSelectionToOuttakes={handleSendSelectionToOuttakes}
         snapshotsTriggerRef={snapshotsTriggerRef}
         findReplaceTriggerRef={findReplaceTriggerRef}
         onSwitchToView={switchToView}

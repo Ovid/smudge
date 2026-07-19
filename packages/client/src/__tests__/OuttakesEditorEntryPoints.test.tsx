@@ -268,3 +268,59 @@ describe("F1: insert outtake at cursor", () => {
     expect(insertContentSpy).not.toHaveBeenCalled();
   });
 });
+
+describe("F2: send selection to outtakes (non-destructive)", () => {
+  it("POSTs the stripped selection with a From-chapter label and refreshes the panel", async () => {
+    const user = userEvent.setup();
+    const paragraph = { type: "paragraph", content: [{ type: "text", text: "grabbed" }] };
+    // Selection slice carries a paragraph AND an image; the image must be stripped.
+    mockControls.selection = { from: 1, to: 8 };
+    mockControls.sliceJson = [paragraph, { type: "image", attrs: { src: "/api/images/x" } }];
+
+    const created = outtake({ id: "ot-new", label: "From Chapter One", content: { type: "doc", content: [paragraph] } });
+    vi.mocked(api.outtakes.create).mockResolvedValue(created);
+    // First list (panel mount) empty; after the nonce bump, the new row loads.
+    vi.mocked(api.outtakes.list).mockResolvedValueOnce([]).mockResolvedValue([created]);
+
+    renderEditorPage();
+    await openOuttakesTab(user);
+    expect(await screen.findByText(STRINGS.outtakes.empty)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: STRINGS.outtakes.newFromSelection }));
+
+    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalledTimes(1));
+    expect(api.outtakes.create).toHaveBeenCalledWith(
+      "proj-1",
+      {
+        content: { type: "doc", content: [paragraph] },
+        label: `${STRINGS.outtakes.fromChapterPrefix}Chapter One`,
+      },
+      expect.anything(),
+    );
+
+    // End-to-end: the nonce bump reloaded the panel and the new row appears.
+    expect(await screen.findByText("grabbed")).toBeInTheDocument();
+  });
+
+  it("no-ops on an empty selection (from === to)", async () => {
+    const user = userEvent.setup();
+    mockControls.selection = { from: 3, to: 3 };
+
+    renderEditorPage();
+    await user.click(await screen.findByRole("button", { name: STRINGS.outtakes.newFromSelection }));
+
+    expect(api.outtakes.create).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the mapped error message when create fails", async () => {
+    const user = userEvent.setup();
+    mockControls.selection = { from: 1, to: 5 };
+    mockControls.sliceJson = [{ type: "paragraph", content: [{ type: "text", text: "x" }] }];
+    vi.mocked(api.outtakes.create).mockRejectedValue(new Error("boom"));
+
+    renderEditorPage();
+    await user.click(await screen.findByRole("button", { name: STRINGS.outtakes.newFromSelection }));
+
+    expect(await screen.findByText(STRINGS.error.createOuttakeFailed)).toBeInTheDocument();
+  });
+});
