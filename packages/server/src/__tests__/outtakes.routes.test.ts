@@ -56,6 +56,8 @@ describe("outtakes routes", () => {
         .send({ content: DOC });
       expect(res.status).toBe(400);
     });
+
+    // Oversize bodies yield 413 via the shared express.json limit (covered at that layer), so not re-tested here.
   });
 
   describe("GET /api/projects/:id/outtakes", () => {
@@ -104,6 +106,11 @@ describe("outtakes routes", () => {
         .send({ label: 42 });
       expect(res.status).toBe(400);
     });
+
+    it("returns 400 for a bad-uuid outtake param", async () => {
+      const res = await request(t.app).patch(`/api/outtakes/${BAD_UUID}`).send({ label: "x" });
+      expect(res.status).toBe(400);
+    });
   });
 
   describe("DELETE /api/outtakes/:id", () => {
@@ -123,6 +130,11 @@ describe("outtakes routes", () => {
     it("returns 404 for an unknown id", async () => {
       const res = await request(t.app).delete(`/api/outtakes/${UNKNOWN_UUID}`);
       expect(res.status).toBe(404);
+    });
+
+    it("returns 400 for a bad-uuid outtake param", async () => {
+      const res = await request(t.app).delete(`/api/outtakes/${BAD_UUID}`);
+      expect(res.status).toBe(400);
     });
   });
 });

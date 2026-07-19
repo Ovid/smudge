@@ -52,7 +52,7 @@ export async function updateOuttakeLabel(
     if (!outtake) return null;
     const project = await txStore.findProjectById(outtake.project_id);
     if (!project) return null;
-    return txStore.updateOuttakeLabel(id, label, new Date().toISOString());
+    return txStore.updateOuttakeLabel(id, label || null, new Date().toISOString());
   });
 }
 

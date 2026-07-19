@@ -105,6 +105,13 @@ describe("outtakes.service", () => {
       expect(updated!.updated_at).not.toBe(created!.created_at);
     });
 
+    it("coerces an empty-string label to null", async () => {
+      const projectId = await createProject();
+      const created = await createOuttake(projectId, DOC_WITH_IMAGE, "old");
+      const updated = await updateOuttakeLabel(created!.id, "");
+      expect(updated!.label).toBeNull();
+    });
+
     it("returns null for an unknown id", async () => {
       expect(await updateOuttakeLabel(uuid(), "x")).toBeNull();
     });

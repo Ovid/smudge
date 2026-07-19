@@ -73,14 +73,23 @@ describe("outtakes are structurally excluded from aggregations", () => {
 
   it("are not touched by a project-wide find-and-replace", async () => {
     stubVelocity();
-    const { projectId } = await createProjectAndChapter("nothing here to change", 4);
+    // Seed REPLACE_ME into BOTH the chapter and the outtake so the replace
+    // actually executes against a real match — a total no-op replace bug would
+    // otherwise pass this test vacuously.
+    const { projectId, chapterId } = await createProjectAndChapter("please REPLACE_ME now", 3);
     const created = await createOuttake(projectId, doc("please REPLACE_ME now"), "cut");
 
     const result = await replaceInProject(projectId, "REPLACE_ME", "CHANGED");
-    // Well-formed replace (may match zero times in chapters); not a failure shape.
     expect(result).not.toBeNull();
     expect(typeof result).not.toBe("string");
 
+    // The chapter WAS changed — proves replace ran end to end.
+    const chapterRow = await t.db("chapters").where({ id: chapterId }).first();
+    const chapterFlat = JSON.stringify(chapterRow.content);
+    expect(chapterFlat).toContain("CHANGED");
+    expect(chapterFlat).not.toContain("REPLACE_ME");
+
+    // The outtake was NOT touched.
     const list = await listOuttakes(projectId);
     const stillThere = list!.find((o) => o.id === created!.id)!;
     const flat = JSON.stringify(stillThere.content);
