@@ -489,7 +489,6 @@ export const STRINGS = {
     confirmDeleteBody: "This can't be undone.",
     labelPlaceholder: "Label (optional)",
     labelAriaLabel: "Outtake label",
-    panelAriaLabel: "Outtakes",
     newPlaceholder: "Paste or type text to stash here…",
     save: "Save",
     cancel: "Cancel",

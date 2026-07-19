@@ -121,10 +121,7 @@ export function OuttakesPanel({ projectId, onInsert, refreshNonce }: OuttakesPan
     : outtakes;
 
   return (
-    <aside
-      aria-label={S.panelAriaLabel}
-      className="border-l border-border/60 bg-bg-sidebar flex flex-col h-full overflow-hidden w-80 min-w-80"
-    >
+    <div className="border-l border-border/60 bg-bg-sidebar flex flex-col h-full overflow-hidden w-80 min-w-80">
       <div className="border-b border-border/40 px-4 py-3 flex flex-col gap-2">
         <input
           type="text"
@@ -205,6 +202,6 @@ export function OuttakesPanel({ projectId, onInsert, refreshNonce }: OuttakesPan
           </ul>
         )}
       </div>
-    </aside>
+    </div>
   );
 }
