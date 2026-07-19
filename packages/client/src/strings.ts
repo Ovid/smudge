@@ -129,6 +129,7 @@ export const STRINGS = {
       "Unable to load settings — check your connection. Close and reopen the dialog to retry.",
     loadOuttakesFailed: "Failed to load outtakes",
     createOuttakeFailed: "Failed to save outtake",
+    createOuttakeTooLarge: "Outtake is too large to save. Capture a smaller selection.",
     updateOuttakeFailed: "Failed to update outtake",
     deleteOuttakeFailed: "Failed to delete outtake",
   },

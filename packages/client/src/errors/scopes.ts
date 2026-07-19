@@ -464,6 +464,11 @@ export const SCOPES = {
   "outtake.create": {
     fallback: STRINGS.error.createOuttakeFailed,
     committed: STRINGS.error.possiblyCommitted,
+    // S1: an oversized capture/blank note that trips the express.json limit
+    // 413s; the generic fallback invites a doomed retry, so give the same
+    // "too large" hint the sibling write scopes carry. Near-unreachable (a
+    // captured selection is a subset of a chapter that already fit).
+    byStatus: { 413: STRINGS.error.createOuttakeTooLarge },
   },
   "outtake.update": {
     fallback: STRINGS.error.updateOuttakeFailed,

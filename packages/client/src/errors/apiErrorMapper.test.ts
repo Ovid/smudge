@@ -362,6 +362,14 @@ describe("mapApiError — terminalStatuses plumbing (S1)", () => {
   });
 });
 
+describe("SCOPES — outtake.create", () => {
+  const scope = SCOPES["outtake.create"];
+  it("413 → createOuttakeTooLarge (S1)", () => {
+    const err = new ApiRequestError("too large", 413, "PAYLOAD_TOO_LARGE");
+    expect(resolveError(err, scope).message).toBe(STRINGS.error.createOuttakeTooLarge);
+  });
+});
+
 describe("SCOPES — chapter.save", () => {
   const scope = SCOPES["chapter.save"];
   it("413 → saveFailedTooLarge", () => {
