@@ -487,6 +487,20 @@ export const STRINGS = {
     confirmDeleteTitle: "Delete this outtake?",
     confirmDeleteBody: "This can't be undone.",
     labelPlaceholder: "Label (optional)",
+    labelAriaLabel: "Outtake label",
+    panelAriaLabel: "Outtakes",
+    newPlaceholder: "Paste or type text to stash here…",
+    save: "Save",
+    cancel: "Cancel",
+    showMore: "Show more",
+    showLess: "Show less",
+    wordCount: (count: number) => `${count.toLocaleString()} words`,
+    created: (dateStr: string) =>
+      new Date(dateStr).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
   },
   findReplace: {
     panelTitle: "Find and Replace",
