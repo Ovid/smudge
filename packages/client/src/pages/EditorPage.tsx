@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import type { Chapter, ChapterStatusRow, ChapterStatusValue } from "@smudge/shared";
+import type { Chapter, ChapterStatusRow, ChapterStatusValue, OuttakeRow } from "@smudge/shared";
+import { stripImageNodes } from "@smudge/shared";
 import type { EditorHandle } from "../components/Editor";
 import type { Editor as TipTapEditor } from "@tiptap/react";
 import { STRINGS } from "../strings";
@@ -452,6 +453,28 @@ export function EditorPage() {
   // than uploading the same file again.
   const [galleryExternalRefreshKey, setGalleryExternalRefreshKey] = useState(0);
   const [toolbarEditor, setToolbarEditor] = useState<TipTapEditor | null>(null);
+
+  // Phase 4c.2 (Outtakes). The panel re-loads its list whenever this nonce
+  // changes; the non-destructive toolbar capture bumps it after a successful
+  // POST so the newly-stashed outtake appears without the panel owning capture.
+  const [outtakesRefreshNonce, setOuttakesRefreshNonce] = useState(0);
+
+  // Insert an outtake's blocks at the cursor. This IS an editor-content
+  // mutation, so it gates on the content/save axis — the machine's editable
+  // flag (mirrored into toolbarEditor.isEditable by the reconcile effect and
+  // the synchronous mutation lock-down) plus the persistent lock — NOT
+  // isActionBusy(). No-ops while the editor is not editable or is locked.
+  // Inserts the block ARRAY (content.content), never the wrapping doc node.
+  const handleInsertOuttake = useCallback(
+    (outtake: OuttakeRow) => {
+      if (!toolbarEditor || !toolbarEditor.isEditable || editorMachine.isLocked()) return;
+      const docContent = outtake.content.content;
+      const blocks = Array.isArray(docContent) ? docContent : [];
+      if (blocks.length === 0) return;
+      toolbarEditor.chain().focus().insertContent(blocks).run();
+    },
+    [toolbarEditor, editorMachine],
+  );
 
   // Clean up image announcement timer on unmount.
   // settingsRefreshOp auto-aborts on unmount — no explicit call needed.
@@ -1065,6 +1088,8 @@ export function EditorPage() {
           }
           editorRef.current?.insertImage(url, alt);
         }}
+        onInsertOuttake={handleInsertOuttake}
+        outtakesRefreshNonce={outtakesRefreshNonce}
         snapshotPanelOpen={snapshotPanelOpen}
         onCloseSnapshotPanel={() => setSnapshotPanelOpen(false)}
         snapshotPanelRef={snapshotPanelRef}

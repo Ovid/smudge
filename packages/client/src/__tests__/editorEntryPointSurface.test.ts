@@ -168,6 +168,12 @@ const EDITOR_MAIN_CONTENT_PROPS = [
   "onSelectTab",
   "galleryExternalRefreshKey",
   "onInsertImage",
+  // Phase 4c.2: insert an outtake's blocks at the cursor. Guard axis:
+  // content/save — the machine's editable flag (via toolbarEditor.isEditable)
+  // + the persistent lock, NOT isActionBusy().
+  "onInsertOuttake",
+  // Phase 4c.2: pure data — the panel re-loads when this nonce changes. No guard.
+  "outtakesRefreshNonce",
   "snapshotPanelOpen",
   "onCloseSnapshotPanel",
   "snapshotPanelRef",

@@ -1,5 +1,5 @@
 import type { ComponentProps, RefObject } from "react";
-import type { Chapter, ChapterStatusRow, ProjectWithChapters } from "@smudge/shared";
+import type { Chapter, ChapterStatusRow, OuttakeRow, ProjectWithChapters } from "@smudge/shared";
 import { Sidebar } from "./Sidebar";
 import { TrashView } from "./TrashView";
 import { PreviewMode } from "./PreviewMode";
@@ -12,6 +12,7 @@ import { SnapshotPanel } from "./SnapshotPanel";
 import { FindReplacePanel } from "./FindReplacePanel";
 import { SnapshotBanner } from "./SnapshotBanner";
 import { ImageGallery } from "./ImageGallery";
+import { OuttakesPanel } from "./OuttakesPanel";
 import { STRINGS } from "../strings";
 import type { ViewMode } from "../hooks/useKeyboardShortcuts";
 import type { useSnapshotState } from "../hooks/useSnapshotState";
@@ -112,6 +113,8 @@ interface EditorMainContentProps {
   onSelectTab: ComponentProps<typeof ReferencePanel>["onSelectTab"];
   galleryExternalRefreshKey: number;
   onInsertImage: (url: string, alt: string) => void;
+  onInsertOuttake: (outtake: OuttakeRow) => void;
+  outtakesRefreshNonce: number;
 
   // Snapshot panel.
   snapshotPanelOpen: boolean;
@@ -185,6 +188,8 @@ export function EditorMainContent({
   onSelectTab,
   galleryExternalRefreshKey,
   onInsertImage,
+  onInsertOuttake,
+  outtakesRefreshNonce,
   snapshotPanelOpen,
   onCloseSnapshotPanel,
   snapshotPanelRef,
@@ -391,6 +396,17 @@ export function EditorMainContent({
                   externalRefreshKey={galleryExternalRefreshKey}
                   onInsertImage={onInsertImage}
                   onNavigateToChapter={onSelectChapter}
+                />
+              ),
+            },
+            {
+              id: "outtakes",
+              label: STRINGS.outtakes.tab,
+              panel: (
+                <OuttakesPanel
+                  projectId={project.id}
+                  onInsert={onInsertOuttake}
+                  refreshNonce={outtakesRefreshNonce}
                 />
               ),
             },
