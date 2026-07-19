@@ -1,7 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { randomUUID as uuid } from "node:crypto";
 import { setupTestDb } from "./test-helpers";
 import * as OuttakesRepo from "../outtakes/outtakes.repository";
+import { logger } from "../logger";
 
 const t = setupTestDb();
 
@@ -106,6 +107,33 @@ describe("outtakes repository", () => {
       const projectId = await createProject();
       const list = await OuttakesRepo.listByProject(t.db, projectId);
       expect(list).toEqual([]);
+    });
+
+    it("degrades one corrupt-content row to an empty doc without breaking the list", async () => {
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+      const projectId = await createProject();
+      const good = makeData(projectId, { label: "good" });
+      await OuttakesRepo.insert(t.db, good);
+      // Bypass the repo so we can persist deliberately-malformed JSON.
+      const corrupt = makeData(projectId, { label: "corrupt", content: "not json {" });
+      await t.db("outtakes").insert(corrupt);
+
+      const list = await OuttakesRepo.listByProject(t.db, projectId);
+
+      expect(list).toHaveLength(2);
+      const badRow = list.find((o) => o.id === corrupt.id);
+      expect(badRow).toBeDefined();
+      expect(badRow!.label).toBe("corrupt");
+      expect(badRow!.content).toEqual({ type: "doc", content: [] });
+      // The healthy row still loads with its real content.
+      const goodRow = list.find((o) => o.id === good.id);
+      expect(goodRow!.content).toEqual({ type: "doc", content: [] });
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ outtake_id: corrupt.id }),
+        expect.any(String),
+      );
+      warnSpy.mockRestore();
     });
   });
 

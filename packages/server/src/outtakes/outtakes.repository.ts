@@ -1,5 +1,6 @@
 import type { Knex } from "knex";
 import type { OuttakeRow, CreateOuttakeData } from "./outtakes.types";
+import { logger } from "../logger";
 
 const TABLE = "outtakes";
 
@@ -7,11 +8,25 @@ const TABLE = "outtakes";
 // (OuttakeRow) carries it parsed. Parse on read so callers never see the raw
 // column string.
 function parseRow(row: Record<string, unknown>): OuttakeRow {
+  let content: Record<string, unknown>;
+  try {
+    content = JSON.parse(row.content as string) as Record<string, unknown>;
+  } catch (err) {
+    // ponytail: degrade one corrupt row to an empty doc (not a corrupt-flag
+    // like chapters). Single-user, unreachable in-app, and keeps content
+    // non-null so no client corrupt-branch is needed — the row still lists so
+    // it stays deletable, instead of one bad row 500-ing the whole drawer.
+    logger.warn(
+      { parseError: err instanceof Error ? err.name : "UnknownError", outtake_id: row.id ?? "unknown" },
+      "Corrupt JSON in outtake content",
+    );
+    content = { type: "doc", content: [] };
+  }
   return {
     id: row.id as string,
     project_id: row.project_id as string,
     label: (row.label as string | null) ?? null,
-    content: JSON.parse(row.content as string) as Record<string, unknown>,
+    content,
     created_at: row.created_at as string,
     updated_at: row.updated_at as string,
   };
