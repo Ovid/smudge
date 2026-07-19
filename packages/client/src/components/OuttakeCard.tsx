@@ -79,7 +79,9 @@ export function OuttakeCard({
       // The server still holds the previous label; revert the visible field to
       // it — but only if untouched since the request, so newer keystrokes the
       // user typed during the round-trip survive (S5).
-      setLabelDraft((current) => (current === attempted ? (lastCommittedRef.current ?? "") : current));
+      setLabelDraft((current) =>
+        current === attempted ? (lastCommittedRef.current ?? "") : current,
+      );
       applyMappedError(mapApiError(err, "outtake.update"), { onMessage: onError });
     }
   }
