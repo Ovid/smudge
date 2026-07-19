@@ -1,0 +1,196 @@
+import { useEffect, useState } from "react";
+import type { OuttakeRow } from "@smudge/shared";
+import { toPlainText } from "@smudge/shared";
+import { api } from "../api/client";
+import { mapApiError, applyMappedError } from "../errors";
+import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
+import { STRINGS } from "../strings";
+import { OuttakeCard } from "./OuttakeCard";
+
+const S = STRINGS.outtakes;
+
+interface OuttakesPanelProps {
+  projectId: string;
+  onInsert: (outtake: OuttakeRow) => void;
+  /** EditorPage bumps this after a toolbar capture; a change re-runs the load. */
+  refreshNonce: number;
+}
+
+/** Wrap a textarea's plain string into a TipTap doc, one paragraph per line. */
+function textToDoc(text: string): Record<string, unknown> {
+  return {
+    type: "doc",
+    content: text
+      .split("\n")
+      .map((line) =>
+        line ? { type: "paragraph", content: [{ type: "text", text: line }] } : { type: "paragraph" },
+      ),
+  };
+}
+
+export function OuttakesPanel({ projectId, onInsert, refreshNonce }: OuttakesPanelProps) {
+  const [outtakes, setOuttakes] = useState<OuttakeRow[]>([]);
+  const [filter, setFilter] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [showNew, setShowNew] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const loadOp = useAbortableAsyncOperation();
+  const mutateOp = useAbortableAsyncOperation();
+
+  // Load (and reload on projectId / refreshNonce change). A bumped
+  // refreshNonce is how a toolbar capture makes a new outtake appear without
+  // this panel owning capture logic. ABORTED is silent via the mapper, and
+  // the per-call signal guards a late resolution after unmount / reload.
+  useEffect(() => {
+    const { promise, signal } = loadOp.run((s) => api.outtakes.list(projectId, s));
+    promise
+      .then((rows) => {
+        if (signal.aborted) return;
+        setOuttakes(rows);
+        setError(null);
+      })
+      .catch((err: unknown) => {
+        if (signal.aborted) return;
+        applyMappedError(mapApiError(err, "outtake.list"), { onMessage: setError });
+      });
+  }, [projectId, refreshNonce, loadOp]);
+
+  async function handleCreate() {
+    if (!draft.trim()) {
+      setShowNew(false);
+      setDraft("");
+      return;
+    }
+    const { promise, signal } = mutateOp.run((s) =>
+      api.outtakes.create(projectId, { content: textToDoc(draft), label: null }, s),
+    );
+    try {
+      const row = await promise;
+      if (signal.aborted) return;
+      setOuttakes((prev) => [row, ...prev]);
+      setDraft("");
+      setShowNew(false);
+      setError(null);
+    } catch (err) {
+      if (signal.aborted) return;
+      applyMappedError(mapApiError(err, "outtake.create"), { onMessage: setError });
+    }
+  }
+
+  async function handleDelete(id: string) {
+    const { promise, signal } = mutateOp.run((s) => api.outtakes.delete(id, s));
+    try {
+      await promise;
+      if (signal.aborted) return;
+      setOuttakes((prev) => prev.filter((o) => o.id !== id));
+      setError(null);
+    } catch (err) {
+      if (signal.aborted) return;
+      applyMappedError(mapApiError(err, "outtake.delete"), { onMessage: setError });
+    }
+  }
+
+  async function handleUpdateLabel(id: string, label: string | null) {
+    const { promise, signal } = mutateOp.run((s) => api.outtakes.updateLabel(id, { label }, s));
+    try {
+      const row = await promise;
+      if (signal.aborted) return;
+      setOuttakes((prev) => prev.map((o) => (o.id === id ? row : o)));
+      setError(null);
+    } catch (err) {
+      if (signal.aborted) return;
+      applyMappedError(mapApiError(err, "outtake.update"), { onMessage: setError });
+    }
+  }
+
+  const needle = filter.trim().toLowerCase();
+  const visible = needle
+    ? outtakes.filter((o) =>
+        `${o.label ?? ""} ${toPlainText(o.content)}`.toLowerCase().includes(needle),
+      )
+    : outtakes;
+
+  return (
+    <aside
+      aria-label={S.panelAriaLabel}
+      className="border-l border-border/60 bg-bg-sidebar flex flex-col h-full overflow-hidden w-80 min-w-80"
+    >
+      <div className="border-b border-border/40 px-4 py-3 flex flex-col gap-2">
+        <input
+          type="text"
+          aria-label={S.filterPlaceholder}
+          placeholder={S.filterPlaceholder}
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          className="text-sm border border-border/40 rounded px-2 py-1 bg-white text-text-primary placeholder:text-text-secondary/60 font-sans focus:outline-none focus:ring-1 focus:ring-accent"
+        />
+        {!showNew ? (
+          <button
+            type="button"
+            onClick={() => setShowNew(true)}
+            className="w-full text-sm font-medium text-accent border border-accent/40 rounded px-3 py-1.5 hover:bg-accent/10 transition-colors font-sans"
+          >
+            {S.newBlank}
+          </button>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <textarea
+              aria-label={S.newPlaceholder}
+              placeholder={S.newPlaceholder}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={4}
+              className="text-sm border border-border/40 rounded px-2 py-1 bg-white text-text-primary placeholder:text-text-secondary/60 font-serif focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleCreate}
+                className="text-sm font-medium text-white bg-accent rounded px-3 py-1 hover:bg-accent/90 transition-colors font-sans"
+              >
+                {S.save}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNew(false);
+                  setDraft("");
+                }}
+                className="text-sm text-text-secondary hover:text-text-primary transition-colors font-sans"
+              >
+                {S.cancel}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-3">
+        {error && (
+          <p role="alert" className="text-xs text-red-700 font-sans">
+            {error}
+          </p>
+        )}
+
+        {outtakes.length === 0 && !error && (
+          <p className="text-sm text-text-secondary text-center py-6 font-sans">{S.empty}</p>
+        )}
+
+        {visible.length > 0 && (
+          <ul className="flex flex-col gap-2">
+            {visible.map((outtake) => (
+              <OuttakeCard
+                key={outtake.id}
+                outtake={outtake}
+                onInsert={onInsert}
+                onDelete={handleDelete}
+                onUpdateLabel={handleUpdateLabel}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+    </aside>
+  );
+}
