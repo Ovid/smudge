@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OuttakeCard } from "../OuttakeCard";
 import { STRINGS } from "../../strings";
+import { expectConsole } from "../../__tests__/expectConsole";
 import type { OuttakeRow } from "@smudge/shared";
 
 const S = STRINGS.outtakes;
@@ -69,6 +70,18 @@ describe("OuttakeCard", () => {
     render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} />);
     await user.click(screen.getByRole("button", { name: S.copy }));
     expect(writeText).toHaveBeenCalledWith("Hello world");
+  });
+
+  it("swallows a clipboard write failure without throwing or logging", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockRejectedValue(new Error("denied"));
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} />);
+    await user.click(screen.getByRole("button", { name: S.copy }));
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    // The catch is a deliberate silent swallow — no banner, no console noise.
+    expectConsole("warn").silent();
+    expectConsole("error").silent();
   });
 
   it("opens a confirm dialog and calls onDelete on confirm", async () => {

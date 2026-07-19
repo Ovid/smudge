@@ -34,9 +34,15 @@ export function OuttakesPanel({ projectId, onInsert, refreshNonce }: OuttakesPan
   const [error, setError] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [draft, setDraft] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const loadOp = useAbortableAsyncOperation();
-  const mutateOp = useAbortableAsyncOperation();
+  // Each mutation gets its own op so an independent, concurrent mutation does
+  // not abort another in flight (run() aborts the op's prior controller). All
+  // still auto-abort on unmount.
+  const createOp = useAbortableAsyncOperation();
+  const deleteOp = useAbortableAsyncOperation();
+  const updateOp = useAbortableAsyncOperation();
 
   // Load (and reload on projectId / refreshNonce change). A bumped
   // refreshNonce is how a toolbar capture makes a new outtake appear without
@@ -62,7 +68,8 @@ export function OuttakesPanel({ projectId, onInsert, refreshNonce }: OuttakesPan
       setDraft("");
       return;
     }
-    const { promise, signal } = mutateOp.run((s) =>
+    setCreating(true);
+    const { promise, signal } = createOp.run((s) =>
       api.outtakes.create(projectId, { content: textToDoc(draft), label: null }, s),
     );
     try {
@@ -75,11 +82,13 @@ export function OuttakesPanel({ projectId, onInsert, refreshNonce }: OuttakesPan
     } catch (err) {
       if (signal.aborted) return;
       applyMappedError(mapApiError(err, "outtake.create"), { onMessage: setError });
+    } finally {
+      if (!signal.aborted) setCreating(false);
     }
   }
 
   async function handleDelete(id: string) {
-    const { promise, signal } = mutateOp.run((s) => api.outtakes.delete(id, s));
+    const { promise, signal } = deleteOp.run((s) => api.outtakes.delete(id, s));
     try {
       await promise;
       if (signal.aborted) return;
@@ -92,7 +101,7 @@ export function OuttakesPanel({ projectId, onInsert, refreshNonce }: OuttakesPan
   }
 
   async function handleUpdateLabel(id: string, label: string | null) {
-    const { promise, signal } = mutateOp.run((s) => api.outtakes.updateLabel(id, { label }, s));
+    const { promise, signal } = updateOp.run((s) => api.outtakes.updateLabel(id, { label }, s));
     try {
       const row = await promise;
       if (signal.aborted) return;
@@ -147,7 +156,8 @@ export function OuttakesPanel({ projectId, onInsert, refreshNonce }: OuttakesPan
               <button
                 type="button"
                 onClick={handleCreate}
-                className="text-sm font-medium text-white bg-accent rounded px-3 py-1 hover:bg-accent/90 transition-colors font-sans"
+                disabled={creating}
+                className="text-sm font-medium text-white bg-accent rounded px-3 py-1 hover:bg-accent/90 transition-colors font-sans disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {S.save}
               </button>
@@ -175,6 +185,10 @@ export function OuttakesPanel({ projectId, onInsert, refreshNonce }: OuttakesPan
 
         {outtakes.length === 0 && !error && (
           <p className="text-sm text-text-secondary text-center py-6 font-sans">{S.empty}</p>
+        )}
+
+        {outtakes.length > 0 && visible.length === 0 && (
+          <p className="text-sm text-text-secondary text-center py-6 font-sans">{S.noMatches}</p>
         )}
 
         {visible.length > 0 && (

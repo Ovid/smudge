@@ -105,6 +105,21 @@ describe("OuttakesPanel", () => {
     expect(screen.getByDisplayValue("Beta")).toBeInTheDocument();
   });
 
+  it("shows the no-matches message when a filter matches zero of several rows", async () => {
+    vi.mocked(api.outtakes.list).mockResolvedValue([
+      makeOuttake({ id: "a", label: "Alpha" }),
+      makeOuttake({ id: "b", label: "Beta" }),
+    ]);
+    const user = userEvent.setup();
+    render(<OuttakesPanel {...defaultProps} />);
+    await waitFor(() => expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument());
+
+    await user.type(screen.getByRole("textbox", { name: S.filterPlaceholder }), "zzznope");
+    expect(screen.getByText(S.noMatches)).toBeInTheDocument();
+    // The truly-empty state must not appear when rows exist but are filtered out.
+    expect(screen.queryByText(S.empty)).not.toBeInTheDocument();
+  });
+
   it("does not match a filter across a paragraph boundary", async () => {
     vi.mocked(api.outtakes.list).mockResolvedValue([
       makeOuttake({ id: "a", label: "Keep", content: docFromLines("Hello", "World") }),
@@ -199,14 +214,20 @@ describe("OuttakesPanel", () => {
     await waitFor(() => expect(screen.queryByDisplayValue("Doomed")).not.toBeInTheDocument());
   });
 
-  it("updates a label in place via the API", async () => {
-    vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a", label: "Before" })]);
+  it("updates in place using the SERVER-returned row, not the local draft", async () => {
+    vi.mocked(api.outtakes.list).mockResolvedValue([
+      makeOuttake({ id: "a", label: "Before", content: docFromLines("Original body") }),
+    ]);
+    // The server row carries content the client never typed. The card's
+    // preview renders straight from outtake.content, so it only shows the
+    // server text if handleUpdateLabel replaced the row (o.id === id ? row : o).
     vi.mocked(api.outtakes.updateLabel).mockResolvedValue(
-      makeOuttake({ id: "a", label: "After" }),
+      makeOuttake({ id: "a", label: "After", content: docFromLines("Server body") }),
     );
     const user = userEvent.setup();
     render(<OuttakesPanel {...defaultProps} />);
     const input = await screen.findByDisplayValue("Before");
+    expect(screen.getByText("Original body")).toBeInTheDocument();
 
     await user.clear(input);
     await user.type(input, "After");
@@ -219,5 +240,70 @@ describe("OuttakesPanel", () => {
         expect.anything(),
       ),
     );
+    await waitFor(() => expect(screen.getByText("Server body")).toBeInTheDocument());
+    expect(screen.queryByText("Original body")).not.toBeInTheDocument();
+  });
+
+  it("save is disabled while a create is in flight, then re-enabled", async () => {
+    vi.mocked(api.outtakes.list).mockResolvedValue([]);
+    let resolveCreate!: (row: OuttakeRow) => void;
+    vi.mocked(api.outtakes.create).mockReturnValue(
+      new Promise<OuttakeRow>((res) => {
+        resolveCreate = res;
+      }),
+    );
+    const user = userEvent.setup();
+    render(<OuttakesPanel {...defaultProps} />);
+    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: S.newBlank }));
+    await user.type(screen.getByRole("textbox", { name: S.newPlaceholder }), "New body");
+    const save = screen.getByRole("button", { name: S.save });
+    expect(save).toBeEnabled();
+
+    await user.click(save);
+    await waitFor(() => expect(save).toBeDisabled());
+    expect(api.outtakes.create).toHaveBeenCalledTimes(1);
+
+    resolveCreate(makeOuttake({ id: "new", label: null, content: docFromLines("New body") }));
+    // After success the form closes; open it again and Save is enabled.
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: S.save })).not.toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("button", { name: S.newBlank }));
+    expect(screen.getByRole("button", { name: S.save })).toBeEnabled();
+  });
+
+  it("a delete does not abort an in-flight label update (independent ops)", async () => {
+    vi.mocked(api.outtakes.list).mockResolvedValue([
+      makeOuttake({ id: "a", label: "Renamed target", content: docFromLines("Body A") }),
+      makeOuttake({ id: "b", label: "Doomed", content: docFromLines("Body B") }),
+    ]);
+    let resolveUpdate!: (row: OuttakeRow) => void;
+    vi.mocked(api.outtakes.updateLabel).mockReturnValue(
+      new Promise<OuttakeRow>((res) => {
+        resolveUpdate = res;
+      }),
+    );
+    const user = userEvent.setup();
+    render(<OuttakesPanel {...defaultProps} />);
+    const input = await screen.findByDisplayValue("Renamed target");
+
+    // Start an in-flight label update on row "a".
+    await user.clear(input);
+    await user.type(input, "New A label");
+    await user.tab();
+    await waitFor(() => expect(api.outtakes.updateLabel).toHaveBeenCalled());
+
+    // Delete a DIFFERENT row while the update is still pending. With a shared
+    // op this delete's run() would abort the update's controller.
+    await user.click(screen.getAllByRole("button", { name: S.delete })[1]!);
+    await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
+    await waitFor(() => expect(screen.queryByDisplayValue("Doomed")).not.toBeInTheDocument());
+
+    // Resolve the update: its handler must NOT have been aborted, so the server
+    // row (with new content) lands in state.
+    resolveUpdate(makeOuttake({ id: "a", label: "New A label", content: docFromLines("Body A server") }));
+    await waitFor(() => expect(screen.getByText("Body A server")).toBeInTheDocument());
   });
 });

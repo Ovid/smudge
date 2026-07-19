@@ -476,6 +476,7 @@ export const STRINGS = {
   outtakes: {
     tab: "Outtakes",
     empty: "No outtakes yet. Stash cut text here to find it later.",
+    noMatches: "No outtakes match your filter.",
     newFromSelection: "Send selection to outtakes",
     newBlank: "New outtake",
     filterPlaceholder: "Filter outtakes…",
