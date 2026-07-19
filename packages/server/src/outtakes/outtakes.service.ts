@@ -22,6 +22,13 @@ import type { OuttakeRow } from "./outtakes.types";
  * filters deleted_at IS NULL): an outtake under a soft-deleted project reads as
  * gone (404), matching the snapshots-under-trashed-chapter contract.
  */
+/**
+ * `content` is trusted TipTap JSON: the ROUTE is the sole content-validation
+ * trust boundary (it parses CreateOuttakeSchema, whose `content` is
+ * TipTapDocSchema) — this service does not re-parse it, to avoid a second walk
+ * of a potentially large document. A future non-route caller must validate
+ * `content` itself before calling (review 2026-07-19 S4).
+ */
 export async function createOuttake(
   projectId: string,
   content: Record<string, unknown>,
