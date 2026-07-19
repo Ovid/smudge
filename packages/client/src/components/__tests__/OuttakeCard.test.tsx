@@ -1,10 +1,20 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OuttakeCard } from "../OuttakeCard";
+import { api } from "../../api/client";
 import { STRINGS } from "../../strings";
 import { expectConsole } from "../../__tests__/expectConsole";
 import type { OuttakeRow } from "@smudge/shared";
+
+vi.mock("../../api/client", () => ({
+  api: {
+    outtakes: {
+      updateLabel: vi.fn(),
+      delete: vi.fn(),
+    },
+  },
+}));
 
 const S = STRINGS.outtakes;
 
@@ -25,9 +35,15 @@ function makeOuttake(overrides: Partial<OuttakeRow> = {}): OuttakeRow {
 
 const defaultProps = {
   onInsert: vi.fn(),
-  onDelete: vi.fn(),
-  onUpdateLabel: vi.fn(),
+  onDeleted: vi.fn(),
+  onUpdated: vi.fn(),
+  onError: vi.fn(),
 };
+
+beforeEach(() => {
+  vi.mocked(api.outtakes.delete).mockResolvedValue(undefined);
+  vi.mocked(api.outtakes.updateLabel).mockResolvedValue(makeOuttake());
+});
 
 afterEach(() => {
   cleanup();
@@ -82,66 +98,72 @@ describe("OuttakeCard", () => {
     expectConsole("error").silent();
   });
 
-  it("opens a confirm dialog and calls onDelete on confirm", async () => {
+  it("opens a confirm dialog and deletes via the API, then reconciles on confirm", async () => {
     const user = userEvent.setup();
-    const onDelete = vi.fn();
-    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} onDelete={onDelete} />);
+    const onDeleted = vi.fn();
+    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} onDeleted={onDeleted} />);
     await user.click(screen.getByRole("button", { name: S.delete }));
     // Dialog is shown
     expect(screen.getByText(S.confirmDeleteTitle)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
-    expect(onDelete).toHaveBeenCalledWith("ot-1");
+    expect(api.outtakes.delete).toHaveBeenCalledWith("ot-1", expect.anything());
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledWith("ot-1"));
   });
 
-  it("does not call onDelete when the confirm dialog is cancelled", async () => {
+  it("does not delete when the confirm dialog is cancelled", async () => {
     const user = userEvent.setup();
-    const onDelete = vi.fn();
-    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} onDelete={onDelete} />);
+    const onDeleted = vi.fn();
+    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} onDeleted={onDeleted} />);
     await user.click(screen.getByRole("button", { name: S.delete }));
     await user.click(screen.getByRole("button", { name: STRINGS.delete.cancelButton }));
-    expect(onDelete).not.toHaveBeenCalled();
+    expect(api.outtakes.delete).not.toHaveBeenCalled();
+    expect(onDeleted).not.toHaveBeenCalled();
     expect(screen.queryByText(S.confirmDeleteTitle)).not.toBeInTheDocument();
   });
 
   it("commits the label on blur", async () => {
     const user = userEvent.setup();
-    const onUpdateLabel = vi.fn();
-    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} onUpdateLabel={onUpdateLabel} />);
+    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} />);
     const input = screen.getByDisplayValue("A cut scene");
     await user.clear(input);
     await user.type(input, "New label");
     await user.tab();
-    expect(onUpdateLabel).toHaveBeenCalledWith("ot-1", "New label");
+    expect(api.outtakes.updateLabel).toHaveBeenCalledWith(
+      "ot-1",
+      { label: "New label" },
+      expect.anything(),
+    );
   });
 
   it("commits the label on Enter", async () => {
     const user = userEvent.setup();
-    const onUpdateLabel = vi.fn();
-    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} onUpdateLabel={onUpdateLabel} />);
+    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} />);
     const input = screen.getByDisplayValue("A cut scene");
     await user.clear(input);
     await user.type(input, "Renamed{Enter}");
-    expect(onUpdateLabel).toHaveBeenCalledWith("ot-1", "Renamed");
+    expect(api.outtakes.updateLabel).toHaveBeenCalledWith(
+      "ot-1",
+      { label: "Renamed" },
+      expect.anything(),
+    );
   });
 
   it("passes null when the label is cleared to empty", async () => {
     const user = userEvent.setup();
-    const onUpdateLabel = vi.fn();
-    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} onUpdateLabel={onUpdateLabel} />);
+    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} />);
     const input = screen.getByDisplayValue("A cut scene");
     await user.clear(input);
     await user.tab();
-    expect(onUpdateLabel).toHaveBeenCalledWith("ot-1", null);
+    expect(api.outtakes.updateLabel).toHaveBeenCalledWith("ot-1", { label: null }, expect.anything());
   });
 
-  it("does not fire onUpdateLabel when the label is unchanged", async () => {
+  it("does not rename when the label is unchanged", async () => {
     const user = userEvent.setup();
-    const onUpdateLabel = vi.fn();
-    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} onUpdateLabel={onUpdateLabel} />);
+    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} />);
     const input = screen.getByDisplayValue("A cut scene");
     await user.click(input);
     await user.tab();
-    expect(onUpdateLabel).not.toHaveBeenCalled();
+    expect(api.outtakes.updateLabel).not.toHaveBeenCalled();
   });
 
   it("expands a long preview when Show more is clicked", async () => {

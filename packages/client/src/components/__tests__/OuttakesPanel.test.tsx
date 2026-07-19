@@ -308,4 +308,67 @@ describe("OuttakesPanel", () => {
     );
     await waitFor(() => expect(screen.getByText("Body A server")).toBeInTheDocument());
   });
+
+  it("reverts the label and stays retryable after a failed rename (I3)", async () => {
+    vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a", label: "Before" })]);
+    vi.mocked(api.outtakes.updateLabel)
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce(makeOuttake({ id: "a", label: "After" }));
+    const user = userEvent.setup();
+    render(<OuttakesPanel {...defaultProps} />);
+    const input = await screen.findByDisplayValue("Before");
+
+    await user.clear(input);
+    await user.type(input, "After");
+    await user.tab();
+
+    // Failure: the visible draft reverts to the last committed value (the
+    // server still holds it) and the error banner shows.
+    await waitFor(() => expect(screen.getByText(STRINGS.error.updateOuttakeFailed)).toBeInTheDocument());
+    expect(screen.getByDisplayValue("Before")).toBeInTheDocument();
+
+    // Retryable: the ref was NOT advanced past the failure, so re-committing the
+    // same value fires a second PATCH (which now succeeds).
+    const retry = screen.getByDisplayValue("Before");
+    await user.clear(retry);
+    await user.type(retry, "After");
+    await user.tab();
+    await waitFor(() => expect(api.outtakes.updateLabel).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByDisplayValue("After")).toBeInTheDocument());
+  });
+
+  it("two deletes on different rows both land (I4 same-type sibling abort)", async () => {
+    vi.mocked(api.outtakes.list).mockResolvedValue([
+      makeOuttake({ id: "a", label: "Alpha" }),
+      makeOuttake({ id: "b", label: "Beta" }),
+    ]);
+    let resolveA!: () => void;
+    let resolveB!: () => void;
+    vi.mocked(api.outtakes.delete).mockImplementation((id) =>
+      id === "a"
+        ? new Promise<undefined>((r) => {
+            resolveA = () => r(undefined);
+          })
+        : new Promise<undefined>((r) => {
+            resolveB = () => r(undefined);
+          }),
+    );
+    const user = userEvent.setup();
+    render(<OuttakesPanel {...defaultProps} />);
+    await screen.findByDisplayValue("Alpha");
+
+    // Start delete A (in flight), then delete B (in flight). With a single shared
+    // per-type op, B's run() would abort A's controller and A would never leave.
+    await user.click(screen.getAllByRole("button", { name: S.delete })[0]!);
+    await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
+    await waitFor(() => expect(api.outtakes.delete).toHaveBeenCalledWith("a", expect.anything()));
+    await user.click(screen.getAllByRole("button", { name: S.delete })[1]!);
+    await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
+    await waitFor(() => expect(api.outtakes.delete).toHaveBeenCalledWith("b", expect.anything()));
+
+    resolveA();
+    resolveB();
+    await waitFor(() => expect(screen.queryByDisplayValue("Alpha")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByDisplayValue("Beta")).not.toBeInTheDocument());
+  });
 });

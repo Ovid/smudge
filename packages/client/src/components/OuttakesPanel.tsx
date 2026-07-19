@@ -39,12 +39,10 @@ export function OuttakesPanel({ projectId, onInsert, refreshNonce }: OuttakesPan
   const [creating, setCreating] = useState(false);
 
   const loadOp = useAbortableAsyncOperation();
-  // Each mutation gets its own op so an independent, concurrent mutation does
-  // not abort another in flight (run() aborts the op's prior controller). All
-  // still auto-abort on unmount.
+  // Create owns its op here (blank-note flow). Per-row delete/rename ops live in
+  // OuttakeCard so a mutation on one row cannot abort another's in-flight
+  // request; the card calls back into the reconcilers below on success.
   const createOp = useAbortableAsyncOperation();
-  const deleteOp = useAbortableAsyncOperation();
-  const updateOp = useAbortableAsyncOperation();
 
   // Load (and reload on projectId / refreshNonce change). A bumped
   // refreshNonce is how a toolbar capture makes a new outtake appear without
@@ -89,30 +87,17 @@ export function OuttakesPanel({ projectId, onInsert, refreshNonce }: OuttakesPan
     }
   }
 
-  async function handleDelete(id: string) {
-    const { promise, signal } = deleteOp.run((s) => api.outtakes.delete(id, s));
-    try {
-      await promise;
-      if (signal.aborted) return;
-      setOuttakes((prev) => prev.filter((o) => o.id !== id));
-      setError(null);
-    } catch (err) {
-      if (signal.aborted) return;
-      applyMappedError(mapApiError(err, "outtake.delete"), { onMessage: setError });
-    }
+  // Reconcile the list by id after a card's own awaited server call succeeds.
+  // No api/abort here — the card owns the request (and its per-row op); these
+  // only touch local state.
+  function handleDeleted(id: string) {
+    setOuttakes((prev) => prev.filter((o) => o.id !== id));
+    setError(null);
   }
 
-  async function handleUpdateLabel(id: string, label: string | null) {
-    const { promise, signal } = updateOp.run((s) => api.outtakes.updateLabel(id, { label }, s));
-    try {
-      const row = await promise;
-      if (signal.aborted) return;
-      setOuttakes((prev) => prev.map((o) => (o.id === id ? row : o)));
-      setError(null);
-    } catch (err) {
-      if (signal.aborted) return;
-      applyMappedError(mapApiError(err, "outtake.update"), { onMessage: setError });
-    }
+  function handleUpdated(row: OuttakeRow) {
+    setOuttakes((prev) => prev.map((o) => (o.id === row.id ? row : o)));
+    setError(null);
   }
 
   const needle = filter.trim().toLowerCase();
@@ -197,8 +182,9 @@ export function OuttakesPanel({ projectId, onInsert, refreshNonce }: OuttakesPan
                 key={outtake.id}
                 outtake={outtake}
                 onInsert={onInsert}
-                onDelete={handleDelete}
-                onUpdateLabel={handleUpdateLabel}
+                onDeleted={handleDeleted}
+                onUpdated={handleUpdated}
+                onError={setError}
               />
             ))}
           </ul>

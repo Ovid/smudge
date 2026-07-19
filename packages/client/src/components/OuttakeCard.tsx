@@ -1,6 +1,9 @@
 import { useRef, useState } from "react";
 import type { OuttakeRow } from "@smudge/shared";
 import { toPlainText, countWords } from "@smudge/shared";
+import { api } from "../api/client";
+import { mapApiError, applyMappedError } from "../errors";
+import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 import { STRINGS } from "../strings";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -10,8 +13,12 @@ const PREVIEW_LIMIT = 160;
 interface OuttakeCardProps {
   outtake: OuttakeRow;
   onInsert: (outtake: OuttakeRow) => void;
-  onDelete: (id: string) => void;
-  onUpdateLabel: (id: string, label: string | null) => void;
+  /** Reconcile the panel list after THIS card's own delete succeeds. */
+  onDeleted: (id: string) => void;
+  /** Reconcile the panel list after THIS card's own rename succeeds. */
+  onUpdated: (row: OuttakeRow) => void;
+  /** Surface a failure on the panel's shared error banner. */
+  onError: (message: string) => void;
 }
 
 /** Normalize a label draft to the canonical `string | null` the API expects. */
@@ -19,24 +26,60 @@ function normalizeLabel(value: string): string | null {
   return value.trim() || null;
 }
 
-export function OuttakeCard({ outtake, onInsert, onDelete, onUpdateLabel }: OuttakeCardProps) {
+export function OuttakeCard({ outtake, onInsert, onDeleted, onUpdated, onError }: OuttakeCardProps) {
   const plainText = toPlainText(outtake.content);
   const [labelDraft, setLabelDraft] = useState(outtake.label ?? "");
   const [expanded, setExpanded] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  // Tracks the last committed value so blur-after-Enter (and blur with no
-  // change) does not fire a redundant onUpdateLabel.
+  // Tracks the last COMMITTED value so blur-after-Enter (and blur with no
+  // change) does not fire a redundant rename. Advanced only on confirmed
+  // success (see commitLabel) so a failed PATCH stays retryable.
   const lastCommittedRef = useRef<string | null>(outtake.label);
+
+  // Per-card ops: a delete/rename on ANOTHER card runs on that card's own op
+  // instance, so it can never abort this card's in-flight request. A single
+  // shared per-type op would (run() aborts the prior controller) — the
+  // same-type sibling-abort lost-update. Both auto-abort when this card
+  // unmounts (e.g. after its own delete removes it from the list).
+  const deleteOp = useAbortableAsyncOperation();
+  const updateOp = useAbortableAsyncOperation();
 
   const isLong = plainText.length > PREVIEW_LIMIT;
   const shownText =
     isLong && !expanded ? plainText.slice(0, PREVIEW_LIMIT).trimEnd() + "…" : plainText;
 
-  function commitLabel() {
+  async function commitLabel() {
     const next = normalizeLabel(labelDraft);
     if (lastCommittedRef.current === next) return;
-    lastCommittedRef.current = next;
-    onUpdateLabel(outtake.id, next);
+    const { promise, signal } = updateOp.run((s) =>
+      api.outtakes.updateLabel(outtake.id, { label: next }, s),
+    );
+    try {
+      const row = await promise;
+      if (signal.aborted) return;
+      // Advance the committed ref ONLY on success — otherwise a failed rename
+      // would block the identical retry on a later blur.
+      lastCommittedRef.current = next;
+      onUpdated(row);
+    } catch (err) {
+      if (signal.aborted) return;
+      // The server still holds the previous label; revert the visible field to
+      // it so the card cannot show a value that never persisted.
+      setLabelDraft(lastCommittedRef.current ?? "");
+      applyMappedError(mapApiError(err, "outtake.update"), { onMessage: onError });
+    }
+  }
+
+  async function handleDelete() {
+    const { promise, signal } = deleteOp.run((s) => api.outtakes.delete(outtake.id, s));
+    try {
+      await promise;
+      if (signal.aborted) return;
+      onDeleted(outtake.id);
+    } catch (err) {
+      if (signal.aborted) return;
+      applyMappedError(mapApiError(err, "outtake.delete"), { onMessage: onError });
+    }
   }
 
   async function handleCopy() {
@@ -60,7 +103,8 @@ export function OuttakeCard({ outtake, onInsert, onDelete, onUpdateLabel }: Outt
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
-            commitLabel();
+            // Blur commits via onBlur; committing here too would double-fire
+            // the rename now that commitLabel resolves asynchronously.
             e.currentTarget.blur();
           }
         }}
@@ -118,7 +162,7 @@ export function OuttakeCard({ outtake, onInsert, onDelete, onUpdateLabel }: Outt
           cancelLabel={STRINGS.delete.cancelButton}
           onConfirm={() => {
             setConfirmingDelete(false);
-            onDelete(outtake.id);
+            void handleDelete();
           }}
           onCancel={() => setConfirmingDelete(false)}
         />
