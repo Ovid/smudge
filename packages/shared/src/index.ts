@@ -13,6 +13,8 @@ export {
   EXPORT_CONTENT_TYPES,
   UpdateImageSchema,
   CreateSnapshotSchema,
+  CreateOuttakeSchema,
+  UpdateOuttakeSchema,
   sanitizeSnapshotLabel,
   validateTipTapDepth,
   MAX_TIPTAP_DEPTH,

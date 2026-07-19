@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   CreateProjectSchema,
   CreateSnapshotSchema,
+  CreateOuttakeSchema,
+  UpdateOuttakeSchema,
   UpdateProjectSchema,
   UpdateChapterSchema,
   UpdateSettingsSchema,
@@ -299,5 +301,27 @@ describe("UpdateSettingsSchema", () => {
       settings: [{ key: "", value: "foo" }],
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe("CreateOuttakeSchema", () => {
+  const doc = { type: "doc", content: [{ type: "paragraph" }] };
+  it("accepts content with an optional label", () => {
+    expect(CreateOuttakeSchema.safeParse({ content: doc }).success).toBe(true);
+    expect(CreateOuttakeSchema.safeParse({ content: doc, label: "Cut scene" }).success).toBe(true);
+  });
+  it("rejects unknown keys (strict)", () => {
+    expect(CreateOuttakeSchema.safeParse({ content: doc, word_count: 5 }).success).toBe(false);
+  });
+  it("rejects a non-TipTap content", () => {
+    expect(CreateOuttakeSchema.safeParse({ content: 42 }).success).toBe(false);
+  });
+});
+
+describe("UpdateOuttakeSchema", () => {
+  it("accepts a label (string or null) and rejects other keys", () => {
+    expect(UpdateOuttakeSchema.safeParse({ label: "x" }).success).toBe(true);
+    expect(UpdateOuttakeSchema.safeParse({ label: null }).success).toBe(true);
+    expect(UpdateOuttakeSchema.safeParse({ content: {} }).success).toBe(false);
   });
 });

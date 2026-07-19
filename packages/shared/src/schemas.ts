@@ -196,3 +196,16 @@ export const CreateSnapshotSchema = z
       .optional(),
   })
   .strict();
+
+export const CreateOuttakeSchema = z
+  .object({
+    content: TipTapDocSchema,
+    label: z.string().transform(sanitizeSnapshotLabel).nullish(),
+  })
+  .strict();
+
+export const UpdateOuttakeSchema = z
+  .object({
+    label: z.string().transform(sanitizeSnapshotLabel).nullable(),
+  })
+  .strict();
