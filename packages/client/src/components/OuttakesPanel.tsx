@@ -23,7 +23,9 @@ function textToDoc(text: string): Record<string, unknown> {
     content: text
       .split("\n")
       .map((line) =>
-        line ? { type: "paragraph", content: [{ type: "text", text: line }] } : { type: "paragraph" },
+        line
+          ? { type: "paragraph", content: [{ type: "text", text: line }] }
+          : { type: "paragraph" },
       ),
   };
 }

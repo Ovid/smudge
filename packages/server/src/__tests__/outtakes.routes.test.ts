@@ -63,8 +63,12 @@ describe("outtakes routes", () => {
   describe("GET /api/projects/:id/outtakes", () => {
     it("lists outtakes newest-first", async () => {
       const projectId = await createProject();
-      await request(t.app).post(`/api/projects/${projectId}/outtakes`).send({ content: DOC, label: "first" });
-      await request(t.app).post(`/api/projects/${projectId}/outtakes`).send({ content: DOC, label: "second" });
+      await request(t.app)
+        .post(`/api/projects/${projectId}/outtakes`)
+        .send({ content: DOC, label: "first" });
+      await request(t.app)
+        .post(`/api/projects/${projectId}/outtakes`)
+        .send({ content: DOC, label: "second" });
 
       const res = await request(t.app).get(`/api/projects/${projectId}/outtakes`);
       expect(res.status).toBe(200);

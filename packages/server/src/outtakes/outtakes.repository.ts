@@ -17,7 +17,10 @@ function parseRow(row: Record<string, unknown>): OuttakeRow {
     // non-null so no client corrupt-branch is needed — the row still lists so
     // it stays deletable, instead of one bad row 500-ing the whole drawer.
     logger.warn(
-      { parseError: err instanceof Error ? err.name : "UnknownError", outtake_id: row.id ?? "unknown" },
+      {
+        parseError: err instanceof Error ? err.name : "UnknownError",
+        outtake_id: row.id ?? "unknown",
+      },
       "Corrupt JSON in outtake content",
     );
     content = { type: "doc", content: [] };

@@ -2,11 +2,19 @@ import { describe, it, expect } from "vitest";
 import { stripImageNodes } from "../tiptap-images";
 describe("stripImageNodes", () => {
   it("drops image nodes but keeps surrounding content", () => {
-    const doc = { type: "doc", content: [{ type: "paragraph", content: [
-      { type: "text", text: "before" },
-      { type: "image", attrs: { src: "/api/images/x.png" } },
-      { type: "text", text: "after" },
-    ] }] };
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "before" },
+            { type: "image", attrs: { src: "/api/images/x.png" } },
+            { type: "text", text: "after" },
+          ],
+        },
+      ],
+    };
     const json = JSON.stringify(stripImageNodes(doc));
     expect(json).not.toContain("image");
     expect(json).toContain("before");

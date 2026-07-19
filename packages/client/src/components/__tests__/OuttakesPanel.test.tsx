@@ -303,7 +303,9 @@ describe("OuttakesPanel", () => {
 
     // Resolve the update: its handler must NOT have been aborted, so the server
     // row (with new content) lands in state.
-    resolveUpdate(makeOuttake({ id: "a", label: "New A label", content: docFromLines("Body A server") }));
+    resolveUpdate(
+      makeOuttake({ id: "a", label: "New A label", content: docFromLines("Body A server") }),
+    );
     await waitFor(() => expect(screen.getByText("Body A server")).toBeInTheDocument());
   });
 });

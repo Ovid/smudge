@@ -1,7 +1,12 @@
 import { MAX_TIPTAP_DEPTH } from "./tiptap-safety";
 type Node = { type?: string; text?: string; content?: Node[] };
 const BLOCK_TYPES = new Set([
-  "paragraph", "heading", "blockquote", "listItem", "codeBlock", "horizontalRule",
+  "paragraph",
+  "heading",
+  "blockquote",
+  "listItem",
+  "codeBlock",
+  "horizontalRule",
 ]);
 function needsNewline(out: string[]): boolean {
   const last = out[out.length - 1];
@@ -9,8 +14,14 @@ function needsNewline(out: string[]): boolean {
 }
 function walk(node: Node, depth: number, out: string[]): void {
   if (depth > MAX_TIPTAP_DEPTH) return;
-  if (typeof node.text === "string") { out.push(node.text); return; }
-  if (node.type === "hardBreak") { out.push("\n"); return; }
+  if (typeof node.text === "string") {
+    out.push(node.text);
+    return;
+  }
+  if (node.type === "hardBreak") {
+    out.push("\n");
+    return;
+  }
   const isBlock = node.type ? BLOCK_TYPES.has(node.type) : false;
   if (isBlock && needsNewline(out)) out.push("\n");
   for (const child of node.content ?? []) walk(child, depth + 1, out);
@@ -21,5 +32,8 @@ export function toPlainText(doc: Record<string, unknown> | null): string {
   if (!doc) return "";
   const out: string[] = [];
   walk(doc as Node, 0, out);
-  return out.join("").replace(/\n+/g, "\n").replace(/^\n|\n$/g, "");
+  return out
+    .join("")
+    .replace(/\n+/g, "\n")
+    .replace(/^\n|\n$/g, "");
 }

@@ -202,6 +202,7 @@ export const CreateOuttakeSchema = z
     content: TipTapDocSchema,
     label: z
       .string()
+      .max(5000, "Label is too long")
       .transform(sanitizeSnapshotLabel)
       .pipe(z.string().trim().max(500, "Label is too long"))
       .nullish(),
@@ -212,6 +213,7 @@ export const UpdateOuttakeSchema = z
   .object({
     label: z
       .string()
+      .max(5000, "Label is too long")
       .transform(sanitizeSnapshotLabel)
       .pipe(z.string().trim().max(500, "Label is too long"))
       .nullable(),

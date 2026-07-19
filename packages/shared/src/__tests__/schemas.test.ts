@@ -325,6 +325,10 @@ describe("CreateOuttakeSchema", () => {
     const result = CreateOuttakeSchema.safeParse({ content: doc, label: "a".repeat(501) });
     expect(result.success).toBe(false);
   });
+  it("rejects a huge label before sanitizing (pre-cap)", () => {
+    const result = CreateOuttakeSchema.safeParse({ content: doc, label: "a".repeat(5001) });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("UpdateOuttakeSchema", () => {
@@ -340,6 +344,10 @@ describe("UpdateOuttakeSchema", () => {
   });
   it("rejects an over-max label", () => {
     const result = UpdateOuttakeSchema.safeParse({ label: "a".repeat(501) });
+    expect(result.success).toBe(false);
+  });
+  it("rejects a huge label before sanitizing (pre-cap)", () => {
+    const result = UpdateOuttakeSchema.safeParse({ label: "a".repeat(5001) });
     expect(result.success).toBe(false);
   });
 });

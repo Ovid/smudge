@@ -487,7 +487,6 @@ export const STRINGS = {
     delete: "Delete",
     confirmDeleteTitle: "Delete this outtake?",
     confirmDeleteBody: "This can't be undone.",
-    labelPlaceholder: "Label (optional)",
     labelAriaLabel: "Outtake label",
     newPlaceholder: "Paste or type text to stash here…",
     save: "Save",

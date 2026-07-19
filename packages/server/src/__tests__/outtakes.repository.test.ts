@@ -166,12 +166,7 @@ describe("outtakes repository", () => {
     });
 
     it("returns null when the outtake does not exist", async () => {
-      const updated = await OuttakesRepo.updateLabel(
-        t.db,
-        uuid(),
-        "x",
-        new Date().toISOString(),
-      );
+      const updated = await OuttakesRepo.updateLabel(t.db, uuid(), "x", new Date().toISOString());
       expect(updated).toBeNull();
     });
   });

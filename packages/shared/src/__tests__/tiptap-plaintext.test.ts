@@ -7,20 +7,43 @@ describe("toPlainText", () => {
     expect(toPlainText(doc([para("Hello"), para("World")]))).toBe("Hello\nWorld");
   });
   it("concatenates adjacent inline text without a separator", () => {
-    expect(toPlainText(doc([{ type: "paragraph", content: [
-      { type: "text", text: "foo" }, { type: "text", text: "bar" },
-    ] }]))).toBe("foobar");
+    expect(
+      toPlainText(
+        doc([
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "foo" },
+              { type: "text", text: "bar" },
+            ],
+          },
+        ]),
+      ),
+    ).toBe("foobar");
   });
   it("does not produce a phantom cross-block match", () => {
     expect(toPlainText(doc([para("Hello"), para("World")])).includes("oW")).toBe(false);
   });
   it("emits a newline for a hardBreak (does not mash words together)", () => {
-    expect(toPlainText(doc([{ type: "paragraph", content: [
-      { type: "text", text: "a" }, { type: "hardBreak" }, { type: "text", text: "b" },
-    ] }]))).toBe("a\nb");
+    expect(
+      toPlainText(
+        doc([
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "a" },
+              { type: "hardBreak" },
+              { type: "text", text: "b" },
+            ],
+          },
+        ]),
+      ),
+    ).toBe("a\nb");
   });
   it("handles an empty paragraph and a typeless node without throwing", () => {
-    expect(toPlainText(doc([{ type: "paragraph" }, { content: [{ type: "text", text: "x" }] }]))).toBe("x");
+    expect(
+      toPlainText(doc([{ type: "paragraph" }, { content: [{ type: "text", text: "x" }] }])),
+    ).toBe("x");
   });
   it("returns '' for null / empty doc", () => {
     expect(toPlainText(null)).toBe("");

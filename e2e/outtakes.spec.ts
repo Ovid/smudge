@@ -117,9 +117,7 @@ test.describe("Outtakes E2e Tests", () => {
     await outtakesPanel.getByRole("button", { name: "Insert into editor" }).click();
 
     // The text now appears twice in the editor.
-    await expect
-      .poll(occurrencesInEditor, { timeout: 5000 })
-      .toBeGreaterThanOrEqual(2);
+    await expect.poll(occurrencesInEditor, { timeout: 5000 }).toBeGreaterThanOrEqual(2);
 
     // Delete the outtake via the confirm dialog.
     await outtakesPanel.getByRole("button", { name: "Delete" }).click();

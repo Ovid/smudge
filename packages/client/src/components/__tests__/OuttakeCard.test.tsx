@@ -15,9 +15,7 @@ function makeOuttake(overrides: Partial<OuttakeRow> = {}): OuttakeRow {
     label: "A cut scene",
     content: {
       type: "doc",
-      content: [
-        { type: "paragraph", content: [{ type: "text", text: "Hello world" }] },
-      ],
+      content: [{ type: "paragraph", content: [{ type: "text", text: "Hello world" }] }],
     },
     created_at: "2026-07-01T12:00:00.000Z",
     updated_at: "2026-07-01T12:00:00.000Z",
@@ -150,7 +148,10 @@ describe("OuttakeCard", () => {
     const user = userEvent.setup();
     const long = "word ".repeat(80).trim();
     const outtake = makeOuttake({
-      content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: long }] }] },
+      content: {
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: long }] }],
+      },
     });
     render(<OuttakeCard outtake={outtake} {...defaultProps} />);
     const toggle = screen.getByRole("button", { name: S.showMore });

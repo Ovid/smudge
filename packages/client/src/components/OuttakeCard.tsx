@@ -29,7 +29,8 @@ export function OuttakeCard({ outtake, onInsert, onDelete, onUpdateLabel }: Outt
   const lastCommittedRef = useRef<string | null>(outtake.label);
 
   const isLong = plainText.length > PREVIEW_LIMIT;
-  const shownText = isLong && !expanded ? plainText.slice(0, PREVIEW_LIMIT).trimEnd() + "…" : plainText;
+  const shownText =
+    isLong && !expanded ? plainText.slice(0, PREVIEW_LIMIT).trimEnd() + "…" : plainText;
 
   function commitLabel() {
     const next = normalizeLabel(labelDraft);

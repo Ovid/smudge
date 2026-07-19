@@ -230,7 +230,9 @@ describe("F1: insert outtake at cursor", () => {
   it("inserts the block ARRAY (content.content), not the doc node", async () => {
     const user = userEvent.setup();
     const blocks = [{ type: "paragraph", content: [{ type: "text", text: "cut text" }] }];
-    vi.mocked(api.outtakes.list).mockResolvedValue([outtake({ content: { type: "doc", content: blocks } })]);
+    vi.mocked(api.outtakes.list).mockResolvedValue([
+      outtake({ content: { type: "doc", content: blocks } }),
+    ]);
 
     renderEditorPage();
     await openOuttakesTab(user);
@@ -258,7 +260,9 @@ describe("F1: insert outtake at cursor", () => {
 
   it("no-ops when the outtake has no blocks (empty doc)", async () => {
     const user = userEvent.setup();
-    vi.mocked(api.outtakes.list).mockResolvedValue([outtake({ content: { type: "doc", content: [] } })]);
+    vi.mocked(api.outtakes.list).mockResolvedValue([
+      outtake({ content: { type: "doc", content: [] } }),
+    ]);
 
     renderEditorPage();
     await openOuttakesTab(user);
@@ -277,7 +281,11 @@ describe("F2: send selection to outtakes (non-destructive)", () => {
     mockControls.selection = { from: 1, to: 8 };
     mockControls.sliceJson = [paragraph, { type: "image", attrs: { src: "/api/images/x" } }];
 
-    const created = outtake({ id: "ot-new", label: "From Chapter One", content: { type: "doc", content: [paragraph] } });
+    const created = outtake({
+      id: "ot-new",
+      label: "From Chapter One",
+      content: { type: "doc", content: [paragraph] },
+    });
     vi.mocked(api.outtakes.create).mockResolvedValue(created);
     // First list (panel mount) empty; after the nonce bump, the new row loads.
     vi.mocked(api.outtakes.list).mockResolvedValueOnce([]).mockResolvedValue([created]);
@@ -307,7 +315,9 @@ describe("F2: send selection to outtakes (non-destructive)", () => {
     mockControls.selection = { from: 3, to: 3 };
 
     renderEditorPage();
-    await user.click(await screen.findByRole("button", { name: STRINGS.outtakes.newFromSelection }));
+    await user.click(
+      await screen.findByRole("button", { name: STRINGS.outtakes.newFromSelection }),
+    );
 
     expect(api.outtakes.create).not.toHaveBeenCalled();
   });
@@ -337,7 +347,9 @@ describe("F2: send selection to outtakes (non-destructive)", () => {
     vi.mocked(api.outtakes.create).mockRejectedValue(new Error("boom"));
 
     renderEditorPage();
-    await user.click(await screen.findByRole("button", { name: STRINGS.outtakes.newFromSelection }));
+    await user.click(
+      await screen.findByRole("button", { name: STRINGS.outtakes.newFromSelection }),
+    );
 
     expect(await screen.findByText(STRINGS.error.createOuttakeFailed)).toBeInTheDocument();
   });

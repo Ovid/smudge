@@ -119,7 +119,10 @@ describe("outtakes.service", () => {
     it("returns null when the parent project is soft-deleted", async () => {
       const projectId = await createProject();
       const created = await createOuttake(projectId, DOC_WITH_IMAGE, "old");
-      await t.db("projects").where({ id: projectId }).update({ deleted_at: new Date().toISOString() });
+      await t
+        .db("projects")
+        .where({ id: projectId })
+        .update({ deleted_at: new Date().toISOString() });
       expect(await updateOuttakeLabel(created!.id, "new")).toBeNull();
     });
   });
@@ -139,7 +142,10 @@ describe("outtakes.service", () => {
     it("returns false when the parent project is soft-deleted", async () => {
       const projectId = await createProject();
       const created = await createOuttake(projectId, DOC_WITH_IMAGE, "gone");
-      await t.db("projects").where({ id: projectId }).update({ deleted_at: new Date().toISOString() });
+      await t
+        .db("projects")
+        .where({ id: projectId })
+        .update({ deleted_at: new Date().toISOString() });
       expect(await deleteOuttake(created!.id)).toBe(false);
     });
   });

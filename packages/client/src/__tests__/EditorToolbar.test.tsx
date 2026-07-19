@@ -162,9 +162,7 @@ describe("EditorToolbar", () => {
         <EditorToolbar editor={editor} onSendSelectionToOuttakes={onSend} />,
       );
       const toolbar = container.querySelector("[role='toolbar']") as HTMLElement;
-      fireEvent.click(
-        within(toolbar).getByRole("button", { name: /send selection to outtakes/i }),
-      );
+      fireEvent.click(within(toolbar).getByRole("button", { name: /send selection to outtakes/i }));
       expect(onSend).toHaveBeenCalledOnce();
       expect(editor.chain).not.toHaveBeenCalled();
     });

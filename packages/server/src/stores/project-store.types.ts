@@ -133,7 +133,11 @@ export interface OuttakesStore {
   insertOuttake(data: CreateOuttakeData): Promise<OuttakeRow>;
   findOuttakeById(id: string): Promise<OuttakeRow | null>;
   listOuttakesByProject(projectId: string): Promise<OuttakeRow[]>;
-  updateOuttakeLabel(id: string, label: string | null, updatedAt: string): Promise<OuttakeRow | null>;
+  updateOuttakeLabel(
+    id: string,
+    label: string | null,
+    updatedAt: string,
+  ): Promise<OuttakeRow | null>;
   deleteOuttake(id: string): Promise<number>;
 }
 
