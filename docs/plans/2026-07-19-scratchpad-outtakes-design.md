@@ -154,10 +154,16 @@ creating an outtake.
 - **`toPlainText(doc)`** (pushback #3) — a shared, **exported**, tested
   TipTap-JSON → plain-text helper with **defined inter-block separation** (blocks
   joined by `\n` so a filter/Copy cannot match a phantom substring spanning a
-  block boundary). The word-count walker in `wordcount.ts` already contains this
-  traversal privately (`extractText`); export/extract it into `toPlainText` and
-  have both the Copy action and the filter box use it (rather than each call site
-  re-deriving plain text ad hoc).
+  block boundary), used by both the Copy action and the filter box (rather than
+  each call site re-deriving plain text ad hoc). **Deliberate deviation
+  (alignment #5):** this is a *new* walker, **not** a reuse of the private
+  `extractText` in `wordcount.ts`. `extractText` joins blocks with a single
+  space and is load-bearing for the client/server word-count agreement
+  invariant (CLAUDE.md §Shared `countWords()`); `toPlainText` needs newline
+  block separation for Copy fidelity. Forking keeps `toPlainText` from perturbing
+  the word-count path — the two walkers are parallel by design, not by
+  oversight, and the small duplication is the accepted cost of not risking the
+  word-count invariant.
 
 Content validation reuses the existing `TipTapDocSchema` + `MAX_CHAPTER_CONTENT_BYTES`
 guard (same as snapshots) so oversized bodies return `413` (inherited from the

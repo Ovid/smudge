@@ -17,6 +17,13 @@
 - All client UI strings in `packages/client/src/strings.ts` (ESLint-enforced; no word-bearing JSX/aria literals).
 - Client API errors route through `mapApiError`/`applyMappedError` + a `scopes.ts` entry per surface.
 - One PR = Phase 4c.2. Do **not** implement the destructive cut (4c.2a).
+- **REFACTOR is mandatory (alignment #1).** Every code-logic task ends with a
+  REFACTOR step after GREEN and before the commit: run `make lint` + the
+  package typecheck, DRY the new code against the cloned snapshot template, and
+  delete any dead branch. Tasks that are pure compiler-checked types (A1, B2,
+  B4) or documentation (G1) are the accepted TDD-exempt exceptions and have no
+  RED/REFACTOR. Where a task below names a concrete refactor target, do that
+  too.
 
 ---
 
@@ -137,7 +144,16 @@ export function toPlainText(doc: Record<string, unknown> | null): string {
 }
 ```
 
-**Step 4 — Run, expect PASS.** **Step 5 — Commit:** `feat(4c.2): shared toPlainText helper (newline-separated blocks)`
+**Step 4 — Run, expect PASS.**
+
+**Step 4b — REFACTOR (alignment #5):** do **not** merge this with `wordcount.ts`'s
+private `extractText`. They differ deliberately — `extractText` space-joins blocks
+and is load-bearing for the client/server word-count agreement invariant; this
+walker newline-separates for Copy fidelity. Leaving them parallel is the accepted
+choice (see design §5). Just confirm `toPlainText` isn't duplicated elsewhere in
+`shared`, and run `make lint` + `npm run -w packages/shared typecheck`.
+
+**Step 5 — Commit:** `feat(4c.2): shared toPlainText helper (newline-separated blocks)`
 
 ---
 
@@ -578,7 +594,16 @@ export async function deleteOuttake(id: string): Promise<boolean> {
 }
 ```
 
-**Step 4 — Run, expect PASS.** **Step 5 — Commit:** `feat(4c.2): outtakes service (validate, image-strip, parent-liveness)`
+**Step 4 — Run, expect PASS.**
+
+**Step 4b — REFACTOR:** the schema already sanitizes the label via
+`sanitizeSnapshotLabel` (Task A4), so the `label?.trim() || null` in `createOuttake`
+is partly redundant — keep only the `|| null` empty-to-null coercion (the label
+arrives pre-trimmed from the route's parsed body) and drop the double-trim.
+Confirm no other outtake-service branch duplicates snapshot-service logic that
+could be shared. Run `make lint` + `npm run -w packages/server typecheck`.
+
+**Step 5 — Commit:** `feat(4c.2): outtakes service (validate, image-strip, parent-liveness)`
 
 ---
 
@@ -695,7 +720,19 @@ it("export output contains no outtake text", async () => {
   const exported = await ExportService.exportProject(projectId, { format: "plaintext", /* ... */ });
   expect(exported.body ?? exported).not.toContain("SECRET_OUTTAKE_MARKER");
 });
+
+it("project-wide find-and-replace does not touch outtake rows", async () => {
+  // design §9: outtakes are excluded from find-and-replace by table separation.
+  const out = await OuttakesService.createOuttake(projectId, docWithWords("REPLACE_ME"));
+  await SearchService.replaceAll(projectId, { find: "REPLACE_ME", replace: "CHANGED" }); // grep exact fn/args
+  const after = await OuttakesService.listOuttakes(projectId);
+  expect(JSON.stringify(after)).toContain("REPLACE_ME");
+  expect(JSON.stringify(after)).not.toContain("CHANGED");
+  expect(after!.find((o) => o.id === out!.id)).toBeDefined();
+});
 ```
+
+> Grep `search.service.ts` for the exact replace-all entry point + argument shape and adapt. This test is expected to PASS with no production change — it *proves* the structural exclusion. If it fails, a code path is leaking outtakes into search; fix the code, not the test.
 
 > Grep for the exact velocity + export service entry points (`velocity.service.ts`, `export.service.ts`) and their signatures; adapt the calls. The point is behavioral: a separate table is invisible to chapter-only aggregations.
 
@@ -798,9 +835,52 @@ Renders: label (inline-editable input; blur/Enter → `onUpdateLabel`), a previe
 - Create: `packages/client/src/components/OuttakesPanel.tsx`
 - Create: `packages/client/src/components/__tests__/OuttakesPanel.test.tsx`
 
-Props: `{ projectId, onInsert, registerCapture? }` (or accept a `captureSelection` callback from the parent — see Phase F). Loads the list on mount via `api.outtakes.list` wrapped in `useAbortableAsyncOperation`; renders a filter `<input>` (case-insensitive substring over `label + toPlainText(content)`), the "New outtake" (textarea → `api.outtakes.create`) control, and the newest-first list of `OuttakeCard`. Errors route through `mapApiError(err, "outtake.list")` → `applyMappedError`. Prepends on create; removes on delete.
+**Props (alignment #2 — concrete capture-refresh mechanism):**
 
-**Step 1 — Failing tests:** list renders; filter narrows; empty state shows `STRINGS.outtakes.empty`; create-from-textarea posts and prepends; a failed load surfaces the mapped message (assert via `expectConsole` that no raw warning leaks). **Step 3 — Implement.** **Step 5 — Commit:** `feat(4c.2): OuttakesPanel component`
+```ts
+interface OuttakesPanelProps {
+  projectId: string;
+  onInsert: (outtake: OuttakeRow) => void;
+  refreshNonce: number; // EditorPage bumps this after a toolbar capture; a change re-runs the load
+}
+```
+
+Loads the list via `api.outtakes.list` wrapped in `useAbortableAsyncOperation`,
+in a `useEffect` keyed on `[projectId, refreshNonce]` — so a toolbar-initiated
+capture (Task F2) that bumps `refreshNonce` makes the new outtake appear without
+the panel owning any capture logic. Renders a filter `<input>` (case-insensitive
+substring over `label + toPlainText(content)`), a "New outtake" control, and the
+newest-first list of `OuttakeCard`. Errors route through
+`mapApiError(err, "outtake.list")` → `applyMappedError`. Prepends on local
+create; removes on delete.
+
+**"New outtake" textarea → TipTap doc (alignment #3).** A `<textarea>` yields a
+plain string, but `CreateOuttakeSchema.content` requires a valid doc. Wrap lines
+into paragraph nodes before POST:
+
+```ts
+function textToDoc(text: string): Record<string, unknown> {
+  return {
+    type: "doc",
+    content: text.split("\n").map((line) =>
+      line ? { type: "paragraph", content: [{ type: "text", text: line }] }
+           : { type: "paragraph" },
+    ),
+  };
+}
+// api.outtakes.create(projectId, { content: textToDoc(textareaValue), label })
+```
+
+**Step 1 — Failing tests:** list renders; filter narrows (and does **not** match
+across a paragraph boundary — reuse the `toPlainText` newline guarantee); empty
+state shows `STRINGS.outtakes.empty`; create-from-textarea POSTs a **valid doc**
+(assert the posted body's `content.type === "doc"` and a paragraph carries the
+typed text) and prepends the returned row; a bumped `refreshNonce` re-fetches and
+shows a newly-captured row; a failed load surfaces the mapped message (assert via
+`expectConsole` that no raw warning leaks).
+
+**Step 3 — Implement.** **Step 4b — REFACTOR** per the standing step. **Step 5 —
+Commit:** `feat(4c.2): OuttakesPanel component`
 
 ---
 
@@ -818,11 +898,21 @@ Props: `{ projectId, onInsert, registerCapture? }` (or accept a `captureSelectio
 {
   id: "outtakes",
   label: STRINGS.outtakes.tab,
-  panel: <OuttakesPanel projectId={project.id} onInsert={onInsertOuttake} /* + capture wiring, Phase F */ />,
+  panel: (
+    <OuttakesPanel
+      projectId={project.id}
+      onInsert={onInsertOuttake}
+      refreshNonce={outtakesRefreshNonce}
+    />
+  ),
 },
 ```
 
-(No `useReferencePanelState` change — `text` codec + unknown-tab degrade already handle a new id.)
+`onInsertOuttake` (Task F1) and `outtakesRefreshNonce` (Task F2) are owned by
+`EditorPage` and threaded through `EditorMainContent`'s props (add both to its
+prop interface — this is the `editorEntryPointSurface` prop-surface that Task F2
+consciously updates). No `useReferencePanelState` change — `text` codec +
+unknown-tab degrade already handle a new id.
 
 **Step 5 — Commit:** `feat(4c.2): wire Outtakes reference-panel tab`
 
@@ -874,16 +964,33 @@ const handleSendSelectionToOuttakes = useCallback(async () => {
   const op = captureOp.run(({ signal }) => api.outtakes.create(project.id, { content, label }, signal));
   try {
     await op.promise;
-    // trigger panel refresh (lift a refresh signal or re-fetch in the panel)
+    setOuttakesRefreshNonce((n) => n + 1); // alignment #2: make the panel re-fetch and show it
   } catch (err) {
     applyMappedError(mapApiError(err, "outtake.create"), { onMessage: setToast /* existing */ });
   }
 }, [editor, project.id, currentChapterTitle]);
 ```
 
-> `captureOp` = a `useAbortableAsyncOperation()` instance in `EditorPage`. The selection persists across focus change (ProseMirror keeps `state.selection` on blur), so a toolbar click is safe. This entry point is **non-destructive** (no `setEditable(false)`, no `markClean`, no save-pipeline invariants) — it only reads the selection and POSTs. Document that in the `editorEntryPointSurface` snapshot rationale so the guard-axis choice ("none — non-destructive read+POST") is explicit.
+Add the refresh state to `EditorPage`:
 
-**Step 1 — Failing tests:** the button appears; clicking with a selection POSTs the stripped selection; with no selection it no-ops; the entry-point snapshot test fails until updated, then passes. **Step 3 — Implement.** **Step 5 — Commit:** `feat(4c.2): send-selection-to-outtakes toolbar entry point`
+```ts
+const [outtakesRefreshNonce, setOuttakesRefreshNonce] = useState(0);
+```
+
+> `captureOp` = a `useAbortableAsyncOperation()` instance in `EditorPage`. The
+> selection persists across focus change (ProseMirror keeps `state.selection` on
+> blur), so a toolbar click is safe. This entry point is **non-destructive** (no
+> `setEditable(false)`, no `markClean`, no save-pipeline invariants) — it only
+> reads the selection and POSTs, then bumps `outtakesRefreshNonce` so
+> `OuttakesPanel` re-loads (Task D2). Document the guard-axis choice ("none —
+> non-destructive read+POST") in the `editorEntryPointSurface` snapshot rationale.
+
+**Step 1 — Failing tests:** the button appears; clicking with a selection POSTs
+the stripped selection **and** bumps the refresh nonce (assert the panel shows the
+new row end-to-end in `EditorPageFeatures.test.tsx`); with no selection it no-ops;
+the entry-point snapshot test fails until updated, then passes. **Step 3 —
+Implement.** **Step 4b — REFACTOR** per the standing step. **Step 5 — Commit:**
+`feat(4c.2): send-selection-to-outtakes toolbar entry point`
 
 ---
 
