@@ -1917,7 +1917,15 @@ codec)` plus three codec factories (`numberInRange`, `flag`, `text`). The
 > Multi-Tab Refactor (prerequisite), **4c.1** Inline Notes, **4c.2** Scratchpad
 > / Outtakes, **4c.3** Tags & Cross-References. The `plan:` comment above points
 > at the **4c.1 Notes** design (`docs/plans/2026-07-12-notes-design.md`), which
-> also specs 4c.0. 4c.2 and 4c.3 get their own designs when reached.
+> also specs 4c.0. **4c.2** now has its own design
+> (`docs/plans/2026-07-19-scratchpad-outtakes-design.md`); 4c.3 gets its own
+> when reached.
+>
+> **Further split (2026-07-19):** brainstorming 4c.2 split it into **4c.2**
+> (the non-destructive Outtakes drawer — table + CRUD + panel + copy-selection
+> capture + insert-back) and **4c.2a** (the destructive one-click "cut selection
+> to outtakes", which touches the save-pipeline invariants and gets its own PR).
+> Per CLAUDE.md §Pull Request Scope.
 >
 > **Status:**
 >
@@ -1925,8 +1933,15 @@ codec)` plus three codec factories (`numberInRange`, `flag`, `text`). The
 >   (`docs/plans/2026-07-12-4c0-reference-panel-tabs-plan.md`). `ReferencePanel`
 >   now takes a `tabs[]` + `activeTabId` + `onSelectTab` API; Images stays the
 >   only tab (no behavior change). Unblocks 4c.1.
-> - **4c.1** Inline Notes — next.
-> - **4c.2 / 4c.3** — planned.
+> - **4c.1** Inline Notes — ✅ **Done** (design
+>   `docs/plans/2026-07-12-notes-design.md`; shipped and merged to `main` —
+>   verified via merged `feat(4c.1)`/`fix(4c.1)` commits).
+> - **4c.2** Scratchpad / Outtakes — 🔨 **In Progress** (brainstormed
+>   2026-07-19; design `docs/plans/2026-07-19-scratchpad-outtakes-design.md`,
+>   plan to follow).
+> - **4c.2a** "Cut selection to outtakes" (destructive) — planned; split from
+>   4c.2, designed when reached.
+> - **4c.3** Tags & Cross-References — planned.
 
 ### Goal
 
