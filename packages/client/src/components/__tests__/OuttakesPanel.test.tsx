@@ -337,6 +337,66 @@ describe("OuttakesPanel", () => {
     await waitFor(() => expect(screen.getByDisplayValue("After")).toBeInTheDocument());
   });
 
+  it("discards a stale reload that would resurrect a row deleted after it started (I2)", async () => {
+    const a = makeOuttake({ id: "a", label: "Alpha" });
+    let resolveReload!: (rows: OuttakeRow[]) => void;
+    vi.mocked(api.outtakes.list)
+      .mockResolvedValueOnce([a]) // mount load
+      .mockReturnValueOnce(
+        new Promise<OuttakeRow[]>((res) => {
+          resolveReload = res;
+        }),
+      ); // refreshNonce reload, deferred
+    const user = userEvent.setup();
+    const { rerender } = render(<OuttakesPanel {...defaultProps} refreshNonce={0} />);
+    await screen.findByDisplayValue("Alpha");
+
+    // A toolbar capture bumps refreshNonce, firing the (deferred) reload GET.
+    rerender(<OuttakesPanel {...defaultProps} refreshNonce={1} />);
+    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalledTimes(2));
+
+    // Delete "a" while that reload GET is still in flight.
+    await user.click(screen.getByRole("button", { name: S.delete }));
+    await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
+    await waitFor(() => expect(screen.queryByDisplayValue("Alpha")).not.toBeInTheDocument());
+
+    // The stale reload resolves still holding "a" — it must be discarded, not
+    // overwrite the just-applied deletion.
+    resolveReload([a]);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByDisplayValue("Alpha")).not.toBeInTheDocument();
+  });
+
+  it("does not duplicate a created row a concurrent reload already added (I2)", async () => {
+    const created = makeOuttake({ id: "new", label: "New" });
+    let resolveCreate!: (r: OuttakeRow) => void;
+    vi.mocked(api.outtakes.create).mockReturnValue(
+      new Promise<OuttakeRow>((res) => {
+        resolveCreate = res;
+      }),
+    );
+    vi.mocked(api.outtakes.list)
+      .mockResolvedValueOnce([]) // mount
+      .mockResolvedValueOnce([created]); // reload sees the server's copy first
+    const user = userEvent.setup();
+    const { rerender } = render(<OuttakesPanel {...defaultProps} refreshNonce={0} />);
+    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: S.newBlank }));
+    await user.type(screen.getByRole("textbox", { name: S.newPlaceholder }), "New body");
+    await user.click(screen.getByRole("button", { name: S.save }));
+    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
+
+    // A reload lands the server's copy of the row before the POST resolves.
+    rerender(<OuttakesPanel {...defaultProps} refreshNonce={1} />);
+    await waitFor(() => expect(screen.getByDisplayValue("New")).toBeInTheDocument());
+
+    // The create resolves; the prepend must dedup by id, not double-render.
+    resolveCreate(created);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.getAllByRole("textbox", { name: S.labelAriaLabel })).toHaveLength(1);
+  });
+
   it("two deletes on different rows both land (I4 same-type sibling abort)", async () => {
     vi.mocked(api.outtakes.list).mockResolvedValue([
       makeOuttake({ id: "a", label: "Alpha" }),

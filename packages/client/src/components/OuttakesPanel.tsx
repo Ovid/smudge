@@ -4,6 +4,7 @@ import { toPlainText } from "@smudge/shared";
 import { api } from "../api/client";
 import { mapApiError, applyMappedError } from "../errors";
 import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
+import { useAbortableSequence } from "../hooks/useAbortableSequence";
 import { STRINGS } from "../strings";
 import { OuttakeCard } from "./OuttakeCard";
 
@@ -43,24 +44,31 @@ export function OuttakesPanel({ projectId, onInsert, refreshNonce }: OuttakesPan
   // OuttakeCard so a mutation on one row cannot abort another's in-flight
   // request; the card calls back into the reconcilers below on success.
   const createOp = useAbortableAsyncOperation();
+  // Arbitrates reload-vs-mutation staleness (invariant 4). Reloads replace the
+  // whole list, so a reload that started BEFORE an optimistic mutation landed
+  // would resurrect a deleted row / revert a rename. Each mutation bumps the
+  // epoch (seq.abort in the reconcilers), staling any in-flight reload's token.
+  const seq = useAbortableSequence();
 
   // Load (and reload on projectId / refreshNonce change). A bumped
   // refreshNonce is how a toolbar capture makes a new outtake appear without
-  // this panel owning capture logic. ABORTED is silent via the mapper, and
-  // the per-call signal guards a late resolution after unmount / reload.
+  // this panel owning capture logic. ABORTED is silent via the mapper; the
+  // per-call signal guards a late resolution after unmount, and the sequence
+  // token discards a reload a mutation has superseded.
   useEffect(() => {
+    const token = seq.start();
     const { promise, signal } = loadOp.run((s) => api.outtakes.list(projectId, s));
     promise
       .then((rows) => {
-        if (signal.aborted) return;
+        if (signal.aborted || token.isStale()) return;
         setOuttakes(rows);
         setError(null);
       })
       .catch((err: unknown) => {
-        if (signal.aborted) return;
+        if (signal.aborted || token.isStale()) return;
         applyMappedError(mapApiError(err, "outtake.list"), { onMessage: setError });
       });
-  }, [projectId, refreshNonce, loadOp]);
+  }, [projectId, refreshNonce, loadOp, seq]);
 
   async function handleCreate() {
     if (!draft.trim()) {
@@ -75,7 +83,11 @@ export function OuttakesPanel({ projectId, onInsert, refreshNonce }: OuttakesPan
     try {
       const row = await promise;
       if (signal.aborted) return;
-      setOuttakes((prev) => [row, ...prev]);
+      // Bump the epoch so an in-flight reload can't clobber this prepend, and
+      // dedup by id so a reload that already surfaced the server's copy can't
+      // leave a duplicate React key.
+      seq.abort();
+      setOuttakes((prev) => [row, ...prev.filter((o) => o.id !== row.id)]);
       setDraft("");
       setShowNew(false);
       setError(null);
@@ -91,11 +103,13 @@ export function OuttakesPanel({ projectId, onInsert, refreshNonce }: OuttakesPan
   // No api/abort here — the card owns the request (and its per-row op); these
   // only touch local state.
   function handleDeleted(id: string) {
+    seq.abort();
     setOuttakes((prev) => prev.filter((o) => o.id !== id));
     setError(null);
   }
 
   function handleUpdated(row: OuttakeRow) {
+    seq.abort();
     setOuttakes((prev) => prev.map((o) => (o.id === row.id ? row : o)));
     setError(null);
   }
