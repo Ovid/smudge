@@ -26,7 +26,13 @@ function normalizeLabel(value: string): string | null {
   return value.trim() || null;
 }
 
-export function OuttakeCard({ outtake, onInsert, onDeleted, onUpdated, onError }: OuttakeCardProps) {
+export function OuttakeCard({
+  outtake,
+  onInsert,
+  onDeleted,
+  onUpdated,
+  onError,
+}: OuttakeCardProps) {
   const plainText = toPlainText(outtake.content);
   const [labelDraft, setLabelDraft] = useState(outtake.label ?? "");
   const [expanded, setExpanded] = useState(false);

@@ -109,6 +109,9 @@ describe("outtakes.service", () => {
     it("returns rows newest-first", async () => {
       const projectId = await createProject();
       const first = await createOuttake(projectId, DOC_WITH_IMAGE, "first");
+      // Distinct created_at so "newest-first" is unambiguous: same-millisecond
+      // rows fall back to the id DESC tiebreak (random UUID), not insertion order.
+      await new Promise((r) => setTimeout(r, 5));
       const second = await createOuttake(projectId, DOC_WITH_IMAGE, "second");
       const list = await listOuttakes(projectId);
       expect(list).not.toBeNull();

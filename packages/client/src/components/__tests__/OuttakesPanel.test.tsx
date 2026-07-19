@@ -324,7 +324,9 @@ describe("OuttakesPanel", () => {
 
     // Failure: the visible draft reverts to the last committed value (the
     // server still holds it) and the error banner shows.
-    await waitFor(() => expect(screen.getByText(STRINGS.error.updateOuttakeFailed)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText(STRINGS.error.updateOuttakeFailed)).toBeInTheDocument(),
+    );
     expect(screen.getByDisplayValue("Before")).toBeInTheDocument();
 
     // Retryable: the ref was NOT advanced past the failure, so re-committing the

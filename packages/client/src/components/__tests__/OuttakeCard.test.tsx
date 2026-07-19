@@ -7,14 +7,26 @@ import { STRINGS } from "../../strings";
 import { expectConsole } from "../../__tests__/expectConsole";
 import type { OuttakeRow } from "@smudge/shared";
 
-vi.mock("../../api/client", () => ({
-  api: {
-    outtakes: {
-      updateLabel: vi.fn(),
-      delete: vi.fn(),
+vi.mock("../../api/client", () => {
+  class ApiRequestError extends Error {
+    status: number;
+    code?: string;
+    constructor(message: string, status: number, code?: string) {
+      super(message);
+      this.status = status;
+      this.code = code;
+    }
+  }
+  return {
+    api: {
+      outtakes: {
+        updateLabel: vi.fn(),
+        delete: vi.fn(),
+      },
     },
-  },
-}));
+    ApiRequestError,
+  };
+});
 
 const S = STRINGS.outtakes;
 
@@ -110,6 +122,25 @@ describe("OuttakeCard", () => {
     await waitFor(() => expect(onDeleted).toHaveBeenCalledWith("ot-1"));
   });
 
+  it("surfaces an error and does not reconcile when the delete fails", async () => {
+    const user = userEvent.setup();
+    const onDeleted = vi.fn();
+    const onError = vi.fn();
+    vi.mocked(api.outtakes.delete).mockRejectedValue(new Error("boom"));
+    render(
+      <OuttakeCard
+        outtake={makeOuttake()}
+        {...defaultProps}
+        onDeleted={onDeleted}
+        onError={onError}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: S.delete }));
+    await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
+    await waitFor(() => expect(onError).toHaveBeenCalledWith(STRINGS.error.deleteOuttakeFailed));
+    expect(onDeleted).not.toHaveBeenCalled();
+  });
+
   it("does not delete when the confirm dialog is cancelled", async () => {
     const user = userEvent.setup();
     const onDeleted = vi.fn();
@@ -154,7 +185,11 @@ describe("OuttakeCard", () => {
     const input = screen.getByDisplayValue("A cut scene");
     await user.clear(input);
     await user.tab();
-    expect(api.outtakes.updateLabel).toHaveBeenCalledWith("ot-1", { label: null }, expect.anything());
+    expect(api.outtakes.updateLabel).toHaveBeenCalledWith(
+      "ot-1",
+      { label: null },
+      expect.anything(),
+    );
   });
 
   it("does not rename when the label is unchanged", async () => {
