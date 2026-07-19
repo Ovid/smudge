@@ -967,6 +967,23 @@ describe("image.delete extrasFrom — drop-only-malformed (4b.3c.1 S8)", () => {
   });
 });
 
+describe("SCOPES — outtake.* scopes", () => {
+  const cases: Array<[ApiErrorScope, string]> = [
+    ["outtake.list", STRINGS.error.loadOuttakesFailed],
+    ["outtake.create", STRINGS.error.createOuttakeFailed],
+    ["outtake.update", STRINGS.error.updateOuttakeFailed],
+    ["outtake.delete", STRINGS.error.deleteOuttakeFailed],
+  ];
+  it.each(cases)("%s maps a 500 to its fallback string", (scope, fallback) => {
+    const err = new ApiRequestError("boom", 500, "INTERNAL_ERROR");
+    expect(mapApiError(err, scope).message).toBe(fallback);
+  });
+  it.each(cases)("%s marks a NETWORK error transient", (scope) => {
+    const err = new ApiRequestError("offline", 0, "NETWORK");
+    expect(mapApiError(err, scope).transient).toBe(true);
+  });
+});
+
 describe("SCOPES — snapshot.restore", () => {
   const scope = SCOPES["snapshot.restore"];
   it("CORRUPT_SNAPSHOT → restoreFailedCorrupt", () => {
@@ -1149,6 +1166,10 @@ describe("SCOPES registry", () => {
       "snapshot.list",
       "snapshot.create",
       "snapshot.delete",
+      "outtake.list",
+      "outtake.create",
+      "outtake.update",
+      "outtake.delete",
       "findReplace.search",
       "findReplace.replace",
       "export.run",

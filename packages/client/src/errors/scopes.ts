@@ -84,6 +84,10 @@ export type ApiErrorScope =
   | "snapshot.list"
   | "snapshot.create"
   | "snapshot.delete"
+  | "outtake.list"
+  | "outtake.create"
+  | "outtake.update"
+  | "outtake.delete"
   | "findReplace.search"
   | "findReplace.replace"
   | "export.run"
@@ -446,6 +450,27 @@ export const SCOPES = {
   "snapshot.delete": {
     fallback: STRINGS.snapshots.deleteFailed,
     network: STRINGS.snapshots.deleteFailedNetwork,
+    committed: STRINGS.error.possiblyCommitted,
+  },
+  "outtake.list": {
+    fallback: STRINGS.error.loadOuttakesFailed,
+  },
+  // Writes: mirror snapshot.create/snapshot.delete — a 2xx BAD_JSON means
+  // the server likely committed but the row couldn't be serialized, so the
+  // shared possiblyCommitted copy routes callers through the committed UX.
+  // No network: override (unlike snapshots) — a NETWORK error is still
+  // transient via the fallback message; keeping copy to the four fallbacks
+  // the phase specified.
+  "outtake.create": {
+    fallback: STRINGS.error.createOuttakeFailed,
+    committed: STRINGS.error.possiblyCommitted,
+  },
+  "outtake.update": {
+    fallback: STRINGS.error.updateOuttakeFailed,
+    committed: STRINGS.error.possiblyCommitted,
+  },
+  "outtake.delete": {
+    fallback: STRINGS.error.deleteOuttakeFailed,
     committed: STRINGS.error.possiblyCommitted,
   },
   "findReplace.search": {

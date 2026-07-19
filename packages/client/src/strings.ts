@@ -127,6 +127,10 @@ export const STRINGS = {
     settingsLoadFailed: "Unable to load settings. Close and reopen the dialog to retry.",
     settingsLoadFailedNetwork:
       "Unable to load settings — check your connection. Close and reopen the dialog to retry.",
+    loadOuttakesFailed: "Failed to load outtakes",
+    createOuttakeFailed: "Failed to save outtake",
+    updateOuttakeFailed: "Failed to update outtake",
+    deleteOuttakeFailed: "Failed to delete outtake",
   },
   editor: {
     placeholder: "Start writing\u2026",
@@ -468,6 +472,21 @@ export const STRINGS = {
       hours: (n: number) => `${n}h ago`,
       days: (n: number) => `${n}d ago`,
     },
+  },
+  outtakes: {
+    tab: "Outtakes",
+    empty: "No outtakes yet. Stash cut text here to find it later.",
+    newFromSelection: "Send selection to outtakes",
+    newBlank: "New outtake",
+    filterPlaceholder: "Filter outtakes…",
+    untitled: "Untitled outtake",
+    fromChapterPrefix: "From ",
+    insert: "Insert into editor",
+    copy: "Copy",
+    delete: "Delete",
+    confirmDeleteTitle: "Delete this outtake?",
+    confirmDeleteBody: "This can't be undone.",
+    labelPlaceholder: "Label (optional)",
   },
   findReplace: {
     panelTitle: "Find and Replace",
