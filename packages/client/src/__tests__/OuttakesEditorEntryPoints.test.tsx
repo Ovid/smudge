@@ -312,6 +312,24 @@ describe("F2: send selection to outtakes (non-destructive)", () => {
     expect(api.outtakes.create).not.toHaveBeenCalled();
   });
 
+  it("no-ops when the selection is image-only (stripped doc has no blocks)", async () => {
+    const user = userEvent.setup();
+    // Non-empty selection (from !== to) but the slice is only image node(s),
+    // which stripImageNodes reduces to an empty doc — no outtake should POST.
+    mockControls.selection = { from: 1, to: 3 };
+    mockControls.sliceJson = [{ type: "image", attrs: { src: "/api/images/x" } }];
+
+    renderEditorPage();
+    await openOuttakesTab(user);
+    expect(await screen.findByText(STRINGS.outtakes.empty)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: STRINGS.outtakes.newFromSelection }));
+
+    expect(api.outtakes.create).not.toHaveBeenCalled();
+    // Panel stays empty (nonce not bumped, no reload adds a row).
+    expect(screen.getByText(STRINGS.outtakes.empty)).toBeInTheDocument();
+  });
+
   it("surfaces the mapped error message when create fails", async () => {
     const user = userEvent.setup();
     mockControls.selection = { from: 1, to: 5 };

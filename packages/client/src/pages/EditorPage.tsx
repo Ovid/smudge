@@ -893,6 +893,10 @@ export function EditorPage() {
     if (from === to) return; // nothing selected
     const slice = toolbarEditor.state.doc.slice(from, to);
     const content = stripImageNodes({ type: "doc", content: slice.content.toJSON() ?? [] });
+    // An image-only selection strips to an empty doc — POSTing it would create a
+    // blank outtake card. from !== to passed the guard above, but there is no
+    // block content left to capture, so no-op (don't POST or bump the nonce).
+    if (!Array.isArray(content.content) || content.content.length === 0) return;
     const label = `${STRINGS.outtakes.fromChapterPrefix}${activeChapter?.title ?? ""}`;
     const { promise, signal } = captureOp.run((s) =>
       api.outtakes.create(project.id, { content, label }, s),
