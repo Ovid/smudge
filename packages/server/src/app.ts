@@ -9,6 +9,7 @@ import { settingsRouter } from "./settings/settings.routes";
 import { exportRouter } from "./export/export.routes";
 import { imagesRouter, imagesDirectRouter } from "./images/images.routes";
 import { snapshotChapterRouter, snapshotDirectRouter } from "./snapshots/snapshots.routes";
+import { projectOuttakesRouter, outtakeDirectRouter } from "./outtakes/outtakes.routes";
 import { searchRouter } from "./search/search.routes";
 import { AppError } from "./errors/appError";
 import { requestContext } from "./requestContext";
@@ -46,6 +47,8 @@ export function createApp(): express.Express {
   app.use("/api/images", imagesDirectRouter());
   app.use("/api/chapters", snapshotChapterRouter());
   app.use("/api/snapshots", snapshotDirectRouter());
+  app.use("/api/projects", projectOuttakesRouter());
+  app.use("/api/outtakes", outtakeDirectRouter());
   app.use("/api/projects", searchRouter());
 
   app.get("/api/health", async (_req, res) => {
