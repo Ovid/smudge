@@ -1,20 +1,9 @@
-import { Router, type Request } from "express";
-import { z } from "zod";
+import { Router } from "express";
 import { asyncHandler } from "../asyncHandler";
 import { CreateOuttakeSchema, UpdateOuttakeSchema } from "@smudge/shared";
 import { BadRequestError, NotFoundError } from "../errors/appError";
+import { validateUuidParam } from "../validateUuidParam";
 import * as OuttakeService from "./outtakes.service";
-
-const UuidSchema = z.string().uuid();
-
-/** Returns the validated UUID param, or throws a 400 BadRequestError. */
-function validateUuidParam(req: Request, label: "project" | "outtake"): string {
-  const parsed = UuidSchema.safeParse(req.params.id);
-  if (!parsed.success) {
-    throw new BadRequestError(`Invalid ${label} id.`);
-  }
-  return parsed.data;
-}
 
 export function projectOuttakesRouter(): Router {
   const router = Router();

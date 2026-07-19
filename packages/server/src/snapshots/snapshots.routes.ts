@@ -1,20 +1,9 @@
-import { Router, type Request } from "express";
-import { z } from "zod";
+import { Router } from "express";
 import { asyncHandler } from "../asyncHandler";
 import { CreateSnapshotSchema, SNAPSHOT_ERROR_CODES } from "@smudge/shared";
 import { BadRequestError, ConflictError, NotFoundError } from "../errors/appError";
+import { validateUuidParam } from "../validateUuidParam";
 import * as SnapshotService from "./snapshots.service";
-
-const UuidSchema = z.string().uuid();
-
-/** Returns the validated UUID param, or throws a 400 BadRequestError. */
-function validateUuidParam(req: Request, label?: "chapter" | "snapshot"): string {
-  const parsed = UuidSchema.safeParse(req.params.id);
-  if (!parsed.success) {
-    throw new BadRequestError(label ? `Invalid ${label} id.` : "Invalid id.");
-  }
-  return parsed.data;
-}
 
 export function snapshotChapterRouter(): Router {
   const router = Router();
