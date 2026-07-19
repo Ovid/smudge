@@ -310,6 +310,29 @@ describe("F2: send selection to outtakes (non-destructive)", () => {
     expect(await screen.findByText("grabbed")).toBeInTheDocument();
   });
 
+  it("truncates the auto-label so a near-max chapter title cannot exceed the 500-char cap", async () => {
+    const user = userEvent.setup();
+    // A chapter title at the 500-char cap: "From " + title would be 505 and the
+    // schema rejects (does not truncate) above 500, so an untruncated label 400s.
+    const longTitle = "x".repeat(500);
+    const longChapter = { ...mockChapter, title: longTitle };
+    vi.mocked(api.projects.get).mockResolvedValue({ ...mockProject, chapters: [longChapter] });
+    vi.mocked(api.chapters.get).mockResolvedValue(longChapter);
+    mockControls.selection = { from: 1, to: 8 };
+    mockControls.sliceJson = [{ type: "paragraph", content: [{ type: "text", text: "grabbed" }] }];
+    vi.mocked(api.outtakes.create).mockResolvedValue(outtake({ id: "ot-new" }));
+
+    renderEditorPage();
+    await openOuttakesTab(user);
+    await user.click(screen.getByRole("button", { name: STRINGS.outtakes.newFromSelection }));
+
+    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalledTimes(1));
+    const body = vi.mocked(api.outtakes.create).mock.calls[0]![1];
+    expect(body.label).not.toBeNull();
+    expect(body.label!.length).toBeLessThanOrEqual(500);
+    expect(body.label!.startsWith(STRINGS.outtakes.fromChapterPrefix)).toBe(true);
+  });
+
   it("no-ops on an empty selection (from === to)", async () => {
     const user = userEvent.setup();
     mockControls.selection = { from: 3, to: 3 };

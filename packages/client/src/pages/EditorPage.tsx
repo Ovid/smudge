@@ -42,6 +42,22 @@ import { EditorHeader } from "../components/EditorHeader";
 import { EditorMainContent } from "../components/EditorMainContent";
 import { EditorDialogs } from "../components/EditorDialogs";
 
+// The outtake label schema rejects (does not truncate) above 500 UTF-16 units.
+// The capture auto-label is machine-derived from a chapter title that is itself
+// capped at 500, so "From " + title can overshoot and deterministically 400 the
+// POST. Truncate the title portion to fit, without leaving a dangling high
+// surrogate. Keep in sync with CreateOuttakeSchema.label's post-pipe max.
+const OUTTAKE_LABEL_MAX = 500;
+function buildOuttakeLabel(title: string): string {
+  const prefix = STRINGS.outtakes.fromChapterPrefix;
+  const budget = OUTTAKE_LABEL_MAX - prefix.length;
+  if (title.length <= budget) return prefix + title;
+  let cut = title.slice(0, budget);
+  const last = cut.charCodeAt(cut.length - 1);
+  if (last >= 0xd800 && last <= 0xdbff) cut = cut.slice(0, -1);
+  return prefix + cut;
+}
+
 export function EditorPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
@@ -897,7 +913,7 @@ export function EditorPage() {
     // blank outtake card. from !== to passed the guard above, but there is no
     // block content left to capture, so no-op (don't POST or bump the nonce).
     if (!Array.isArray(content.content) || content.content.length === 0) return;
-    const label = `${STRINGS.outtakes.fromChapterPrefix}${activeChapter?.title ?? ""}`;
+    const label = buildOuttakeLabel(activeChapter?.title ?? "");
     const { promise, signal } = captureOp.run((s) =>
       api.outtakes.create(project.id, { content, label }, s),
     );
