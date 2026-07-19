@@ -36,6 +36,7 @@ export type { SearchMatch, SearchOptions } from "./tiptap-text";
 export { CANONICAL_UNSAFE_KEYS } from "./tiptap-safety";
 export { stripNoteMarks, extractNotes, NOTE_MARK_NAME } from "./tiptap-notes";
 export { toPlainText } from "./tiptap-plaintext";
+export { stripImageNodes } from "./tiptap-images";
 export type { ExtractedNote } from "./tiptap-notes";
 export { generateSlug } from "./slugify";
 export { parsePort } from "./parsePort";
