@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import type { OuttakeRow } from "@smudge/shared";
-import { toPlainText, countWords } from "@smudge/shared";
+import { toPlainText, countWords, truncateUnits } from "@smudge/shared";
 import { api } from "../api/client";
 import { mapApiError, applyMappedError } from "../errors";
 import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
@@ -52,10 +52,13 @@ export function OuttakeCard({
 
   const isLong = plainText.length > PREVIEW_LIMIT;
   const shownText =
-    isLong && !expanded ? plainText.slice(0, PREVIEW_LIMIT).trimEnd() + "…" : plainText;
+    isLong && !expanded ? truncateUnits(plainText, PREVIEW_LIMIT).trimEnd() + "…" : plainText;
 
   async function commitLabel() {
-    const next = normalizeLabel(labelDraft);
+    // The raw field value at send time; used to detect whether the user kept
+    // typing during the request so neither settle path clobbers newer edits.
+    const attempted = labelDraft;
+    const next = normalizeLabel(attempted);
     if (lastCommittedRef.current === next) return;
     const { promise, signal } = updateOp.run((s) =>
       api.outtakes.updateLabel(outtake.id, { label: next }, s),
@@ -63,15 +66,20 @@ export function OuttakeCard({
     try {
       const row = await promise;
       if (signal.aborted) return;
-      // Advance the committed ref ONLY on success — otherwise a failed rename
-      // would block the identical retry on a later blur.
-      lastCommittedRef.current = next;
+      // Track the SERVER-committed value (server may sanitize) so an identical
+      // retry is suppressed but a failed one stays retryable.
+      lastCommittedRef.current = row.label;
+      // S3: re-seed the field from the server-sanitized label so stripping is
+      // visible — but only if the user hasn't typed since, so we don't discard
+      // their in-flight edits (S5).
+      setLabelDraft((current) => (current === attempted ? (row.label ?? "") : current));
       onUpdated(row);
     } catch (err) {
       if (signal.aborted) return;
       // The server still holds the previous label; revert the visible field to
-      // it so the card cannot show a value that never persisted.
-      setLabelDraft(lastCommittedRef.current ?? "");
+      // it — but only if untouched since the request, so newer keystrokes the
+      // user typed during the round-trip survive (S5).
+      setLabelDraft((current) => (current === attempted ? (lastCommittedRef.current ?? "") : current));
       applyMappedError(mapApiError(err, "outtake.update"), { onMessage: onError });
     }
   }

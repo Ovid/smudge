@@ -201,6 +201,47 @@ describe("OuttakeCard", () => {
     expect(api.outtakes.updateLabel).not.toHaveBeenCalled();
   });
 
+  it("re-seeds the input from the server-sanitized label on success (S3)", async () => {
+    const user = userEvent.setup();
+    // The server strips a zero-width space the client typed; the input must
+    // show the server's sanitized value, not the un-sanitized client draft.
+    vi.mocked(api.outtakes.updateLabel).mockResolvedValue(makeOuttake({ label: "Clean" }));
+    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} />);
+    const input = screen.getByDisplayValue("A cut scene");
+    await user.clear(input);
+    await user.type(input, "Clean​");
+    await user.tab();
+    await waitFor(() => expect(screen.getByDisplayValue("Clean")).toBeInTheDocument());
+  });
+
+  it("does not clobber keystrokes typed while a failed rename is in flight (S5)", async () => {
+    const user = userEvent.setup();
+    let rejectUpdate!: (err: unknown) => void;
+    vi.mocked(api.outtakes.updateLabel).mockReturnValue(
+      new Promise<OuttakeRow>((_res, rej) => {
+        rejectUpdate = rej;
+      }),
+    );
+    render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} />);
+    const input = screen.getByDisplayValue("A cut scene");
+    await user.clear(input);
+    await user.type(input, "First");
+    await user.tab(); // commit fires, PATCH pending
+    await waitFor(() => expect(api.outtakes.updateLabel).toHaveBeenCalled());
+
+    // User refocuses and keeps typing while the request is still in flight.
+    await user.click(input);
+    await user.type(input, "-edited");
+    expect(screen.getByDisplayValue("First-edited")).toBeInTheDocument();
+
+    // The rename fails: the revert must NOT overwrite the newer keystrokes.
+    rejectUpdate(new Error("boom"));
+    await waitFor(() =>
+      expect(defaultProps.onError).toHaveBeenCalledWith(STRINGS.error.updateOuttakeFailed),
+    );
+    expect(screen.getByDisplayValue("First-edited")).toBeInTheDocument();
+  });
+
   it("expands a long preview when Show more is clicked", async () => {
     const user = userEvent.setup();
     const long = "word ".repeat(80).trim();

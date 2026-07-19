@@ -41,6 +41,7 @@ export { toPlainText } from "./tiptap-plaintext";
 export { stripImageNodes } from "./tiptap-images";
 export type { ExtractedNote } from "./tiptap-notes";
 export { generateSlug } from "./slugify";
+export { truncateUnits } from "./truncate";
 export { parsePort } from "./parsePort";
 // Helpers that import node:fs / node:path (findFirstNonDirectoryAncestor,
 // formatMkdirDataDirError) are deliberately NOT re-exported here. Vite

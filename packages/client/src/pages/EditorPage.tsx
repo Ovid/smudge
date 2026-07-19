@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import type { Chapter, ChapterStatusRow, ChapterStatusValue, OuttakeRow } from "@smudge/shared";
-import { stripImageNodes } from "@smudge/shared";
+import { stripImageNodes, truncateUnits } from "@smudge/shared";
 import type { EditorHandle } from "../components/Editor";
 import type { Editor as TipTapEditor } from "@tiptap/react";
 import { STRINGS } from "../strings";
@@ -51,11 +51,7 @@ const OUTTAKE_LABEL_MAX = 500;
 function buildOuttakeLabel(title: string): string {
   const prefix = STRINGS.outtakes.fromChapterPrefix;
   const budget = OUTTAKE_LABEL_MAX - prefix.length;
-  if (title.length <= budget) return prefix + title;
-  let cut = title.slice(0, budget);
-  const last = cut.charCodeAt(cut.length - 1);
-  if (last >= 0xd800 && last <= 0xdbff) cut = cut.slice(0, -1);
-  return prefix + cut;
+  return prefix + truncateUnits(title, budget);
 }
 
 export function EditorPage() {
