@@ -84,6 +84,16 @@ export interface SnapshotRow {
   created_at: string;
 }
 
+/** An outtake: cut/stashed text stored as TipTap JSON, per project. */
+export interface OuttakeRow {
+  id: string;
+  project_id: string;
+  label: string | null;
+  content: Record<string, unknown>; // parsed TipTap doc on the wire
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SnapshotListItem {
   id: string;
   chapter_id: string;

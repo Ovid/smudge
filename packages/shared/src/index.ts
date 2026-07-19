@@ -71,6 +71,7 @@ export type {
   VelocityResponse,
   SnapshotRow,
   SnapshotListItem,
+  OuttakeRow,
   SearchResult,
   ReplaceResult,
 } from "./types";
