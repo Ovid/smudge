@@ -466,10 +466,10 @@ export function EditorPage() {
   const [galleryExternalRefreshKey, setGalleryExternalRefreshKey] = useState(0);
   const [toolbarEditor, setToolbarEditor] = useState<TipTapEditor | null>(null);
 
-  // Phase 4c.2 (Outtakes). The panel re-loads its list whenever this nonce
-  // changes; the non-destructive toolbar capture bumps it after a successful
-  // POST so the newly-stashed outtake appears without the panel owning capture.
-  const [outtakesRefreshNonce, setOuttakesRefreshNonce] = useState(0);
+  // Phase 4c.2 (Outtakes). The row the toolbar capture just POSTed. The panel
+  // prepends it optimistically (I1) rather than reloading — a reload could be
+  // staled by a concurrent card delete/rename, silently dropping the capture.
+  const [capturedOuttake, setCapturedOuttake] = useState<OuttakeRow | null>(null);
 
   // Insert an outtake's blocks at the cursor. This IS an editor-content
   // mutation, so it gates on the content/save axis — the machine's editable
@@ -914,9 +914,11 @@ export function EditorPage() {
       api.outtakes.create(project.id, { content, label }, s),
     );
     try {
-      await promise;
+      const row = await promise;
       if (signal.aborted) return;
-      setOuttakesRefreshNonce((n) => n + 1);
+      // Hand the created row to the panel to prepend (I1). A new object
+      // identity each time drives the panel's prepend effect.
+      setCapturedOuttake(row);
     } catch (err) {
       if (signal.aborted) return;
       applyMappedError(mapApiError(err, "outtake.create"), { onMessage: setActionError });
@@ -1136,7 +1138,7 @@ export function EditorPage() {
           editorRef.current?.insertImage(url, alt);
         }}
         onInsertOuttake={handleInsertOuttake}
-        outtakesRefreshNonce={outtakesRefreshNonce}
+        capturedOuttake={capturedOuttake}
         snapshotPanelOpen={snapshotPanelOpen}
         onCloseSnapshotPanel={() => setSnapshotPanelOpen(false)}
         snapshotPanelRef={snapshotPanelRef}

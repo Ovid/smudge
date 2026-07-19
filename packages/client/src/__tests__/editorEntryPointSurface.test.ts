@@ -176,8 +176,8 @@ const EDITOR_MAIN_CONTENT_PROPS = [
   // content/save — the machine's editable flag (via toolbarEditor.isEditable)
   // + the persistent lock, NOT isActionBusy().
   "onInsertOuttake",
-  // Phase 4c.2: pure data — the panel re-loads when this nonce changes. No guard.
-  "outtakesRefreshNonce",
+  // Phase 4c.2: pure data — the panel prepends this captured row (I1). No guard.
+  "capturedOuttake",
   "snapshotPanelOpen",
   "onCloseSnapshotPanel",
   "snapshotPanelRef",

@@ -287,8 +287,8 @@ describe("F2: send selection to outtakes (non-destructive)", () => {
       content: { type: "doc", content: [paragraph] },
     });
     vi.mocked(api.outtakes.create).mockResolvedValue(created);
-    // First list (panel mount) empty; after the nonce bump, the new row loads.
-    vi.mocked(api.outtakes.list).mockResolvedValueOnce([]).mockResolvedValue([created]);
+    // Panel mounts empty; the created row is prepended (I1), not reloaded.
+    vi.mocked(api.outtakes.list).mockResolvedValue([]);
 
     renderEditorPage();
     await openOuttakesTab(user);
@@ -306,7 +306,7 @@ describe("F2: send selection to outtakes (non-destructive)", () => {
       expect.anything(),
     );
 
-    // End-to-end: the nonce bump reloaded the panel and the new row appears.
+    // End-to-end: the created row is prepended to the panel and appears.
     expect(await screen.findByText("grabbed")).toBeInTheDocument();
   });
 
@@ -359,7 +359,7 @@ describe("F2: send selection to outtakes (non-destructive)", () => {
     await user.click(screen.getByRole("button", { name: STRINGS.outtakes.newFromSelection }));
 
     expect(api.outtakes.create).not.toHaveBeenCalled();
-    // Panel stays empty (nonce not bumped, no reload adds a row).
+    // Panel stays empty (no capture, so nothing is prepended).
     expect(screen.getByText(STRINGS.outtakes.empty)).toBeInTheDocument();
   });
 

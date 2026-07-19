@@ -114,7 +114,7 @@ interface EditorMainContentProps {
   galleryExternalRefreshKey: number;
   onInsertImage: (url: string, alt: string) => void;
   onInsertOuttake: (outtake: OuttakeRow) => void;
-  outtakesRefreshNonce: number;
+  capturedOuttake: OuttakeRow | null;
 
   // Snapshot panel.
   snapshotPanelOpen: boolean;
@@ -189,7 +189,7 @@ export function EditorMainContent({
   galleryExternalRefreshKey,
   onInsertImage,
   onInsertOuttake,
-  outtakesRefreshNonce,
+  capturedOuttake,
   snapshotPanelOpen,
   onCloseSnapshotPanel,
   snapshotPanelRef,
@@ -406,7 +406,7 @@ export function EditorMainContent({
                 <OuttakesPanel
                   projectId={project.id}
                   onInsert={onInsertOuttake}
-                  refreshNonce={outtakesRefreshNonce}
+                  capturedOuttake={capturedOuttake}
                 />
               ),
             },

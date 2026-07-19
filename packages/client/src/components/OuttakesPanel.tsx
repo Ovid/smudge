@@ -13,8 +13,13 @@ const S = STRINGS.outtakes;
 interface OuttakesPanelProps {
   projectId: string;
   onInsert: (outtake: OuttakeRow) => void;
-  /** EditorPage bumps this after a toolbar capture; a change re-runs the load. */
-  refreshNonce: number;
+  /**
+   * The row EditorPage just captured via the toolbar. A new object identity is
+   * prepended optimistically (I1) — mirroring handleCreate — so surfacing the
+   * capture never depends on a reload that a concurrent card delete/rename
+   * could stale. Null before the first capture.
+   */
+  capturedOuttake: OuttakeRow | null;
 }
 
 /** Wrap a textarea's plain string into a TipTap doc, one paragraph per line. */
@@ -31,7 +36,7 @@ function textToDoc(text: string): Record<string, unknown> {
   };
 }
 
-export function OuttakesPanel({ projectId, onInsert, refreshNonce }: OuttakesPanelProps) {
+export function OuttakesPanel({ projectId, onInsert, capturedOuttake }: OuttakesPanelProps) {
   const [outtakes, setOuttakes] = useState<OuttakeRow[]>([]);
   const [filter, setFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -50,11 +55,9 @@ export function OuttakesPanel({ projectId, onInsert, refreshNonce }: OuttakesPan
   // epoch (seq.abort in the reconcilers), staling any in-flight reload's token.
   const seq = useAbortableSequence();
 
-  // Load (and reload on projectId / refreshNonce change). A bumped
-  // refreshNonce is how a toolbar capture makes a new outtake appear without
-  // this panel owning capture logic. ABORTED is silent via the mapper; the
-  // per-call signal guards a late resolution after unmount, and the sequence
-  // token discards a reload a mutation has superseded.
+  // Load (and reload on projectId change). ABORTED is silent via the mapper;
+  // the per-call signal guards a late resolution after unmount, and the
+  // sequence token discards a reload a mutation has superseded.
   useEffect(() => {
     const token = seq.start();
     const { promise, signal } = loadOp.run((s) => api.outtakes.list(projectId, s));
@@ -68,7 +71,19 @@ export function OuttakesPanel({ projectId, onInsert, refreshNonce }: OuttakesPan
         if (signal.aborted || token.isStale()) return;
         applyMappedError(mapApiError(err, "outtake.list"), { onMessage: setError });
       });
-  }, [projectId, refreshNonce, loadOp, seq]);
+  }, [projectId, loadOp, seq]);
+
+  // I1: prepend a toolbar-captured row the moment EditorPage hands it down,
+  // exactly as handleCreate does for the blank-note flow. Bump the epoch so an
+  // in-flight reload can't clobber the prepend, and dedup by id so a reload
+  // that already surfaced the server's copy can't leave a duplicate key. Fires
+  // only on a NEW row identity (null on mount / before the first capture).
+  useEffect(() => {
+    if (!capturedOuttake) return;
+    seq.abort();
+    setOuttakes((prev) => [capturedOuttake, ...prev.filter((o) => o.id !== capturedOuttake.id)]);
+    setError(null);
+  }, [capturedOuttake, seq]);
 
   async function handleCreate() {
     if (!draft.trim()) {

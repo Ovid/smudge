@@ -57,7 +57,7 @@ function makeOuttake(overrides: Partial<OuttakeRow> = {}): OuttakeRow {
 const defaultProps = {
   projectId: "proj-1",
   onInsert: vi.fn(),
-  refreshNonce: 0,
+  capturedOuttake: null,
 };
 
 beforeEach(() => {
@@ -177,18 +177,50 @@ describe("OuttakesPanel", () => {
     expect(api.outtakes.create).not.toHaveBeenCalled();
   });
 
-  it("re-fetches when refreshNonce changes and shows the new row", async () => {
-    vi.mocked(api.outtakes.list).mockResolvedValueOnce([makeOuttake({ id: "a", label: "Alpha" })]);
-    const { rerender } = render(<OuttakesPanel {...defaultProps} refreshNonce={0} />);
+  it("prepends a captured outtake without a reload (I1)", async () => {
+    vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a", label: "Alpha" })]);
+    const { rerender } = render(<OuttakesPanel {...defaultProps} capturedOuttake={null} />);
     await waitFor(() => expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument());
 
-    vi.mocked(api.outtakes.list).mockResolvedValueOnce([
-      makeOuttake({ id: "a", label: "Alpha" }),
-      makeOuttake({ id: "b", label: "Captured" }),
-    ]);
-    rerender(<OuttakesPanel {...defaultProps} refreshNonce={1} />);
+    // A toolbar capture hands the created row down; it appears immediately with
+    // no second list() call, so a concurrent card mutation cannot drop it.
+    const captured = makeOuttake({ id: "b", label: "Captured" });
+    rerender(<OuttakesPanel {...defaultProps} capturedOuttake={captured} />);
     await waitFor(() => expect(screen.getByDisplayValue("Captured")).toBeInTheDocument());
-    expect(api.outtakes.list).toHaveBeenCalledTimes(2);
+    expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument();
+    expect(api.outtakes.list).toHaveBeenCalledTimes(1);
+  });
+
+  it("the captured row survives a card delete fired right after (I1)", async () => {
+    vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a", label: "Alpha" })]);
+    const user = userEvent.setup();
+    const { rerender } = render(<OuttakesPanel {...defaultProps} capturedOuttake={null} />);
+    await waitFor(() => expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument());
+
+    const captured = makeOuttake({ id: "b", label: "Captured" });
+    rerender(<OuttakesPanel {...defaultProps} capturedOuttake={captured} />);
+    await waitFor(() => expect(screen.getByDisplayValue("Captured")).toBeInTheDocument());
+
+    // Deleting the other row (which seq.abort()s any in-flight reload) must not
+    // drop the already-prepended capture. Captured is prepended at index 0, so
+    // Alpha's delete is index 1.
+    await user.click(screen.getAllByRole("button", { name: S.delete })[1]!);
+    await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
+    await waitFor(() => expect(screen.queryByDisplayValue("Alpha")).not.toBeInTheDocument());
+    expect(screen.getByDisplayValue("Captured")).toBeInTheDocument();
+  });
+
+  it("does not duplicate a captured row a reload already surfaced (I1 dedup)", async () => {
+    const captured = makeOuttake({ id: "b", label: "Captured" });
+    // The mount load already contains the row (a prior reload surfaced it).
+    vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a" }), captured]);
+    const { rerender } = render(<OuttakesPanel {...defaultProps} capturedOuttake={null} />);
+    await waitFor(() => expect(screen.getByDisplayValue("Captured")).toBeInTheDocument());
+
+    rerender(<OuttakesPanel {...defaultProps} capturedOuttake={captured} />);
+    await new Promise((r) => setTimeout(r, 0));
+    // Prepend dedups by id — no duplicate React row for "b".
+    expect(screen.getAllByDisplayValue("Captured")).toHaveLength(1);
   });
 
   it("surfaces the mapped message on a failed load without leaking a raw warning", async () => {
@@ -348,13 +380,13 @@ describe("OuttakesPanel", () => {
         new Promise<OuttakeRow[]>((res) => {
           resolveReload = res;
         }),
-      ); // refreshNonce reload, deferred
+      ); // projectId-change reload, deferred
     const user = userEvent.setup();
-    const { rerender } = render(<OuttakesPanel {...defaultProps} refreshNonce={0} />);
+    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-1" />);
     await screen.findByDisplayValue("Alpha");
 
-    // A toolbar capture bumps refreshNonce, firing the (deferred) reload GET.
-    rerender(<OuttakesPanel {...defaultProps} refreshNonce={1} />);
+    // A projectId change fires the (deferred) reload GET.
+    rerender(<OuttakesPanel {...defaultProps} projectId="proj-2" />);
     await waitFor(() => expect(api.outtakes.list).toHaveBeenCalledTimes(2));
 
     // Delete "a" while that reload GET is still in flight.
@@ -381,7 +413,7 @@ describe("OuttakesPanel", () => {
       .mockResolvedValueOnce([]) // mount
       .mockResolvedValueOnce([created]); // reload sees the server's copy first
     const user = userEvent.setup();
-    const { rerender } = render(<OuttakesPanel {...defaultProps} refreshNonce={0} />);
+    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-1" />);
     await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
 
     await user.click(screen.getByRole("button", { name: S.newBlank }));
@@ -389,8 +421,8 @@ describe("OuttakesPanel", () => {
     await user.click(screen.getByRole("button", { name: S.save }));
     await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
 
-    // A reload lands the server's copy of the row before the POST resolves.
-    rerender(<OuttakesPanel {...defaultProps} refreshNonce={1} />);
+    // A projectId-change reload lands the server's copy before the POST resolves.
+    rerender(<OuttakesPanel {...defaultProps} projectId="proj-2" />);
     await waitFor(() => expect(screen.getByDisplayValue("New")).toBeInTheDocument());
 
     // The create resolves; the prepend must dedup by id, not double-render.
