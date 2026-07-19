@@ -10,6 +10,7 @@ import type {
   VelocityResponse,
   ExportFormatType,
   ImageRow,
+  OuttakeRow,
   SnapshotRow,
   SnapshotListItem,
   SearchResult,
@@ -552,6 +553,39 @@ export const api = {
     restore: (id: string, signal?: AbortSignal) =>
       apiFetch<Chapter>(`/snapshots/${enc(id)}/restore`, {
         method: "POST",
+        ...(signal ? { signal } : {}),
+      }),
+  },
+
+  outtakes: {
+    list: (projectId: string, signal?: AbortSignal) =>
+      apiFetch<OuttakeRow[]>(
+        `/projects/${enc(projectId)}/outtakes`,
+        signal ? { signal } : undefined,
+      ),
+
+    create: (
+      projectId: string,
+      body: { content: unknown; label?: string | null },
+      signal?: AbortSignal,
+    ) =>
+      apiFetch<OuttakeRow>(`/projects/${enc(projectId)}/outtakes`, {
+        method: "POST",
+        body: JSON.stringify(body),
+        ...(signal ? { signal } : {}),
+      }),
+
+    updateLabel: (id: string, body: { label: string | null }, signal?: AbortSignal) =>
+      apiFetch<OuttakeRow>(`/outtakes/${enc(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+        ...(signal ? { signal } : {}),
+      }),
+
+    // DELETE returns 204 No Content; apiFetch resolves to undefined.
+    delete: (id: string, signal?: AbortSignal) =>
+      apiFetch<undefined>(`/outtakes/${enc(id)}`, {
+        method: "DELETE",
         ...(signal ? { signal } : {}),
       }),
   },

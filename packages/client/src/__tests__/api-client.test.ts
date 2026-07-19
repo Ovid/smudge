@@ -684,6 +684,56 @@ describe("api.snapshots", () => {
   });
 });
 
+describe("api.outtakes", () => {
+  it("list(projectId) fetches GET /api/projects/:id/outtakes", async () => {
+    const rows = [{ id: "o-1", project_id: "p-1", content: {}, label: null }];
+    mockFetch.mockResolvedValue(jsonResponse(rows));
+
+    const result = await api.outtakes.list("p-1");
+    expect(result).toEqual(rows);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p-1/outtakes", {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  it("create(projectId, body) sends POST /api/projects/:id/outtakes with body", async () => {
+    const row = { id: "o-1", project_id: "p-1", content: { foo: 1 }, label: "Cut scene" };
+    mockFetch.mockResolvedValue(jsonResponse(row, 201));
+
+    const result = await api.outtakes.create("p-1", { content: { foo: 1 }, label: "Cut scene" });
+    expect(result).toEqual(row);
+    expect(mockFetch).toHaveBeenCalledWith("/api/projects/p-1/outtakes", {
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      body: JSON.stringify({ content: { foo: 1 }, label: "Cut scene" }),
+    });
+  });
+
+  it("updateLabel(id, body) sends PATCH /api/outtakes/:id", async () => {
+    const row = { id: "o-1", project_id: "p-1", content: {}, label: "Renamed" };
+    mockFetch.mockResolvedValue(jsonResponse(row));
+
+    const result = await api.outtakes.updateLabel("o-1", { label: "Renamed" });
+    expect(result).toEqual(row);
+    expect(mockFetch).toHaveBeenCalledWith("/api/outtakes/o-1", {
+      headers: { "Content-Type": "application/json" },
+      method: "PATCH",
+      body: JSON.stringify({ label: "Renamed" }),
+    });
+  });
+
+  it("delete(id) sends DELETE /api/outtakes/:id and resolves undefined (204)", async () => {
+    mockFetch.mockResolvedValue(noContentResponse());
+
+    const result = await api.outtakes.delete("o-1");
+    expect(result).toBeUndefined();
+    expect(mockFetch).toHaveBeenCalledWith("/api/outtakes/o-1", {
+      headers: { "Content-Type": "application/json" },
+      method: "DELETE",
+    });
+  });
+});
+
 describe("api.search", () => {
   it("find(slug, query, options) sends POST /api/projects/:slug/search", async () => {
     const searchResult = { total_count: 2, chapters: [] };
