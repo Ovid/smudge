@@ -14,6 +14,14 @@ describe("toPlainText", () => {
   it("does not produce a phantom cross-block match", () => {
     expect(toPlainText(doc([para("Hello"), para("World")])).includes("oW")).toBe(false);
   });
+  it("emits a newline for a hardBreak (does not mash words together)", () => {
+    expect(toPlainText(doc([{ type: "paragraph", content: [
+      { type: "text", text: "a" }, { type: "hardBreak" }, { type: "text", text: "b" },
+    ] }]))).toBe("a\nb");
+  });
+  it("handles an empty paragraph and a typeless node without throwing", () => {
+    expect(toPlainText(doc([{ type: "paragraph" }, { content: [{ type: "text", text: "x" }] }]))).toBe("x");
+  });
   it("returns '' for null / empty doc", () => {
     expect(toPlainText(null)).toBe("");
     expect(toPlainText(doc([]))).toBe("");

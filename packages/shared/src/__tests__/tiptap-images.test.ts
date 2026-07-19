@@ -16,6 +16,9 @@ describe("stripImageNodes", () => {
     const doc = { type: "doc", content: [{ type: "image", attrs: { src: "/x" } }] };
     expect(stripImageNodes(doc)).toEqual({ type: "doc", content: [] });
   });
+  it("returns an empty doc when the top-level node is itself an image", () => {
+    expect(stripImageNodes({ type: "image" })).toEqual({ type: "doc", content: [] });
+  });
   it("caps recursion at MAX_TIPTAP_DEPTH without throwing", () => {
     let node: Record<string, unknown> = { type: "text", text: "x" };
     for (let i = 0; i < 200; i++) node = { type: "paragraph", content: [node] };

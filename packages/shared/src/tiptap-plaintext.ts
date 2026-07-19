@@ -10,6 +10,7 @@ function needsNewline(out: string[]): boolean {
 function walk(node: Node, depth: number, out: string[]): void {
   if (depth > MAX_TIPTAP_DEPTH) return;
   if (typeof node.text === "string") { out.push(node.text); return; }
+  if (node.type === "hardBreak") { out.push("\n"); return; }
   const isBlock = node.type ? BLOCK_TYPES.has(node.type) : false;
   if (isBlock && needsNewline(out)) out.push("\n");
   for (const child of node.content ?? []) walk(child, depth + 1, out);
