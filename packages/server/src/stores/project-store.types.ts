@@ -20,6 +20,7 @@ import type {
   SnapshotListItem,
   CreateSnapshotData,
 } from "../snapshots/snapshots.types";
+import type { OuttakeRow, CreateOuttakeData } from "../outtakes/outtakes.types";
 
 // F-4: the store contract is composed from one cohesive sub-interface per
 // domain rather than a single 54-method "god interface". Each slice owns the
@@ -128,6 +129,14 @@ export interface SnapshotsStore {
   getLatestSnapshotContentHashAnyKind(chapterId: string): Promise<string | null>;
 }
 
+export interface OuttakesStore {
+  insertOuttake(data: CreateOuttakeData): Promise<OuttakeRow>;
+  findOuttakeById(id: string): Promise<OuttakeRow | null>;
+  listOuttakesByProject(projectId: string): Promise<OuttakeRow[]>;
+  updateOuttakeLabel(id: string, label: string | null, updatedAt: string): Promise<OuttakeRow | null>;
+  deleteOuttake(id: string): Promise<number>;
+}
+
 /**
  * The full store contract: the composition of every domain slice plus the
  * cross-domain transaction seam. Consumers import this type; the sole
@@ -143,7 +152,8 @@ export interface ProjectStore
     SettingsStore,
     VelocityStore,
     ImagesStore,
-    SnapshotsStore {
+    SnapshotsStore,
+    OuttakesStore {
   /**
    * Run a function within a database transaction.
    *
