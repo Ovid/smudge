@@ -413,13 +413,23 @@ This is a first-class design constraint, not optional:
 
 ## Data Model
 
-Five tables, all using UUID primary keys (except `settings` and `chapter_statuses`):
+Core tables, all using UUID primary keys (except `settings` and `chapter_statuses`):
 
 - **projects** — id, title, slug, mode, target_word_count, target_deadline, created_at, updated_at, deleted_at
 - **chapters** — id, project_id (FK), title, content (TipTap JSON), sort_order, word_count, status, created_at, updated_at, deleted_at
 - **chapter_statuses** — status (PK), sort_order, label. Seed data; defines the chapter workflow statuses.
 - **settings** — key (PK), value. Key-value store for app settings (e.g., timezone).
 - **daily_snapshots** — id, project_id (FK), date, total_word_count, created_at. One row per project per day; upserted on each save.
+- **outtakes** — id, project_id (FK), label, content (TipTap JSON, images
+  stripped on capture), created_at, updated_at. Per-project store of cut/stashed
+  text. **Hard delete (no `deleted_at`)** — a documented exception to "soft delete
+  everywhere", matching ChapterSnapshot (a safety-net TipTap-JSON table). Images
+  are stripped on capture because outtake JSON is invisible to the image
+  reference-counter/reaper (which scans only `chapters`), so an image referenced
+  only by an outtake would be GC'd. Outtakes are excluded from the manuscript word
+  count, export, preview, and find-and-replace **by table separation** — any future
+  "all project content" iteration must consciously opt them in, and must never do
+  so for images without extending ref-tracking.
 
 ## Testing Philosophy
 
