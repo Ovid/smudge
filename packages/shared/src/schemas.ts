@@ -181,41 +181,33 @@ export function sanitizeSnapshotLabel(raw: string): string {
   );
 }
 
+// Shared label chain for snapshot/outtake labels. Cap pre-sanitize at 5000 code
+// units as defense-in-depth: without this, a 1 MB payload walks through the
+// sanitizer before being rejected by the post-pipe .max(500). 5000 is ~10x the
+// final cap — room for sanitizer-stripped bidi/control chars without gatekeeping
+// legitimate long labels that would fit once cleaned. Each schema applies its
+// own nullability modifier (.optional()/.nullish()/.nullable()) below.
+const sanitizedLabelBase = z
+  .string()
+  .max(5000, "Label is too long")
+  .transform(sanitizeSnapshotLabel)
+  .pipe(z.string().trim().max(500, "Label is too long"));
+
 export const CreateSnapshotSchema = z
   .object({
-    // Cap pre-sanitize at 5000 code units as defense-in-depth: without this,
-    // a 1 MB payload walks through the sanitizer before being rejected by
-    // the post-pipe .max(500). 5000 is ~10x the final cap — room for
-    // sanitizer-stripped bidi/control chars without gatekeeping legitimate
-    // long labels that would fit once cleaned.
-    label: z
-      .string()
-      .max(5000, "Label is too long")
-      .transform(sanitizeSnapshotLabel)
-      .pipe(z.string().trim().max(500, "Label is too long"))
-      .optional(),
+    label: sanitizedLabelBase.optional(),
   })
   .strict();
 
 export const CreateOuttakeSchema = z
   .object({
     content: TipTapDocSchema,
-    label: z
-      .string()
-      .max(5000, "Label is too long")
-      .transform(sanitizeSnapshotLabel)
-      .pipe(z.string().trim().max(500, "Label is too long"))
-      .nullish(),
+    label: sanitizedLabelBase.nullish(),
   })
   .strict();
 
 export const UpdateOuttakeSchema = z
   .object({
-    label: z
-      .string()
-      .max(5000, "Label is too long")
-      .transform(sanitizeSnapshotLabel)
-      .pipe(z.string().trim().max(500, "Label is too long"))
-      .nullable(),
+    label: sanitizedLabelBase.nullable(),
   })
   .strict();
