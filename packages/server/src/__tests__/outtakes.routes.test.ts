@@ -44,10 +44,31 @@ describe("outtakes routes", () => {
     });
 
     it("does not 500 on a body TipTapDocSchema accepts but the walker cannot", async () => {
-      // TipTapDocSchema constrains top-level elements only, so nested null /
-      // primitive / array children pass validation and reach stripImageNodes.
-      // An unguarded walk threw there, surfacing as 500 INTERNAL_ERROR — a
-      // status the API contract does not allow for a malformed body.
+      // TipTapDocSchema constrains top-level elements only, so nested null and
+      // primitive children pass validation and reach stripImageNodes. An
+      // unguarded walk threw there, surfacing as 500 INTERNAL_ERROR — a status
+      // the API contract does not allow for a malformed body.
+      const projectId = await createProject();
+      const res = await request(t.app)
+        .post(`/api/projects/${projectId}/outtakes`)
+        .send({
+          content: {
+            type: "doc",
+            content: [{ type: "paragraph", content: [null, 42] }],
+          },
+        });
+      expect(res.status).toBe(201);
+    });
+
+    it("returns 400 for an array-wrapped child rather than accepting it", async () => {
+      // I2 (dedup review 2026-07-26): validateTipTapDepth — the depth cap's
+      // sole enforcement point, reached via TipTapDocSchema's .refine — used to
+      // return true for an array node, so this body was ACCEPTED and the
+      // array-wrapped image merely stripped by the walker. That same hole made
+      // MAX_TIPTAP_DEPTH bypassable by nesting through `content: [[...]]`.
+      // An array is not a valid TipTap node in any position, so it is now
+      // rejected at the boundary — a strictly better outcome than accept-and-
+      // strip, and still a 400 rather than the 500 this case originally fixed.
       const projectId = await createProject();
       const res = await request(t.app)
         .post(`/api/projects/${projectId}/outtakes`)
@@ -55,13 +76,12 @@ describe("outtakes routes", () => {
           content: {
             type: "doc",
             content: [
-              { type: "paragraph", content: [null, 42, [{ type: "image", attrs: { src: "/x" } }]] },
+              { type: "paragraph", content: [[{ type: "image", attrs: { src: "/x" } }]] },
             ],
           },
         });
-      expect(res.status).toBe(201);
-      // The array-wrapped image is dropped, not smuggled past the strip.
-      expect(JSON.stringify(res.body.content)).not.toContain("image");
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
     });
 
     it("returns 404 for an unknown project", async () => {

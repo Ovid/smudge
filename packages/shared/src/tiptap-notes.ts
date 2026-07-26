@@ -51,8 +51,16 @@ export function stripNoteMarks<T>(doc: T): T {
 
 function strip(node: TipTapNode, depth: number): TipTapNode | undefined {
   // Chapters read from the DB bypass Zod, so a walker cannot rely on the shape
-  // the schema promises (see tiptap-text.ts:70-76). A non-object node is passed
-  // through untouched — spreading a string would corrupt it into a character map.
+  // the schema promises (see tiptap-text.ts:70-76).
+  //
+  // I2 (dedup review 2026-07-26): an ARRAY child must be DROPPED, not passed
+  // through. `typeof [] === "object"` clears the primitive arm below, and an
+  // array has no `.content`, so returning it verbatim smuggled every note mark
+  // inside it past this strip — the one failure mode this walker exists to
+  // prevent. Its sibling stripImageNodes already dropped the equivalent node.
+  if (Array.isArray(node)) return undefined;
+  // A non-object node is passed through untouched — spreading a string would
+  // corrupt it into a character map, and a primitive cannot carry a mark.
   if (!node || typeof node !== "object") return node;
   // Fail CLOSED at the depth cap: drop the over-deep subtree rather than return
   // it verbatim. Returning it would ship its note marks straight into export —
@@ -62,6 +70,11 @@ function strip(node: TipTapNode, depth: number): TipTapNode | undefined {
   // walker fails closed too (collectLeafBlocks → [], validateTipTapDepth →
   // false). Unreachable via the API (Zod rejects depth > MAX_TIPTAP_DEPTH);
   // reachable from a hand-edited DB or a restored backup.
+  //
+  // That API-unreachability rests entirely on validateTipTapDepth, which until
+  // I2 returned `true` for an array node and so let a nested-array chain past
+  // the cap. Both claims in this paragraph are true again only because that
+  // walker now fails closed on arrays too — see tiptap-safety.ts.
   if (depth > MAX_TIPTAP_DEPTH) return undefined;
   const next: TipTapNode = { ...node };
   if (Array.isArray(node.marks)) {

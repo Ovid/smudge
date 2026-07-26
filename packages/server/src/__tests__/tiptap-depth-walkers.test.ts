@@ -28,6 +28,10 @@ import {
   countWords,
   searchInDoc,
   replaceInDoc,
+  stripNoteMarks,
+  stripImageNodes,
+  extractNotes,
+  toPlainText,
 } from "@smudge/shared";
 import {
   canonicalContentHash,
@@ -160,5 +164,99 @@ describe("TipTap depth-guard contract (MAX_TIPTAP_DEPTH walkers)", () => {
     >;
     const inline = paragraph.content as unknown[];
     expect(inline).toHaveLength(1); // merged: marks compared equal under the cap
+  });
+});
+
+/**
+ * Cross-cutting CHILD-SHAPE contract for the same six walkers.
+ *
+ * TipTapDocSchema constrains TOP-LEVEL elements only
+ * (`content: z.array(z.record(z.unknown()))`), and DB reads bypass Zod
+ * entirely, so a `null` / primitive / **array** child is reachable at every
+ * nested level. Each walker must treat such a child as ABSENT — fail closed —
+ * rather than descend into it or pass it through verbatim.
+ *
+ * ┌─ NEW WALKER? ────────────────────────────────────────────────────────────┐
+ * │ Guard with `!node || typeof node !== "object" || Array.isArray(node)` and │
+ * │ add it to the table below. The array arm is the one that gets forgotten:  │
+ * │ `typeof [] === "object"`, so the first two arms let an array through, and │
+ * │ an array has no `.content`, so a walker that returns it verbatim smuggles │
+ * │ the whole subtree past its own filter.                                    │
+ * └───────────────────────────────────────────────────────────────────────────┘
+ *
+ * I2 (dedup review 2026-07-26): fd574f1 added the array arm to four walkers
+ * and missed stripNoteMarks and validateTipTapDepth. This table is the forcing
+ * mechanism that would have caught it.
+ */
+describe("TipTap child-shape contract (fail closed on a non-descendable child)", () => {
+  const NOTED_TEXT = {
+    type: "text",
+    text: "SECRET",
+    marks: [{ type: "note", attrs: { text: "spoiler" } }],
+  };
+  const IMAGE_NODE = { type: "image", attrs: { src: `/api/images/${SAMPLE_UUID}` } };
+
+  /** Wrap `child` so it sits as an ARRAY element inside doc.content. */
+  const arrayWrapped = (child: unknown) => ({ type: "doc", content: [[child]] });
+
+  it("stripNoteMarks drops an array-wrapped subtree instead of passing it through", () => {
+    // The note mark is editor-only and must never reach a rendered surface.
+    // Passing the array through verbatim preserved it — the one failure mode
+    // this walker exists to prevent.
+    const out = JSON.stringify(stripNoteMarks(arrayWrapped(NOTED_TEXT)));
+    expect(out).not.toContain("spoiler");
+    expect(out).not.toContain('"note"');
+  });
+
+  it("validateTipTapDepth rejects a chain nested through arrays", () => {
+    // The depth cap's ONLY enforcement point is TipTapDocSchema's .refine, so a
+    // walker that returns `true` for an array child makes MAX_TIPTAP_DEPTH
+    // bypassable through the public API: a top-level array child is rejected by
+    // Zod's z.array(z.record(...)), but a NESTED one is not, because only
+    // top-level content is typed.
+    let node: unknown = { type: "text", text: "x" };
+    for (let i = 0; i < OVER_CAP_DEPTH; i++) node = { type: "blockquote", content: [[node]] };
+    expect(validateTipTapDepth({ type: "doc", content: [node] })).toBe(false);
+  });
+
+  it("stripImageNodes drops an array-wrapped image", () => {
+    const out = stripImageNodes(arrayWrapped(IMAGE_NODE));
+    expect(JSON.stringify(out)).not.toContain(SAMPLE_UUID);
+  });
+
+  it("extractImageIds finds nothing inside an array-wrapped image", () => {
+    expect(extractImageIds(arrayWrapped(IMAGE_NODE))).toEqual([]);
+  });
+
+  it("countWords counts nothing inside an array-wrapped text node", () => {
+    expect(countWords(arrayWrapped({ type: "text", text: "hello world" }))).toBe(0);
+  });
+
+  it("toPlainText emits nothing for an array-wrapped text node", () => {
+    expect(toPlainText(arrayWrapped({ type: "text", text: "hello" }))).not.toContain("hello");
+  });
+
+  it("searchInDoc matches nothing inside an array-wrapped paragraph", () => {
+    const doc = arrayWrapped({ type: "paragraph", content: [{ type: "text", text: "x" }] });
+    expect(searchInDoc(doc, "x")).toEqual([]);
+  });
+
+  it("extractNotes reports nothing inside an array-wrapped noted node", () => {
+    expect(extractNotes(arrayWrapped(NOTED_TEXT))).toEqual([]);
+  });
+
+  it.each([
+    ["null", null],
+    ["a string", "text"],
+    ["a number", 42],
+  ])("every walker also fails closed on %s as a child", (_label, child) => {
+    const doc = { type: "doc", content: [child] };
+    expect(() => stripNoteMarks(doc)).not.toThrow();
+    expect(() => stripImageNodes(doc)).not.toThrow();
+    expect(countWords(doc)).toBe(0);
+    expect(extractImageIds(doc)).toEqual([]);
+    expect(searchInDoc(doc, "x")).toEqual([]);
+    expect(extractNotes(doc)).toEqual([]);
+    expect(validateTipTapDepth(doc)).toBe(true); // shallow: no depth violation
   });
 });

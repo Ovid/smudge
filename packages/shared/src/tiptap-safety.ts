@@ -24,9 +24,23 @@ export const MAX_TIPTAP_DEPTH = 64;
  * exceeds MAX_TIPTAP_DEPTH. Exported so callers that work with already-
  * parsed documents (snapshot restore, find/replace) can apply the same
  * guard without paying for full Zod schema parsing.
+ *
+ * This walker is the depth cap's ONLY enforcement point — TipTapDocSchema's
+ * `.refine` is the sole caller on the write path — so its fail-closed arms are
+ * load-bearing for every other walker's "unreachable via the API" assumption.
+ *
+ * I2 (dedup review 2026-07-26): an ARRAY node returned `true` here, because
+ * `typeof [] === "object"` passes the primitive arm and an array has no
+ * `.content` to recurse into. TipTapDocSchema types only TOP-LEVEL content
+ * (`z.array(z.record(z.unknown()))`), so Zod rejects a top-level array child
+ * but not a nested one — which made MAX_TIPTAP_DEPTH bypassable through
+ * `PATCH /api/chapters/:id` by nesting through `content: [[...]]`. An array is
+ * not a valid TipTap node in any position, so rejecting the document is both
+ * the fail-closed answer and the correct one.
  */
 export function validateTipTapDepth(node: unknown, depth: number = 0): boolean {
   if (depth > MAX_TIPTAP_DEPTH) return false;
+  if (Array.isArray(node)) return false;
   if (!node || typeof node !== "object") return true;
   const content = (node as { content?: unknown }).content;
   if (!Array.isArray(content)) return true;
