@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
+import { logger } from "../logger";
 
 // Safety net for architecture flaw F-3 (server error taxonomy refactor).
 //
@@ -88,12 +89,22 @@ describe("no endpoint emits a status outside the allowlist (I4)", () => {
     ["an unsupported charset", "application/json; charset=iso-8859-1", undefined],
     ["an unsupported Content-Encoding", "application/json", "br"],
   ])("returns 400, not 415, for %s", async (_label, contentType, encoding) => {
-    const req = request(t.app)
-      .patch(`/api/chapters/${ABSENT_UUID}`)
-      .set("Content-Type", contentType);
-    if (encoding) req.set("Content-Encoding", encoding);
-    const res = await req.send("{}");
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    // The global handler logs this through req.log (a per-request pino child),
+    // so silencing the PARENT before the request is what keeps the suite quiet
+    // — same approach as the 413 case in outtakes.routes.test.ts. §Testing
+    // Philosophy: zero warnings in test output.
+    const prevLevel = logger.level;
+    logger.level = "silent";
+    try {
+      const req = request(t.app)
+        .patch(`/api/chapters/${ABSENT_UUID}`)
+        .set("Content-Type", contentType);
+      if (encoding) req.set("Content-Encoding", encoding);
+      const res = await req.send("{}");
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    } finally {
+      logger.level = prevLevel;
+    }
   });
 });
