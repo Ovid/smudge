@@ -13,7 +13,7 @@
 
 Give the writer a per-project **drawer for cut text** — the "killed darlings" a
 writer removes from a chapter but is not ready to lose. Today the only options
-are *delete* (gone) or *stash in a junk chapter* (which inflates the word count
+are _delete_ (gone) or _stash in a junk chapter_ (which inflates the word count
 and pollutes the manuscript). The Outtakes drawer is a dedicated, private,
 searchable home for that text: excluded from the manuscript word count, from
 preview, and from every export format.
@@ -32,7 +32,7 @@ invariants).
 - The `outtakes` table + full CRUD (create, list, update-label, delete).
 - The Outtakes reference-panel tab: list, client-side filter, per-outtake card
   with Insert / Copy / Delete actions.
-- **Non-destructive capture:** "Send selection to outtakes" (a *copy* of the
+- **Non-destructive capture:** "Send selection to outtakes" (a _copy_ of the
   editor selection — the chapter is untouched) and manual create (plain
   textarea).
 - **Insert back into the editor:** insert an outtake's content at the cursor
@@ -46,7 +46,7 @@ invariants).
   save-pipeline invariants that CLAUDE.md flags as the highest-risk code in the
   app, so it earns its own focused review.
 - **⚠️ Delete-safety re-evaluation (forcing note).** v1 hard-deletes outtakes
-  (decision 2) safely *because capture is non-destructive* — the original text
+  (decision 2) safely _because capture is non-destructive_ — the original text
   still lives in the chapter. After 4c.2a's destructive cut, the outtake becomes
   the **sole copy** of that text, so hard-delete-behind-one-confirm is then the
   only barrier against permanent loss. **4c.2a's design MUST re-evaluate the
@@ -58,7 +58,7 @@ invariants).
 
 **Out of scope entirely (future / only-if-requested):**
 
-- Editing an outtake's *content* in the panel (a rich in-place editor).
+- Editing an outtake's _content_ in the panel (a rich in-place editor).
 - Images inside outtakes + the image-reference tracking they would require.
 - Soft-delete / trash / 30-day recovery for outtakes (see the forcing note above
   for the 4c.2a trigger to reconsider).
@@ -71,10 +71,10 @@ review treats them as decided.
 
 1. **Non-destructive capture in v1; destructive cut split to 4c.2a.** The drawer
    carries essentially all the writer value (a safe, searchable home for cut
-   text) with zero save-pipeline exposure. The one-click *cut* is a delighter
+   text) with zero save-pipeline exposure. The one-click _cut_ is a delighter
    that touches the app's most dangerous code and belongs in its own PR.
 2. **Hard delete + confirmation dialog; no `deleted_at`.** In v1 an outtake is a
-   *copy* — the original still lives in the chapter — so a safe-place-for-the-
+   _copy_ — the original still lives in the chapter — so a safe-place-for-the-
    safe-place is complexity a single-user drawer does not need. This matches
    `ChapterSnapshot` (also a safety-net TipTap-JSON table that hard-deletes). The
    confirm dialog is the guardrail. This is a **documented deviation** from the
@@ -90,7 +90,7 @@ review treats them as decided.
    edit there, optionally re-capture).
 4. **Images stripped on capture.** Outtake JSON is invisible to the image
    garbage-collector / reference-counter (which scans only the `chapters`
-   table), so an image referenced *only* by an outtake would be deleted out from
+   table), so an image referenced _only_ by an outtake would be deleted out from
    under it. Cut text is almost always prose; stripping image nodes on capture
    (authoritatively server-side, best-effort client-side too) closes the blind
    spot without the weight of extending ref-tracking.
@@ -102,14 +102,14 @@ review treats them as decided.
 
 **Table `outtakes`:**
 
-| Column        | Type    | Notes                                                       |
-| ------------- | ------- | ----------------------------------------------------------- |
-| `id`          | TEXT PK | UUID                                                        |
-| `project_id`  | TEXT    | `NOT NULL`, FK → `projects(id)` `ON DELETE CASCADE`         |
-| `label`       | TEXT    | nullable                                                    |
-| `content`     | TEXT    | `NOT NULL`, stringified TipTap JSON                         |
-| `created_at`  | TEXT    | `NOT NULL`                                                  |
-| `updated_at`  | TEXT    | `NOT NULL` (bumped on label edit)                           |
+| Column       | Type    | Notes                                               |
+| ------------ | ------- | --------------------------------------------------- |
+| `id`         | TEXT PK | UUID                                                |
+| `project_id` | TEXT    | `NOT NULL`, FK → `projects(id)` `ON DELETE CASCADE` |
+| `label`      | TEXT    | nullable                                            |
+| `content`    | TEXT    | `NOT NULL`, stringified TipTap JSON                 |
+| `created_at` | TEXT    | `NOT NULL`                                          |
+| `updated_at` | TEXT    | `NOT NULL` (bumped on label edit)                   |
 
 Index: `(project_id, created_at)` for the newest-first list query.
 
@@ -117,11 +117,11 @@ Index: `(project_id, created_at)` for the newest-first list query.
 `content` (§5) and the client already ships `countWords()`, so the panel
 computes the per-outtake count from content it holds — a persisted column, its
 server compute step, and its migration cost would buy nothing. If a future
-consumer ever needs a count *without* loading content (e.g. a drawer total), add
+consumer ever needs a count _without_ loading content (e.g. a drawer total), add
 it then.
 
 **No `deleted_at`** — hard delete (decision 2). `ON DELETE CASCADE` cleans up
-outtakes only when a project is *hard*-purged; because projects soft-delete, the
+outtakes only when a project is _hard_-purged; because projects soft-delete, the
 outtakes service treats a soft-deleted parent project as `404` (mirrors the
 snapshot service's parent-chapter check via a raw `deleted_at IS NULL` lookup).
 
@@ -135,7 +135,7 @@ creating an outtake.
 ## 5. Shared Types, Schemas & Helpers (`packages/shared`)
 
 - **`OuttakeRow`** (wire type, `types.ts`): `{ id, project_id, label: string | null,
-  content: <TipTap JSON>, created_at, updated_at }`. The list endpoint returns
+content: <TipTap JSON>, created_at, updated_at }`. The list endpoint returns
   full rows (content included) — a per-project drawer holds dozens of short
   cut-prose items, so the client filters, previews, inserts, and word-counts
   from the already-loaded list without a second fetch. **Single-user
@@ -144,7 +144,7 @@ creating an outtake.
   single-user trade-offs; if drawers ever grow pathologically large, a
   content-elided list variant is the escape hatch. Recorded as accepted.
 - **`CreateOuttakeSchema`** (`schemas.ts`, `.strict()`): `{ content: TipTapDocSchema,
-  label?: <sanitized string, nullable> }`. No client-supplied counts.
+label?: <sanitized string, nullable> }`. No client-supplied counts.
 - **`UpdateOuttakeSchema`** (`.strict()`): `{ label: <sanitized string | null> }`.
   Content is not re-editable in v1, so only the label is patchable.
 - **`stripImageNodes(doc)`** — a small TipTap walker (co-located with the
@@ -156,7 +156,7 @@ creating an outtake.
   joined by `\n` so a filter/Copy cannot match a phantom substring spanning a
   block boundary), used by both the Copy action and the filter box (rather than
   each call site re-deriving plain text ad hoc). **Deliberate deviation
-  (alignment #5):** this is a *new* walker, **not** a reuse of the private
+  (alignment #5):** this is a _new_ walker, **not** a reuse of the private
   `extractText` in `wordcount.ts`. `extractText` joins blocks with a single
   space and is load-bearing for the client/server word-count agreement
   invariant (CLAUDE.md §Shared `countWords()`); `toPlainText` needs newline
@@ -177,20 +177,34 @@ New domain `packages/server/src/outtakes/`:
   (insert then re-read the row), `listByProject` (newest first), `findById`,
   `updateLabel`, `remove` (hard `del()`). All SQL/Knex lives here (F-5).
 - **`outtakes.service.ts`** — reaches the store via `getProjectStore()`:
-  1. Validate `content` with `TipTapDocSchema` + byte cap.
-  2. **Strip image nodes** from the doc (`stripImageNodes`, authoritative).
-  3. Generate UUID + timestamps; `insert` inside `store.transaction()`.
-  4. Enforce a live parent project (soft-deleted parent → `404`).
-  `listByProject`, `updateLabel` (bumps `updated_at`), and `remove` follow the
-  same parent-liveness discipline.
+  1. **Strip image nodes** from the doc (`stripImageNodes`, authoritative).
+  2. Generate UUID + timestamps; `insert` inside `store.transaction()`.
+  3. Enforce a live parent project (soft-deleted parent → `404`).
+     `listByProject`, `updateLabel` (bumps `updated_at`), and `remove` follow the
+     same parent-liveness discipline.
+
+  > **The service does NOT validate `content`.** This section originally listed
+  > "Validate `content` with `TipTapDocSchema` + byte cap" as step 1. Review S4
+  > (2026-07-19) moved that boundary: the **route** is the sole content-validation
+  > trust boundary — it parses `CreateOuttakeSchema`, whose `content` is
+  > `TipTapDocSchema` — and the service does not re-parse, to avoid a second walk
+  > of a potentially large document. The byte cap is the global
+  > `express.json({ limit })` mount in `app.ts`.
+  >
+  > **A future non-route caller must validate `content` itself before calling.**
+  > Recorded here, and not only in a code comment and a commit message, because
+  > Phase 4c.2a (the destructive cut) is required to re-read this design before
+  > shipping — and an author reading the original step 1 would reasonably have
+  > believed `createOuttake` self-validates (S8, agentic-review 2026-07-26).
+
 - **`outtakes.routes.ts`** — two routers, registered in `app.ts`:
   - `projectOuttakesRouter()` → `POST /api/projects/:id/outtakes`,
     `GET /api/projects/:id/outtakes`.
   - `outtakeDirectRouter()` → `PATCH /api/outtakes/:id`, `DELETE /api/outtakes/:id`.
-  UUID params via `UuidSchema`; bodies via the shared schemas +
-  `respondValidationParse` / `validationError`; unknown ids via the `notFound`
-  helper; **`DELETE` returns `204`** (body-less, per CLAUDE.md §API Design), with
-  the client owning the success toast.
+    UUID params via `UuidSchema`; bodies via the shared schemas +
+    `respondValidationParse` / `validationError`; unknown ids via the `notFound`
+    helper; **`DELETE` returns `204`** (body-less, per CLAUDE.md §API Design), with
+    the client owning the success toast.
 - **`outtakes.types.ts`** — server-internal `CreateOuttakeData` insert shape.
 
 **Facade (F-4/F-5):** add an `OuttakesStore` slice to `project-store.types.ts`,
@@ -200,8 +214,8 @@ compose it into `ProjectStore`, and add one-line delegations in
 ## 7. Client
 
 - **API (`api/client.ts`):** `api.outtakes = { list(projectId, signal?),
-  create(projectId, body, signal?), updateLabel(id, body, signal?),
-  delete(id, signal?) }`, mirroring `api.snapshots` (204 → resolves `undefined`).
+create(projectId, body, signal?), updateLabel(id, body, signal?),
+delete(id, signal?) }`, mirroring `api.snapshots` (204 → resolves `undefined`).
 - **Error scopes (`errors/scopes.ts`):** `outtake.list`, `outtake.create`,
   `outtake.update`, `outtake.delete`, each with a `STRINGS.error.*` fallback.
   All user-facing messages route through `mapApiError` / `applyMappedError`.
@@ -247,7 +261,7 @@ this is a pure read-of-selection + POST.
 
 1. Card "Insert into editor" → callback to `EditorPage`.
 2. Insert the outtake's **block array** — `insertContent(outtake.content.content)`
-   (the `content` of the stored `doc`, *not* the `doc` node itself, which is not
+   (the `content` of the stored `doc`, _not_ the `doc` node itself, which is not
    well-defined mid-paragraph) — at the cursor via
    `editor.chain().focus().insertContent(…).run()`.
 3. The normal auto-save pipeline persists the resulting chapter edit.
@@ -264,20 +278,29 @@ involvement).
 
 ## 9. Exclusion Guarantees (each with a test)
 
-| Surface                     | Why outtakes are excluded                                              | Test |
-| --------------------------- | --------------------------------------------------------------------- | ---- |
-| Manuscript word count / daily snapshots | computed from `chapters` only                             | creating an outtake leaves `velocity.current_total` unchanged |
-| Export (all formats)        | export gathers `listChaptersByProject` only                           | export output contains no outtake text |
-| Preview / rendered HTML     | renders a single passed-in doc, never queries outtakes                | (covered by the export/render tests) |
-| Global find-and-replace     | search service not extended to outtakes                               | replace-all does not touch outtake rows |
-| Image GC / reference count  | images stripped on capture → no refs to track                         | an image node cannot survive capture |
+| Surface                                 | Why outtakes are excluded                              | Test                                                          |
+| --------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------- |
+| Manuscript word count / daily snapshots | computed from `chapters` only                          | creating an outtake leaves `velocity.current_total` unchanged |
+| Export (all formats)                    | export gathers `listChaptersByProject` only            | export output contains no outtake text                        |
+| Preview / rendered HTML                 | renders a single passed-in doc, never queries outtakes | (covered by the export/render tests)                          |
+| Global find-and-replace                 | search service not extended to outtakes                | replace-all does not touch outtake rows                       |
+| Image GC / reference count              | images stripped on capture → no refs to track          | an image node cannot survive capture                          |
 
 ## 10. Testing (RED-GREEN-REFACTOR, real SQLite)
 
-- **Server:** migration up/down; repository CRUD; service (content validation,
-  image-strip, parent-project-404, transaction rollback); routes via Supertest
+- **Server:** migration up/down; repository CRUD; service (image-strip,
+  parent-project-404); routes via Supertest
   (create/list/patch-label/delete-`204`, `400` on invalid JSON, `404` unknown
   id, `413` oversized); the exclusion tests in §9.
+  <!-- S8 (agentic-review 2026-07-26): "content validation" and "transaction
+  rollback" were listed here as service-level tests and neither exists.
+  Removed rather than written, because neither is testable as described:
+  content validation is the ROUTE's job (see the callout in §6) and is covered
+  by the Supertest `400` case, and createOuttake has no rollback path to
+  exercise — the parent-liveness check returns null BEFORE the transaction's
+  only write, so there is never a partial write to undo. If a second write is
+  ever added inside that transaction, this line comes back and gets a test. -->
+
 - **Shared:** `CreateOuttakeSchema` / `UpdateOuttakeSchema` strictness +
   sanitization; `TipTapDocSchema` rejection; `stripImageNodes` walker;
   **`toPlainText`** (block separation — two paragraphs must not concatenate into
@@ -297,7 +320,7 @@ involvement).
 
 - **CLAUDE.md §Data Model:** add the `outtakes` table, noting (a) the hard-delete
   exception to "soft delete everywhere" (as snapshots already are) and (b) the
-  image-strip-on-capture invariant and *why* (reaper blind spot). Note that
+  image-strip-on-capture invariant and _why_ (reaper blind spot). Note that
   outtakes are excluded from word count / export / search **by table
   separation** (a new "all project content" iteration must consciously opt them
   in, and for images must never do so without ref-tracking).
@@ -305,8 +328,8 @@ involvement).
   detail so it matches this design — strike `deleted_at` from the Outtake table,
   change the `DELETE /api/outtakes/{id}` bullet from "soft-delete" to hard-delete,
   and qualify the line that lists "outtakes" among image-bearing content (images
-  are stripped from outtakes in v1). *(The top-of-section 4c sub-status block is
-  already updated to point at this design and split out 4c.2a.)*
+  are stripped from outtakes in v1). _(The top-of-section 4c sub-status block is
+  already updated to point at this design and split out 4c.2a.)_
 
 ## 12. PR Scope
 
@@ -323,11 +346,11 @@ a separate PR. No exception to the one-feature rule is needed.
 
 ## 14. Pushback Resolutions (2026-07-19)
 
-| # | Severity | Finding | Resolution |
-| - | -------- | ------- | ---------- |
-| 1 | Important | Roadmap 4c.2 spec still says `deleted_at` / soft-delete / images-in-outtakes | **fixed-in-design** — §11 now lists the roadmap reconciliation as a deliverable (and the 4c sub-status block already points here) |
-| 2 | Important | Hard-delete posture is inherited by 4c.2a where the outtake is the sole copy | **fixed-in-design** — kept hard-delete for v1 (decision, Option A) + added the §2 forcing note requiring 4c.2a to re-evaluate delete-safety |
-| 3 | Minor | Plain-text extraction unspecified; `extractText` is private | **fixed-in-design** — added shared, exported, tested `toPlainText(doc)` (§5) used by Copy + filter |
-| 4 | Minor | "Insert" inserts a whole `doc` node; edge cases undefined | **fixed-in-design** — insert the block array `content.content`; edge behavior specified + tested (§8, §10) |
-| 5 | Minor | Persisted `word_count` column is redundant | **fixed-in-design** — dropped the column; count computed client-side from loaded content (§4) |
-| 6 | Minor | List returns full content with no bound | **accepted-as-is** — recorded the single-user "dozens × short" assumption + content-elided escape hatch (§5) |
+| #   | Severity  | Finding                                                                      | Resolution                                                                                                                                  |
+| --- | --------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Important | Roadmap 4c.2 spec still says `deleted_at` / soft-delete / images-in-outtakes | **fixed-in-design** — §11 now lists the roadmap reconciliation as a deliverable (and the 4c sub-status block already points here)           |
+| 2   | Important | Hard-delete posture is inherited by 4c.2a where the outtake is the sole copy | **fixed-in-design** — kept hard-delete for v1 (decision, Option A) + added the §2 forcing note requiring 4c.2a to re-evaluate delete-safety |
+| 3   | Minor     | Plain-text extraction unspecified; `extractText` is private                  | **fixed-in-design** — added shared, exported, tested `toPlainText(doc)` (§5) used by Copy + filter                                          |
+| 4   | Minor     | "Insert" inserts a whole `doc` node; edge cases undefined                    | **fixed-in-design** — insert the block array `content.content`; edge behavior specified + tested (§8, §10)                                  |
+| 5   | Minor     | Persisted `word_count` column is redundant                                   | **fixed-in-design** — dropped the column; count computed client-side from loaded content (§4)                                               |
+| 6   | Minor     | List returns full content with no bound                                      | **accepted-as-is** — recorded the single-user "dozens × short" assumption + content-elided escape hatch (§5)                                |
