@@ -9,7 +9,7 @@ import {
 } from "../errors/appError";
 import * as imagesService from "./images.service";
 import { UUID_PATTERN } from "./images.paths";
-import { MAX_IMAGE_UPLOAD_BYTES } from "@smudge/shared";
+import { MAX_IMAGE_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_LABEL } from "@smudge/shared";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -44,7 +44,9 @@ export function imagesRouter(): Router {
         if (err && (err as Error & { code?: string }).code === "LIMIT_FILE_SIZE") {
           // Async multer callback — forward via next() rather than throw
           // (a throw here would not be caught by Express).
-          return next(new PayloadTooLargeError("File too large. Maximum: 10MB."));
+          return next(
+            new PayloadTooLargeError(`File too large. Maximum: ${MAX_IMAGE_UPLOAD_LABEL}.`),
+          );
         }
         if (err) return next(err);
         next();

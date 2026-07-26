@@ -2,7 +2,7 @@ import path from "node:path";
 import { randomUUID as uuidv4 } from "node:crypto";
 import { UpdateImageSchema } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
-import { MAX_IMAGE_UPLOAD_BYTES } from "@smudge/shared";
+import { MAX_IMAGE_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_LABEL } from "@smudge/shared";
 import { extractImageIds, scanImageReferences } from "./images.references";
 import { ALLOWED_MIMES, mimeToExt, getImagePath, validateMagicBytes } from "./images.paths";
 import { writeImageFile, readImageFile, deleteImageFile } from "./images.fs";
@@ -58,7 +58,7 @@ export async function uploadImage(projectId: string, file: FileInput): Promise<U
 
   if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
     return {
-      validationError: `File too large (${file.size} bytes). Maximum size is 10 MB`,
+      validationError: `File too large (${file.size} bytes). Maximum size is ${MAX_IMAGE_UPLOAD_LABEL}`,
     };
   }
 

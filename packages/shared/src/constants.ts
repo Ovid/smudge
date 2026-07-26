@@ -41,6 +41,22 @@ export const MAX_REPLACE_LENGTH = 10_000;
 export const MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 /**
+ * The same cap, as the figure shown to the user (e.g. "10 MB").
+ *
+ * S5 (agentic-review 2026-07-26): the S1 change above converted all three
+ * CHECKS to the constant but left all three MESSAGES saying "10 MB" as a
+ * literal — server service, server route, and the client string. Raising the
+ * constant to 20 would have made every message tell the user the wrong limit
+ * while the server happily accepted the file: the same divergence S1 set out
+ * to make unrepresentable, one layer over. Derived, not written, so there is
+ * nothing left to keep in sync.
+ *
+ * Whole megabytes only, which is what every caller wants and what the cap has
+ * always been; a fractional cap would render as e.g. "10.5 MB".
+ */
+export const MAX_IMAGE_UPLOAD_LABEL = `${MAX_IMAGE_UPLOAD_BYTES / 1024 / 1024} MB`;
+
+/**
  * Error codes emitted by the server in the { error: { code, message } }
  * envelope for 400 responses from search/replace endpoints. Shared so the
  * client can discriminate on these without string-literal drift.

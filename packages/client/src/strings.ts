@@ -1,4 +1,9 @@
-import { UNTITLED_CHAPTER, TRASH_RETENTION_DAYS, TRASH_RETENTION_MS } from "@smudge/shared";
+import {
+  UNTITLED_CHAPTER,
+  TRASH_RETENTION_DAYS,
+  TRASH_RETENTION_MS,
+  MAX_IMAGE_UPLOAD_LABEL,
+} from "@smudge/shared";
 
 export const STRINGS = {
   app: {
@@ -379,7 +384,7 @@ export const STRINGS = {
     usedInChapters: "Used in",
     saving: "Saving...",
     saved: "Saved",
-    fileTooLarge: "File too large. Maximum: 10MB.",
+    fileTooLarge: `File too large. Maximum: ${MAX_IMAGE_UPLOAD_LABEL}.`,
     deleteSuccess: (filename: string) => `Image deleted: ${filename}`,
     saveFailed: "Save failed. Your changes have not been saved.",
     saveFailedNetwork: "Save failed — check your connection and try again.",

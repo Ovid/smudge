@@ -63,6 +63,7 @@ export {
   MAX_QUERY_LENGTH,
   MAX_REPLACE_LENGTH,
   MAX_IMAGE_UPLOAD_BYTES,
+  MAX_IMAGE_UPLOAD_LABEL,
 } from "./constants";
 export type { SearchErrorCode, SnapshotErrorCode } from "./constants";
 export type {
