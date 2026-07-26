@@ -105,3 +105,59 @@ describe("parseChapterContent integration — corrupt DB content", () => {
     errorSpy.mockRestore();
   });
 });
+
+// ---------------------------------------------------------------------------
+// I6 (dedup review 2026-07-26): "valid JSON, wrong shape" degrades like a throw
+// ---------------------------------------------------------------------------
+
+describe('parseChapterContent — "valid JSON, wrong shape" (I6)', () => {
+  // The guard exists at both sibling sites and never reached chapters:
+  // a19e8aa (2026-04-17) added it to snapshots.service.ts and 5d3d495
+  // (2026-07-26) added it to outtakes.repository.ts — its comment saying
+  // "mirroring snapshots.service.ts", three months later, re-deriving the same
+  // reasoning without extending it here.
+  //
+  // Guarding only the JSON.parse THROW let "42" / "[]" / "null" / '"text"'
+  // through: they parse fine and returned e.g. `{ ...row, content: 42 }` with
+  // NO content_corrupt flag. isCorruptChapter was then false, the row was
+  // served as healthy, and the designed CORRUPT_CONTENT route could not fire.
+  //
+  // Reachability is a hand-edited DB, a restored backup, or a legacy row —
+  // never the API, which validates through TipTapDocSchema. The degrade must
+  // still be correct: this is the read path for content the writer cannot
+  // otherwise recover.
+  it.each([
+    ["a number", "42"],
+    ["an array", "[]"],
+    ["a populated array", '[{"type":"doc"}]'],
+    ["null", "null"],
+    ["a string", '"just text"'],
+    ["a boolean", "true"],
+  ])("flags %s as corrupt rather than serving it as healthy", (_label, stored) => {
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
+    const result = parseChapterContent({
+      id: "abc",
+      title: "Test",
+      content: stored,
+    }) as unknown as Record<string, unknown>;
+
+    expect(result.content).toBeNull();
+    expect(result.content_corrupt).toBe(true);
+    expect(result.id).toBe("abc");
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ chapter_id: "abc" }),
+      "Corrupt JSON in chapter content",
+    );
+    errorSpy.mockRestore();
+  });
+
+  it("still accepts a plain object, the only valid shape", () => {
+    const result = parseChapterContent({
+      id: "abc",
+      title: "Test",
+      content: '{"type":"doc","content":[]}',
+    }) as unknown as Record<string, unknown>;
+    expect(result.content).toEqual({ type: "doc", content: [] });
+    expect(result.content_corrupt).toBeUndefined();
+  });
+});
