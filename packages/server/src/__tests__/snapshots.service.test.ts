@@ -13,7 +13,7 @@ afterEach(() => {
 // Stub velocity so best-effort calls don't blow up
 function stubVelocity() {
   setVelocityService({
-        updateDailySnapshot: async () => {},
+    updateDailySnapshot: async () => {},
   });
 }
 
