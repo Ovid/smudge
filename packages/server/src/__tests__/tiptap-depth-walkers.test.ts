@@ -239,12 +239,19 @@ describe("TipTap depth-guard contract (MAX_TIPTAP_DEPTH walkers)", () => {
  * rather than descend into it or pass it through verbatim.
  *
  * ┌─ NEW WALKER? ────────────────────────────────────────────────────────────┐
- * │ Guard with `!node || typeof node !== "object" || Array.isArray(node)` and │
- * │ add it to the table below. The array arm is the one that gets forgotten:  │
- * │ `typeof [] === "object"`, so the first two arms let an array through, and │
- * │ an array has no `.content`, so a walker that returns it verbatim smuggles │
- * │ the whole subtree past its own filter.                                    │
+ * │ Guard with `isTipTapNode(node)` (@smudge/shared) and add it to the table  │
+ * │ below. The array arm is the one that gets forgotten:                      │
+ * │ `typeof [] === "object"`, so a hand-written null+typeof check lets an     │
+ * │ array through, and an array has no `.content`, so a walker that returns   │
+ * │ it verbatim smuggles the whole subtree past its own filter.               │
  * └───────────────────────────────────────────────────────────────────────────┘
+ *
+ * S1 (dedup review 2026-07-26): this box used to instruct authors to write out
+ * `!node || typeof node !== "object" || Array.isArray(node)` — institutionalising
+ * the literal copy whose omission WAS the I2 bug below. It now names the shared
+ * predicate. Two walkers cannot adopt it and keep their own split forms:
+ * validateTipTapDepth needs array→false but primitive→true, and tiptap-notes'
+ * walker needs array→undefined but primitive→node.
  *
  * I2 (dedup review 2026-07-26): fd574f1 added the array arm to four walkers
  * and missed stripNoteMarks and validateTipTapDepth. This table is the forcing

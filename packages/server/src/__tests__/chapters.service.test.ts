@@ -438,7 +438,7 @@ describe("chapters.service", () => {
       expect(typeof result).toBe("object");
       expect(warnSpy).toHaveBeenCalledWith(
         expect.objectContaining({ project_id: expect.any(String) }),
-        "applyImageRefDiff: newContent JSON.parse failed; aborting diff to avoid mass decrement",
+        "applyImageRefDiff: newContent is not a TipTap object; aborting diff to avoid mass decrement",
       );
       logSpy.mockRestore();
       warnSpy.mockRestore();

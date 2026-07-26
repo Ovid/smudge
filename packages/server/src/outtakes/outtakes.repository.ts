@@ -1,4 +1,5 @@
 import type { Knex } from "knex";
+import { isTipTapNode } from "@smudge/shared";
 import type { OuttakeRow, CreateOuttakeData } from "./outtakes.types";
 import { logger } from "../logger";
 
@@ -16,7 +17,7 @@ function parseRow(row: Record<string, unknown>): OuttakeRow {
     // OuttakeRow.content — which callers dereference unguarded (EditorPage
     // reads content.content, OuttakeCard walks it for the word count). Route it
     // through the same degrade, mirroring snapshots.service.ts.
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    if (!isTipTapNode(parsed)) {
       throw new TypeError("Outtake content is not a JSON object");
     }
     content = parsed as Record<string, unknown>;

@@ -1,4 +1,4 @@
-import { MAX_TIPTAP_DEPTH } from "./tiptap-safety";
+import { MAX_TIPTAP_DEPTH, isTipTapNode } from "./tiptap-safety";
 type Node = { type?: string; text?: string; content?: Node[] };
 // S9: THREE independent encodings of "what separates text" live in shared, and
 // nothing forces a joint update when a node type is registered in
@@ -27,7 +27,7 @@ function walk(node: Node, depth: number, out: string[]): void {
   // Nested content[] is unvalidated by TipTapDocSchema and DB-read content
   // bypasses Zod, so a null/primitive/array child is reachable; dereferencing
   // one threw. Contributes nothing, exactly like an unknown empty node.
-  if (!node || typeof node !== "object" || Array.isArray(node)) return;
+  if (!isTipTapNode(node)) return;
   if (depth > MAX_TIPTAP_DEPTH) return;
   if (typeof node.text === "string") {
     out.push(node.text);

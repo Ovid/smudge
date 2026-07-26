@@ -1,4 +1,4 @@
-import { MAX_TIPTAP_DEPTH } from "./tiptap-safety";
+import { MAX_TIPTAP_DEPTH, isTipTapNode } from "./tiptap-safety";
 type Node = { type?: string; content?: Node[]; [k: string]: unknown };
 function strip(node: Node, depth: number): Node | null {
   // TipTapDocSchema constrains TOP-LEVEL elements only (z.array(z.record(...)));
@@ -8,7 +8,7 @@ function strip(node: Node, depth: number): Node | null {
   // array-wrapped child has no .content, so returning it verbatim smuggled its
   // images past the strip. Kept symmetric with extractImageIds (images.references.ts),
   // which likewise finds nothing inside such a child.
-  if (!node || typeof node !== "object" || Array.isArray(node)) return null;
+  if (!isTipTapNode(node)) return null;
   if (node.type === "image") return null;
   // Fail CLOSED at the depth cap: drop the over-deep subtree rather than return
   // it verbatim, which kept every image inside it — the one failure mode this

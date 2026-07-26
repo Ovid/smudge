@@ -1,4 +1,4 @@
-import { MAX_TIPTAP_DEPTH } from "@smudge/shared";
+import { MAX_TIPTAP_DEPTH, isTipTapNode } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { logger } from "../logger";
 import { UUID_PATTERN } from "./images.paths";
@@ -67,7 +67,7 @@ export function extractImageIds(content: Record<string, unknown> | null): string
         // which DROPS the same children. If one side walked an array-wrapped
         // child and the other did not, the two halves of the reference count
         // would disagree and the reaper would GC a still-referenced image.
-        if (typeof child === "object" && child !== null && !Array.isArray(child)) {
+        if (isTipTapNode(child)) {
           walk(child as Record<string, unknown>, depth + 1);
         }
       }
@@ -120,21 +120,32 @@ export async function applyImageRefDiff(
   }
   let newContent: Record<string, unknown> | null = null;
   if (newContentJson) {
+    // New content corrupt: abort. If we proceeded, extractImageIds would return
+    // [] and every old id would be classified as removed — silently
+    // decrementing every referenced image toward purge. Ref counts must stay
+    // conservative, not optimistic. Callers validate content before writing, so
+    // this path is latent today but the shared surface must be safe for future
+    // writers.
+    //
+    // S1 (dedup review 2026-07-26): the guard used to be a bare try/catch, and
+    // its own comment named `extractImageIds(null)` as the case it prevented —
+    // which the catch cannot see, because `JSON.parse("null")` RETURNS null
+    // rather than throwing. So did "42", '"text"' and "[]". The shape check is
+    // what actually closes the case the comment always claimed to.
+    let parsed: unknown;
     try {
-      newContent = JSON.parse(newContentJson);
+      parsed = JSON.parse(newContentJson);
     } catch {
-      // New content corrupt: abort. If we proceeded, extractImageIds(null)
-      // would return [] and every old id would be classified as removed —
-      // silently decrementing every referenced image toward purge. Ref
-      // counts must stay conservative, not optimistic. Callers validate
-      // content before writing, so this path is latent today but the
-      // shared surface must be safe for future writers.
+      parsed = null;
+    }
+    if (!isTipTapNode(parsed)) {
       logger.warn(
         { project_id: projectId },
-        "applyImageRefDiff: newContent JSON.parse failed; aborting diff to avoid mass decrement",
+        "applyImageRefDiff: newContent is not a TipTap object; aborting diff to avoid mass decrement",
       );
       return;
     }
+    newContent = parsed;
   }
 
   const oldIds = extractImageIds(oldContent);

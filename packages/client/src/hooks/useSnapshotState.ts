@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { SNAPSHOT_ERROR_CODES } from "@smudge/shared";
+import { SNAPSHOT_ERROR_CODES, isTipTapNode } from "@smudge/shared";
 import { api } from "../api/client";
 // I16 (review 2026-04-24): import ApiRequestError via the errors
 // barrel so the file observes the boundary — only errors/ and
@@ -308,7 +308,7 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         } catch {
           return { ok: false, error: makeCorruptViewError() };
         }
-        if (content === null || typeof content !== "object" || Array.isArray(content)) {
+        if (!isTipTapNode(content)) {
           return { ok: false, error: makeCorruptViewError() };
         }
         setViewingSnapshot({

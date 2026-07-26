@@ -1,4 +1,5 @@
 import type { Knex } from "knex";
+import { isTipTapNode } from "@smudge/shared";
 import type {
   ChapterRow,
   ChapterRawRow,
@@ -26,8 +27,11 @@ function parseContent(row: Record<string, unknown>): ChapterRow {
       //
       // The three sites keep deliberately DIFFERENT degrade policies
       // (corrupt-flag here, empty-doc for outtakes, reject-restore for
-      // snapshots), so the guard is shared by shape, not by extraction.
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      // snapshots) — but that is an argument for sharing the PREDICATE and not
+      // the degrade, which is what isTipTapNode does (S1, dedup review
+      // 2026-07-26). The predicate was the extractable part all along; each
+      // caller still owns what happens inside the `if`.
+      if (!isTipTapNode(parsed)) {
         throw new TypeError("Chapter content is not a JSON object");
       }
       return { ...row, content: parsed } as ChapterRow;

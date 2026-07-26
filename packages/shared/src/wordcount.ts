@@ -1,7 +1,7 @@
 // Imported from the zero-dep tiptap-safety module rather than schemas so
 // countWords callers (notably the client bundle) don't pull in Zod just
 // to compute word counts.
-import { MAX_TIPTAP_DEPTH } from "./tiptap-safety";
+import { MAX_TIPTAP_DEPTH, isTipTapNode } from "./tiptap-safety";
 
 type TipTapNode = {
   type: string;
@@ -36,7 +36,7 @@ function extractText(node: TipTapNode, depth: number = 0): string {
     // top-level elements only) and DB-read content bypasses Zod entirely, so a
     // null/primitive/array child is reachable; reading .type off one threw.
     // Contributes no text and no separator — treat it as absent.
-    if (!child || typeof child !== "object" || Array.isArray(child)) continue;
+    if (!isTipTapNode(child)) continue;
     if (child.type !== "text" && !endsWithWhitespace) {
       parts.push(" ");
       endsWithWhitespace = true;

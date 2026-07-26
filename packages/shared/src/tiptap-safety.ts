@@ -20,6 +20,33 @@
 export const MAX_TIPTAP_DEPTH = 64;
 
 /**
+ * Is `value` something a TipTap walker may descend into — a non-null, non-array
+ * object?
+ *
+ * TipTapDocSchema constrains TOP-LEVEL elements only
+ * (`content: z.array(z.record(z.unknown()))`) and DB reads bypass Zod entirely,
+ * so a `null` / primitive / **array** child is reachable at every nested level.
+ * The array arm is the one that gets forgotten: `typeof [] === "object"`, so the
+ * first two arms let an array through, and an array has no `.content`, so a
+ * walker that returns it verbatim smuggles the whole subtree past its own
+ * filter.
+ *
+ * S1 (dedup review 2026-07-26): this expression was written out byte-identically
+ * at seven sites, and the depth-walkers test's "NEW WALKER?" box instructed
+ * authors to copy the literal — institutionalising the copy whose omission was
+ * the previous review's I2 bug. Callers keep their own degrade in the `if` body;
+ * only the predicate is shared, because only the predicate is the same.
+ *
+ * Two sites deliberately do NOT adopt it: tiptap-safety's own
+ * validateTipTapDepth needs array→`false` but primitive→`true`, and
+ * tiptap-notes' walker needs array→`undefined` but primitive→`node`. Neither
+ * can be expressed by one boolean.
+ */
+export function isTipTapNode(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
  * Walks a TipTap doc and returns false if any `content[]` recursion
  * exceeds MAX_TIPTAP_DEPTH. Exported so callers that work with already-
  * parsed documents (snapshot restore, find/replace) can apply the same
