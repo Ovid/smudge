@@ -148,7 +148,10 @@ export function OuttakesPanel({ projectId, onInsert, capturedOuttake }: Outtakes
     : outtakes;
 
   return (
-    <div className="border-l border-border/60 bg-bg-sidebar flex flex-col h-full overflow-hidden w-80 min-w-80">
+    // Frame (border/background/overflow) and width are the owning <aside>'s —
+    // re-declaring them here fought the user's panel resize (I2). Matches the
+    // sibling tab, ImageGallery.
+    <div className="flex flex-col h-full">
       <div className="border-b border-border/40 px-4 py-3 flex flex-col gap-2">
         <input
           type="text"

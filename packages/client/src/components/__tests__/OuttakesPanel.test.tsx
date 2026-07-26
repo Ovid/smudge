@@ -223,6 +223,22 @@ describe("OuttakesPanel", () => {
     expect(screen.getAllByDisplayValue("Captured")).toHaveLength(1);
   });
 
+  it("does not re-declare the reference panel frame or pin its own width (I2)", async () => {
+    // The owning <aside> supplies the border, background, overflow and the
+    // user-resizable width (240-480px). Re-declaring them here pinned the
+    // content at 320px: below that the panel refused to shrink (spurious
+    // horizontal scrollbar, clipped by the aside), above it a dead gutter and
+    // a duplicate border. jsdom does no layout, so the class list IS the
+    // contract — the sibling tab (ImageGallery) is just "flex flex-col h-full".
+    const { container } = render(<OuttakesPanel {...defaultProps} />);
+    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
+
+    const root = container.firstElementChild!;
+    for (const owned of ["w-80", "min-w-80", "border-l", "bg-bg-sidebar"]) {
+      expect(root.classList.contains(owned)).toBe(false);
+    }
+  });
+
   it("mounting with a capture already in hand keeps the server list (C1)", async () => {
     // The capture POST completes before the panel mounts (the toolbar button
     // lives outside the panel, and the panel unmounts when the drawer is closed
