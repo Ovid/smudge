@@ -29,6 +29,11 @@ function extractText(node: TipTapNode, depth: number = 0): string {
   const parts: string[] = [];
   let endsWithWhitespace = true;
   for (const child of node.content) {
+    // Nested content[] is unvalidated by TipTapDocSchema (it constrains
+    // top-level elements only) and DB-read content bypasses Zod entirely, so a
+    // null/primitive/array child is reachable; reading .type off one threw.
+    // Contributes no text and no separator — treat it as absent.
+    if (!child || typeof child !== "object" || Array.isArray(child)) continue;
     if (child.type !== "text" && !endsWithWhitespace) {
       parts.push(" ");
       endsWithWhitespace = true;

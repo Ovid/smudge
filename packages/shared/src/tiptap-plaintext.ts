@@ -13,6 +13,10 @@ function needsNewline(out: string[]): boolean {
   return last !== undefined && !last.endsWith("\n");
 }
 function walk(node: Node, depth: number, out: string[]): void {
+  // Nested content[] is unvalidated by TipTapDocSchema and DB-read content
+  // bypasses Zod, so a null/primitive/array child is reachable; dereferencing
+  // one threw. Contributes nothing, exactly like an unknown empty node.
+  if (!node || typeof node !== "object" || Array.isArray(node)) return;
   if (depth > MAX_TIPTAP_DEPTH) return;
   if (typeof node.text === "string") {
     out.push(node.text);

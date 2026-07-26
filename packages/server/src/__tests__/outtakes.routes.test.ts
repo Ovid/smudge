@@ -42,6 +42,27 @@ describe("outtakes routes", () => {
       expect(res.status).toBe(400);
     });
 
+    it("does not 500 on a body TipTapDocSchema accepts but the walker cannot", async () => {
+      // TipTapDocSchema constrains top-level elements only, so nested null /
+      // primitive / array children pass validation and reach stripImageNodes.
+      // An unguarded walk threw there, surfacing as 500 INTERNAL_ERROR — a
+      // status the API contract does not allow for a malformed body.
+      const projectId = await createProject();
+      const res = await request(t.app)
+        .post(`/api/projects/${projectId}/outtakes`)
+        .send({
+          content: {
+            type: "doc",
+            content: [
+              { type: "paragraph", content: [null, 42, [{ type: "image", attrs: { src: "/x" } }]] },
+            ],
+          },
+        });
+      expect(res.status).toBe(201);
+      // The array-wrapped image is dropped, not smuggled past the strip.
+      expect(JSON.stringify(res.body.content)).not.toContain("image");
+    });
+
     it("returns 404 for an unknown project", async () => {
       const res = await request(t.app)
         .post(`/api/projects/${UNKNOWN_UUID}/outtakes`)

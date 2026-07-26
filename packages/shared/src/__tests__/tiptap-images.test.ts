@@ -27,6 +27,19 @@ describe("stripImageNodes", () => {
   it("returns an empty doc when the top-level node is itself an image", () => {
     expect(stripImageNodes({ type: "image" })).toEqual({ type: "doc", content: [] });
   });
+  // TipTapDocSchema constrains TOP-LEVEL elements only (z.array(z.record(...)));
+  // nested content[] is unvalidated, so the walker cannot assume child shape.
+  it("survives a malformed child without throwing", () => {
+    const doc = { type: "doc", content: [{ type: "paragraph", content: [null, 42, "x"] }] };
+    expect(() => stripImageNodes(doc as Record<string, unknown>)).not.toThrow();
+  });
+  it("drops an array-wrapped child rather than letting its image survive", () => {
+    const doc = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [[{ type: "image", attrs: { src: "/x.png" } }]] }],
+    };
+    expect(JSON.stringify(stripImageNodes(doc as Record<string, unknown>))).not.toContain("image");
+  });
   it("caps recursion at MAX_TIPTAP_DEPTH without throwing", () => {
     let node: Record<string, unknown> = { type: "text", text: "x" };
     for (let i = 0; i < 200; i++) node = { type: "paragraph", content: [node] };

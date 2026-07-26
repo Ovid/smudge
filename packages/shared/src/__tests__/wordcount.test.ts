@@ -6,6 +6,13 @@ describe("countWords", () => {
     expect(countWords(null)).toBe(0);
   });
 
+  it("survives malformed children without throwing", () => {
+    // Chapters read from the DB bypass Zod, and TipTapDocSchema constrains
+    // top-level elements only, so a nested null/primitive child is reachable.
+    const doc = { type: "doc", content: [{ type: "paragraph", content: [null, 42, "x"] }] };
+    expect(() => countWords(doc as Record<string, unknown>)).not.toThrow();
+  });
+
   it("returns 0 for empty document", () => {
     expect(countWords({ type: "doc", content: [{ type: "paragraph" }] })).toBe(0);
   });

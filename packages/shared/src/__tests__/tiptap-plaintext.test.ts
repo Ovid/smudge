@@ -49,6 +49,9 @@ describe("toPlainText", () => {
     expect(toPlainText(null)).toBe("");
     expect(toPlainText(doc([]))).toBe("");
   });
+  it("survives malformed children without throwing", () => {
+    expect(toPlainText(doc([{ type: "paragraph", content: [null, 42, "x"] }]))).toBe("");
+  });
   it("caps recursion at MAX_TIPTAP_DEPTH without throwing", () => {
     let node: Record<string, unknown> = { type: "text", text: "deep" };
     for (let i = 0; i < 200; i++) node = { type: "paragraph", content: [node] };

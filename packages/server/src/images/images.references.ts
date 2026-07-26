@@ -62,7 +62,12 @@ export function extractImageIds(content: Record<string, unknown> | null): string
     }
     if (Array.isArray(node.content)) {
       for (const child of node.content) {
-        if (typeof child === "object" && child !== null) {
+        // Skip anything this walker cannot see inside — kept explicitly
+        // symmetric with stripImageNodes (packages/shared/src/tiptap-images.ts),
+        // which DROPS the same children. If one side walked an array-wrapped
+        // child and the other did not, the two halves of the reference count
+        // would disagree and the reaper would GC a still-referenced image.
+        if (typeof child === "object" && child !== null && !Array.isArray(child)) {
           walk(child as Record<string, unknown>, depth + 1);
         }
       }
