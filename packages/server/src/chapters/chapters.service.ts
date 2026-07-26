@@ -5,6 +5,7 @@ import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
 import {
   isCorruptChapter,
+  stripCorruptFlag,
   enrichChapterWithLabel,
   type ChapterWithLabel,
   type RestoredChapterResponse,
@@ -146,8 +147,10 @@ export async function updateChapter(
   } catch {
     // Enrichment failed but the save succeeded — fall back to status as label
     // so the client sees a successful save, not a false 500.
-    const { content_corrupt: _, ...clean } = updated;
-    enriched = { ...clean, status_label: updated.status };
+    // I5: route through the shared helper. This inline twin was re-introduced
+    // by b694a86 six days after e6fd38b consolidated the strips, and survived
+    // bdb6c99's fix to the identical shape in snapshots.service.ts.
+    enriched = { ...stripCorruptFlag(updated), status_label: updated.status };
   }
   return { chapter: enriched };
 }
