@@ -320,14 +320,3 @@
 - **Last seen:** 2026-06-04 on branch `operational-backup-stopgap` at `1aa1eec`
 - **Severity:** Suggestion
 
-## `9b5b9453` — `chapters.routes.ts` validates no UUID path params — malformed ids 404 instead of the 400 every sibling route returns
-- **File (at first sighting):** `packages/server/src/chapters/chapters.routes.ts:12`
-- **Symbol:** `chaptersRouter`
-- **Bug class:** Contract
-- **Description:** All four `/:id` handlers in `chaptersRouter` read `req.params.id as string` with no UUID validation, so a malformed id falls through to a service lookup and returns 404 NotFound. Three sibling surfaces return 400: outtakes and snapshots via the shared `validateUuidParam` helper, images via its own local `requireUuidParam` middleware (`images.routes.ts:20-30`). The client-observable contract therefore differs per endpoint. Pre-existing on `main`; surfaced only because branch `scratchpad-outtakes` added `validateUuidParam.ts`, whose doc comment claims the check is "shared by every route whose trust boundary is a UUID path param".
-- **Suggested fix:** Adopt `validateUuidParam(req, "chapter")` in the four chapters `/:id` handlers, accepting that those 404s become 400s. Fold `images.routes.ts`'s parallel `requireUuidParam` into the same helper while there, so the check exists once. Both are deliberate contract changes, not drive-bys — do them as their own change with route tests updated.
-- **Confidence:** Medium
-- **Found by:** Contract & Integration (`claude-opus-5[1m]`)
-- **First seen:** 2026-07-26 on branch `scratchpad-outtakes` at `5676476`
-- **Last seen:** 2026-07-26 on branch `scratchpad-outtakes` at `5676476`
-- **Severity:** Suggestion

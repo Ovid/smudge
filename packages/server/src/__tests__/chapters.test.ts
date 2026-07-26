@@ -2,6 +2,11 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import request from "supertest";
 import { UNTITLED_CHAPTER } from "@smudge/shared";
 import { setupTestDb } from "./test-helpers";
+
+// A well-formed UUID that is not in the DB. Distinct from a MALFORMED id,
+// which is a 400 (OOSS1) — these routes must still 404 for "valid shape,
+// no such row".
+const UNKNOWN_UUID = "11111111-1111-4111-8111-111111111111";
 import { logger } from "../logger";
 import * as ChapterService from "../chapters/chapters.service";
 
@@ -69,7 +74,7 @@ describe("GET /api/chapters/:id", () => {
   });
 
   it("returns 404 for non-existent chapter", async () => {
-    const res = await request(t.app).get("/api/chapters/nonexistent-id");
+    const res = await request(t.app).get(`/api/chapters/${UNKNOWN_UUID}`);
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe("NOT_FOUND");
   });
@@ -136,7 +141,7 @@ describe("PATCH /api/chapters/:id", () => {
   });
 
   it("returns 404 for non-existent chapter", async () => {
-    const res = await request(t.app).patch("/api/chapters/nonexistent-id").send({ title: "Nope" });
+    const res = await request(t.app).patch(`/api/chapters/${UNKNOWN_UUID}`).send({ title: "Nope" });
 
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe("NOT_FOUND");
@@ -269,7 +274,7 @@ describe("DELETE /api/chapters/:id", () => {
   });
 
   it("returns 404 for non-existent chapter", async () => {
-    const res = await request(t.app).delete("/api/chapters/nonexistent-id");
+    const res = await request(t.app).delete(`/api/chapters/${UNKNOWN_UUID}`);
 
     expect(res.status).toBe(404);
   });
@@ -354,7 +359,7 @@ describe("POST /api/chapters/:id/restore", () => {
   });
 
   it("returns 404 for non-existent chapter", async () => {
-    const res = await request(t.app).post("/api/chapters/nonexistent-id/restore");
+    const res = await request(t.app).post(`/api/chapters/${UNKNOWN_UUID}/restore`);
 
     expect(res.status).toBe(404);
   });
@@ -492,5 +497,24 @@ describe("PATCH /api/chapters/:id — target_word_count removed", () => {
       .send({ title: "Updated Title" });
     expect(res.status).toBe(200);
     expect(res.body).not.toHaveProperty("target_word_count");
+  });
+});
+
+describe("chapter routes reject a malformed :id with 400 (OOSS1)", () => {
+  const BAD_UUID = "not-a-uuid";
+
+  // Pre-existing on main: all four /:id handlers read req.params.id raw, so a
+  // malformed id fell through to a service lookup and 404'd — telling the client
+  // "this chapter does not exist" (stop retrying) when the truth is "you sent a
+  // malformed id". Its siblings already 400: snapshots and outtakes via
+  // validateUuidParam, images via its own requireUuidParam middleware.
+  it.each([
+    ["GET", () => request(t.app).get(`/api/chapters/${BAD_UUID}`)],
+    ["PATCH", () => request(t.app).patch(`/api/chapters/${BAD_UUID}`).send({ title: "x" })],
+    ["DELETE", () => request(t.app).delete(`/api/chapters/${BAD_UUID}`)],
+    ["POST restore", () => request(t.app).post(`/api/chapters/${BAD_UUID}/restore`)],
+  ])("%s returns 400, not 404", async (_method, send) => {
+    const res = await send();
+    expect(res.status).toBe(400);
   });
 });

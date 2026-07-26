@@ -2,6 +2,11 @@ import { Router } from "express";
 import { asyncHandler } from "../asyncHandler";
 import * as ChapterService from "./chapters.service";
 import { BadRequestError, ConflictError, InternalError, NotFoundError } from "../errors/appError";
+// OOSS1: these handlers read req.params.id raw, so a malformed id fell through
+// to a service lookup and 404'd ("this chapter does not exist" — stop
+// retrying) where the truth was "you sent a malformed id". Snapshots and
+// outtakes already 400 via this helper; images 400s via its own middleware.
+import { validateUuidParam } from "../validateUuidParam";
 
 export function chaptersRouter(): Router {
   const router = Router();
@@ -9,7 +14,7 @@ export function chaptersRouter(): Router {
   router.get(
     "/:id",
     asyncHandler(async (req, res) => {
-      const id = req.params.id as string;
+      const id = validateUuidParam(req, "chapter");
       const result = await ChapterService.getChapter(id);
       if (result === null) {
         throw new NotFoundError("Chapter not found.");
@@ -27,7 +32,7 @@ export function chaptersRouter(): Router {
   router.patch(
     "/:id",
     asyncHandler(async (req, res) => {
-      const id = req.params.id as string;
+      const id = validateUuidParam(req, "chapter");
       const result = await ChapterService.updateChapter(id, req.body);
       if (result === null) {
         throw new NotFoundError("Chapter not found.");
@@ -54,7 +59,7 @@ export function chaptersRouter(): Router {
   router.delete(
     "/:id",
     asyncHandler(async (req, res) => {
-      const id = req.params.id as string;
+      const id = validateUuidParam(req, "chapter");
       const deleted = await ChapterService.deleteChapter(id);
       if (!deleted) {
         throw new NotFoundError("Chapter not found.");
@@ -68,7 +73,7 @@ export function chaptersRouter(): Router {
   router.post(
     "/:id/restore",
     asyncHandler(async (req, res) => {
-      const id = req.params.id as string;
+      const id = validateUuidParam(req, "chapter");
       const result = await ChapterService.restoreChapter(id);
       if (result === null) {
         throw new NotFoundError("Deleted chapter not found.");
