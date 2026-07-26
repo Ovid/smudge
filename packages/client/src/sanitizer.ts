@@ -98,6 +98,15 @@ export const ALLOWED_ATTR: readonly string[] = Object.freeze(["src", "alt"]);
 // URL. The trailing alternation allows the rendered server URL form
 // (`/api/images/<uuid>`, with optional `?query` or `#fragment` or
 // nothing) but rejects extra path segments.
+//
+// S3 (dedup review 2026-07-26): this is byte-identical to the server's
+// ALLOWED_IMAGE_SRC (packages/server/src/export/export.renderers.ts) —
+// deliberately, since they are the two halves of one fail-closed rule
+// applied on two different rendering routes. The cross-reference used to
+// point only one way (export → here); it now points both ways, and
+// sanitizer.test.ts asserts the two patterns still accept the same set.
+// This is NOT the F-16 pair: IMAGE_SRC_RE's optional absolute-host arm
+// serves reference counting and must stay different.
 const ALLOWED_URI_REGEXP =
   /^\/api\/images\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[?#].*)?$/i;
 

@@ -9,10 +9,11 @@ import {
 } from "../errors/appError";
 import * as imagesService from "./images.service";
 import { UUID_PATTERN } from "./images.paths";
+import { MAX_IMAGE_UPLOAD_BYTES } from "@smudge/shared";
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB streaming rejection
+  limits: { fileSize: MAX_IMAGE_UPLOAD_BYTES }, // streaming rejection at the shared cap
 });
 
 const UUID_RE = new RegExp(`^${UUID_PATTERN}$`, "i");

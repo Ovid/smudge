@@ -61,6 +61,7 @@ export {
   SNAPSHOT_ERROR_CODES,
   MAX_QUERY_LENGTH,
   MAX_REPLACE_LENGTH,
+  MAX_IMAGE_UPLOAD_BYTES,
 } from "./constants";
 export type { SearchErrorCode, SnapshotErrorCode } from "./constants";
 export type {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useReducer } from "react";
-import type { ImageRow } from "@smudge/shared";
+import { MAX_IMAGE_UPLOAD_BYTES, type ImageRow } from "@smudge/shared";
 import { api } from "../api/client";
 import { mapApiError, applyMappedError, STOP } from "../errors";
 import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
@@ -16,7 +16,6 @@ interface ImageGalleryProps {
   externalRefreshKey?: number;
 }
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ANNOUNCEMENT_DURATION = 3000;
 const ACCEPTED_TYPES = "image/jpeg,image/png,image/gif,image/webp";
 
@@ -174,7 +173,7 @@ export function ImageGallery({
     // Reset input so the same file can be re-selected
     e.target.value = "";
 
-    if (file.size > MAX_FILE_SIZE) {
+    if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
       announce(S.fileTooLarge);
       return;
     }

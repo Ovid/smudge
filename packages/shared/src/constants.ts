@@ -27,6 +27,20 @@ export const MAX_QUERY_LENGTH = 1000;
 export const MAX_REPLACE_LENGTH = 10_000;
 
 /**
+ * Maximum accepted size of a single uploaded image, in bytes.
+ *
+ * S1 (dedup review 2026-07-26): the NUMBER was a bare literal in three files
+ * with no cross-reference — ImageGallery's pre-flight check, the multer
+ * streaming limit in images.routes, and the post-read check in images.service.
+ * All three CHECKS are correct and must stay (client pre-flight for a fast
+ * error, multer to reject mid-stream, service as the trust boundary); only the
+ * value was duplicated, so lowering the cap in one place would have left the
+ * client accepting a file the server rejects. Follows the DEFAULT_SERVER_PORT
+ * precedent above: one shared constant, imported at every site.
+ */
+export const MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+/**
  * Error codes emitted by the server in the { error: { code, message } }
  * envelope for 400 responses from search/replace endpoints. Shared so the
  * client can discriminate on these without string-literal drift.
