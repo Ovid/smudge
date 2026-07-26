@@ -1295,6 +1295,57 @@ describe("useProjectEditor", () => {
     warn.calledWith("handleCreateChapter recovery GET failed:", expect.any(Error));
   });
 
+  it("S2 (review 2026-07-26): handleCreateChapter's post-recovery dispatch bails in the PRE-LOAD window", async () => {
+    // The I3 recheck before this dispatch was hand-rolled id-only, even though
+    // the full-strength isStaleProject was already in scope in the same
+    // callback. The id check cannot see the pre-load window: the URL slug has
+    // advanced to B but loadProject has not finished, so projectRef still holds
+    // A's id and the compare passes. A create failure in project A then fires
+    // its banner over the project the user is navigating to.
+    const warn = expectConsole("warn");
+    const onError = vi.fn();
+    vi.mocked(api.chapters.create).mockRejectedValue(
+      new ApiRequestError("body parse error", 200, "BAD_JSON"),
+    );
+    let rejectRecovery!: (err: unknown) => void;
+    vi.mocked(api.projects.get).mockReset();
+    vi.mocked(api.projects.get)
+      .mockResolvedValueOnce(mockProject) // initial load for slug A
+      .mockReturnValueOnce(
+        new Promise((_res, rej) => {
+          rejectRecovery = rej;
+        }),
+      ) // the recovery GET, held open
+      .mockReturnValue(new Promise(() => {})); // slug B's load: never settles
+
+    const { result, rerender } = renderHook(
+      ({ slug }: { slug: string }) => useProjectEditor(slug),
+      {
+        initialProps: { slug: "test-project" },
+      },
+    );
+    await waitFor(() => expect(result.current.project).toBeTruthy());
+
+    let createPromise!: Promise<void>;
+    act(() => {
+      createPromise = result.current.handleCreateChapter(onError);
+    });
+    await waitFor(() => expect(api.projects.get).toHaveBeenCalledTimes(2));
+
+    // Only the URL moves — project B's GET never settles, so `project` stays A
+    // and an id-only comparison sees no drift at all.
+    rerender({ slug: "project-b" });
+
+    await act(async () => {
+      rejectRecovery(new Error("recovery GET boom"));
+      await createPromise;
+    });
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(result.current.error).toBeNull();
+    warn.calledWith("handleCreateChapter recovery GET failed:", expect.any(Error));
+  });
+
   it("when the handleCreateChapter recovery GET is aborted, no console.warn fires (stable across S10 4b.3c.2 fix)", async () => {
     // Abort-silence invariant mirror — unmount cleanup at
     // useProjectEditor.ts:273-280 fires createRecoveryAbortRef.abort()

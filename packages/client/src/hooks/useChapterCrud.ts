@@ -377,7 +377,14 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         // without this recheck the failure-axis banner fires on B for
         // an A event (worst case: setError surfaces the full-page
         // overlay when no onError is wired, tearing down B's editor).
-        if (projectRef.current?.id !== projectId) return;
+        // S2 (review 2026-07-26): use the full-strength guard already built at
+        // this callback's entry rather than a hand-rolled id-only compare. The
+        // id check alone cannot see the pre-load window — URL slug advanced to
+        // B, loadProject not yet finished, projectRef still holding A's id — so
+        // it waved through exactly the case the comment above describes, the
+        // worst of which is setError raising the full-page overlay on B for an
+        // A event when no onError is wired.
+        if (isStaleProject()) return;
         if (onError) {
           onError(message);
         } else {

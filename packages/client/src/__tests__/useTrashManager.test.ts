@@ -1095,6 +1095,105 @@ describe("handleRestore cross-project nav guard (review 2026-05-27 round 2)", ()
     expect(navigate).not.toHaveBeenCalled();
   });
 
+  it("S2 (review 2026-07-26): handleRestore bails in the PRE-LOAD window, where the id-only guard could not", async () => {
+    // The I1/I2 tests above advance BOTH project and slug — the post-load
+    // window, which an id-only compare catches. This is the other half: the URL
+    // slug has advanced to B but loadProject has not finished, so `project` is
+    // still A and projectRef.current.id still equals the captured id. The
+    // id-only guard passes here and lets A's success arm navigate the user out
+    // of the project they just opened. Only check 2 (slug, compared both ways)
+    // sees this window.
+    const projectA = makeProject();
+    const restoredA = {
+      ...makeChapter({ id: "ch-a", deleted_at: null, sort_order: 0 }),
+      project_slug: projectA.slug,
+    };
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    const handleDeleteChapter = vi.fn();
+    const seedConfirmedStatus = vi.fn();
+
+    let resolveRestore!: (chapter: typeof restoredA) => void;
+    vi.mocked(api.chapters.restore).mockImplementation(
+      () =>
+        new Promise<typeof restoredA>((resolve) => {
+          resolveRestore = resolve;
+        }),
+    );
+    vi.mocked(api.projects.trash).mockResolvedValue([makeChapter({ id: "ch-a" })]);
+
+    const { rerender, result } = renderHook(
+      ({ project, slug }: { project: ProjectWithChapters; slug: string }) =>
+        useTrashManager(project, slug, setProject, handleDeleteChapter, navigate, {
+          seedConfirmedStatus,
+        }),
+      { initialProps: { project: projectA, slug: projectA.slug } },
+    );
+
+    await act(async () => {
+      await result.current.openTrash();
+    });
+
+    let restorePromise!: Promise<void>;
+    act(() => {
+      restorePromise = result.current.handleRestore("ch-a");
+    });
+
+    // Only the URL moves. `project` stays A — this IS the pre-load window.
+    rerender({ project: projectA, slug: "project-b" });
+
+    await act(async () => {
+      resolveRestore(restoredA);
+      await restorePromise;
+    });
+
+    expect(setProject).not.toHaveBeenCalled();
+    expect(seedConfirmedStatus).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("S2 (review 2026-07-26): a restore FAILURE in the pre-load window does not banner over the incoming project", async () => {
+    // Catch-arm twin of the test above: pre-fix, A's restore-failure banner
+    // surfaced on whichever project the user was heading to.
+    const projectA = makeProject();
+    const setProject = vi.fn();
+    const navigate = vi.fn();
+    const handleDeleteChapter = vi.fn();
+
+    let rejectRestore!: (err: unknown) => void;
+    vi.mocked(api.chapters.restore).mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectRestore = reject;
+        }),
+    );
+    vi.mocked(api.projects.trash).mockResolvedValue([makeChapter({ id: "ch-a" })]);
+
+    const { rerender, result } = renderHook(
+      ({ project, slug }: { project: ProjectWithChapters; slug: string }) =>
+        useTrashManager(project, slug, setProject, handleDeleteChapter, navigate),
+      { initialProps: { project: projectA, slug: projectA.slug } },
+    );
+
+    await act(async () => {
+      await result.current.openTrash();
+    });
+
+    let restorePromise!: Promise<void>;
+    act(() => {
+      restorePromise = result.current.handleRestore("ch-a");
+    });
+
+    rerender({ project: projectA, slug: "project-b" });
+
+    await act(async () => {
+      rejectRestore(new ApiRequestError("nope", 500, "PROJECT_PURGED"));
+      await restorePromise;
+    });
+
+    expect(result.current.actionError).toBeNull();
+  });
+
   it("openTrash does NOT set actionError when project changes mid-fetch-failure", async () => {
     // Sibling pattern to handleRestore: openTrash's catch ran
     // `applyMappedError(..., { onMessage: setActionError })` unconditionally
