@@ -111,7 +111,7 @@ export function useTrashManager(
     // mechanism lives in refreshTrashList (4b.3d S13). EditorPage
     // stays mounted across project navigation so this is a routine
     // race.
-    const result = await refreshTrashList(project, projectRef, trashOp);
+    const result = await refreshTrashList(project, projectRef, slugRef, trashOp);
     if (result.kind === "aborted" || result.kind === "stale") return;
     if (result.kind === "ok") {
       setTrashedChapters(result.trashed);
@@ -368,7 +368,7 @@ export function useTrashManager(
       // setTrashedChapters; unlike openTrash this site does NOT set
       // setTrashOpen (already open) and does NOT log (the failure
       // banner via applyMappedError is sufficient signal).
-      const result = await refreshTrashList(project, projectRef, trashOp);
+      const result = await refreshTrashList(project, projectRef, slugRef, trashOp);
       if (result.kind === "aborted" || result.kind === "stale") return;
       if (result.kind === "ok") {
         setTrashedChapters(result.trashed);

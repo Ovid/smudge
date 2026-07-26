@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import { getCachedContent, clearCachedContent } from "./useContentCache";
 import { useAbortableSequence } from "./useAbortableSequence";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
+import { makeStaleProjectGuard } from "./staleProjectGuard";
 import {
   mapApiError,
   applyMappedError,
@@ -138,6 +139,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
       const slug = projectSlugRef.current;
       const projectId = projectRef.current?.id;
       if (!slug || !projectId) return;
+      const isStaleProject = makeStaleProjectGuard(projectRef, projectSlugRef);
       // I1 (review 2026-05-27 round 2): bump the per-create epoch BEFORE
       // anything else so any older create's still-pending recovery GET is
       // invalidated. The token is checked inside that GET's await branch
@@ -191,9 +193,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         // chapter into Project B's state, producing a phantom chapter
         // in the sidebar and pointing subsequent edits at the wrong
         // project's chapter id.
-        if (projectRef.current?.id !== projectId) return;
-        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
-          return;
+        if (isStaleProject()) return;
         setActiveChapter(newChapter);
         setChapterWordCount(0);
         setProject((prev) => (prev ? { ...prev, chapters: [...prev.chapters, newChapter] } : prev));
@@ -222,9 +222,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         // there. The drift guards convert that stale-A 404 into a
         // silent no-op — same discipline as the existing onError gate
         // below, just hoisted above the navigation side-effect.
-        if (projectRef.current?.id !== projectId) return;
-        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
-          return;
+        if (isStaleProject()) return;
         // S11 (4b.3c.3): a 404 means the project was deleted between
         // the sidebar render and the POST landing. The default banner
         // (createChapterProjectGone) was the wrong UX because the
@@ -568,9 +566,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
       // surfaced A's "failed to delete" banner on B. Mirrors the
       // captured-id discipline in handleCreateChapter / handleReorderChapters /
       // handleUpdateProjectTitle.
-      const startedForProjectId = projectRef.current?.id;
-      const isStaleProject = () =>
-        startedForProjectId !== undefined && projectRef.current?.id !== startedForProjectId;
+      const isStaleProject = makeStaleProjectGuard(projectRef, projectSlugRef);
       // Sequence abort + controller abort + backoff-unblock. Before S3
       // this path omitted the backoff-unblock, so a retry asleep in
       // backoff could wake up after the chapter was gone. The isStale()
@@ -705,6 +701,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
       const slug = projectSlugRef.current;
       const projectId = projectRef.current?.id;
       if (!slug || !projectId) return;
+      const isStaleProject = makeStaleProjectGuard(projectRef, projectSlugRef);
       // C5 (review 2026-04-24): abort any prior in-flight reorder
       // before issuing a new one so overlapping drag-drops cannot
       // commit out of drop order. The signal is threaded through the
@@ -750,9 +747,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         // Project B's chapters array — the filter by id then drops
         // everything (ids don't match), leaving Project B with an
         // empty chapters list until refresh.
-        if (projectRef.current?.id !== projectId) return;
-        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
-          return;
+        if (isStaleProject()) return;
         applyOrder();
       } catch (err) {
         // C5: ABORTED means a newer reorder superseded this one and is
@@ -760,9 +755,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         // call; stay silent and let the newer reorder land.
         if (signal.aborted) return;
         clientWarn("Failed to reorder chapters:", err);
-        if (projectRef.current?.id !== projectId) return;
-        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
-          return;
+        if (isStaleProject()) return;
         // I4: route through the onError callback rather than setError so
         // a 400 on id-list mismatch (recoverable per CLAUDE.md) surfaces
         // as a dismissible banner instead of tearing down the editor.

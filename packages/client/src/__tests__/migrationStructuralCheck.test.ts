@@ -117,7 +117,7 @@ export function collectTsSources(root: string): string[] {
 // `refreshTrashList(getProject(), projectRef, trashOp)` would silently
 // fail to recognize `trashOp` as consumed and surface a false-positive
 // "dead binding" offender. Today the only delegation site is
-// `refreshTrashList(project, projectRef, trashOp)` (no nested parens),
+// `refreshTrashList(project, projectRef, slugRef, trashOp)` (no nested parens),
 // so the check works. When a delegation call site needs nested parens,
 // extend the matcher with a paren-counting walker rather than tweaking
 // the regex — the symmetry with the inner `[^>]*` non-nested-generic
@@ -311,7 +311,7 @@ describe("client source-tree migration structural check", () => {
       import { refreshTrashList } from "./useTrashManager.refresh";
       function C() {
         const trashOp = useAbortableAsyncOperation();
-        const result = refreshTrashList(project, projectRef, trashOp);
+        const result = refreshTrashList(project, projectRef, slugRef, trashOp);
         return result;
       }
     `;

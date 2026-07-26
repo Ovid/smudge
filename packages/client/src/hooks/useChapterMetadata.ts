@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { api } from "../api/client";
 import { useAbortableSequence } from "./useAbortableSequence";
 import { useAbortableAsyncOperation } from "./useAbortableAsyncOperation";
+import { makeStaleProjectGuard } from "./staleProjectGuard";
 import { STRINGS } from "../strings";
 import { mapApiError, applyMappedError, devWarn, isApiError, clientWarn } from "../errors";
 import type { ChapterMetadataDeps } from "./useProjectEditor.types";
@@ -83,6 +84,7 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
       const slug = projectSlugRef.current;
       const projectId = projectRef.current?.id;
       if (!slug || !projectId) return undefined;
+      const isStaleProject = makeStaleProjectGuard(projectRef, projectSlugRef);
       // S6 (review 2026-04-21) + C1 (review 2026-04-24): drift guard —
       // see handleCreateChapter for full rationale.
       setProjectTitleError(null);
@@ -97,9 +99,7 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
         // (refuses saveProjectTitle when project.slug !== slug), but this
         // extra check keeps handleUpdateProjectTitle independently safe for
         // any future direct caller.
-        if (projectRef.current?.id !== projectId) return undefined;
-        if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
-          return undefined;
+        if (isStaleProject()) return undefined;
         projectSlugRef.current = updated.slug;
         setProject((prev) => (prev ? { ...prev, title: updated.title, slug: updated.slug } : prev));
         return updated.slug;
@@ -170,9 +170,7 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
       // (full-page overlay) when onError is omitted — both surfaces are
       // wrong-project leaks on A→B nav mid-PATCH. The drift guard bails
       // before either fires.
-      const startedForProjectId = projectRef.current?.id;
-      const isStaleProject = () =>
-        startedForProjectId !== undefined && projectRef.current?.id !== startedForProjectId;
+      const isStaleProject = makeStaleProjectGuard(projectRef, projectSlugRef);
       // I11: abort the prior in-flight PATCH before issuing a new one so
       // overlapping status clicks cannot land out-of-order at the server.
       const { promise: statusPromise, signal: statusSignal } = statusChangeOp.run((s) =>
@@ -343,9 +341,7 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
       // I2 (review 2026-05-27 round 2, sweep): capture project id at
       // entry so the catch's onError bails when the user has navigated
       // A → B mid-rename.
-      const startedForProjectId = projectRef.current?.id;
-      const isStaleProject = () =>
-        startedForProjectId !== undefined && projectRef.current?.id !== startedForProjectId;
+      const isStaleProject = makeStaleProjectGuard(projectRef, projectSlugRef);
       // I7: abort any prior in-flight rename before issuing a new one
       // so overlapping renames cannot commit out of typing order at the
       // server (same rationale as title/status abort refs).
