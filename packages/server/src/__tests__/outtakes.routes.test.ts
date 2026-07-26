@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
+import { logger } from "../logger";
 
 const t = setupTestDb();
 
@@ -78,7 +79,26 @@ describe("outtakes routes", () => {
       expect(res.status).toBe(400);
     });
 
-    // Oversize bodies yield 413 via the shared express.json limit (covered at that layer), so not re-tested here.
+    it("returns 413 for an oversize body", async () => {
+      // S12: the shared express.json limit is covered at that layer, but the
+      // client ships an outtake.create-specific 413 string whose only
+      // justification is that THIS route really does 413. Prove it end to end.
+      const projectId = await createProject();
+      const huge = "x".repeat(6 * 1024 * 1024); // over the 5mb express.json limit
+      // The global handler logs this through req.log (a per-request child), so
+      // silencing the parent before the request is what keeps the suite quiet.
+      const prevLevel = logger.level;
+      logger.level = "silent";
+      try {
+        const res = await request(t.app)
+          .post(`/api/projects/${projectId}/outtakes`)
+          .send({ content: { type: "doc", content: [{ type: "text", text: huge }] } });
+        expect(res.status).toBe(413);
+        expect(res.body.error.code).toBe("PAYLOAD_TOO_LARGE");
+      } finally {
+        logger.level = prevLevel;
+      }
+    });
   });
 
   describe("GET /api/projects/:id/outtakes", () => {
@@ -87,6 +107,10 @@ describe("outtakes routes", () => {
       await request(t.app)
         .post(`/api/projects/${projectId}/outtakes`)
         .send({ content: DOC, label: "first" });
+      // S4: distinct created_at so "newest-first" is unambiguous. Two POSTs in
+      // the same millisecond fall back to the id DESC tiebreak (a random
+      // UUIDv4), which orders them at random. Same gap as the service test.
+      await new Promise((r) => setTimeout(r, 5));
       await request(t.app)
         .post(`/api/projects/${projectId}/outtakes`)
         .send({ content: DOC, label: "second" });

@@ -10,7 +10,16 @@ const TABLE = "outtakes";
 function parseRow(row: Record<string, unknown>): OuttakeRow {
   let content: Record<string, unknown>;
   try {
-    content = JSON.parse(row.content as string) as Record<string, unknown>;
+    const parsed: unknown = JSON.parse(row.content as string);
+    // S1: "valid JSON, wrong shape" ("null", "42", "[]", '"text"') parses
+    // without throwing, so guarding only the throw let a non-object escape as
+    // OuttakeRow.content — which callers dereference unguarded (EditorPage
+    // reads content.content, OuttakeCard walks it for the word count). Route it
+    // through the same degrade, mirroring snapshots.service.ts.
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new TypeError("Outtake content is not a JSON object");
+    }
+    content = parsed as Record<string, unknown>;
   } catch (err) {
     // ponytail: degrade one corrupt row to an empty doc (not a corrupt-flag
     // like chapters). Single-user, unreachable in-app, and keeps content

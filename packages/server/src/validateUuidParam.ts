@@ -7,8 +7,14 @@ const UuidSchema = z.string().uuid();
 /**
  * Validate the `:id` route param as a UUID, returning it or throwing a 400.
  * The optional label names the entity in the message ("Invalid chapter id.");
- * omit it for a generic "Invalid id." Shared by every route whose trust
- * boundary is a UUID path param so the check cannot drift per endpoint.
+ * omit it for a generic "Invalid id."
+ *
+ * S10: adoption is NOT universal — this is the shared helper for snapshots and
+ * outtakes only. `images.routes.ts` runs its own parallel `requireUuidParam`
+ * regex middleware with differently-worded copy, and `chapters.routes.ts`
+ * validates nothing (a malformed id there falls through to a lookup and 404s
+ * where these routes 400). Prefer this helper for new routes; converting the
+ * two holdouts is a client-observable contract change, not a drive-by.
  */
 export function validateUuidParam(req: Request, label?: string): string {
   const parsed = UuidSchema.safeParse(req.params.id);

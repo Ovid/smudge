@@ -135,6 +135,31 @@ describe("outtakes repository", () => {
       );
       warnSpy.mockRestore();
     });
+
+    it.each([
+      ["null", "null"],
+      ["a number", "42"],
+      ["an array", "[]"],
+      ["a string", '"just text"'],
+    ])("degrades content that parses to %s (S1)", async (_label, stored) => {
+      // JSON.parse succeeds for all of these, so only guarding the throw let a
+      // non-object through as OuttakeRow.content — which the client then
+      // dereferences unguarded (EditorPage reads .content.content, OuttakeCard
+      // walks it for the word count).
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+      const projectId = await createProject();
+      const row = makeData(projectId, { label: "shapeless", content: stored });
+      await t.db("outtakes").insert(row);
+
+      const found = await OuttakesRepo.findById(t.db, row.id);
+
+      expect(found!.content).toEqual({ type: "doc", content: [] });
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ outtake_id: row.id }),
+        expect.any(String),
+      );
+      warnSpy.mockRestore();
+    });
   });
 
   describe("updateLabel()", () => {

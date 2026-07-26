@@ -302,6 +302,44 @@ describe("purgeOldTrash", () => {
     await db.destroy();
   });
 
+  it("deletes outtakes when their project is purged (S8)", async () => {
+    // purgeOldTrash deletes images and chapters explicitly and leaves the
+    // child tables to their FK cascade — which only holds because these tests
+    // assert it. Migration 015 added a third child table with no such
+    // assertion; orphaned outtakes are unreachable from any UI, so they would
+    // grow the DB silently.
+    const db = knex(createTestKnexConfig());
+    await db.raw("PRAGMA foreign_keys = ON");
+    await db.migrate.latest();
+
+    const now = new Date();
+    const old = new Date(now.getTime() - 31 * 24 * 60 * 60 * 1000).toISOString();
+
+    await db("projects").insert({
+      id: "p-outtake",
+      title: "Outtake Project Purge",
+      mode: "fiction",
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+      deleted_at: old,
+    });
+    await db("outtakes").insert({
+      id: "ot-purge-1",
+      project_id: "p-outtake",
+      label: "Cut scene",
+      content: '{"type":"doc"}',
+      created_at: now.toISOString(),
+      updated_at: now.toISOString(),
+    });
+
+    const result = await purgeOldTrash(db);
+
+    expect(result.projects).toBe(1);
+    expect(await db("outtakes").select("id")).toHaveLength(0);
+
+    await db.destroy();
+  });
+
   it("does not delete images for non-purged projects", async () => {
     const db = knex(createTestKnexConfig());
     await db.raw("PRAGMA foreign_keys = ON");
