@@ -1074,6 +1074,37 @@ describe("useProjectEditor", () => {
     warn.calledWith(expect.stringContaining("Failed to rename chapter:"), expect.any(Error));
   });
 
+  it("I3: handleRenameChapter keeps the optimistic title on UPDATE_READ_FAILURE", async () => {
+    // The server throws UPDATE_READ_FAILURE unconditionally when the
+    // post-update read-back fails, so it reaches rename as readily as save.
+    // Pre-fix it fell through to the generic catch: the DB held the new title,
+    // the sidebar kept the old one, and the user was told to try again —
+    // a silent, unreconciled divergence between UI and server.
+    const warn = expectConsole("warn");
+    vi.mocked(api.chapters.update).mockRejectedValue(
+      new ApiRequestError("read-back failed", 500, "UPDATE_READ_FAILURE"),
+    );
+
+    const { result } = renderHook(() => useProjectEditor("test-project"));
+    await waitFor(() => expect(result.current.activeChapter).toBeTruthy());
+
+    const onError = vi.fn();
+    await act(async () => {
+      await result.current.handleRenameChapter("ch1", "Committed Name", onError);
+    });
+
+    // The write landed, so the UI keeps the new title...
+    expect(result.current.activeChapter?.title).toBe("Committed Name");
+    expect(result.current.project?.chapters[0]!.title).toBe("Committed Name");
+    // ...and the user is told the response was unreadable, not to retry.
+    expect(onError).toHaveBeenCalledWith(STRINGS.error.renameChapterResponseUnreadable);
+    expect(result.current.error).toBeNull();
+    warn.calledWith(
+      expect.stringContaining("Failed to rename chapter:"),
+      expect.any(ApiRequestError),
+    );
+  });
+
   it("handleStatusChange updates chapter status optimistically", async () => {
     vi.mocked(api.chapters.update).mockResolvedValue({
       ...mockChapter1,

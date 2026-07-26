@@ -1442,3 +1442,43 @@ describe("chapter.flushBeforeNavigate scope (4b.3c.1 S16)", () => {
     expect(result.message).toBe(STRINGS.editor.flushBeforeNavigateFailed);
   });
 });
+
+// ---------------------------------------------------------------------------
+// I3 (dedup review 2026-07-26): one endpoint, one committed-code policy
+// ---------------------------------------------------------------------------
+
+describe("every scope fronting PATCH /api/chapters/:id shares its code policy", () => {
+  // chapters.service.ts throws UPDATE_READ_FAILURE UNCONDITIONALLY when the
+  // post-update read-back fails — it does not care which field was in the
+  // update — so it can reach any of the three scopes that front the endpoint.
+  // Only chapter.save declared it; rename and updateStatus declared `committed:`
+  // copy that was therefore UNREACHABLE for this code (the 2xx-BAD_JSON early
+  // return cannot fire for a 500, and possiblyCommitted on the byCode path
+  // requires committedCodes to list it).
+  //
+  // ┌─ NEW CALLER OF PATCH /api/chapters/:id? ────────────────────────────────┐
+  // │ Add its scope to this list. The assertions below then force it to carry │
+  // │ the same committed-intent policy as its three siblings.                 │
+  // └─────────────────────────────────────────────────────────────────────────┘
+  const CHAPTER_PATCH_SCOPES: ApiErrorScope[] = [
+    "chapter.save",
+    "chapter.rename",
+    "chapter.updateStatus",
+  ];
+
+  it.each(CHAPTER_PATCH_SCOPES)("%s declares UPDATE_READ_FAILURE as committed", (scope) => {
+    expect(SCOPES[scope].committedCodes ?? []).toContain("UPDATE_READ_FAILURE");
+  });
+
+  it.each(CHAPTER_PATCH_SCOPES)("%s maps UPDATE_READ_FAILURE to its own copy", (scope) => {
+    expect(SCOPES[scope].byCode?.UPDATE_READ_FAILURE).toBeTruthy();
+  });
+
+  it.each(CHAPTER_PATCH_SCOPES)("%s surfaces possiblyCommitted for the real error", (scope) => {
+    const err = new ApiRequestError("read-back failed", 500, "UPDATE_READ_FAILURE");
+    const mapped = mapApiError(err, scope);
+    expect(mapped.possiblyCommitted).toBe(true);
+    // ...and does NOT fall through to the retry-inviting fallback copy.
+    expect(mapped.message).not.toBe(SCOPES[scope].fallback);
+  });
+});

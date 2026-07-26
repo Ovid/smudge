@@ -95,6 +95,8 @@ export const STRINGS = {
     updateTitleProjectSlugLost:
       "This project was renamed and moved to a new URL. Refresh the page to continue editing.",
     renameChapterFailed: "Failed to rename chapter",
+    renameChapterResponseUnreadable:
+      "The rename may have been saved, but the server response was unreadable. Refresh to see the current title.",
     deleteFailed: "Failed to delete project",
     loadTrashFailed: "Failed to load trash",
     loadTrashFailedNetwork: "Failed to load trash — check your connection and try again.",

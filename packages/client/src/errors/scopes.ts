@@ -58,6 +58,19 @@ function truncateCodePoints(s: string, max: number): string {
   return result;
 }
 
+// I3 (dedup review 2026-07-26): codes PATCH /api/chapters/:id can emit that
+// mean "the write landed; only the read-back failed". chapters.service.ts
+// throws UPDATE_READ_FAILURE UNCONDITIONALLY — it does not care which field was
+// in the update — so it can reach ANY scope fronting that endpoint, not just
+// chapter.save. (Contrast CORRUPT_CONTENT, correctly absent from rename and
+// updateStatus because the service gates it on `content !== undefined`.)
+//
+// Shared here so a fourth caller of the endpoint cannot silently omit it; the
+// forcing check is the CHAPTER_PATCH_SCOPES table in apiErrorMapper.test.ts.
+// Each scope still supplies its OWN byCode copy — the policy is shared, the
+// wording is not.
+const CHAPTER_PATCH_COMMITTED_CODES = ["UPDATE_READ_FAILURE"];
+
 export type ApiErrorScope =
   | "project.load"
   | "projectList.load"
@@ -195,7 +208,7 @@ export const SCOPES = {
     // S8: UPDATE_READ_FAILURE means the server persisted the row but
     // couldn't serialize the response. Surface possiblyCommitted so
     // callers route through the committed/lock path.
-    committedCodes: ["UPDATE_READ_FAILURE"],
+    committedCodes: [...CHAPTER_PATCH_COMMITTED_CODES],
     // S3/S7 (4b.3c.1): UPDATE_READ_FAILURE and CORRUPT_CONTENT are 5xx
     // codes the server emits when a chapter PATCH cannot be served
     // safely (the write may have landed; the read-back failed; or the
@@ -245,7 +258,14 @@ export const SCOPES = {
   "chapter.rename": {
     fallback: STRINGS.error.renameChapterFailed,
     network: STRINGS.error.renameChapterFailedNetwork,
-    committed: STRINGS.error.possiblyCommitted,
+    committed: STRINGS.error.renameChapterResponseUnreadable,
+    // I3: without these, a 500 UPDATE_READ_FAILURE fell through to the
+    // retry-inviting fallback while the DB already held the new title —
+    // the sidebar kept the old one and nothing reconciled them. The
+    // `committed:` copy above was unreachable for this code, since the
+    // mapper's 2xx-BAD_JSON early return cannot fire for a 500.
+    byCode: { UPDATE_READ_FAILURE: STRINGS.error.renameChapterResponseUnreadable },
+    committedCodes: [...CHAPTER_PATCH_COMMITTED_CODES],
   },
   "chapter.reorder": {
     fallback: STRINGS.error.reorderFailed,
@@ -263,6 +283,13 @@ export const SCOPES = {
     fallback: STRINGS.error.statusChangeFailed,
     network: STRINGS.error.statusChangeFailedNetwork,
     committed: STRINGS.error.statusChangeResponseUnreadable,
+    // I3: same endpoint, same committed-intent code. The status handler's
+    // revert branch already self-heals in the common case (its recovery
+    // GET adopts the server's truth, which for this code IS the newly
+    // written status), but the local-revert arm — reached when that GET
+    // also fails — would otherwise fight the committed server state.
+    byCode: { UPDATE_READ_FAILURE: STRINGS.error.statusChangeResponseUnreadable },
+    committedCodes: [...CHAPTER_PATCH_COMMITTED_CODES],
   },
   "chapterStatus.fetch": {
     fallback: STRINGS.error.statusesFetchFailed,

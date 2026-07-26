@@ -352,9 +352,10 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
       const { promise, signal } = renameChapterOp.run((s) =>
         api.chapters.update(chapterId, { title }, s),
       );
-      try {
-        await promise;
-        if (signal.aborted) return;
+      // I3 (dedup review 2026-07-26): applying the new title is shared between
+      // the success path and the possibly-committed path, so it lives here
+      // rather than being written twice and drifting.
+      const applyTitle = () => {
         if (activeChapterRef.current?.id === chapterId) {
           // Only update the title — don't overwrite content with stale server data.
           // The editor holds the current truth (same principle as handleSave).
@@ -368,6 +369,11 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
             chapters: prev.chapters.map((c) => (c.id === chapterId ? { ...c, title } : c)),
           };
         });
+      };
+      try {
+        await promise;
+        if (signal.aborted) return;
+        applyTitle();
       } catch (err) {
         // I7: ABORTED means a newer rename superseded this one; stay
         // silent so the newer call's state update is not contradicted
@@ -381,6 +387,13 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
         // onError — useTrashManager-style wrong-project leak.
         if (isStaleProject()) return;
         applyMappedError(mapApiError(err, "chapter.rename"), {
+          // I3: UPDATE_READ_FAILURE (and 2xx BAD_JSON) mean the server wrote
+          // the new title and only the read-back failed. Reverting — which is
+          // what "do nothing" amounts to here — left the DB and the sidebar
+          // permanently disagreeing while the copy invited a retry. Keep the
+          // optimistic title and say the response was unreadable, mirroring
+          // the status handler's I6 branch.
+          onCommitted: () => applyTitle(),
           onMessage: (message) => onError?.(message),
         });
       }
