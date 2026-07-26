@@ -112,15 +112,20 @@ export function useSnapshotController(deps: SnapshotControllerDeps) {
     // lock banner is showing. The button gate is the UX affordance;
     // this is the invariant.
     //
-    // S5: announce the busy banner alongside the refusal, matching
-    // executeReplace/handleReplaceOne's lock-banner branch. Under normal
-    // operation the SnapshotBanner's canRestore gate suppresses the click
-    // entirely, so this runs only on a programmatic call — but the
-    // sibling replace paths surface the same copy for the same state, and
-    // diverging here would leave a future non-button caller silently
-    // dropping clicks.
+    // S5: announce the refusal rather than dropping the click silently. Under
+    // normal operation the SnapshotBanner's canRestore gate suppresses the
+    // click entirely, so this runs only on a programmatic call — but a future
+    // non-button caller must not silently lose it.
+    //
+    // I1 (dedup review 2026-07-26): this used to announce `mutationBusy`,
+    // "matching executeReplace/handleReplaceOne's lock-banner branch". Those
+    // two siblings were themselves wrong, so citing them turned a two-site
+    // drift into a three-site one. A lock is not a busy state: nothing is in
+    // flight and waiting never clears it (only EDITOR_REMOUNTED or UNLOCK
+    // does, and nothing in production dispatches UNLOCK). All three now say
+    // what is actually true and what actually helps — refresh.
     if (isEditorLocked()) {
-      setActionInfo(STRINGS.editor.mutationBusy);
+      setActionInfo(STRINGS.editor.lockedRefusal);
       return;
     }
 

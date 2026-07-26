@@ -214,8 +214,10 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       // user could open Ctrl+H and issue another replace, firing a fresh
       // PATCH + auto-snapshot while the UI claims nothing will touch server
       // state. Mirror handleRestoreSnapshot's guard exactly.
+      //
+      // I1: `lockedRefusal`, not `mutationBusy` — see useSnapshotController.
       if (isEditorLocked()) {
-        setActionInfo(STRINGS.editor.mutationBusy);
+        setActionInfo(STRINGS.editor.lockedRefusal);
         return;
       }
 
@@ -479,8 +481,10 @@ export function useFindReplaceController(deps: FindReplaceControllerDeps) {
       // C1: Same lock-banner guard as executeReplace/handleRestoreSnapshot.
       // Per-match Replace must not issue a server write while the lock
       // banner claims nothing will touch server state until refresh.
+      //
+      // I1: `lockedRefusal`, not `mutationBusy` — see useSnapshotController.
       if (isEditorLocked()) {
-        setActionInfo(STRINGS.editor.mutationBusy);
+        setActionInfo(STRINGS.editor.lockedRefusal);
         return;
       }
 
