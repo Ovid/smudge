@@ -13,8 +13,8 @@ import {
 } from "docx";
 import { stripNoteMarks } from "@smudge/shared";
 import type { ExportProjectInfo, ExportChapter, RenderOptions } from "./export.renderers";
+import { ALLOWED_IMAGE_SRC } from "./export.renderers";
 import { resolveImage, buildCaptionText, type ImageSource } from "./image-resolver";
-import { UUID_PATTERN } from "../images/images.paths";
 import { logger } from "../logger";
 
 // ---------------------------------------------------------------------------
@@ -321,8 +321,21 @@ async function blockToParagraphs(
         const src = attrs.src as string | undefined;
         if (!src) return [];
 
-        // Extract image ID from /api/images/{uuid} URL
-        const idMatch = src.match(new RegExp(`/api/images/(${UUID_PATTERN})`, "i"));
+        // C1 (dedup review 2026-07-26): gate on the ANCHORED export allowlist,
+        // then take the image id from its capture. This walker never renders
+        // HTML, so stripDisallowedImages — which every other export format gets
+        // via chapterContentToHtml — cannot run for it; carrying the allowlist
+        // here is DOCX's own route to the same guarantee, exactly parallel to
+        // the stripNoteMarks it already carries at tipTapToParagraphs.
+        //
+        // The previous UNANCHORED match extracted a UUID from anywhere in the
+        // string, so `https://evil.example/api/images/<uuid>`,
+        // `https://evil.example/?ref=/api/images/<uuid>/x` and
+        // `javascript:x/api/images/<uuid>` all embedded the local image bytes
+        // into a file the writer hands a beta reader, while every other format
+        // dropped the <img>. Nothing upstream validates attrs.src:
+        // TipTapDocSchema is .passthrough() and DB reads bypass Zod entirely.
+        const idMatch = ALLOWED_IMAGE_SRC.exec(src);
         if (!idMatch?.[1]) {
           logger.warn({ src }, "Image src not a recognized /api/images/ URL in docx export");
           return [];

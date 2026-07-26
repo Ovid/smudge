@@ -325,6 +325,33 @@ describe("renderDocx with images", () => {
     expect(mediaFiles.length).toBeGreaterThan(0);
   });
 
+  // C1 (dedup review 2026-07-26): the DOCX walker extracted the UUID with an
+  // UNANCHORED /api/images/(uuid) match, so a hostile src that merely *contains*
+  // a valid image path resolved to the local bytes and embedded them — where
+  // every HTML-route format drops the <img> via ALLOWED_IMAGE_SRC. DOCX cannot
+  // reuse stripDisallowedImages (it never renders HTML), so it carries the
+  // allowlist decision at its own walker, exactly as it carries stripNoteMarks.
+  it.each([
+    ["absolute host prefix", `https://evil.example/api/images/${"IMG"}`],
+    ["query-string smuggling", `https://evil.example/?ref=/api/images/${"IMG"}/x`],
+    ["javascript: scheme", `javascript:x/api/images/${"IMG"}`],
+    ["extra path segment", `/api/images/${"IMG"}/../../etc/passwd`],
+  ])("embeds no image bytes for a non-relative src (%s)", async (_label, template) => {
+    const src = template.replace("IMG", imageId);
+    const chapters: ExportChapter[] = [
+      {
+        id: "ch-1",
+        title: "Hostile Image",
+        content: { type: "doc", content: [{ type: "image", attrs: { src, alt: "x" } }] },
+        sort_order: 0,
+      },
+    ];
+    const buf = await renderDocx(projectInfo, chapters, { includeToc: false }, imageSrc);
+    const zip = await JSZip.loadAsync(buf);
+    const mediaFiles = Object.keys(zip.files).filter((f) => f.startsWith("word/media/"));
+    expect(mediaFiles).toEqual([]);
+  });
+
   it("renders a caption paragraph beneath a captioned image", async () => {
     const chapters: ExportChapter[] = [
       {
