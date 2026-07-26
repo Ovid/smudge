@@ -6,7 +6,25 @@ import { getImagesDir } from "../config/paths";
 // the image path helpers below keep a stable surface.
 export { getDataDir } from "../config/paths";
 
-export const ALLOWED_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+const MIME_TO_EXT: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/gif": "gif",
+  "image/webp": "webp",
+};
+
+/**
+ * The MIME types an upload may declare — the gate.
+ *
+ * S3 (dedup review 2026-07-26): derived from MIME_TO_EXT rather than re-typed.
+ * The two lists sat nine lines apart and had to agree, and this file already
+ * derives its third consumer (IMAGE_EXT_PATTERN) from the same map for exactly
+ * this reason. Drift failed closed but MISDIAGNOSED: a MIME added here alone
+ * reached validateMagicBytes' `default: return false` and was reported as
+ * "File content does not match declared type" — a content error for a config
+ * gap. No test bound the two.
+ */
+export const ALLOWED_MIMES = new Set(Object.keys(MIME_TO_EXT));
 
 /** Strict UUID v4 capture pattern — used by reference counting and export resolvers. */
 export const UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
@@ -28,13 +46,6 @@ export const IMAGE_SRC_REGEX = new RegExp(
   `src="/api/images/(${UUID_PATTERN})(?:[?#][^"]*)?"`,
   "gi",
 );
-
-const MIME_TO_EXT: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/gif": "gif",
-  "image/webp": "webp",
-};
 
 export function mimeToExt(mime: string): string | null {
   return MIME_TO_EXT[mime] ?? null;

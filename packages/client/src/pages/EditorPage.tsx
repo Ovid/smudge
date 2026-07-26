@@ -267,6 +267,12 @@ export function EditorPage() {
   // setActionInfo("Replaced N occurrences"), leaving a contradictory
   // success+failure banner pair pinned to one logical operation.
   const actionBusyRef = useRef(false);
+  // S2 (dedup review 2026-07-26): three sites in the settings-refresh flow used
+  // to read `mutation.isBusy() || isActionBusy()`, which is `A || (A || B)`.
+  // `mutation` is a single instance and isActionBusy is never shadowed, so those
+  // were pure tautologies — and misleading ones: they read as a stricter gate
+  // than the other 22 call sites, when they were identical. Every busy check
+  // goes through isActionBusy().
   const isActionBusy = useCallback(() => mutation.isBusy() || actionBusyRef.current, [mutation]);
 
   // I2: shared lock-banner predicate for entry points outside useEditorMutation
@@ -889,7 +895,7 @@ export function EditorPage() {
     // pending search that the user hasn't had a chance to re-kick-off.
     // Surface the mutationBusy banner so the user knows the refresh was
     // deferred and can retry once the mutation settles.
-    if (mutation.isBusy() || isActionBusy()) {
+    if (isActionBusy()) {
       setActionInfo(STRINGS.editor.mutationBusy);
       return;
     }
@@ -909,7 +915,7 @@ export function EditorPage() {
           // this .then would then stomp them with the pre-mutation GET
           // response. Skip the merge; a subsequent refresh picks up
           // the post-mutation state once the mutation settles.
-          if (mutation.isBusy() || isActionBusy()) return;
+          if (isActionBusy()) return;
           setProject((prev) => {
             if (!prev) return data;
             // I3 (review 2026-04-21): cross-project race. If the user
@@ -932,7 +938,7 @@ export function EditorPage() {
           // that fights with the mutation's own UI state. Skip the
           // banner; a subsequent refresh after the mutation settles
           // can re-surface a real failure.
-          if (mutation.isBusy() || isActionBusy()) return;
+          if (isActionBusy()) return;
           // 404 after a settings update means the project was deleted
           // (or purged) from another tab/request — refreshing here would
           // leave the user staring at a stale editor with a retry banner
@@ -946,7 +952,7 @@ export function EditorPage() {
           applyMappedError(mapApiError(err, "project.load"), { onMessage: setActionError });
         });
     }
-  }, [slug, setProject, setActionError, navigate, mutation, isActionBusy, settingsRefreshOp]);
+  }, [slug, setProject, setActionError, navigate, isActionBusy, settingsRefreshOp]);
 
   // Dedicated abortable op for the capture POST — never reuse a content-
   // mutation op (this flow touches no editor content).

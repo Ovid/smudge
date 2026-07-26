@@ -36,3 +36,22 @@ export function getDbPath(): string {
 export function getImagesDir(dataDir?: string): string {
   return path.join(dataDir ?? getDataDir(), "images");
 }
+
+/**
+ * Directory holding backup archives: `<cwd>/backups`.
+ *
+ * S7 (dedup review 2026-07-26): the one persistence location that never joined
+ * this owner — `join(process.cwd(), "backups")` was written out in both
+ * scripts/backup.ts and scripts/auto-backup.ts. If those two ever disagreed,
+ * `make backup` and `make dev`'s auto-backup would write to different places
+ * and rotateAutoBackups would prune only the directory it was handed, silently
+ * letting the other grow forever. restore.ts correctly needs no copy: the
+ * operator names the archive.
+ *
+ * Deliberately relative to `process.cwd()`, not to getDataDir(): backups are an
+ * operator artifact of a source checkout (see docs/backup.md), and writing them
+ * inside the data directory would fold each archive into the next one.
+ */
+export function getBackupsDir(): string {
+  return path.join(process.cwd(), "backups");
+}
