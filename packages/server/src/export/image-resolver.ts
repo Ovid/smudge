@@ -130,18 +130,29 @@ async function resolveImageSrcs(
   const uniqueIds = [...new Set(matches.map((m) => m[1]).filter(Boolean))] as string[];
 
   const images = new Map<string, ResolvedImage>();
-  let resolvedHtml = html;
+  const srcById = new Map<string, string>();
 
   for (const id of uniqueIds) {
     const result = await resolve(id);
     if (result) {
       images.set(id, result.image);
-      resolvedHtml = resolvedHtml.replace(
-        new RegExp(`src="/api/images/${id}"`, "gi"),
-        `data-image-id="${id}" src="${result.src}"`,
-      );
+      srcById.set(id.toLowerCase(), result.src);
     }
   }
+
+  // C1 (dedup review 2026-07-26): substitute in ONE pass driven by the same
+  // IMAGE_SRC_REGEX that found the ids, rather than rebuilding a second
+  // `src="/api/images/${id}"` pattern per image. The rebuilt pattern was a
+  // third encoding of "is this src an image reference?" and it had already
+  // drifted from this one — it could not match a src carrying a `?query`
+  // suffix, so an id found by the scanner still failed to substitute and the
+  // catch-all below then dropped the whole tag. One regex, no drift surface.
+  // An unresolved src is left untouched here on purpose: the catch-all is what
+  // strips it, so the fail-closed behaviour is unchanged.
+  let resolvedHtml = html.replace(IMAGE_SRC_REGEX, (whole, id: string) => {
+    const src = srcById.get(id.toLowerCase());
+    return src ? `data-image-id="${id}" src="${src}"` : whole;
+  });
 
   // Add figure/figcaption for images with captions or attribution
   for (const [id, img] of images) {

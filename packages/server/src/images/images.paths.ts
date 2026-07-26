@@ -11,8 +11,23 @@ export const ALLOWED_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "i
 /** Strict UUID v4 capture pattern — used by reference counting and export resolvers. */
 export const UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 
-/** Regex matching /api/images/{uuid} src attributes — case-insensitive, global. */
-export const IMAGE_SRC_REGEX = new RegExp(`src="/api/images/(${UUID_PATTERN})"`, "gi");
+/**
+ * Regex matching /api/images/{uuid} src attributes — case-insensitive, global.
+ *
+ * C1 (dedup review 2026-07-26): the optional `?query` / `#fragment` tail is
+ * load-bearing, not defensive. This scanner runs immediately downstream of
+ * ALLOWED_IMAGE_SRC (export.renderers.ts), which accepts that tail — so when
+ * this pattern demanded the closing quote right after the uuid, a suffixed src
+ * was kept by the allowlist, missed here, and then deleted outright from the
+ * export by the unresolved-image catch-all in image-resolver.ts. The two are
+ * pinned together by the third column of
+ * `shared/src/__tests__/image-src-allowlist-parity.test.ts`; widening either
+ * without the other turns it red.
+ */
+export const IMAGE_SRC_REGEX = new RegExp(
+  `src="/api/images/(${UUID_PATTERN})(?:[?#][^"]*)?"`,
+  "gi",
+);
 
 const MIME_TO_EXT: Record<string, string> = {
   "image/jpeg": "jpg",

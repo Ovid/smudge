@@ -23,6 +23,17 @@ import { resolve, dirname } from "node:path";
 // right and update both — a widened client accepts srcs the export drops (a
 // broken image in the downloaded file); a widened export embeds bytes the
 // client refuses to render.
+//
+// C1 (dedup review 2026-07-26): a THIRD encoding joined the corpus —
+// IMAGE_SRC_REGEX (packages/server/src/images/images.paths.ts), the export
+// resolver's scanner. It is not an allowlist (it answers "which id does this
+// src reference?", scanning inside HTML rather than testing a bare src), but it
+// runs IN SEQUENCE with ALLOWED_IMAGE_SRC on the export path: the allowlist
+// keeps the <img>, the scanner then decides whether it resolves. A src the
+// allowlist accepts and the scanner misses is silently DELETED from the export
+// by the unresolved-image catch-all in image-resolver.ts. That is exactly what
+// a `?query` suffix did before this column existed. Same corpus, same verdicts,
+// wrapped in the `src="…"` the scanner expects.
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CLIENT_SANITIZER = resolve(HERE, "../../../client/src/sanitizer.ts");
@@ -59,6 +70,28 @@ function readServerPattern(): RegExp {
   return new RegExp(tmpl[0]![1]!.replace("${UUID_PATTERN}", uuid[0]![1]!), "i");
 }
 
+/**
+ * Rebuild the export resolver's scanner from its template plus the same
+ * UUID_PATTERN. The `g` flag is dropped: `.test()` on a global regex is
+ * stateful, and this test only asks "does it match at all?".
+ */
+function readResolverPattern(): RegExp {
+  const src = readFileSync(SERVER_PATHS, "utf8");
+
+  const tmpl = Array.from(
+    src.matchAll(/^export const IMAGE_SRC_REGEX = new RegExp\(\s*`(.+)`,\s*"gi",?\s*\);$/gm),
+  );
+  expect(
+    tmpl.length,
+    "IMAGE_SRC_REGEX construction not found (or found more than once) in images.paths.ts — update this test.",
+  ).toBe(1);
+
+  const uuid = Array.from(src.matchAll(/^export const UUID_PATTERN = "(.+)";$/gm));
+  expect(uuid.length, "UUID_PATTERN not found in images.paths.ts — update this test.").toBe(1);
+
+  return new RegExp(tmpl[0]![1]!.replace("${UUID_PATTERN}", uuid[0]![1]!), "i");
+}
+
 const UUID = "11111111-2222-3333-4444-555555555555";
 
 // Every case both rules must agree on. The rejections are the ones that matter:
@@ -90,5 +123,17 @@ describe("client and server image-src allowlists agree", () => {
   it.each(CORPUS)("%s → accepted=%s on both sides", (_label, src, accepted) => {
     expect(client.test(src), `client sanitizer disagreed on ${JSON.stringify(src)}`).toBe(accepted);
     expect(server.test(src), `server export disagreed on ${JSON.stringify(src)}`).toBe(accepted);
+  });
+});
+
+describe("the export resolver's scanner agrees with the allowlist that gates it", () => {
+  const resolver = readResolverPattern();
+
+  it.each(CORPUS)("%s → resolvable=%s", (_label, src, accepted) => {
+    expect(
+      resolver.test(`src="${src}"`),
+      `export resolver disagreed on ${JSON.stringify(src)} — a src the allowlist keeps but the ` +
+        `resolver cannot see is deleted outright from the exported manuscript`,
+    ).toBe(accepted);
   });
 });

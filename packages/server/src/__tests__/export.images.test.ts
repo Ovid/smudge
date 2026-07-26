@@ -222,6 +222,28 @@ describe("resolveImagesInHtml", () => {
     expect(result.images.size).toBe(2);
     expect(result.html).not.toContain("/api/images/");
   });
+
+  // C1 (dedup review 2026-07-26): the export allowlist ALLOWED_IMAGE_SRC accepts
+  // a `?query` / `#fragment` suffix, and the scanner that runs immediately after
+  // it used to reject one — so the allowlist kept the <img>, the scanner found no
+  // id, and the unresolved-image catch-all deleted the tag outright. The image was
+  // visible in the editor and in the preview, and `deleteImage` refused to remove
+  // it as IMAGE_IN_USE, but it vanished from every HTML-route export with no
+  // warning. Nothing in the app emits a suffix today; nothing stops one either
+  // (TipTap preserves `src` verbatim and the paste path does not sanitize it), and
+  // a cache-buster would make it universal.
+  it.each([["a query suffix", "?v=2"], ["a fragment suffix", "#frag"]])(
+    "resolves an image whose src carries %s rather than deleting the tag",
+    async (_label, suffix) => {
+      const html = `<p>Before</p><img src="/api/images/${imageId}${suffix}" alt="Test"><p>After</p>`;
+      const result = await resolveImagesInHtml(html, imageSrc);
+
+      expect(result.images.has(imageId)).toBe(true);
+      expect(result.html).toContain("data:image/png;base64,");
+      expect(result.html).not.toContain("/api/images/");
+      expect(result.html).toContain("<p>Before</p>");
+    },
+  );
 });
 
 describe("resolveImagesForEpub", () => {
