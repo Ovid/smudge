@@ -182,6 +182,24 @@ describe("useSnapshotState", () => {
     ["number literal", "42"],
     ["string literal", '"hello"'],
     ["array literal", "[1,2,3]"],
+    // S5 (dedup review 2026-07-26): these four are the ones the old
+    // object-shape gate caught. The three below are objects, so it waved them
+    // through — viewable, but rejected by the server as CORRUPT_SNAPSHOT the
+    // moment the user clicked Restore. The gate now runs the same
+    // TipTapDocSchema the server restore does, so "viewable" and "restorable"
+    // agree on shape.
+    ["a non-doc node", '{"type":"paragraph"}'],
+    ["an object with no type", '{"foo":1}'],
+    [
+      "a doc nested past MAX_TIPTAP_DEPTH",
+      JSON.stringify(
+        (() => {
+          let node: Record<string, unknown> = { type: "text", text: "x" };
+          for (let i = 0; i < 100; i++) node = { type: "blockquote", content: [node] };
+          return { type: "doc", content: [node] };
+        })(),
+      ),
+    ],
   ])(
     "viewSnapshot returns corrupt-snapshot error when content parses as %s (not a TipTap doc)",
     async (_label, payload) => {

@@ -712,6 +712,35 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
       const { promise, signal } = reorderOp.run((s) =>
         api.projects.reorderChapters(slug, orderedIds, s),
       );
+
+      // S4 (dedup review 2026-07-26): the success branch and the
+      // possiblyCommitted branch applied the new order with
+      // character-for-character identical code — same [S20] inside-updater
+      // epoch check, same map, same filter. The committed branch's comment
+      // claimed it "stays hand-rolled because it pairs with the [S20]
+      // inside-updater epoch check", but the success branch carries that same
+      // check, so the justification was void. Precedent: applyTitle in the
+      // sibling useChapterMetadata, extracted for exactly this reason.
+      //
+      // S20 (4b.3c.2): defense-in-depth for the React-scheduling window between
+      // each branch's outer project check and this updater actually running. A
+      // setProject queued from a concurrent project-switch could drain first,
+      // making prev a different project than the one whose orderedIds we
+      // captured at handler entry — prev.chapters would then be walked with A's
+      // ids, every lookup would miss, and project B would be left with an empty
+      // chapter list until refresh.
+      const applyOrder = () =>
+        setProject((prev) => {
+          if (!prev) return prev;
+          if (prev.id !== projectId) return prev;
+          const reordered = orderedIds
+            .map((id, index) => {
+              const ch = prev.chapters.find((c) => c.id === id);
+              return ch ? { ...ch, sort_order: index } : undefined;
+            })
+            .filter(Boolean) as Chapter[];
+          return { ...prev, chapters: reordered };
+        });
       // S6 (review 2026-04-21) + C1 (review 2026-04-24): drift guard —
       // see handleCreateChapter for full rationale.
       try {
@@ -724,24 +753,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         if (projectRef.current?.id !== projectId) return;
         if (projectSlugRef.current !== slug && projectSlugRef.current !== projectRef.current?.slug)
           return;
-        setProject((prev) => {
-          if (!prev) return prev;
-          // S20 (4b.3c.2): defense-in-depth for the React-scheduling window
-          // between the outer check above and this updater running. A
-          // setProject queued from a concurrent project-switch could drain
-          // before this updater, making prev a different project than the
-          // one whose orderedIds we captured at handler entry. Without
-          // this guard, prev.chapters would be walked with A's ids and
-          // every miss filtered out, leaving project B empty.
-          if (prev.id !== projectId) return prev;
-          const reordered = orderedIds
-            .map((id, index) => {
-              const ch = prev.chapters.find((c) => c.id === id);
-              return ch ? { ...ch, sort_order: index } : undefined;
-            })
-            .filter(Boolean) as Chapter[];
-          return { ...prev, chapters: reordered };
-        });
+        applyOrder();
       } catch (err) {
         // C5: ABORTED means a newer reorder superseded this one and is
         // driving its own PATCH. Reverting here would stomp the live
@@ -765,26 +777,10 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
         // committed server state, and surface the committed copy so
         // the user knows the response was ambiguous.
         //
-        // The committed-branch setProject stays hand-rolled (outside of
-        // applyMappedError's onCommitted) because it pairs with the
-        // [S20] inside-updater epoch check — routing it through the
-        // helper would obscure the per-branch placement intent.
+        // Kept outside applyMappedError's onCommitted so the per-branch
+        // placement intent stays visible; the updater itself is applyOrder.
         if (mapped.possiblyCommitted) {
-          setProject((prev) => {
-            if (!prev) return prev;
-            // S20 (4b.3c.2): same scheduling guard as the success branch
-            // above — the committed-path updater is reached via the catch,
-            // but the project could still have switched in the React queue
-            // between the catch-arm outer check (line 1144) and here.
-            if (prev.id !== projectId) return prev;
-            const reordered = orderedIds
-              .map((id, index) => {
-                const ch = prev.chapters.find((c) => c.id === id);
-                return ch ? { ...ch, sort_order: index } : undefined;
-              })
-              .filter(Boolean) as Chapter[];
-            return { ...prev, chapters: reordered };
-          });
+          applyOrder();
         }
         // 4b.3c.2 S15: migrate the message-dispatch tail to applyMappedError.
         // ABORTED's message=null is handled inside the helper; onMessage

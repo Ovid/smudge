@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { SNAPSHOT_ERROR_CODES, isTipTapNode } from "@smudge/shared";
+import { SNAPSHOT_ERROR_CODES, TipTapDocSchema } from "@smudge/shared";
 import { api } from "../api/client";
 // I16 (review 2026-04-24): import ApiRequestError via the errors
 // barrel so the file observes the boundary — only errors/ and
@@ -294,27 +294,41 @@ export function useSnapshotState(chapterId: string | null): UseSnapshotStateRetu
         if (!full) {
           return { ok: false, error: makeCorruptViewError() };
         }
-        // SnapshotRow.content is typed as a JSON string on the wire.
-        // A parse failure, or a non-object payload (valid JSON like "42",
-        // "null", or "[1,2,3]"), means the stored snapshot is not a TipTap
-        // document and would crash the read-only preview editor. Mirror the
-        // server-side restore path (which gates on TipTapDocSchema.safeParse)
-        // by synthesizing a CORRUPT_SNAPSHOT ApiRequestError so the
-        // snapshot.view scope's byCode entry maps it to the
-        // "this snapshot is corrupt" copy.
+        // SnapshotRow.content is typed as a JSON string on the wire. A parse
+        // failure, or a payload that is not a TipTap document, means the
+        // snapshot cannot be shown; synthesize a CORRUPT_SNAPSHOT
+        // ApiRequestError so the snapshot.view scope's byCode entry maps it to
+        // the "this snapshot is corrupt" copy.
+        //
+        // S5 (dedup review 2026-07-26): gate on the SAME TipTapDocSchema the
+        // server restore path uses, which is what this comment always claimed.
+        // The old check was "non-null non-array object", a strict SUPERSET:
+        // `{"type":"paragraph"}`, `{"foo":1}` and over-depth docs were viewable
+        // but rejected as CORRUPT_SNAPSHOT the moment the user clicked Restore
+        // — asymmetric messaging about one stored row. The server's other
+        // restore gate, MAX_CHAPTER_CONTENT_BYTES, is deliberately NOT mirrored:
+        // it exists so a restored chapter stays inside the autosave body limit,
+        // which a read-only view never touches.
+        //
+        // The old comment also claimed a non-doc payload "would crash the
+        // read-only preview editor". It would not — snapshot view renders
+        // sanitized HTML via dangerouslySetInnerHTML, not a TipTap instance,
+        // and renderSnapshotContent already try/catches. The reason to gate is
+        // agreement with restore, not a crash.
         let content: unknown;
         try {
           content = JSON.parse(full.content);
         } catch {
           return { ok: false, error: makeCorruptViewError() };
         }
-        if (!isTipTapNode(content)) {
+        const doc = TipTapDocSchema.safeParse(content);
+        if (!doc.success) {
           return { ok: false, error: makeCorruptViewError() };
         }
         setViewingSnapshot({
           id: snapshot.id,
           label: snapshot.label,
-          content: content as Record<string, unknown>,
+          content: doc.data as Record<string, unknown>,
           created_at: snapshot.created_at,
         });
         return { ok: true };

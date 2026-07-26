@@ -122,6 +122,20 @@ describe("CreateSnapshotSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  // S9 (dedup review 2026-07-26): the two create schemas share
+  // sanitizedLabelBase and both write a nullable `text` column, but disagreed
+  // on the nullability modifier — snapshot `.optional()` 400s on an explicit
+  // null that outtake `.nullish()` accepts. Latent (no shipped client sends
+  // one) and a strict subset, so widening breaks nothing. UpdateOuttakeSchema
+  // stays `.nullable()`: a PATCH genuinely needs an explicit clear signal and
+  // must not treat "absent" as "clear".
+  it.each([
+    ["CreateSnapshotSchema", CreateSnapshotSchema, { label: null }],
+    ["CreateOuttakeSchema", CreateOuttakeSchema, { label: null, content: { type: "doc" } }],
+  ])("%s accepts an explicit null label", (_label, schema, body) => {
+    expect(schema.safeParse(body).success).toBe(true);
+  });
+
   it("sanitizes control characters in the label", () => {
     const result = CreateSnapshotSchema.safeParse({ label: "a\u0000b\u202Ec" });
     expect(result.success).toBe(true);

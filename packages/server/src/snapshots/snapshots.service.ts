@@ -57,6 +57,14 @@ export async function createSnapshot(
     const snapshot = await txStore.insertSnapshot({
       id: uuidv4(),
       chapter_id: chapterId,
+      // S9 (dedup review 2026-07-26): the review called this `.trim()` dead,
+      // because sanitizedLabelBase already trims and the route is the only
+      // production caller. True of that path — but createSnapshot is a service
+      // function callable directly, snapshots.service.test.ts asserts it trims
+      // as its own contract, and dropping it would be a behaviour change with
+      // no user-visible benefit. It stays. The substance of S9 — the
+      // `.optional()`/`.nullish()` disagreement with the outtake twin — is
+      // fixed in schemas.ts.
       label: label?.trim() || null,
       content,
       word_count: chapter.word_count,

@@ -208,9 +208,16 @@ const sanitizedLabelBase = z
   .transform(sanitizeSnapshotLabel)
   .pipe(z.string().trim().max(LABEL_MAX_UNITS, "Label is too long"));
 
+// S9 (dedup review 2026-07-26): `.nullish()`, matching CreateOuttakeSchema
+// below. The two share sanitizedLabelBase and both write a nullable `text`
+// column, but this one used `.optional()` — so an explicit `null` that the
+// outtake create accepts 400'd here. A strict subset, latent (no shipped client
+// sends one), and widening breaks no client. UpdateOuttakeSchema keeps
+// `.nullable()` on purpose: a PATCH needs an explicit clear signal and must not
+// read "absent" as "clear".
 export const CreateSnapshotSchema = z
   .object({
-    label: sanitizedLabelBase.optional(),
+    label: sanitizedLabelBase.nullish(),
   })
   .strict();
 
