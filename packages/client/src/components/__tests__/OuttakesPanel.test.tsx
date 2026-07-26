@@ -261,9 +261,7 @@ describe("OuttakesPanel", () => {
     // for project B: the stale row must not appear at all.
     const projectARow = makeOuttake({ id: "cap", project_id: "proj-A", label: "From A" });
     vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "b", label: "B row" })]);
-    render(
-      <OuttakesPanel {...defaultProps} projectId="proj-B" capturedOuttake={projectARow} />,
-    );
+    render(<OuttakesPanel {...defaultProps} projectId="proj-B" capturedOuttake={projectARow} />);
 
     await waitFor(() => expect(screen.getByDisplayValue("B row")).toBeInTheDocument());
     expect(screen.queryByDisplayValue("From A")).not.toBeInTheDocument();

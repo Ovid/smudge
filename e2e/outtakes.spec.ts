@@ -164,7 +164,10 @@ test.describe("Outtakes E2e Tests", () => {
     await expect(insertButton).toBeVisible();
 
     const occurrences = async () =>
-      editor.evaluate((el, needle) => (el.textContent ?? "").split(needle).length - 1, OUTTAKE_TEXT);
+      editor.evaluate(
+        (el, needle) => (el.textContent ?? "").split(needle).length - 1,
+        OUTTAKE_TEXT,
+      );
 
     // 1. Into an empty doc.
     await editor.click();

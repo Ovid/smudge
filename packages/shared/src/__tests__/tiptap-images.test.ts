@@ -46,7 +46,9 @@ describe("stripImageNodes", () => {
     // which is the one failure mode this walker exists to prevent.
     let node: Record<string, unknown> = { type: "image", attrs: { src: "/deep.png" } };
     for (let i = 0; i < 200; i++) node = { type: "paragraph", content: [node] };
-    expect(JSON.stringify(stripImageNodes({ type: "doc", content: [node] }))).not.toContain("image");
+    expect(JSON.stringify(stripImageNodes({ type: "doc", content: [node] }))).not.toContain(
+      "image",
+    );
   });
   it("caps recursion at MAX_TIPTAP_DEPTH without throwing", () => {
     let node: Record<string, unknown> = { type: "text", text: "x" };
