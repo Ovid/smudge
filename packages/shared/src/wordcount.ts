@@ -22,6 +22,9 @@ type TipTapNode = {
  * is defensive — protects against legacy rows or test fixtures that bypass
  * validation from stack-overflowing the walker.
  */
+// S9: the third "what separates text" encoding, and the only type-agnostic
+// one (any non-text child separates). See the cross-reference comment above
+// BLOCK_TYPES in tiptap-plaintext.ts before registering a new node type.
 function extractText(node: TipTapNode, depth: number = 0): string {
   if (depth > MAX_TIPTAP_DEPTH) return "";
   if (node.text) return node.text;

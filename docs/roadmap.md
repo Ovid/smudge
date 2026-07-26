@@ -1938,7 +1938,8 @@ codec)` plus three codec factories (`numberInRange`, `flag`, `text`). The
 >   verified via merged `feat(4c.1)`/`fix(4c.1)` commits).
 > - **4c.2** Scratchpad / Outtakes — 🔨 **In Progress** (brainstormed
 >   2026-07-19; design `docs/plans/2026-07-19-scratchpad-outtakes-design.md`,
->   plan to follow).
+>   plan `docs/plans/2026-07-19-scratchpad-outtakes-plan.md`, decisions
+>   `docs/roadmap-decisions/2026-07-19-phase-4c-2-scratchpad-outtakes.md`).
 > - **4c.2a** "Cut selection to outtakes" (destructive) — planned; split from
 >   4c.2, designed when reached.
 > - **4c.3** Tags & Cross-References — planned.

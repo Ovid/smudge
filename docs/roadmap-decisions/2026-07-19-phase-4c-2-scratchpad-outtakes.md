@@ -98,9 +98,12 @@ rationale.
 - **Summary:** F2/D2/E1 each deferred the "new capture appears in the panel"
   mechanism to the others, leaving the one cross-component coupling unspecified
   even though the e2e asserts it.
-- **Resolution:** fixed-in-plan — specified a single mechanism (a `refreshNonce`
-  lifted to `EditorPage`, passed to `OuttakesPanel`, re-triggering its abortable
-  load) across F2/D2/E1, with an end-to-end test.
+- **Resolution:** fixed-in-plan — specified a single mechanism across F2/D2/E1,
+  with an end-to-end test. **Amended during implementation (review 2026-07-26,
+  S13):** the specified `refreshNonce` reload was substituted for an optimistic
+  prepend (`capturedOuttake: OuttakeRow | null`), because a nonce-triggered
+  reload could be staled by a concurrent card delete/rename and silently drop
+  the capture. Still a single mechanism, which is what this finding asked for.
 
 ### 3 "New outtake" textarea → TipTap-doc wrapping unspecified
 - **Severity:** Minor

@@ -1,5 +1,16 @@
 import { MAX_TIPTAP_DEPTH } from "./tiptap-safety";
 type Node = { type?: string; text?: string; content?: Node[] };
+// S9: THREE independent encodings of "what separates text" live in shared, and
+// nothing forces a joint update when a node type is registered in
+// editorExtensions.ts:
+//   - BLOCK_TYPES here (tiptap-plaintext.ts) — inserts "\n" around a block
+//   - LEAF_BLOCKS (tiptap-text.ts) — which blocks find-and-replace flattens
+//   - extractText (wordcount.ts) — type-agnostic: ANY non-text child separates
+// They do not diverge today. They meet on one screen: OuttakeCard renders the
+// preview via toPlainText and the badge via countWords, so a new block type
+// absent from BLOCK_TYPES would mash blocks into "fooBar" in the preview while
+// the badge still counted two words. Adding a block type means visiting all
+// three (cross-referenced at each site).
 const BLOCK_TYPES = new Set([
   "paragraph",
   "heading",

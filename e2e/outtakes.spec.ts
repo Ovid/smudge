@@ -136,4 +136,60 @@ test.describe("Outtakes E2e Tests", () => {
     const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
     expect(results.violations).toEqual([]);
   });
+
+  // S11: design §8.5 specifies three insert edge behaviours — into an empty
+  // doc, over a non-empty selection (replaced), and at an inline cursor (block
+  // splits). All three are TipTap's own insertContent semantics, so only a real
+  // editor can exercise them: the unit suite mocks the editor as a chainable
+  // Proxy. Insert-over-a-selection is the destructive-looking one a writer hits
+  // by accident, having just used Ctrl+A to capture.
+  test("insert honours TipTap semantics: empty doc, over a selection, mid-block", async ({
+    page,
+    request,
+  }) => {
+    const OUTTAKE_TEXT = "Stashed sentence here";
+    const created = await request.post(`/api/projects/${project.id}/outtakes`, {
+      data: { content: tiptapText(OUTTAKE_TEXT), label: "Stashed" },
+    });
+    expect(created.ok()).toBeTruthy();
+
+    await gotoProjectEditor(page, project.slug);
+    const editor = page.getByRole("textbox", { name: "Chapter content" });
+    await expect(editor).toContainText(CHAPTER_TEXT);
+
+    await page.getByTitle("Toggle reference panel (Ctrl+.)").click();
+    await page.getByRole("tab", { name: "Outtakes" }).click();
+    const outtakesPanel = page.getByRole("tabpanel");
+    const insertButton = outtakesPanel.getByRole("button", { name: "Insert into editor" });
+    await expect(insertButton).toBeVisible();
+
+    const occurrences = async () =>
+      editor.evaluate((el, needle) => (el.textContent ?? "").split(needle).length - 1, OUTTAKE_TEXT);
+
+    // 1. Into an empty doc.
+    await editor.click();
+    await page.keyboard.press("Control+A");
+    await page.keyboard.press("Delete");
+    await expect(editor).not.toContainText(CHAPTER_TEXT);
+    await insertButton.click();
+    await expect.poll(occurrences, { timeout: 5000 }).toBe(1);
+
+    // 2. Over a non-empty selection: TipTap REPLACES it, so the count stays at
+    // one rather than doubling.
+    await editor.click();
+    await page.keyboard.press("Control+A");
+    await insertButton.click();
+    await expect.poll(occurrences, { timeout: 5000 }).toBe(1);
+
+    // 3. At an inline cursor mid-block: the block splits, so the doc gains
+    // paragraphs rather than appending to the existing one.
+    const paragraphsBefore = await editor.locator("p").count();
+    await editor.click();
+    await page.keyboard.press("Home");
+    for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowRight");
+    await insertButton.click();
+    await expect
+      .poll(() => editor.locator("p").count(), { timeout: 5000 })
+      .toBeGreaterThan(paragraphsBefore);
+  });
 });

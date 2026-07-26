@@ -837,18 +837,28 @@ Renders: label (inline-editable input; blur/Enter → `onUpdateLabel`), a previe
 
 **Props (alignment #2 — concrete capture-refresh mechanism):**
 
+> **Superseded during implementation (review 2026-07-26, item S13).** The
+> `refreshNonce` mechanism below was replaced by an optimistic prepend: the
+> panel takes `capturedOuttake: OuttakeRow | null` and prepends that row
+> directly. A nonce-triggered reload could be staled by a concurrent card
+> delete/rename, silently dropping the capture. The rest of this task
+> (textarea → doc wrapping, filter, error routing) is as delivered. Two bugs the
+> substitution introduced were found and fixed in the same review round: a mount
+> with a non-null `capturedOuttake` discarded the panel's list load (C1), and a
+> mutation landing during an in-flight load discarded it permanently (I3).
+
 ```ts
 interface OuttakesPanelProps {
   projectId: string;
   onInsert: (outtake: OuttakeRow) => void;
-  refreshNonce: number; // EditorPage bumps this after a toolbar capture; a change re-runs the load
+  capturedOuttake: OuttakeRow | null; // the row EditorPage's toolbar capture just POSTed
 }
 ```
 
 Loads the list via `api.outtakes.list` wrapped in `useAbortableAsyncOperation`,
-in a `useEffect` keyed on `[projectId, refreshNonce]` — so a toolbar-initiated
-capture (Task F2) that bumps `refreshNonce` makes the new outtake appear without
-the panel owning any capture logic. Renders a filter `<input>` (case-insensitive
+in a `useEffect` keyed on `[projectId, reloadKey]`. A toolbar-initiated capture
+(Task F2) hands its created row down as `capturedOuttake`; the panel prepends it
+without owning any capture logic and without a reload. Renders a filter `<input>` (case-insensitive
 substring over `label + toPlainText(content)`), a "New outtake" control, and the
 newest-first list of `OuttakeCard`. Errors route through
 `mapApiError(err, "outtake.list")` → `applyMappedError`. Prepends on local
@@ -875,8 +885,10 @@ function textToDoc(text: string): Record<string, unknown> {
 across a paragraph boundary — reuse the `toPlainText` newline guarantee); empty
 state shows `STRINGS.outtakes.empty`; create-from-textarea POSTs a **valid doc**
 (assert the posted body's `content.type === "doc"` and a paragraph carries the
-typed text) and prepends the returned row; a bumped `refreshNonce` re-fetches and
-shows a newly-captured row; a failed load surfaces the mapped message (assert via
+typed text) and prepends the returned row; a new `capturedOuttake` identity
+prepends the captured row (and mounting with one already in hand does NOT, since
+the mount load already contains it — C1); a failed load surfaces the mapped
+message (assert via
 `expectConsole` that no raw warning leaks).
 
 **Step 3 — Implement.** **Step 4b — REFACTOR** per the standing step. **Step 5 —
@@ -902,13 +914,14 @@ Commit:** `feat(4c.2): OuttakesPanel component`
     <OuttakesPanel
       projectId={project.id}
       onInsert={onInsertOuttake}
-      refreshNonce={outtakesRefreshNonce}
+      capturedOuttake={capturedOuttake}
     />
   ),
 },
 ```
 
-`onInsertOuttake` (Task F1) and `outtakesRefreshNonce` (Task F2) are owned by
+`onInsertOuttake` (Task F1) and `capturedOuttake` (Task F2, delivered in place
+of the `outtakesRefreshNonce` this plan first specified — see S13 above) are owned by
 `EditorPage` and threaded through `EditorMainContent`'s props (add both to its
 prop interface — this is the `editorEntryPointSurface` prop-surface that Task F2
 consciously updates). No `useReferencePanelState` change — `text` codec +
@@ -971,23 +984,27 @@ const handleSendSelectionToOuttakes = useCallback(async () => {
 }, [editor, project.id, currentChapterTitle]);
 ```
 
-Add the refresh state to `EditorPage`:
+Add the capture state to `EditorPage` (delivered form; the plan first specified
+`const [outtakesRefreshNonce, setOuttakesRefreshNonce] = useState(0)` — see S13):
 
 ```ts
-const [outtakesRefreshNonce, setOuttakesRefreshNonce] = useState(0);
+const [capturedOuttake, setCapturedOuttake] = useState<OuttakeRow | null>(null);
 ```
 
 > `captureOp` = a `useAbortableAsyncOperation()` instance in `EditorPage`. The
 > selection persists across focus change (ProseMirror keeps `state.selection` on
 > blur), so a toolbar click is safe. This entry point is **non-destructive** (no
 > `setEditable(false)`, no `markClean`, no save-pipeline invariants) — it only
-> reads the selection and POSTs, then bumps `outtakesRefreshNonce` so
-> `OuttakesPanel` re-loads (Task D2). Document the guard-axis choice ("none —
+> reads the selection and POSTs, then hands the created row down as
+> `capturedOuttake` so `OuttakesPanel` prepends it (Task D2). A re-entrancy
+> latch, not an abort, guards a second click: aborting a POST that may already
+> have committed orphans the row (review 2026-07-26, I4). Document the guard-axis choice ("none —
 > non-destructive read+POST") in the `editorEntryPointSurface` snapshot rationale.
 
 **Step 1 — Failing tests:** the button appears; clicking with a selection POSTs
-the stripped selection **and** bumps the refresh nonce (assert the panel shows the
-new row end-to-end in `EditorPageFeatures.test.tsx`); with no selection it no-ops;
+the stripped selection **and** surfaces the created row (assert the panel shows
+it end-to-end); with no selection it refuses with a visible message rather than
+no-opping silently (I5);
 the entry-point snapshot test fails until updated, then passes. **Step 3 —
 Implement.** **Step 4b — REFACTOR** per the standing step. **Step 5 — Commit:**
 `feat(4c.2): send-selection-to-outtakes toolbar entry point`

@@ -63,6 +63,9 @@ export interface ReplaceOptions extends SearchOptions {
 /** Maximum matches allowed in a single search/replace request. */
 export const MAX_MATCHES_PER_REQUEST = 10_000;
 
+// S9: one of three independent "what separates text" encodings — see the
+// cross-reference comment above BLOCK_TYPES in tiptap-plaintext.ts before
+// registering a new block-level node type.
 const LEAF_BLOCKS = new Set(["paragraph", "heading", "codeBlock"]);
 
 /**
