@@ -123,17 +123,24 @@ describe("PreviewMode", () => {
     expect(tocNav).toBeInTheDocument();
   });
 
-  it("renders empty string for null content", () => {
-    const chaptersWithNull: Chapter[] = [
-      {
-        ...chapters[0]!,
-        content: null,
-      },
+  // I3 (dedup review 2026-07-26): renderChapterHtml returned null for BOTH "no
+  // content" and "rendering threw", and the caller treated null as failure. A
+  // new project's first chapter is inserted with content: null, and DB reads
+  // hand that null straight to the client — so "create project → click Preview"
+  // told the writer their brand-new chapter was broken. An empty chapter is
+  // empty, not unrenderable.
+  it.each([
+    ["null content (a never-touched chapter)", null],
+    ["an empty document", { type: "doc", content: [] }],
+  ])("renders %s as empty, not as a render failure", (_label, content) => {
+    const chaptersWithEmpty: Chapter[] = [
+      { ...chapters[0]!, content: content as Chapter["content"] },
     ];
-    render(<PreviewMode chapters={chaptersWithNull} onNavigateToChapter={vi.fn()} />);
+    render(<PreviewMode chapters={chaptersWithEmpty} onNavigateToChapter={vi.fn()} />);
 
     // Chapter title should still render
     expect(screen.getByRole("heading", { name: "Chapter One" })).toBeInTheDocument();
+    expect(screen.queryByText("Unable to render content")).not.toBeInTheDocument();
   });
 
   it("updates activeTocId when IntersectionObserver fires", () => {

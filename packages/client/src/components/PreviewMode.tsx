@@ -31,8 +31,21 @@ export function PreviewMode({ chapters, onNavigateToChapter }: PreviewModeProps)
     return () => observer.disconnect();
   }, [chapters]);
 
+  /**
+   * Render a chapter for display, or return `null` if rendering FAILED.
+   *
+   * I3 (dedup review 2026-07-26): `null` used to mean both "there is no
+   * content" and "rendering threw", and the caller below reports null as
+   * "Unable to render content". A new project's first chapter is inserted with
+   * content: null and DB reads hand that null straight through, so creating a
+   * project and clicking Preview told the writer their untouched chapter was
+   * broken. An empty chapter renders as empty; only a throw is a failure.
+   * renderSnapshotContent (useSnapshotController) is the sibling encoding of
+   * this same degrade and never had the conflation — it returns its error copy
+   * from the catch alone.
+   */
   function renderChapterHtml(content: Record<string, unknown> | null): string | null {
-    if (!content) return null;
+    if (!content) return "";
     try {
       return renderEditorHtml(content);
     } catch {
@@ -68,7 +81,7 @@ export function PreviewMode({ chapters, onNavigateToChapter }: PreviewModeProps)
               </h2>
               {(() => {
                 const html = renderChapterHtml(chapter.content);
-                if (html) {
+                if (html !== null) {
                   return (
                     <div
                       className="prose prose-xl font-serif text-text-primary leading-[2] prose-headings:text-text-primary prose-headings:tracking-tight prose-a:text-accent prose-blockquote:border-l-accent-light prose-blockquote:text-text-secondary prose-hr:border-border"
