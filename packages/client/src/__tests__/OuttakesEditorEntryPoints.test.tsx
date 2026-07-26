@@ -78,6 +78,10 @@ vi.mock("../components/Editor", async () => {
         };
       }
       onEditorReady?.(fake);
+      // The real Editor clears the handle on unmount (Editor.tsx:461). The
+      // mock must too, or EditorPage keeps a live toolbarEditor for a view in
+      // which no editor is mounted — and guards that key off it silently pass.
+      return () => onEditorReady?.(null);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     return React.createElement("div", { "data-testid": "mock-editor" }, "editor");
@@ -230,6 +234,14 @@ async function openOuttakesTab(user: ReturnType<typeof userEvent.setup>) {
 }
 
 beforeEach(() => {
+  // PreviewMode builds an IntersectionObserver for its TOC scroll tracking;
+  // jsdom has none, and the resulting throw unmounts the whole tree. Same stub
+  // as EditorPageFeatures.test.tsx.
+  global.IntersectionObserver = vi.fn().mockImplementation(() => ({
+    observe: vi.fn(),
+    unobserve: vi.fn(),
+    disconnect: vi.fn(),
+  }));
   vi.clearAllMocks();
   // Reference-panel open/active-tab state is localStorage-backed; clear it so a
   // prior test that opened the Outtakes tab does not make the next test's
@@ -292,6 +304,31 @@ describe("F1: insert outtake at cursor", () => {
     // I5: the click must not vanish silently — say why it was refused, as
     // onInsertImage already does for the same "intentionally ignored" case.
     expect(await screen.findByText(STRINGS.editor.mutationBusy)).toBeInTheDocument();
+  });
+
+  it("S3/S4: refuses with 'switch to the editor', not 'please wait', when no editor is mounted", async () => {
+    // Preview / dashboard / trash view unmounts the Editor (onEditorReady(null))
+    // while the reference panel keeps rendering — and keeps its Insert buttons
+    // clickable. The old guard folded this into the busy arm and told the user
+    // "Another operation is in progress — please wait": nothing was in
+    // progress, and waiting never cleared it. Pre-I2 it was a silent no-op.
+    const user = userEvent.setup();
+    vi.mocked(api.outtakes.list).mockResolvedValue([outtake()]);
+    renderEditorPage();
+    await openOuttakesTab(user);
+    await screen.findByRole("button", { name: STRINGS.outtakes.insert });
+
+    // Leave the editor view; the panel (and its Insert button) stay on screen,
+    // because the ReferencePanel is rendered outside the view-mode branch
+    // (EditorMainContent) while the editor itself is not.
+    await user.click(screen.getByRole("button", { name: STRINGS.nav.preview }));
+    await waitFor(() => expect(screen.queryByTestId("mock-editor")).not.toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: STRINGS.outtakes.insert }));
+
+    expect(insertContentSpy).not.toHaveBeenCalled();
+    expect(await screen.findByText(STRINGS.editor.insertNeedsEditor)).toBeInTheDocument();
+    expect(screen.queryByText(STRINGS.editor.mutationBusy)).not.toBeInTheDocument();
   });
 
   it("no-ops when the outtake has no blocks (empty doc)", async () => {

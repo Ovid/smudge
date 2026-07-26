@@ -171,14 +171,17 @@ const EDITOR_MAIN_CONTENT_PROPS = [
   "activeTabId",
   "onSelectTab",
   "galleryExternalRefreshKey",
-  // Phase 3d: insert an image at the cursor. Guard axis (I2): identical to
-  // onInsertOuttake's — the persistent lock + the machine's editable flag —
-  // PLUS isActionBusy() for the extended post-mutation window. It gated on
-  // isActionBusy() alone until the lock axis was found missing.
+  // Phase 3d: insert an image at the cursor. Guard axis: guardInsertAtCursor().
   "onInsertImage",
   // Phase 4c.2: insert an outtake's blocks at the cursor. Guard axis:
-  // content/save — the machine's editable flag (via toolbarEditor.isEditable)
-  // + the persistent lock, NOT isActionBusy().
+  // guardInsertAtCursor() — the SAME call, not merely the same list. S4
+  // (review 2026-07-26): these two are one operation (write blocks into the
+  // mounted editor at the cursor) and used to carry two hand-written guard
+  // chains that had already drifted apart once (I2) and were still asymmetric
+  // afterwards — the image path gated on isActionBusy(), the outtake path did
+  // not, reconciled by a comment asserting both were correct. A comment is not
+  // a mechanism. A third insert-at-cursor entry point must call
+  // guardInsertAtCursor() too rather than growing a third chain.
   "onInsertOuttake",
   // Phase 4c.2: pure data — the panel prepends this captured row (I1). No guard.
   "capturedOuttake",

@@ -486,74 +486,82 @@ export function EditorPage() {
   // staled by a concurrent card delete/rename, silently dropping the capture.
   const [capturedOuttake, setCapturedOuttake] = useState<OuttakeRow | null>(null);
 
-  // Insert an outtake's blocks at the cursor. This IS an editor-content
-  // mutation, so it gates on the content/save axis — the machine's editable
-  // flag (mirrored into toolbarEditor.isEditable by the reconcile effect and
-  // the synchronous mutation lock-down) plus the persistent lock — NOT
-  // isActionBusy(). No-ops while the editor is not editable or is locked.
-  // Inserts the block ARRAY (content.content), never the wrapping doc node.
+  // S3 + S4 (review 2026-07-26): ONE guard for the two insert-at-cursor entry
+  // points. I2 established that inserting an image and inserting an outtake are
+  // the same operation — write blocks into the mounted editor at the cursor —
+  // and fixed the axes the image path was missing. The pair was still
+  // asymmetric in the other direction (the image path also gated on
+  // isActionBusy(), the outtake path did not) and the divergence was reconciled
+  // by a comment asserting both were correct. An assertion is not a mechanism;
+  // this is. Returns the editor to insert into, or null after announcing why
+  // the click was refused.
+  //
+  // The axes, in refusal order:
+  //   1. No editor mounted. Preview / dashboard / trash view unmounts the
+  //      Editor while the reference panel keeps rendering its Insert buttons.
+  //      Its own copy (S3) — announcing mutationBusy here was a lie: nothing is
+  //      in progress and waiting never clears it.
+  //   2. Persistent lock (terminal save failure). TipTap does not gate
+  //      programmatic dispatch on `editable`, so this must be checked, not
+  //      assumed.
+  //   3. Not editable, or the extended post-mutation window where the editor is
+  //      editable again but trailing banner/refresh work is still running
+  //      (actionBusyRef, via isActionBusy).
+  //
+  // On axis 3, honestly: it is defence-in-depth, not a reachable bug fix, and
+  // the review finding that prompted this refactor overstated it. Both flows
+  // that raise actionBusyRef — snapshot restore and project-wide replace —
+  // close the reference panel on open (handleToggleSnapshotPanel /
+  // handleToggleFindReplace call setPanelOpen(false)), and
+  // handleToggleReferencePanel refuses to reopen it while isActionBusy(), so
+  // neither Insert button is on screen during that window. The snapshot path
+  // additionally never yields between mutation.run() resolving and its finally.
+  // The axis is kept because it costs one predicate and the unreachability
+  // rests on panel-exclusivity invariants a future panel could break — but no
+  // test drives it, because no user gesture can.
+  const guardInsertAtCursor = useCallback((): TipTapEditor | null => {
+    if (!toolbarEditor) {
+      setActionInfo(STRINGS.editor.insertNeedsEditor);
+      return null;
+    }
+    if (editorMachine.isLocked()) {
+      setActionInfo(STRINGS.editor.lockedRefusal);
+      return null;
+    }
+    if (!toolbarEditor.isEditable || isActionBusy()) {
+      setActionInfo(STRINGS.editor.mutationBusy);
+      return null;
+    }
+    return toolbarEditor;
+  }, [toolbarEditor, editorMachine, isActionBusy, setActionInfo]);
+
+  // Insert an outtake's blocks at the cursor. Inserts the block ARRAY
+  // (content.content), never the wrapping doc node.
   const handleInsertOuttake = useCallback(
     (outtake: OuttakeRow) => {
-      if (!toolbarEditor) return;
-      // I5: a refused click must say why, exactly as onInsertImage does for the
-      // same "your click was intentionally ignored" case. In the locked-editor
-      // case, telling the user why input is refused is the entire point of the
-      // lock banner.
-      if (editorMachine.isLocked()) {
-        setActionInfo(STRINGS.editor.lockedRefusal);
-        return;
-      }
-      if (!toolbarEditor.isEditable) {
-        setActionInfo(STRINGS.editor.mutationBusy);
-        return;
-      }
+      const editor = guardInsertAtCursor();
+      if (!editor) return;
       const docContent = outtake.content.content;
       const blocks = Array.isArray(docContent) ? docContent : [];
       // An empty outtake is a card-level oddity, not a refused action — there
       // is nothing to report beyond "nothing happened because it is empty",
       // which the (visibly empty) card already says.
       if (blocks.length === 0) return;
-      toolbarEditor.chain().focus().insertContent(blocks).run();
+      editor.chain().focus().insertContent(blocks).run();
     },
-    [toolbarEditor, editorMachine, setActionInfo],
+    [guardInsertAtCursor],
   );
 
-  // Insert an image at the cursor. Same operation as handleInsertOuttake — both
-  // mutate the live document — so it carries the same content/save guard axis.
-  //
-  // I2 (dedup review 2026-07-26): this used to gate on isActionBusy() ALONE.
-  // That axis is false under the persistent lock raised by a terminal auto-save
-  // failure (useProjectEditor.onRequestEditorLock → applyReloadFailedLock):
-  // no mutation is in flight and there is no panel precondition. TipTap does not
-  // gate programmatic dispatch on `editable`, so the insert landed anyway,
-  // onUpdate set dirtyRef and wrote the mutated document into the draft cache —
-  // which outlives the refresh the lock banner tells the user to perform. The
-  // save-failure lock is the one lock state that coexists with an open image
-  // gallery, since the restore/replace locks arrive through panels that close
-  // the reference panel and refuse to reopen it.
-  //
-  // isActionBusy() is kept as well: unlike the lock it also covers the extended
-  // post-mutation window (actionBusyRef) during which the editor is editable
-  // again but trailing banner/refresh work is still running. The two axes are
-  // orthogonal, which is why handleInsertOuttake's "NOT isActionBusy()" note
-  // and this handler's extra check are both correct.
+  // Insert an image at the cursor. Same operation as handleInsertOuttake, so
+  // same guard — see guardInsertAtCursor above for the axes and why each is
+  // load-bearing (notably I2: the persistent lock, which TipTap's programmatic
+  // dispatch does not honour on its own).
   const handleInsertImage = useCallback(
     (url: string, alt: string) => {
-      if (editorMachine.isLocked()) {
-        setActionInfo(STRINGS.editor.lockedRefusal);
-        return;
-      }
-      if (!toolbarEditor?.isEditable) {
-        setActionInfo(STRINGS.editor.mutationBusy);
-        return;
-      }
-      if (isActionBusy()) {
-        setActionInfo(STRINGS.editor.mutationBusy);
-        return;
-      }
+      if (!guardInsertAtCursor()) return;
       editorRef.current?.insertImage(url, alt);
     },
-    [toolbarEditor, editorMachine, isActionBusy, setActionInfo],
+    [guardInsertAtCursor],
   );
 
   // Clean up image announcement timer on unmount.

@@ -166,6 +166,11 @@ export const STRINGS = {
       "Unable to save pending changes. Try again once your connection recovers before switching views.",
     mutationBusy: "Another operation is in progress — please wait.",
     lockedRefusal: "The editor is locked — refresh the page before continuing.",
+    // S3: no editor is mounted (preview / dashboard / trash view unmounts it
+    // while the reference panel stays on screen and its Insert buttons stay
+    // clickable). Distinct from mutationBusy: nothing is in progress, so
+    // "please wait" would be a lie and waiting would never help.
+    insertNeedsEditor: "Switch to the editor view to insert here.",
     refreshButton: "Refresh page",
   },
   shortcuts: {
