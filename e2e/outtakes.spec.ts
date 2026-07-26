@@ -1,16 +1,12 @@
-import { test, expect, type APIRequestContext } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
+import { createTestProject, deleteProject, getFirstChapter } from "./helpers/project";
 
 interface TestProject {
   id: string;
   title: string;
   slug: string;
-}
-
-interface TestChapter {
-  id: string;
-  title: string;
 }
 
 const CHAPTER_TEXT = "The quick brown fox";
@@ -22,27 +18,6 @@ function tiptapText(text: string): object {
   };
 }
 
-async function createTestProject(request: APIRequestContext): Promise<TestProject> {
-  // S6 (review 2026-04-25): Date.now() millisecond resolution can collide
-  // under Playwright sharding; append crypto.randomUUID() for hard uniqueness.
-  const res = await request.post("/api/projects", {
-    data: { title: `Outtakes Test ${Date.now()}-${crypto.randomUUID()}`, mode: "fiction" },
-  });
-  expect(res.ok()).toBeTruthy();
-  return res.json();
-}
-
-async function getFirstChapter(request: APIRequestContext, slug: string): Promise<TestChapter> {
-  const res = await request.get(`/api/projects/${slug}`);
-  expect(res.ok()).toBeTruthy();
-  const detail = await res.json();
-  return (detail.chapters as TestChapter[])[0]!;
-}
-
-async function deleteProject(request: APIRequestContext, slug: string) {
-  await request.delete(`/api/projects/${slug}`);
-}
-
 test.describe("Outtakes E2e Tests", () => {
   // Track creation explicitly so afterEach skips deleteProject when
   // beforeEach fails before the project is assigned (mirrors images.spec).
@@ -50,7 +25,7 @@ test.describe("Outtakes E2e Tests", () => {
   let projectCreated = false;
 
   test.beforeEach(async ({ request, page }) => {
-    project = await createTestProject(request);
+    project = await createTestProject(request, "Outtakes Test");
     projectCreated = true;
     // Seed the first chapter with known text so the editor has a selection.
     const chapter = await getFirstChapter(request, project.slug);

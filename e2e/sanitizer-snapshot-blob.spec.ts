@@ -1,5 +1,6 @@
-import { test, expect, type APIRequestContext } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
+import { createTestProject, deleteProject } from "./helpers/project";
 
 interface TestProject {
   id: string;
@@ -15,37 +16,6 @@ interface ProjectWithChapters extends TestProject {
   chapters: ChapterSummary[];
 }
 
-async function createTestProject(request: APIRequestContext): Promise<TestProject> {
-  // S6 (review 2026-04-25): Date.now() millisecond resolution can collide
-  // under Playwright sharding/parallel workers. Append crypto.randomUUID()
-  // for hard uniqueness so two concurrent project creates can't generate
-  // the same slug.
-  const res = await request.post("/api/projects", {
-    data: { title: `Sanitizer Test ${Date.now()}-${crypto.randomUUID()}`, mode: "fiction" },
-  });
-  expect(res.ok()).toBeTruthy();
-  const json = (await res.json()) as TestProject;
-  expect(json.id).toBeTruthy();
-  expect(json.slug).toBeTruthy();
-  return json;
-}
-
-async function deleteProject(request: APIRequestContext, slug: string) {
-  // S6 (review 2026-04-27, third pass): cleanup must not compete with
-  // the test's own assertion. See e2e/editor-save.spec.ts for the
-  // full rationale.
-  try {
-    const res = await request.delete(`/api/projects/${slug}`);
-    if (!res.ok()) {
-      console.warn(`deleteProject(${slug}): cleanup DELETE returned ${res.status()}`);
-    }
-  } catch (err) {
-    console.warn(
-      `deleteProject(${slug}): cleanup threw — ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-}
-
 test.describe("Sanitizer e2e (I14)", () => {
   // S* (review 2026-04-26 inline): track creation explicitly so afterEach
   // does not call deleteProject(request, project.slug) when beforeEach
@@ -55,7 +25,7 @@ test.describe("Sanitizer e2e (I14)", () => {
   let projectCreated = false;
 
   test.beforeEach(async ({ request }) => {
-    project = await createTestProject(request);
+    project = await createTestProject(request, "Sanitizer Test");
     projectCreated = true;
   });
 

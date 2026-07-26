@@ -193,9 +193,7 @@ describe("TipTap depth-guard contract (MAX_TIPTAP_DEPTH walkers)", () => {
   it("extractNotes reports no note below the depth cap (collect bails)", () => {
     const doc = deepDoc(OVER_CAP_DEPTH, {
       type: "paragraph",
-      content: [
-        { type: "text", text: "x", marks: [{ type: "note", attrs: { text: "spoiler" } }] },
-      ],
+      content: [{ type: "text", text: "x", marks: [{ type: "note", attrs: { text: "spoiler" } }] }],
     });
     expect(extractNotes(doc)).toEqual([]);
   });

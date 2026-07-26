@@ -686,6 +686,7 @@ export function useChapterCrud(deps: ChapterCrudDeps) {
       selectChapterSeq,
       deleteChapterOp,
       projectRef,
+      projectSlugRef,
       activeChapterRef,
       setProject,
       setActiveChapter,

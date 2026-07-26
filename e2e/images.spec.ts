@@ -1,16 +1,12 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { gotoProjectEditor, expectEditorReady } from "./helpers/gotoProjectEditor";
+import { createTestProject, deleteProject, getFirstChapter } from "./helpers/project";
 
 interface TestProject {
   id: string;
   title: string;
   slug: string;
-}
-
-interface TestChapter {
-  id: string;
-  title: string;
 }
 
 interface ImageRecord {
@@ -29,23 +25,6 @@ const TEST_PNG = Buffer.from(
   "base64",
 );
 
-async function createTestProject(request: APIRequestContext): Promise<TestProject> {
-  // S6 (review 2026-04-25): Date.now() millisecond resolution can collide
-  // under Playwright sharding; append crypto.randomUUID() for hard uniqueness.
-  const res = await request.post("/api/projects", {
-    data: { title: `Images Test ${Date.now()}-${crypto.randomUUID()}`, mode: "fiction" },
-  });
-  expect(res.ok()).toBeTruthy();
-  return res.json();
-}
-
-async function getFirstChapter(request: APIRequestContext, slug: string): Promise<TestChapter> {
-  const res = await request.get(`/api/projects/${slug}`);
-  expect(res.ok()).toBeTruthy();
-  const detail = await res.json();
-  return (detail.chapters as TestChapter[])[0]!;
-}
-
 async function uploadTestImage(
   request: APIRequestContext,
   projectId: string,
@@ -62,10 +41,6 @@ async function uploadTestImage(
   });
   expect(res.ok()).toBeTruthy();
   return res.json();
-}
-
-async function deleteProject(request: APIRequestContext, slug: string) {
-  await request.delete(`/api/projects/${slug}`);
 }
 
 function tiptapContentWithImage(imageId: string): object {
@@ -101,7 +76,7 @@ test.describe("Image Gallery & Reference Panel E2e Tests", () => {
   let projectCreated = false;
 
   test.beforeEach(async ({ request, page }) => {
-    project = await createTestProject(request);
+    project = await createTestProject(request, "Images Test");
     projectCreated = true;
     // Clear localStorage panel state so tests start from a known state
     await page.goto(`/projects/${project.slug}`);

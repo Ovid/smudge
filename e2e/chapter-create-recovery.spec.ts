@@ -1,46 +1,12 @@
-import { test, expect, type APIRequestContext } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { interceptWithSuccessBadJson } from "./helpers/interceptWithSuccessBadJson";
 import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
+import { createTestProject, deleteProject } from "./helpers/project";
 
 interface TestProject {
   id: string;
   title: string;
   slug: string;
-}
-
-async function createTestProject(request: APIRequestContext): Promise<TestProject> {
-  // Matches the unique-suffix pattern in editor-save.spec.ts: Date.now()
-  // millisecond resolution can collide under Playwright sharding, so append
-  // crypto.randomUUID() for hard uniqueness.
-  const res = await request.post("/api/projects", {
-    data: {
-      title: `Chapter Create Recovery ${Date.now()}-${crypto.randomUUID()}`,
-      mode: "fiction",
-    },
-  });
-  expect(res.ok()).toBeTruthy();
-  const json = (await res.json()) as TestProject;
-  expect(json.id).toBeTruthy();
-  expect(json.slug).toBeTruthy();
-  return json;
-}
-
-async function deleteProject(request: APIRequestContext, slug: string) {
-  // Cleanup must not compete with the test's own assertion. If the DELETE
-  // fails (transient blip, server crashed mid-test), log and continue — the
-  // test outcome captures the actual failure. A hard `expect()` here would
-  // surface a second, less-informative error from afterEach and mask the
-  // original test failure in the reporter.
-  try {
-    const res = await request.delete(`/api/projects/${slug}`);
-    if (!res.ok()) {
-      console.warn(`deleteProject(${slug}): cleanup DELETE returned ${res.status()}`);
-    }
-  } catch (err) {
-    console.warn(
-      `deleteProject(${slug}): cleanup threw — ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
 }
 
 test.describe("Chapter create recovery (4b.3c.1)", () => {
@@ -50,7 +16,7 @@ test.describe("Chapter create recovery (4b.3c.1)", () => {
   let projectCreated = false;
 
   test.beforeEach(async ({ request }) => {
-    project = await createTestProject(request);
+    project = await createTestProject(request, "Chapter Create Recovery");
     projectCreated = true;
   });
 

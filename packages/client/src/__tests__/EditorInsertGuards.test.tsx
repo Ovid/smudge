@@ -92,7 +92,6 @@ vi.mock("../components/Editor", async () => {
       onEditorReady?.(fake);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-    // eslint-disable-next-line no-restricted-syntax -- test fixture (not user-facing)
     return React.createElement("div", { "data-testid": "mock-editor" }, "editor");
   }
   return { Editor };

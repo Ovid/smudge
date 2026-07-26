@@ -232,7 +232,10 @@ describe("resolveImagesInHtml", () => {
   // warning. Nothing in the app emits a suffix today; nothing stops one either
   // (TipTap preserves `src` verbatim and the paste path does not sanitize it), and
   // a cache-buster would make it universal.
-  it.each([["a query suffix", "?v=2"], ["a fragment suffix", "#frag"]])(
+  it.each([
+    ["a query suffix", "?v=2"],
+    ["a fragment suffix", "#frag"],
+  ])(
     "resolves an image whose src carries %s rather than deleting the tag",
     async (_label, suffix) => {
       const html = `<p>Before</p><img src="/api/images/${imageId}${suffix}" alt="Test"><p>After</p>`;

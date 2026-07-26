@@ -1,43 +1,12 @@
-import { test, expect, type APIRequestContext } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { interceptWithSuccessBadJson } from "./helpers/interceptWithSuccessBadJson";
 import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
+import { createTestProject, deleteProject } from "./helpers/project";
 
 interface TestProject {
   id: string;
   title: string;
   slug: string;
-}
-
-async function createTestProject(request: APIRequestContext): Promise<TestProject> {
-  // S6 (review 2026-04-25): Date.now() millisecond resolution can collide
-  // under Playwright sharding; append crypto.randomUUID() for hard uniqueness.
-  const res = await request.post("/api/projects", {
-    data: {
-      title: `Snapshot Create Recovery ${Date.now()}-${crypto.randomUUID()}`,
-      mode: "fiction",
-    },
-  });
-  expect(res.ok()).toBeTruthy();
-  const json = (await res.json()) as TestProject;
-  expect(json.id).toBeTruthy();
-  expect(json.slug).toBeTruthy();
-  return json;
-}
-
-async function deleteProject(request: APIRequestContext, slug: string) {
-  // Cleanup must not compete with the test's own assertion. If the DELETE
-  // fails (transient blip, server crashed mid-test), log and continue —
-  // the test outcome captures the actual failure.
-  try {
-    const res = await request.delete(`/api/projects/${slug}`);
-    if (!res.ok()) {
-      console.warn(`deleteProject(${slug}): cleanup DELETE returned ${res.status()}`);
-    }
-  } catch (err) {
-    console.warn(
-      `deleteProject(${slug}): cleanup threw — ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
 }
 
 test.describe("Snapshot create recovery (4b.3c.2 I3)", () => {
@@ -47,7 +16,7 @@ test.describe("Snapshot create recovery (4b.3c.2 I3)", () => {
   let projectCreated = false;
 
   test.beforeEach(async ({ request }) => {
-    project = await createTestProject(request);
+    project = await createTestProject(request, "Snapshot Create Recovery");
     projectCreated = true;
   });
 

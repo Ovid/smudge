@@ -394,7 +394,7 @@ export function useChapterMetadata(deps: ChapterMetadataDeps) {
         });
       }
     },
-    [renameChapterOp, projectRef, activeChapterRef, setActiveChapter, setProject],
+    [renameChapterOp, projectRef, projectSlugRef, activeChapterRef, setActiveChapter, setProject],
   );
 
   return {

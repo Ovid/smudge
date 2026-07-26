@@ -1,6 +1,7 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
 import AxeBuilder from "@axe-core/playwright";
+import { createTestProject, deleteProject } from "./helpers/project";
 
 interface TestProject {
   id: string;
@@ -23,16 +24,6 @@ const TIPTAP_CONTENT = {
   ],
 };
 
-async function createTestProject(request: APIRequestContext): Promise<TestProject> {
-  // S6 (review 2026-04-25): Date.now() millisecond resolution can collide
-  // under Playwright sharding; append crypto.randomUUID() for hard uniqueness.
-  const res = await request.post("/api/projects", {
-    data: { title: `Export Test ${Date.now()}-${crypto.randomUUID()}`, mode: "fiction" },
-  });
-  expect(res.ok()).toBeTruthy();
-  return res.json();
-}
-
 async function addChapter(request: APIRequestContext, slug: string): Promise<TestChapter> {
   const res = await request.post(`/api/projects/${slug}/chapters`);
   expect(res.ok()).toBeTruthy();
@@ -46,10 +37,6 @@ async function setChapterContent(request: APIRequestContext, chapterId: string, 
   expect(res.ok()).toBeTruthy();
 }
 
-async function deleteProject(request: APIRequestContext, slug: string) {
-  await request.delete(`/api/projects/${slug}`);
-}
-
 test.describe("Export E2e Tests", () => {
   // Track creation explicitly so afterEach skips deleteProject when
   // beforeEach fails before the project is assigned (or fails after
@@ -61,7 +48,7 @@ test.describe("Export E2e Tests", () => {
   let firstChapter: TestChapter;
 
   test.beforeEach(async ({ request }) => {
-    project = await createTestProject(request);
+    project = await createTestProject(request, "Export Test");
     projectCreated = true;
     // The project comes with one default chapter; fetch it from the project detail
     const projectRes = await request.get(`/api/projects/${project.slug}`);
