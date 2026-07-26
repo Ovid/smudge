@@ -1,7 +1,6 @@
 import * as VelocityService from "./velocity.service";
 
 export interface VelocityServiceInterface {
-  recordSave(projectId: string): Promise<void>;
   updateDailySnapshot(projectId: string): Promise<void>;
 }
 

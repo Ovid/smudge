@@ -13,8 +13,7 @@ afterEach(() => {
 // Stub velocity so best-effort calls don't blow up
 function stubVelocity() {
   setVelocityService({
-    recordSave: async () => {},
-    updateDailySnapshot: async () => {},
+        updateDailySnapshot: async () => {},
   });
 }
 
@@ -741,14 +740,11 @@ describe("snapshots.service", () => {
       expect(result).toBeNull();
     });
 
-    it("succeeds even when velocity recordSave throws (best-effort)", async () => {
+    it("succeeds even when velocity updateDailySnapshot throws (best-effort)", async () => {
       const { logger } = await import("../logger");
       const logSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
 
       setVelocityService({
-        recordSave: async () => {
-          throw new Error("velocity broken");
-        },
         updateDailySnapshot: async () => {
           throw new Error("velocity broken");
         },
@@ -771,7 +767,7 @@ describe("snapshots.service", () => {
       expect(result).not.toBe("corrupt_snapshot");
       expect(logSpy).toHaveBeenCalledWith(
         expect.objectContaining({ project_id: expect.any(String) }),
-        "Velocity recordSave failed after restore (best-effort)",
+        "Velocity updateDailySnapshot failed after restore (best-effort)",
       );
       logSpy.mockRestore();
     });

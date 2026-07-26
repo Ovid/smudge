@@ -11,9 +11,9 @@ const t = setupTestDb();
 
 afterEach(() => resetVelocityService());
 
-// No-op velocity so replaceInProject's best-effort recordSave stays warning-clean.
+// No-op velocity so replaceInProject's best-effort updateDailySnapshot stays warning-clean.
 function stubVelocity() {
-  setVelocityService({ recordSave: async () => {}, updateDailySnapshot: async () => {} });
+  setVelocityService({ updateDailySnapshot: async () => {} });
 }
 
 function doc(text: string): Record<string, unknown> {

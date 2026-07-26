@@ -48,7 +48,7 @@ export async function getChapter(id: string): Promise<ChapterWithLabel | null | 
  * - Bumps the parent project's `updated_at` (within the transaction).
  * - Diffs image reference counts for images added/removed by a content change
  *   (within the transaction, via {@link applyImageRefDiff}).
- * - Fires `velocityService.recordSave` after commit when content changed —
+ * - Fires `velocityService.updateDailySnapshot` after commit when content changed —
  *   best-effort: a throw is logged and swallowed, never failing the save
  *   (writes a `daily_snapshots` row).
  */
@@ -127,11 +127,11 @@ export async function updateChapter(
   if (parsed.data.content !== undefined) {
     try {
       const svc = getVelocityService();
-      await svc.recordSave(projectId);
+      await svc.updateDailySnapshot(projectId);
     } catch (err: unknown) {
       logger.error(
         { err, project_id: projectId, chapter_id: id },
-        "Velocity recordSave failed (best-effort)",
+        "Velocity updateDailySnapshot failed after save (best-effort)",
       );
     }
   }

@@ -528,13 +528,13 @@ describe("search.service", () => {
       warnSpy.mockRestore();
     });
 
-    it("logs and recovers when velocity recordSave throws after replace", async () => {
+    it("logs and recovers when velocity updateDailySnapshot throws after replace", async () => {
       const { replaceInProject } = await import("../search/search.service");
       const { logger } = await import("../logger");
       const velocityModule = await import("../velocity/velocity.injectable");
       const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => {});
       const velocitySpy = vi.spyOn(velocityModule, "getVelocityService").mockReturnValueOnce({
-        recordSave: vi.fn().mockRejectedValue(new Error("velocity is down")),
+        updateDailySnapshot: vi.fn().mockRejectedValue(new Error("velocity is down")),
       } as unknown as ReturnType<typeof velocityModule.getVelocityService>);
 
       const projectId = await createProject();
@@ -546,7 +546,7 @@ describe("search.service", () => {
       expect(r.replaced_count).toBe(1);
       expect(errorSpy).toHaveBeenCalledWith(
         expect.objectContaining({ err: expect.any(Error) }),
-        expect.stringContaining("Velocity recordSave failed"),
+        expect.stringContaining("Velocity updateDailySnapshot failed"),
       );
 
       errorSpy.mockRestore();

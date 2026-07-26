@@ -377,11 +377,11 @@ export async function replaceInProject(
   if (txResult.affected_chapter_ids.length > 0) {
     try {
       const svc = getVelocityService();
-      await svc.recordSave(projectId);
+      await svc.updateDailySnapshot(projectId);
     } catch (err: unknown) {
       logger.error(
         { err, project_id: projectId },
-        "Velocity recordSave failed after replace (best-effort)",
+        "Velocity updateDailySnapshot failed after replace (best-effort)",
       );
     }
   }

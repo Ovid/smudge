@@ -233,11 +233,11 @@ export async function restoreSnapshot(
   // Fire velocity side-effects after the transaction commits
   try {
     const svc = getVelocityService();
-    await svc.recordSave(result.project_id);
+    await svc.updateDailySnapshot(result.project_id);
   } catch (err: unknown) {
     logger.error(
       { err, project_id: result.project_id, chapter_id: result.chapter_id },
-      "Velocity recordSave failed after restore (best-effort)",
+      "Velocity updateDailySnapshot failed after restore (best-effort)",
     );
   }
 

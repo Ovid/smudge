@@ -13,7 +13,7 @@ import { projectOuttakesRouter, outtakeDirectRouter } from "./outtakes/outtakes.
 import { searchRouter } from "./search/search.routes";
 import { AppError, ERROR_STATUS_ALLOWLIST } from "./errors/appError";
 import { requestContext } from "./requestContext";
-import { MAX_CHAPTER_CONTENT_LIMIT_STRING } from "./constants";
+import { MAX_CHAPTER_CONTENT_BYTES } from "./constants";
 
 export function createApp(): express.Express {
   const app = express();
@@ -36,7 +36,7 @@ export function createApp(): express.Express {
   // F-10: assign a correlation id before any body parsing, so even a
   // malformed-JSON 400 is traceable in the logs.
   app.use(requestContext);
-  app.use(express.json({ limit: MAX_CHAPTER_CONTENT_LIMIT_STRING }));
+  app.use(express.json({ limit: MAX_CHAPTER_CONTENT_BYTES }));
 
   app.use("/api/projects", projectsRouter());
   app.use("/api/chapters", chaptersRouter());

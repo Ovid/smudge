@@ -54,16 +54,6 @@ export async function updateDailySnapshot(projectId: string): Promise<void> {
   });
 }
 
-/**
- * Record a content save for velocity tracking.
- *
- * Opens its own transaction internally — must NOT be called from within
- * a store.transaction() callback (ProjectStore.transaction() does not support nesting).
- */
-export async function recordSave(projectId: string): Promise<void> {
-  await updateDailySnapshot(projectId);
-}
-
 // --- Velocity query ---
 
 function daysAgoDate(today: string, days: number): string {
