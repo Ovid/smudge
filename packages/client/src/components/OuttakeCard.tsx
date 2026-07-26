@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import type { OuttakeRow } from "@smudge/shared";
 import { toPlainText, countWords, truncateUnits } from "@smudge/shared";
 import { api } from "../api/client";
-import { mapApiError, applyMappedError } from "../errors";
+import { mapApiError, applyMappedError, STOP } from "../errors";
 import { useAbortableAsyncOperation } from "../hooks/useAbortableAsyncOperation";
 import { STRINGS } from "../strings";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -19,6 +19,12 @@ interface OuttakeCardProps {
   onUpdated: (row: OuttakeRow) => void;
   /** Surface a failure on the panel's shared error banner. */
   onError: (message: string) => void;
+  /**
+   * S3: the server may have committed this card's write while the response was
+   * unreadable (2xx BAD_JSON). Hands the panel the mapped ambiguity copy to
+   * display and triggers an authoritative refetch of the list.
+   */
+  onPossiblyCommitted: (message: string) => void;
 }
 
 /** Normalize a label draft to the canonical `string | null` the API expects. */
@@ -32,6 +38,7 @@ export function OuttakeCard({
   onDeleted,
   onUpdated,
   onError,
+  onPossiblyCommitted,
 }: OuttakeCardProps) {
   const plainText = toPlainText(outtake.content);
   const [labelDraft, setLabelDraft] = useState(outtake.label ?? "");
@@ -59,7 +66,14 @@ export function OuttakeCard({
     // typing during the request so neither settle path clobbers newer edits.
     const attempted = labelDraft;
     const next = normalizeLabel(attempted);
-    if (lastCommittedRef.current === next) return;
+    if (lastCommittedRef.current === next) {
+      // S5: no PATCH fires, so normalize the FIELD too. Otherwise a
+      // whitespace-only edit ("   " -> null on an untitled card) keeps
+      // rendering a value that was never sent and is not on the server, and
+      // the success path's re-seed below never runs to correct it.
+      setLabelDraft(lastCommittedRef.current ?? "");
+      return;
+    }
     const { promise, signal } = updateOp.run((s) =>
       api.outtakes.updateLabel(outtake.id, { label: next }, s),
     );
@@ -76,13 +90,28 @@ export function OuttakeCard({
       onUpdated(row);
     } catch (err) {
       if (signal.aborted) return;
-      // The server still holds the previous label; revert the visible field to
-      // it — but only if untouched since the request, so newer keystrokes the
-      // user typed during the round-trip survive (S5).
-      setLabelDraft((current) =>
-        current === attempted ? (lastCommittedRef.current ?? "") : current,
-      );
-      applyMappedError(mapApiError(err, "outtake.update"), { onMessage: onError });
+      const mapped = mapApiError(err, "outtake.update");
+      applyMappedError(mapped, {
+        // S3: on a 2xx BAD_JSON the server most likely committed the rename.
+        // Do NOT revert — that would make the field assert the OLD label as
+        // truth while the server holds the new one. Leave what the user typed
+        // (the value the server probably has), ask the panel to refetch the
+        // authoritative list, and surface the ambiguity. lastCommittedRef is
+        // deliberately left un-advanced so a retry still fires.
+        onCommitted: () => {
+          if (mapped.message !== null) onPossiblyCommitted(mapped.message);
+          return STOP;
+        },
+        onMessage: (message) => {
+          // A definite failure: the server still holds the previous label, so
+          // revert the visible field to it — but only if untouched since the
+          // request, so newer keystrokes typed during the round-trip survive (S5).
+          setLabelDraft((current) =>
+            current === attempted ? (lastCommittedRef.current ?? "") : current,
+          );
+          onError(message);
+        },
+      });
     }
   }
 
@@ -94,7 +123,16 @@ export function OuttakeCard({
       onDeleted(outtake.id);
     } catch (err) {
       if (signal.aborted) return;
-      applyMappedError(mapApiError(err, "outtake.delete"), { onMessage: onError });
+      const mapped = mapApiError(err, "outtake.delete");
+      applyMappedError(mapped, {
+        // S3: on a 2xx BAD_JSON the row is probably gone server-side; a refetch
+        // reconciles the list so a retry can't 404 against a phantom card.
+        onCommitted: () => {
+          if (mapped.message !== null) onPossiblyCommitted(mapped.message);
+          return STOP;
+        },
+        onMessage: onError,
+      });
     }
   }
 

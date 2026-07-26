@@ -50,6 +50,7 @@ const defaultProps = {
   onDeleted: vi.fn(),
   onUpdated: vi.fn(),
   onError: vi.fn(),
+  onPossiblyCommitted: vi.fn(),
 };
 
 beforeEach(() => {
@@ -67,6 +68,21 @@ describe("OuttakeCard", () => {
     render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} />);
     expect(screen.getByDisplayValue("A cut scene")).toBeInTheDocument();
     expect(screen.getByText(S.wordCount(2))).toBeInTheDocument();
+  });
+
+  it("clears a no-op whitespace-only label edit off the field (S5)", async () => {
+    // "   " normalizes to null, which equals the committed value, so no PATCH
+    // fires. The field must not keep rendering a value that was never sent and
+    // is not on the server.
+    const user = userEvent.setup();
+    render(<OuttakeCard outtake={makeOuttake({ label: null })} {...defaultProps} />);
+    const input = screen.getByRole("textbox", { name: S.labelAriaLabel });
+
+    await user.type(input, "   ");
+    await user.tab();
+
+    expect(api.outtakes.updateLabel).not.toHaveBeenCalled();
+    expect(input).toHaveValue("");
   });
 
   it("shows the untitled placeholder when the label is null", () => {

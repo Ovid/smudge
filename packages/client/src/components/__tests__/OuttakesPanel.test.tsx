@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OuttakesPanel } from "../OuttakesPanel";
-import { api } from "../../api/client";
+import { api, ApiRequestError } from "../../api/client";
 import { STRINGS } from "../../strings";
 import { expectConsole } from "../../__tests__/expectConsole";
 import type { OuttakeRow } from "@smudge/shared";
@@ -475,6 +475,101 @@ describe("OuttakesPanel", () => {
     resolveCreate(created);
     await new Promise((r) => setTimeout(r, 0));
     expect(screen.getAllByRole("textbox", { name: S.labelAriaLabel })).toHaveLength(1);
+  });
+
+  it("re-issues a list load a mutation superseded mid-flight (I3)", async () => {
+    // seq.abort() DISCARDS an outstanding load rather than reconciling it, so a
+    // mutation landing before the load resolves used to throw the rows away
+    // permanently — the panel has no other refetch trigger.
+    const existing = makeOuttake({ id: "a", label: "Alpha" });
+    const created = makeOuttake({ id: "new", label: "New" });
+    let resolveMountLoad!: (rows: OuttakeRow[]) => void;
+    vi.mocked(api.outtakes.list)
+      .mockReturnValueOnce(
+        new Promise<OuttakeRow[]>((res) => {
+          resolveMountLoad = res;
+        }),
+      )
+      .mockResolvedValue([created, existing]);
+    vi.mocked(api.outtakes.create).mockResolvedValue(created);
+    const user = userEvent.setup();
+    render(<OuttakesPanel {...defaultProps} />);
+    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole("button", { name: S.newBlank }));
+    await user.type(screen.getByRole("textbox", { name: S.newPlaceholder }), "New body");
+    await user.click(screen.getByRole("button", { name: S.save }));
+    await waitFor(() => expect(screen.getByDisplayValue("New")).toBeInTheDocument());
+
+    // The superseded mount GET resolves and is (correctly) discarded; the
+    // re-issued load is what puts the server's rows back on screen.
+    resolveMountLoad([existing]);
+    await waitFor(() => expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument());
+    expect(screen.getByDisplayValue("New")).toBeInTheDocument();
+  });
+
+  it("does not refetch when no load was outstanding", async () => {
+    // The re-issue above is a race repair, not a post-mutation reload — the
+    // optimistic prepend is still what surfaces the row in the common case.
+    vi.mocked(api.outtakes.list).mockResolvedValue([]);
+    vi.mocked(api.outtakes.create).mockResolvedValue(makeOuttake({ id: "new", label: "New" }));
+    const user = userEvent.setup();
+    render(<OuttakesPanel {...defaultProps} />);
+    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole("button", { name: S.newBlank }));
+    await user.type(screen.getByRole("textbox", { name: S.newPlaceholder }), "New body");
+    await user.click(screen.getByRole("button", { name: S.save }));
+    await waitFor(() => expect(screen.getByDisplayValue("New")).toBeInTheDocument());
+    expect(api.outtakes.list).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovers from a 2xx BAD_JSON create by refetching, keeping the draft (S3)", async () => {
+    const created = makeOuttake({ id: "new", label: "New" });
+    vi.mocked(api.outtakes.list).mockResolvedValueOnce([]).mockResolvedValue([created]);
+    vi.mocked(api.outtakes.create).mockRejectedValue(
+      new ApiRequestError("bad body", 200, "BAD_JSON"),
+    );
+    const user = userEvent.setup();
+    render(<OuttakesPanel {...defaultProps} />);
+    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole("button", { name: S.newBlank }));
+    await user.type(screen.getByRole("textbox", { name: S.newPlaceholder }), "New body");
+    await user.click(screen.getByRole("button", { name: S.save }));
+
+    // The authoritative list is refetched so the row (which did land) appears...
+    await waitFor(() => expect(screen.getByDisplayValue("New")).toBeInTheDocument());
+    // ...and the notice survives that refetch's own setError(null), so the user
+    // is told the outcome was ambiguous rather than silently repaired.
+    expect(screen.getByText(STRINGS.error.possiblyCommitted)).toBeInTheDocument();
+    // The draft is the writer's TEXT, not a label — never discard it on an
+    // outcome the server may never have received.
+    expect(screen.getByRole("textbox", { name: S.newPlaceholder })).toHaveValue("New body");
+  });
+
+  it("does not revert a rename the server may have committed (S3)", async () => {
+    vi.mocked(api.outtakes.list)
+      .mockResolvedValueOnce([makeOuttake({ id: "a", label: "Before" })])
+      .mockResolvedValue([makeOuttake({ id: "a", label: "After" })]);
+    vi.mocked(api.outtakes.updateLabel).mockRejectedValue(
+      new ApiRequestError("bad body", 200, "BAD_JSON"),
+    );
+    const user = userEvent.setup();
+    render(<OuttakesPanel {...defaultProps} />);
+    const input = await screen.findByDisplayValue("Before");
+
+    await user.clear(input);
+    await user.type(input, "After");
+    await user.tab();
+
+    // The authoritative list is refetched...
+    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalledTimes(2));
+    // ...the field keeps the attempted value (the one the server most likely
+    // holds) instead of asserting the old label as truth...
+    expect(screen.getByDisplayValue("After")).toBeInTheDocument();
+    // ...and the ambiguity is surfaced rather than repaired silently.
+    expect(screen.getByText(STRINGS.error.possiblyCommitted)).toBeInTheDocument();
   });
 
   it("two deletes on different rows both land (I4 same-type sibling abort)", async () => {
