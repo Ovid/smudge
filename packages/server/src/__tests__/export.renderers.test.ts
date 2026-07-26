@@ -1377,10 +1377,22 @@ describe("escapeHtml", () => {
 // a chapter, with nothing to tell them. Hence the assertion on the logger: the
 // over-deep subtree must be REFUSED by the depth bail, not lost to a caught
 // stack overflow. Those two outcomes look identical in the output XML.
-describe("renderDocx depth guard (I5)", () => {
-  it("refuses an over-deep subtree without recursing into it", async () => {
-    // Well past MAX_TIPTAP_DEPTH (64) and past the stack budget of the pre-bail
-    // walker, which spent an async frame per level.
+describe("renderDocx survives an over-deep document (I5)", () => {
+  it("drops the over-deep subtree instead of overflowing the stack", async () => {
+    // S1 (agentic-review 2026-07-26): this test does NOT pin blockToParagraphs'
+    // depth bail and never did, despite the header of
+    // tiptap-depth-walkers.test.ts once delegating that walker's enrollment
+    // here. tipTapToParagraphs runs stripNoteMarks first, which truncates one
+    // level EARLIER than the bail fires, so through renderDocx the bail is
+    // unreachable and this assertion is satisfied by the strip alone — verified
+    // by deleting the bail and watching all 110 export tests stay green. The
+    // bail is now enrolled directly via __depthContractSeam in
+    // tiptap-depth-walkers.test.ts.
+    //
+    // What this test DOES pin is still worth keeping: the whole DOCX path
+    // survives a hostile document end-to-end, dropping it rather than blowing
+    // the stack. Well past MAX_TIPTAP_DEPTH (64) and past the stack budget of
+    // the pre-bail walker, which spent an async frame per level.
     let node: Record<string, unknown> = {
       type: "paragraph",
       content: [{ type: "text", text: "DEEP_MARKER" }],

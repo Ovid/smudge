@@ -247,8 +247,8 @@ async function blockToParagraphs(
 ): Promise<Paragraph[]> {
   // Fail CLOSED at the depth cap, matching every sibling TipTap walker: drop
   // the over-deep subtree rather than recurse into it. See BlockContext.depth.
-  // Enrolled in the cross-cutting contract via renderDocx in
-  // export.renderers.test.ts.
+  // Enrolled in the cross-cutting contract via __depthContractSeam below —
+  // NOT via renderDocx, which cannot reach this line (see the seam's comment).
   if ((ctx?.depth ?? 0) > MAX_TIPTAP_DEPTH) return [];
 
   try {
@@ -469,6 +469,32 @@ async function tipTapToParagraphs(
   }
   return paragraphs;
 }
+
+/**
+ * Test seam for the depth-bail contract (S1, agentic-review 2026-07-26).
+ *
+ * The bail in `blockToParagraphs` is UNREACHABLE through `renderDocx`, so no
+ * test driven through `renderDocx` can pin it — which is exactly what the
+ * previous enrollment tried to do, and why deleting the bail left all 110
+ * export tests green. The arithmetic: `tipTapToParagraphs` runs
+ * `stripNoteMarks` first, and that walker counts the doc node as depth 0 and
+ * drops anything at depth > 64; `blockToParagraphs` enters doc children at
+ * depth 0, i.e. one level BEHIND. So `docxDepth === stripDepth - 1 <= 63` for
+ * every node that survives the strip, and the bail's `> 64` never fires.
+ *
+ * That does not make the bail dead code — its stated purpose is to survive a
+ * future change that relocates the strip (it exists for note confidentiality,
+ * not for depth) and leaves this recursion unguarded. But defence-in-depth that
+ * only matters when an upstream guard is gone can only be pinned by calling
+ * this walker WITHOUT that guard in the path. Hence the seam.
+ *
+ * Exported for `tiptap-depth-walkers.test.ts` only; not part of the renderer's
+ * public API.
+ */
+export const __depthContractSeam = {
+  blockToParagraphs,
+  newBuildState,
+};
 
 // ---------------------------------------------------------------------------
 // Public renderer

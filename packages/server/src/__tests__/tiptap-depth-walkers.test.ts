@@ -4,9 +4,17 @@
  * ELEVEN walkers each implement their own depth-counted recursion capped at the
  * shared MAX_TIPTAP_DEPTH (64). This test pins that contract: each walker is
  * driven through its PUBLIC entry point with an assertion that flips if the
- * walker's `if (depth > MAX_TIPTAP_DEPTH)` bail is removed. Ten are enrolled
- * below; the eleventh, the DOCX renderer's blockToParagraphs, is enrolled via
- * renderDocx in export.renderers.test.ts because it needs the export fixtures.
+ * walker's `if (depth > MAX_TIPTAP_DEPTH)` bail is removed. All eleven are
+ * enrolled below.
+ *
+ * S1 (agentic-review 2026-07-26): the eleventh, the DOCX renderer's
+ * blockToParagraphs, used to be delegated to export.renderers.test.ts "because
+ * it needs the export fixtures". It does not — and that delegation could not
+ * work: through renderDocx the bail is unreachable (stripNoteMarks runs first
+ * and truncates one level earlier), so the delegated test passed on the
+ * strip's behaviour and stayed green with the bail deleted. Delegation is how a
+ * walker ends up certified by a test that cannot fail. Enrol here, calling the
+ * walker directly through __depthContractSeam.
  *
  * ┌─ NEW WALKER? ────────────────────────────────────────────────────────────┐
  * │ Any new function that recurses TipTap JSON content MUST:                  │
@@ -56,6 +64,7 @@ import {
   __resetWarnedFallbackDigestsForTests,
 } from "../snapshots/content-hash";
 import { extractImageIds } from "../images/images.references";
+import { __depthContractSeam } from "../export/docx.renderer";
 import { logger } from "../logger";
 
 // Comfortably past MAX_TIPTAP_DEPTH (64); trivially safe for JSON.parse /
@@ -188,6 +197,42 @@ describe("TipTap depth-guard contract (MAX_TIPTAP_DEPTH walkers)", () => {
     // drop the subtree it refused to descend into.
     const doc = deepDoc(OVER_CAP_DEPTH, { type: "text", text: "DEEP_MARKER" });
     expect(JSON.stringify(stripNoteMarks(doc))).not.toContain("DEEP_MARKER");
+  });
+
+  it("blockToParagraphs (DOCX) renders nothing below the depth cap (bail drops the subtree)", async () => {
+    // S1 (agentic-review 2026-07-26): the eleventh walker, enrolled DIRECTLY
+    // rather than through renderDocx. It was previously delegated to
+    // export.renderers.test.ts, where the assertion could not discriminate:
+    // renderDocx → tipTapToParagraphs runs stripNoteMarks FIRST, and that
+    // walker counts the doc as depth 0 while blockToParagraphs enters doc
+    // children at depth 0 — one level behind. Every node surviving the strip
+    // therefore arrives at docxDepth <= 63 and the `> 64` bail cannot fire, so
+    // the old test passed on the strip's behaviour and stayed green with the
+    // bail deleted (verified: 110/110).
+    //
+    // Calling the walker directly is the whole point: the bail exists to
+    // survive a future change that relocates the strip (it is there for note
+    // confidentiality, not depth) and leaves this recursion unguarded. That is
+    // the scenario, and it is only reachable without the strip in the path.
+    const { blockToParagraphs, newBuildState } = __depthContractSeam;
+    const state = newBuildState({ getImage: async () => null } as unknown as never);
+    // deepDoc wraps in a doc root; hand the walker the doc's single child, the
+    // way tipTapToParagraphs does, and start it over the cap.
+    const doc = deepDoc(OVER_CAP_DEPTH, { type: "text", text: "DEEP_MARKER" });
+    const topBlock = (doc.content as Array<Record<string, unknown>>)[0]!;
+
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    try {
+      const paragraphs = await blockToParagraphs(topBlock, state, {
+        depth: MAX_TIPTAP_DEPTH + 1,
+      });
+      expect(paragraphs).toEqual([]);
+      // Dropped deliberately, not by catching a stack overflow in the walker's
+      // own try/catch — which would look identical from the outside.
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it("extractNotes reports no note below the depth cap (collect bails)", () => {
