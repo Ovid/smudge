@@ -75,9 +75,7 @@ describe("outtakes routes", () => {
         .send({
           content: {
             type: "doc",
-            content: [
-              { type: "paragraph", content: [[{ type: "image", attrs: { src: "/x" } }]] },
-            ],
+            content: [{ type: "paragraph", content: [[{ type: "image", attrs: { src: "/x" } }]] }],
           },
         });
       expect(res.status).toBe(400);

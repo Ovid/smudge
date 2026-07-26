@@ -76,3 +76,24 @@ describe("error envelope contract (F-3 safety net)", () => {
     expect(res.body.error.message).toBe("A project with that title already exists");
   });
 });
+
+describe("no endpoint emits a status outside the allowlist (I4)", () => {
+  const t = setupTestDb();
+
+  // The real leak found by the dedup review: express.json() rejects an
+  // unsupported charset or Content-Encoding with body-parser's
+  // UnsupportedMediaTypeError, whose status 415 flowed straight through the
+  // unclamped handler on every body-accepting endpoint.
+  it.each([
+    ["an unsupported charset", "application/json; charset=iso-8859-1", undefined],
+    ["an unsupported Content-Encoding", "application/json", "br"],
+  ])("returns 400, not 415, for %s", async (_label, contentType, encoding) => {
+    const req = request(t.app)
+      .patch(`/api/chapters/${ABSENT_UUID}`)
+      .set("Content-Type", contentType);
+    if (encoding) req.set("Content-Encoding", encoding);
+    const res = await req.send("{}");
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_ERROR");
+  });
+});
