@@ -1,21 +1,39 @@
 /**
  * Cross-cutting depth-guard contract for TipTap-JSON walkers.
  *
- * Six walkers each implement their own depth-counted recursion capped at the
+ * ELEVEN walkers each implement their own depth-counted recursion capped at the
  * shared MAX_TIPTAP_DEPTH (64). This test pins that contract: each walker is
  * driven through its PUBLIC entry point with an assertion that flips if the
- * walker's `if (depth > MAX_TIPTAP_DEPTH)` bail is removed.
+ * walker's `if (depth > MAX_TIPTAP_DEPTH)` bail is removed. Ten are enrolled
+ * below; the eleventh, the DOCX renderer's blockToParagraphs, is enrolled via
+ * renderDocx in export.renderers.test.ts because it needs the export fixtures.
  *
  * ┌─ NEW WALKER? ────────────────────────────────────────────────────────────┐
  * │ Any new function that recurses TipTap JSON content MUST:                  │
  * │  1. import MAX_TIPTAP_DEPTH from "@smudge/shared" and bail when exceeded; │
  * │  2. be added to THIS test via its public entry point, with a             │
- * │     discriminating assertion (one that fails if the bail is removed).     │
- * │ A SEVENTH walker also triggers the "extract a generic walker" re-         │
- * │ evaluation deferred in dedup report I5                                     │
- * │ (paad/duplicate-code-reports/ovid-experimental-dedup-2026-04-28-08-02-18- │
- * │ 093074c.md).                                                              │
+ * │     DISCRIMINATING assertion — one that fails if the bail is removed.     │
+ * │     `expect(...).not.toThrow()` is NOT discriminating, and neither is an  │
+ * │     assertion about something the walker drops for another reason: the    │
+ * │     image/note checks run BEFORE the depth bail, so asserting a deep      │
+ * │     image is gone proves nothing. Assert that the over-deep SUBTREE is    │
+ * │     gone. Verify by deleting the bail and watching this test go red.      │
  * └───────────────────────────────────────────────────────────────────────────┘
+ *
+ * I5 (dedup review 2026-07-26): this header used to say "Six walkers" and its
+ * tripwire fired on a SEVENTH. There were ten by then, and it had never fired —
+ * four walkers had a bail with no enrollment here (two of them, stripImageNodes
+ * and toPlainText, pinned by NO test at all: both bails could be deleted
+ * together with all 33 of their local tests still passing), and the DOCX walker
+ * had no bail at all. A count in prose is not a mechanism; enrollment is. The
+ * "extract a generic walker" re-evaluation that tripwire deferred has now been
+ * made and DECLINED — see the rejection entry in
+ * paad/dedup-reviews/scratchpad-outtakes-2026-07-26-15-00-06-4a87534.md. The
+ * walkers differ on fail-return type (null / undefined / void / [] / false /
+ * ""), traversal shape, what counts as a level, and whether marks are visited;
+ * a shared walkTipTap would need three policy knobs, i.e. worse than the
+ * copies. This test IS the intended ceiling. Do not re-derive that decision;
+ * just enrol the new walker.
  *
  * The walkers count depth differently (tree walkers: 1 per content level;
  * canonicalize: object AND array levels; canonicalJSON: mark-attr nesting), so
@@ -136,6 +154,50 @@ describe("TipTap depth-guard contract (MAX_TIPTAP_DEPTH walkers)", () => {
     } finally {
       warnSpy.mockRestore();
     }
+  });
+
+  it("stripImageNodes drops the whole subtree below the depth cap (strip bails)", () => {
+    // I5 (dedup review 2026-07-26): this walker's bail was UNENROLLED on the
+    // depth axis, and its own local depth test asserted only `not.toThrow()` —
+    // which passes with or without the bail. Deleting the bail from
+    // tiptap-images.ts AND tiptap-plaintext.ts together broke no test at all.
+    //
+    // The leaf is deliberately NOT an image: `node.type === "image"` is checked
+    // BEFORE the depth bail, so a deep image is dropped either way and asserting
+    // on it does not discriminate. What the bail decides is whether the
+    // over-deep subtree is dropped or passed through verbatim — and passing it
+    // through is what would smuggle images (any node the walker never inspected)
+    // past the strip.
+    const doc = deepDoc(OVER_CAP_DEPTH, { type: "text", text: "DEEP_MARKER" });
+    expect(JSON.stringify(stripImageNodes(doc))).not.toContain("DEEP_MARKER");
+  });
+
+  it("toPlainText emits no text below the depth cap (walk bails)", () => {
+    // Same unenrolled-and-untested gap as stripImageNodes above.
+    const doc = deepDoc(OVER_CAP_DEPTH, { type: "text", text: "hello world" });
+    expect(toPlainText(doc)).not.toContain("hello");
+  });
+
+  it("stripNoteMarks drops the whole subtree below the depth cap (strip bails)", () => {
+    // Pinned locally by tiptap-notes.test.ts too, but the cross-cutting
+    // contract is what a future author reads — a confidentiality-critical bail
+    // must not be enrolled only in its own module's tests.
+    //
+    // As with stripImageNodes, the mark strip itself runs regardless of depth,
+    // so asserting on the note text does not discriminate. The bail's job is to
+    // drop the subtree it refused to descend into.
+    const doc = deepDoc(OVER_CAP_DEPTH, { type: "text", text: "DEEP_MARKER" });
+    expect(JSON.stringify(stripNoteMarks(doc))).not.toContain("DEEP_MARKER");
+  });
+
+  it("extractNotes reports no note below the depth cap (collect bails)", () => {
+    const doc = deepDoc(OVER_CAP_DEPTH, {
+      type: "paragraph",
+      content: [
+        { type: "text", text: "x", marks: [{ type: "note", attrs: { text: "spoiler" } }] },
+      ],
+    });
+    expect(extractNotes(doc)).toEqual([]);
   });
 
   it("replaceInDoc merges adjacent runs whose marks differ only below the cap (canonicalJSON bails)", () => {

@@ -1362,3 +1362,50 @@ describe("escapeHtml", () => {
     expect(escapeHtml("")).toBe("");
   });
 });
+
+// I5 (dedup review 2026-07-26): the DOCX walker (blockToParagraphs /
+// listItemsToParagraphs) is the tenth TipTap-JSON walker in the codebase and
+// was the only one with NO depth bail of its own. It was safe only
+// transitively: tipTapToParagraphs calls stripNoteMarks first, and THAT walker
+// truncates over-cap subtrees. The strip is there for note confidentiality, so
+// relocating it — say, to per-mark handling — would keep notes out while
+// silently unguarding this recursion against unbounded DB-read content.
+//
+// The cost was not a visible failure: blockToParagraphs wraps its body in a
+// try/catch, so the RangeError was swallowed into a per-node warn and the
+// chapter's content dropped from the export. A writer would get a DOCX missing
+// a chapter, with nothing to tell them. Hence the assertion on the logger: the
+// over-deep subtree must be REFUSED by the depth bail, not lost to a caught
+// stack overflow. Those two outcomes look identical in the output XML.
+describe("renderDocx depth guard (I5)", () => {
+  it("refuses an over-deep subtree without recursing into it", async () => {
+    // Well past MAX_TIPTAP_DEPTH (64) and past the stack budget of the pre-bail
+    // walker, which spent an async frame per level.
+    let node: Record<string, unknown> = {
+      type: "paragraph",
+      content: [{ type: "text", text: "DEEP_MARKER" }],
+    };
+    for (let i = 0; i < 4000; i++) node = { type: "blockquote", content: [node] };
+
+    const chapter = {
+      id: "ch-deep",
+      title: "Deep",
+      content: { type: "doc", content: [node] },
+      sort_order: 0,
+    };
+
+    vi.mocked(logger.warn).mockClear();
+    const buf = await renderDocx(projectInfo, [chapter], { includeToc: false }, imageSrc);
+    const xml = await docxXml(buf);
+
+    // Fails closed: the over-deep subtree is dropped, not rendered.
+    expect(xml).not.toContain("DEEP_MARKER");
+    // ...and dropped deliberately, not by catching a stack overflow.
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(RangeError) }),
+      expect.any(String),
+    );
+    // The chapter itself still made it into the document.
+    expect(xml).toContain("Deep");
+  });
+});

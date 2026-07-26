@@ -11,7 +11,7 @@ import {
   LevelFormat,
   ShadingType,
 } from "docx";
-import { stripNoteMarks } from "@smudge/shared";
+import { stripNoteMarks, MAX_TIPTAP_DEPTH } from "@smudge/shared";
 import type { ExportProjectInfo, ExportChapter, RenderOptions } from "./export.renderers";
 import { ALLOWED_IMAGE_SRC } from "./export.renderers";
 import { resolveImage, buildCaptionText, type ImageSource } from "./image-resolver";
@@ -158,6 +158,28 @@ interface BlockContext {
   indent?: { left: number };
   extraRunProps?: MarkInfo;
   listDepth?: number;
+  /**
+   * TipTap-JSON recursion depth, capped at MAX_TIPTAP_DEPTH. Distinct from
+   * `listDepth`, which is Word's indentation level (capped at MAX_LIST_DEPTH)
+   * and says nothing about how deep the source tree is.
+   *
+   * I5 (dedup review 2026-07-26): this walker was the only TipTap-JSON walker
+   * in the codebase with no depth bail. It was safe only TRANSITIVELY —
+   * tipTapToParagraphs calls stripNoteMarks first, and that walker truncates
+   * over-cap subtrees. The strip is there for note confidentiality, so a future
+   * change moving it (e.g. to per-mark handling) would keep notes out while
+   * silently unguarding this recursion. What that costs is not obvious: the
+   * RangeError is caught by blockToParagraphs' own try/catch, so the chapter's
+   * content is dropped from the export with nothing but a per-node warn — a
+   * silently truncated manuscript, not a visible failure. A safety property
+   * should not rest on an unrelated feature's implementation detail.
+   */
+  depth?: number;
+}
+
+/** Depth for children of a node at `ctx`'s level. */
+function childDepth(ctx?: BlockContext): number {
+  return (ctx?.depth ?? 0) + 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -175,7 +197,7 @@ async function listItemsToParagraphs(
   const level = Math.min(ctx?.listDepth ?? 0, MAX_LIST_DEPTH - 1);
   // Child blocks (e.g. nested lists) see an incremented depth so they
   // render at the next indentation level in Word.
-  const childCtx: BlockContext = { ...ctx, listDepth: level + 1 };
+  const childCtx: BlockContext = { ...ctx, listDepth: level + 1, depth: childDepth(ctx) };
   const items: Paragraph[] = [];
   for (const listItem of listItems) {
     const liContent = listItem.content as Array<Record<string, unknown>> | undefined;
@@ -223,6 +245,12 @@ async function blockToParagraphs(
   state: DocxBuildState,
   ctx?: BlockContext,
 ): Promise<Paragraph[]> {
+  // Fail CLOSED at the depth cap, matching every sibling TipTap walker: drop
+  // the over-deep subtree rather than recurse into it. See BlockContext.depth.
+  // Enrolled in the cross-cutting contract via renderDocx in
+  // export.renderers.test.ts.
+  if ((ctx?.depth ?? 0) > MAX_TIPTAP_DEPTH) return [];
+
   try {
     const type = node.type as string;
     const content = node.content as Array<Record<string, unknown>> | undefined;
@@ -271,6 +299,7 @@ async function blockToParagraphs(
           indent: { left: (ctx?.indent?.left ?? 0) + 720 },
           extraRunProps: { ...ctx?.extraRunProps, italics: true },
           listDepth: ctx?.listDepth,
+          depth: childDepth(ctx),
         };
         const paragraphs: Paragraph[] = [];
         for (const child of content) {
