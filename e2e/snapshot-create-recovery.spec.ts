@@ -1,13 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { interceptWithSuccessBadJson } from "./helpers/interceptWithSuccessBadJson";
 import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
-import { createTestProject, deleteProject } from "./helpers/project";
-
-interface TestProject {
-  id: string;
-  title: string;
-  slug: string;
-}
+import { createTestProject, deleteProject, type TestProject } from "./helpers/project";
 
 test.describe("Snapshot create recovery (4b.3c.2 I3)", () => {
   // Track creation explicitly so afterEach does not throw on `project.slug`

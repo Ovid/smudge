@@ -1,13 +1,7 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
 import AxeBuilder from "@axe-core/playwright";
-import { createTestProject, deleteProject } from "./helpers/project";
-
-interface TestProject {
-  id: string;
-  title: string;
-  slug: string;
-}
+import { createTestProject, deleteProject, type TestProject } from "./helpers/project";
 
 interface TestChapter {
   id: string;

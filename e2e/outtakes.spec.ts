@@ -1,13 +1,12 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
-import { createTestProject, deleteProject, getFirstChapter } from "./helpers/project";
-
-interface TestProject {
-  id: string;
-  title: string;
-  slug: string;
-}
+import {
+  createTestProject,
+  deleteProject,
+  getFirstChapter,
+  type TestProject,
+} from "./helpers/project";
 
 const CHAPTER_TEXT = "The quick brown fox";
 

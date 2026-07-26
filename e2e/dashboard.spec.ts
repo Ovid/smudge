@@ -1,13 +1,7 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { gotoProjectEditor, expectEditorReady } from "./helpers/gotoProjectEditor";
-import { createTestProject, deleteProject } from "./helpers/project";
-
-interface TestProject {
-  id: string;
-  title: string;
-  slug: string;
-}
+import { createTestProject, deleteProject, type TestProject } from "./helpers/project";
 
 async function addChapter(
   request: APIRequestContext,

@@ -1,12 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
-import { createTestProject, deleteProject } from "./helpers/project";
-
-interface TestProject {
-  id: string;
-  title: string;
-  slug: string;
-}
+import { createTestProject, deleteProject, type TestProject } from "./helpers/project";
 
 /** Type content into the editor and wait for it to be saved. */
 async function typeAndWaitForSave(page: import("@playwright/test").Page, text: string) {

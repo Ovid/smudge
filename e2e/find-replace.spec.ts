@@ -1,12 +1,6 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
-import { createTestProject, deleteProject } from "./helpers/project";
-
-interface TestProject {
-  id: string;
-  title: string;
-  slug: string;
-}
+import { createTestProject, deleteProject, type TestProject } from "./helpers/project";
 
 interface TestChapter {
   id: string;

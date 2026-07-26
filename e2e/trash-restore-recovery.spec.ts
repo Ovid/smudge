@@ -1,13 +1,7 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import { interceptWithSuccessBadJson } from "./helpers/interceptWithSuccessBadJson";
 import { gotoProjectEditor } from "./helpers/gotoProjectEditor";
-import { createTestProject, deleteProject } from "./helpers/project";
-
-interface TestProject {
-  id: string;
-  title: string;
-  slug: string;
-}
+import { createTestProject, deleteProject, type TestProject } from "./helpers/project";
 
 interface ProjectWithChapters extends TestProject {
   chapters: { id: string; title: string }[];

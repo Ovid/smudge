@@ -1,12 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { gotoProjectEditor, expectEditorReady } from "./helpers/gotoProjectEditor";
-import { createTestProject, deleteProject } from "./helpers/project";
-
-interface TestProject {
-  id: string;
-  title: string;
-  slug: string;
-}
+import { createTestProject, deleteProject, type TestProject } from "./helpers/project";
 
 test.describe("Editor save pipeline E2e Tests", () => {
   // Track creation explicitly so afterEach does not throw on

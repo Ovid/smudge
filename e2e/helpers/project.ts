@@ -12,12 +12,25 @@ import { expect, type APIRequestContext } from "@playwright/test";
  * comment says it "mirrors images.spec".
  */
 
+/**
+ * S7 (agentic-review 2026-07-26): the S6 consolidation removed the twelve
+ * duplicated fixture BODIES but left twelve duplicated declarations of this
+ * shape, and the type exported here had no importers at all. TypeScript is
+ * structural, so the copies compiled — and would have gone on compiling if a
+ * required field were added here, which is the same drift S6 was opened to
+ * remove, one level up. All twelve specs now import this type.
+ */
 export interface TestProject {
   id: string;
   title: string;
   slug: string;
 }
 
+/**
+ * The shape `getFirstChapter` returns. Specs that create their OWN chapters
+ * (export.spec, find-replace.spec) keep their own local shapes — those carry
+ * different fields for a different call, and are not copies of this one.
+ */
 export interface TestChapter {
   id: string;
   title: string;
