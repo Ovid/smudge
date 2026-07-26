@@ -2,13 +2,13 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import request from "supertest";
 import { UNTITLED_CHAPTER } from "@smudge/shared";
 import { setupTestDb } from "./test-helpers";
+import { logger } from "../logger";
+import * as ChapterService from "../chapters/chapters.service";
 
 // A well-formed UUID that is not in the DB. Distinct from a MALFORMED id,
 // which is a 400 (OOSS1) — these routes must still 404 for "valid shape,
 // no such row".
 const UNKNOWN_UUID = "11111111-1111-4111-8111-111111111111";
-import { logger } from "../logger";
-import * as ChapterService from "../chapters/chapters.service";
 
 const t = setupTestDb();
 
