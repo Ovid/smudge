@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { EditorPage } from "../pages/EditorPage";
 import { api } from "../api/client";
 import { STRINGS } from "../strings";
@@ -182,6 +182,39 @@ function renderEditorPage() {
     <MemoryRouter initialEntries={["/projects/test-project"]}>
       <Routes>
         <Route path="/projects/:slug" element={<EditorPage />} />
+        {/* eslint-disable-next-line no-restricted-syntax -- test fixture (not user-facing) */}
+        <Route path="/" element={<div>Home</div>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+// Same page, plus an in-route button that navigates to a DIFFERENT project
+// slug without unmounting EditorPage — the A→B switch the drift guard exists
+// for. Sits inside the :slug route deliberately: that is what makes the
+// navigation a param change rather than a remount.
+function renderEditorPageWithNav() {
+  function NavToB() {
+    const navigate = useNavigate();
+    return (
+      // eslint-disable-next-line no-restricted-syntax -- test fixture (not user-facing)
+      <button type="button" data-testid="nav-to-b" onClick={() => navigate("/projects/project-b")}>
+        go
+      </button>
+    );
+  }
+  return render(
+    <MemoryRouter initialEntries={["/projects/test-project"]}>
+      <Routes>
+        <Route
+          path="/projects/:slug"
+          element={
+            <>
+              <EditorPage />
+              <NavToB />
+            </>
+          }
+        />
         {/* eslint-disable-next-line no-restricted-syntax -- test fixture (not user-facing) */}
         <Route path="/" element={<div>Home</div>} />
       </Routes>
@@ -413,5 +446,40 @@ describe("F2: send selection to outtakes (non-destructive)", () => {
     );
 
     expect(await screen.findByText(STRINGS.error.createOuttakeFailed)).toBeInTheDocument();
+  });
+
+  it("does not paint project A's capture failure over project B (I1)", async () => {
+    // EditorPage is not keyed on slug, so an A→B navigation leaves it mounted
+    // and captureOp un-aborted: only unmount or a newer capture abort it.
+    // Nothing clears actionError on project change either, so without a drift
+    // guard A's banner pins itself over B. This drives the guard's SECOND check
+    // (the pre-load window): the URL slug has advanced while project B's GET is
+    // still outstanding, so projectRef still holds A's id and an id-only
+    // comparison would wave the banner through.
+    const user = userEvent.setup();
+    mockControls.selection = { from: 1, to: 5 };
+    mockControls.sliceJson = [{ type: "paragraph", content: [{ type: "text", text: "x" }] }];
+    let rejectCreate!: (err: unknown) => void;
+    vi.mocked(api.outtakes.create).mockReturnValue(
+      new Promise((_res, rej) => {
+        rejectCreate = rej;
+      }),
+    );
+
+    renderEditorPageWithNav();
+    await user.click(
+      await screen.findByRole("button", { name: STRINGS.outtakes.newFromSelection }),
+    );
+    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
+
+    // Navigate to project B; its GET never settles, so we sit in the pre-load
+    // window for the rest of the test.
+    vi.mocked(api.projects.get).mockReturnValue(new Promise(() => {}));
+    await user.click(screen.getByTestId("nav-to-b"));
+
+    rejectCreate(new Error("boom"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(screen.queryByText(STRINGS.error.createOuttakeFailed)).not.toBeInTheDocument();
   });
 });

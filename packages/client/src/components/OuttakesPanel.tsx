@@ -45,6 +45,12 @@ export function OuttakesPanel({ projectId, onInsert, capturedOuttake }: Outtakes
   const [draft, setDraft] = useState("");
   const [creating, setCreating] = useState(false);
 
+  // I2: read the LIVE draft from inside handleCreate's post-await tail, whose
+  // closure captured the value as of the click. Mirrors the projectRef pattern
+  // used across the hooks.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+
   const loadOp = useAbortableAsyncOperation();
   // Create owns its op here (blank-note flow). Per-row delete/rename ops live in
   // OuttakeCard so a mutation on one row cannot abort another's in-flight
@@ -65,6 +71,22 @@ export function OuttakesPanel({ projectId, onInsert, capturedOuttake }: Outtakes
   const loadsInFlightRef = useRef(0);
   const [reloadKey, setReloadKey] = useState(0);
   const requestReload = useCallback(() => setReloadKey((k) => k + 1), []);
+
+  // I3 (review 2026-07-26): drop everything project-scoped the instant the
+  // project does. Kept separate from the load effect below because that one
+  // also runs on every reloadKey bump, where clearing would throw away the
+  // optimistic row a mutation just placed. Only the failure arm of a reload
+  // actually needed this — the success arm replaces `outtakes` wholesale — but
+  // the failure arm is exactly the one that used to leave project A's rows
+  // rendered AND actionable under project B. `committedNotice` is deliberately
+  // sticky (cleared only by reconcile), which is right within a project and
+  // wrong across one: an ambiguity warning about A's server state says nothing
+  // about B's.
+  useEffect(() => {
+    setOuttakes([]);
+    setCommittedNotice(null);
+    setError(null);
+  }, [projectId]);
 
   // Load (on mount, projectId change, and an explicit reload request). ABORTED
   // is silent via the mapper; the per-call signal guards a late resolution after
@@ -117,11 +139,22 @@ export function OuttakesPanel({ projectId, onInsert, capturedOuttake }: Outtakes
   // duplicate React key.
   const applyServerRow = useCallback(
     (row: OuttakeRow) => {
+      // I1 (review 2026-07-26): the row's OWN project is the authority on
+      // whether it belongs here. Neither producer re-checks the project after
+      // its await — the capture POST lives in EditorPage and the blank-note
+      // POST in handleCreate below — and this panel is not keyed on project, so
+      // an A→B switch mid-POST delivers project A's row to a panel showing B.
+      // The C1 ref seed only covers the MOUNT path; this covers the prop-change
+      // path and the create path too, because every write to the list funnels
+      // through here. A leaked row is not cosmetic: its Insert button pastes A's
+      // private text into a B chapter, and its Delete HARD-deletes a real
+      // project-A outtake (outtakes carry no deleted_at — CLAUDE.md §Data Model).
+      if (row.project_id !== projectId) return;
       reconcile();
       setOuttakes((prev) => [row, ...prev.filter((o) => o.id !== row.id)]);
       setError(null);
     },
-    [reconcile],
+    [reconcile, projectId],
   );
 
   // C1: the id this panel has already surfaced, seeded at FIRST RENDER so mount
@@ -149,16 +182,27 @@ export function OuttakesPanel({ projectId, onInsert, capturedOuttake }: Outtakes
       setDraft("");
       return;
     }
+    // I2 (review 2026-07-26): the text we are actually sending. Cancel carries
+    // no disabled={creating} — only Save does — so the writer can close the form
+    // and start a second note while this POST is still out. Clearing
+    // unconditionally on success then erased text the server never saw, with no
+    // banner and no undo. Same current === attempted discipline as
+    // OuttakeCard.commitLabel; see the S3 note below for why this panel treats
+    // the writer's text as the thing it exists to protect.
+    const attempted = draft;
     setCreating(true);
     const { promise, signal } = createOp.run((s) =>
-      api.outtakes.create(projectId, { content: textToDoc(draft), label: null }, s),
+      api.outtakes.create(projectId, { content: textToDoc(attempted), label: null }, s),
     );
     try {
       const row = await promise;
       if (signal.aborted) return;
       applyServerRow(row);
-      setDraft("");
-      setShowNew(false);
+      // Only tear down the form when it still holds the text we sent.
+      if (draftRef.current === attempted) {
+        setDraft("");
+        setShowNew(false);
+      }
     } catch (err) {
       if (signal.aborted) return;
       const mapped = mapApiError(err, "outtake.create");

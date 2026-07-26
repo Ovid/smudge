@@ -718,6 +718,16 @@ export function useProjectEditor(slug: string | undefined, options?: UseProjectE
     // Getter for reading the current active chapter from inside async
     // callbacks whose closure would otherwise see a stale value.
     getActiveChapter: () => activeChapterRef.current,
+    // I1 (review 2026-07-26): the two refs makeStaleProjectGuard needs. The
+    // guard was already used at nine sites inside this hook's own children
+    // (useChapterCrud, useChapterMetadata, useTrashManager.refresh), but a
+    // project-scoped async handler that lives in EditorPage itself — the
+    // outtake capture POST — had no way to reach them and so shipped with no
+    // drift guard at all. Exposed read-only (the callers only ever read
+    // .current) rather than as a pre-built guard, because the guard must be
+    // constructed at each handler's ENTRY to capture that call's baseline.
+    projectRef,
+    projectSlugRef,
     // Cancel any in-flight save retries. Used before entering snapshot
     // view mode so a retry from earlier typing cannot write to the server
     // while the editor is supposed to be read-only.

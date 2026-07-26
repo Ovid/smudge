@@ -4360,6 +4360,12 @@ describe("useProjectEditor public return contract", () => {
     "replaceConfirmedStatusesFromProject",
     "getActiveChapter",
     "cancelPendingSaves",
+    // I1 (review 2026-07-26): the two refs makeStaleProjectGuard needs, so a
+    // project-scoped async handler living in EditorPage itself can be guarded
+    // like the nine sites inside this hook's own children already are. Refs,
+    // not functions — deliberately absent from EXPECTED_FUNCTION_KEYS below.
+    "projectRef",
+    "projectSlugRef",
   ] as const;
 
   const EXPECTED_FUNCTION_KEYS = [

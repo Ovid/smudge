@@ -17,6 +17,7 @@ import { useFindReplaceState } from "../hooks/useFindReplaceState";
 import { useChapterTitleEditing } from "../hooks/useChapterTitleEditing";
 import { useProjectTitleEditing } from "../hooks/useProjectTitleEditing";
 import { useTrashManager } from "../hooks/useTrashManager";
+import { makeStaleProjectGuard } from "../hooks/staleProjectGuard";
 import { useKeyboardShortcuts, type ViewMode } from "../hooks/useKeyboardShortcuts";
 import { api } from "../api/client";
 import {
@@ -146,6 +147,8 @@ export function EditorPage() {
     cancelPendingSaves,
     seedConfirmedStatus,
     replaceConfirmedStatusesFromProject,
+    projectRef,
+    projectSlugRef,
   } = useProjectEditor(slug, {
     // I2: route terminal save-fail codes through the invariant-pair
     // helper so the banner and setEditable(false) stay in lock-step.
@@ -997,23 +1000,41 @@ export function EditorPage() {
       return;
     }
     const label = buildOuttakeLabel(activeChapter?.title ?? "");
+    // I1 (review 2026-07-26): captureOp aborts on unmount and on a newer
+    // capture — never on project navigation, and EditorPage stays mounted
+    // across /projects/:slug changes. Without this, an A→B switch mid-POST
+    // paints project A's failure banner over project B (nothing clears
+    // actionError on project change) and hands A's row to a panel showing B.
+    // Built at entry, before the await, exactly as the nine sibling sites do.
+    const isStaleProject = makeStaleProjectGuard(projectRef, projectSlugRef);
     captureInFlightRef.current = true;
     const { promise, signal } = captureOp.run((s) =>
       api.outtakes.create(project.id, { content, label }, s),
     );
     try {
       const row = await promise;
-      if (signal.aborted) return;
+      if (signal.aborted || isStaleProject()) return;
       // Hand the created row to the panel to prepend (I1). A new object
-      // identity each time drives the panel's prepend effect.
+      // identity each time drives the panel's prepend effect. The panel
+      // independently refuses a row whose project_id is not its own — belt and
+      // braces, since this guard cannot see the pre-load window's far side.
       setCapturedOuttake(row);
     } catch (err) {
-      if (signal.aborted) return;
+      if (signal.aborted || isStaleProject()) return;
       applyMappedError(mapApiError(err, "outtake.create"), { onMessage: setActionError });
     } finally {
       captureInFlightRef.current = false;
     }
-  }, [toolbarEditor, project, activeChapter, captureOp, setActionError, setActionInfo]);
+  }, [
+    toolbarEditor,
+    project,
+    activeChapter,
+    captureOp,
+    setActionError,
+    setActionInfo,
+    projectRef,
+    projectSlugRef,
+  ]);
 
   useKeyboardShortcuts({
     shortcutHelpOpen,

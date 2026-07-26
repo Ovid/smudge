@@ -267,6 +267,64 @@ describe("OuttakesPanel", () => {
     expect(screen.queryByDisplayValue("From A")).not.toBeInTheDocument();
   });
 
+  it("does not leak a capture that arrives AFTER a project switch (I1)", async () => {
+    // The C1 test above covers the MOUNT path (capture already in hand when the
+    // panel first renders, so surfacedCaptureIdRef seeds it away). This is the
+    // prop-change path: the panel is already mounted for project B when project
+    // A's capture POST finally resolves. surfacedCaptureIdRef was seeded null at
+    // B's first render, so the id differs and the prepend effect fires. The row
+    // belongs to A and must be dropped on its project_id, not on a ref seed.
+    vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "b", label: "B row" })]);
+    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-B" />);
+    await waitFor(() => expect(screen.getByDisplayValue("B row")).toBeInTheDocument());
+
+    const projectARow = makeOuttake({ id: "cap", project_id: "proj-A", label: "From A" });
+    rerender(<OuttakesPanel {...defaultProps} projectId="proj-B" capturedOuttake={projectARow} />);
+
+    await waitFor(() => expect(screen.getByDisplayValue("B row")).toBeInTheDocument());
+    expect(screen.queryByDisplayValue("From A")).not.toBeInTheDocument();
+  });
+
+  it("drops a created row that came back for a different project (I1)", async () => {
+    // Same guard, reached through the blank-note create rather than the toolbar
+    // capture: handleCreate has no project re-check after its await either, so
+    // applyServerRow is the one place that has to refuse the row.
+    const user = userEvent.setup();
+    vi.mocked(api.outtakes.list).mockResolvedValue([]);
+    vi.mocked(api.outtakes.create).mockResolvedValue(
+      makeOuttake({ id: "new", project_id: "proj-OTHER", label: "Wrong project" }),
+    );
+    render(<OuttakesPanel {...defaultProps} projectId="proj-1" />);
+    await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: S.newBlank }));
+    await user.type(screen.getByLabelText(S.newPlaceholder), "stashed text");
+    await user.click(screen.getByRole("button", { name: S.save }));
+
+    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
+    expect(screen.queryByDisplayValue("Wrong project")).not.toBeInTheDocument();
+  });
+
+  it("a project switch clears the previous project's rows and sticky notice (I3)", async () => {
+    // The panel is not keyed on project, so a switch only changes the prop. If
+    // the reload for B fails, A's rows stay rendered — and every one of them is
+    // actionable: Delete on such a card hard-deletes a real project-A outtake
+    // (outtakes have no deleted_at). Rows must go the moment the project does.
+    vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a", label: "A row" })]);
+    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-A" />);
+    await waitFor(() => expect(screen.getByDisplayValue("A row")).toBeInTheDocument());
+
+    vi.mocked(api.outtakes.list).mockRejectedValue(new Error("boom"));
+    rerender(<OuttakesPanel {...defaultProps} projectId="proj-B" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(STRINGS.error.loadOuttakesFailed)).toBeInTheDocument();
+    });
+    expect(screen.queryByDisplayValue("A row")).not.toBeInTheDocument();
+    expectConsole("warn").silent();
+    expectConsole("error").silent();
+  });
+
   it("surfaces the mapped message on a failed load without leaking a raw warning", async () => {
     vi.mocked(api.outtakes.list).mockRejectedValue(new Error("boom"));
     render(<OuttakesPanel {...defaultProps} />);
@@ -350,6 +408,39 @@ describe("OuttakesPanel", () => {
     expect(screen.getByRole("button", { name: S.save })).toBeEnabled();
   });
 
+  it("a settling create does not wipe a newer draft the writer started (I2)", async () => {
+    // Cancel carries no disabled={creating} — only Save does — so the writer can
+    // close the form and start a second note while the first POST is still out.
+    // The tail of handleCreate must not clear text it never sent. This is the
+    // same current === attempted discipline OuttakeCard.commitLabel already uses.
+    vi.mocked(api.outtakes.list).mockResolvedValue([]);
+    let resolveCreate!: (row: OuttakeRow) => void;
+    vi.mocked(api.outtakes.create).mockReturnValue(
+      new Promise<OuttakeRow>((res) => {
+        resolveCreate = res;
+      }),
+    );
+    const user = userEvent.setup();
+    render(<OuttakesPanel {...defaultProps} />);
+    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
+
+    await user.click(screen.getByRole("button", { name: S.newBlank }));
+    await user.type(screen.getByRole("textbox", { name: S.newPlaceholder }), "scene A");
+    await user.click(screen.getByRole("button", { name: S.save }));
+    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalledTimes(1));
+
+    // Writer gives up waiting, cancels, and starts a different note.
+    await user.click(screen.getByRole("button", { name: S.cancel }));
+    await user.click(screen.getByRole("button", { name: S.newBlank }));
+    await user.type(screen.getByRole("textbox", { name: S.newPlaceholder }), "scene B");
+
+    resolveCreate(makeOuttake({ id: "new", label: "Saved A", content: docFromLines("scene A") }));
+    await waitFor(() => expect(screen.getByDisplayValue("Saved A")).toBeInTheDocument());
+
+    // "scene B" is still on screen, in an open form, unsent and unlost.
+    expect(screen.getByRole("textbox", { name: S.newPlaceholder })).toHaveValue("scene B");
+  });
+
   it("a delete does not abort an in-flight label update (independent ops)", async () => {
     vi.mocked(api.outtakes.list).mockResolvedValue([
       makeOuttake({ id: "a", label: "Renamed target", content: docFromLines("Body A") }),
@@ -417,30 +508,40 @@ describe("OuttakesPanel", () => {
 
   it("discards a stale reload that would resurrect a row deleted after it started (I2)", async () => {
     const a = makeOuttake({ id: "a", label: "Alpha" });
+    const b = makeOuttake({ id: "b", label: "Beta" });
     let resolveReload!: (rows: OuttakeRow[]) => void;
     vi.mocked(api.outtakes.list)
-      .mockResolvedValueOnce([a]) // mount load
+      .mockResolvedValueOnce([a, b]) // mount load
       .mockReturnValueOnce(
         new Promise<OuttakeRow[]>((res) => {
           resolveReload = res;
         }),
-      ); // projectId-change reload, deferred
+      ) // possibly-committed recovery reload, deferred
+      .mockResolvedValue([b]); // the load the delete re-issues: server truth
+    // A rename the server may or may not have committed is the in-project way
+    // to put a reload in flight. (A projectId change also reloads, but it now
+    // clears the list outright — I3 — so it cannot stage this race.)
+    vi.mocked(api.outtakes.updateLabel).mockRejectedValue(
+      new ApiRequestError("bad body", 200, "BAD_JSON"),
+    );
     const user = userEvent.setup();
-    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-1" />);
+    render(<OuttakesPanel {...defaultProps} />);
     await screen.findByDisplayValue("Alpha");
 
-    // A projectId change fires the (deferred) reload GET.
-    rerender(<OuttakesPanel {...defaultProps} projectId="proj-2" />);
+    const betaInput = screen.getByDisplayValue("Beta");
+    await user.clear(betaInput);
+    await user.type(betaInput, "Beta renamed");
+    await user.tab();
     await waitFor(() => expect(api.outtakes.list).toHaveBeenCalledTimes(2));
 
     // Delete "a" while that reload GET is still in flight.
-    await user.click(screen.getByRole("button", { name: S.delete }));
+    await user.click(screen.getAllByRole("button", { name: S.delete })[0]!);
     await user.click(screen.getByRole("button", { name: STRINGS.delete.confirmButton }));
     await waitFor(() => expect(screen.queryByDisplayValue("Alpha")).not.toBeInTheDocument());
 
     // The stale reload resolves still holding "a" — it must be discarded, not
     // overwrite the just-applied deletion.
-    resolveReload([a]);
+    resolveReload([a, b]);
     await new Promise((r) => setTimeout(r, 0));
     expect(screen.queryByDisplayValue("Alpha")).not.toBeInTheDocument();
   });
