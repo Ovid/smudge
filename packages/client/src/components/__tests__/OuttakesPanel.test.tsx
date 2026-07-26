@@ -223,6 +223,36 @@ describe("OuttakesPanel", () => {
     expect(screen.getAllByDisplayValue("Captured")).toHaveLength(1);
   });
 
+  it("mounting with a capture already in hand keeps the server list (C1)", async () => {
+    // The capture POST completes before the panel mounts (the toolbar button
+    // lives outside the panel, and the panel unmounts when the drawer is closed
+    // or another tab is selected). The mount load therefore ALREADY contains the
+    // captured row — prepending it here would stale that load and leave the
+    // panel showing only the capture, hiding every stored outtake.
+    const captured = makeOuttake({ id: "cap", label: "Captured" });
+    vi.mocked(api.outtakes.list).mockResolvedValue([
+      captured,
+      makeOuttake({ id: "a", label: "Alpha" }),
+    ]);
+    render(<OuttakesPanel {...defaultProps} capturedOuttake={captured} />);
+
+    await waitFor(() => expect(screen.getByDisplayValue("Alpha")).toBeInTheDocument());
+    expect(screen.getAllByDisplayValue("Captured")).toHaveLength(1);
+  });
+
+  it("does not leak a previous project's capture into a new project's list (C1)", async () => {
+    // Same mount path, but the row belongs to project A while the panel mounts
+    // for project B: the stale row must not appear at all.
+    const projectARow = makeOuttake({ id: "cap", project_id: "proj-A", label: "From A" });
+    vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "b", label: "B row" })]);
+    render(
+      <OuttakesPanel {...defaultProps} projectId="proj-B" capturedOuttake={projectARow} />,
+    );
+
+    await waitFor(() => expect(screen.getByDisplayValue("B row")).toBeInTheDocument());
+    expect(screen.queryByDisplayValue("From A")).not.toBeInTheDocument();
+  });
+
   it("surfaces the mapped message on a failed load without leaking a raw warning", async () => {
     vi.mocked(api.outtakes.list).mockRejectedValue(new Error("boom"));
     render(<OuttakesPanel {...defaultProps} />);

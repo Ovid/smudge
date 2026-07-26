@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { OuttakeRow } from "@smudge/shared";
 import { toPlainText } from "@smudge/shared";
 import { api } from "../api/client";
@@ -73,13 +73,24 @@ export function OuttakesPanel({ projectId, onInsert, capturedOuttake }: Outtakes
       });
   }, [projectId, loadOp, seq]);
 
+  // C1: the id this panel has already surfaced, seeded at FIRST RENDER so mount
+  // is a no-op. The capture POST always completes before the panel mounts (the
+  // toolbar button lives outside the panel, and the panel unmounts whenever the
+  // drawer closes or another tab is selected), so the mount load already
+  // contains the row. Prepending on mount would seq.abort() the panel's only
+  // load — the list would collapse to just the capture, hiding every stored
+  // outtake until a page refresh, and leaking project A's row into project B.
+  const surfacedCaptureIdRef = useRef<string | null>(capturedOuttake?.id ?? null);
+
   // I1: prepend a toolbar-captured row the moment EditorPage hands it down,
   // exactly as handleCreate does for the blank-note flow. Bump the epoch so an
   // in-flight reload can't clobber the prepend, and dedup by id so a reload
   // that already surfaced the server's copy can't leave a duplicate key. Fires
-  // only on a NEW row identity (null on mount / before the first capture).
+  // only for a row this panel has not already surfaced.
   useEffect(() => {
     if (!capturedOuttake) return;
+    if (surfacedCaptureIdRef.current === capturedOuttake.id) return;
+    surfacedCaptureIdRef.current = capturedOuttake.id;
     seq.abort();
     setOuttakes((prev) => [capturedOuttake, ...prev.filter((o) => o.id !== capturedOuttake.id)]);
     setError(null);
