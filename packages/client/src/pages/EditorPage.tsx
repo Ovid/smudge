@@ -479,13 +479,28 @@ export function EditorPage() {
   // Inserts the block ARRAY (content.content), never the wrapping doc node.
   const handleInsertOuttake = useCallback(
     (outtake: OuttakeRow) => {
-      if (!toolbarEditor || !toolbarEditor.isEditable || editorMachine.isLocked()) return;
+      if (!toolbarEditor) return;
+      // I5: a refused click must say why, exactly as onInsertImage does for the
+      // same "your click was intentionally ignored" case. In the locked-editor
+      // case, telling the user why input is refused is the entire point of the
+      // lock banner.
+      if (editorMachine.isLocked()) {
+        setActionInfo(STRINGS.editor.lockedRefusal);
+        return;
+      }
+      if (!toolbarEditor.isEditable) {
+        setActionInfo(STRINGS.editor.mutationBusy);
+        return;
+      }
       const docContent = outtake.content.content;
       const blocks = Array.isArray(docContent) ? docContent : [];
+      // An empty outtake is a card-level oddity, not a refused action — there
+      // is nothing to report beyond "nothing happened because it is empty",
+      // which the (visibly empty) card already says.
       if (blocks.length === 0) return;
       toolbarEditor.chain().focus().insertContent(blocks).run();
     },
-    [toolbarEditor, editorMachine],
+    [toolbarEditor, editorMachine, setActionInfo],
   );
 
   // Clean up image announcement timer on unmount.
@@ -892,6 +907,16 @@ export function EditorPage() {
   // Dedicated abortable op for the capture POST — never reuse a content-
   // mutation op (this flow touches no editor content).
   const captureOp = useAbortableAsyncOperation();
+  // I4: re-entrancy latch, mirroring the panel's own `creating` flag. Letting a
+  // second click run captureOp.run() again would abort the first POST's
+  // controller — but that POST may already have reached the server, leaving a
+  // committed row that never reaches setCapturedOuttake and (since the prepend
+  // is now the only thing that surfaces a capture) never appears at all.
+  // Aborting a POST that may have committed is the wrong cancellation
+  // semantic; abort-on-unmount still comes free from the hook. Note this is NOT
+  // covered by the F-8 duplicate-upload trade-off, whose premise is that the
+  // only retry path is manual.
+  const captureInFlightRef = useRef(false);
 
   // Send the current selection to outtakes (non-destructive copy). Reads the
   // selection, strips images, POSTs a new outtake, then bumps the refresh
@@ -901,15 +926,28 @@ export function EditorPage() {
   // is safe on a blurred editor because ProseMirror keeps state.selection.
   const handleSendSelectionToOuttakes = useCallback(async () => {
     if (!toolbarEditor || !project) return;
+    if (captureInFlightRef.current) {
+      setActionInfo(STRINGS.editor.mutationBusy);
+      return;
+    }
     const { from, to } = toolbarEditor.state.selection;
-    if (from === to) return; // nothing selected
+    // I5: the toolbar button is always enabled, so a collapsed caret is the
+    // everyday way to reach this — a silent no-op reads as a broken button.
+    if (from === to) {
+      setActionInfo(STRINGS.outtakes.selectionRequired);
+      return;
+    }
     const slice = toolbarEditor.state.doc.slice(from, to);
     const content = stripImageNodes({ type: "doc", content: slice.content.toJSON() ?? [] });
     // An image-only selection strips to an empty doc — POSTing it would create a
-    // blank outtake card. from !== to passed the guard above, but there is no
-    // block content left to capture, so no-op (don't POST or bump the nonce).
-    if (!Array.isArray(content.content) || content.content.length === 0) return;
+    // blank outtake card. from !== to passed the guard above, so the user DID
+    // select something; say what happened to it rather than no-op silently (I5).
+    if (!Array.isArray(content.content) || content.content.length === 0) {
+      setActionInfo(STRINGS.outtakes.selectionHasNoText);
+      return;
+    }
     const label = buildOuttakeLabel(activeChapter?.title ?? "");
+    captureInFlightRef.current = true;
     const { promise, signal } = captureOp.run((s) =>
       api.outtakes.create(project.id, { content, label }, s),
     );
@@ -922,8 +960,10 @@ export function EditorPage() {
     } catch (err) {
       if (signal.aborted) return;
       applyMappedError(mapApiError(err, "outtake.create"), { onMessage: setActionError });
+    } finally {
+      captureInFlightRef.current = false;
     }
-  }, [toolbarEditor, project, activeChapter, captureOp, setActionError]);
+  }, [toolbarEditor, project, activeChapter, captureOp, setActionError, setActionInfo]);
 
   useKeyboardShortcuts({
     shortcutHelpOpen,

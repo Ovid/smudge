@@ -479,6 +479,8 @@ export const STRINGS = {
     empty: "No outtakes yet. Stash cut text here to find it later.",
     noMatches: "No outtakes match your filter.",
     newFromSelection: "Send selection to outtakes",
+    selectionRequired: "Select some text first, then send it to outtakes.",
+    selectionHasNoText: "That selection has no text to stash — images aren't kept in outtakes.",
     newBlank: "New outtake",
     filterPlaceholder: "Filter outtakes…",
     untitled: "Untitled outtake",

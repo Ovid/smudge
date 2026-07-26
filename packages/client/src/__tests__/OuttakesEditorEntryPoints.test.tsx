@@ -256,6 +256,9 @@ describe("F1: insert outtake at cursor", () => {
     await user.click(await screen.findByRole("button", { name: STRINGS.outtakes.insert }));
 
     expect(insertContentSpy).not.toHaveBeenCalled();
+    // I5: the click must not vanish silently — say why it was refused, as
+    // onInsertImage already does for the same "intentionally ignored" case.
+    expect(await screen.findByText(STRINGS.editor.mutationBusy)).toBeInTheDocument();
   });
 
   it("no-ops when the outtake has no blocks (empty doc)", async () => {
@@ -343,6 +346,38 @@ describe("F2: send selection to outtakes (non-destructive)", () => {
     );
 
     expect(api.outtakes.create).not.toHaveBeenCalled();
+    // I5: an enabled toolbar button that does nothing is the everyday case here
+    // (a collapsed caret), so it has to say what is missing.
+    expect(await screen.findByText(STRINGS.outtakes.selectionRequired)).toBeInTheDocument();
+  });
+
+  it("ignores a second capture click instead of aborting the first POST (I4)", async () => {
+    const user = userEvent.setup();
+    mockControls.selection = { from: 1, to: 8 };
+    mockControls.sliceJson = [{ type: "paragraph", content: [{ type: "text", text: "grabbed" }] }];
+    let resolveCreate!: (row: ReturnType<typeof outtake>) => void;
+    vi.mocked(api.outtakes.create).mockReturnValue(
+      new Promise((res) => {
+        resolveCreate = res;
+      }),
+    );
+
+    renderEditorPage();
+    await openOuttakesTab(user);
+    const button = screen.getByRole("button", { name: STRINGS.outtakes.newFromSelection });
+
+    await user.click(button);
+    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalledTimes(1));
+    // The button gives no busy feedback, so a second click during a slow
+    // round-trip is the expected user reaction. Aborting the first POST would
+    // silently orphan a row the server had already committed.
+    await user.click(button);
+    expect(api.outtakes.create).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(STRINGS.editor.mutationBusy)).toBeInTheDocument();
+
+    // The latch releases on settle, so the row still surfaces.
+    resolveCreate(outtake({ id: "ot-new" }));
+    expect(await screen.findByText("cut text")).toBeInTheDocument();
   });
 
   it("no-ops when the selection is image-only (stripped doc has no blocks)", async () => {
@@ -361,6 +396,9 @@ describe("F2: send selection to outtakes (non-destructive)", () => {
     expect(api.outtakes.create).not.toHaveBeenCalled();
     // Panel stays empty (no capture, so nothing is prepended).
     expect(screen.getByText(STRINGS.outtakes.empty)).toBeInTheDocument();
+    // I5: distinct copy — the user DID select something, so "select some text"
+    // would read as a lie.
+    expect(await screen.findByText(STRINGS.outtakes.selectionHasNoText)).toBeInTheDocument();
   });
 
   it("surfaces the mapped error message when create fails", async () => {
