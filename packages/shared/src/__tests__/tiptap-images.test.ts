@@ -40,6 +40,14 @@ describe("stripImageNodes", () => {
     };
     expect(JSON.stringify(stripImageNodes(doc as Record<string, unknown>))).not.toContain("image");
   });
+  it("drops an over-deep subtree rather than returning it with images intact", () => {
+    // Fail CLOSED at the cap, like stripNoteMarks / collectLeafBlocks /
+    // validateTipTapDepth. Returning the subtree verbatim kept its images,
+    // which is the one failure mode this walker exists to prevent.
+    let node: Record<string, unknown> = { type: "image", attrs: { src: "/deep.png" } };
+    for (let i = 0; i < 200; i++) node = { type: "paragraph", content: [node] };
+    expect(JSON.stringify(stripImageNodes({ type: "doc", content: [node] }))).not.toContain("image");
+  });
   it("caps recursion at MAX_TIPTAP_DEPTH without throwing", () => {
     let node: Record<string, unknown> = { type: "text", text: "x" };
     for (let i = 0; i < 200; i++) node = { type: "paragraph", content: [node] };

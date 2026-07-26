@@ -10,11 +10,23 @@ function strip(node: Node, depth: number): Node | null {
   // which likewise finds nothing inside such a child.
   if (!node || typeof node !== "object" || Array.isArray(node)) return null;
   if (node.type === "image") return null;
-  if (depth > MAX_TIPTAP_DEPTH || !Array.isArray(node.content)) return node;
+  // Fail CLOSED at the depth cap: drop the over-deep subtree rather than return
+  // it verbatim, which kept every image inside it — the one failure mode this
+  // walker exists to prevent. Matches stripNoteMarks (-> undefined),
+  // collectLeafBlocks (-> []) and validateTipTapDepth (-> false). Unreachable
+  // via the API (Zod rejects depth > MAX_TIPTAP_DEPTH before insert); reachable
+  // from a hand-edited DB or a restored backup.
+  if (depth > MAX_TIPTAP_DEPTH) return null;
+  if (!Array.isArray(node.content)) return node;
   const content = node.content.map((c) => strip(c, depth + 1)).filter((c): c is Node => c !== null);
   return { ...node, content };
 }
-/** Returns a copy of `doc` with all image nodes removed. */
+/**
+ * Returns a copy of `doc` with all image nodes removed. Fails closed: a subtree
+ * past MAX_TIPTAP_DEPTH, or a child this walker cannot descend into (null,
+ * primitive, array), is DROPPED rather than passed through — no caller has to
+ * depth-validate first for the no-images guarantee to hold.
+ */
 export function stripImageNodes(doc: Record<string, unknown>): Record<string, unknown> {
   const result = strip(doc as Node, 0);
   return (result ?? { type: "doc", content: [] }) as Record<string, unknown>;
