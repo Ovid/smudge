@@ -171,6 +171,10 @@ const EDITOR_MAIN_CONTENT_PROPS = [
   "activeTabId",
   "onSelectTab",
   "galleryExternalRefreshKey",
+  // Phase 3d: insert an image at the cursor. Guard axis (I2): identical to
+  // onInsertOuttake's — the persistent lock + the machine's editable flag —
+  // PLUS isActionBusy() for the extended post-mutation window. It gated on
+  // isActionBusy() alone until the lock axis was found missing.
   "onInsertImage",
   // Phase 4c.2: insert an outtake's blocks at the cursor. Guard axis:
   // content/save — the machine's editable flag (via toolbarEditor.isEditable)

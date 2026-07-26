@@ -503,6 +503,44 @@ export function EditorPage() {
     [toolbarEditor, editorMachine, setActionInfo],
   );
 
+  // Insert an image at the cursor. Same operation as handleInsertOuttake — both
+  // mutate the live document — so it carries the same content/save guard axis.
+  //
+  // I2 (dedup review 2026-07-26): this used to gate on isActionBusy() ALONE.
+  // That axis is false under the persistent lock raised by a terminal auto-save
+  // failure (useProjectEditor.onRequestEditorLock → applyReloadFailedLock):
+  // no mutation is in flight and there is no panel precondition. TipTap does not
+  // gate programmatic dispatch on `editable`, so the insert landed anyway,
+  // onUpdate set dirtyRef and wrote the mutated document into the draft cache —
+  // which outlives the refresh the lock banner tells the user to perform. The
+  // save-failure lock is the one lock state that coexists with an open image
+  // gallery, since the restore/replace locks arrive through panels that close
+  // the reference panel and refuse to reopen it.
+  //
+  // isActionBusy() is kept as well: unlike the lock it also covers the extended
+  // post-mutation window (actionBusyRef) during which the editor is editable
+  // again but trailing banner/refresh work is still running. The two axes are
+  // orthogonal, which is why handleInsertOuttake's "NOT isActionBusy()" note
+  // and this handler's extra check are both correct.
+  const handleInsertImage = useCallback(
+    (url: string, alt: string) => {
+      if (editorMachine.isLocked()) {
+        setActionInfo(STRINGS.editor.lockedRefusal);
+        return;
+      }
+      if (!toolbarEditor?.isEditable) {
+        setActionInfo(STRINGS.editor.mutationBusy);
+        return;
+      }
+      if (isActionBusy()) {
+        setActionInfo(STRINGS.editor.mutationBusy);
+        return;
+      }
+      editorRef.current?.insertImage(url, alt);
+    },
+    [toolbarEditor, editorMachine, isActionBusy, setActionInfo],
+  );
+
   // Clean up image announcement timer on unmount.
   // settingsRefreshOp auto-aborts on unmount — no explicit call needed.
   useEffect(() => {
@@ -1165,18 +1203,7 @@ export function EditorPage() {
         activeTabId={activeTabId}
         onSelectTab={setActiveTab}
         galleryExternalRefreshKey={galleryExternalRefreshKey}
-        onInsertImage={(url, alt) => {
-          // I4: gate behind isActionBusy() like every other editor-
-          // modifying entry point. Inserting during an in-flight
-          // mutation fires onUpdate, sets dirtyRef=true on content
-          // that is about to be overwritten, and schedules an auto-
-          // save after the hook already markClean-ed.
-          if (isActionBusy()) {
-            setActionInfo(STRINGS.editor.mutationBusy);
-            return;
-          }
-          editorRef.current?.insertImage(url, alt);
-        }}
+        onInsertImage={handleInsertImage}
         onInsertOuttake={handleInsertOuttake}
         capturedOuttake={capturedOuttake}
         snapshotPanelOpen={snapshotPanelOpen}
