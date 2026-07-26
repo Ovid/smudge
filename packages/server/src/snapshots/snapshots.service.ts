@@ -16,6 +16,19 @@ import { canonicalContentHash } from "./content-hash";
 import { MAX_CHAPTER_CONTENT_BYTES } from "../constants";
 import type { SnapshotRow, SnapshotListItem } from "./snapshots.types";
 
+/**
+ * How much of the restored snapshot's own label may be embedded in the
+ * generated "Before restore to ‘…’" label.
+ *
+ * I4 (dedup review 2026-07-26): this was a bare 450 with no stated link to the
+ * cap it sits under. It is deliberately well below LABEL_MAX_UNITS rather than
+ * derived from it (the template's own 20 units would leave 480): the headroom
+ * lets the template text grow without silently eating into the user's
+ * fragment. It is a budget, not the enforcement — buildAutoSnapshotLabel's
+ * clamp is what guarantees the result fits.
+ */
+const EMBEDDED_LABEL_MAX = 450;
+
 export async function createSnapshot(
   chapterId: string,
   label?: string | null,
@@ -175,7 +188,7 @@ export async function restoreSnapshot(
     // the guarantee that the stored label is sanitized even if the embed
     // template ever adds bidi chars literally.
     const sanitizedEmbed = snapshot.label ? sanitizeSnapshotLabel(snapshot.label) : null;
-    const embedded = sanitizedEmbed ? truncateGraphemes(sanitizedEmbed, 450) : null;
+    const embedded = sanitizedEmbed ? truncateGraphemes(sanitizedEmbed, EMBEDDED_LABEL_MAX) : null;
     const rawLabel = embedded
       ? `Before restore to \u2018${embedded}\u2019`
       : `Before restore to snapshot from ${snapshot.created_at}`;

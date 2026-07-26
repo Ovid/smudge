@@ -16,6 +16,7 @@ export {
   CreateOuttakeSchema,
   UpdateOuttakeSchema,
   sanitizeSnapshotLabel,
+  LABEL_MAX_UNITS,
   validateTipTapDepth,
   MAX_TIPTAP_DEPTH,
   TipTapDocSchema,

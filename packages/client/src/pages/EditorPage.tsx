@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import type { Chapter, ChapterStatusRow, ChapterStatusValue, OuttakeRow } from "@smudge/shared";
-import { stripImageNodes, truncateUnits } from "@smudge/shared";
+import { stripImageNodes, truncateUnits, LABEL_MAX_UNITS } from "@smudge/shared";
 import type { EditorHandle } from "../components/Editor";
 import type { Editor as TipTapEditor } from "@tiptap/react";
 import { STRINGS } from "../strings";
@@ -42,15 +42,21 @@ import { EditorHeader } from "../components/EditorHeader";
 import { EditorMainContent } from "../components/EditorMainContent";
 import { EditorDialogs } from "../components/EditorDialogs";
 
-// The outtake label schema rejects (does not truncate) above 500 UTF-16 units.
+// The outtake label schema rejects (does not truncate) above the label cap.
 // The capture auto-label is machine-derived from a chapter title that is itself
-// capped at 500, so "From " + title can overshoot and deterministically 400 the
-// POST. Truncate the title portion to fit, without leaving a dangling high
-// surrogate. Keep in sync with CreateOuttakeSchema.label's post-pipe max.
-const OUTTAKE_LABEL_MAX = 500;
+// capped at the same length, so "From " + title can overshoot and
+// deterministically 400 the POST. Truncate the title portion to fit, without
+// leaving a dangling high surrogate.
+//
+// I4 (dedup review 2026-07-26): the cap is imported rather than re-typed. The
+// old local copy said "keep in sync with CreateOuttakeSchema.label's post-pipe
+// max" — a comment is not a mechanism, and this is precisely the number that
+// must not drift, since lowering the schema's cap alone would make every
+// outtake capture deterministically 400: the failure this helper exists to
+// prevent.
 function buildOuttakeLabel(title: string): string {
   const prefix = STRINGS.outtakes.fromChapterPrefix;
-  const budget = OUTTAKE_LABEL_MAX - prefix.length;
+  const budget = LABEL_MAX_UNITS - prefix.length;
   return prefix + truncateUnits(title, budget);
 }
 

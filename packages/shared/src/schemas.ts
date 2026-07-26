@@ -181,17 +181,32 @@ export function sanitizeSnapshotLabel(raw: string): string {
   );
 }
 
+/**
+ * How long a snapshot or outtake label may be, in **UTF-16 code units** —
+ * `String.length`, the unit Zod's `.max()` measures.
+ *
+ * I4 (dedup review 2026-07-26): exported because the server's auto-label
+ * builders and the client's outtake-capture label each carried their own
+ * private `500`, and one of them counted a different unit. Emoji are one
+ * grapheme and two code units, so a 500-GRAPHEME truncation happily emits a
+ * 1000-code-unit label; the restore path really did compose to store 520 units
+ * behind a schema that rejects 501. Anything that truncates a label to fit this
+ * cap must measure the same unit the cap is written in — see
+ * `truncateUnits` (@smudge/shared) and `snapshots/labels.ts`.
+ */
+export const LABEL_MAX_UNITS = 500;
+
 // Shared label chain for snapshot/outtake labels. Cap pre-sanitize at 5000 code
 // units as defense-in-depth: without this, a 1 MB payload walks through the
-// sanitizer before being rejected by the post-pipe .max(500). 5000 is ~10x the
-// final cap — room for sanitizer-stripped bidi/control chars without gatekeeping
-// legitimate long labels that would fit once cleaned. Each schema applies its
-// own nullability modifier (.optional()/.nullish()/.nullable()) below.
+// sanitizer before being rejected by the post-pipe LABEL_MAX_UNITS cap. 5000 is
+// ~10x the final cap — room for sanitizer-stripped bidi/control chars without
+// gatekeeping legitimate long labels that would fit once cleaned. Each schema
+// applies its own nullability modifier (.optional()/.nullish()/.nullable()).
 const sanitizedLabelBase = z
   .string()
   .max(5000, "Label is too long")
   .transform(sanitizeSnapshotLabel)
-  .pipe(z.string().trim().max(500, "Label is too long"));
+  .pipe(z.string().trim().max(LABEL_MAX_UNITS, "Label is too long"));
 
 export const CreateSnapshotSchema = z
   .object({
