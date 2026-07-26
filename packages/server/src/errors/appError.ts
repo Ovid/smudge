@@ -18,7 +18,9 @@
 // contract, and the 503 /api/health carve-out — while the one site that
 // actually writes a status (globalErrorHandler in app.ts) encoded neither.
 // ERROR_STATUS_ALLOWLIST below is now the single machine-readable owner: the
-// subclasses draw from it and the handler clamps to it.
+// base constructor rejects anything outside it (S6) and the handler clamps to
+// it. Both halves are needed — the handler's clamp runs after its
+// `err instanceof AppError` early return, so it never sees this taxonomy.
 //
 // AppErrors are intentional, already-classified domain failures, so the
 // global handler renders them WITHOUT error-level logging (matching the
@@ -47,6 +49,26 @@ export class AppError extends Error {
 
   constructor(status: number, code: string, message: string, extras?: AppErrorExtras) {
     super(message);
+    // S6 (agentic-review 2026-07-26): make the comment above true. It claimed
+    // "the subclasses draw from it and the handler clamps to it", but the
+    // subclasses hardcode their status literals and the handler's clamp runs
+    // AFTER its `err instanceof AppError` early return — so the set governed
+    // library errors (the 415 leak it was written for) and not the taxonomy it
+    // says it owns. This constructor is public, so `throw new AppError(415, …)`
+    // from a route emitted an off-allowlist status that no client scope maps:
+    // the identical symptom, one layer up. Narrowing the set had the mirror
+    // problem — dropping 413 would have left PayloadTooLargeError emitting it
+    // unclamped with no test going red.
+    //
+    // Throwing (rather than clamping) is deliberate: an off-allowlist status is
+    // a programming error, not a runtime condition to paper over. The throw
+    // escapes as a non-AppError, which globalErrorHandler then clamps to 500
+    // and logs — loud, and inside the contract.
+    if (!ERROR_STATUS_ALLOWLIST.has(status)) {
+      throw new TypeError(
+        `AppError status ${status} is outside ERROR_STATUS_ALLOWLIST — reuse an allowed status with a discriminating code (CLAUDE.md §API Design).`,
+      );
+    }
     this.name = new.target.name;
     this.status = status;
     this.code = code;

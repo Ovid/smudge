@@ -2,6 +2,15 @@ import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { setupTestDb } from "./test-helpers";
 import { logger } from "../logger";
+import {
+  AppError,
+  ERROR_STATUS_ALLOWLIST,
+  NotFoundError,
+  BadRequestError,
+  ConflictError,
+  PayloadTooLargeError,
+  InternalError,
+} from "../errors/appError";
 
 // Safety net for architecture flaw F-3 (server error taxonomy refactor).
 //
@@ -106,5 +115,43 @@ describe("no endpoint emits a status outside the allowlist (I4)", () => {
     } finally {
       logger.level = prevLevel;
     }
+  });
+});
+
+describe("the allowlist governs the taxonomy, not just library errors (S6)", () => {
+  // The I4 comment claimed "the subclasses draw from it and the handler clamps
+  // to it". Only the second half was true: the clamp sits after the handler's
+  // `err instanceof AppError` early return, so the taxonomy itself was
+  // unchecked and AppError's public constructor could mint any status at all.
+  it("refuses to construct an AppError with an off-allowlist status", () => {
+    expect(() => new AppError(415, "NOPE", "unsupported media type")).toThrow(
+      /outside ERROR_STATUS_ALLOWLIST/,
+    );
+    // 2xx is the sharper case: AppError renders an ERROR envelope, so a 2xx
+    // here would emit `{ error: … }` under a success status.
+    expect(() => new AppError(200, "NOPE", "ok?")).toThrow(/outside ERROR_STATUS_ALLOWLIST/);
+  });
+
+  it("accepts every status the allowlist actually contains", () => {
+    for (const status of ERROR_STATUS_ALLOWLIST) {
+      expect(new AppError(status, "CODE", "message").status).toBe(status);
+    }
+  });
+
+  it("every shipped subclass draws a status the allowlist contains", () => {
+    // The mirror failure: narrowing the set (dropping 413, say) would otherwise
+    // leave PayloadTooLargeError emitting it with no test going red.
+    const subclasses = [
+      new NotFoundError("x"),
+      new BadRequestError("x"),
+      new ConflictError("x"),
+      new PayloadTooLargeError("x"),
+      new InternalError("x"),
+    ];
+    for (const err of subclasses) {
+      expect(ERROR_STATUS_ALLOWLIST.has(err.status)).toBe(true);
+    }
+    // Every allowlisted status has a subclass, so the set has no dead entries.
+    expect(new Set(subclasses.map((e) => e.status))).toEqual(new Set(ERROR_STATUS_ALLOWLIST));
   });
 });
