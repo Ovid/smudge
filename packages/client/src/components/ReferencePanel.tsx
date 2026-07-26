@@ -1,6 +1,6 @@
-import { useRef, useEffect } from "react";
 import { PANEL_MIN_WIDTH, PANEL_MAX_WIDTH } from "../hooks/useReferencePanelState";
 import { STRINGS } from "../strings";
+import { ResizeSeparator } from "./ResizeSeparator";
 
 export interface ReferencePanelTab {
   id: string;
@@ -30,13 +30,6 @@ export function ReferencePanel({
   // removed in a later build). Degrade to the first tab so the panel stays
   // non-empty and the tablist keeps a valid selection + aria-labelledby target.
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
-  const resizeCleanupRef = useRef<(() => void) | null>(null);
-
-  useEffect(() => {
-    return () => {
-      resizeCleanupRef.current?.();
-    };
-  }, []);
 
   return (
     <aside
@@ -45,48 +38,13 @@ export function ReferencePanel({
       className="border-l border-border/60 bg-bg-sidebar flex flex-col h-full overflow-hidden relative"
       style={{ width: `${width}px`, minWidth: `${width}px` }}
     >
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={STRINGS.referencePanel.resizeHandle}
-        aria-valuenow={width}
-        aria-valuemin={PANEL_MIN_WIDTH}
-        aria-valuemax={PANEL_MAX_WIDTH}
-        tabIndex={0}
-        className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/20 focus:bg-accent/20 focus:outline-none transition-colors duration-200"
-        onMouseDown={(e) => {
-          e.preventDefault();
-          const startX = e.clientX;
-          const startWidth = width;
-          function onMouseMove(ev: MouseEvent) {
-            const newWidth = Math.min(
-              PANEL_MAX_WIDTH,
-              Math.max(PANEL_MIN_WIDTH, startWidth - (ev.clientX - startX)),
-            );
-            onResize(newWidth);
-          }
-          function onMouseUp() {
-            cleanupResize();
-          }
-          function cleanupResize() {
-            document.removeEventListener("mousemove", onMouseMove);
-            document.removeEventListener("mouseup", onMouseUp);
-            resizeCleanupRef.current = null;
-          }
-          document.addEventListener("mousemove", onMouseMove);
-          document.addEventListener("mouseup", onMouseUp);
-          resizeCleanupRef.current = cleanupResize;
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowLeft") {
-            e.preventDefault();
-            onResize(Math.min(PANEL_MAX_WIDTH, width + 10));
-          }
-          if (e.key === "ArrowRight") {
-            e.preventDefault();
-            onResize(Math.max(PANEL_MIN_WIDTH, width - 10));
-          }
-        }}
+      <ResizeSeparator
+        edge="left"
+        value={width}
+        min={PANEL_MIN_WIDTH}
+        max={PANEL_MAX_WIDTH}
+        ariaLabel={STRINGS.referencePanel.resizeHandle}
+        onResize={onResize}
       />
 
       <div role="tablist" className="border-b border-border/40 px-4 py-2 flex gap-2">

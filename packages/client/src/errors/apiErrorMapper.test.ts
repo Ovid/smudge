@@ -1466,12 +1466,14 @@ describe("every scope fronting PATCH /api/chapters/:id shares its code policy", 
     "chapter.updateStatus",
   ];
 
+  const entryOf = (scope: ApiErrorScope): ScopeEntry => SCOPES[scope];
+
   it.each(CHAPTER_PATCH_SCOPES)("%s declares UPDATE_READ_FAILURE as committed", (scope) => {
-    expect(SCOPES[scope].committedCodes ?? []).toContain("UPDATE_READ_FAILURE");
+    expect(entryOf(scope).committedCodes ?? []).toContain("UPDATE_READ_FAILURE");
   });
 
   it.each(CHAPTER_PATCH_SCOPES)("%s maps UPDATE_READ_FAILURE to its own copy", (scope) => {
-    expect(SCOPES[scope].byCode?.UPDATE_READ_FAILURE).toBeTruthy();
+    expect(entryOf(scope).byCode?.UPDATE_READ_FAILURE).toBeTruthy();
   });
 
   it.each(CHAPTER_PATCH_SCOPES)("%s surfaces possiblyCommitted for the real error", (scope) => {
@@ -1479,6 +1481,6 @@ describe("every scope fronting PATCH /api/chapters/:id shares its code policy", 
     const mapped = mapApiError(err, scope);
     expect(mapped.possiblyCommitted).toBe(true);
     // ...and does NOT fall through to the retry-inviting fallback copy.
-    expect(mapped.message).not.toBe(SCOPES[scope].fallback);
+    expect(mapped.message).not.toBe(entryOf(scope).fallback);
   });
 });
