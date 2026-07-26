@@ -15,6 +15,37 @@ export interface ImageSource {
   findImageById(id: string): Promise<ImageRow | null>;
 }
 
+/**
+ * Wrap an image lookup so it only ever yields images owned by `projectId`.
+ *
+ * I1 (dedup review 2026-07-26): the ownership rule — "an image id found in
+ * chapter content is honoured only if `image.project_id` matches the project
+ * being operated on" — was applied by `applyImageRefDiff` (warn + skip the
+ * refcount update) and by the EPUB cover path (`row.project_id === project.id`),
+ * but NOT on the export resolution path, which had no project parameter at all.
+ * A stale paste of `/api/images/<other-project-uuid>` between two of the
+ * writer's own projects — an entirely ordinary relative src, no hostile input
+ * needed — therefore embedded the other project's bytes into this project's
+ * export, in all five formats.
+ *
+ * The check lives HERE, at the injected boundary, rather than as a `projectId`
+ * argument threaded through `resolveImage` / `resolveImagesInHtml` /
+ * `resolveImagesForEpub` / the DOCX build state. `ImageSource` is already the
+ * one narrow seam every renderer resolves images through (F-12), so scoping it
+ * once at construction means a renderer cannot omit the check — including a
+ * renderer that does not exist yet. The EPUB cover's own `project_id` compare is
+ * left in place: it is now redundant, but it is the documented second layer and
+ * costs nothing.
+ */
+export function projectScopedImageSource(source: ImageSource, projectId: string): ImageSource {
+  return {
+    async findImageById(id: string): Promise<ImageRow | null> {
+      const row = await source.findImageById(id);
+      return row && row.project_id === projectId ? row : null;
+    },
+  };
+}
+
 export interface ResolvedImage {
   id: string;
   filename: string;

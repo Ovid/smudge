@@ -18,6 +18,7 @@ import {
   resolveImage,
   resolveImagesInHtml,
   resolveImagesForEpub,
+  projectScopedImageSource,
   type ImageSource,
 } from "../export/image-resolver";
 import { renderHtml, renderMarkdown, renderPlainText } from "../export/export.renderers";
@@ -29,9 +30,12 @@ vi.mock("../logger", () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
 }));
 
-// Image source injected into the renderers (F-12). Delegates to the live store
-// set up in beforeAll — looked up lazily so it resolves after setProjectStore.
-const imageSrc: ImageSource = { findImageById: (id) => getProjectStore().findImageById(id) };
+// Image source injected into the renderers (F-12), scoped to the project under
+// export exactly as export.service does (I1). Delegates to the live store set
+// up in beforeAll — looked up lazily so it resolves after setProjectStore.
+const imageSrc: ImageSource = {
+  findImageById: (id) => projectScopedImageSource(getProjectStore(), projectId).findImageById(id),
+};
 
 // Small valid 1x1 PNG
 const TEST_PNG = Buffer.from(
@@ -44,6 +48,10 @@ let tmpDataDir: string;
 let projectId: string;
 let imageId: string;
 let imageIdWithCaption: string;
+// A second project with its own image, used to prove an image reference is
+// honoured only when it belongs to the project being exported (I1).
+let otherProjectId: string;
+let otherProjectImageId: string;
 
 function makeChapterWithImage(imgId: string): Record<string, unknown> {
   return {
@@ -115,6 +123,29 @@ beforeAll(async () => {
     caption: "A lovely caption",
   });
   await writeFile(path.join(imgDir, `${imageIdWithCaption}.png`), TEST_PNG);
+
+  // A second project owning its own image, on disk and in the DB.
+  otherProjectId = uuidv4();
+  await testDb("projects").insert({
+    id: otherProjectId,
+    title: "Other Project",
+    slug: "other-project",
+    mode: "fiction",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  otherProjectImageId = uuidv4();
+  await imagesRepo.insert(testDb, {
+    id: otherProjectImageId,
+    project_id: otherProjectId,
+    filename: "other.png",
+    mime_type: "image/png",
+    size_bytes: TEST_PNG.length,
+    created_at: new Date().toISOString(),
+  });
+  const otherImgDir = path.join(tmpDataDir, "images", otherProjectId);
+  await mkdir(otherImgDir, { recursive: true });
+  await writeFile(path.join(otherImgDir, `${otherProjectImageId}.png`), TEST_PNG);
 });
 
 afterAll(async () => {
@@ -507,5 +538,96 @@ describe("renderEpub with images", () => {
     expect(buf).toBeInstanceOf(Buffer);
     expect(buf[0]).toBe(0x50);
     expect(buf[1]).toBe(0x4b);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// I1 (dedup review 2026-07-26): image references are project-scoped
+// ---------------------------------------------------------------------------
+
+describe("an image reference is honoured only within its own project (I1)", () => {
+  // resolveImage did no ownership check at all, so a perfectly ORDINARY
+  // relative src — a stale paste between two of the writer's own projects —
+  // embedded the other project's bytes into this project's export, in all five
+  // formats. applyImageRefDiff already knows the rule (it warns and skips the
+  // refcount update for exactly this shape) and the EPUB cover path already
+  // applies it; the export resolver was the one site that did not. Scoping is
+  // applied once at the injected ImageSource, so no renderer can omit it.
+  let foreignChapters: ExportChapter[];
+
+  beforeAll(() => {
+    foreignChapters = [
+      {
+        id: "ch-foreign",
+        title: "Borrowed Image",
+        content: makeChapterWithImage(otherProjectImageId),
+        sort_order: 0,
+      },
+    ];
+  });
+
+  it("resolves nothing for an out-of-project id", async () => {
+    expect(await resolveImage(otherProjectImageId, imageSrc)).toBeNull();
+    // ...while the same store, unscoped, still finds the row — proving the
+    // refusal comes from the scoping and not from a missing fixture.
+    expect(await getProjectStore().findImageById(otherProjectImageId)).not.toBeNull();
+  });
+
+  it("embeds no data URI in an HTML export", async () => {
+    const html = await renderHtml(projectInfo, foreignChapters, { includeToc: false }, imageSrc);
+    expect(html).not.toContain("data:image/png;base64,");
+    expect(html).not.toContain(otherProjectImageId);
+  });
+
+  it("embeds no data URI in a Markdown export", async () => {
+    const md = await renderMarkdown(projectInfo, foreignChapters, { includeToc: false }, imageSrc);
+    expect(md).not.toContain("data:image/png;base64,");
+  });
+
+  it("leaks no foreign image metadata into a plaintext export", async () => {
+    // Plaintext never embeds bytes, so its leak is METADATA: renderPlainText
+    // labels a resolved image with `alt attribute > DB alt_text > filename`.
+    // With an empty alt the label fell back to the other project's DB filename,
+    // so exporting project A disclosed a filename from project B.
+    const chapters: ExportChapter[] = [
+      {
+        id: "ch-foreign-noalt",
+        title: "Borrowed Image",
+        content: {
+          type: "doc",
+          content: [
+            { type: "image", attrs: { src: `/api/images/${otherProjectImageId}`, alt: "" } },
+          ],
+        },
+        sort_order: 0,
+      },
+    ];
+    const text = await renderPlainText(projectInfo, chapters, { includeToc: false }, imageSrc);
+    expect(text).not.toContain("data:image/png;base64,");
+    expect(text).not.toContain("other.png");
+    expect(text).not.toContain(otherProjectImageId);
+  });
+
+  it("embeds no image media in a DOCX export", async () => {
+    const buf = await renderDocx(projectInfo, foreignChapters, { includeToc: false }, imageSrc);
+    const zip = await JSZip.loadAsync(buf);
+    expect(Object.keys(zip.files).filter((f) => f.startsWith("word/media/"))).toEqual([]);
+  });
+
+  it("embeds no image media in an EPUB export", async () => {
+    const buf = await renderEpub(projectInfo, foreignChapters, { includeToc: false }, imageSrc);
+    const zip = await JSZip.loadAsync(buf);
+    const media = Object.keys(zip.files).filter((f) => /\.(png|jpe?g|gif|webp)$/i.test(f));
+    expect(media).toEqual([]);
+  });
+
+  it("still resolves an image that DOES belong to the exporting project", async () => {
+    const html = await renderHtml(
+      projectInfo,
+      [{ id: "ch-1", title: "Own", content: makeChapterWithImage(imageId), sort_order: 0 }],
+      { includeToc: false },
+      imageSrc,
+    );
+    expect(html).toContain("data:image/png;base64,");
   });
 });

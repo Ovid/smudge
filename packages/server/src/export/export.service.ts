@@ -9,6 +9,7 @@ import {
 } from "./export.renderers";
 import { renderDocx } from "./docx.renderer";
 import { renderEpub } from "./epub.renderer";
+import { projectScopedImageSource } from "./image-resolver";
 
 interface ExportResult {
   content: string | Buffer;
@@ -67,26 +68,33 @@ export async function exportProject(
   // The service owns the store dependency and injects it into the leaf
   // renderers as a narrow ImageSource (F-12) — the renderers no longer reach
   // the global getProjectStore() singleton themselves.
+  //
+  // I1: the injected source is scoped to the project being exported, so an
+  // image id in chapter content that belongs to a DIFFERENT project resolves to
+  // nothing in every format. Scoping the seam rather than each renderer is what
+  // makes the rule unforgettable — see projectScopedImageSource.
+  const imageSource = projectScopedImageSource(store, project.id);
+
   let content: string | Buffer;
   switch (format) {
     case "html":
-      content = await renderHtml(projectInfo, exportChapters, options, store);
+      content = await renderHtml(projectInfo, exportChapters, options, imageSource);
       break;
     case "markdown":
-      content = await renderMarkdown(projectInfo, exportChapters, options, store);
+      content = await renderMarkdown(projectInfo, exportChapters, options, imageSource);
       break;
     case "plaintext":
-      content = await renderPlainText(projectInfo, exportChapters, options, store);
+      content = await renderPlainText(projectInfo, exportChapters, options, imageSource);
       break;
     case "docx":
-      content = await renderDocx(projectInfo, exportChapters, options, store);
+      content = await renderDocx(projectInfo, exportChapters, options, imageSource);
       break;
     case "epub":
       content = await renderEpub(
         projectInfo,
         exportChapters,
         { ...options, coverImageId: parsed.data.epub_cover_image_id },
-        store,
+        imageSource,
       );
       break;
     default: {
