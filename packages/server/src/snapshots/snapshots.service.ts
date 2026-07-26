@@ -2,6 +2,7 @@ import { randomUUID as uuidv4 } from "node:crypto";
 import { countWords, TipTapDocSchema, sanitizeSnapshotLabel } from "@smudge/shared";
 import { truncateGraphemes } from "../utils/grapheme";
 import { buildAutoSnapshotLabel } from "./labels";
+import { insertAutoSnapshotIfChanged } from "./auto-snapshot";
 import { getProjectStore } from "../stores/project-store.injectable";
 import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
@@ -181,28 +182,10 @@ export async function restoreSnapshot(
     const snapshotLabel = buildAutoSnapshotLabel(rawLabel);
 
     // Auto-snapshot the pre-restore content, deduped against the latest
-    // snapshot of ANY kind — manual OR auto (F-15). Unlike the manual-
-    // snapshot path (which dedups against the latest *manual* snapshot so an
-    // auto-snapshot can't block an explicit marker), this insert is itself an
-    // auto-snapshot, so it must also be skipped when the pre-restore content
-    // is byte-identical to a prior auto-snapshot left by an earlier
-    // restore/replace. This removes the identical-content history noise the
-    // flaw describes — including a re-restore whose pre-restore content
-    // already matches the most recent snapshot. The restore itself always
-    // proceeds; only the redundant snapshot insert is skipped.
-    const currentHash = canonicalContentHash(currentContent);
-    const latestHash = await txStore.getLatestSnapshotContentHashAnyKind(chapter.id);
-    if (latestHash !== currentHash) {
-      await txStore.insertSnapshot({
-        id: uuidv4(),
-        chapter_id: chapter.id,
-        label: snapshotLabel,
-        content: currentContent,
-        word_count: chapter.word_count,
-        is_auto: true,
-        created_at: new Date().toISOString(),
-      });
-    }
+    // snapshot of ANY kind (F-15) — including a re-restore whose pre-restore
+    // content already matches the most recent snapshot. See
+    // insertAutoSnapshotIfChanged for the full rationale.
+    await insertAutoSnapshotIfChanged(txStore, chapter, currentContent, snapshotLabel);
 
     // Replace content using the validated, parsed snapshot content.
     const newWordCount = countWords(newParsed);

@@ -1,4 +1,3 @@
-import { randomUUID as uuidv4 } from "node:crypto";
 import {
   searchInDoc,
   replaceInDoc,
@@ -21,7 +20,7 @@ import { getVelocityService } from "../velocity/velocity.injectable";
 import { logger } from "../logger";
 import { applyImageRefDiff } from "../images/images.references";
 import { buildAutoSnapshotLabel } from "../snapshots/labels";
-import { canonicalContentHash } from "../snapshots/content-hash";
+import { insertAutoSnapshotIfChanged } from "../snapshots/auto-snapshot";
 import type { SearchResult, ReplaceResult } from "@smudge/shared";
 
 /**
@@ -295,28 +294,10 @@ export async function replaceInProject(
         const rawLabel = `Before find-and-replace: \u2018${truncateForLabel(search)}\u2019 \u2192 \u2018${truncateForLabel(replace)}\u2019`;
         const label = buildAutoSnapshotLabel(rawLabel);
 
-        // Auto-snapshot before replacement (using DB-committed word_count),
-        // deduped against the latest snapshot of ANY kind — manual OR auto
-        // (F-15). Unlike the manual-snapshot path (which dedups against the
-        // latest *manual* snapshot), this insert is itself an auto-snapshot,
-        // so it must also be skipped when the pre-replace content is byte-
-        // identical to a prior auto-snapshot left by an earlier
-        // restore/replace. This removes the identical-content history noise
-        // the flaw describes. The replacement itself still proceeds; only the
-        // redundant snapshot insert is skipped.
-        const preReplaceHash = canonicalContentHash(chapter.content);
-        const latestSnapshotHash = await txStore.getLatestSnapshotContentHashAnyKind(chapter.id);
-        if (latestSnapshotHash !== preReplaceHash) {
-          await txStore.insertSnapshot({
-            id: uuidv4(),
-            chapter_id: chapter.id,
-            label,
-            content: chapter.content,
-            word_count: chapter.word_count,
-            is_auto: true,
-            created_at: new Date().toISOString(),
-          });
-        }
+        // Auto-snapshot before replacement, using the DB-committed
+        // word_count, deduped against the latest snapshot of ANY kind (F-15).
+        // See insertAutoSnapshotIfChanged for the full rationale.
+        await insertAutoSnapshotIfChanged(txStore, chapter, chapter.content, label);
 
         // Update chapter content — guard against amplification (`$'` / `$\``
         // in regex replacements can splice the full match context repeatedly)
