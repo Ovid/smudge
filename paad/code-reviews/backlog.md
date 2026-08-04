@@ -295,3 +295,15 @@
 - **First seen:** 2026-06-04 on branch `operational-backup-stopgap` at `1aa1eec`
 - **Last seen:** 2026-06-04 on branch `operational-backup-stopgap` at `1aa1eec`
 - **Severity:** Suggestion
+
+## `0364ab66` — find-and-replace parse sites lack the `isTipTapNode` guard, so a wrong-shape chapter is omitted from `skipped_chapter_ids`
+- **File (at first sighting):** `packages/server/src/search/search.service.ts:141`
+- **Symbol:** `searchProject`
+- **Bug class:** Logic
+- **Description:** `searchProject` (line 141) and `replaceInProject` (line 252) keep a bare `try/catch` around `JSON.parse(chapter.content)`. A column holding `"null"`, `"42"`, `"[]"` or `'"text"'` parses without throwing, so the catch never fires; the walkers return zero matches and the loop continues without pushing to `skippedIds`. `skipped_chapter_ids` then omits a chapter that was never examined, reporting the project fully searched/replaced. Three sibling parse sites (`chapters.repository.parseContent`, `images.references.applyImageRefDiff`, `outtakes.repository.parseRow`) gained an `isTipTapNode` gate; these two did not. Pre-existing behaviour — the `scratchpad-outtakes` branch created the visible inconsistency (the same row now 500s `CORRUPT_CONTENT` on `GET /api/chapters/:id`) but did not change this path.
+- **Suggested fix:** Mirror the siblings at both sites: `const p: unknown = JSON.parse(...)` then `if (!isTipTapNode(p)) { logger.warn(...); skippedIds.push(chapter.id); continue; }`, using the `isTipTapNode` predicate already imported from `@smudge/shared` elsewhere on the server.
+- **Confidence:** Medium
+- **Found by:** Logic & Correctness (`Claude Opus 5 (1M context)`)
+- **First seen:** 2026-08-04 on branch `scratchpad-outtakes` at `8d0b5f7`
+- **Last seen:** 2026-08-04 on branch `scratchpad-outtakes` at `8d0b5f7`
+- **Severity:** Suggestion

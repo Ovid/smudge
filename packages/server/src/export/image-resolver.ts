@@ -127,7 +127,16 @@ async function resolveImageSrcs(
 ): Promise<{ html: string; images: Map<string, ResolvedImage> }> {
   IMAGE_SRC_REGEX.lastIndex = 0;
   const matches = [...html.matchAll(IMAGE_SRC_REGEX)];
-  const uniqueIds = [...new Set(matches.map((m) => m[1]).filter(Boolean))] as string[];
+  // OOSS1 (agentic-review 2026-08-04): canonicalize BEFORE resolving, not just
+  // when keying the maps below. `resolve(id)` ends at `where({ id })` under
+  // SQLite's BINARY collation, so an uppercase-only reference resolved to null
+  // and was then deleted outright by the unresolved-image catch-all — the image
+  // gone from every HTML-route export with no warning, after two i-flagged
+  // regexes had accepted it. Ids are minted lowercase (randomUUID), so lowercase
+  // IS the canonical spelling.
+  const uniqueIds = [
+    ...new Set(matches.map((m) => m[1]?.toLowerCase()).filter(Boolean)),
+  ] as string[];
 
   const images = new Map<string, ResolvedImage>();
   const srcById = new Map<string, string>();

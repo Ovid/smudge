@@ -255,6 +255,23 @@ describe("resolveImagesInHtml", () => {
     expect(result.html.match(/<figcaption>A lovely caption<\/figcaption>/g)).toHaveLength(2);
   });
 
+  // OOSS1 (agentic-review 2026-08-04): the S6 normalization reached the map keys
+  // and the emitted data-image-id but not `resolve(id)`, which runs
+  // `where({ id })` under SQLite's BINARY collation. An UPPERCASE-only
+  // reference resolved to null, fell through the rewrite, and was deleted by the
+  // unresolved-image catch-all — the image vanishing from HTML/Markdown/
+  // plaintext/EPUB export with no warning, while IMAGE_SRC_REGEX and
+  // ALLOWED_IMAGE_SRC (both i-flagged) had just accepted it. The duplicate-
+  // reference test above passes either way: its lowercase twin populates the map.
+  it("resolves an image referenced only in uppercase (OOSS1)", async () => {
+    const html = `<img src="/api/images/${imageIdWithCaption.toUpperCase()}" alt="A">`;
+    const result = await resolveImagesInHtml(html, imageSrc);
+
+    expect(result.images.has(imageIdWithCaption)).toBe(true);
+    expect(result.html).toContain("<figcaption>A lovely caption</figcaption>");
+    expect(result.html).not.toContain("/api/images/");
+  });
+
   it("leaves HTML unchanged when no image URLs are present", async () => {
     const html = "<p>No images here</p>";
     const result = await resolveImagesInHtml(html, imageSrc);
