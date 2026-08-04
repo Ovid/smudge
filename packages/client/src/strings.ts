@@ -494,6 +494,8 @@ export const STRINGS = {
     selectionRequired: "Select some text first, then send it to outtakes.",
     selectionHasNoText: "That selection has no text to stash — images aren't kept in outtakes.",
     newBlank: "New outtake",
+    createdElsewhere:
+      "Saved to the project you were in when you clicked Save — it isn't in this project's outtakes. Your text is still below.",
     filterPlaceholder: "Filter outtakes…",
     untitled: "Untitled outtake",
     fromChapterPrefix: "From ",

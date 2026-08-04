@@ -137,8 +137,18 @@ export function OuttakesPanel({ projectId, onInsert, capturedOuttake }: Outtakes
   // blank-note create and the toolbar capture. Prepend (newest-first) and dedup
   // by id so a reload that already surfaced the server's copy can't leave a
   // duplicate React key.
+  // I1 (agentic-review 2026-08-04): read the LIVE project, not the one this
+  // callback closed over. `applyServerRow` is a useCallback keyed on projectId,
+  // but handleCreate is a plain function body — its running invocation pins the
+  // click-time callback, so the guard below compared A's row against A's
+  // captured projectId, passed, and prepended into what was by then B's list.
+  // Same ref discipline as draftRef above and the projectRef pattern in the
+  // hooks. Returns whether the row was accepted (S2).
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
+
   const applyServerRow = useCallback(
-    (row: OuttakeRow) => {
+    (row: OuttakeRow): boolean => {
       // I1 (review 2026-07-26): the row's OWN project is the authority on
       // whether it belongs here. Neither producer re-checks the project after
       // its await — the capture POST lives in EditorPage and the blank-note
@@ -149,12 +159,13 @@ export function OuttakesPanel({ projectId, onInsert, capturedOuttake }: Outtakes
       // through here. A leaked row is not cosmetic: its Insert button pastes A's
       // private text into a B chapter, and its Delete HARD-deletes a real
       // project-A outtake (outtakes carry no deleted_at — CLAUDE.md §Data Model).
-      if (row.project_id !== projectId) return;
+      if (row.project_id !== projectIdRef.current) return false;
       reconcile();
       setOuttakes((prev) => [row, ...prev.filter((o) => o.id !== row.id)]);
       setError(null);
+      return true;
     },
-    [reconcile, projectId],
+    [reconcile],
   );
 
   // C1: the id this panel has already surfaced, seeded at FIRST RENDER so mount
@@ -197,7 +208,15 @@ export function OuttakesPanel({ projectId, onInsert, capturedOuttake }: Outtakes
     try {
       const row = await promise;
       if (signal.aborted) return;
-      applyServerRow(row);
+      // S2: the ordinary refusal here is a project switch mid-POST — the row
+      // committed, but in the project the writer just left. Tearing the form
+      // down would close it, show no card and say nothing, losing the text from
+      // the one panel whose job is not losing it. Keep it on screen and name
+      // where it went, so the writer can decide rather than retype.
+      if (!applyServerRow(row)) {
+        setCommittedNotice(S.createdElsewhere);
+        return;
+      }
       // Only tear down the form when it still holds the text we sent.
       if (draftRef.current === attempted) {
         setDraft("");

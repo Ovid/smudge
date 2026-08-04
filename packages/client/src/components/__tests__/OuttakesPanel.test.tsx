@@ -305,6 +305,70 @@ describe("OuttakesPanel", () => {
     expect(screen.queryByDisplayValue("Wrong project")).not.toBeInTheDocument();
   });
 
+  it("drops a created row when the project changed while the POST was in flight (I1)", async () => {
+    // The test above holds projectId CONSTANT and stages a server-echoed wrong
+    // project_id, so applyServerRow's closure is still current there — it cannot
+    // see the real hazard. Here the row is correct for the project it was
+    // created in (A) and the panel has since moved to B. handleCreate is a plain
+    // function body, so its running invocation pins the click-time
+    // applyServerRow — the one closed over A's projectId — and the guard then
+    // compares A against A and lets the row into B's list. Its Insert pastes A's
+    // private text into a B chapter; its Delete HARD-deletes a real project-A
+    // outtake (no deleted_at — CLAUDE.md §Data Model).
+    const user = userEvent.setup();
+    let resolveCreate!: (r: OuttakeRow) => void;
+    vi.mocked(api.outtakes.create).mockReturnValue(
+      new Promise<OuttakeRow>((res) => {
+        resolveCreate = res;
+      }),
+    );
+    vi.mocked(api.outtakes.list).mockResolvedValue([]);
+    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-A" />);
+    await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: S.newBlank }));
+    await user.type(screen.getByLabelText(S.newPlaceholder), "A's private text");
+    await user.click(screen.getByRole("button", { name: S.save }));
+    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
+
+    rerender(<OuttakesPanel {...defaultProps} projectId="proj-B" />);
+    resolveCreate(makeOuttake({ id: "cap", project_id: "proj-A", label: "From A" }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(screen.queryByDisplayValue("From A")).not.toBeInTheDocument();
+  });
+
+  it("keeps the draft and the form open when the created row is refused (S2)", async () => {
+    // The refusal above is the ordinary project-switch-mid-create path, not an
+    // exotic one. Tearing the form down on a row that was never added closes the
+    // form, shows no card and says nothing — the writer's text vanishes from the
+    // one panel whose whole job is not losing it. The row DID commit (in A), so
+    // the text is recoverable there; keeping it on screen is what lets the writer
+    // notice and decide.
+    const user = userEvent.setup();
+    let resolveCreate!: (r: OuttakeRow) => void;
+    vi.mocked(api.outtakes.create).mockReturnValue(
+      new Promise<OuttakeRow>((res) => {
+        resolveCreate = res;
+      }),
+    );
+    vi.mocked(api.outtakes.list).mockResolvedValue([]);
+    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-A" />);
+    await waitFor(() => expect(screen.getByText(S.empty)).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: S.newBlank }));
+    await user.type(screen.getByLabelText(S.newPlaceholder), "A's private text");
+    await user.click(screen.getByRole("button", { name: S.save }));
+    await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
+
+    rerender(<OuttakesPanel {...defaultProps} projectId="proj-B" />);
+    resolveCreate(makeOuttake({ id: "cap", project_id: "proj-A", label: "From A" }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(screen.getByLabelText(S.newPlaceholder)).toHaveValue("A's private text");
+    expect(screen.getByText(S.createdElsewhere)).toBeInTheDocument();
+  });
+
   it("a project switch clears the previous project's rows and sticky notice (I3)", async () => {
     // The panel is not keyed on project, so a switch only changes the prop. If
     // the reload for B fails, A's rows stay rendered — and every one of them is
@@ -547,6 +611,11 @@ describe("OuttakesPanel", () => {
   });
 
   it("does not duplicate a created row a concurrent reload already added (I2)", async () => {
+    // S17 (agentic-review 2026-08-04): this used to stage the concurrent reload
+    // by switching projectId, which after the I1 fix makes applyServerRow refuse
+    // the row OUTRIGHT — `toHaveLength(1)` would then pass without the dedup
+    // branch ever running. Stage the reload inside ONE project instead, via the
+    // explicit reload a card delete triggers while the create is still out.
     const created = makeOuttake({ id: "new", label: "New" });
     let resolveCreate!: (r: OuttakeRow) => void;
     vi.mocked(api.outtakes.create).mockReturnValue(
@@ -554,20 +623,27 @@ describe("OuttakesPanel", () => {
         resolveCreate = res;
       }),
     );
+    let resolveMountLoad!: (rows: OuttakeRow[]) => void;
     vi.mocked(api.outtakes.list)
-      .mockResolvedValueOnce([]) // mount
-      .mockResolvedValueOnce([created]); // reload sees the server's copy first
+      .mockReturnValueOnce(
+        new Promise<OuttakeRow[]>((res) => {
+          resolveMountLoad = res;
+        }),
+      )
+      .mockResolvedValue([created]);
     const user = userEvent.setup();
-    const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-1" />);
-    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalled());
+    render(<OuttakesPanel {...defaultProps} projectId="proj-1" />);
+    await waitFor(() => expect(api.outtakes.list).toHaveBeenCalledTimes(1));
 
     await user.click(screen.getByRole("button", { name: S.newBlank }));
     await user.type(screen.getByRole("textbox", { name: S.newPlaceholder }), "New body");
     await user.click(screen.getByRole("button", { name: S.save }));
     await waitFor(() => expect(api.outtakes.create).toHaveBeenCalled());
 
-    // A projectId-change reload lands the server's copy before the POST resolves.
-    rerender(<OuttakesPanel {...defaultProps} projectId="proj-2" />);
+    // The mount GET lands the server's copy of the new row before the POST
+    // resolves — same project throughout, so the row reaches the dedup branch
+    // rather than being refused by the project guard.
+    resolveMountLoad([created]);
     await waitFor(() => expect(screen.getByDisplayValue("New")).toBeInTheDocument());
 
     // The create resolves; the prepend must dedup by id, not double-render.
