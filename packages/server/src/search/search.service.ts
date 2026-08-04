@@ -11,6 +11,7 @@ import {
   MAX_MATCHES_PER_REQUEST,
   SEARCH_ERROR_CODES,
   sanitizeSnapshotLabel,
+  isTipTapNode,
 } from "@smudge/shared";
 import type { SearchErrorCode } from "@smudge/shared";
 import { getProjectStore } from "../stores/project-store.injectable";
@@ -138,11 +139,19 @@ export async function searchProject(
 
     let parsed: Record<string, unknown>;
     try {
-      parsed = JSON.parse(chapter.content);
+      // OOSS2 (agentic-review 2026-08-04): "valid JSON, wrong shape" ("null",
+      // "42", "[]", '"text"') parses without throwing, so guarding only the
+      // throw let the walker examine a non-document, find nothing, and continue
+      // WITHOUT recording a skip — reporting the project fully searched when a
+      // chapter was never read. Same isTipTapNode gate as the sibling parse
+      // sites (chapters.repository, images.references, outtakes.repository).
+      const raw: unknown = JSON.parse(chapter.content);
+      if (!isTipTapNode(raw)) throw new TypeError("Chapter content is not a TipTap node");
+      parsed = raw as Record<string, unknown>;
     } catch {
       logger.warn(
         { chapter_id: chapter.id, project_id: projectId },
-        "Skipping chapter with corrupt JSON during search",
+        "Skipping chapter with unreadable content during search",
       );
       skippedIds.push(chapter.id);
       continue;
@@ -249,11 +258,15 @@ export async function replaceInProject(
 
         let parsed: Record<string, unknown>;
         try {
-          parsed = JSON.parse(chapter.content);
+          // OOSS2: see searchProject above — a wrong-shape row silently counted
+          // as "replaced, nothing to do" instead of as skipped.
+          const raw: unknown = JSON.parse(chapter.content);
+          if (!isTipTapNode(raw)) throw new TypeError("Chapter content is not a TipTap node");
+          parsed = raw as Record<string, unknown>;
         } catch {
           logger.warn(
             { chapter_id: chapter.id, project_id: projectId },
-            "Skipping chapter with corrupt JSON during replace",
+            "Skipping chapter with unreadable content during replace",
           );
           skippedIds.push(chapter.id);
           continue;

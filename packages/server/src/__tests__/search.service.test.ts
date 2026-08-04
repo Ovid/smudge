@@ -200,6 +200,31 @@ describe("search.service", () => {
       warnSpy.mockRestore();
     });
 
+    // OOSS2 (agentic-review 2026-08-04): "valid JSON, wrong shape" parses
+    // without throwing, so the catch never fired: the walker found nothing and
+    // the loop continued WITHOUT recording a skip, reporting the project fully
+    // searched when a chapter was never examined. Three sibling parse sites
+    // gained an isTipTapNode gate; these two did not.
+    it.each([["null"], ["42"], ["[]"], ['"text"']])(
+      "records a chapter whose content parses to %s as skipped",
+      async (rawContent) => {
+        const { searchProject } = await import("../search/search.service");
+        const { logger } = await import("../logger");
+        const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+        const projectId = await createProject();
+        await createChapter(projectId, "Good", JSON.stringify(makeDoc("hello world")), 0);
+        const wrongShapeId = await createChapter(projectId, "Wrong shape", rawContent, 1);
+
+        const result = await searchProject(projectId, "hello");
+
+        const r = assertSearchResult(result);
+        expect(r.total_count).toBe(1);
+        expect(r.skipped_chapter_ids).toEqual([wrongShapeId]);
+        expect(warnSpy).toHaveBeenCalled();
+        warnSpy.mockRestore();
+      },
+    );
+
     it("skips chapters with null content", async () => {
       const { searchProject } = await import("../search/search.service");
       const projectId = await createProject();
@@ -505,6 +530,36 @@ describe("search.service", () => {
 
       expect(result).toBe("scope_not_found");
     });
+
+    it.each([["null"], ["42"], ["[]"], ['"text"']])(
+      "records a chapter whose content parses to %s as skipped during replace (OOSS2)",
+      async (rawContent) => {
+        const { replaceInProject } = await import("../search/search.service");
+        const { logger } = await import("../logger");
+        const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+        const projectId = await createProject();
+        const ch1 = await createChapter(
+          projectId,
+          "Good",
+          JSON.stringify(makeDoc("hello world")),
+          0,
+        );
+        const wrongShapeId = await createChapter(projectId, "Wrong shape", rawContent, 1);
+
+        const result = await replaceInProject(projectId, "hello", "goodbye");
+
+        const r = result as {
+          replaced_count: number;
+          affected_chapter_ids: string[];
+          skipped_chapter_ids?: string[];
+        };
+        expect(r.replaced_count).toBe(1);
+        expect(r.affected_chapter_ids).toEqual([ch1]);
+        expect(r.skipped_chapter_ids).toEqual([wrongShapeId]);
+        expect(warnSpy).toHaveBeenCalled();
+        warnSpy.mockRestore();
+      },
+    );
 
     it("skips chapters with corrupt JSON content during replace", async () => {
       const { replaceInProject } = await import("../search/search.service");
