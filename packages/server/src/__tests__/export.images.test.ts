@@ -234,7 +234,9 @@ describe("resolveImagesInHtml", () => {
     const html = `<h1>Doc title</h1><img src="/api/images/${dollarId}" alt="A">`;
     const result = await resolveImagesInHtml(html, imageSrc);
 
-    expect(result.html).toContain("<figcaption>Sold for US$1,200 -- $&amp; $` $&#39; $1</figcaption>");
+    expect(result.html).toContain(
+      "<figcaption>Sold for US$1,200 -- $&amp; $` $&#39; $1</figcaption>",
+    );
     // The document did not splice itself into its own caption.
     expect(result.html.match(/Doc title/g)).toHaveLength(1);
   });

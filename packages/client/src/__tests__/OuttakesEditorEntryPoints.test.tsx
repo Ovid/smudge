@@ -349,9 +349,7 @@ describe("F1: insert outtake at cursor", () => {
     await user.click(await screen.findByRole("button", { name: STRINGS.outtakes.insert }));
 
     expect(insertContentSpy).not.toHaveBeenCalled();
-    expect(
-      await screen.findByText(STRINGS.outtakes.insertFailedCorrupt),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(STRINGS.outtakes.insertFailedCorrupt)).toBeInTheDocument();
   });
 
   it("no-ops when the outtake has no blocks (empty doc)", async () => {

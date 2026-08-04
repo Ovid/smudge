@@ -395,18 +395,15 @@ describe("TipTap child-shape contract (fail closed on a non-descendable child)",
     ["a string", "text"],
     ["an object", { type: "text", text: "smuggled" }],
     ["true", true],
-  ])(
-    "every walker also fails closed on %s as a nested `content` container",
-    (_label, content) => {
-      const doc = { type: "doc", content: [{ type: "paragraph", content }] };
-      expect(() => stripNoteMarks(doc)).not.toThrow();
-      expect(() => stripImageNodes(doc)).not.toThrow();
-      expect(countWords(doc)).toBe(0);
-      expect(toPlainText(doc)).toBe("");
-      expect(extractImageIds(doc)).toEqual([]);
-      expect(searchInDoc(doc, "x")).toEqual([]);
-      expect(extractNotes(doc)).toEqual([]);
-      expect(validateTipTapDepth(doc)).toBe(true); // shallow: no depth violation
-    },
-  );
+  ])("every walker also fails closed on %s as a nested `content` container", (_label, content) => {
+    const doc = { type: "doc", content: [{ type: "paragraph", content }] };
+    expect(() => stripNoteMarks(doc)).not.toThrow();
+    expect(() => stripImageNodes(doc)).not.toThrow();
+    expect(countWords(doc)).toBe(0);
+    expect(toPlainText(doc)).toBe("");
+    expect(extractImageIds(doc)).toEqual([]);
+    expect(searchInDoc(doc, "x")).toEqual([]);
+    expect(extractNotes(doc)).toEqual([]);
+    expect(validateTipTapDepth(doc)).toBe(true); // shallow: no depth violation
+  });
 });

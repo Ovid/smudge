@@ -169,8 +169,8 @@ describe("OuttakeCard", () => {
     const onError = vi.fn();
     let resolveDelete!: () => void;
     vi.mocked(api.outtakes.delete).mockReturnValue(
-      new Promise<void>((res) => {
-        resolveDelete = res;
+      new Promise<undefined>((res) => {
+        resolveDelete = () => res(undefined);
       }),
     );
     render(

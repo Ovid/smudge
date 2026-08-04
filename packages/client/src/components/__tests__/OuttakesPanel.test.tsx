@@ -58,6 +58,11 @@ const defaultProps = {
   projectId: "proj-1",
   onInsert: vi.fn(),
   capturedOuttake: null,
+  // S1: EditorPage bumps this when a capture's response was unreadable. Held at
+  // 0 here; the refetch it drives is exercised end-to-end through EditorPage in
+  // OuttakesEditorEntryPoints.test.tsx, where the capture handler that bumps it
+  // actually exists.
+  externalRefreshKey: 0,
 };
 
 beforeEach(() => {

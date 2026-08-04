@@ -1,12 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import type { Chapter, ChapterStatusRow, ChapterStatusValue, OuttakeRow } from "@smudge/shared";
-import {
-  stripImageNodes,
-  truncateUnits,
-  LABEL_MAX_UNITS,
-  TipTapDocSchema,
-} from "@smudge/shared";
+import { stripImageNodes, truncateUnits, LABEL_MAX_UNITS, TipTapDocSchema } from "@smudge/shared";
 import type { EditorHandle } from "../components/Editor";
 import type { Editor as TipTapEditor } from "@tiptap/react";
 import { STRINGS } from "../strings";
