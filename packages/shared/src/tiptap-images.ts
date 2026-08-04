@@ -17,15 +17,22 @@ function strip(node: Node, depth: number): Node | null {
   // via the API (Zod rejects depth > MAX_TIPTAP_DEPTH before insert); reachable
   // from a hand-edited DB or a restored backup.
   if (depth > MAX_TIPTAP_DEPTH) return null;
-  if (!Array.isArray(node.content)) return node;
+  // I1 (agentic-review 2026-08-04): the CONTAINER shape, not the child shape.
+  // `{"type":"paragraph","content":{"type":"image",…}}` has nothing to iterate,
+  // and returning the node verbatim kept the image the walker never inspected —
+  // exactly the smuggling the docblock above says cannot happen. Drop the
+  // unreadable container; the two siblings hardened one commit apart already do
+  // (wordcount.ts extractText, tiptap-plaintext.ts walk).
+  if (!Array.isArray(node.content)) return { ...node, content: undefined };
   const content = node.content.map((c) => strip(c, depth + 1)).filter((c): c is Node => c !== null);
   return { ...node, content };
 }
 /**
  * Returns a copy of `doc` with all image nodes removed. Fails closed: a subtree
- * past MAX_TIPTAP_DEPTH, or a child this walker cannot descend into (null,
- * primitive, array), is DROPPED rather than passed through — no caller has to
- * depth-validate first for the no-images guarantee to hold.
+ * past MAX_TIPTAP_DEPTH, a child this walker cannot descend into (null,
+ * primitive, array), or a `content` CONTAINER that is not an array, is DROPPED
+ * rather than passed through — no caller has to depth-validate first for the
+ * no-images guarantee to hold.
  */
 export function stripImageNodes(doc: Record<string, unknown>): Record<string, unknown> {
   const result = strip(doc as Node, 0);

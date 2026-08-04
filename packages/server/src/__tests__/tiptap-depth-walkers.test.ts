@@ -394,16 +394,32 @@ describe("TipTap child-shape contract (fail closed on a non-descendable child)",
     ["a number", 42],
     ["a string", "text"],
     ["an object", { type: "text", text: "smuggled" }],
+    ["an image object", IMAGE_NODE],
+    ["a noted object", NOTED_TEXT],
     ["true", true],
   ])("every walker also fails closed on %s as a nested `content` container", (_label, content) => {
     const doc = { type: "doc", content: [{ type: "paragraph", content }] };
-    expect(() => stripNoteMarks(doc)).not.toThrow();
-    expect(() => stripImageNodes(doc)).not.toThrow();
+    // I1 (agentic-review 2026-08-04): these two cells used to assert only
+    // `not.toThrow()` — the exact non-discriminating assertion this file's own
+    // header forbids, and it certified a guarantee the code did not provide.
+    // Both walkers returned the node VERBATIM here, so an image survived the
+    // outtake capture strip and a note mark survived the export strip. Assert
+    // the unreadable container is DROPPED, which is what fails open.
+    expect(stripNoteMarks(doc)).toEqual({ type: "doc", content: [{ type: "paragraph" }] });
+    expect(stripImageNodes(doc)).toEqual({ type: "doc", content: [{ type: "paragraph" }] });
     expect(countWords(doc)).toBe(0);
     expect(toPlainText(doc)).toBe("");
     expect(extractImageIds(doc)).toEqual([]);
     expect(searchInDoc(doc, "x")).toEqual([]);
     expect(extractNotes(doc)).toEqual([]);
-    expect(validateTipTapDepth(doc)).toBe(true); // shallow: no depth violation
+    // S1: an unreadable container is a structurally invalid document, and this
+    // walker is the API's only content validator — accepting it let every
+    // downstream consumer degrade differently and silently (an unreadable
+    // container in a chapter drops the ENTIRE body from HTML/EPUB/markdown/
+    // plaintext export behind one logger.warn). Reject it at the boundary.
+    // This is a SEPARATE hardening, not a substitute for the two strips above:
+    // their contract is "no caller has to depth-validate first", and they run
+    // on DB-read content that never passes through Zod.
+    expect(validateTipTapDepth(doc)).toBe(false);
   });
 });

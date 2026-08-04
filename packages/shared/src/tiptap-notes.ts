@@ -84,6 +84,15 @@ function strip(node: TipTapNode, depth: number): TipTapNode | undefined {
   }
   if (Array.isArray(node.content)) {
     next.content = node.content.flatMap((child) => strip(child, depth + 1) ?? []);
+  } else {
+    // OOSS1 (agentic-review 2026-08-04): the CONTAINER shape. A non-array
+    // `content` has nothing to iterate, and the `{ ...node }` copy above carried
+    // it through with every note mark inside it intact — the same fail-open the
+    // sibling stripImageNodes carried, on the walker whose failing open is a
+    // confidentiality leak. It does not leak TODAY only because generateHTML and
+    // docx's inlineToRuns happen to throw on the shape; that is two unrelated
+    // libraries' behaviour, not a guarantee. Drop the unreadable container.
+    delete next.content;
   }
   return next;
 }

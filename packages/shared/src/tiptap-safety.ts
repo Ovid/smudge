@@ -70,7 +70,15 @@ export function validateTipTapDepth(node: unknown, depth: number = 0): boolean {
   if (Array.isArray(node)) return false;
   if (!node || typeof node !== "object") return true;
   const content = (node as { content?: unknown }).content;
-  if (!Array.isArray(content)) return true;
+  // S1 (agentic-review 2026-08-04): an ABSENT content is a leaf and fine; a
+  // PRESENT non-array one is a structurally invalid document. Returning true for
+  // it made this walker — the API's only content validator — accept
+  // `{"type":"paragraph","content":5}`, after which every consumer degraded
+  // differently and silently: chapterContentToHtml returns "", so the whole
+  // chapter body vanishes from HTML/EPUB/markdown/plaintext export with the
+  // title still rendering, behind one logger.warn.
+  if (content === undefined) return true;
+  if (!Array.isArray(content)) return false;
   for (const child of content) {
     if (!validateTipTapDepth(child, depth + 1)) return false;
   }
