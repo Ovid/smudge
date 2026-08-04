@@ -143,6 +143,25 @@ content: <TipTap JSON>, created_at, updated_at }`. The list endpoint returns
   "dozens × short" is asserted, not enforced. This matches Smudge's other
   single-user trade-offs; if drawers ever grow pathologically large, a
   content-elided list variant is the escape hatch. Recorded as accepted.
+
+  > **S7 (agentic-review 2026-08-04): `OuttakeRow` gained a degraded-read flag,
+  > `content_corrupt?: true`.** The wire type shipped as `{ …, content_corrupt?:
+  > true }`, which the bullet above does not name. A row whose stored `content`
+  > is unparseable, or parses to something that is not a TipTap node, is
+  > returned with `content` replaced by a **valid empty doc** `{ type: "doc",
+  > content: [] }` and the flag set, rather than 500-ing the whole drawer — the
+  > row must keep listing, because listing is what keeps it deletable, and
+  > outtakes are hard-deleted. Two consequences any future reader must carry:
+  > the substituted doc **passes `TipTapDocSchema`**, so a schema check is not a
+  > corruption check (the flag is); and an apparently-empty outtake may be an
+  > unreadable one, so **Phase 4c.2a must not treat "empty" as "safe to
+  > discard"** once the outtake is the only copy of the cut text.
+  >
+  > **S3 (same review): the list is still unbounded, deliberately.** The trade-off
+  > recorded above stands, with one sharper reason to revisit it than payload
+  > size: the drawer that fails to load is also the only UI carrying each row's
+  > delete button, so an unloadable list is an undeletable one. The revisit
+  > trigger is a real project whose drawer stops loading, not a line count.
 - **`CreateOuttakeSchema`** (`schemas.ts`, `.strict()`): `{ content: TipTapDocSchema,
 label?: <sanitized string, nullable> }`. No client-supplied counts.
 - **`UpdateOuttakeSchema`** (`.strict()`): `{ label: <sanitized string | null> }`.

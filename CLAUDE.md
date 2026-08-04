@@ -424,7 +424,13 @@ Core tables, all using UUID primary keys (except `settings` and `chapter_statuse
 - **daily_snapshots** — id, project_id (FK), date, total_word_count, created_at. One row per project per day; upserted on each save.
 - **outtakes** — id, project_id (FK), label, content (TipTap JSON, images
   stripped on capture), created_at, updated_at. Per-project store of cut/stashed
-  text. **Hard delete (no `deleted_at`)** — a documented exception to "soft delete
+  text. **Degraded read:** a row whose stored `content` is unparseable (or parses
+  to a non-node) is returned with `content` replaced by a valid empty doc and a
+  `content_corrupt: true` flag on the wire type, never as a 500 — the row must
+  keep listing, because listing is what keeps it deletable. The substituted doc
+  **passes `TipTapDocSchema`**, so a schema check is not a corruption check: any
+  code acting on outtake content (insert, copy, and the future destructive cut)
+  must test the flag, and must not read "empty" as "safe to discard". **Hard delete (no `deleted_at`)** — a documented exception to "soft delete
   everywhere", matching ChapterSnapshot (a safety-net TipTap-JSON table). Images
   are stripped on capture because outtake JSON is invisible to the image
   reference-counter/reaper (which scans only `chapters`), so an image referenced

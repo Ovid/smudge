@@ -59,6 +59,15 @@ export function projectOuttakesRouter(): Router {
   );
 
   // GET /api/projects/:id/outtakes
+  //
+  // S3 (agentic-review 2026-08-04): full rows, no projection, no limit, no
+  // per-project cap — unlike `snapshots.repository.listByChapter`, which
+  // projects `content` away. Deliberate and recorded (design §5, "Single-user
+  // assumption"): the panel filters, previews, word-counts and inserts from the
+  // loaded list with no second fetch, so eliding content would cost a round
+  // trip per card. The failure mode to watch is not payload size but that this
+  // drawer carries every row's ONLY delete button — an unloadable list is an
+  // undeletable one. Revisit if a real project's drawer stops loading.
   router.get(
     "/:id/outtakes",
     asyncHandler(async (req, res) => {
