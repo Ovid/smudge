@@ -202,6 +202,14 @@ export function OuttakeCard({
     // 3456, i.e. the shipping configuration is the dead one. The writer clicks
     // Copy, sees nothing change, and pastes whatever was on the clipboard before
     // into the manuscript.
+    // S2 (agentic-review 2026-08-04): a corrupt row's content was degraded to an
+    // empty doc on read, so this used to write "" — clearing whatever the writer
+    // had on the clipboard — and then announce "Copied", on the very card that
+    // says its text couldn't be read and invites copying it out by hand.
+    if (outtake.content_corrupt) {
+      onError(S.corruptNoText);
+      return;
+    }
     try {
       await navigator.clipboard.writeText(plainText);
       setCopied(true);

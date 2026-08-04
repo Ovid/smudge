@@ -553,6 +553,13 @@ export const STRINGS = {
       "This outtake's saved text couldn't be read. Don't delete it if you want it back.",
     insertFailedCorrupt:
       "This outtake's content is corrupt and can't be inserted. Copy the text instead.",
+    // S1/S2 (agentic-review 2026-08-04): distinct from insertFailedCorrupt,
+    // which covers a row whose text IS present but fails the doc schema — there
+    // "copy it instead" is good advice. A server-flagged content_corrupt row was
+    // degraded to an empty doc on read, so there is no text for either action:
+    // Insert was a silent no-op and Copy wrote "" over the writer's clipboard
+    // while announcing success.
+    corruptNoText: "This outtake's saved text couldn't be read, so there's nothing to insert or copy.",
     showMore: "Show more",
     showLess: "Show less",
     wordCount: (count: number) => `${count.toLocaleString()} words`,

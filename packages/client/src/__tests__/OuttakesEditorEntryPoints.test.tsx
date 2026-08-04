@@ -359,6 +359,25 @@ describe("F1: insert outtake at cursor", () => {
     expect(await screen.findByText(STRINGS.outtakes.insertFailedCorrupt)).toBeInTheDocument();
   });
 
+  it("says why a corrupt outtake can't be inserted rather than doing nothing (S1)", async () => {
+    // The server's degraded read substitutes a VALID empty doc for unreadable
+    // content, so the schema gate above passes and the emptiness short-circuit
+    // returned bare. The comment defending that silence ("the visibly empty
+    // card already says so") is false for this row: the card renders a
+    // corruption alert, not an empty preview.
+    const user = userEvent.setup();
+    vi.mocked(api.outtakes.list).mockResolvedValue([
+      outtake({ content: { type: "doc", content: [] }, content_corrupt: true }),
+    ]);
+
+    renderEditorPage();
+    await openOuttakesTab(user);
+    await user.click(await screen.findByRole("button", { name: STRINGS.outtakes.insert }));
+
+    expect(insertContentSpy).not.toHaveBeenCalled();
+    expect(await screen.findByText(STRINGS.outtakes.corruptNoText)).toBeInTheDocument();
+  });
+
   it("no-ops when the outtake has no blocks (empty doc)", async () => {
     const user = userEvent.setup();
     vi.mocked(api.outtakes.list).mockResolvedValue([

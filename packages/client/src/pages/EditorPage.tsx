@@ -551,6 +551,15 @@ export function EditorPage() {
       // (hand-edited DB, restored backup) inserted into a REAL chapter then
       // fails that chapter's auto-save Zod validation on every attempt: the
       // terminal "Unable to save" lock, on text the writer just pasted in.
+      // S1 (agentic-review 2026-08-04): before the schema gate, because the
+      // server's degraded read substitutes a VALID empty doc for unreadable
+      // content — so a corrupt row sails through safeParse and fell out of the
+      // emptiness short-circuit below in silence. The card renders a corruption
+      // alert, not an empty preview, so nothing on screen explained the no-op.
+      if (outtake.content_corrupt) {
+        setActionInfo(STRINGS.outtakes.corruptNoText);
+        return;
+      }
       const parsed = TipTapDocSchema.safeParse(outtake.content);
       if (!parsed.success) {
         setActionInfo(STRINGS.outtakes.insertFailedCorrupt);

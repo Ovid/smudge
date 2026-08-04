@@ -132,6 +132,30 @@ describe("OuttakeCard", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(S.copied);
   });
 
+  it("refuses to copy a corrupt outtake instead of wiping the clipboard (S2)", async () => {
+    // The degraded read hands the card a valid EMPTY doc, so plainText is "",
+    // writeText("") resolves, and the card announced "Copied" — destroying
+    // whatever the writer had on the clipboard, on the one card that
+    // simultaneously says its text couldn't be read.
+    const user = userEvent.setup();
+    const onError = vi.fn();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    render(
+      <OuttakeCard
+        outtake={makeOuttake({ content: { type: "doc", content: [] }, content_corrupt: true })}
+        {...defaultProps}
+        onError={onError}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: S.copy }));
+
+    expect(writeText).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(S.corruptNoText);
+    expect(screen.getByRole("status")).not.toHaveTextContent(S.copied);
+  });
+
   it("surfaces a failed copy instead of looking like it worked (S4)", async () => {
     // The shipping configuration IS the failing one: off a secure context
     // navigator.clipboard is undefined and the property access throws, and
