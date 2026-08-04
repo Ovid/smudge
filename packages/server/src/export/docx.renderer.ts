@@ -197,7 +197,16 @@ async function listItemsToParagraphs(
   const level = Math.min(ctx?.listDepth ?? 0, MAX_LIST_DEPTH - 1);
   // Child blocks (e.g. nested lists) see an incremented depth so they
   // render at the next indentation level in Word.
-  const childCtx: BlockContext = { ...ctx, listDepth: level + 1, depth: childDepth(ctx) };
+  //
+  // S10 (agentic-review 2026-08-04): `childDepth(ctx) + 1`, not `childDepth(ctx)`.
+  // A block inside a list item sits TWO TipTap levels below the list node
+  // (list > listItem > block), and this walker never enters the listItem itself —
+  // it reads `listItem.content` directly — so counting one level lost the other.
+  // The guard therefore fired at a true nesting depth of ~130 instead of 64, one
+  // level of slack per list level. Not exploitable today, but it is a
+  // defence-in-depth guard that did not hold the depth it claims. The blockquote
+  // arm has no such gap: it recurses through the node it counts.
+  const childCtx: BlockContext = { ...ctx, listDepth: level + 1, depth: childDepth(ctx) + 1 };
   const items: Paragraph[] = [];
   for (const listItem of listItems) {
     const liContent = listItem.content as Array<Record<string, unknown>> | undefined;

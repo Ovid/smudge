@@ -235,6 +235,40 @@ describe("TipTap depth-guard contract (MAX_TIPTAP_DEPTH walkers)", () => {
     }
   });
 
+  it("blockToParagraphs (DOCX) counts the listItem level too (S10)", async () => {
+    // S10 (agentic-review 2026-08-04): the enrollment above drives the bail
+    // through a BLOCKQUOTE chain, which recurses through the node it counts. The
+    // list arm does not: `listItemsToParagraphs` reads `listItem.content`
+    // directly, so it never enters the listItem and used to count one level for
+    // the two that a `list > listItem > block` chain actually spends. The guard
+    // fired at a true depth of ~130 rather than 64 — a defence-in-depth guard
+    // not holding the depth it claims, and invisible to a blockquote fixture.
+    //
+    // 40 list levels = 80 TipTap levels. Counted correctly the chain crosses the
+    // cap at the 34th list and the marker below it is dropped; counted one per
+    // list it reaches only 40 and the marker renders.
+    const { blockToParagraphs, newBuildState } = __depthContractSeam;
+    const state = newBuildState({ getImage: async () => null } as unknown as never);
+    let node: Record<string, unknown> = {
+      type: "paragraph",
+      content: [{ type: "text", text: "DEEP_MARKER" }],
+    };
+    for (let i = 0; i < 40; i++) {
+      node = { type: "bulletList", content: [{ type: "listItem", content: [node] }] };
+    }
+
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    try {
+      const paragraphs = await blockToParagraphs(node, state);
+      expect(paragraphs).toEqual([]);
+      // Dropped by the bail, not by the walker's own try/catch swallowing a
+      // stack overflow — which would look identical from the outside.
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it("extractNotes reports no note below the depth cap (collect bails)", () => {
     const doc = deepDoc(OVER_CAP_DEPTH, {
       type: "paragraph",
