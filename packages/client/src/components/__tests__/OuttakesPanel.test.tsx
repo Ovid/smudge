@@ -405,6 +405,12 @@ describe("OuttakesPanel", () => {
     // the reload for B fails, A's rows stay rendered — and every one of them is
     // actionable: Delete on such a card hard-deletes a real project-A outtake
     // (outtakes have no deleted_at). Rows must go the moment the project does.
+    //
+    // S2 (agentic-review 2026-08-04): spies installed BEFORE the action —
+    // expectConsole() calls vi.spyOn at call time, so the trailing form these
+    // used left spy.mock.calls necessarily empty and passed unconditionally.
+    const warn = expectConsole("warn");
+    const error = expectConsole("error");
     vi.mocked(api.outtakes.list).mockResolvedValue([makeOuttake({ id: "a", label: "A row" })]);
     const { rerender } = render(<OuttakesPanel {...defaultProps} projectId="proj-A" />);
     await waitFor(() => expect(screen.getByDisplayValue("A row")).toBeInTheDocument());
@@ -416,18 +422,20 @@ describe("OuttakesPanel", () => {
       expect(screen.getByText(STRINGS.error.loadOuttakesFailed)).toBeInTheDocument();
     });
     expect(screen.queryByDisplayValue("A row")).not.toBeInTheDocument();
-    expectConsole("warn").silent();
-    expectConsole("error").silent();
+    warn.silent();
+    error.silent();
   });
 
   it("surfaces the mapped message on a failed load without leaking a raw warning", async () => {
+    const warn = expectConsole("warn");
+    const error = expectConsole("error");
     vi.mocked(api.outtakes.list).mockRejectedValue(new Error("boom"));
     render(<OuttakesPanel {...defaultProps} />);
     await waitFor(() => {
       expect(screen.getByText(STRINGS.error.loadOuttakesFailed)).toBeInTheDocument();
     });
-    expectConsole("warn").silent();
-    expectConsole("error").silent();
+    warn.silent();
+    error.silent();
   });
 
   it("deletes an outtake and removes it from the list", async () => {

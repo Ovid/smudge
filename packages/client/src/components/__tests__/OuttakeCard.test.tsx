@@ -115,16 +115,22 @@ describe("OuttakeCard", () => {
     expect(writeText).toHaveBeenCalledWith("Hello world");
   });
 
-  it("swallows a clipboard write failure without throwing or logging", async () => {
+  it("does not log when a clipboard write fails", async () => {
+    // S2 (agentic-review 2026-08-04): the spies MUST be installed before the
+    // action. expectConsole() calls vi.spyOn at call time, so installing after
+    // the click left spy.mock.calls necessarily empty and .silent() passed
+    // unconditionally — on the tests that encode the zero-warnings rule for this
+    // surface. Same hoist as useProjectEditor.test.ts and EditorInsertGuards.
+    const warn = expectConsole("warn");
+    const error = expectConsole("error");
     const user = userEvent.setup();
     const writeText = vi.fn().mockRejectedValue(new Error("denied"));
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
     render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} />);
     await user.click(screen.getByRole("button", { name: S.copy }));
     await waitFor(() => expect(writeText).toHaveBeenCalled());
-    // The catch is a deliberate silent swallow — no banner, no console noise.
-    expectConsole("warn").silent();
-    expectConsole("error").silent();
+    warn.silent();
+    error.silent();
   });
 
   // I3 (agentic-review 2026-08-04): every outtake mutation used to be owned by
