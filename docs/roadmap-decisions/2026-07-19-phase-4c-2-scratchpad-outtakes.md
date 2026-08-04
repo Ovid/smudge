@@ -150,8 +150,8 @@ rationale.
 
 ## One-Feature-Rule Exception (recorded 2026-08-04)
 
-**Decision: granted.** Phase 4c.2 lands with fourteen out-of-scope clusters
-bundled alongside the Outtakes drawer.
+**Decision: granted.** Phase 4c.2 lands with sixteen out-of-scope clusters
+bundled alongside the Outtakes drawer, and a tenth site on cluster OOSA2.
 
 > **Amended 2026-08-04 (round 6).** The entry originally said ten. Round 6
 > (`scratchpad-outtakes-2026-08-04-10-00-22-ef6a65a1.md`) found four more that
@@ -162,6 +162,17 @@ bundled alongside the Outtakes drawer.
 > fix defects that are now understood, and reverting them means knowingly
 > re-shipping bugs. Read §The argument against granting it before citing this —
 > it applies with more force to a list that has now grown twice.
+
+> **Amended 2026-08-04 (round 7).** Fourteen clusters became sixteen. Round 7
+> (`scratchpad-outtakes-2026-08-04-11-44-09-8d0b5f7.md`) found two additions
+> that landed *after* the round-6 amendment closed the list — recorded below as
+> OOSA15 and OOSA16 — and the review response added a third, OOSA17, on an
+> explicit decision by the maintainer. The decision on all three is **keep**, on
+> the same ground as before. Note what the growth pattern itself says: the list
+> has now been reopened at every round that looked for it, twice *after* being
+> declared final. §The argument against granting it is the part of this record
+> that predicted that, and it should be read as the live half of the decision,
+> not the archived dissent.
 
 This reverses design §12, which stated "No exception to the one-feature rule is
 needed." That was true when written and stopped being true as the branch grew.
@@ -241,13 +252,56 @@ a feature. Each is carried on the same ground as the seven above.
   because the old copy told the user to wait for an operation that does not
   exist and never ends.
 
+### Added by the round-7 amendment
+
+Two entries that landed after the round-6 amendment declared the list closed,
+and one added by the review response to that round. OOSA15 and OOSA17 are new
+clusters; OOSA16 is a tenth site on the existing cluster OOSA2.
+
+- **OOSA15** — the loading gate in `ImageGallery.tsx` and `SnapshotPanel.tsx`
+  (commit `8d0b5f74`, branch tip). Both panels stop rendering their "nothing
+  here" empty state for the duration of every load, so a project with a full
+  gallery is no longer told it has none and invited to re-upload what it
+  already has. Neither component participates in the Outtakes drawer; the
+  change is the `OuttakesPanel` S6 fix extended sideways to its two siblings.
+  The branch's own commit `d25a8dc4` names both files as out of scope verbatim
+  and defers the widening to the maintainer, and it widened before the answer
+  arrived. Carried because the defect is real and now tested — and because
+  round 7's highest-severity finding (I1) was a regression *inside* this
+  addition: `ImageGallery` gated one ternary arm too high, blanking the whole
+  thumbnail grid on every post-mutation refresh. That fix and its regression
+  test are part of this cluster. Reverting the cluster now would take the fix
+  with it, since they are the same code.
+- **OOSA16** — `handleUpdateProjectTitle`'s possibly-committed recovery arm in
+  `useChapterMetadata.ts` upgraded from the id-only check to the full
+  `isStaleProject()` guard (commit `4cecc06d`). Round 6 classified this as
+  Out-of-Scope Important (backlog `dc808129`) and it was fixed on-branch
+  anyway. A runtime behaviour change on project rename, a path with no
+  relationship to outtakes. **This is the tenth site of cluster OOSA2, not a
+  tenth cluster of its own** — see the correction below. Carried because it is
+  the one surviving arm that writes back to `projectSlugRef`, the ref every
+  later request reads.
+- **OOSA17** — two backlog fixes taken on an explicit maintainer decision
+  during the round-7 review response: `image-resolver.ts` resolving export
+  image ids case-insensitively (backlog `e730ae37`), and the two
+  find-and-replace parse sites recording a wrong-shape chapter in
+  `skipped_chapter_ids` instead of reporting the project fully searched
+  (backlog `0364ab66`). Both were logged as out of scope by round 7 and
+  approved for this branch rather than a follow-up. Both entries removed from
+  `paad/code-reviews/backlog.md`.
+
 ### Attribution corrections
 
 The original cluster list credited two files to clusters they do not
-participate in. Verified at HEAD:
+participate in, and one cluster's site count has since gone stale. Verified at
+HEAD:
 
 - Cluster **OOSA2** ("`makeStaleProjectGuard` extraction and strength upgrade at
-  nine sites") lists `useSnapshotState.ts`. That file imports
+  nine sites") is now **ten sites**: `useChapterMetadata.ts`'s project-rename
+  recovery arm joined it as OOSA16 above, after the cluster description was
+  written. The recorded count was factually wrong about its own scope from
+  commit `4cecc06d` until this amendment.
+- The same cluster lists `useSnapshotState.ts`. That file imports
   `makeStaleProjectGuard` **zero** times. Its actual change on this branch is
   OOSA13 above.
 - The same cluster lists `useFindReplaceController.ts`, which also imports it
