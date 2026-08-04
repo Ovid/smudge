@@ -52,7 +52,12 @@ export const TipTapDocSchema = z
   })
   .passthrough()
   .refine((doc) => validateTipTapDepth(doc, 0), {
-    message: `TipTap document exceeds maximum nesting depth (${MAX_TIPTAP_DEPTH}).`,
+    // S4 (agentic-review 2026-08-04): validateTipTapDepth rejects on SHAPE as
+    // well as depth (an array where a node belongs, a present non-array
+    // `content`), and this message reaches the client verbatim — so a
+    // structural violation was reported as a depth violation the writer cannot
+    // act on by un-nesting. One refine, so one message: name both causes.
+    message: `TipTap document is malformed or exceeds maximum nesting depth (${MAX_TIPTAP_DEPTH}).`,
   });
 
 export const ReorderChaptersSchema = z.object({

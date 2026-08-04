@@ -10,6 +10,7 @@ import {
   ChapterStatus,
   ExportSchema,
 } from "../schemas";
+import { MAX_TIPTAP_DEPTH } from "../tiptap-safety";
 
 describe("CreateProjectSchema", () => {
   it("accepts valid project creation input", () => {
@@ -113,6 +114,29 @@ describe("UpdateChapterSchema", () => {
     const doc = { type: "doc", content: [deep] };
     const result = UpdateChapterSchema.safeParse({ content: doc });
     expect(result.success).toBe(false);
+  });
+
+  // S4 (agentic-review 2026-08-04): validateTipTapDepth gained two NON-depth
+  // rejections on this branch (an array node, a present non-array `content`)
+  // while the refine kept its depth-only message. That message reaches the
+  // client verbatim, so a shape violation was reported as a depth violation the
+  // writer cannot act on by un-nesting.
+  it.each([
+    // Nested, not top-level: Zod's own z.array(z.record()) already rejects a
+    // top-level array child with an accurate message. The refine is the only
+    // check that sees deeper positions.
+    [
+      "a nested array node",
+      { type: "doc", content: [{ type: "paragraph", content: [[{ type: "text", text: "x" }]] }] },
+    ],
+    ["a non-array content", { type: "doc", content: [{ type: "paragraph", content: 5 }] }],
+  ])("names shape as well as depth when rejecting %s", (_name, doc) => {
+    const result = UpdateChapterSchema.safeParse({ content: doc });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const message = result.error.issues.map((i) => i.message).join(" ");
+    expect(message).toMatch(/malformed/i);
+    expect(message).toContain(String(MAX_TIPTAP_DEPTH));
   });
 });
 
