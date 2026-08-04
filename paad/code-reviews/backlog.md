@@ -8,18 +8,6 @@
 
 ---
 
-## `b7e3f9a1` — `startedForProjectId` + `isStaleProject` drift-guard duplicated three times in `useProjectEditor.ts`
-- **File (at first sighting):** `packages/client/src/hooks/useProjectEditor.ts:1145-1147`, `:1450-1452`, `:1614-1616`
-- **Symbol:** Three sibling `startedForProjectId` + `isStaleProject` closures
-- **Bug class:** Contract
-- **Description:** Three additional sites in `useProjectEditor.ts` carry the same `const startedForProjectId = …; const isStaleProject = () => startedForProjectId !== undefined && projectRef.current?.id !== startedForProjectId;` shape that Phase 4b.3d's [S13] just extracted into `refreshTrashList` for the trash flow. Phase 4b.3d's stated motivation ("consolidate the drift-guard pipeline") leaves the sibling sites unconsolidated. Pre-existing — not introduced or worsened by this branch. A general-purpose `withStaleProjectGuard<T>(projectRef, project, fn)` helper would absorb all four call sites; the trash-flavour discriminated-union shape may not transfer cleanly because the sibling state-write shapes differ, so a brainstorming pass is warranted before extraction.
-- **Suggested fix:** File as a Phase 4b.4+ follow-up. Brainstorm whether the helper shape should mirror `RefreshTrashResult`'s discriminated-union or take a callback-injection shape that matches each call site's state-write needs.
-- **Confidence:** Medium
-- **Found by:** Contract & Integration (`general-purpose (claude-opus-4-7[1m])`)
-- **First seen:** 2026-05-28 on branch `mapper-internals-claude-md-updates` at `76a47b1`
-- **Last seen:** 2026-05-28 on branch `mapper-internals-claude-md-updates` at `76a47b1`
-- **Severity:** Suggestion
-
 ## `f4b4b15c` — `EditorFooter.tsx` `saveFailed` fallback is structurally unreachable
 - **File (at first sighting):** `packages/client/src/components/EditorFooter.tsx:40`
 - **Symbol:** `EditorFooter` (saveStatus="error" branch)
@@ -236,18 +224,6 @@
 - **Last seen:** 2026-05-26 on branch `consumer-recovery-helper-consuming-fixes` at `490e351`
 - **Severity:** Suggestion
 
-## `dc808129` — `handleUpdateProjectTitle` slug-recovery `setProject(refreshed)` lacks S20-style guard; paired `projectSlugRef` write compounds risk
-- **File (at first sighting):** `packages/client/src/hooks/useProjectEditor.ts:1254`
-- **Symbol:** `handleUpdateProjectTitle`
-- **Bug class:** Concurrency
-- **Description:** The slug-recovery `setProject(refreshed)` at line 1254 is gated only by the outer `projectRef.current?.id === projectId` check at line 1253. The same React-scheduling window S20 addressed in `handleReorderChapters` is open here: a concurrent `loadProject(B)` can queue a `setProject(B)` that drains either side of A's recovery update, and if A's drains last it overwrites project B with A's refreshed snapshot. Compounding risk: the imperative `projectSlugRef.current = refreshed.slug` write at line 1255 lands even if the queued `setProject(refreshed)` is overwritten — leaving project state on B while slugRef points at A's new slug. Subsequent save/create/reorder POSTs would 404 against A's slug under B's project context: exactly the cascading-silent-failure mode the I3 slug-desync recovery was added to prevent.
-- **Suggested fix:** Convert to `setProject((prev) => prev && prev.id === projectId ? refreshed : prev)` AND move the slugRef write into the updater (or guard it with the same predicate). Without moving the slugRef write, the structural guarantee that state.slug and slugRef agree is broken.
-- **Confidence:** Medium
-- **Found by:** Concurrency & State (`claude-opus-4-7[1m]`)
-- **First seen:** 2026-05-26 on branch `consumer-recovery-helper-consuming-fixes` at `490e351`
-- **Last seen:** 2026-08-04 on branch `scratchpad-outtakes` at `ef6a65a1`
-- **Severity:** Suggestion
-
 ## `7f2c1e08` — `handleUpdateProjectTitle` recovery-GET catch silently swallows every non-404 error
 - **File (at first sighting):** `packages/client/src/hooks/useProjectEditor.ts:1418`
 - **Symbol:** `handleUpdateProjectTitle` recovery branch
@@ -319,22 +295,3 @@
 - **First seen:** 2026-06-04 on branch `operational-backup-stopgap` at `1aa1eec`
 - **Last seen:** 2026-06-04 on branch `operational-backup-stopgap` at `1aa1eec`
 - **Severity:** Suggestion
-
-## `665350d0` — `stripNoteMarks` fails open on a non-array `content` container; note marks survive the confidentiality strip
-- **File (at first sighting):** `packages/shared/src/tiptap-notes.ts:85`
-- **Symbol:** `strip`
-- **Bug class:** Security
-- **Description:**
-  ```text
-  When a node's `content` is a truthy non-array, the `if (Array.isArray(node.content))` block is skipped and the container is copied through untouched by `{ ...node }`, so every note mark inside it survives the strip. Verified: UpdateChapterSchema accepts the shape and stripNoteMarks preserves the note text. Does NOT leak today &lt;- renderEditorHtml throws RangeError (caught by chapterContentToHtml, chapter body renders as "") and DOCX inlineToRuns throws TypeError. Confidentiality holds only via two libraries' throw behaviour. Pre-existing; not reached differently by this branch.
-  ```
-- **Suggested fix:**
-  ```text
-  Drop what the walker cannot descend into, as the sibling `stripImageNodes` should also do. Since stripImageNodes, stripNoteMarks and extractImageIds all need identical container handling, the root-cause shape is a shared `childrenOf(node): unknown[]` helper next to `isTipTapNode` in `tiptap-safety.ts`, returning [] for a non-array. Then upgrade the non-discriminating `not.toThrow()` cell for the two strips in `tiptap-depth-walkers.test.ts:398-401` to `not.toContain("SECRET")` / `not.toContain('"note"')`, and verify by reverting the fix.
-  ```
-- **Confidence:** Medium
-- **Found by:** Security (`claude-opus-5[1m]`)
-- **First seen:** 2026-08-04 on branch `scratchpad-outtakes` at `ef6a65a1`
-- **Last seen:** 2026-08-04 on branch `scratchpad-outtakes` at `ef6a65a1`
-- **Severity:** Suggestion
-

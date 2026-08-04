@@ -353,7 +353,7 @@ Re-flagging one is warranted only if its stated premise changes.
   optimizations. Revisit only if Smudge ever ships a cloud / multi-writer
   deployment.
 - **`EditorPage` god-orchestrator, accepted with an enforcement net (F-1).**
-  `packages/client/src/pages/EditorPage.tsx` (~1094 lines) owns the shared
+  `packages/client/src/pages/EditorPage.tsx` (~1,330 lines) owns the shared
   mutable busy/lock state and threads it into every editor-mutating entry point;
   the cross-hook invariant holds because this one component wires the same
   objects consistently. Five prior decompositions already extracted rendering
