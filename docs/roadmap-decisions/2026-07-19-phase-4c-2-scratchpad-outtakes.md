@@ -150,8 +150,18 @@ rationale.
 
 ## One-Feature-Rule Exception (recorded 2026-08-04)
 
-**Decision: granted.** Phase 4c.2 lands with ten out-of-scope clusters bundled
-alongside the Outtakes drawer.
+**Decision: granted.** Phase 4c.2 lands with fourteen out-of-scope clusters
+bundled alongside the Outtakes drawer.
+
+> **Amended 2026-08-04 (round 6).** The entry originally said ten. Round 6
+> (`scratchpad-outtakes-2026-08-04-10-00-22-ef6a65a1.md`) found four more that
+> the ten-cluster list did not name — recorded below as OOSA11–OOSA14 — and two
+> file attributions in the original list that credit a file to a cluster it does
+> not participate in. Both are corrected here. The decision on the four is
+> **keep**, on the same ground the seven defect-fixing clusters were kept: they
+> fix defects that are now understood, and reverting them means knowingly
+> re-shipping bugs. Read §The argument against granting it before citing this —
+> it applies with more force to a list that has now grown twice.
 
 This reverses design §12, which stated "No exception to the one-feature rule is
 needed." That was true when written and stopped being true as the branch grew.
@@ -193,6 +203,59 @@ Five clusters are load-bearing for the feature and cannot be split mechanically:
 - **OOSA2** — the capture handler needs the stale-project guard.
 - **OOSA3** — `e2e/outtakes.spec.ts` needs the shared project fixture.
 
+### Added by the round-6 amendment
+
+Four clusters the ten-cluster list did not name. All four fix defects; none is
+a feature. Each is carried on the same ground as the seven above.
+
+- **OOSA11** — two new server parity test files (`wire-type-parity.test.ts`,
+  `schema-parity.test.ts`, commit `f3b88834`). Test-only, no production change.
+  `chapters.status` has neither a CHECK constraint nor an FK to
+  `chapter_statuses`, so nothing but these assertions holds the enum and
+  migration 003's seed rows together. Half of `schema-parity.test.ts` is
+  feature-motivated rather than out of scope at all: migration 015 adds outtakes
+  as a **third** `project_id`-bearing child table, and the project-purge path
+  had no assertion covering it.
+- **OOSA12** — the `ResizeSeparator` drag-lifecycle fix (backlog `c9fce6ab`,
+  commit `0e3ffc95`). A behaviour change to pointer resizing in both the Sidebar
+  and the ReferencePanel: a drag self-terminates when no button is held, and a
+  second mousedown reclaims the previous drag's document listeners. **This is
+  distinct from cluster OOSA1 above**, which covers the *extraction*
+  (`c7bba0ab`) and whose source report states that the extraction gives
+  `c9fce6ab` a single owner *without* fixing it. Carried because the bug is
+  real — a mouseup delivered outside the document (release over an iframe, a
+  native menu, off-window) leaves the panel following the bare pointer and
+  writing to localStorage on every mousemove, and an orphaned listener resizes
+  the panel for the rest of the session. Giving it a single owner was what made
+  the one-place fix possible.
+- **OOSA13** — the snapshot **view** corruption gate tightened to
+  `TipTapDocSchema` (`useSnapshotState.ts`). The one item here that changes what
+  a user sees for **existing data**: snapshot rows that previously opened in the
+  read-only viewer now report "this snapshot is corrupt". Carried because view
+  disagreeing with restore is the defect; approved here for the first time, the
+  attribution correction below being why.
+- **OOSA14** — lock-refusal copy on three pre-existing editor-mutation entry
+  points (`useSnapshotController.ts`, `useFindReplaceController.ts` ×2) changed
+  from `STRINGS.editor.mutationBusy` to `STRINGS.editor.lockedRefusal`. Reached
+  from this branch because `guardInsertAtCursor` needed the same string. Carried
+  because the old copy told the user to wait for an operation that does not
+  exist and never ends.
+
+### Attribution corrections
+
+The original cluster list credited two files to clusters they do not
+participate in. Verified at HEAD:
+
+- Cluster **OOSA2** ("`makeStaleProjectGuard` extraction and strength upgrade at
+  nine sites") lists `useSnapshotState.ts`. That file imports
+  `makeStaleProjectGuard` **zero** times. Its actual change on this branch is
+  OOSA13 above.
+- The same cluster lists `useFindReplaceController.ts`, which also imports it
+  **zero** times. Its actual change is OOSA14 above.
+
+This matters beyond bookkeeping: a reader auditing what was approved for those
+two files would have found a refactor granted and a behaviour change shipped.
+
 ### The argument against granting it
 
 Recorded because it is strong and was not dismissed.
@@ -220,3 +283,13 @@ The one-feature rule remains at its default of enforcement. This entry is NOT
 precedent for bundling a second *feature*, and it is not precedent for
 discovering an exception after the fact as a matter of routine — the next branch
 that grows this way should split while splitting is still cheap.
+
+**Round-6 addendum.** The list has now grown twice: ten at the original
+recording, fourteen after the amendment above. That is the failure mode this
+section names, observed on the very branch that names it. The four additions
+were kept because each fixes an understood defect and reverting means
+re-shipping bugs — but "we found four more and kept them" is the argument
+against the exception getting stronger, not the exception getting broader. A
+list that grows after being recorded is the signal to split, and the next branch
+should treat a second round of discovered out-of-scope work as the trigger,
+not the third.
