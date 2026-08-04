@@ -1018,7 +1018,16 @@ export function EditorPage() {
       setActionInfo(STRINGS.outtakes.selectionRequired);
       return;
     }
-    const slice = toolbarEditor.state.doc.slice(from, to);
+    // I2 (agentic-review 2026-08-04): selection.content(), NOT doc.slice(from,
+    // to). The latter defaults includeParents = false and cuts at
+    // $from.sharedDepth(to), so a selection inside ONE paragraph — the feature's
+    // most natural gesture — captured the paragraph's INLINE content and
+    // persisted {type:"doc",content:[{type:"text",…}]}, which fails the doc
+    // node's `block+` expression. Nothing downstream rejected it (TipTapDocSchema
+    // types content as z.array(z.record()), the JSON walkers tolerate it,
+    // insertContent accepts an inline fragment) so the rows just accumulated in a
+    // HARD-delete table. Pinned against a real schema in outtakeCaptureSlice.test.ts.
+    const slice = toolbarEditor.state.selection.content();
     const content = stripImageNodes({ type: "doc", content: slice.content.toJSON() ?? [] });
     // An image-only selection strips to an empty doc — POSTing it would create a
     // blank outtake card. from !== to passed the guard above, so the user DID

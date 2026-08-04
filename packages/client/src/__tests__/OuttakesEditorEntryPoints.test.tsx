@@ -52,11 +52,18 @@ vi.mock("../components/Editor", async () => {
         mockControls.editable = v;
       },
       state: {
+        // I2 (agentic-review 2026-08-04): the capture path may only reach the
+        // selection through `selection.content()` (includeParents = true, always
+        // block-level). `state.doc.slice(from, to)` is deliberately NOT exposed
+        // here: it returns INLINE content for an intra-paragraph selection, which
+        // persisted a doc ProseMirror rejects. Reverting to it fails every test
+        // in this file rather than passing quietly — outtakeCaptureSlice.test.ts
+        // holds the real-schema proof of why.
         get selection() {
-          return mockControls.selection;
-        },
-        doc: {
-          slice: () => ({ content: { toJSON: () => mockControls.sliceJson } }),
+          return {
+            ...mockControls.selection,
+            content: () => ({ content: { toJSON: () => mockControls.sliceJson } }),
+          };
         },
       },
     };
