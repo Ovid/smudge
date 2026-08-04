@@ -219,7 +219,7 @@ describe("ReferencePanel", () => {
       fireEvent.mouseDown(separator, { clientX: 500 });
 
       // Drag left by 50px (moving mouse left increases width since panel is on right)
-      fireEvent.mouseMove(document, { clientX: 450 });
+      fireEvent.mouseMove(document, { clientX: 450, buttons: 1 });
 
       // Width should be startWidth - (newX - startX) = 320 - (450 - 500) = 320 + 50 = 370
       expect(onResize).toHaveBeenCalledWith(370);
@@ -232,7 +232,7 @@ describe("ReferencePanel", () => {
 
       fireEvent.mouseDown(separator, { clientX: 500 });
       // Drag far left to exceed max
-      fireEvent.mouseMove(document, { clientX: 0 });
+      fireEvent.mouseMove(document, { clientX: 0, buttons: 1 });
 
       // startWidth - (0 - 500) = 320 + 500 = 820, clamped to PANEL_MAX_WIDTH
       expect(onResize).toHaveBeenCalledWith(PANEL_MAX_WIDTH);
@@ -245,7 +245,7 @@ describe("ReferencePanel", () => {
 
       fireEvent.mouseDown(separator, { clientX: 500 });
       // Drag far right to go below min
-      fireEvent.mouseMove(document, { clientX: 1000 });
+      fireEvent.mouseMove(document, { clientX: 1000, buttons: 1 });
 
       // startWidth - (1000 - 500) = 320 - 500 = -180, clamped to PANEL_MIN_WIDTH
       expect(onResize).toHaveBeenCalledWith(PANEL_MIN_WIDTH);
@@ -257,7 +257,7 @@ describe("ReferencePanel", () => {
       const separator = screen.getByRole("separator");
 
       fireEvent.mouseDown(separator, { clientX: 500 });
-      fireEvent.mouseMove(document, { clientX: 450 });
+      fireEvent.mouseMove(document, { clientX: 450, buttons: 1 });
       expect(onResize).toHaveBeenCalledTimes(1);
 
       // Release mouse
@@ -265,7 +265,7 @@ describe("ReferencePanel", () => {
       onResize.mockClear();
 
       // Further mouse moves should not trigger onResize
-      fireEvent.mouseMove(document, { clientX: 400 });
+      fireEvent.mouseMove(document, { clientX: 400, buttons: 1 });
       expect(onResize).not.toHaveBeenCalled();
     });
 
@@ -278,7 +278,7 @@ describe("ReferencePanel", () => {
 
       // Start a drag
       fireEvent.mouseDown(separator, { clientX: 500 });
-      fireEvent.mouseMove(document, { clientX: 450 });
+      fireEvent.mouseMove(document, { clientX: 450, buttons: 1 });
       expect(onResize).toHaveBeenCalledTimes(1);
       onResize.mockClear();
 
@@ -286,7 +286,7 @@ describe("ReferencePanel", () => {
       unmount();
 
       // Further mouse moves should not trigger onResize
-      fireEvent.mouseMove(document, { clientX: 400 });
+      fireEvent.mouseMove(document, { clientX: 400, buttons: 1 });
       expect(onResize).not.toHaveBeenCalled();
     });
 

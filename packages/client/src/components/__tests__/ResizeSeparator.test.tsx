@@ -89,7 +89,10 @@ describe("ResizeSeparator", () => {
     ])("edge=%s, dx=%i → %i", (edge, dx, expected) => {
       const { separator, onResize } = renderSeparator(edge);
       fireEvent.mouseDown(separator, { clientX: 100 });
-      fireEvent.mouseMove(document, { clientX: 100 + dx });
+      // `buttons: 1` on every drag move: a move with no button held is now
+      // treated as the mouseup we missed (OOSS1), so omitting it would model a
+      // released button rather than a drag.
+      fireEvent.mouseMove(document, { clientX: 100 + dx, buttons: 1 });
       expect(onResize).toHaveBeenCalledWith(expected);
       fireEvent.mouseUp(document);
     });
@@ -97,9 +100,9 @@ describe("ResizeSeparator", () => {
     it("clamps a drag past the bounds", () => {
       const { separator, onResize } = renderSeparator("right");
       fireEvent.mouseDown(separator, { clientX: 100 });
-      fireEvent.mouseMove(document, { clientX: 9999 });
+      fireEvent.mouseMove(document, { clientX: 9999, buttons: 1 });
       expect(onResize).toHaveBeenLastCalledWith(400);
-      fireEvent.mouseMove(document, { clientX: -9999 });
+      fireEvent.mouseMove(document, { clientX: -9999, buttons: 1 });
       expect(onResize).toHaveBeenLastCalledWith(200);
       fireEvent.mouseUp(document);
     });
@@ -109,7 +112,46 @@ describe("ResizeSeparator", () => {
       fireEvent.mouseDown(separator, { clientX: 100 });
       fireEvent.mouseUp(document);
       onResize.mockClear();
-      fireEvent.mouseMove(document, { clientX: 200 });
+      fireEvent.mouseMove(document, { clientX: 200, buttons: 1 });
+      expect(onResize).not.toHaveBeenCalled();
+    });
+
+    it("stops resizing when the mouse button was released off-window (OOSS1)", () => {
+      // A mouseup delivered outside the document (release over an iframe, a
+      // native menu, or off-window) never reaches the listener, so the drag
+      // never ends: the panel then follows the bare pointer around the screen,
+      // writing to localStorage on every move. `buttons === 0` is the browser
+      // telling us no button is held.
+      const { separator, onResize } = renderSeparator("right");
+      fireEvent.mouseDown(separator, { clientX: 100 });
+      fireEvent.mouseMove(document, { clientX: 150, buttons: 1 });
+      expect(onResize).toHaveBeenCalled();
+
+      onResize.mockClear();
+      fireEvent.mouseMove(document, { clientX: 200, buttons: 0 });
+      expect(onResize).not.toHaveBeenCalled();
+      // ...and the listener is gone, not merely skipping one event.
+      fireEvent.mouseMove(document, { clientX: 250, buttons: 1 });
+      expect(onResize).not.toHaveBeenCalled();
+    });
+
+    it("a second drag reclaims the first drag's listeners (OOSS1)", () => {
+      // Without a reclaim, the second mousedown OVERWRITES resizeCleanupRef and
+      // the first drag's cleanup closure becomes unreachable — no mouseup and no
+      // unmount can ever remove its listener, so both fire for the rest of the
+      // session and each move calls onResize twice.
+      const { separator, onResize } = renderSeparator("right");
+      fireEvent.mouseDown(separator, { clientX: 100 });
+      fireEvent.mouseDown(separator, { clientX: 100 });
+
+      onResize.mockClear();
+      fireEvent.mouseMove(document, { clientX: 150, buttons: 1 });
+      expect(onResize).toHaveBeenCalledTimes(1);
+
+      // One mouseup ends everything.
+      fireEvent.mouseUp(document);
+      onResize.mockClear();
+      fireEvent.mouseMove(document, { clientX: 200, buttons: 1 });
       expect(onResize).not.toHaveBeenCalled();
     });
 
@@ -121,7 +163,7 @@ describe("ResizeSeparator", () => {
       fireEvent.mouseDown(screen.getByRole("separator"), { clientX: 100 });
       unmount();
       onResize.mockClear();
-      fireEvent.mouseMove(document, { clientX: 200 });
+      fireEvent.mouseMove(document, { clientX: 200, buttons: 1 });
       expect(onResize).not.toHaveBeenCalled();
     });
   });

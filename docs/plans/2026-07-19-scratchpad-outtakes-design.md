@@ -165,9 +165,30 @@ label?: <sanitized string, nullable> }`. No client-supplied counts.
   oversight, and the small duplication is the accepted cost of not risking the
   word-count invariant.
 
-Content validation reuses the existing `TipTapDocSchema` + `MAX_CHAPTER_CONTENT_BYTES`
-guard (same as snapshots) so oversized bodies return `413` (inherited from the
-global `express.json({ limit })` mount in `app.ts`).
+  > **S12 (agentic-review 2026-08-04): the branch edited `extractText` anyway,
+  > and it IS a behaviour change, not just a crash guard.** The shared
+  > `isTipTapNode` guard makes a malformed child (`null`, a primitive, an array)
+  > contribute no text AND no separator, where it previously contributed a
+  > separator: `[text "foo", [], text "bar"]` goes from 2 words to 1.
+  > `countWords` drives the persisted `word_count` column and `daily_snapshots`.
+  > The new behaviour is the correct one — a malformed child is not a node, so
+  > treating it as absent matches every sibling walker — and it is unreachable
+  > through the API now that `validateTipTapDepth` rejects nested arrays; only a
+  > legacy row could carry one. But the "forking keeps `toPlainText` from
+  > perturbing the word-count path" rationale above no longer describes what
+  > shipped, so do not read it as a promise that this path was left untouched.
+
+Content validation reuses `TipTapDocSchema` **at the route**, and oversized
+bodies return `413` from the global `express.json({ limit })` mount in `app.ts`.
+
+> **S13 (agentic-review 2026-08-04): this is NOT "same as snapshots".** This
+> paragraph used to say so, and to name `MAX_CHAPTER_CONTENT_BYTES` as a reused
+> guard. Neither is true: `restoreSnapshot` re-checks the byte cap explicitly,
+> whereas outtakes rely on the global body limit alone, and the service does not
+> re-parse content at all (see the §6 callout, which this paragraph contradicted).
+> Phase 4c.2a is required to re-read this design before shipping the destructive
+> cut, so a stale "same as snapshots" here is the sentence that would license
+> skipping a guard that was never there.
 
 ## 6. Server Layers (clones the snapshot stack)
 

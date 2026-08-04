@@ -209,11 +209,17 @@ export function EditorToolbar({
               strokeLinejoin="round"
               aria-hidden="true"
             >
-              <circle cx="6" cy="6" r="3" />
-              <circle cx="6" cy="18" r="3" />
-              <line x1="20" y1="4" x2="8.12" y2="15.88" />
-              <line x1="14.47" y1="14.48" x2="20" y2="20" />
-              <line x1="8.12" y1="8.12" x2="12" y2="12" />
+              {/* S20 (agentic-review 2026-08-04): an ARCHIVE box, not scissors.
+                  This action is explicitly non-destructive — the selection is
+                  copied, the manuscript is untouched — and the destructive cut
+                  is fenced into Phase 4c.2a. The accessible name and title were
+                  already correct, so a scissors glyph misled sighted users
+                  only: they would watch their text stay put and reasonably
+                  assume the button had failed, or worse, trust that it cut and
+                  not check. There is no undo for an assumed cut. */}
+              <rect x="2" y="3" width="20" height="5" rx="1" />
+              <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+              <path d="M10 12h4" />
             </svg>
           </button>
         </>

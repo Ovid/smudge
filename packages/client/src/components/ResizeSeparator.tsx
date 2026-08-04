@@ -81,9 +81,24 @@ export function ResizeSeparator({
       className={`absolute ${edge === "left" ? "left-0" : "right-0"} top-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/20 focus:bg-accent/20 focus:outline-none transition-colors duration-200`}
       onMouseDown={(e) => {
         e.preventDefault();
+        // OOSS1 (agentic-review 2026-08-04): reclaim any drag still registered.
+        // Without this, a second mousedown OVERWRITES resizeCleanupRef and the
+        // first drag's cleanup closure becomes unreachable — no mouseup and no
+        // unmount can remove its listener again, so it resizes the panel for
+        // the rest of the session.
+        resizeCleanupRef.current?.();
         const startX = e.clientX;
         const startWidth = value;
         function onMouseMove(ev: MouseEvent) {
+          // A mouseup delivered outside the document (release over an iframe, a
+          // native menu, off-window) never reaches onMouseUp, so the drag never
+          // ends and the panel follows the bare pointer — writing to
+          // localStorage on every move. `buttons === 0` is the browser saying no
+          // button is held; treat it as the mouseup we missed.
+          if (ev.buttons === 0) {
+            cleanupResize();
+            return;
+          }
           onResize(clamp(startWidth + dragSign * (ev.clientX - startX)));
         }
         function onMouseUp() {

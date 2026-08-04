@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { truncateUnits } from "./truncate";
+import { truncateUnits } from "../truncate";
 
 describe("truncateUnits", () => {
   it("returns the string unchanged when it fits", () => {

@@ -104,7 +104,12 @@ export const ALLOWED_ATTR: readonly string[] = Object.freeze(["src", "alt"]);
 // deliberately, since they are the two halves of one fail-closed rule
 // applied on two different rendering routes. The cross-reference used to
 // point only one way (export → here); it now points both ways, and
-// sanitizer.test.ts asserts the two patterns still accept the same set.
+// packages/shared/src/__tests__/image-src-allowlist-parity.test.ts asserts the
+// two patterns still accept the same set — it reads both out of source and runs
+// a shared corpus through them. (S18: this named sanitizer.test.ts, which has
+// no such assertion. The invariant IS mechanically enforced; only the pointer
+// was wrong, and a pointer to a guard that isn't there is how the guard gets
+// deleted.)
 // This is NOT the F-16 pair: IMAGE_SRC_RE's optional absolute-host arm
 // serves reference counting and must stay different.
 const ALLOWED_URI_REGEXP =

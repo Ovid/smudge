@@ -23,7 +23,14 @@ import { MAX_IMAGE_UPLOAD_BYTES, MAX_IMAGE_UPLOAD_LABEL } from "../constants";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
+// S16 (agentic-review 2026-08-04): constants.ts is the site that MATTERS and it
+// was the one omitted — the label is defined there, so a hand-written "10 MB"
+// would live there and nowhere else. Without it every assertion in this file
+// passed with the derivation replaced by a literal, which is the exact
+// regression the file exists to prevent. It is safe to scan: the derivation
+// itself (`${... / 1024 / 1024} MB`) has no digit adjacent to "MB".
 const MESSAGE_SITES = [
+  resolve(HERE, "../constants.ts"),
   resolve(HERE, "../../../server/src/images/images.service.ts"),
   resolve(HERE, "../../../server/src/images/images.routes.ts"),
   resolve(HERE, "../../../client/src/strings.ts"),
@@ -37,15 +44,13 @@ describe("image upload cap: one source for the figure the user is shown", () => 
     expect(MAX_IMAGE_UPLOAD_LABEL).toBe(`${MAX_IMAGE_UPLOAD_BYTES / 1024 / 1024} MB`);
   });
 
-  it("tracks the constant rather than restating it", () => {
-    // The discriminating half: a hand-written "10 MB" would satisfy the
-    // assertion above today and silently stop tracking on the next change.
-    // Recomputing from a DIFFERENT cap proves the label is a function of the
-    // constant, not a coincidence.
-    const twentyMb = 20 * 1024 * 1024;
-    expect(`${twentyMb / 1024 / 1024} MB`).toBe("20 MB");
-    expect(MAX_IMAGE_UPLOAD_LABEL).not.toBe("20 MB");
-  });
+  // S16 (agentic-review 2026-08-04): the "discriminating half" used to live here
+  // as two assertions that could not fail — `${20*1024*1024/1024/1024} MB` ===
+  // "20 MB" is an arithmetic identity, and `MAX_IMAGE_UPLOAD_LABEL !== "20 MB"`
+  // holds for any cap that isn't 20 MB. Neither said anything about the label
+  // being DERIVED. The real discrimination is the source scan below, which now
+  // includes constants.ts: replace the derivation with a literal "10 MB" and
+  // this file goes red, which is what it always claimed to do.
 
   it.each(MESSAGE_SITES)("%s states no size of its own", (site) => {
     const source = readFileSync(site, "utf8");
