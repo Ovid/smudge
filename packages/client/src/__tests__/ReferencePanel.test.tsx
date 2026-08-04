@@ -99,6 +99,48 @@ describe("ReferencePanel", () => {
         expect(screen.getByTestId("notes-content")).toBeInTheDocument();
         expect(screen.queryByTestId("panel-content")).not.toBeInTheDocument();
       });
+
+      // S12 (agentic-review 2026-08-04): this markup opts into the WAI-ARIA tabs
+      // pattern (role=tablist/tab/tabpanel + aria-selected + aria-controls), and
+      // a screen-reader user who knows that pattern expects arrow keys to move
+      // between tabs and one Tab stop for the tablist. The panel became
+      // multi-tab for the first time on this branch and shipped neither. aXe has
+      // no rule for it, so the e2e scan could not have caught it either.
+      describe("keyboard navigation (WAI-ARIA tabs pattern)", () => {
+        it("gives the tablist a single Tab stop via a roving tabIndex", () => {
+          render(<ReferencePanel {...secondProps} />);
+          expect(
+            screen.getByRole("tab", { name: STRINGS.referencePanel.imagesTab }),
+          ).toHaveAttribute("tabindex", "0");
+          expect(screen.getByRole("tab", { name: "Notes" })).toHaveAttribute("tabindex", "-1");
+        });
+
+        it.each([
+          ["{ArrowRight}", "images", "notes"],
+          ["{ArrowLeft}", "images", "notes"], // wraps backwards to the last tab
+          ["{End}", "images", "notes"],
+          ["{Home}", "notes", "images"],
+          ["{ArrowRight}", "notes", "images"], // wraps forwards to the first tab
+        ])("%s from the %s tab selects %s", async (key, activeTabId, expected) => {
+          const onSelectTab = vi.fn();
+          render(
+            <ReferencePanel {...secondProps} activeTabId={activeTabId} onSelectTab={onSelectTab} />,
+          );
+          screen.getByRole("tab", { selected: true }).focus();
+          await userEvent.keyboard(key);
+          expect(onSelectTab).toHaveBeenCalledWith(expected);
+        });
+
+        it("leaves keys it does not own to the panel's own listeners", async () => {
+          // Escape closes the panel and Ctrl+. toggles it; swallowing those here
+          // would break both.
+          const onSelectTab = vi.fn();
+          render(<ReferencePanel {...secondProps} onSelectTab={onSelectTab} />);
+          screen.getByRole("tab", { selected: true }).focus();
+          await userEvent.keyboard("{Escape}{ArrowDown}");
+          expect(onSelectTab).not.toHaveBeenCalled();
+        });
+      });
     });
 
     describe("stale activeTabId (e.g. a removed tab still in localStorage)", () => {

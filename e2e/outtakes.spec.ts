@@ -97,6 +97,20 @@ test.describe("Outtakes E2e Tests", () => {
     await outtakesPanel.getByRole("button", { name: "Delete" }).click();
     const dialog = page.getByRole("alertdialog", { name: "Delete this outtake?" });
     await expect(dialog).toBeVisible();
+
+    // S11 (agentic-review 2026-08-04): scan HERE, not after the delete. This is
+    // the phase's only mechanical a11y enforcement, and it used to be the last
+    // statement in the test — running against an emptied panel, so the card's
+    // label input, its Insert/Copy/Delete buttons and the ConfirmDialog were
+    // never in the DOM for it. Design §10 and plan task H1 both promise a panel
+    // pass. With the dialog open, one scan covers the populated panel and the
+    // dialog together.
+    //
+    // Exclude color-contrast: Tailwind v4 uses oklab() which aXe cannot parse
+    // (mirrors images.spec).
+    const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
+    expect(results.violations).toEqual([]);
+
     await dialog.getByRole("button", { name: "Confirm" }).click();
 
     // The card is gone and the empty state returns.
@@ -104,11 +118,6 @@ test.describe("Outtakes E2e Tests", () => {
     await expect(
       outtakesPanel.getByText("No outtakes yet. Stash cut text here to find it later."),
     ).toBeVisible();
-
-    // aXe-core scan of the panel. Exclude color-contrast: Tailwind v4 uses
-    // oklab() which aXe cannot parse (mirrors images.spec).
-    const results = await new AxeBuilder({ page }).disableRules(["color-contrast"]).analyze();
-    expect(results.violations).toEqual([]);
   });
 
   // S11: design §8.5 specifies three insert edge behaviours — into an empty
