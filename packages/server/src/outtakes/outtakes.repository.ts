@@ -72,13 +72,17 @@ export async function findById(db: Knex, id: string): Promise<OuttakeRow | null>
 }
 
 export async function listByProject(db: Knex, projectId: string): Promise<OuttakeRow[]> {
-  // Newest first; secondary `id DESC` breaks ties when two outtakes share the
-  // same millisecond ISO timestamp so ordering stays deterministic.
+  // Newest first. S8 (agentic-review 2026-08-04): the tie-break is `rowid DESC`,
+  // not `id DESC` — ids are v4 UUIDs and carry no ordering information, so two
+  // outtakes sharing a millisecond listed in UUID order, as likely oldest-first
+  // as newest-first, against a contract that says newest first. rowid is
+  // monotonic per insert, so a tie falls back to insertion order, which is what
+  // "newest first" means when the timestamps cannot say.
   const rows = await db(TABLE)
     .where({ project_id: projectId })
     .orderBy([
       { column: "created_at", order: "desc" },
-      { column: "id", order: "desc" },
+      { column: "rowid", order: "desc" },
     ]);
   return rows.map(parseRow);
 }

@@ -90,17 +90,24 @@ describe("outtakes repository", () => {
       expect(list[0]!.content).toEqual({ type: "doc", content: [] });
     });
 
-    it("breaks same-timestamp ties deterministically by id desc", async () => {
+    // S8 (agentic-review 2026-08-04): the tie-break was `id DESC`, and ids are
+    // v4 UUIDs — they carry no ordering information, so two outtakes sharing a
+    // millisecond listed in UUID order, as likely oldest-first as newest-first,
+    // against an endpoint whose contract (and whose panel) says newest first.
+    // Deterministic-but-arbitrary is harder to notice than nondeterministic.
+    // Insertion order here contradicts id order, so only a rowid tie-break
+    // passes.
+    it("breaks same-timestamp ties by insertion order, newest first", async () => {
       const projectId = await createProject();
       const sameTime = "2026-04-03T00:00:00.000Z";
-      const a = makeData(projectId, { id: "aaaa-id", created_at: sameTime });
-      const b = makeData(projectId, { id: "bbbb-id", created_at: sameTime });
+      const first = makeData(projectId, { id: "zzzz-id", created_at: sameTime });
+      const second = makeData(projectId, { id: "aaaa-id", created_at: sameTime });
 
-      await OuttakesRepo.insert(t.db, a);
-      await OuttakesRepo.insert(t.db, b);
+      await OuttakesRepo.insert(t.db, first);
+      await OuttakesRepo.insert(t.db, second);
 
       const list = await OuttakesRepo.listByProject(t.db, projectId);
-      expect(list.map((o) => o.id)).toEqual(["bbbb-id", "aaaa-id"]);
+      expect(list.map((o) => o.id)).toEqual(["aaaa-id", "zzzz-id"]);
     });
 
     it("returns an empty array when no outtakes exist", async () => {

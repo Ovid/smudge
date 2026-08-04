@@ -23,7 +23,11 @@ describe("migration 015 outtakes", () => {
   // it does not work. Declared LAST so the re-migrate restores the table before
   // any sibling test runs.
   it("drops the table on rollback and restores it on re-migrate (down)", async () => {
-    await t.db.migrate.down();
+    // S6 (agentic-review 2026-08-04): pinned to 015. A bare down() rolls back
+    // whatever is latest, so the day 016 lands this went red against an
+    // unrelated change — while silently ceasing to cover 015's down(), the one
+    // thing it exists for.
+    await t.db.migrate.down({ name: "015_create_outtakes.js" });
     expect(await t.db.schema.hasTable("outtakes")).toBe(false);
 
     await t.db.migrate.latest();

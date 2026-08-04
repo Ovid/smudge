@@ -193,6 +193,44 @@ describe("snapshots repository", () => {
       expect(hash).toBe(expected);
     });
 
+    // S8 (agentic-review 2026-08-04, extended from outtakes): the same-
+    // millisecond tie-break was `id DESC` over v4 UUIDs, which carry no
+    // ordering. Here that decides WHICH snapshot dedup compares against, so a
+    // burst (restore or find-and-replace, both of which snapshot) could dedup a
+    // new manual snapshot against an older row's content and silently refuse
+    // the writer's marker. Insertion order contradicts id order below.
+    it("compares against the last-inserted snapshot when timestamps tie", async () => {
+      const projectId = await createProject();
+      const chapterId = await createChapter(projectId);
+      const sameTime = "2026-04-04T00:00:00.000Z";
+
+      await SnapshotsRepo.insert(t.db, {
+        id: "ffffffff-0000-4000-8000-000000000000",
+        chapter_id: chapterId,
+        label: null,
+        content: "older content",
+        word_count: 5,
+        is_auto: false,
+        created_at: sameTime,
+      });
+      await SnapshotsRepo.insert(t.db, {
+        id: "00000000-0000-4000-8000-000000000000",
+        chapter_id: chapterId,
+        label: null,
+        content: "newer content",
+        word_count: 6,
+        is_auto: false,
+        created_at: sameTime,
+      });
+
+      expect(await SnapshotsRepo.getLatestContentHash(t.db, chapterId)).toBe(
+        canonicalContentHash("newer content"),
+      );
+      expect(await SnapshotsRepo.getLatestContentHashAnyKind(t.db, chapterId)).toBe(
+        canonicalContentHash("newer content"),
+      );
+    });
+
     it("ignores auto-snapshots so manual dedup does not trip on them", async () => {
       const projectId = await createProject();
       const chapterId = await createChapter(projectId);
