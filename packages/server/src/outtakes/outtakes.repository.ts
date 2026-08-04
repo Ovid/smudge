@@ -10,6 +10,7 @@ const TABLE = "outtakes";
 // column string.
 function parseRow(row: Record<string, unknown>): OuttakeRow {
   let content: Record<string, unknown>;
+  let corrupt = false;
   try {
     const parsed: unknown = JSON.parse(row.content as string);
     // S1: "valid JSON, wrong shape" ("null", "42", "[]", '"text"') parses
@@ -22,10 +23,17 @@ function parseRow(row: Record<string, unknown>): OuttakeRow {
     }
     content = parsed as Record<string, unknown>;
   } catch (err) {
-    // ponytail: degrade one corrupt row to an empty doc (not a corrupt-flag
-    // like chapters). Single-user, unreachable in-app, and keeps content
-    // non-null so no client corrupt-branch is needed — the row still lists so
-    // it stays deletable, instead of one bad row 500-ing the whole drawer.
+    // Degrade one corrupt row to an empty doc rather than 500-ing the whole
+    // drawer: content stays non-null so every walker keeps working and the row
+    // still lists, which is what keeps it deletable.
+    //
+    // S7 (agentic-review 2026-08-04): but the degrade must be VISIBLE. The
+    // recorded rationale for the silent version addressed the rendering failure
+    // mode and missed the irreversible one — outtakes are hard-deleted (no
+    // `deleted_at`, no trash, no 30-day window), so an apparently-empty card
+    // invites the writer to delete the last copy of JSON a human could still
+    // recover from the DB by hand. Flag it and let the card say so.
+    corrupt = true;
     logger.warn(
       {
         parseError: err instanceof Error ? err.name : "UnknownError",
@@ -42,6 +50,9 @@ function parseRow(row: Record<string, unknown>): OuttakeRow {
     content,
     created_at: row.created_at as string,
     updated_at: row.updated_at as string,
+    // Omitted entirely (not `false`) on the happy path, matching the optional
+    // `content_corrupt?: true` on the wire type.
+    ...(corrupt ? { content_corrupt: true as const } : {}),
   };
 }
 

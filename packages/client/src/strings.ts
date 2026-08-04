@@ -530,6 +530,11 @@ export const STRINGS = {
     newPlaceholder: "Paste or type text to stash here…",
     save: "Save",
     cancel: "Cancel",
+    // S7 (agentic-review 2026-08-04): outtakes are hard-deleted, so an
+    // apparently-empty card is an invitation to destroy the last copy of JSON a
+    // human could still recover by hand. Say what actually happened.
+    corruptContent:
+      "This outtake's saved text couldn't be read. Don't delete it if you want it back.",
     insertFailedCorrupt:
       "This outtake's content is corrupt and can't be inserted. Copy the text instead.",
     showMore: "Show more",

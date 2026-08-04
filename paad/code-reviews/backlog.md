@@ -245,7 +245,7 @@
 - **Confidence:** Medium
 - **Found by:** Concurrency & State (`claude-opus-4-7[1m]`)
 - **First seen:** 2026-05-26 on branch `consumer-recovery-helper-consuming-fixes` at `490e351`
-- **Last seen:** 2026-05-27 on branch `consumer-recovery-independent-fixes` at `a4bb07e`
+- **Last seen:** 2026-08-04 on branch `scratchpad-outtakes` at `ef6a65a1`
 - **Severity:** Suggestion
 
 ## `7f2c1e08` — `handleUpdateProjectTitle` recovery-GET catch silently swallows every non-404 error
@@ -318,5 +318,23 @@
 - **Found by:** Logic & Correctness / Security (`claude-opus-4-8[1m]`)
 - **First seen:** 2026-06-04 on branch `operational-backup-stopgap` at `1aa1eec`
 - **Last seen:** 2026-06-04 on branch `operational-backup-stopgap` at `1aa1eec`
+- **Severity:** Suggestion
+
+## `665350d0` — `stripNoteMarks` fails open on a non-array `content` container; note marks survive the confidentiality strip
+- **File (at first sighting):** `packages/shared/src/tiptap-notes.ts:85`
+- **Symbol:** `strip`
+- **Bug class:** Security
+- **Description:**
+  ```text
+  When a node's `content` is a truthy non-array, the `if (Array.isArray(node.content))` block is skipped and the container is copied through untouched by `{ ...node }`, so every note mark inside it survives the strip. Verified: UpdateChapterSchema accepts the shape and stripNoteMarks preserves the note text. Does NOT leak today &lt;- renderEditorHtml throws RangeError (caught by chapterContentToHtml, chapter body renders as "") and DOCX inlineToRuns throws TypeError. Confidentiality holds only via two libraries' throw behaviour. Pre-existing; not reached differently by this branch.
+  ```
+- **Suggested fix:**
+  ```text
+  Drop what the walker cannot descend into, as the sibling `stripImageNodes` should also do. Since stripImageNodes, stripNoteMarks and extractImageIds all need identical container handling, the root-cause shape is a shared `childrenOf(node): unknown[]` helper next to `isTipTapNode` in `tiptap-safety.ts`, returning [] for a non-array. Then upgrade the non-discriminating `not.toThrow()` cell for the two strips in `tiptap-depth-walkers.test.ts:398-401` to `not.toContain("SECRET")` / `not.toContain('"note"')`, and verify by reverting the fix.
+  ```
+- **Confidence:** Medium
+- **Found by:** Security (`claude-opus-5[1m]`)
+- **First seen:** 2026-08-04 on branch `scratchpad-outtakes` at `ef6a65a1`
+- **Last seen:** 2026-08-04 on branch `scratchpad-outtakes` at `ef6a65a1`
 - **Severity:** Suggestion
 

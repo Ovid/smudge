@@ -125,9 +125,16 @@ describe("outtakes repository", () => {
       expect(badRow).toBeDefined();
       expect(badRow!.label).toBe("corrupt");
       expect(badRow!.content).toEqual({ type: "doc", content: [] });
-      // The healthy row still loads with its real content.
+      // S7 (agentic-review 2026-08-04): the placeholder doc keeps the row
+      // renderable and therefore deletable, but it must not be MISTAKEABLE for
+      // an empty outtake. Outtakes are hard-deleted (no deleted_at, no trash, no
+      // 30-day window), so the writer who reads that card as "nothing here"
+      // destroys the last copy of JSON a human could still recover by hand.
+      expect(badRow!.content_corrupt).toBe(true);
+      // The healthy row still loads with its real content, and carries no flag.
       const goodRow = list.find((o) => o.id === good.id);
       expect(goodRow!.content).toEqual({ type: "doc", content: [] });
+      expect(goodRow!.content_corrupt).toBeUndefined();
 
       expect(warnSpy).toHaveBeenCalledWith(
         expect.objectContaining({ outtake_id: corrupt.id }),

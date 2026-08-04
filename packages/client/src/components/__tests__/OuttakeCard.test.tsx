@@ -91,6 +91,20 @@ describe("OuttakeCard", () => {
     expect(screen.getByPlaceholderText(S.untitled)).toBeInTheDocument();
   });
 
+  it("says a corrupt outtake is corrupt rather than showing it empty (S7)", () => {
+    // The server degrades unparseable content to a placeholder empty doc so the
+    // row still lists and stays deletable. On a table with no deleted_at, no
+    // trash and no 30-day window, an empty-LOOKING card is an invitation to
+    // destroy the only remaining copy.
+    render(
+      <OuttakeCard
+        outtake={makeOuttake({ content: { type: "doc", content: [] }, content_corrupt: true })}
+        {...defaultProps}
+      />,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(S.corruptContent);
+  });
+
   it("renders the plain-text preview", () => {
     render(<OuttakeCard outtake={makeOuttake()} {...defaultProps} />);
     expect(screen.getByText("Hello world")).toBeInTheDocument();

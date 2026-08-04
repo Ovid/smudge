@@ -219,12 +219,21 @@ export function OuttakeCard({
         className="text-sm font-medium text-text-primary font-sans border border-transparent hover:border-border/40 focus:border-accent rounded px-1 py-0.5 bg-transparent focus:outline-none focus:ring-1 focus:ring-accent"
       />
 
-      <p
-        id={previewId}
-        className="text-sm text-text-secondary font-serif whitespace-pre-wrap break-words"
-      >
-        {shownText}
-      </p>
+      {outtake.content_corrupt ? (
+        // S7: the row lists (so it stays deletable) but its text is gone. An
+        // empty-looking preview reads as "nothing here, safe to delete" on a
+        // table with no trash and no 30-day window.
+        <p role="alert" className="text-sm text-red-700 font-sans">
+          {S.corruptContent}
+        </p>
+      ) : (
+        <p
+          id={previewId}
+          className="text-sm text-text-secondary font-serif whitespace-pre-wrap break-words"
+        >
+          {shownText}
+        </p>
+      )}
       {isLong && (
         // S13: a real disclosure. Without aria-expanded/aria-controls a screen
         // reader announced "Show more, button" with no state and no target — on

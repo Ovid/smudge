@@ -92,6 +92,17 @@ export interface OuttakeRow {
   content: Record<string, unknown>; // parsed TipTap doc on the wire
   created_at: string;
   updated_at: string;
+  /**
+   * S7 (agentic-review 2026-08-04): the stored JSON could not be parsed, and
+   * `content` is a placeholder empty doc so the row still lists and stays
+   * deletable. Unlike chapters — which signal corruption to the client with
+   * `content: null` and strip their internal flag at the wire boundary — this
+   * one is CARRIED to the client on purpose: outtakes are hard-deleted (no
+   * `deleted_at`, no trash, no 30-day window), so a row that merely looks empty
+   * invites the writer to delete the last copy of still-recoverable JSON. The
+   * flag is what lets the card say "corrupt" instead of showing nothing.
+   */
+  content_corrupt?: true;
 }
 
 export interface SnapshotListItem {
