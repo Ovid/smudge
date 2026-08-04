@@ -126,9 +126,7 @@ describe("ImageGallery", () => {
     rerender(<ImageGallery {...defaultProps} externalRefreshKey={1} />);
 
     expect(screen.getByRole("list")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: imageButtonName(image) }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: imageButtonName(image) })).toBeInTheDocument();
   });
 
   it("renders upload button", () => {

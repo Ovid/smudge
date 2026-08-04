@@ -388,9 +388,7 @@ describe("OuttakeCard", () => {
     const user = userEvent.setup();
     const onDeleted = vi.fn();
     const onError = vi.fn();
-    vi.mocked(api.outtakes.delete).mockRejectedValue(
-      new ApiRequestError("gone", 404, "NOT_FOUND"),
-    );
+    vi.mocked(api.outtakes.delete).mockRejectedValue(new ApiRequestError("gone", 404, "NOT_FOUND"));
     render(
       <OuttakeCard
         outtake={makeOuttake()}

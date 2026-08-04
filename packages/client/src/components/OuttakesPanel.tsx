@@ -264,7 +264,11 @@ export function OuttakesPanel({
       // definite and possibly-committed. The distinction is A's business and
       // the writer has to go look there either way; what B's panel must say is
       // that the note is not here and that Save now targets B.
-      if (startedForProject !== projectIdRef.current) {
+      // `ref.current !== local`, not the mirror: the mirrored form is what the
+      // no-restricted-syntax sequence-ref rule targets, and this is a
+      // project-drift check (one of the patterns its comment names as
+      // legitimate), not an epoch comparison.
+      if (projectIdRef.current !== startedForProject) {
         setCommittedNotice(S.createFailedElsewhere);
         return;
       }

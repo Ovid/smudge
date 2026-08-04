@@ -559,7 +559,8 @@ export const STRINGS = {
     // degraded to an empty doc on read, so there is no text for either action:
     // Insert was a silent no-op and Copy wrote "" over the writer's clipboard
     // while announcing success.
-    corruptNoText: "This outtake's saved text couldn't be read, so there's nothing to insert or copy.",
+    corruptNoText:
+      "This outtake's saved text couldn't be read, so there's nothing to insert or copy.",
     // S5 (agentic-review 2026-08-04): a rename against a row the server no
     // longer has. Reverting the field to a label that does not exist left a card
     // whose every retry 404s; the card goes instead, and this says why.
